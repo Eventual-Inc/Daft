@@ -123,7 +123,7 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
-    - run: pip install -U twine toml
+    - run: pip install -U twine toml maturin
     - run: python tools/patch_package_version.py
     - name: Install Rust toolchain
       uses: moonrepo/setup-rust@v0
@@ -139,13 +139,9 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-    - name: Build wheels - x86
-      uses: messense/maturin-action@v1
-      with:
-        target: x86_64
-        manylinux: auto
-        # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
-        args: --release --out dist --sdist
+    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+    - name: Build wheels
+      run: maturin build --release --compatibility linux --out dist
     - name: Upload wheels
       uses: actions/upload-artifact@v3
       with:
@@ -178,10 +174,14 @@ jobs:
       with:
         name: wheels
         path: dist
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
-        pip install -r requirements-dev.txt
-        pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: actions/cache@v3
       env:
