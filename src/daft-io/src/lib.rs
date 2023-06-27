@@ -66,8 +66,11 @@ pub(crate) enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
+    #[snafu(display("Unable to load Credentials for store: {store} {source}"))]
+    UnableToLoadCredentials { store: SourceType, source: DynError },
+
     #[snafu(display("Failed to load Credentials for store: {store} {source}"))]
-    FailedToLoadCredentials { store: SourceType, source: DynError },
+    UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },

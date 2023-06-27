@@ -19,6 +19,7 @@ use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::string::FromUtf8Error;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
@@ -36,6 +37,15 @@ enum Error {
         source: SdkError<GetObjectError, Response>,
     },
 
+    #[snafu(display("Unable to query the region for {}: {}", path, source))]
+    UnableToQueryRegion {
+        path: String,
+        source: reqwest::Error,
+    },
+
+    #[snafu(display("Unable missing header: {header} when performing request for: {path}"))]
+    MissingHeader { path: String, header: String },
+
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
@@ -50,8 +60,16 @@ enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Failed to load Credentials: {source}"))]
-    FailedToLoadCredentials { source: CredentialsError },
+    #[snafu(display("Unable to load Credentials: {source}"))]
+    UnableToLoadCredentials { source: CredentialsError },
+
+    #[snafu(display("Unable to create http client. {}", source))]
+    UnableToCreateClient { source: reqwest::Error },
+
+    #[snafu(display(
+        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
+    ))]
+    UnableToParseUtf8 { path: String, source: FromUtf8Error },
 }
 
 impl From<Error> for super::Error {
@@ -74,9 +92,17 @@ impl From<Error> for super::Error {
                 source: source.into(),
             },
             NotAFile { path } => super::Error::NotAFile { path },
-            FailedToLoadCredentials { source } => super::Error::FailedToLoadCredentials {
+            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
+            },
+            UnableToCreateClient { source } => super::Error::UnableToCreateClient {
+                store: SourceType::S3,
+                source: source.into(),
+            },
+            err => super::Error::Generic {
+                store: SourceType::S3,
+                source: err.into(),
             },
         }
     }
@@ -117,7 +143,7 @@ async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
         .credentials_cache()
         .provide_cached_credentials()
         .await
-        .context(FailedToLoadCredentialsSnafu {})?;
+        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
 
     Ok(s3::Client::from_conf(s3_conf))
 }
@@ -128,7 +154,9 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     Ok(S3LikeSource {
         s3_client,
         s3_config: config.clone(),
-        http_client: reqwest::Client::builder().build().unwrap(),
+        http_client: reqwest::Client::builder()
+            .build()
+            .with_context(|_| UnableToCreateClientSnafu {})?,
     })
 }
 
@@ -193,23 +221,32 @@ impl ObjectSource for S3LikeSource {
                 Err(SdkError::ServiceError(err)) => match err.err() {
                     GetObjectError::Unhandled(unhandled) => match unhandled.meta().code() {
                         Some("PermanentRedirect") if self.s3_config.endpoint_url.is_none() => {
-                            log::warn!("S3 Region of {uri} doesn't match that of the client: {:?}, Attempting to Resolve.", self.s3_client.conf().region().unwrap());
+                            log::warn!("S3 Region of {uri} doesn't match that of the client: {:?}, Attempting to Resolve.", self.s3_client.conf().region().map_or("", |v| v.as_ref()));
                             let head = self
                                 .http_client
                                 .head(format! {"https://{bucket}.s3.amazonaws.com"})
                                 .send()
                                 .await
-                                .unwrap();
-
-                            let head = head.headers();
-                            let new_region = head.get("x-amz-bucket-region").unwrap();
+                                .with_context(|_| UnableToQueryRegionSnafu::<String> {
+                                    path: uri.into(),
+                                })?;
+                            const REGION_HEADER: &str = "x-amz-bucket-region";
+                            let headers = head.headers();
+                            let new_region =
+                                headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
+                                    path: uri.into(),
+                                    header: REGION_HEADER.into(),
+                                })?;
 
                             let mut new_config = self.s3_config.clone();
-                            new_config.region_name =
-                                Some(String::from_utf8(new_region.as_bytes().to_vec()).unwrap());
+                            new_config.region_name = Some(
+                                String::from_utf8(new_region.as_bytes().to_vec()).with_context(
+                                    |_| UnableToParseUtf8Snafu::<String> { path: uri.into() },
+                                )?,
+                            );
 
                             let new_client = S3LikeSource::get_client(&new_config).await?;
-                            log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().unwrap());
+                            log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().map_or("", |v| v.as_ref()));
                             return new_client.get(uri).await;
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
