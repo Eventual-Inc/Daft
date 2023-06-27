@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
 
@@ -13,7 +13,7 @@ from daft.io.common import _get_tabular_files_scan
 
 @PublicAPI
 def read_csv(
-    path: str,
+    path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
     has_headers: bool = True,

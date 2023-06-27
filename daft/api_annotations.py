@@ -64,6 +64,7 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         # T is a generic type, like `typing.List`
         origin_T = get_origin(T)
         if isinstance(origin_T, type):
+            print(type(T), origin_T, T)
             return isinstance(value, origin_T)
 
         # T is a higher order type, like `typing.Union`
