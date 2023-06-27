@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 
+use crate::config::S3Config;
+use crate::SourceType;
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
@@ -11,9 +13,6 @@ use s3::error::{ProvideErrorMetadata, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
-
-use crate::config::S3Config;
-use crate::SourceType;
 
 use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
@@ -62,7 +61,7 @@ enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Unable to load Credentials: {source}"))]
+    #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
 
     #[snafu(display("Unable to create http client. {}", source))]
@@ -111,10 +110,15 @@ impl From<Error> for super::Error {
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let mut anonymous = false;
-
-    let conf: SdkConfig = aws_config::load_from_env().await;
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let mut anonymous = config.anonymous;
+
+    let conf: SdkConfig = if anonymous {
+        aws_config::SdkConfig::builder().build()
+    } else {
+        aws_config::load_from_env().await
+    };
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -144,18 +148,20 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     };
 
     let s3_conf = builder.build();
-
-    match s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
-        .await
-        .with_context(|_| UnableToLoadCredentialsSnafu {})
-    {
-        Ok(_) => {}
-        Err(err) => {
-            log::warn!("Could not load S3 Credentials when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-            anonymous = true;
-        }
+    if !config.anonymous {
+        use CredentialsError::*;
+        match s3_conf
+            .credentials_cache()
+            .provide_cached_credentials()
+            .await {
+            Ok(_) => Ok(()),
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                anonymous = true;
+                Ok(())
+            },
+            Err(err) => Err(err),
+        }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
     };
 
     let client = s3::Client::from_conf(s3_conf);
