@@ -23,7 +23,6 @@ def minio_io_config() -> daft.io.IOConfig:
             endpoint_url="http://127.0.0.1:9000",
             key_id="minioadmin",
             access_key="minioadmin",
-            region_name="us-east-1",
         )
     )
 
