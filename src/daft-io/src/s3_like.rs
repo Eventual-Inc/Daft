@@ -110,7 +110,7 @@ impl From<Error> for super::Error {
 
 async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
     let conf: SdkConfig = aws_config::load_from_env().await;
-
+    const DEFAULT_REGION: Region = Region::from_static("us-east-1");
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -118,8 +118,8 @@ async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
     };
     let builder = if let Some(region) = &config.region_name {
         builder.region(Region::new(region.to_owned()))
-    } else if config.endpoint_url.is_none() && conf.region().is_none() {
-        builder.region(Region::from_static("us-east-1"))
+    } else if conf.region().is_none() && config.region_name.is_none() {
+        builder.region(DEFAULT_REGION)
     } else {
         builder
     };
