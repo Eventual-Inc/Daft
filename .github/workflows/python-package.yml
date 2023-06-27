@@ -41,6 +41,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-build-${{ env.cache-name }}-
@@ -134,6 +135,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-integration-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-integration-build-${{ env.cache-name }}-
@@ -229,6 +231,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-rust-package-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-rust-package-${{ env.cache-name }}-
@@ -318,6 +321,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-build-${{ env.cache-name }}-
@@ -395,6 +399,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
+          target
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-build-${{ env.cache-name }}-
