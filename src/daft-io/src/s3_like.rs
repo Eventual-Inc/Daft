@@ -1,18 +1,18 @@
 use async_trait::async_trait;
 
+use crate::config::S3Config;
+use crate::SourceType;
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
+use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::Response;
+use s3::client::customize::{Operation, Response};
 use s3::config::{Credentials, Region};
 use s3::error::{ProvideErrorMetadata, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
-
-use crate::config::S3Config;
-use crate::SourceType;
 
 use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
@@ -27,6 +27,7 @@ pub(crate) struct S3LikeSource {
     s3_client: s3::Client,
     s3_config: S3Config,
     http_client: reqwest::Client,
+    anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -60,7 +61,7 @@ enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Unable to load Credentials: {source}"))]
+    #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
 
     #[snafu(display("Unable to create http client. {}", source))]
@@ -108,9 +109,16 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
-    let conf: SdkConfig = aws_config::load_from_env().await;
+async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let mut anonymous = config.anonymous;
+
+    let conf: SdkConfig = if anonymous {
+        aws_config::SdkConfig::builder().build()
+    } else {
+        aws_config::load_from_env().await
+    };
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -132,31 +140,39 @@ async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
         );
         builder.credentials_provider(creds)
     } else if config.access_key.is_some() || config.key_id.is_some() {
-        panic!("Must provide both access_key and key_id when building S3-Like Client");
+        return Err(super::Error::InvalidArgument {
+            msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
+        });
     } else {
         builder
     };
 
     let s3_conf = builder.build();
+    if !config.anonymous {
+        use CredentialsError::*;
+        match s3_conf
+            .credentials_cache()
+            .provide_cached_credentials()
+            .await {
+            Ok(_) => Ok(()),
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                anonymous = true;
+                Ok(())
+            },
+            Err(err) => Err(err),
+        }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
+    };
 
-    s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
-        .await
-        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
-
-    Ok(s3::Client::from_conf(s3_conf))
-}
-
-async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let s3_client = build_s3_client(config).await?;
+    let client = s3::Client::from_conf(s3_conf);
 
     Ok(S3LikeSource {
-        s3_client,
+        s3_client: client,
         s3_config: config.clone(),
         http_client: reqwest::Client::builder()
             .build()
             .with_context(|_| UnableToCreateClientSnafu {})?,
+        anonymous: anonymous,
     })
 }
 
@@ -196,14 +212,32 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
-            let request = self
-                .s3_client
-                .get_object()
-                .bucket(bucket)
-                .key(key)
-                .send()
-                .await;
-            match request {
+            let request = self.s3_client.get_object().bucket(bucket).key(key);
+
+            let response = if self.anonymous {
+                request
+                    .customize_middleware()
+                    .await
+                    .unwrap()
+                    .map_operation::<Error>(|mut o| {
+                        {
+                            let mut properties = o.properties_mut();
+                            let mut config = properties
+                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
+                                .expect("signing config added by make_operation()");
+
+                            config.signing_requirements = SigningRequirements::Disabled;
+                        }
+                        Ok(o)
+                    })
+                    .unwrap()
+                    .send()
+                    .await
+            } else {
+                request.send().await
+            };
+
+            match response {
                 Ok(v) => {
                     let body = v.body;
                     let owned_string = uri.to_owned();

@@ -36,6 +36,7 @@ impl PyS3Config {
         endpoint_url: Option<String>,
         key_id: Option<String>,
         access_key: Option<String>,
+        anonymous: Option<bool>,
     ) -> Self {
         PyS3Config {
             config: S3Config {
@@ -43,6 +44,7 @@ impl PyS3Config {
                 endpoint_url,
                 key_id,
                 access_key,
+                anonymous: anonymous.unwrap_or(false),
             },
         }
     }

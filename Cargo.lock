@@ -758,6 +758,8 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-s3",
+ "aws-sig-auth",
+ "aws-sigv4",
  "bytes",
  "common-error",
  "daft-core",
