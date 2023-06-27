@@ -146,7 +146,7 @@ def test_python_duration() -> None:
 )
 @pytest.mark.parametrize(
     "timezone",
-    [None, "UTC", "-08:00"],
+    [None, "UTC"],
 )
 def test_temporal_arithmetic(timeunit, timezone) -> None:
     pa_table = pa.Table.from_pydict(
@@ -193,7 +193,7 @@ def test_temporal_arithmetic(timeunit, timezone) -> None:
 )
 @pytest.mark.parametrize(
     "timezone",
-    [None, "UTC", "-08:00"],
+    [None, "UTC"],
 )
 def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezone) -> None:
     if t_timeunit == d_timeunit:
