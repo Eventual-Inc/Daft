@@ -16,7 +16,9 @@ use crate::single_url_get;
 use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub(crate) struct S3LikeSource {
@@ -114,9 +116,26 @@ async fn build_client(config: &S3Config) -> S3LikeSource {
     }
 }
 
+lazy_static! {
+    static ref S3_CLIENT_MAP: RwLock<HashMap<S3Config, Arc<S3LikeSource>>> =
+        RwLock::new(HashMap::new());
+}
+
 impl S3LikeSource {
-    pub async fn new(config: &S3Config) -> Self {
-        build_client(config).await
+    pub async fn get_client(config: &S3Config) -> Arc<S3LikeSource> {
+        {
+            if let Some(client) = S3_CLIENT_MAP.read().unwrap().get(config) {
+                return client.clone();
+            }
+        }
+
+        let new_client = Arc::new(build_client(config).await);
+
+        let mut w_handle = S3_CLIENT_MAP.write().unwrap();
+        if w_handle.get(config).is_none() {
+            w_handle.insert(config.clone(), new_client.clone());
+        }
+        w_handle.get(config).unwrap().clone()
     }
 }
 
@@ -158,12 +177,14 @@ impl ObjectSource for S3LikeSource {
                 Err(SdkError::ServiceError(err)) => match err.err() {
                     GetObjectError::Unhandled(unhandled) => match unhandled.meta().code() {
                         Some("PermanentRedirect") if self.s3_config.endpoint_url.is_none() => {
+                            log::warn!("S3 Region of {uri} doesn't match that of the client: {:?}, Attempting to Resolve.", self.s3_client.conf().region().unwrap());
                             let head = self
                                 .http_client
                                 .head(format! {"https://{bucket}.s3.amazonaws.com"})
                                 .send()
                                 .await
                                 .unwrap();
+
                             let head = head.headers();
                             let new_region = head.get("x-amz-bucket-region").unwrap();
 
@@ -171,9 +192,9 @@ impl ObjectSource for S3LikeSource {
                             new_config.region_name =
                                 Some(String::from_utf8(new_region.as_bytes().to_vec()).unwrap());
 
-                            let io_config = IOConfig { s3: new_config };
-
-                            return single_url_get(uri.to_string(), &io_config).await;
+                            let new_client = S3LikeSource::get_client(&new_config).await;
+                            log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().unwrap());
+                            return new_client.get(uri).await;
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))

@@ -5,9 +5,9 @@ use super::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use snafu::{ResultExt, Snafu};
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use url::ParseError;
-
 pub(crate) struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -61,8 +61,8 @@ impl From<Error> for super::Error {
 }
 
 impl LocalSource {
-    pub async fn new() -> Self {
-        LocalSource {}
+    pub async fn get_client() -> Arc<Self> {
+        LocalSource {}.into()
     }
 }
 

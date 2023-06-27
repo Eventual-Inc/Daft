@@ -13,14 +13,7 @@ use config::IOConfig;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
-use lazy_static::lazy_static;
-
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    hash::Hash,
-    sync::{Arc, RwLock},
-};
+use std::{borrow::Cow, hash::Hash, sync::Arc};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -89,30 +82,12 @@ impl From<Error> for DaftError {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-lazy_static! {
-    static ref OBJ_SRC_MAP: RwLock<HashMap<(SourceType, IOConfig), Arc<dyn ObjectSource>>> =
-        RwLock::new(HashMap::new());
-}
-
 async fn get_source(source_type: SourceType, config: &IOConfig) -> Result<Arc<dyn ObjectSource>> {
-    let key = (source_type.clone(), config.clone());
-    {
-        if let Some(source) = OBJ_SRC_MAP.read().unwrap().get(&key) {
-            return Ok(source.clone());
-        }
-    }
-
-    let new_source: Arc<dyn ObjectSource> = match source_type {
-        SourceType::File => Arc::new(LocalSource::new().await) as Arc<dyn ObjectSource>,
-        SourceType::Http => Arc::new(HttpSource::new().await) as Arc<dyn ObjectSource>,
-        SourceType::S3 => Arc::new(S3LikeSource::new(&config.s3).await) as Arc<dyn ObjectSource>,
-    };
-
-    let mut w_handle = OBJ_SRC_MAP.write().unwrap();
-    if w_handle.get(&key).is_none() {
-        w_handle.insert(key, new_source.clone());
-    }
-    Ok(new_source)
+    Ok(match source_type {
+        SourceType::File => LocalSource::get_client().await as Arc<dyn ObjectSource>,
+        SourceType::Http => HttpSource::get_client().await as Arc<dyn ObjectSource>,
+        SourceType::S3 => S3LikeSource::get_client(&config.s3).await as Arc<dyn ObjectSource>,
+    })
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
