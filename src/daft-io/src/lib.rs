@@ -62,10 +62,16 @@ pub(crate) enum Error {
         path: String,
         source: url::ParseError,
     },
+
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+
+    #[snafu(display("Failed to load Credentials for store: {store} {source}"))]
+    FailedToLoadCredentials { store: SourceType, source: DynError },
+
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
+
     #[snafu(display("Error joining spawned task: {}", source), context(false))]
     JoinError { source: tokio::task::JoinError },
 }
@@ -84,9 +90,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 async fn get_source(source_type: SourceType, config: &IOConfig) -> Result<Arc<dyn ObjectSource>> {
     Ok(match source_type {
-        SourceType::File => LocalSource::get_client().await as Arc<dyn ObjectSource>,
-        SourceType::Http => HttpSource::get_client().await as Arc<dyn ObjectSource>,
-        SourceType::S3 => S3LikeSource::get_client(&config.s3).await as Arc<dyn ObjectSource>,
+        SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
+        SourceType::Http => HttpSource::get_client().await? as Arc<dyn ObjectSource>,
+        SourceType::S3 => S3LikeSource::get_client(&config.s3).await? as Arc<dyn ObjectSource>,
     })
 }
 

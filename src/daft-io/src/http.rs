@@ -68,8 +68,8 @@ lazy_static! {
 }
 
 impl HttpSource {
-    pub async fn get_client() -> Arc<Self> {
-        HTTP_CLIENT.clone()
+    pub async fn get_client() -> super::Result<Arc<Self>> {
+        Ok(HTTP_CLIENT.clone())
     }
 }
 

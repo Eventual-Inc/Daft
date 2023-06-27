@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 
-use aws_config::meta::region;
 use aws_config::SdkConfig;
+use aws_credential_types::cache::ProvideCachedCredentials;
+use aws_credential_types::provider::error::CredentialsError;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
@@ -10,8 +11,8 @@ use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
 
-use crate::config::{IOConfig, S3Config};
-use crate::single_url_get;
+use crate::config::S3Config;
+use crate::SourceType;
 
 use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
@@ -48,6 +49,9 @@ enum Error {
     },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+
+    #[snafu(display("Failed to load Credentials: {source}"))]
+    FailedToLoadCredentials { source: CredentialsError },
 }
 
 impl From<Error> for super::Error {
@@ -70,12 +74,17 @@ impl From<Error> for super::Error {
                 source: source.into(),
             },
             NotAFile { path } => super::Error::NotAFile { path },
+            FailedToLoadCredentials { source } => super::Error::FailedToLoadCredentials {
+                store: SourceType::S3,
+                source: source.into(),
+            },
         }
     }
 }
 
-async fn build_s3_client(config: &S3Config) -> s3::Client {
+async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
     let conf: SdkConfig = aws_config::load_from_env().await;
+
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -103,17 +112,24 @@ async fn build_s3_client(config: &S3Config) -> s3::Client {
     };
 
     let s3_conf = builder.build();
-    s3::Client::from_conf(s3_conf)
+
+    s3_conf
+        .credentials_cache()
+        .provide_cached_credentials()
+        .await
+        .context(FailedToLoadCredentialsSnafu {})?;
+
+    Ok(s3::Client::from_conf(s3_conf))
 }
 
-async fn build_client(config: &S3Config) -> S3LikeSource {
-    let s3_client = build_s3_client(config).await;
+async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
+    let s3_client = build_s3_client(config).await?;
 
-    S3LikeSource {
+    Ok(S3LikeSource {
         s3_client,
         s3_config: config.clone(),
         http_client: reqwest::Client::builder().build().unwrap(),
-    }
+    })
 }
 
 lazy_static! {
@@ -122,20 +138,20 @@ lazy_static! {
 }
 
 impl S3LikeSource {
-    pub async fn get_client(config: &S3Config) -> Arc<S3LikeSource> {
+    pub async fn get_client(config: &S3Config) -> super::Result<Arc<S3LikeSource>> {
         {
             if let Some(client) = S3_CLIENT_MAP.read().unwrap().get(config) {
-                return client.clone();
+                return Ok(client.clone());
             }
         }
 
-        let new_client = Arc::new(build_client(config).await);
+        let new_client = Arc::new(build_client(config).await?);
 
         let mut w_handle = S3_CLIENT_MAP.write().unwrap();
         if w_handle.get(config).is_none() {
             w_handle.insert(config.clone(), new_client.clone());
         }
-        w_handle.get(config).unwrap().clone()
+        Ok(w_handle.get(config).unwrap().clone())
     }
 }
 
@@ -192,7 +208,7 @@ impl ObjectSource for S3LikeSource {
                             new_config.region_name =
                                 Some(String::from_utf8(new_region.as_bytes().to_vec()).unwrap());
 
-                            let new_client = S3LikeSource::get_client(&new_config).await;
+                            let new_client = S3LikeSource::get_client(&new_config).await?;
                             log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().unwrap());
                             return new_client.get(uri).await;
                         }

@@ -61,8 +61,8 @@ impl From<Error> for super::Error {
 }
 
 impl LocalSource {
-    pub async fn get_client() -> Arc<Self> {
-        LocalSource {}.into()
+    pub async fn get_client() -> super::Result<Arc<Self>> {
+        Ok(LocalSource {}.into())
     }
 }
 
