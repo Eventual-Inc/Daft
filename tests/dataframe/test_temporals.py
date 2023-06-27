@@ -138,3 +138,79 @@ def test_python_duration() -> None:
 
     res = df.to_pydict()["duration"][0]
     assert res == duration
+
+
+@pytest.mark.parametrize(
+    "timeunit",
+    ["s", "ms", "us", "ns"],
+)
+@pytest.mark.parametrize(
+    "timezone",
+    [None, "UTC", "-08:00"],
+)
+def test_temporal_arithmetic(timeunit, timezone) -> None:
+    pa_table = pa.Table.from_pydict(
+        {
+            "timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, timezone)),
+            "duration": pa.array([1, 0, -1], pa.duration(timeunit)),
+        }
+    )
+    df = daft.from_arrow(pa_table)
+
+    df = df.select(
+        (df["timestamp"] + df["duration"]).alias("ladd"),
+        (df["duration"] + df["timestamp"]).alias("radd"),
+        (df["timestamp"] - df["duration"]).alias("sub"),
+    ).collect()
+
+    # Check that the result dtypes are correct.
+    expected_daft_dtype = daft.DataType.timestamp(daft.TimeUnit.from_str(timeunit), timezone)
+    assert df.schema()["ladd"].dtype == expected_daft_dtype
+    assert df.schema()["radd"].dtype == expected_daft_dtype
+    assert df.schema()["sub"].dtype == expected_daft_dtype
+
+    # Check that the result values are correct.
+    expected_result = daft.from_arrow(
+        pa.Table.from_pydict(
+            {
+                "ladd": pa.array([2, 0, -2], pa.timestamp(timeunit, timezone)),
+                "radd": pa.array([2, 0, -2], pa.timestamp(timeunit, timezone)),
+                "sub": pa.array([0, 0, 0], pa.timestamp(timeunit, timezone)),
+            }
+        )
+    ).to_pydict()
+
+    assert df.to_pydict() == expected_result
+
+
+@pytest.mark.parametrize(
+    "t_timeunit",
+    ["s", "ms", "us", "ns"],
+)
+@pytest.mark.parametrize(
+    "d_timeunit",
+    ["s", "ms", "us", "ns"],
+)
+@pytest.mark.parametrize(
+    "timezone",
+    [None, "UTC", "-08:00"],
+)
+def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezone) -> None:
+    if t_timeunit == d_timeunit:
+        return
+
+    pa_table = pa.Table.from_pydict(
+        {
+            "timestamp": pa.array([1, 0, -1], pa.timestamp(t_timeunit, timezone)),
+            "duration": pa.array([1, 0, -1], pa.duration(d_timeunit)),
+        }
+    )
+
+    df = daft.from_arrow(pa_table)
+    for expression in [
+        (df["timestamp"] + df["duration"]).alias("ladd"),
+        (df["duration"] + df["timestamp"]).alias("radd"),
+        (df["timestamp"] - df["duration"]).alias("sub"),
+    ]:
+        with pytest.raises(ValueError):
+            df.select(expression).collect()
