@@ -47,6 +47,8 @@ def read_csv(
             "`df.select(*[col(old).alias(new) for old, new in zip(df.column_names, MY_COL_NAMES)])`. Please submit an issue if this is a "
             "blocker for your workflow!"
         )
+    if isinstance(path, list) and len(path) == 0:
+        raise ValueError(f"Cannot read DataFrame from from empty list of CSV filepaths")
 
     plan = _get_tabular_files_scan(
         path,

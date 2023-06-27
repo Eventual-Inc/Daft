@@ -35,6 +35,9 @@ def read_parquet(
     returns:
         DataFrame: parsed DataFrame
     """
+    if isinstance(path, list) and len(path) == 0:
+        raise ValueError(f"Cannot read DataFrame from from empty list of Parquet filepaths")
+
     plan = _get_tabular_files_scan(
         path,
         schema_hints,
