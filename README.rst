@@ -45,32 +45,21 @@ Quickstart
 
   Check out our `10-minute quickstart <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_!
 
-In this example, we load images from an AWS S3 bucket and run a simple function to generate thumbnails for each image:
+In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
 .. code:: python
 
     import daft as daft
 
-    import io
-    from PIL import Image
-
-    def get_thumbnail(img: Image.Image) -> Image.Image:
-        """Simple function to make an image thumbnail"""
-        imgcopy = img.copy()
-        imgcopy.thumbnail((48, 48))
-        return imgcopy
-
-    # Load a dataframe from files in an S3 bucket
+    # Load a dataframe from filepaths in an S3 bucket
     df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
 
-    # Get the AWS S3 url of each image
-    df = df.select(df["path"].alias("s3_url"))
+    # 1. Download column of image URLs as a column of bytes
+    # 2. Decode the column of bytes into a column of images
+    df = df.with_column("image", df["path"].url.download().image.decode())
 
-    # Download images and load as a PIL Image object
-    df = df.with_column("image", df["s3_url"].url.download().apply(lambda data: Image.open(io.BytesIO(data)), return_dtype=daft.DataType.python()))
-
-    # Generate thumbnails from images
-    df = df.with_column("thumbnail", df["image"].apply(get_thumbnail, return_dtype=daft.DataType.python()))
+    # Resize each image into 32x32
+    df = df.with_column("resized", df["image"].image.resize(32, 32))
 
     df.show(3)
 
@@ -137,7 +126,7 @@ License
 
 Daft has an Apache 2.0 license - please see the LICENSE file.
 
-.. |Quickstart Image| image:: https://user-images.githubusercontent.com/17691182/200086119-fb73037b-8b4e-414a-9060-a44122f0c290.png
+.. |Quickstart Image| image:: https://github.com/Eventual-Inc/Daft/assets/17691182/dea2f515-9739-4f3e-ac58-cd96d51e44a8
    :alt: Dataframe code to load a folder of images from AWS S3 and create thumbnails
    :height: 256
 
