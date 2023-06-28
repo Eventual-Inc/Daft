@@ -2,6 +2,7 @@
 daft-core = {path = "src/daft-core", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
+daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
@@ -43,6 +44,7 @@ members = [
   "src/common/error",
   "src/daft-core",
   "src/daft-io",
+  "src/daft-parquet",
   "src/daft-dsl",
   "src/daft-table"
 ]
@@ -57,7 +59,6 @@ serde_json = "1.0.100"
 
 [workspace.dependencies.arrow2]
 branch = "clark/expand-casting-support"
-features = ["chrono-tz", "compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "io_ipc"]
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
 version = "0.17.1"

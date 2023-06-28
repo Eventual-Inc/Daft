@@ -1,0 +1,12 @@
+[dependencies]
+arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+daft-io = {path = "../daft-io", default-features = false}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-log = {workspace = true, optional = true}
+snafu = "0.7.4"
+
+[package]
+edition = {workspace = true}
+name = "daft-parquet"
+version = {workspace = true}
