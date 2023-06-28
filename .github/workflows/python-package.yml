@@ -216,6 +216,75 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+  integration-test-io:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+    - integration-test-build
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.7']
+        daft-runner: [py, ray]
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+    - name: Download built wheels
+      uses: actions/download-artifact@v3
+      with:
+        name: wheels
+        path: dist
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        rm -rf daft
+    - name: Prepare tmpdirs for IO services
+      run: |
+        mkdir -p /tmp/daft-integration-testing/nginx
+        chmod +rw /tmp/daft-integration-testing/nginx
+    - name: Spin up IO services
+      uses: isbang/compose-action@v1.4.1
+      with:
+        compose-file: ./tests/integration/docker-compose/docker-compose.yml
+        down-flags: --volumes
+    - name: Run IO integration tests
+      run: |
+        pytest tests/integration/io -m 'integration' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
   rust-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
