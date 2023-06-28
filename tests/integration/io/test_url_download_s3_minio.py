@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
 import s3fs
 
 import daft
 
 
+@pytest.mark.integration()
 def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixture, image_data):
     urls = minio_image_data_fixture
     fs = s3fs.S3FileSystem(
@@ -19,6 +21,7 @@ def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixtur
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(urls))]}
 
 
+@pytest.mark.integration()
 def test_url_download_minio_native_downloader(minio_io_config, minio_image_data_fixture, image_data):
     urls = minio_image_data_fixture
     data = {"urls": urls}

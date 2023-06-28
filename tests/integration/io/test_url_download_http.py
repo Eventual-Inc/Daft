@@ -6,6 +6,7 @@ from aiohttp.client_exceptions import ClientResponseError
 import daft
 
 
+@pytest.mark.integration()
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_url_download_http(mock_http_image_urls, image_data, use_native_downloader):
     data = {"urls": mock_http_image_urls}
@@ -14,6 +15,7 @@ def test_url_download_http(mock_http_image_urls, image_data, use_native_download
     assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(mock_http_image_urls))]}
 
 
+@pytest.mark.integration()
 @pytest.mark.parametrize("status_code", [400, 401, 403, 404, 429, 500, 503])
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_url_download_http_error_codes(nginx_config, use_native_downloader, status_code):
