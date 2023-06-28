@@ -74,7 +74,7 @@ module = 'daft.*'
 warn_return_any = false
 
 [tool.pytest.ini_options]
-addopts = "--benchmark-skip -m 'not hypothesis'"
+addopts = "--benchmark-skip -m 'not hypothesis' --ignore tests/integration"
 minversion = "6.0"
 testpaths = [
   "tests"
