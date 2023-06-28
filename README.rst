@@ -26,7 +26,7 @@ About Daft
 
 The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich complex data types such as images, audio, video and more.
 
-1. **Any Data**: Columns can contain any Python objects, which means that the Python libraries you already use for running machine learning or custom data processing will work natively with Daft!
+1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex multimodal data such as Images, Embeddings and Python objects. Ingestion and basic transformations of complex data is extremely easy and performant in Daft.
 2. **Notebook Computing**: Daft is built for the interactive developer experience on a notebook - intelligent caching/query optimizations accelerates your experimentation and data exploration.
 3. **Distributed Computing**: Rich complex formats such as images can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
