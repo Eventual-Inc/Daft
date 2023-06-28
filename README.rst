@@ -51,16 +51,14 @@ In this example, we load images from an AWS S3 bucket's URLs and resize each ima
 
     import daft as daft
 
-    # Load a dataframe from files in an S3 bucket
+    # Load a dataframe from filepaths in an S3 bucket
     df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
 
-    # Get the AWS S3 url of each image
-    df = df.select(df["path"].alias("s3_url"))
+    # 1. Download column of image URLs as a column of bytes
+    # 2. Decode the column of bytes into a column of images
+    df = df.with_column("image", df["path"].url.download().image.decode())
 
-    # Download images and load as a PIL Image object
-    df = df.with_column("image", df["s3_url"].url.download().image.decode())
-
-    # Generate thumbnails from images
+    # Resize each image into 32x32
     df = df.with_column("resized", df["image"].image.resize(32, 32))
 
     df.show(3)
