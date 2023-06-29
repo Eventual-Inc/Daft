@@ -892,10 +892,13 @@ version = "0.1.0"
 dependencies = [
  "arrow2",
  "daft-io",
+ "futures",
  "log",
  "pyo3",
  "pyo3-log",
  "snafu",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

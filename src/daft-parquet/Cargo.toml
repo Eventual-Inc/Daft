@@ -1,10 +1,13 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 daft-io = {path = "../daft-io", default-features = false}
+futures = "0.3.28"
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 snafu = "0.7.4"
+tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
+tokio-util = "0.7.8"
 
 [package]
 edition = {workspace = true}
