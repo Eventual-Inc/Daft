@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use lazy_static::lazy_static;
+use reqwest::header::RANGE;
 use snafu::{IntoError, ResultExt, Snafu};
 
 use super::object_io::{GetResult, ObjectSource};
@@ -75,10 +76,17 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    async fn get(&self, uri: &str) -> super::Result<GetResult> {
-        let response = self
-            .client
-            .get(uri)
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+        let request = self.client.get(uri);
+        let request = match range {
+            None => request,
+            Some(range) => request.header(
+                RANGE,
+                format!("bytes={}-{}", range.start, range.end.saturating_sub(1)),
+            ),
+        };
+
+        let response = request
             .send()
             .await
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;

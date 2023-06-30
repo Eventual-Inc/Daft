@@ -13,7 +13,7 @@ use config::IOConfig;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
-use std::{borrow::Cow, hash::Hash, sync::Arc};
+use std::{borrow::Cow, hash::Hash, ops::Range, sync::Arc};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -138,10 +138,14 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     }
 }
 
-async fn single_url_get(input: String, config: &IOConfig) -> Result<GetResult> {
+async fn single_url_get(
+    input: String,
+    range: Option<Range<usize>>,
+    config: &IOConfig,
+) -> Result<GetResult> {
     let (scheme, path) = parse_url(&input)?;
     let source = get_source(scheme, config).await?;
-    source.get(path.as_ref()).await
+    source.get(path.as_ref(), range).await
 }
 
 async fn single_url_download(
@@ -151,7 +155,7 @@ async fn single_url_download(
     config: Arc<IOConfig>,
 ) -> Result<Option<bytes::Bytes>> {
     let value = if let Some(input) = input {
-        let response = single_url_get(input, config.as_ref()).await;
+        let response = single_url_get(input, Some(0..1), config.as_ref()).await;
         let res = match response {
             Ok(res) => res.bytes().await,
             Err(err) => Err(err),

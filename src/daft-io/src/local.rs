@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::path::PathBuf;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -68,7 +69,10 @@ impl LocalSource {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
-    async fn get(&self, uri: &str) -> super::Result<GetResult> {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+        if range.is_some() {
+            unimplemented!("range gets not implemented for local files");
+        }
         const TO_STRIP: &str = "file://";
         if let Some(p) = uri.strip_prefix(TO_STRIP) {
             let path = std::path::Path::new(p);

@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -47,5 +48,8 @@ impl GetResult {
 
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
-    async fn get(&self, uri: &str) -> super::Result<GetResult>;
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
+    async fn get_range(&self, uri: &str, range: Range<usize>) -> super::Result<GetResult> {
+        self.get(uri, Some(range)).await
+    }
 }
