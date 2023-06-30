@@ -271,6 +271,10 @@ macro_rules! impl_series_like_for_data_array {
             fn add(&self, rhs: &Series) -> DaftResult<Series> {
                 self + rhs
             }
+
+            fn sub(&self, rhs: &Series) -> DaftResult<Series> {
+                self - rhs
+            }
         }
     };
 }

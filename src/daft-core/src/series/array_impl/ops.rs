@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     series::{ops::py_binary_op_utilfn, series_like::SeriesLike},
-    with_match_numeric_and_utf_daft_types, DataType,
+    with_match_numeric_and_utf_daft_types, with_match_numeric_daft_types, DataType,
 };
 
 use crate::datatypes::{
@@ -43,7 +43,30 @@ fn default_add(lhs: &Series, rhs: &Series, output_type: &DataType) -> DaftResult
             })
         }
         _ => panic!(
-            "No default add implementation for {} + {} -> {}",
+            "No default implementation for {} + {} -> {}",
+            lhs.data_type(),
+            rhs.data_type(),
+            output_type
+        ),
+    }
+}
+
+fn default_sub(lhs: &Series, rhs: &Series, output_type: &DataType) -> DaftResult<Series> {
+    use DataType::*;
+    match output_type {
+        #[cfg(feature = "python")]
+        Python => Ok(py_binary_op!(lhs, rhs, "sub")),
+        output_type if output_type.is_physical() => {
+            let lhs = lhs.cast(&output_type)?;
+            let rhs = rhs.cast(&output_type)?;
+            with_match_numeric_daft_types!(output_type, |$T| {
+                let lhs = lhs.downcast::<$T>()?;
+                let rhs = rhs.downcast::<$T>()?;
+                Ok(lhs.sub(rhs)?.into_series().rename(lhs.name()))
+            })
+        }
+        _ => panic!(
+            "No default implementation for {} - {} -> {}",
             lhs.data_type(),
             rhs.data_type(),
             output_type
@@ -54,7 +77,7 @@ fn default_add(lhs: &Series, rhs: &Series, output_type: &DataType) -> DaftResult
 impl Add<&Series> for &ArrayWrapper<TimestampArray> {
     type Output = DaftResult<Series>;
 
-    fn add(self, rhs: &Series) -> DaftResult<Series> {
+    fn add(self, rhs: &Series) -> Self::Output {
         use DataType::*;
         let output_type = (self.data_type() + rhs.data_type())?;
         let lhs = self.0.clone().into_series();
@@ -70,10 +93,29 @@ impl Add<&Series> for &ArrayWrapper<TimestampArray> {
     }
 }
 
+impl Sub<&Series> for &ArrayWrapper<TimestampArray> {
+    type Output = DaftResult<Series>;
+
+    fn sub(self, rhs: &Series) -> Self::Output {
+        use DataType::*;
+        let output_type = (self.data_type() - rhs.data_type())?;
+        let lhs = self.0.clone().into_series();
+        match rhs.data_type() {
+            Duration(..) => {
+                let lhs = lhs.as_physical()?;
+                let rhs = rhs.as_physical()?;
+                let physical_result = lhs.sub(rhs)?;
+                physical_result.cast(&output_type)
+            }
+            _ => default_sub(&lhs, rhs, &output_type),
+        }
+    }
+}
+
 impl Add<&Series> for &ArrayWrapper<DurationArray> {
     type Output = DaftResult<Series>;
 
-    fn add(self, rhs: &Series) -> DaftResult<Series> {
+    fn add(self, rhs: &Series) -> Self::Output {
         use DataType::*;
         let output_type = (self.data_type() + rhs.data_type())?;
         let lhs = self.0.clone().into_series();
@@ -94,10 +136,24 @@ macro_rules! impl_default_add {
         impl Add<&Series> for &ArrayWrapper<$arrayT> {
             type Output = DaftResult<Series>;
 
-            fn add(self, rhs: &Series) -> DaftResult<Series> {
+            fn add(self, rhs: &Series) -> Self::Output {
                 let output_type = (self.data_type() + rhs.data_type())?;
                 let lhs = self.0.clone().into_series();
                 default_add(&lhs, rhs, &output_type)
+            }
+        }
+    };
+}
+
+macro_rules! impl_default_sub {
+    ($arrayT:ty) => {
+        impl Sub<&Series> for &ArrayWrapper<$arrayT> {
+            type Output = DaftResult<Series>;
+
+            fn sub(self, rhs: &Series) -> Self::Output {
+                let output_type = (self.data_type() - rhs.data_type())?;
+                let lhs = self.0.clone().into_series();
+                default_sub(&lhs, rhs, &output_type)
             }
         }
     };
@@ -128,3 +184,30 @@ impl_default_add!(DateArray);
 impl_default_add!(EmbeddingArray);
 impl_default_add!(ImageArray);
 impl_default_add!(FixedShapeImageArray);
+
+#[cfg(feature = "python")]
+impl_default_sub!(PythonArray);
+impl_default_sub!(NullArray);
+impl_default_sub!(BooleanArray);
+impl_default_sub!(BinaryArray);
+impl_default_sub!(Int8Array);
+impl_default_sub!(Int16Array);
+impl_default_sub!(Int32Array);
+impl_default_sub!(Int64Array);
+impl_default_sub!(UInt8Array);
+impl_default_sub!(UInt16Array);
+impl_default_sub!(UInt32Array);
+impl_default_sub!(UInt64Array);
+impl_default_sub!(Float32Array);
+impl_default_sub!(Float64Array);
+impl_default_sub!(Utf8Array);
+impl_default_sub!(FixedSizeListArray);
+impl_default_sub!(ListArray);
+impl_default_sub!(StructArray);
+impl_default_sub!(ExtensionArray);
+
+impl_default_sub!(DateArray);
+impl_default_sub!(DurationArray);
+impl_default_sub!(EmbeddingArray);
+impl_default_sub!(ImageArray);
+impl_default_sub!(FixedShapeImageArray);

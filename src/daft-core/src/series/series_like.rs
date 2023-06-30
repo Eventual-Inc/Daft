@@ -33,4 +33,5 @@ pub trait SeriesLike: Send + Sync + Any {
     fn str_value(&self, idx: usize) -> DaftResult<String>;
     fn html_value(&self, idx: usize) -> String;
     fn add(&self, rhs: &Series) -> DaftResult<Series>;
+    fn sub(&self, rhs: &Series) -> DaftResult<Series>;
 }
