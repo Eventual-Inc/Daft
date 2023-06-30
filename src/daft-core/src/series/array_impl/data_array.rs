@@ -267,6 +267,10 @@ macro_rules! impl_series_like_for_data_array {
                     None => Ok(self.0.list()?.into_series()),
                 }
             }
+
+            fn add(&self, rhs: &Series) -> DaftResult<Series> {
+                self + rhs
+            }
         }
     };
 }

@@ -52,44 +52,7 @@ macro_rules! impl_series_math_op {
 impl Add for &Series {
     type Output = DaftResult<Series>;
     fn add(self, rhs: Self) -> Self::Output {
-        match (self.data_type(), rhs.data_type()) {
-            (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
-            | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz)) => {
-                // If the timeunits are not the same, disallow the operation.
-                if t_unit != d_unit {
-                    return Err(DaftError::TypeError(format!(
-                        "Cannot add temporal types of different precisions: {:?} and {:?}. Please explicitly cast to the precision you wish to compute in first.",
-                        t_unit, d_unit
-                    )));
-                }
-
-                let lhs = self.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
-                return physical_result.cast(&DataType::Timestamp(t_unit.clone(), tz.clone()));
-            }
-            _ => (),
-        }
-
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-        if let DataType::Timestamp(..) = lhs.data_type() {
-            return Err(DaftError::TypeError(format!(
-                "Can only perform timestamp arithmetic with Timestamp and Duration, but got {} and {}",
-                lhs.data_type(), rhs.data_type(),
-            )));
-        }
-
-        #[cfg(feature = "python")]
-        if lhs.data_type() == &DataType::Python {
-            return Ok(py_binary_op!(lhs, rhs, "add"));
-        }
-
-        with_match_numeric_and_utf_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.add(rhs)?.into_series().rename(lhs.name()))
-        })
+        self.inner.add(rhs)
     }
 }
 

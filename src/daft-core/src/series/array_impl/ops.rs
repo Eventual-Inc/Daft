@@ -28,45 +28,7 @@ macro_rules! py_binary_op {
     };
 }
 
-impl Add<Series> for &ArrayWrapper<TimestampArray> {
-    type Output = DaftResult<Series>;
-
-    fn add(self, rhs: Series) -> DaftResult<Series> {
-        use DataType::*;
-        let output_type = (self.data_type() + rhs.data_type())?;
-        let lhs = self.0.clone().into_series();
-        match rhs.data_type() {
-            Duration(..) => {
-                let lhs = lhs.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
-                physical_result.cast(&output_type)
-            }
-            _ => default_add(lhs, rhs, &output_type),
-        }
-    }
-}
-
-impl Add<Series> for &ArrayWrapper<DurationArray> {
-    type Output = DaftResult<Series>;
-
-    fn add(self, rhs: Series) -> DaftResult<Series> {
-        use DataType::*;
-        let output_type = (self.data_type() + rhs.data_type())?;
-        let lhs = self.0.clone().into_series();
-        match rhs.data_type() {
-            Timestamp(..) => {
-                let lhs = lhs.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
-                physical_result.cast(&output_type)
-            }
-            _ => default_add(lhs, rhs, &output_type),
-        }
-    }
-}
-
-fn default_add(lhs: Series, rhs: Series, output_type: &DataType) -> DaftResult<Series> {
+fn default_add(lhs: &Series, rhs: &Series, output_type: &DataType) -> DaftResult<Series> {
     use DataType::*;
     match output_type {
         #[cfg(feature = "python")]
@@ -89,15 +51,53 @@ fn default_add(lhs: Series, rhs: Series, output_type: &DataType) -> DaftResult<S
     }
 }
 
+impl Add<&Series> for &ArrayWrapper<TimestampArray> {
+    type Output = DaftResult<Series>;
+
+    fn add(self, rhs: &Series) -> DaftResult<Series> {
+        use DataType::*;
+        let output_type = (self.data_type() + rhs.data_type())?;
+        let lhs = self.0.clone().into_series();
+        match rhs.data_type() {
+            Duration(..) => {
+                let lhs = lhs.as_physical()?;
+                let rhs = rhs.as_physical()?;
+                let physical_result = lhs.add(rhs)?;
+                physical_result.cast(&output_type)
+            }
+            _ => default_add(&lhs, rhs, &output_type),
+        }
+    }
+}
+
+impl Add<&Series> for &ArrayWrapper<DurationArray> {
+    type Output = DaftResult<Series>;
+
+    fn add(self, rhs: &Series) -> DaftResult<Series> {
+        use DataType::*;
+        let output_type = (self.data_type() + rhs.data_type())?;
+        let lhs = self.0.clone().into_series();
+        match rhs.data_type() {
+            Timestamp(..) => {
+                let lhs = lhs.as_physical()?;
+                let rhs = rhs.as_physical()?;
+                let physical_result = lhs.add(rhs)?;
+                physical_result.cast(&output_type)
+            }
+            _ => default_add(&lhs, rhs, &output_type),
+        }
+    }
+}
+
 macro_rules! impl_default_add {
     ($arrayT:ty) => {
-        impl Add<Series> for &ArrayWrapper<$arrayT> {
+        impl Add<&Series> for &ArrayWrapper<$arrayT> {
             type Output = DaftResult<Series>;
 
-            fn add(self, rhs: Series) -> DaftResult<Series> {
+            fn add(self, rhs: &Series) -> DaftResult<Series> {
                 let output_type = (self.data_type() + rhs.data_type())?;
                 let lhs = self.0.clone().into_series();
-                default_add(lhs, rhs, &output_type)
+                default_add(&lhs, rhs, &output_type)
             }
         }
     };

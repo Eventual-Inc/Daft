@@ -47,12 +47,16 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
 macro_rules! py_binary_op_utilfn {
     ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
         use crate::python::PySeries;
+        use crate::DataType;
         use pyo3::prelude::*;
 
-        let (lhs, rhs) = match ($lhs.len(), $rhs.len()) {
-            (a, b) if a == b => ($lhs, $rhs),
-            (a, 1) => ($lhs, $rhs.broadcast(a)?),
-            (1, b) => ($lhs.broadcast(b)?, $rhs),
+        let lhs = $lhs.cast(&DataType::Python)?;
+        let rhs = $rhs.cast(&DataType::Python)?;
+
+        let (lhs, rhs) = match (lhs.len(), rhs.len()) {
+            (a, b) if a == b => (lhs, rhs),
+            (a, 1) => (lhs, rhs.broadcast(a)?),
+            (1, b) => (lhs.broadcast(b)?, rhs),
             (a, b) => panic!("Cannot apply operation on arrays of different lengths: {a} vs {b}"),
         };
 

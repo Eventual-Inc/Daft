@@ -40,7 +40,7 @@ impl Add for &DataType {
                         Binary | Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),
-                        other if other.is_physical() => Ok(other.clone()),
+                        other if other.is_physical() => Ok(Utf8),
                         _ => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", self, other)
                         )),

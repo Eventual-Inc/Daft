@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use crate::{
     array::ops::GroupIndices,
@@ -31,4 +32,5 @@ pub trait SeriesLike: Send + Sync + Any {
     fn take(&self, idx: &Series) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
     fn html_value(&self, idx: usize) -> String;
+    fn add(&self, rhs: &Series) -> DaftResult<Series>;
 }

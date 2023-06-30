@@ -141,6 +141,9 @@ macro_rules! impl_series_like_for_logical_array {
                 let new_field = self.field().to_list_field()?;
                 Ok(ListArray::new(Arc::new(new_field), data_array.data)?.into_series())
             }
+            fn add(&self, rhs: &Series) -> DaftResult<Series> {
+                self + rhs
+            }
         }
     };
 }
