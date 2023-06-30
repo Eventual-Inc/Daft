@@ -12,6 +12,12 @@ pub struct LogicalArray<L: DaftLogicalType> {
     marker_: PhantomData<L>,
 }
 
+impl<L: DaftLogicalType> Clone for LogicalArray<L> {
+    fn clone(&self) -> Self {
+        LogicalArray::new(self.field.clone(), self.physical.clone())
+    }
+}
+
 impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     pub fn new<F: Into<Arc<Field>>>(field: F, physical: DataArray<L::PhysicalType>) -> Self {
         let field = field.into();

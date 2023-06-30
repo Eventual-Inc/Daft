@@ -13,16 +13,8 @@ impl Add for &DataType {
         use DataType::*;
         try_numeric_supertype(self, other).or(
             match (self, other) {
-                (Null, other) | (other, Null)
-                // Condition is for backwards compatibility. TODO: remove
-                    if other.clone() != Binary && other.clone() != Date => Ok(other.clone()),
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
-                (Utf8, other) | (other, Utf8)
-                // Date condition is for backwards compatibility. TODO: remove
-                    if other.clone() != Binary && other.clone() != Date => Ok(Utf8),
-                (Boolean, other) | (other, Boolean)
-                    if other.is_numeric() => Ok(other.clone()),
                 (Timestamp(t_unit, tz), Duration(d_unit))
                 | (Duration(d_unit), Timestamp(t_unit, tz))
                     if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
@@ -30,6 +22,32 @@ impl Add for &DataType {
                 | (du @ Duration(..), ts @ Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
+                (Null, other) | (other, Null) => {
+                    match other {
+                        // Condition is for backwards compatibility. TODO: remove
+                        Binary | Date => Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        )),
+                        other if other.is_physical() => Ok(other.clone()),
+                        _ => Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        )),
+                    }
+                }
+                (Utf8, other) | (other, Utf8) => {
+                    match other {
+                        // Date condition is for backwards compatibility. TODO: remove
+                        Binary | Date => Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        )),
+                        other if other.is_physical() => Ok(other.clone()),
+                        _ => Err(DaftError::TypeError(
+                            format!("Cannot add types: {}, {}", self, other)
+                        )),
+                    }
+                }
+                (Boolean, other) | (other, Boolean)
+                    if other.is_numeric() => Ok(other.clone()),
                 _ => Err(DaftError::TypeError(
                     format!("Cannot add types: {}, {}", self, other)
                 ))
