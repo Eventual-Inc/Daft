@@ -13,14 +13,19 @@ impl Add for &DataType {
         use DataType::*;
         try_numeric_supertype(self, other).or(
             match (self, other) {
-                (Null, other) | (other, Null) => Ok(other.clone()),
+                (Null, other) | (other, Null)
+                // Condition is for backwards compatibility. TODO: remove
+                    if other.clone() != Binary && other.clone() != Date => Ok(other.clone()),
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
-                (Utf8, _) | (_, Utf8) => Ok(Utf8),
-                (Boolean, other) | (other, Boolean) if other.is_numeric() => Ok(other.clone()),
+                (Utf8, other) | (other, Utf8)
+                // Date condition is for backwards compatibility. TODO: remove
+                    if other.clone() != Binary && other.clone() != Date => Ok(Utf8),
+                (Boolean, other) | (other, Boolean)
+                    if other.is_numeric() => Ok(other.clone()),
                 (Timestamp(t_unit, tz), Duration(d_unit))
                 | (Duration(d_unit), Timestamp(t_unit, tz))
-                if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
+                    if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
                 (ts @ Timestamp(..), du @ Duration(..))
                 | (du @ Duration(..), ts @ Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
@@ -43,7 +48,7 @@ impl Sub for &DataType {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 (Timestamp(t_unit, tz), Duration(d_unit))
-                if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
+                    if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
                 (ts @ Timestamp(..), du @ Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
