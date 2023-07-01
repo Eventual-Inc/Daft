@@ -155,7 +155,7 @@ async fn single_url_download(
     config: Arc<IOConfig>,
 ) -> Result<Option<bytes::Bytes>> {
     let value = if let Some(input) = input {
-        let response = single_url_get(input, Some(0..1), config.as_ref()).await;
+        let response = single_url_get(input, None, config.as_ref()).await;
         let res = match response {
             Ok(res) => res.bytes().await,
             Err(err) => Err(err),
