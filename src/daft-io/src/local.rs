@@ -136,6 +136,8 @@ pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
     Ok(Bytes::from(buf))
 }
 
+#[cfg(test)]
+
 mod tests {
 
     use std::io::Write;
