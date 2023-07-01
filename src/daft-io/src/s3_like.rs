@@ -329,6 +329,34 @@ mod tests {
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 0..10)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 10);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 10..100)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 90);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+
+        let last_bytes = client
+            .get_range(
+                parquet_file_path,
+                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+            )
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(last_bytes.len(), 10);
+        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
         Ok(())
     }
 }

@@ -106,3 +106,53 @@ impl ObjectSource for HttpSource {
         Ok(GetResult::Stream(stream.boxed(), size_bytes))
     }
 }
+
+mod tests {
+
+    use crate::object_io::ObjectSource;
+    use crate::HttpSource;
+    use crate::Result;
+    use tokio;
+
+    #[tokio::test]
+    async fn test_full_get_from_http() -> Result<()> {
+        let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
+        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
+
+        let client = HttpSource::get_client().await?;
+        let parquet_file = client.get(parquet_file_path, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, parquet_expected_md5);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 0..10)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 10);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 10..100)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 90);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+
+        let last_bytes = client
+            .get_range(
+                parquet_file_path,
+                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+            )
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(last_bytes.len(), 10);
+        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
+        Ok(())
+    }
+}
