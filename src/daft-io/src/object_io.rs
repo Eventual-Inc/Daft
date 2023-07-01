@@ -6,10 +6,10 @@ use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use crate::local::collect_file;
+use crate::local::{collect_file, LocalFile};
 
 pub(crate) enum GetResult {
-    File(PathBuf),
+    File(LocalFile),
     Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
 }
 
@@ -40,7 +40,7 @@ impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
         use GetResult::*;
         match self {
-            File(path) => collect_file(path.to_str().unwrap()).await,
+            File(f) => collect_file(f).await,
             Stream(stream, size) => collect_bytes(stream, size).await,
         }
     }

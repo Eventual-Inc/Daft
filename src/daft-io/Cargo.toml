@@ -25,6 +25,7 @@ version = "0.11.18"
 
 [dev-dependencies]
 md5 = "0.7.0"
+tempfile = "3.6.0"
 
 [features]
 default = ["python"]
