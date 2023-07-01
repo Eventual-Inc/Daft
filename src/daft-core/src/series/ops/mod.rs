@@ -44,6 +44,7 @@ fn match_types_on_series(l: &Series, r: &Series) -> DaftResult<(Series, Series)>
     Ok((lhs, rhs))
 }
 
+#[cfg(feature = "python")]
 macro_rules! py_binary_op_utilfn {
     ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
         use crate::python::PySeries;
@@ -83,4 +84,5 @@ macro_rules! py_binary_op_utilfn {
         result_series
     }};
 }
+#[cfg(feature = "python")]
 pub(super) use py_binary_op_utilfn;

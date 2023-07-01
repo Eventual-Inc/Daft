@@ -147,6 +147,15 @@ macro_rules! impl_series_like_for_logical_array {
             fn sub(&self, rhs: &Series) -> DaftResult<Series> {
                 self - rhs
             }
+            fn mul(&self, rhs: &Series) -> DaftResult<Series> {
+                self * rhs
+            }
+            fn div(&self, rhs: &Series) -> DaftResult<Series> {
+                self / rhs
+            }
+            fn rem(&self, rhs: &Series) -> DaftResult<Series> {
+                self % rhs
+            }
         }
     };
 }
