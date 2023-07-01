@@ -1,11 +1,11 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 use crate::{
     datatypes::{Float64Type, Utf8Type},
     series::series_like::SeriesLike,
-    with_match_numeric_and_utf_daft_types, with_match_numeric_daft_types, DataType,
+    with_match_numeric_daft_types, DataType,
 };
 
 use crate::datatypes::{

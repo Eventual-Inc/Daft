@@ -17,7 +17,7 @@ impl Add for &DataType {
                 (Python, _) | (_, Python) => Ok(Python),
                 (Timestamp(t_unit, tz), Duration(d_unit))
                 | (Duration(d_unit), Timestamp(t_unit, tz))
-                    if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
+                    if t_unit == d_unit => Ok(Timestamp(*t_unit, tz.clone())),
                 (ts @ Timestamp(..), du @ Duration(..))
                 | (du @ Duration(..), ts @ Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
@@ -66,7 +66,7 @@ impl Sub for &DataType {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => Ok(Python),
                 (Timestamp(t_unit, tz), Duration(d_unit))
-                    if t_unit == d_unit => Ok(Timestamp(t_unit.clone(), tz.clone())),
+                    if t_unit == d_unit => Ok(Timestamp(*t_unit, tz.clone())),
                 (ts @ Timestamp(..), du @ Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),

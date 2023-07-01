@@ -1,12 +1,8 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use super::match_types_on_series;
+use crate::series::Series;
 
-use crate::datatypes::{DataType, Float64Type};
-use crate::series::{IntoSeries, Series};
-use crate::with_match_numeric_and_utf_daft_types;
-use crate::with_match_numeric_daft_types;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 impl Add for &Series {
     type Output = DaftResult<Series>;
