@@ -7,7 +7,7 @@ use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::{Operation, Response};
+use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
 use s3::error::{ProvideErrorMetadata, SdkError};
 use s3::operation::get_object::GetObjectError;
@@ -19,6 +19,7 @@ use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::{Arc, RwLock};
 
@@ -201,7 +202,7 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str) -> super::Result<GetResult> {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -213,6 +214,14 @@ impl ObjectSource for S3LikeSource {
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
             let request = self.s3_client.get_object().bucket(bucket).key(key);
+            let request = match &range {
+                None => request,
+                Some(range) => request.range(format!(
+                    "bytes={}-{}",
+                    range.start,
+                    range.end.saturating_sub(1)
+                )),
+            };
 
             let response = if self.anonymous {
                 request
@@ -281,7 +290,7 @@ impl ObjectSource for S3LikeSource {
 
                             let new_client = S3LikeSource::get_client(&new_config).await?;
                             log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().map_or("", |v| v.as_ref()));
-                            return new_client.get(uri).await;
+                            return new_client.get(uri, range).await;
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -296,5 +305,58 @@ impl ObjectSource for S3LikeSource {
         } else {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::object_io::ObjectSource;
+    use crate::S3LikeSource;
+    use crate::{config::S3Config, Result};
+    use tokio;
+
+    #[tokio::test]
+    async fn test_full_get_from_s3() -> Result<()> {
+        let parquet_file_path = "s3://daft-public-data/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
+        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
+
+        let mut config = S3Config::default();
+        config.anonymous = true;
+        let client = S3LikeSource::get_client(&config).await?;
+        let parquet_file = client.get(parquet_file_path, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, parquet_expected_md5);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 0..10)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 10);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 10..100)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 90);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+
+        let last_bytes = client
+            .get_range(
+                parquet_file_path,
+                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+            )
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(last_bytes.len(), 10);
+        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
+        Ok(())
     }
 }

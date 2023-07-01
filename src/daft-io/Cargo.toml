@@ -23,6 +23,10 @@ default-features = false
 features = ["stream", "rustls-tls"]
 version = "0.11.18"
 
+[dev-dependencies]
+md5 = "0.7.0"
+tempfile = "3.6.0"
+
 [features]
 default = ["python"]
 python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python"]
