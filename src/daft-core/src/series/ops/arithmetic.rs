@@ -4,75 +4,29 @@ use crate::series::Series;
 
 use common_error::DaftResult;
 
-impl Add for &Series {
-    type Output = DaftResult<Series>;
-    fn add(self, rhs: Self) -> Self::Output {
-        self.inner.add(rhs)
-    }
+macro_rules! impl_arithmetic_for_series {
+    ($trait:ident, $op:ident) => {
+        impl $trait for &Series {
+            type Output = DaftResult<Series>;
+            fn $op(self, rhs: Self) -> Self::Output {
+                self.inner.$op(rhs)
+            }
+        }
+
+        impl $trait for Series {
+            type Output = DaftResult<Series>;
+            fn $op(self, rhs: Self) -> Self::Output {
+                (&self).$op(&rhs)
+            }
+        }
+    };
 }
 
-impl Add for Series {
-    type Output = DaftResult<Series>;
-    fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
-    }
-}
-
-impl Sub for &Series {
-    type Output = DaftResult<Series>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        self.inner.sub(rhs)
-    }
-}
-
-impl Sub for Series {
-    type Output = DaftResult<Series>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
-    }
-}
-
-impl Mul for &Series {
-    type Output = DaftResult<Series>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        self.inner.mul(rhs)
-    }
-}
-
-impl Mul for Series {
-    type Output = DaftResult<Series>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        (&self).mul(&rhs)
-    }
-}
-
-impl Div for &Series {
-    type Output = DaftResult<Series>;
-    fn div(self, rhs: Self) -> Self::Output {
-        self.inner.div(rhs)
-    }
-}
-
-impl Div for Series {
-    type Output = DaftResult<Series>;
-    fn div(self, rhs: Self) -> Self::Output {
-        (&self).div(&rhs)
-    }
-}
-
-impl Rem for &Series {
-    type Output = DaftResult<Series>;
-    fn rem(self, rhs: Self) -> Self::Output {
-        self.inner.rem(rhs)
-    }
-}
-
-impl Rem for Series {
-    type Output = DaftResult<Series>;
-    fn rem(self, rhs: Self) -> Self::Output {
-        (&self).rem(&rhs)
-    }
-}
+impl_arithmetic_for_series!(Add, add);
+impl_arithmetic_for_series!(Sub, sub);
+impl_arithmetic_for_series!(Mul, mul);
+impl_arithmetic_for_series!(Div, div);
+impl_arithmetic_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
