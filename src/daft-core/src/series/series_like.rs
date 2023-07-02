@@ -9,6 +9,7 @@ use common_error::DaftResult;
 use super::Series;
 
 pub trait SeriesLike: Send + Sync + Any {
+    fn into_series(&self) -> Series;
     fn to_arrow(&self) -> Box<dyn arrow2::array::Array>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;

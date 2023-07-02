@@ -4,6 +4,7 @@ use crate::datatypes::logical::{
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
+use crate::series::array_impl::ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;
@@ -20,6 +21,9 @@ macro_rules! impl_series_like_for_logical_array {
         }
 
         impl SeriesLike for ArrayWrapper<$da> {
+            fn into_series(&self) -> Series {
+                self.0.clone().into_series()
+            }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
                 let arrow_logical_type = self.0.logical_type().to_arrow().unwrap();
                 let physical_arrow_array = self.0.physical.data();
@@ -141,20 +145,25 @@ macro_rules! impl_series_like_for_logical_array {
                 let new_field = self.field().to_list_field()?;
                 Ok(ListArray::new(Arc::new(new_field), data_array.data)?.into_series())
             }
+
             fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                self + rhs
+                SeriesBinaryOps::add(self, rhs)
             }
+
             fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                self - rhs
+                SeriesBinaryOps::sub(self, rhs)
             }
+
             fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                self * rhs
+                SeriesBinaryOps::mul(self, rhs)
             }
+
             fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                self / rhs
+                SeriesBinaryOps::div(self, rhs)
             }
+
             fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                self % rhs
+                SeriesBinaryOps::rem(self, rhs)
             }
         }
     };

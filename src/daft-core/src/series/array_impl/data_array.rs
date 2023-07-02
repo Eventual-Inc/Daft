@@ -9,6 +9,7 @@ use crate::datatypes::DaftArrowBackedType;
 
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
+use crate::series::array_impl::ops::SeriesBinaryOps;
 use crate::series::Field;
 use crate::{
     datatypes::{
@@ -169,6 +170,9 @@ impl IntoSeries for PythonArray {
 macro_rules! impl_series_like_for_data_array {
     ($da:ident) => {
         impl SeriesLike for ArrayWrapper<$da> {
+            fn into_series(&self) -> Series {
+                self.0.clone().into_series()
+            }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
                 logical_to_arrow(Cow::Borrowed(&self.0.data), self.field()).into_owned()
             }
@@ -269,23 +273,23 @@ macro_rules! impl_series_like_for_data_array {
             }
 
             fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                self + rhs
+                SeriesBinaryOps::add(self, rhs)
             }
 
             fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                self - rhs
+                SeriesBinaryOps::sub(self, rhs)
             }
 
             fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                self * rhs
+                SeriesBinaryOps::mul(self, rhs)
             }
 
             fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                self / rhs
+                SeriesBinaryOps::div(self, rhs)
             }
 
             fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                self % rhs
+                SeriesBinaryOps::rem(self, rhs)
             }
         }
     };
