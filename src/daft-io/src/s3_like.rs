@@ -1,8 +1,11 @@
 use async_trait::async_trait;
 
+use crate::config::S3Config;
+use crate::SourceType;
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
+use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
@@ -11,14 +14,12 @@ use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
 
-use crate::config::S3Config;
-use crate::SourceType;
-
 use super::object_io::{GetResult, ObjectSource};
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::{Arc, RwLock};
 
@@ -27,6 +28,7 @@ pub(crate) struct S3LikeSource {
     s3_client: s3::Client,
     s3_config: S3Config,
     http_client: reqwest::Client,
+    anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -60,7 +62,7 @@ enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Unable to load Credentials: {source}"))]
+    #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
 
     #[snafu(display("Unable to create http client. {}", source))]
@@ -108,9 +110,16 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
-    let conf: SdkConfig = aws_config::load_from_env().await;
+async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
+
+    let mut anonymous = config.anonymous;
+
+    let conf: SdkConfig = if anonymous {
+        aws_config::SdkConfig::builder().build()
+    } else {
+        aws_config::load_from_env().await
+    };
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
@@ -132,31 +141,39 @@ async fn build_s3_client(config: &S3Config) -> super::Result<s3::Client> {
         );
         builder.credentials_provider(creds)
     } else if config.access_key.is_some() || config.key_id.is_some() {
-        panic!("Must provide both access_key and key_id when building S3-Like Client");
+        return Err(super::Error::InvalidArgument {
+            msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
+        });
     } else {
         builder
     };
 
     let s3_conf = builder.build();
+    if !config.anonymous {
+        use CredentialsError::*;
+        match s3_conf
+            .credentials_cache()
+            .provide_cached_credentials()
+            .await {
+            Ok(_) => Ok(()),
+            Err(err @ CredentialsNotLoaded(..)) => {
+                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                anonymous = true;
+                Ok(())
+            },
+            Err(err) => Err(err),
+        }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
+    };
 
-    s3_conf
-        .credentials_cache()
-        .provide_cached_credentials()
-        .await
-        .with_context(|_| UnableToLoadCredentialsSnafu {})?;
-
-    Ok(s3::Client::from_conf(s3_conf))
-}
-
-async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let s3_client = build_s3_client(config).await?;
+    let client = s3::Client::from_conf(s3_conf);
 
     Ok(S3LikeSource {
-        s3_client,
+        s3_client: client,
         s3_config: config.clone(),
         http_client: reqwest::Client::builder()
             .build()
             .with_context(|_| UnableToCreateClientSnafu {})?,
+        anonymous: anonymous,
     })
 }
 
@@ -185,7 +202,7 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str) -> super::Result<GetResult> {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -196,14 +213,40 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
-            let request = self
-                .s3_client
-                .get_object()
-                .bucket(bucket)
-                .key(key)
-                .send()
-                .await;
-            match request {
+            let request = self.s3_client.get_object().bucket(bucket).key(key);
+            let request = match &range {
+                None => request,
+                Some(range) => request.range(format!(
+                    "bytes={}-{}",
+                    range.start,
+                    range.end.saturating_sub(1)
+                )),
+            };
+
+            let response = if self.anonymous {
+                request
+                    .customize_middleware()
+                    .await
+                    .unwrap()
+                    .map_operation::<Error>(|mut o| {
+                        {
+                            let mut properties = o.properties_mut();
+                            let mut config = properties
+                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
+                                .expect("signing config added by make_operation()");
+
+                            config.signing_requirements = SigningRequirements::Disabled;
+                        }
+                        Ok(o)
+                    })
+                    .unwrap()
+                    .send()
+                    .await
+            } else {
+                request.send().await
+            };
+
+            match response {
                 Ok(v) => {
                     let body = v.body;
                     let owned_string = uri.to_owned();
@@ -247,7 +290,7 @@ impl ObjectSource for S3LikeSource {
 
                             let new_client = S3LikeSource::get_client(&new_config).await?;
                             log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().map_or("", |v| v.as_ref()));
-                            return new_client.get(uri).await;
+                            return new_client.get(uri, range).await;
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -262,5 +305,58 @@ impl ObjectSource for S3LikeSource {
         } else {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::object_io::ObjectSource;
+    use crate::S3LikeSource;
+    use crate::{config::S3Config, Result};
+    use tokio;
+
+    #[tokio::test]
+    async fn test_full_get_from_s3() -> Result<()> {
+        let parquet_file_path = "s3://daft-public-data/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
+        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
+
+        let mut config = S3Config::default();
+        config.anonymous = true;
+        let client = S3LikeSource::get_client(&config).await?;
+        let parquet_file = client.get(parquet_file_path, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, parquet_expected_md5);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 0..10)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 10);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+
+        let first_bytes = client
+            .get_range(parquet_file_path, 10..100)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 90);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+
+        let last_bytes = client
+            .get_range(
+                parquet_file_path,
+                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+            )
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(last_bytes.len(), 10);
+        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
+        Ok(())
     }
 }

@@ -1,3 +1,5 @@
+use std::io::{Seek, SeekFrom};
+use std::ops::Range;
 use std::path::PathBuf;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -6,7 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use url::ParseError;
 pub(crate) struct LocalSource {}
 
@@ -23,6 +25,12 @@ enum Error {
         path: String,
         source: std::io::Error,
     },
+    #[snafu(display("Unable to seek in file {}: {}", path, source))]
+    UnableToSeek {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to parse URL \"{}\"", url.to_string_lossy()))]
     InvalidUrl { url: PathBuf, source: ParseError },
 
@@ -66,13 +74,21 @@ impl LocalSource {
     }
 }
 
+pub struct LocalFile {
+    path: PathBuf,
+    range: Option<Range<usize>>,
+}
+
 #[async_trait]
 impl ObjectSource for LocalSource {
-    async fn get(&self, uri: &str) -> super::Result<GetResult> {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         const TO_STRIP: &str = "file://";
         if let Some(p) = uri.strip_prefix(TO_STRIP) {
             let path = std::path::Path::new(p);
-            Ok(GetResult::File(path.to_path_buf()))
+            Ok(GetResult::File(LocalFile {
+                path: path.to_path_buf(),
+                range,
+            }))
         } else {
             return Err(Error::InvalidFilePath {
                 path: uri.to_string(),
@@ -82,14 +98,103 @@ impl ObjectSource for LocalSource {
     }
 }
 
-pub(crate) async fn collect_file(path: &str) -> Result<Bytes> {
+pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
+    let path = &local_file.path;
     let mut file = tokio::fs::File::open(path)
         .await
-        .context(UnableToOpenFileSnafu { path })?;
+        .context(UnableToOpenFileSnafu {
+            path: path.to_string_lossy(),
+        })?;
+
     let mut buf = vec![];
-    let _ = file
-        .read_to_end(&mut buf)
-        .await
-        .context(UnableToReadBytesSnafu::<String> { path: path.into() })?;
+
+    match local_file.range {
+        None => {
+            let _ = file
+                .read_to_end(&mut buf)
+                .await
+                .context(UnableToReadBytesSnafu {
+                    path: path.to_string_lossy(),
+                })?;
+        }
+        Some(range) => {
+            let length = range.end - range.start;
+            file.seek(SeekFrom::Start(range.start as u64))
+                .await
+                .context(UnableToSeekSnafu {
+                    path: path.to_string_lossy(),
+                })?;
+            buf.reserve(length);
+            file.take(length as u64)
+                .read_to_end(&mut buf)
+                .await
+                .context(UnableToReadBytesSnafu {
+                    path: path.to_string_lossy(),
+                })?;
+        }
+    }
     Ok(Bytes::from(buf))
+}
+
+#[cfg(test)]
+
+mod tests {
+
+    use std::io::Write;
+
+    use crate::object_io::ObjectSource;
+    use crate::Result;
+    use crate::{HttpSource, LocalSource};
+    use tokio;
+    #[tokio::test]
+    async fn test_full_get_from_local() -> Result<()> {
+        let mut file1 = tempfile::NamedTempFile::new().unwrap();
+        let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
+        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
+
+        let client = HttpSource::get_client().await?;
+        let parquet_file = client.get(parquet_file_path, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let all_bytes = bytes.as_ref();
+        let checksum = format!("{:x}", md5::compute(all_bytes));
+        assert_eq!(checksum, parquet_expected_md5);
+        file1.write_all(all_bytes).unwrap();
+        file1.flush().unwrap();
+
+        let parquet_file_path = format!("file://{}", file1.path().to_str().unwrap());
+        let client = LocalSource::get_client().await?;
+
+        let try_all_bytes = client.get(&parquet_file_path, None).await?.bytes().await?;
+        assert_eq!(try_all_bytes.len(), all_bytes.len());
+        assert_eq!(try_all_bytes.as_ref(), all_bytes);
+
+        let first_bytes = client
+            .get_range(&parquet_file_path, 0..10)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 10);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
+
+        let first_bytes = client
+            .get_range(&parquet_file_path, 10..100)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(first_bytes.len(), 90);
+        assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
+
+        let last_bytes = client
+            .get_range(
+                &parquet_file_path,
+                (all_bytes.len() - 10)..(all_bytes.len() + 10),
+            )
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(last_bytes.len(), 10);
+        assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
+        Ok(())
+    }
 }

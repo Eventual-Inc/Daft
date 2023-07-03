@@ -9,6 +9,7 @@ pub struct S3Config {
     pub endpoint_url: Option<String>,
     pub key_id: Option<String>,
     pub access_key: Option<String>,
+    pub anonymous: bool,
 }
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -24,8 +25,9 @@ impl Display for S3Config {
     region_name: {:?}
     endpoint_url: {:?}
     key_id: {:?}
-    access_key: {:?}",
-            self.region_name, self.endpoint_url, self.key_id, self.access_key
+    access_key: {:?}
+    anonymous: {}",
+            self.region_name, self.endpoint_url, self.key_id, self.access_key, self.anonymous
         )
     }
 }

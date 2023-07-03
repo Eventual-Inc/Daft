@@ -68,6 +68,15 @@ def test_wrong_input_type():
         daft.from_pydict("invalid input")
 
 
+def test_create_dataframe_empty_list() -> None:
+    with pytest.raises(ValueError):
+        daft.read_parquet([])
+    with pytest.raises(ValueError):
+        daft.read_csv([])
+    with pytest.raises(ValueError):
+        daft.read_json([])
+
+
 ###
 # List tests
 ###
@@ -354,6 +363,23 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
+def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
+        for f in (f1, f2):
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
+        df = daft.read_csv([f1.name, f2.name])
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == (len(valid_data) * 2)
+
+
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
@@ -508,6 +534,22 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
+def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
+        for f in (f1, f2):
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json([f1.name, f2.name])
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == (len(valid_data) * 2)
+
+
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
@@ -605,6 +647,21 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]]) -> None:
+    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
+        for f in (f1, f2):
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, f.name)
+            f.flush()
+
+        df = daft.read_parquet([f1.name, f2.name])
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == (len(valid_data) * 2)
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")

@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -5,10 +6,10 @@ use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use crate::local::collect_file;
+use crate::local::{collect_file, LocalFile};
 
 pub(crate) enum GetResult {
-    File(PathBuf),
+    File(LocalFile),
     Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
 }
 
@@ -39,7 +40,7 @@ impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
         use GetResult::*;
         match self {
-            File(path) => collect_file(path.to_str().unwrap()).await,
+            File(f) => collect_file(f).await,
             Stream(stream, size) => collect_bytes(stream, size).await,
         }
     }
@@ -47,5 +48,8 @@ impl GetResult {
 
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
-    async fn get(&self, uri: &str) -> super::Result<GetResult>;
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
+    async fn get_range(&self, uri: &str, range: Range<usize>) -> super::Result<GetResult> {
+        self.get(uri, Some(range)).await
+    }
 }
