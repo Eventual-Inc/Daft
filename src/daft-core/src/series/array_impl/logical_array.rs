@@ -4,7 +4,7 @@ use crate::datatypes::logical::{
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
-use crate::series::array_impl::ops::SeriesBinaryOps;
+use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
 use crate::with_match_integer_daft_types;

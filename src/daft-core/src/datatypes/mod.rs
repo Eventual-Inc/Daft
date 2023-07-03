@@ -1,9 +1,9 @@
+mod binary_ops;
 mod dtype;
 mod field;
 mod image_format;
 mod image_mode;
 mod matching;
-mod ops;
 mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};

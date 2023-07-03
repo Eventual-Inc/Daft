@@ -9,7 +9,7 @@ use crate::datatypes::DaftArrowBackedType;
 
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
-use crate::series::array_impl::ops::SeriesBinaryOps;
+use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::Field;
 use crate::{
     datatypes::{
