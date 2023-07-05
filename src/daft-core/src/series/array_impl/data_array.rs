@@ -291,6 +291,15 @@ macro_rules! impl_series_like_for_data_array {
             fn rem(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::rem(self, rhs)
             }
+            fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::and(self, rhs)
+            }
+            fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::or(self, rhs)
+            }
+            fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::xor(self, rhs)
+            }
         }
     };
 }

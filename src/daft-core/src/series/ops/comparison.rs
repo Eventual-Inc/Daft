@@ -52,25 +52,9 @@ impl DaftCompare<&Series> for Series {
 }
 
 macro_rules! impl_logical {
-    ($fname:ident, $pyop:expr) => {
+    ($fname:ident) => {
         fn $fname(&self, other: &Series) -> Self::Output {
-            let (lhs, rhs) = match_types_on_series(self, other)?;
-
-            #[cfg(feature = "python")]
-            if lhs.data_type() == &DataType::Python {
-                return py_binary_op_bool!(lhs, rhs, $pyop).downcast::<BooleanType>().cloned();
-            }
-
-            if lhs.data_type() != &DataType::Boolean {
-                return Err(DaftError::TypeError(format!(
-                    "Can only perform logical operations on boolean supertype, but got left series {} and right series {} with supertype {}",
-                    self.field(),
-                    other.field(),
-                    lhs.data_type(),
-                )));
-            }
-            lhs.downcast::<BooleanType>()?
-                .$fname(rhs.downcast::<BooleanType>()?)
+            self.inner.$fname(other)
         }
     };
 }
@@ -78,7 +62,7 @@ macro_rules! impl_logical {
 impl DaftLogical<&Series> for Series {
     type Output = DaftResult<BooleanArray>;
 
-    impl_logical!(and, "and_");
-    impl_logical!(or, "or_");
-    impl_logical!(xor, "xor");
+    impl_logical!(and);
+    impl_logical!(or);
+    impl_logical!(xor);
 }
