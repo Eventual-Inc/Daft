@@ -5,7 +5,7 @@ mod http;
 mod local;
 mod object_io;
 mod s3_like;
-
+use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -181,6 +181,14 @@ async fn single_url_download(
     }
 }
 
+lazy_static! {
+    static ref THREADED_RUNTIME: tokio::runtime::Runtime =
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+}
+
 pub fn _url_download(
     array: &Utf8Array,
     max_connections: usize,
@@ -196,20 +204,27 @@ pub fn _url_download(
             msg: "max_connections for url_download must be non-zero".to_owned()
         }
     );
-    let rt = match multi_thread {
-        false => tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build(),
-        true => tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build(),
-    }?;
 
+    let _maybe_local_runtime: Option<tokio::runtime::Runtime>;
+
+    let runtime_handle = match multi_thread {
+        false => {
+            _maybe_local_runtime = Some(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()?,
+            );
+            let val = _maybe_local_runtime.as_ref().unwrap();
+            val
+        }
+        _ => &THREADED_RUNTIME,
+    };
+    let _rt_guard = runtime_handle.enter();
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    // let thread_max_connections =
+
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         let owned_config = config.clone();
@@ -228,7 +243,7 @@ pub fn _url_download(
     });
 
     let collect_future = fetches.try_collect::<Vec<_>>();
-    let mut results = rt.block_on(collect_future)?;
+    let mut results = runtime_handle.block_on(collect_future)?;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);

@@ -28,6 +28,9 @@ enum Error {
         source: reqwest::Error,
     },
 
+    #[snafu(display("Unable to create Http Client {}", source))]
+    UnableToCreateClient { source: reqwest::Error },
+
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
         path: String,
@@ -61,16 +64,14 @@ impl From<Error> for super::Error {
     }
 }
 
-lazy_static! {
-    static ref HTTP_CLIENT: Arc<HttpSource> = HttpSource {
-        client: reqwest::ClientBuilder::default().build().unwrap(),
-    }
-    .into();
-}
-
 impl HttpSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(HTTP_CLIENT.clone())
+        Ok(HttpSource {
+            client: reqwest::ClientBuilder::default()
+                .build()
+                .context(UnableToCreateClientSnafu)?,
+        }
+        .into())
     }
 }
 
