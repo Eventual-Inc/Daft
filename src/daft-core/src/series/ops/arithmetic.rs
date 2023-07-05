@@ -1,197 +1,32 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use super::match_types_on_series;
-use super::py_binary_op_utilfn;
+use crate::series::Series;
 
-use crate::datatypes::{DataType, Float64Type};
-use crate::series::{IntoSeries, Series};
-use crate::with_match_numeric_and_utf_daft_types;
-use crate::with_match_numeric_daft_types;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
-macro_rules! py_binary_op {
-    ($lhs:expr, $rhs:expr, $pyoperator:expr) => {
-        py_binary_op_utilfn!($lhs, $rhs, $pyoperator, "map_operator_arrow_semantics")
-    };
-}
-
-macro_rules! impl_series_math_op {
-    ($op:ident, $func_name:ident, $pyop:expr) => {
-        impl $op for &Series {
+macro_rules! impl_arithmetic_for_series {
+    ($trait:ident, $op:ident) => {
+        impl $trait for &Series {
             type Output = DaftResult<Series>;
-            fn $func_name(self, rhs: Self) -> Self::Output {
-                let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-                #[cfg(feature = "python")]
-                if lhs.data_type() == &DataType::Python {
-                    return Ok(py_binary_op!(lhs, rhs, $pyop));
-                }
-
-                if !lhs.data_type().is_numeric() || !rhs.data_type().is_numeric() {
-                    return Err(DaftError::TypeError(
-                        "Cannot run on non-numeric types".into(),
-                    ));
-                }
-                with_match_numeric_daft_types!(lhs.data_type(), |$T| {
-                    let lhs = lhs.downcast::<$T>()?;
-                    let rhs = rhs.downcast::<$T>()?;
-                    Ok(lhs.$func_name(rhs)?.into_series().rename(lhs.name()))
-                })
+            fn $op(self, rhs: Self) -> Self::Output {
+                self.inner.$op(rhs)
             }
         }
 
-        impl $op for Series {
+        impl $trait for Series {
             type Output = DaftResult<Series>;
-            fn $func_name(self, rhs: Self) -> Self::Output {
-                (&self).$func_name(&rhs)
+            fn $op(self, rhs: Self) -> Self::Output {
+                (&self).$op(&rhs)
             }
         }
     };
 }
 
-impl Add for &Series {
-    type Output = DaftResult<Series>;
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self.data_type(), rhs.data_type()) {
-            (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
-            | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz)) => {
-                // If the timeunits are not the same, disallow the operation.
-                if t_unit != d_unit {
-                    return Err(DaftError::TypeError(format!(
-                        "Cannot add temporal types of different precisions: {:?} and {:?}. Please explicitly cast to the precision you wish to compute in first.",
-                        t_unit, d_unit
-                    )));
-                }
-
-                let lhs = self.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.add(rhs)?;
-                return physical_result.cast(&DataType::Timestamp(t_unit.clone(), tz.clone()));
-            }
-            _ => (),
-        }
-
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-        if let DataType::Timestamp(..) = lhs.data_type() {
-            return Err(DaftError::TypeError(format!(
-                "Can only perform timestamp arithmetic with Timestamp and Duration, but got {} and {}",
-                lhs.data_type(), rhs.data_type(),
-            )));
-        }
-
-        #[cfg(feature = "python")]
-        if lhs.data_type() == &DataType::Python {
-            return Ok(py_binary_op!(lhs, rhs, "add"));
-        }
-
-        with_match_numeric_and_utf_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.add(rhs)?.into_series().rename(lhs.name()))
-        })
-    }
-}
-
-impl Add for Series {
-    type Output = DaftResult<Series>;
-    fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
-    }
-}
-
-impl Sub for &Series {
-    type Output = DaftResult<Series>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self.data_type(), rhs.data_type()) {
-            (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit)) => {
-                // If the timeunits are not the same, disallow the operation.
-                if t_unit != d_unit {
-                    return Err(DaftError::TypeError(format!(
-                        "Cannot add temporal types of different precisions: {:?} and {:?}. Please explicitly cast to the precision you wish to compute in first.",
-                        t_unit, d_unit
-                    )));
-                }
-
-                let lhs = self.as_physical()?;
-                let rhs = rhs.as_physical()?;
-                let physical_result = lhs.sub(rhs)?;
-                return physical_result.cast(&DataType::Timestamp(t_unit.clone(), tz.clone()));
-            }
-            _ => (),
-        }
-
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-        if let DataType::Timestamp(..) = lhs.data_type() {
-            return Err(DaftError::TypeError(format!(
-                "Can only perform timestamp arithmetic with Timestamp and Duration, but got {} and {}",
-                lhs.data_type(), rhs.data_type(),
-            )));
-        }
-
-        #[cfg(feature = "python")]
-        if lhs.data_type() == &DataType::Python {
-            return Ok(py_binary_op!(lhs, rhs, "sub"));
-        }
-
-        if !lhs.data_type().is_numeric() || !rhs.data_type().is_numeric() {
-            return Err(DaftError::TypeError(
-                "Cannot run on non-numeric types".into(),
-            ));
-        }
-        with_match_numeric_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>()?;
-            let rhs = rhs.downcast::<$T>()?;
-            Ok(lhs.sub(rhs)?.into_series().rename(lhs.name()))
-        })
-    }
-}
-
-impl Sub for Series {
-    type Output = DaftResult<Series>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        (&self).sub(&rhs)
-    }
-}
-
-impl Div for &Series {
-    type Output = DaftResult<Series>;
-    fn div(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = match_types_on_series(self, rhs)?;
-
-        #[cfg(feature = "python")]
-        if lhs.data_type() == &DataType::Python {
-            return Ok(py_binary_op!(lhs, rhs, "truediv"));
-        }
-
-        if !self.data_type().is_numeric() || !rhs.data_type().is_numeric() {
-            return Err(DaftError::TypeError(format!(
-                "True division requires numeric arguments, but received {} / {}",
-                self.data_type(),
-                rhs.data_type()
-            )));
-        }
-        let lhs = self.cast(&crate::datatypes::DataType::Float64)?;
-        let rhs = rhs.cast(&crate::datatypes::DataType::Float64)?;
-
-        Ok(lhs
-            .downcast::<Float64Type>()?
-            .div(rhs.downcast::<Float64Type>()?)?
-            .into_series()
-            .rename(lhs.name()))
-    }
-}
-
-impl Div for Series {
-    type Output = DaftResult<Series>;
-    fn div(self, rhs: Self) -> Self::Output {
-        (&self).div(&rhs)
-    }
-}
-
-impl_series_math_op!(Mul, mul, "mul");
-impl_series_math_op!(Rem, rem, "mod");
+impl_arithmetic_for_series!(Add, add);
+impl_arithmetic_for_series!(Sub, sub);
+impl_arithmetic_for_series!(Mul, mul);
+impl_arithmetic_for_series!(Div, div);
+impl_arithmetic_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {

@@ -41,6 +41,7 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
         ))),
     }
 }
+
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         use DataType::*;

@@ -296,114 +296,28 @@ impl Expr {
                             Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {left_field} and {right_field}"))),
                         }
                     }
-
-                    // Plus operation: special-cased as it has semantic meaning for some other types
                     Operator::Plus => {
-                        #[cfg(feature = "python")]
-                        {
-                            let supertype =
-                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-                            if supertype.is_python() {
-                                return Ok(Field::new(left_field.name.as_str(), supertype));
-                            }
-                        }
-                        let (lhs, rhs) = (&left_field.dtype, &right_field.dtype);
-                        // Special case for temporal logic
-                        match (lhs, rhs) {
-                            (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
-                            | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz)) => {
-                                // If the timeunits are not the same, disallow the operation.
-                                if t_unit != d_unit {
-                                    return Err(DaftError::TypeError(format!(
-                                        "Cannot add temporal types of different precisions: {:?} and {:?}. Please explicitly cast to the precision you wish to compute in first.",
-                                        t_unit, d_unit
-                                    )));
-                                }
-                                let dtype = DataType::Timestamp(t_unit.clone(), tz.clone());
-                                return Ok(Field::new(left.to_field(schema)?.name.as_str(), dtype));
-                            }
-                            _ => (),
-                        }
-                        for dt in [lhs, rhs] {
-                            if !(dt.is_numeric()
-                                || dt.eq(&DataType::Utf8)
-                                || dt.eq(&DataType::Boolean)
-                                || dt.eq(&DataType::Null))
-                            {
-                                return Err(DaftError::TypeError(format!("Expected left and right arguments to both be numeric for {op}, but received {right_field} and {left_field}")));
-                            }
-                        }
-                        let supertype = try_get_supertype(lhs, rhs)?;
-                        Ok(Field::new(left.to_field(schema)?.name.as_str(), supertype))
+                        let result_type = (&left_field.dtype + &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
                     }
-
-                    // True divide operation
-                    Operator::TrueDivide => {
-                        #[cfg(feature = "python")]
-                        {
-                            let supertype =
-                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-                            if supertype.is_python() {
-                                return Ok(Field::new(left_field.name.as_str(), supertype));
-                            }
-                        }
-                        if !left_field.dtype.is_numeric() || !right_field.dtype.is_numeric() {
-                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric and castable to {}, but received {left_field} and {right_field}", DataType::Float64)));
-                        }
-                        Ok(Field::new(left_field.name.as_str(), DataType::Float64))
-                    }
-
                     Operator::Minus => {
-                        #[cfg(feature = "python")]
-                        {
-                            let supertype =
-                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-                            if supertype.is_python() {
-                                return Ok(Field::new(left_field.name.as_str(), supertype));
-                            }
-                        }
-
-                        // Special case for temporal logic
-                        let (lhs, rhs) = (&left_field.dtype, &right_field.dtype);
-                        match (lhs, rhs) {
-                            (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit)) => {
-                                // If the timeunits are not the same, disallow the operation.
-                                if t_unit != d_unit {
-                                    return Err(DaftError::TypeError(format!(
-                                        "Cannot subtract temporal types of different precisions: {:?} and {:?}. Please explicitly cast to the precision you wish to compute in first.",
-                                        t_unit, d_unit
-                                    )));
-                                }
-                                let dtype = DataType::Timestamp(t_unit.clone(), tz.clone());
-                                return Ok(Field::new(left.to_field(schema)?.name.as_str(), dtype));
-                            }
-                            _ => (),
-                        }
-                        if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
-                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {left_field} and {right_field}")));
-                        }
-                        Ok(Field::new(
-                            left_field.name.as_str(),
-                            try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        ))
+                        let result_type = (&left_field.dtype - &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
                     }
-                    // Regular arithmetic operations
-                    Operator::Multiply | Operator::Modulus | Operator::FloorDivide => {
-                        #[cfg(feature = "python")]
-                        {
-                            let supertype =
-                                try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-                            if supertype.is_python() {
-                                return Ok(Field::new(left_field.name.as_str(), supertype));
-                            }
-                        }
-                        if !&left_field.dtype.is_numeric() || !&right_field.dtype.is_numeric() {
-                            return Err(DaftError::TypeError(format!("Expected left and right arguments for {op} to both be numeric but received {left_field} and {right_field}")));
-                        }
-                        Ok(Field::new(
-                            left_field.name.as_str(),
-                            try_get_supertype(&left_field.dtype, &right_field.dtype)?,
-                        ))
+                    Operator::Multiply => {
+                        let result_type = (&left_field.dtype * &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
+                    }
+                    Operator::TrueDivide => {
+                        let result_type = (&left_field.dtype / &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
+                    }
+                    Operator::Modulus => {
+                        let result_type = (&left_field.dtype % &right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
+                    }
+                    Operator::FloorDivide => {
+                        unimplemented!()
                     }
                 }
             }

@@ -1,3 +1,4 @@
+mod binary_ops;
 mod dtype;
 mod field;
 mod image_format;
