@@ -6,6 +6,44 @@ use crate::impl_binary_trait_by_reference;
 
 use super::DataType;
 
+impl DataType {
+    pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
+        use DataType::*;
+        match (self, other) {
+            #[cfg(feature = "python")]
+            (Python, _) | (_, Python) => Ok(()),
+            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(()),
+            _ => Err(()),
+        }
+        .map(|()| Boolean)
+        .map_err(|()| {
+            DaftError::TypeError(format!(
+                "Cannot perform logic on types: {}, {}",
+                self, other
+            ))
+        })
+    }
+    pub fn comparison_op(&self, other: &Self) -> DaftResult<DataType> {
+        use DataType::*;
+        match (self, other) {
+            // TODO: [ISSUE-688] Make Binary type comparable
+            (Binary, _) | (_, Binary) => Err(()),
+            (s, o) if s == o => Ok(()),
+            (s, o) if s.is_physical() && o.is_physical() => Ok(()),
+            // To maintain existing behaviour. TODO: cleanup
+            (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => Ok(()),
+            _ => Err(()),
+        }
+        .map(|()| Boolean)
+        .map_err(|()| {
+            DaftError::TypeError(format!(
+                "Cannot perform comparison on types: {}, {}",
+                self, other
+            ))
+        })
+    }
+}
+
 impl Add for &DataType {
     type Output = DaftResult<DataType>;
 
