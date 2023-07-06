@@ -171,6 +171,25 @@ impl_binary_trait_by_reference!(DataType, Mul, mul);
 impl_binary_trait_by_reference!(DataType, Div, div);
 impl_binary_trait_by_reference!(DataType, Rem, rem);
 
+pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
+    // Given two physical data types,
+    // get the physical data type that they can both be casted to.
+
+    use DataType::*;
+    try_numeric_supertype(l, r).or(match (l, r) {
+        (l, r) if l.is_logical() || r.is_logical() => Err(DaftError::TypeError(format!(
+            "Invalid arguments to try_physical_supertype: {}, {}",
+            l, r
+        ))),
+        (Null, other) | (other, Null) => Ok(other.clone()),
+        (Boolean, other) | (other, Boolean) => Ok(other.clone()),
+        #[cfg(feature = "python")]
+        (Python, _) | (_, Python) => Ok(Python),
+        (Utf8, _) | (_, Utf8) => Ok(Utf8),
+        _ => unimplemented!(),
+    })
+}
+
 pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     // If given two numeric data types,
     // get the numeric type that they should both be casted to
