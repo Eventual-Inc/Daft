@@ -45,9 +45,7 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
-        match err {
-            _ => DaftError::External(err.into()),
-        }
+        DaftError::External(err.into())
     }
 }
 

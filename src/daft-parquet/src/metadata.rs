@@ -21,7 +21,7 @@ async fn read_parquet_metadata(
 
     /// The number of bytes read at the end of the parquet file on first read
     const DEFAULT_FOOTER_READ_SIZE: usize = 64 * 1024;
-    let default_end_len = std::cmp::min(DEFAULT_FOOTER_READ_SIZE, size) as usize;
+    let default_end_len = std::cmp::min(DEFAULT_FOOTER_READ_SIZE, size);
 
     let start = size.saturating_sub(default_end_len);
     let data = io_client
@@ -50,9 +50,9 @@ async fn read_parquet_metadata(
         });
     }
 
-    let reader: &[u8] = if (footer_len as usize) < buffer.len() {
+    let reader: &[u8] = if footer_len < buffer.len() {
         // the whole metadata is in the bytes we already read
-        let remaining = buffer.len() - footer_len as usize;
+        let remaining = buffer.len() - footer_len;
         &buffer[remaining..]
     } else {
         // the end of file read by default is not long enough, read again including the metadata.
