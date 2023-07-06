@@ -285,6 +285,10 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
             )
             arrow_schema = ds.schema(fetch_if_missing=True)
 
+            # Ray 2.5.0 broke the API by using its own `ray.data.dataset.Schema` instead of PyArrow schemas
+            if RAY_VERSION >= (2, 5, 0):
+                arrow_schema = pa.schema({name: t for name, t in zip(arrow_schema.names, arrow_schema.types)})
+
         daft_schema = Schema._from_field_name_and_types(
             [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
         )
