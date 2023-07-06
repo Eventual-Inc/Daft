@@ -85,7 +85,26 @@ macro_rules! py_numeric_binary_op {
     }};
 }
 
-macro_rules! py_bool_logical_op {
+macro_rules! physical_logic_op {
+    ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
+        let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
+        let lhs = $self.into_series();
+        use DataType::*;
+        if let Boolean = output_type {
+            match (&lhs.data_type(), &$rhs.data_type()) {
+                #[cfg(feature = "python")]
+                (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop)
+                    .downcast::<BooleanType>()
+                    .cloned(),
+                _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanType, $op),
+            }
+        } else {
+            unimplemented!()
+        }
+    }};
+}
+
+macro_rules! physical_comparable_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
         let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
         let lhs = $self.into_series();
@@ -139,16 +158,16 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         }
     }
     fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-        py_numeric_binary_op!(self, rhs, rem, "rem")
+        py_numeric_binary_op!(self, rhs, rem, "mod")
     }
     fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        py_bool_logical_op!(self, rhs, and, "and_")
+        physical_logic_op!(self, rhs, and, "and_")
     }
     fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        py_bool_logical_op!(self, rhs, or, "or_")
+        physical_logic_op!(self, rhs, or, "or_")
     }
     fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-        py_bool_logical_op!(self, rhs, xor, "xor")
+        physical_logic_op!(self, rhs, xor, "xor")
     }
 }
 
