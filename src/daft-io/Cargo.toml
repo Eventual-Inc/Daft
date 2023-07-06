@@ -1,6 +1,6 @@
 [dependencies]
 async-recursion = "1.0.4"
-async-trait = "0.1.68"
+async-trait = "0.1.71"
 aws-config = {version = "0.55.3"}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = "0.28.0"
