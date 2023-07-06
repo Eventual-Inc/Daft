@@ -1,4 +1,4 @@
-use std::io::{Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use url::ParseError;
 pub(crate) struct LocalSource {}
 
@@ -145,7 +145,7 @@ mod tests {
     use crate::object_io::ObjectSource;
     use crate::Result;
     use crate::{HttpSource, LocalSource};
-    use tokio;
+
     #[tokio::test]
     async fn test_full_get_from_local() -> Result<()> {
         let mut file1 = tempfile::NamedTempFile::new().unwrap();

@@ -1,5 +1,4 @@
 use std::ops::Range;
-use std::path::PathBuf;
 
 use async_trait::async_trait;
 use bytes::Bytes;

@@ -2,7 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use lazy_static::lazy_static;
+
 use reqwest::header::RANGE;
 use snafu::{IntoError, ResultExt, Snafu};
 
@@ -27,6 +27,9 @@ enum Error {
         path: String,
         source: reqwest::Error,
     },
+
+    #[snafu(display("Unable to create Http Client {}", source))]
+    UnableToCreateClient { source: reqwest::Error },
 
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
@@ -61,16 +64,14 @@ impl From<Error> for super::Error {
     }
 }
 
-lazy_static! {
-    static ref HTTP_CLIENT: Arc<HttpSource> = HttpSource {
-        client: reqwest::ClientBuilder::default().build().unwrap(),
-    }
-    .into();
-}
-
 impl HttpSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(HTTP_CLIENT.clone())
+        Ok(HttpSource {
+            client: reqwest::ClientBuilder::default()
+                .build()
+                .context(UnableToCreateClientSnafu)?,
+        }
+        .into())
     }
 }
 
@@ -106,13 +107,13 @@ impl ObjectSource for HttpSource {
         Ok(GetResult::Stream(stream.boxed(), size_bytes))
     }
 }
+
 #[cfg(test)]
 mod tests {
 
     use crate::object_io::ObjectSource;
     use crate::HttpSource;
     use crate::Result;
-    use tokio;
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {
