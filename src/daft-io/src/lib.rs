@@ -117,7 +117,6 @@ impl IOClient {
             return Ok(client.clone());
         }
 
-        let start = time::PreciseTime::now();
         let new_source = match source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => HttpSource::get_client().await? as Arc<dyn ObjectSource>,
@@ -125,8 +124,6 @@ impl IOClient {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
         };
-        let end = time::PreciseTime::now();
-        log::warn!("total time: {}", start.to(end));
 
         if w_handle.get(source_type).is_none() {
             w_handle.insert(*source_type, new_source.clone());
@@ -223,6 +220,8 @@ lazy_static! {
             .enable_all()
             .build()
             .unwrap();
+    static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<IOConfig, Arc<IOClient>>> =
+        tokio::sync::RwLock::new(HashMap::new());
 }
 
 pub fn _url_download(
@@ -260,7 +259,24 @@ pub fn _url_download(
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = Arc::new(IOClient::new(config)?);
+    let io_client = {
+        let read_handle = CLIENT_CACHE.blocking_read();
+        if let Some(client) = read_handle.get(&config) {
+            client.clone()
+        } else {
+            drop(read_handle);
+
+            let mut w_handle = CLIENT_CACHE.blocking_write();
+            if let Some(client) = w_handle.get(&config) {
+                client.clone()
+            } else {
+                let client = Arc::new(IOClient::new(config.clone())?);
+                w_handle.insert(config.as_ref().clone(), client.clone());
+                client
+            }
+        }
+    };
+
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         let owned_client = io_client.clone();
