@@ -8,6 +8,7 @@ use super::DataType;
 
 impl DataType {
     pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
+        // Whether a logical op (and, or, xor) is supported between the two types.
         use DataType::*;
         match (self, other) {
             #[cfg(feature = "python")]
@@ -23,18 +24,26 @@ impl DataType {
             ))
         })
     }
-    pub fn comparison_op(&self, other: &Self) -> DaftResult<DataType> {
+    pub fn comparison_op(&self, other: &Self) -> DaftResult<(DataType, DataType)> {
+        // Whether a comparison op is supported between the two types.
+        // Returns:
+        // - the output type,
+        // - the type at which the comparison should be performed.
         use DataType::*;
         match (self, other) {
             // TODO: [ISSUE-688] Make Binary type comparable
             (Binary, _) | (_, Binary) => Err(()),
-            (s, o) if s == o => Ok(()),
-            (s, o) if s.is_physical() && o.is_physical() => Ok(()),
+            (s, o) if s == o => Ok(s.to_physical()),
+            (s, o) if s.is_physical() && o.is_physical() => {
+                try_physical_supertype(s, o).or_else(|_| Err(()))
+            }
             // To maintain existing behaviour. TODO: cleanup
-            (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => Ok(()),
+            (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => {
+                try_physical_supertype(&Date.to_physical(), o).or_else(|_| Err(()))
+            }
             _ => Err(()),
         }
-        .map(|()| Boolean)
+        .map(|comp_type| (Boolean, comp_type))
         .map_err(|()| {
             DaftError::TypeError(format!(
                 "Cannot perform comparison on types: {}, {}",
@@ -177,16 +186,15 @@ pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType
 
     use DataType::*;
     try_numeric_supertype(l, r).or(match (l, r) {
-        (l, r) if l.is_logical() || r.is_logical() => Err(DaftError::TypeError(format!(
+        (Null, other) | (other, Null) if other.is_physical() => Ok(other.clone()),
+        (Boolean, other) | (other, Boolean) if other.is_physical() => Ok(other.clone()),
+        #[cfg(feature = "python")]
+        (Python, _) | (_, Python) => Ok(Python),
+        (Utf8, o) | (o, Utf8) if o.is_physical() => Ok(Utf8),
+        _ => Err(DaftError::TypeError(format!(
             "Invalid arguments to try_physical_supertype: {}, {}",
             l, r
         ))),
-        (Null, other) | (other, Null) => Ok(other.clone()),
-        (Boolean, other) | (other, Boolean) => Ok(other.clone()),
-        #[cfg(feature = "python")]
-        (Python, _) | (_, Python) => Ok(Python),
-        (Utf8, _) | (_, Utf8) => Ok(Utf8),
-        _ => unimplemented!(),
     })
 }
 

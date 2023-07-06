@@ -175,6 +175,24 @@ macro_rules! impl_series_like_for_logical_array {
             fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
                 SeriesBinaryOps::xor(self, rhs)
             }
+            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::equal(self, rhs)
+            }
+            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::not_equal(self, rhs)
+            }
+            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::lt(self, rhs)
+            }
+            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::lte(self, rhs)
+            }
+            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::gt(self, rhs)
+            }
+            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::gte(self, rhs)
+            }
         }
     };
 }

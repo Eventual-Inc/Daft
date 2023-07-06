@@ -267,7 +267,8 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
-                        let result_type = left_field.dtype.comparison_op(&right_field.dtype)?;
+                        let (result_type, _comp_type) =
+                            left_field.dtype.comparison_op(&right_field.dtype)?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 

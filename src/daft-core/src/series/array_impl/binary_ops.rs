@@ -3,20 +3,19 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::DaftLogical,
+    array::ops::{DaftCompare, DaftLogical},
     datatypes::{BooleanType, Float64Type, Utf8Type},
     series::series_like::SeriesLike,
-    with_match_daft_types, with_match_numeric_daft_types, DataType,
-};
-
-use crate::datatypes::{
-    BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray, UInt16Array,
-    UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+    with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
 };
 
 use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+};
+use crate::datatypes::{
+    BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
+    Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray, UInt16Array,
+    UInt32Array, UInt64Array, UInt8Array, Utf8Array,
 };
 
 use super::{ArrayWrapper, IntoSeries, Series};
@@ -104,18 +103,20 @@ macro_rules! physical_logic_op {
     }};
 }
 
-macro_rules! physical_comparable_op {
+macro_rules! physical_compare_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
-        let output_type = ($self.data_type().logical_op($rhs.data_type()))?;
+        let (output_type, comp_type) = ($self.data_type().comparison_op($rhs.data_type()))?;
         let lhs = $self.into_series();
         use DataType::*;
         if let Boolean = output_type {
-            match (&lhs.data_type(), &$rhs.data_type()) {
+            match comp_type {
                 #[cfg(feature = "python")]
-                (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop)
+                Python => py_binary_op_bool!(lhs, $rhs, $pyop)
                     .downcast::<BooleanType>()
                     .cloned(),
-                _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanType, $op),
+                _ => with_match_comparable_daft_types!(comp_type, |$T| {
+                    cast_downcast_op!(lhs, $rhs, &comp_type, $T, $op)
+                }),
             }
         } else {
             unimplemented!()
@@ -168,6 +169,24 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
     }
     fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
         physical_logic_op!(self, rhs, xor, "xor")
+    }
+    fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, equal, "eq")
+    }
+    fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, not_equal, "ne")
+    }
+    fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, lt, "lt")
+    }
+    fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, lte, "le")
+    }
+    fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, gt, "gt")
+    }
+    fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        physical_compare_op!(self, rhs, gte, "ge")
     }
 }
 
