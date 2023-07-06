@@ -107,6 +107,7 @@ impl ObjectSource for HttpSource {
         Ok(GetResult::Stream(stream.boxed(), size_bytes))
     }
 }
+
 #[cfg(test)]
 mod tests {
 
