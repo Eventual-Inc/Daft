@@ -13,6 +13,7 @@ use arrow2::{
     compute::{arithmetics::basic::NativeArithmetics, comparison::Simd8},
     types::{simd::Simd, NativeType},
 };
+pub use binary_ops::try_physical_supertype;
 pub use dtype::DataType;
 pub use field::Field;
 pub use image_format::ImageFormat;

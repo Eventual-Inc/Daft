@@ -37,4 +37,13 @@ pub trait SeriesLike: Send + Sync + Any {
     fn mul(&self, rhs: &Series) -> DaftResult<Series>;
     fn div(&self, rhs: &Series) -> DaftResult<Series>;
     fn rem(&self, rhs: &Series) -> DaftResult<Series>;
+    fn and(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn or(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray>;
+    fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray>;
 }

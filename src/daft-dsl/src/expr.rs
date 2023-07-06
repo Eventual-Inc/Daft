@@ -256,21 +256,8 @@ impl Expr {
                 match op {
                     // Logical operations
                     Operator::And | Operator::Or | Operator::Xor => {
-                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
-                            Ok(DataType::Boolean) => Ok(Field::new(
-                                left_field.name.as_str(),
-                                DataType::Boolean,
-                            )),
-                            #[cfg(feature = "python")]
-                            Ok(DataType::Python) => Ok(Field::new(
-                                left_field.name.as_str(),
-                                DataType::Boolean,
-                            )),
-                            Ok(other_stype) => Err(DaftError::TypeError(format!(
-                                "Expected boolean supertype arguments for {op} but received {left_field} {op} {right_field} with supertype {other_stype}",
-                            ))),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {left_field} and {right_field}"))),
-                        }
+                        let result_type = left_field.dtype.logical_op(&right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 
                     // Comparison operations
@@ -280,22 +267,12 @@ impl Expr {
                     | Operator::NotEq
                     | Operator::LtEq
                     | Operator::GtEq => {
-                        // TODO: [ISSUE-688] Make Binary type comparable
-                        if left_field.dtype == DataType::Binary
-                            || right_field.dtype == DataType::Binary
-                        {
-                            return Err(DaftError::TypeError(format!(
-                                "Binary types cannot be compared: {left_field} {op} {right_field}",
-                            )));
-                        }
-                        match try_get_supertype(&left_field.dtype, &right_field.dtype) {
-                            Ok(_) => Ok(Field::new(
-                                left.to_field(schema)?.name.as_str(),
-                                DataType::Boolean,
-                            )),
-                            Err(_) => Err(DaftError::TypeError(format!("Expected left and right arguments to be castable to the same supertype for comparison {op}, but received {left_field} and {right_field}"))),
-                        }
+                        let (result_type, _comp_type) =
+                            left_field.dtype.comparison_op(&right_field.dtype)?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
                     }
+
+                    // Arithmetic operations
                     Operator::Plus => {
                         let result_type = (&left_field.dtype + &right_field.dtype)?;
                         Ok(Field::new(left_field.name.as_str(), result_type))

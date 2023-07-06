@@ -1,6 +1,7 @@
 use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
 };
+use crate::datatypes::BooleanArray;
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -164,6 +165,33 @@ macro_rules! impl_series_like_for_logical_array {
 
             fn rem(&self, rhs: &Series) -> DaftResult<Series> {
                 SeriesBinaryOps::rem(self, rhs)
+            }
+            fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::and(self, rhs)
+            }
+            fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::or(self, rhs)
+            }
+            fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::xor(self, rhs)
+            }
+            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::equal(self, rhs)
+            }
+            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::not_equal(self, rhs)
+            }
+            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::lt(self, rhs)
+            }
+            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::lte(self, rhs)
+            }
+            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::gt(self, rhs)
+            }
+            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+                SeriesBinaryOps::gte(self, rhs)
             }
         }
     };

@@ -6,6 +6,53 @@ use crate::impl_binary_trait_by_reference;
 
 use super::DataType;
 
+impl DataType {
+    pub fn logical_op(&self, other: &Self) -> DaftResult<DataType> {
+        // Whether a logical op (and, or, xor) is supported between the two types.
+        use DataType::*;
+        match (self, other) {
+            #[cfg(feature = "python")]
+            (Python, _) | (_, Python) => Ok(()),
+            (Boolean, Boolean) | (Boolean, Null) | (Null, Boolean) => Ok(()),
+            _ => Err(()),
+        }
+        .map(|()| Boolean)
+        .map_err(|()| {
+            DaftError::TypeError(format!(
+                "Cannot perform logic on types: {}, {}",
+                self, other
+            ))
+        })
+    }
+    pub fn comparison_op(&self, other: &Self) -> DaftResult<(DataType, DataType)> {
+        // Whether a comparison op is supported between the two types.
+        // Returns:
+        // - the output type,
+        // - the type at which the comparison should be performed.
+        use DataType::*;
+        match (self, other) {
+            // TODO: [ISSUE-688] Make Binary type comparable
+            (Binary, _) | (_, Binary) => Err(()),
+            (s, o) if s == o => Ok(s.to_physical()),
+            (s, o) if s.is_physical() && o.is_physical() => {
+                try_physical_supertype(s, o).map_err(|_| ())
+            }
+            // To maintain existing behaviour. TODO: cleanup
+            (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => {
+                try_physical_supertype(&Date.to_physical(), o).map_err(|_| ())
+            }
+            _ => Err(()),
+        }
+        .map(|comp_type| (Boolean, comp_type))
+        .map_err(|()| {
+            DaftError::TypeError(format!(
+                "Cannot perform comparison on types: {}, {}",
+                self, other
+            ))
+        })
+    }
+}
+
 impl Add for &DataType {
     type Output = DaftResult<DataType>;
 
@@ -132,6 +179,24 @@ impl_binary_trait_by_reference!(DataType, Sub, sub);
 impl_binary_trait_by_reference!(DataType, Mul, mul);
 impl_binary_trait_by_reference!(DataType, Div, div);
 impl_binary_trait_by_reference!(DataType, Rem, rem);
+
+pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
+    // Given two physical data types,
+    // get the physical data type that they can both be casted to.
+
+    use DataType::*;
+    try_numeric_supertype(l, r).or(match (l, r) {
+        (Null, other) | (other, Null) if other.is_physical() => Ok(other.clone()),
+        (Boolean, other) | (other, Boolean) if other.is_physical() => Ok(other.clone()),
+        #[cfg(feature = "python")]
+        (Python, _) | (_, Python) => Ok(Python),
+        (Utf8, o) | (o, Utf8) if o.is_physical() => Ok(Utf8),
+        _ => Err(DaftError::TypeError(format!(
+            "Invalid arguments to try_physical_supertype: {}, {}",
+            l, r
+        ))),
+    })
+}
 
 pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     // If given two numeric data types,
