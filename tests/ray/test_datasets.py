@@ -30,6 +30,12 @@ DATA = {
 }
 
 
+def _row_to_pydict(row: ray.data.row.TableRow | dict) -> dict:
+    if isinstance(row, dict):
+        return row
+    return row.as_pydict()
+
+
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_all_arrow(n_partitions: int):
@@ -43,7 +49,7 @@ def test_to_ray_dataset_all_arrow(n_partitions: int):
         elif RAY_VERSION >= (2, 0, 0):
             assert ds._dataset_format() == "arrow", "Ray Dataset format should be arrow"
 
-    rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
+    rows = sorted([_row_to_pydict(row) for row in ds.iter_rows()], key=lambda r: r["intcol"])
     assert rows == sorted(
         [
             {"intcol": 1, "strcol": "a", "floatcol": 1.0},
@@ -95,7 +101,7 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
                 ds._dataset_format() == "arrow"
             ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
 
-    rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
+    rows = sorted([_row_to_pydict(row) for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(
         rows,
         sorted(
@@ -127,7 +133,7 @@ def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
                 ds._dataset_format() == "simple"
             ), "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
 
-    rows = sorted([row.as_pydict() for row in ds.iter_rows()], key=lambda r: r["intcol"])
+    rows = sorted([_row_to_pydict(row) for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(
         rows,
         sorted(
