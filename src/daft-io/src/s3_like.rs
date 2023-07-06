@@ -18,7 +18,7 @@ use super::object_io::{GetResult, ObjectSource};
 use async_recursion::async_recursion;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
-use lazy_static::lazy_static;
+
 use std::collections::HashMap;
 use std::ops::Range;
 use std::string::FromUtf8Error;
@@ -174,13 +174,13 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     let default_region = client.conf().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
-        region_to_client_map: RwLock::new(client_map.into()),
+        region_to_client_map: RwLock::new(client_map),
         s3_config: config.clone(),
-        default_region: default_region,
+        default_region,
         http_client: reqwest::Client::builder()
             .build()
             .with_context(|_| UnableToCreateClientSnafu {})?,
-        anonymous: anonymous,
+        anonymous,
     })
 }
 
@@ -302,7 +302,7 @@ impl S3LikeSource {
                                 })?;
                             log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", region_name);
                             let new_region = Region::new(region_name);
-                            return self._get_impl(uri, range, &new_region).await;
+                            self._get_impl(uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -315,7 +315,7 @@ impl S3LikeSource {
                 Err(err) => Err(UnableToOpenFileSnafu { path: uri }.into_error(err).into()),
             }
         } else {
-            return Err(Error::NotAFile { path: uri.into() }.into());
+            Err(Error::NotAFile { path: uri.into() }.into())
         }
     }
 }
@@ -333,7 +333,6 @@ mod tests {
     use crate::object_io::ObjectSource;
     use crate::S3LikeSource;
     use crate::{config::S3Config, Result};
-    use tokio;
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

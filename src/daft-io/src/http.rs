@@ -2,7 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use lazy_static::lazy_static;
+
 use reqwest::header::RANGE;
 use snafu::{IntoError, ResultExt, Snafu};
 
@@ -113,7 +113,6 @@ mod tests {
     use crate::object_io::ObjectSource;
     use crate::HttpSource;
     use crate::Result;
-    use tokio;
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {
