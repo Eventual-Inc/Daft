@@ -13,7 +13,7 @@ use config::IOConfig;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
-use std::{borrow::Cow, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -91,12 +91,91 @@ impl From<Error> for DaftError {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-async fn get_source(source_type: SourceType, config: &IOConfig) -> Result<Arc<dyn ObjectSource>> {
-    Ok(match source_type {
-        SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
-        SourceType::Http => HttpSource::get_client().await? as Arc<dyn ObjectSource>,
-        SourceType::S3 => S3LikeSource::get_client(&config.s3).await? as Arc<dyn ObjectSource>,
-    })
+#[derive(Default)]
+struct IOClient {
+    source_type_to_store: tokio::sync::RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>>,
+    config: Arc<IOConfig>,
+}
+
+impl IOClient {
+    fn new(config: Arc<IOConfig>) -> Result<Self> {
+        Ok(IOClient {
+            source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
+            config,
+        })
+    }
+
+    async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
+        {
+            if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
+                return Ok(client.clone());
+            }
+        }
+        let mut w_handle = self.source_type_to_store.write().await;
+
+        if let Some(client) = w_handle.get(source_type) {
+            return Ok(client.clone());
+        }
+
+        let start = time::PreciseTime::now();
+        let new_source = match source_type {
+            SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
+            SourceType::Http => HttpSource::get_client().await? as Arc<dyn ObjectSource>,
+            SourceType::S3 => {
+                S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
+            }
+        };
+        let end = time::PreciseTime::now();
+        log::warn!("total time: {}", start.to(end));
+
+        if w_handle.get(source_type).is_none() {
+            w_handle.insert(*source_type, new_source.clone());
+        }
+        Ok(new_source)
+    }
+
+    async fn single_url_get(
+        &self,
+        input: String,
+        range: Option<Range<usize>>,
+    ) -> Result<GetResult> {
+        let (scheme, path) = parse_url(&input)?;
+        let source = self.get_source(&scheme).await?;
+        source.get(path.as_ref(), range).await
+    }
+
+    async fn single_url_download(
+        &self,
+        index: usize,
+        input: Option<String>,
+        raise_error_on_failure: bool,
+    ) -> Result<Option<bytes::Bytes>> {
+        let value = if let Some(input) = input {
+            let response = self.single_url_get(input, None).await;
+            let res = match response {
+                Ok(res) => res.bytes().await,
+                Err(err) => Err(err),
+            };
+            Some(res)
+        } else {
+            None
+        };
+
+        match value {
+            Some(Ok(bytes)) => Ok(Some(bytes)),
+            Some(Err(err)) => match raise_error_on_failure {
+                true => Err(err),
+                false => {
+                    log::warn!(
+                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
+                        err
+                    );
+                    Ok(None)
+                }
+            },
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
@@ -135,49 +214,6 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" => Ok((SourceType::S3, fixed_input)),
         _ => Err(Error::NotImplementedSource { store: scheme }),
-    }
-}
-
-async fn single_url_get(
-    input: String,
-    range: Option<Range<usize>>,
-    config: &IOConfig,
-) -> Result<GetResult> {
-    let (scheme, path) = parse_url(&input)?;
-    let source = get_source(scheme, config).await?;
-    source.get(path.as_ref(), range).await
-}
-
-async fn single_url_download(
-    index: usize,
-    input: Option<String>,
-    raise_error_on_failure: bool,
-    config: Arc<IOConfig>,
-) -> Result<Option<bytes::Bytes>> {
-    let value = if let Some(input) = input {
-        let response = single_url_get(input, None, config.as_ref()).await;
-        let res = match response {
-            Ok(res) => res.bytes().await,
-            Err(err) => Err(err),
-        };
-        Some(res)
-    } else {
-        None
-    };
-
-    match value {
-        Some(Ok(bytes)) => Ok(Some(bytes)),
-        Some(Err(err)) => match raise_error_on_failure {
-            true => Err(err),
-            false => {
-                log::warn!(
-                    "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                    err
-                );
-                Ok(None)
-            }
-        },
-        None => Ok(None),
     }
 }
 
@@ -224,14 +260,16 @@ pub fn _url_download(
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-
+    let io_client = Arc::new(IOClient::new(config)?);
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
-        let owned_config = config.clone();
+        let owned_client = io_client.clone();
         tokio::spawn(async move {
             (
                 i,
-                single_url_download(i, owned_url, raise_error_on_failure, owned_config).await,
+                owned_client
+                    .single_url_download(i, owned_url, raise_error_on_failure)
+                    .await,
             )
         })
     }))
