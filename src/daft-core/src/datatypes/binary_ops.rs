@@ -35,11 +35,11 @@ impl DataType {
             (Binary, _) | (_, Binary) => Err(()),
             (s, o) if s == o => Ok(s.to_physical()),
             (s, o) if s.is_physical() && o.is_physical() => {
-                try_physical_supertype(s, o).or_else(|_| Err(()))
+                try_physical_supertype(s, o).map_err(|_| ())
             }
             // To maintain existing behaviour. TODO: cleanup
             (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => {
-                try_physical_supertype(&Date.to_physical(), o).or_else(|_| Err(()))
+                try_physical_supertype(&Date.to_physical(), o).map_err(|_| ())
             }
             _ => Err(()),
         }

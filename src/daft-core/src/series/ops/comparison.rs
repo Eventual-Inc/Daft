@@ -1,10 +1,9 @@
 use crate::{
     array::ops::{DaftCompare, DaftLogical},
-    datatypes::{BooleanArray, BooleanType, DataType},
+    datatypes::BooleanArray,
     series::Series,
-    with_match_comparable_daft_types,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 macro_rules! call_inner {
     ($fname:ident) => {
