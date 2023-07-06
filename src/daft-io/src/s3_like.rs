@@ -15,17 +15,17 @@ use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
 
 use super::object_io::{GetResult, ObjectSource};
+use async_recursion::async_recursion;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
-use lazy_static::lazy_static;
+
 use std::collections::HashMap;
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::{Arc, RwLock};
-
-#[derive(Clone)]
 pub(crate) struct S3LikeSource {
-    s3_client: s3::Client,
+    region_to_client_map: RwLock<HashMap<Region, Arc<s3::Client>>>,
+    default_region: Region,
     s3_config: S3Config,
     http_client: reqwest::Client,
     anonymous: bool,
@@ -110,7 +110,7 @@ impl From<Error> for super::Error {
     }
 }
 
-async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
+async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
@@ -165,44 +165,54 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
     };
 
-    let client = s3::Client::from_conf(s3_conf);
+    Ok((anonymous, s3::Client::from_conf(s3_conf)))
+}
 
+async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
+    let (anonymous, client) = build_s3_client(config).await?;
+    let mut client_map = HashMap::new();
+    let default_region = client.conf().region().unwrap().clone();
+    client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
-        s3_client: client,
+        region_to_client_map: RwLock::new(client_map),
         s3_config: config.clone(),
+        default_region,
         http_client: reqwest::Client::builder()
             .build()
             .with_context(|_| UnableToCreateClientSnafu {})?,
-        anonymous: anonymous,
+        anonymous,
     })
-}
-
-lazy_static! {
-    static ref S3_CLIENT_MAP: RwLock<HashMap<S3Config, Arc<S3LikeSource>>> =
-        RwLock::new(HashMap::new());
 }
 
 impl S3LikeSource {
     pub async fn get_client(config: &S3Config) -> super::Result<Arc<S3LikeSource>> {
+        Ok(build_client(config).await?.into())
+    }
+
+    async fn get_s3_client(&self, region: &Region) -> super::Result<Arc<s3::Client>> {
         {
-            if let Some(client) = S3_CLIENT_MAP.read().unwrap().get(config) {
+            if let Some(client) = self.region_to_client_map.read().unwrap().get(region) {
                 return Ok(client.clone());
             }
         }
+        let mut new_config = self.s3_config.clone();
+        new_config.region_name = Some(region.to_string());
+        let (_, new_client) = build_s3_client(&new_config).await?;
 
-        let new_client = Arc::new(build_client(config).await?);
-
-        let mut w_handle = S3_CLIENT_MAP.write().unwrap();
-        if w_handle.get(config).is_none() {
-            w_handle.insert(config.clone(), new_client.clone());
+        let mut w_handle = self.region_to_client_map.write().unwrap();
+        if w_handle.get(region).is_none() {
+            w_handle.insert(region.clone(), new_client.into());
         }
-        Ok(w_handle.get(config).unwrap().clone())
+        Ok(w_handle.get(region).unwrap().clone())
     }
-}
 
-#[async_trait]
-impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    #[async_recursion]
+    async fn _get_impl(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        region: &Region,
+    ) -> super::Result<GetResult> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -213,7 +223,12 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
-            let request = self.s3_client.get_object().bucket(bucket).key(key);
+            let request = self
+                .get_s3_client(region)
+                .await?
+                .get_object()
+                .bucket(bucket)
+                .key(key);
             let request = match &range {
                 None => request,
                 Some(range) => request.range(format!(
@@ -264,7 +279,7 @@ impl ObjectSource for S3LikeSource {
                 Err(SdkError::ServiceError(err)) => match err.err() {
                     GetObjectError::Unhandled(unhandled) => match unhandled.meta().code() {
                         Some("PermanentRedirect") if self.s3_config.endpoint_url.is_none() => {
-                            log::warn!("S3 Region of {uri} doesn't match that of the client: {:?}, Attempting to Resolve.", self.s3_client.conf().region().map_or("", |v| v.as_ref()));
+                            log::warn!("S3 Region of {uri} doesn't match that of the client: {:?}, Attempting to Resolve.", region);
                             let head = self
                                 .http_client
                                 .head(format! {"https://{bucket}.s3.amazonaws.com"})
@@ -281,16 +296,13 @@ impl ObjectSource for S3LikeSource {
                                     header: REGION_HEADER.into(),
                                 })?;
 
-                            let mut new_config = self.s3_config.clone();
-                            new_config.region_name = Some(
-                                String::from_utf8(new_region.as_bytes().to_vec()).with_context(
-                                    |_| UnableToParseUtf8Snafu::<String> { path: uri.into() },
-                                )?,
-                            );
-
-                            let new_client = S3LikeSource::get_client(&new_config).await?;
-                            log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", new_client.s3_client.conf().region().map_or("", |v| v.as_ref()));
-                            return new_client.get(uri, range).await;
+                            let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                                .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                    path: uri.into(),
+                                })?;
+                            log::warn!("Correct S3 Region of {uri} found: {:?}. Attempting GET in that region with new client", region_name);
+                            let new_region = Region::new(region_name);
+                            self._get_impl(uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -303,8 +315,15 @@ impl ObjectSource for S3LikeSource {
                 Err(err) => Err(UnableToOpenFileSnafu { path: uri }.into_error(err).into()),
             }
         } else {
-            return Err(Error::NotAFile { path: uri.into() }.into());
+            Err(Error::NotAFile { path: uri.into() }.into())
         }
+    }
+}
+
+#[async_trait]
+impl ObjectSource for S3LikeSource {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+        self._get_impl(uri, range, &self.default_region).await
     }
 }
 
@@ -314,7 +333,6 @@ mod tests {
     use crate::object_io::ObjectSource;
     use crate::S3LikeSource;
     use crate::{config::S3Config, Result};
-    use tokio;
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

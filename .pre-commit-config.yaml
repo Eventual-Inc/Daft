@@ -78,8 +78,18 @@ repos:
   - id: cargo-check
     name: cargo check --no-default-features
     args: [--no-default-features, --profile, rust-analyzer]
+
+- repo: local
+  hooks:
   - id: clippy
-    args: [--profile, rust-analyzer]
+    name: clippy
+    description: Lint rust sources
+    entry: cargo clippy
+    language: system
+    args: [--workspace, --, -D, warnings]
+    types: [rust]
+    pass_filenames: false
+
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.10.1
