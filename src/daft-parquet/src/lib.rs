@@ -1,35 +1,54 @@
 #![feature(async_closure)]
 
-use daft_io::object_io::GetResult;
-use futures::{AsyncRead, StreamExt, TryStreamExt};
+use common_error::DaftError;
+use snafu::Snafu;
 
-struct SeekableReader {
-    uri: String,
-    pos: i64,
+pub mod metadata;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("Unable to open file {}: {}", path, source))]
+    UnableToOpenFile {
+        path: String,
+        source: daft_io::Error,
+    },
+
+    #[snafu(display("Unable to read data from file {}: {}", path, source))]
+    UnableToReadBytes {
+        path: String,
+        source: daft_io::Error,
+    },
+
+    #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
+    UnableToParseMetadata {
+        path: String,
+        source: parquet2::error::Error,
+    },
+    #[snafu(display(
+        "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
+        path,
+        footer
+    ))]
+    InvalidParquetFile { path: String, footer: Vec<u8> },
+    #[snafu(display(
+        "File: {} has a footer size: {} greater than the file size: {}",
+        path,
+        footer_size,
+        file_size
+    ))]
+    InvalidParquetFooterSize {
+        path: String,
+        footer_size: usize,
+        file_size: usize,
+    },
 }
 
-impl AsyncRead for SeekableReader {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        let io_config = daft_io::IOConfig::default();
-        let get_result = daft_io::single_url_get(self.uri, &io_config);
+impl From<Error> for DaftError {
+    fn from(err: Error) -> DaftError {
+        match err {
+            _ => DaftError::External(err.into()),
+        }
     }
 }
 
-async fn read_parquet(uri: &str) {
-    let io_config = daft_io::IOConfig::default();
-    let get_result = daft_io::single_url_get(uri.into(), &io_config)
-        .await
-        .unwrap();
-
-    let s = match get_result {
-        GetResult::Stream(s, len) => s,
-        GetResult::File(_) => todo!("file"),
-    }
-    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-
-    let val = tokio_util::io::StreamReader::new(s);
-}
+type Result<T, E = Error> = std::result::Result<T, E>;

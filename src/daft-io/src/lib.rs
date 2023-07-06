@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 pub mod python;
 
 use config::IOConfig;
+pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -31,14 +32,10 @@ use daft_core::{
 use common_error::{DaftError, DaftResult};
 use s3_like::S3LikeSource;
 
-use self::{
-    http::HttpSource,
-    local::LocalSource,
-    object_io::{GetResult, ObjectSource},
-};
+use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 
 #[derive(Debug, Snafu)]
-pub(crate) enum Error {
+pub enum Error {
     #[snafu(display("Generic {} error: {:?}", store, source))]
     Generic { store: SourceType, source: DynError },
 
@@ -92,13 +89,13 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
-struct IOClient {
+pub struct IOClient {
     source_type_to_store: tokio::sync::RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>>,
     config: Arc<IOConfig>,
 }
 
 impl IOClient {
-    fn new(config: Arc<IOConfig>) -> Result<Self> {
+    pub fn new(config: Arc<IOConfig>) -> Result<Self> {
         Ok(IOClient {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
@@ -131,7 +128,7 @@ impl IOClient {
         Ok(new_source)
     }
 
-    async fn single_url_get(
+    pub async fn single_url_get(
         &self,
         input: String,
         range: Option<Range<usize>>,
@@ -176,7 +173,7 @@ impl IOClient {
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
-pub(crate) enum SourceType {
+pub enum SourceType {
     File,
     Http,
     S3,

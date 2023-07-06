@@ -891,9 +891,11 @@ name = "daft-parquet"
 version = "0.1.0"
 dependencies = [
  "arrow2",
+ "common-error",
  "daft-io",
  "futures",
  "log",
+ "parquet2",
  "pyo3",
  "pyo3-log",
  "snafu",
@@ -1862,6 +1864,7 @@ dependencies = [
  "seq-macro",
  "snap",
  "streaming-decompression",
+ "xxhash-rust",
  "zstd",
 ]
 

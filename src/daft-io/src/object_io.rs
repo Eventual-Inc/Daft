@@ -7,7 +7,7 @@ use futures::StreamExt;
 
 use crate::local::{collect_file, LocalFile};
 
-pub(crate) enum GetResult {
+pub enum GetResult {
     File(LocalFile),
     Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
 }
