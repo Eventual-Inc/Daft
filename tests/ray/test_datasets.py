@@ -186,15 +186,21 @@ def test_from_ray_dataset_simple(n_partitions: int):
     df = daft.from_ray_dataset(ds)
     # Sort data since partition ordering in Datasets is not deterministic.
     out = df.to_pydict()
-    assert list(out.keys()) == ["value"]
-    assert sorted(out["value"]) == list(range(8))
+    key = "id" if RAY_VERSION >= (2, 5, 0) else "value"
+    assert list(out.keys()) == [key]
+    assert sorted(out[key]) == list(range(8))
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_from_ray_dataset_tensor(n_partitions: int):
     ds = ray.data.range(8)
-    ds = ds.map(lambda i: {"int": i, "np": np.ones((3, 3))}).repartition(n_partitions)
+    ds = (
+        ds.map(lambda d: {"int": d["id"], "np": np.ones((3, 3))})
+        if RAY_VERSION >= (2, 5, 0)
+        else ds.map(lambda i: {"int": i, "np": np.ones((3, 3))})
+    )
+    ds = ds.repartition(n_partitions)
 
     df = daft.from_ray_dataset(ds)
     out = df.to_pydict()
