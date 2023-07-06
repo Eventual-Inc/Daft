@@ -61,6 +61,9 @@ def test_to_ray_dataset_all_arrow(n_partitions: int):
 
 
 @pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(
+    RAY_VERSION >= (2, 5, 0), reason="Ray Datasets versions >= 2.5.0 no longer support Python objects as rows"
+)
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_py(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
