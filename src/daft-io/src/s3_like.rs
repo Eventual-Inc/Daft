@@ -22,9 +22,9 @@ use aws_sdk_s3::primitives::ByteStreamError;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::string::FromUtf8Error;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 pub(crate) struct S3LikeSource {
-    region_to_client_map: RwLock<HashMap<Region, Arc<s3::Client>>>,
+    region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     default_region: Region,
     s3_config: S3Config,
     http_client: reqwest::Client,
@@ -174,7 +174,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     let default_region = client.conf().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
-        region_to_client_map: RwLock::new(client_map),
+        region_to_client_map: tokio::sync::RwLock::new(client_map),
         s3_config: config.clone(),
         default_region,
         http_client: reqwest::Client::builder()
@@ -191,15 +191,21 @@ impl S3LikeSource {
 
     async fn get_s3_client(&self, region: &Region) -> super::Result<Arc<s3::Client>> {
         {
-            if let Some(client) = self.region_to_client_map.read().unwrap().get(region) {
+            if let Some(client) = self.region_to_client_map.read().await.get(region) {
                 return Ok(client.clone());
             }
         }
+
+        let mut w_handle = self.region_to_client_map.write().await;
+
+        if let Some(client) = w_handle.get(region) {
+            return Ok(client.clone());
+        }
+
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
         let (_, new_client) = build_s3_client(&new_config).await?;
 
-        let mut w_handle = self.region_to_client_map.write().unwrap();
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
         }
