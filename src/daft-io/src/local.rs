@@ -1,4 +1,4 @@
-use std::io::{Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 
