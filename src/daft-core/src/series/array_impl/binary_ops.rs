@@ -98,7 +98,7 @@ macro_rules! physical_logic_op {
                 _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanType, $op),
             }
         } else {
-            unimplemented!()
+            unreachable!()
         }
     }};
 }
@@ -119,7 +119,7 @@ macro_rules! physical_compare_op {
                 }),
             }
         } else {
-            unimplemented!()
+            unreachable!()
         }
     }};
 }

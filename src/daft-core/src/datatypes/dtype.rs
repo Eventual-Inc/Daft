@@ -41,6 +41,9 @@ pub enum DataType {
     Float32,
     /// A [`f64`]
     Float64,
+    /// Fixed-precision decimal type.
+    /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
+    Decimal128(usize, usize),
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
     ///
     /// Time is measured as a Unix epoch, counting the seconds from
@@ -125,6 +128,7 @@ impl DataType {
             DataType::Float16 => Ok(ArrowType::Float16),
             DataType::Float32 => Ok(ArrowType::Float32),
             DataType::Float64 => Ok(ArrowType::Float64),
+            DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
             DataType::Timestamp(unit, timezone) => {
                 Ok(ArrowType::Timestamp(unit.to_arrow()?, timezone.clone()))
             }
@@ -363,6 +367,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::Duration(timeunit) => DataType::Duration(timeunit.into()),
             ArrowType::Binary | ArrowType::LargeBinary => DataType::Binary,
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
+            ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
                 DataType::List(Box::new(field.as_ref().into()))
             }
