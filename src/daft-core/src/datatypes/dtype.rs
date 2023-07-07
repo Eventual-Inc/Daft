@@ -294,7 +294,8 @@ impl DataType {
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
-            DataType::Date
+            DataType::Decimal128(..)
+                | DataType::Date
                 | DataType::Timestamp(..)
                 | DataType::Duration(..)
                 | DataType::Embedding(..)
