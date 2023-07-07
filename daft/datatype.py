@@ -180,6 +180,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.null())
 
     @classmethod
+    def decimal128(cls, precision: int, scale: int) -> DataType:
+        """Fixed-precision decimal."""
+        return cls._from_pydatatype(PyDataType.decimal128(precision, scale))
+
+    @classmethod
     def date(cls) -> DataType:
         """Create a Date DataType: A date with a year, month and day"""
         return cls._from_pydatatype(PyDataType.date())
@@ -314,6 +319,8 @@ class DataType:
             return cls.bool()
         elif pa.types.is_null(arrow_type):
             return cls.null()
+        elif pa.types.is_decimal128(arrow_type):
+            return cls.decimal128(arrow_type.precision, arrow_type.scale)
         elif pa.types.is_date32(arrow_type):
             return cls.date()
         elif pa.types.is_timestamp(arrow_type):
