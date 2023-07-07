@@ -107,6 +107,7 @@ impl_daft_arrow_datatype!(ExtensionType, Unknown);
 
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
+impl_daft_non_arrow_datatype!(Int128Type, Int128);
 
 impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DateType, Date, Int32Type);
@@ -241,6 +242,7 @@ pub type Int8Array = DataArray<Int8Type>;
 pub type Int16Array = DataArray<Int16Type>;
 pub type Int32Array = DataArray<Int32Type>;
 pub type Int64Array = DataArray<Int64Type>;
+pub type Int128Array = DataArray<Int128Type>;
 pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;

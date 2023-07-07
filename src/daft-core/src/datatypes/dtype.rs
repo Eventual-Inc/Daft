@@ -25,6 +25,8 @@ pub enum DataType {
     Int32,
     /// An [`i64`]
     Int64,
+    /// An [`i128`]
+    Int128,
     /// An [`u8`]
     UInt8,
     /// An [`u16`]
@@ -115,6 +117,7 @@ impl DataType {
             DataType::Int16 => Ok(ArrowType::Int16),
             DataType::Int32 => Ok(ArrowType::Int32),
             DataType::Int64 => Ok(ArrowType::Int64),
+            DataType::Int128 => Ok(ArrowType::Decimal(32, 32)),
             DataType::UInt8 => Ok(ArrowType::UInt8),
             DataType::UInt16 => Ok(ArrowType::UInt16),
             DataType::UInt32 => Ok(ArrowType::UInt32),
@@ -214,6 +217,7 @@ impl DataType {
              | DataType::Int16
              | DataType::Int32
              | DataType::Int64
+             | DataType::Int128
              | DataType::UInt8
              | DataType::UInt16
              | DataType::UInt32
@@ -234,6 +238,7 @@ impl DataType {
                 | DataType::Int16
                 | DataType::Int32
                 | DataType::Int64
+                | DataType::Int128
                 | DataType::UInt8
                 | DataType::UInt16
                 | DataType::UInt32
