@@ -253,7 +253,6 @@ pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
-pub type Decimal128Array = DataArray<Decimal128Type>;
 pub type FixedSizeListArray = DataArray<FixedSizeListType>;
 pub type ListArray = DataArray<ListType>;
 pub type StructArray = DataArray<StructType>;
