@@ -49,7 +49,7 @@ In this example, we load images from an AWS S3 bucket's URLs and resize each ima
 
 .. code:: python
 
-    import daft as daft
+    import daft
 
     # Load a dataframe from filepaths in an S3 bucket
     df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
