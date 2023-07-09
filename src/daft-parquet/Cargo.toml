@@ -1,7 +1,9 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
+daft-table = {path = "../daft-table", default-features = false}
 futures = "0.3.28"
 log = {workspace = true}
 parquet2 = "0.17.2"

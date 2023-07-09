@@ -7,7 +7,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::datatypes::Field;
+use crate::{array::from, datatypes::Field, utils::arrow};
 
 use common_error::{DaftError, DaftResult};
 
@@ -122,5 +122,14 @@ impl Display for Schema {
             .collect();
         table.add_row(header);
         write!(f, "{table}")
+    }
+}
+
+impl TryFrom<&arrow2::datatypes::Schema> for Schema {
+    type Error = DaftError;
+    fn try_from(arrow_schema: &arrow2::datatypes::Schema) -> DaftResult<Self> {
+        let fields = &arrow_schema.fields;
+        let daft_fields: Vec<Field> = fields.iter().map(|f| f.into()).collect();
+        Self::new(daft_fields)
     }
 }

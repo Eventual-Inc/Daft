@@ -892,7 +892,9 @@ version = "0.1.0"
 dependencies = [
  "arrow2",
  "common-error",
+ "daft-core",
  "daft-io",
+ "daft-table",
  "futures",
  "log",
  "parquet2",
