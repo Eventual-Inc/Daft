@@ -1,22 +1,14 @@
 use std::sync::Arc;
 
-use arrow2::{
-    buffer,
-    io::parquet::read::{column_iter_to_arrays, infer_schema, to_deserializer},
-};
+use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
-use futures::{pin_mut, StreamExt};
+use futures::StreamExt;
 use parquet2::{
-    compression,
     metadata::FileMetaData,
-    page::CompressedPage,
-    read::{
-        deserialize_metadata, get_page_iterator, get_page_stream_from_column_start,
-        BasicDecompressor, Decompressor, PageReader,
-    },
+    read::{deserialize_metadata, BasicDecompressor, PageReader},
 };
 use snafu::ResultExt;
 

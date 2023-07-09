@@ -7,7 +7,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{array::from, datatypes::Field, utils::arrow};
+use crate::datatypes::Field;
 
 use common_error::{DaftError, DaftResult};
 
