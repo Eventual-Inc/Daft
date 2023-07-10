@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::ops::{DaftCompare, DaftLogical},
-    datatypes::{BooleanType, Float64Type, Utf8Type},
+    datatypes::{BooleanType, Float64Type, Utf8Type, Int128Array, logical::Decimal128Array},
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
 };
@@ -199,6 +199,7 @@ impl SeriesBinaryOps for ArrayWrapper<Int8Array> {}
 impl SeriesBinaryOps for ArrayWrapper<Int16Array> {}
 impl SeriesBinaryOps for ArrayWrapper<Int32Array> {}
 impl SeriesBinaryOps for ArrayWrapper<Int64Array> {}
+impl SeriesBinaryOps for ArrayWrapper<Int128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<UInt8Array> {}
 impl SeriesBinaryOps for ArrayWrapper<UInt16Array> {}
 impl SeriesBinaryOps for ArrayWrapper<UInt32Array> {}
@@ -210,6 +211,7 @@ impl SeriesBinaryOps for ArrayWrapper<FixedSizeListArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ListArray> {}
 impl SeriesBinaryOps for ArrayWrapper<StructArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ExtensionArray> {}
+impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<DateArray> {}
 impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {

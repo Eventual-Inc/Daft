@@ -230,6 +230,7 @@ macro_rules! with_match_daft_logical_types {(
     use $crate::datatypes::*;
 
     match $key_type {
+        Decimal128(..) => __with_ty__! { Decimal128Type },
         Date => __with_ty__! { DateType },
         Duration(..) => __with_ty__! { DurationType },
         Timestamp(..) => __with_ty__! { TimestampType },

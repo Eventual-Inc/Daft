@@ -14,8 +14,8 @@ use crate::series::Field;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
+        StructArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
@@ -327,6 +327,7 @@ impl_series_like_for_data_array!(Int8Array);
 impl_series_like_for_data_array!(Int16Array);
 impl_series_like_for_data_array!(Int32Array);
 impl_series_like_for_data_array!(Int64Array);
+impl_series_like_for_data_array!(Int128Array);
 impl_series_like_for_data_array!(UInt8Array);
 impl_series_like_for_data_array!(UInt16Array);
 impl_series_like_for_data_array!(UInt32Array);
