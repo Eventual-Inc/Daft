@@ -4,7 +4,7 @@ use common_error::DaftError;
 use snafu::Snafu;
 
 pub mod metadata;
-
+pub mod read;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Unable to open file {}: {}", path, source))]

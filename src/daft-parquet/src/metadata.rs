@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_io::IOClient;
+use daft_io::{config::IOConfig, get_io_client, get_runtime, IOClient};
 use daft_table::Table;
 use futures::StreamExt;
 use parquet2::{
@@ -18,7 +18,7 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
-async fn read_parquet_metadata(
+pub async fn read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,
@@ -70,65 +70,6 @@ async fn read_parquet_metadata(
     deserialize_metadata(reader, max_size).context(UnableToParseMetadataSnafu { path: uri })
 }
 
-async fn read_row_group(
-    uri: &str,
-    row_group: usize,
-    metadata: &FileMetaData,
-    io_client: Arc<IOClient>,
-) -> DaftResult<Table> {
-    let rg = metadata.row_groups.get(row_group).unwrap();
-
-    let columns = rg.columns();
-
-    let arrow_schema = infer_schema(metadata).unwrap();
-    let daft_schema = daft_core::schema::Schema::try_from(&arrow_schema).unwrap();
-    let mut daft_series = Vec::with_capacity(columns.len());
-    for (ii, col) in columns.iter().enumerate() {
-        let (start, len) = col.byte_range();
-        let end = start + len;
-
-        // should be async
-        let get_result = io_client
-            .single_url_get(uri.into(), Some(start as usize..end as usize))
-            .await
-            .unwrap();
-
-        // // should stream this instead
-        let bytes = get_result.bytes().await.unwrap();
-        let buffer = bytes.to_vec();
-        let pages = PageReader::new(
-            std::io::Cursor::new(buffer),
-            col,
-            Arc::new(|_, _| true),
-            vec![],
-            4 * 1024 * 1024,
-        );
-
-        let decom = BasicDecompressor::new(pages, vec![]);
-        let ptype = &col.descriptor().descriptor.primitive_type;
-
-        let field = &arrow_schema.fields[ii];
-        let arr_iter = column_iter_to_arrays(
-            vec![decom],
-            vec![ptype],
-            field.clone(),
-            None,
-            col.num_values() as usize,
-        )
-        .unwrap();
-        let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>().unwrap();
-        let ser = all_arrays
-            .into_iter()
-            .map(|a| Series::try_from((field.name.as_str(), cast_array_for_daft_if_needed(a))))
-            .collect::<DaftResult<Vec<Series>>>()
-            .unwrap();
-
-        let series = Series::concat(ser.iter().collect::<Vec<_>>().as_ref()).unwrap();
-        daft_series.push(series);
-    }
-    Table::new(daft_schema, daft_series)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -136,7 +77,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_io::IOClient;
 
-    use super::{read_parquet_metadata, read_row_group};
+    use super::read_parquet_metadata;
 
     #[tokio::test]
     async fn test_parquet_metadata_from_s3() -> DaftResult<()> {
@@ -144,12 +85,7 @@ mod tests {
         let size = 9882;
         let io_client = Arc::new(IOClient::default());
         let metadata = read_parquet_metadata(file, size, io_client.clone()).await?;
-        // assert_eq!(metadata.num_rows, 100);
-
-        println!(
-            "{}",
-            read_row_group(file, 0, &metadata, io_client.clone()).await?
-        );
+        assert_eq!(metadata.num_rows, 100);
 
         Ok(())
     }

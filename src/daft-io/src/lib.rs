@@ -212,13 +212,43 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 
 lazy_static! {
-    static ref THREADED_RUNTIME: tokio::runtime::Runtime =
+    static ref THREADED_RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .unwrap();
+            .unwrap()
+    );
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<IOConfig, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
+}
+
+pub fn get_io_client(config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+    let read_handle = CLIENT_CACHE.blocking_read();
+    if let Some(client) = read_handle.get(&config) {
+        Ok(client.clone())
+    } else {
+        drop(read_handle);
+
+        let mut w_handle = CLIENT_CACHE.blocking_write();
+        if let Some(client) = w_handle.get(&config) {
+            Ok(client.clone())
+        } else {
+            let client = Arc::new(IOClient::new(config.clone())?);
+            w_handle.insert(config.as_ref().clone(), client.clone());
+            Ok(client)
+        }
+    }
+}
+
+pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
+    match multi_thread {
+        false => Ok(Arc::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?,
+        )),
+        true => Ok(THREADED_RUNTIME.clone()),
+    }
 }
 
 pub fn _url_download(
@@ -237,42 +267,13 @@ pub fn _url_download(
         }
     );
 
-    let _maybe_local_runtime: Option<tokio::runtime::Runtime>;
-
-    let runtime_handle = match multi_thread {
-        false => {
-            _maybe_local_runtime = Some(
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()?,
-            );
-            let val = _maybe_local_runtime.as_ref().unwrap();
-            val
-        }
-        _ => &THREADED_RUNTIME,
-    };
+    let runtime_handle = get_runtime(multi_thread)?;
     let _rt_guard = runtime_handle.enter();
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = {
-        let read_handle = CLIENT_CACHE.blocking_read();
-        if let Some(client) = read_handle.get(&config) {
-            client.clone()
-        } else {
-            drop(read_handle);
-
-            let mut w_handle = CLIENT_CACHE.blocking_write();
-            if let Some(client) = w_handle.get(&config) {
-                client.clone()
-            } else {
-                let client = Arc::new(IOClient::new(config.clone())?);
-                w_handle.insert(config.as_ref().clone(), client.clone());
-                client
-            }
-        }
-    };
+    let io_client = get_io_client(config)?;
 
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
