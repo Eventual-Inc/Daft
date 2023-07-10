@@ -5,10 +5,9 @@ use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::{config::IOConfig, get_io_client, get_runtime, IOClient};
 use daft_table::Table;
-use futures::StreamExt;
 use parquet2::{
     metadata::FileMetaData,
-    read::{deserialize_metadata, BasicDecompressor, PageReader},
+    read::{BasicDecompressor, PageReader},
 };
 
 use crate::metadata::read_parquet_metadata;
@@ -91,7 +90,7 @@ pub fn read_parquet(uri: &str, size: Option<usize>, io_config: Arc<IOConfig>) ->
     runtime_handle.block_on(async {
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
         let all_row_groups: Vec<_> = (0..metadata.row_groups.len()).collect();
-        Ok(read_row_groups(uri, all_row_groups.as_slice(), &metadata, io_client.clone()).await?)
+        read_row_groups(uri, all_row_groups.as_slice(), &metadata, io_client.clone()).await
     })
 }
 
@@ -100,7 +99,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::{config::IOConfig, IOClient};
+    use daft_io::config::IOConfig;
 
     use super::read_parquet;
     #[test]

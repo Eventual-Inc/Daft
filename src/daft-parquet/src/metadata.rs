@@ -1,15 +1,8 @@
 use std::sync::Arc;
 
-use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
-use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_io::{config::IOConfig, get_io_client, get_runtime, IOClient};
-use daft_table::Table;
-use futures::StreamExt;
-use parquet2::{
-    metadata::FileMetaData,
-    read::{deserialize_metadata, BasicDecompressor, PageReader},
-};
+use daft_io::IOClient;
+
+use parquet2::{metadata::FileMetaData, read::deserialize_metadata};
 use snafu::ResultExt;
 
 use crate::{Error, UnableToOpenFileSnafu, UnableToParseMetadataSnafu, UnableToReadBytesSnafu};
@@ -23,7 +16,6 @@ pub async fn read_parquet_metadata(
     size: usize,
     io_client: Arc<IOClient>,
 ) -> super::Result<FileMetaData> {
-    const HEADER_SIZE: usize = PARQUET_MAGIC.len();
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
 
