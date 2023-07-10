@@ -10,7 +10,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use crate::array::DataArray;
 use arrow2::{
-    compute::{arithmetics::basic::NativeArithmetics, comparison::Simd8},
+    compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
 pub use binary_ops::try_physical_supertype;
@@ -135,7 +135,6 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + ToPrimitive
-    + NativeArithmetics
 {
     type DAFTTYPE: DaftNumericType;
 }

@@ -77,6 +77,7 @@ where
 impl<T> Add for &DataArray<T>
 where
     T: DaftNumericType,
+    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn add(self, rhs: Self) -> Self::Output {
@@ -94,6 +95,7 @@ impl Add for &Utf8Array {
 impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
+    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -104,6 +106,7 @@ where
 impl<T> Mul for &DataArray<T>
 where
     T: DaftNumericType,
+    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn mul(self, rhs: Self) -> Self::Output {
@@ -148,6 +151,7 @@ where
 impl<T> Rem for &DataArray<T>
 where
     T: DaftNumericType,
+    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
