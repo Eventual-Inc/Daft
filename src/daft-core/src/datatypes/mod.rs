@@ -213,7 +213,11 @@ impl DaftNumericType for Float64Type {
     type Native = f64;
 }
 
-pub trait DaftIntegerType: DaftNumericType {}
+pub trait DaftIntegerType: DaftNumericType
+where
+    Self::Native: Ord,
+{
+}
 
 impl DaftIntegerType for UInt8Type {}
 impl DaftIntegerType for UInt16Type {}

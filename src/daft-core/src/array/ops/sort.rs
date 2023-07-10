@@ -63,7 +63,7 @@ pub fn build_multi_array_bicompare(
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: arrow2::types::Index,
+    <T as DaftNumericType>::Native: Ord,
 {
     pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
     where
