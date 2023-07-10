@@ -233,7 +233,5 @@ def test_series_canonical_tensor_extension_type_size_bytes(dtype, size, with_nul
 
     s = Series.from_arrow(data)
 
-    assert s.datatype() == DataType.extension(
-        "arrow.fixed_shape_tensor", DataType.from_arrow_type(data.type.storage_type), '{"shape":[2,2]}'
-    )
+    assert s.datatype() == DataType.tensor(DataType.from_arrow_type(data.type.storage_type.value_type), (2, 2))
     assert s.size_bytes() == get_total_buffer_size(data)

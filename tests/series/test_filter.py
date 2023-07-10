@@ -153,7 +153,7 @@ def test_series_filter_on_canonical_tensor_extension_array() -> None:
 
     assert s.datatype() == result.datatype()
     expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
-    assert result.to_pylist() == expected
+    np.testing.assert_equal(result.to_pylist(), expected)
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)

@@ -397,8 +397,8 @@ def test_series_if_else_canonical_tensor_extension_type(if_true, if_false, expec
 
     result = predicate_series.if_else(if_true_series, if_false_series)
 
-    assert result.datatype() == DataType.extension(
-        "arrow.fixed_shape_tensor", DataType.from_arrow_type(if_true_arrow.type.storage_type), '{"shape":[2,2]}'
+    assert result.datatype() == DataType.tensor(
+        DataType.from_arrow_type(if_true_arrow.type.storage_type.value_type), (2, 2)
     )
     result_arrow = result.to_arrow()
     np.testing.assert_equal(result_arrow.to_numpy_ndarray(), expected)

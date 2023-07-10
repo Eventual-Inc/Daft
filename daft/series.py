@@ -71,6 +71,9 @@ class Series:
                 return series.cast(DataType.from_arrow_type(array.type))
             elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
                 return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+            elif isinstance(array.type, pa.FixedShapeTensorType):
+                series = Series.from_arrow(array.storage, name=name)
+                return series.cast(DataType.from_arrow_type(array.type))
             else:
                 pys = PySeries.from_arrow(name, array)
                 return Series._from_pyseries(pys)
@@ -266,6 +269,10 @@ class Series:
                 # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
                 # elements have the same number of dimensions, without going through pylist roundtrip.
                 return ArrowTensorArray.from_numpy(self.to_pylist())
+        elif dtype._is_fixed_shape_tensor_type() and hasattr(pa, "fixed_shape_tensor"):
+            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
+            arrow_series = self._series.to_arrow()
+            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
         else:
             return self._series.to_arrow()
 

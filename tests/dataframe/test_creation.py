@@ -195,16 +195,15 @@ def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -
 )
 def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    shape = (2, 2)
+    dtype = pa.fixed_shape_tensor(pa.int64(), shape)
     storage = pa.array([list(range(4 * i, 4 * (i + 1))) for i in range(len(valid_data))], pa.list_(pa.int64(), 4))
-    ata = pa.ExtensionArray.from_storage(dtype, storage)
-    pydict["obj"] = ata
+    fst = pa.ExtensionArray.from_storage(dtype, storage)
+    pydict["tensor"] = fst
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
-    assert df.schema()["obj"].dtype == DataType.extension(
-        "arrow.fixed_shape_tensor", DataType.from_arrow_type(dtype.storage_type), '{"shape":[2,2]}'
-    )
+    assert df.schema()["tensor"].dtype == DataType.tensor(DataType.int64(), shape)
     casted_field = t.schema.field("variety").with_type(pa.large_string())
     expected = t.cast(t.schema.set(t.schema.get_field_index("variety"), casted_field))
     # Check roundtrip.

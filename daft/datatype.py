@@ -370,6 +370,9 @@ class DataType:
             scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
             shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
             return cls.tensor(scalar_dtype, shape)
+        elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
+            scalar_dtype = cls.from_arrow_type(arrow_type.value_type)
+            return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
         elif isinstance(arrow_type, pa.PyExtensionType):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(

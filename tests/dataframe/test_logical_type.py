@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 from PIL import Image
 
 import daft
 from daft import DataType, Series, col
 from daft.datatype import DaftExtension
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 def test_embedding_type_df() -> None:
@@ -85,7 +88,7 @@ def test_fixed_shape_tensor_type_df() -> None:
         np.arange(12, 24).reshape(shape),
         None,
     ]
-    df = daft.from_pydict({"index": np.arange(len(data)), "tensor": Series.from_pylist(data, pyobj="force")})
+    df = daft.from_pydict({"index": np.arange(len(data)), "tensor": Series.from_pylist(data, pyobj="allow")})
 
     target = DataType.tensor(DataType.int64(), shape)
     df = df.select(col("index"), col("tensor").cast(target))
@@ -93,4 +96,7 @@ def test_fixed_shape_tensor_type_df() -> None:
     df = df.sort("index")
     df = df.collect()
     arrow_table = df.to_arrow()
-    assert isinstance(arrow_table["tensor"].type, DaftExtension)
+    if ARROW_VERSION >= (12, 0, 0):
+        assert arrow_table["tensor"].type == pa.fixed_shape_tensor(pa.int64(), shape)
+    else:
+        assert isinstance(arrow_table["tensor"].type, DaftExtension)

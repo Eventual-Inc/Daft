@@ -137,8 +137,8 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
 
     concated = Series.concat(series)
 
-    assert concated.datatype() == DataType.extension(
-        "arrow.fixed_shape_tensor", DataType.from_arrow_type(ext_arrays[0].type.storage_type), '{"shape":[2,2]}'
+    assert concated.datatype() == DataType.tensor(
+        DataType.from_arrow_type(ext_arrays[0].type.storage_type.value_type), (2, 2)
     )
     expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
     concated_arrow = concated.to_arrow()
