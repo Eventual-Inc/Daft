@@ -21,6 +21,7 @@ pub mod pylib {
         daft_dsl::register_modules(_py, m)?;
         daft_table::register_modules(_py, m)?;
         daft_io::register_modules(_py, m)?;
+        daft_parquet::register_modules(_py, m)?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;

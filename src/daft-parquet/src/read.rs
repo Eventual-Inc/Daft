@@ -81,7 +81,7 @@ async fn read_row_groups(
 }
 
 pub fn read_parquet(uri: &str, size: Option<usize>, io_config: Arc<IOConfig>) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(false)?;
+    let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
 
     let io_client = get_io_client(io_config)?;

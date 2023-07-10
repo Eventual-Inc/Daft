@@ -13,6 +13,10 @@ snafu = {workspace = true}
 tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-util = "0.7.8"
 
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python"]
+
 [package]
 edition = {workspace = true}
 name = "daft-parquet"

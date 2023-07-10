@@ -5,6 +5,12 @@ use snafu::Snafu;
 
 pub mod metadata;
 pub mod read;
+
+#[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Unable to open file {}: {}", path, source))]
