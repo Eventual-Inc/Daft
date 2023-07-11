@@ -96,6 +96,27 @@ impl ObjectSource for LocalSource {
             .into());
         }
     }
+
+    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+        const TO_STRIP: &str = "file://";
+        if let Some(p) = uri.strip_prefix(TO_STRIP) {
+            let path = std::path::Path::new(p);
+            let file = tokio::fs::File::open(path)
+                .await
+                .context(UnableToOpenFileSnafu {
+                    path: path.to_string_lossy(),
+                })?;
+            let metadata = file.metadata().await.context(UnableToOpenFileSnafu {
+                path: path.to_string_lossy(),
+            })?;
+            return Ok(metadata.len() as usize);
+        } else {
+            return Err(Error::InvalidFilePath {
+                path: uri.to_string(),
+            }
+            .into());
+        }
+    }
 }
 
 pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
@@ -194,6 +215,9 @@ mod tests {
             .await?;
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
+
+        let size_from_get_size = client.get_size(parquet_file_path.as_str()).await?;
+        assert_eq!(size_from_get_size, all_bytes.len());
 
         Ok(())
     }

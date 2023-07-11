@@ -51,4 +51,5 @@ pub(crate) trait ObjectSource: Sync + Send {
     async fn get_range(&self, uri: &str, range: Range<usize>) -> super::Result<GetResult> {
         self.get(uri, Some(range)).await
     }
+    async fn get_size(&self, uri: &str) -> super::Result<usize>;
 }
