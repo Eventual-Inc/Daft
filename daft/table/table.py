@@ -7,6 +7,7 @@ from loguru import logger
 
 from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
+from daft.daft import read_parquet as _read_parquet
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -34,6 +35,8 @@ if TYPE_CHECKING:
     import numpy as np
     import pandas as pd
     import pyarrow as pa
+
+    from daft.io import IOConfig
 
 
 class Table:
@@ -337,3 +340,7 @@ class Table:
     def __reduce__(self) -> tuple:
         names = self.column_names()
         return Table.from_pydict, ({name: self.get_column(name) for name in names},)
+
+    @classmethod
+    def read_parquet(cls, path: str, file_size: None | int = None, io_config: IOConfig | None = None) -> Table:
+        return _read_parquet(path, file_size, io_config)

@@ -85,9 +85,12 @@ pub fn read_parquet(uri: &str, size: Option<usize>, io_config: Arc<IOConfig>) ->
     let _rt_guard = runtime_handle.enter();
 
     let io_client = get_io_client(io_config)?;
-    let size = size.unwrap();
 
     runtime_handle.block_on(async {
+        let size = match size {
+            Some(size) => size,
+            None => io_client.single_url_get_size(uri.into()).await?,
+        };
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
         let all_row_groups: Vec<_> = (0..metadata.row_groups.len()).collect();
         read_row_groups(uri, all_row_groups.as_slice(), &metadata, io_client.clone()).await
@@ -105,9 +108,8 @@ mod tests {
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
-        let size = 9882;
         let io_config = Arc::new(IOConfig::default());
-        let table = read_parquet(file, Some(size), io_config)?;
+        let table = read_parquet(file, None, io_config)?;
         assert_eq!(table.len(), 100);
 
         Ok(())

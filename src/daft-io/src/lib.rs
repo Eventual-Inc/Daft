@@ -138,6 +138,12 @@ impl IOClient {
         source.get(path.as_ref(), range).await
     }
 
+    pub async fn single_url_get_size(&self, input: String) -> Result<usize> {
+        let (scheme, path) = parse_url(&input)?;
+        let source = self.get_source(&scheme).await?;
+        source.get_size(path.as_ref()).await
+    }
+
     async fn single_url_download(
         &self,
         index: usize,
