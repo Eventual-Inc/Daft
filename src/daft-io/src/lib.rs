@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 pub mod python;
 
 use config::IOConfig;
+pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -31,14 +32,10 @@ use daft_core::{
 use common_error::{DaftError, DaftResult};
 use s3_like::S3LikeSource;
 
-use self::{
-    http::HttpSource,
-    local::LocalSource,
-    object_io::{GetResult, ObjectSource},
-};
+use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 
 #[derive(Debug, Snafu)]
-pub(crate) enum Error {
+pub enum Error {
     #[snafu(display("Generic {} error: {:?}", store, source))]
     Generic { store: SourceType, source: DynError },
 
@@ -92,13 +89,13 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]
-struct IOClient {
+pub struct IOClient {
     source_type_to_store: tokio::sync::RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>>,
     config: Arc<IOConfig>,
 }
 
 impl IOClient {
-    fn new(config: Arc<IOConfig>) -> Result<Self> {
+    pub fn new(config: Arc<IOConfig>) -> Result<Self> {
         Ok(IOClient {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
@@ -131,7 +128,7 @@ impl IOClient {
         Ok(new_source)
     }
 
-    async fn single_url_get(
+    pub async fn single_url_get(
         &self,
         input: String,
         range: Option<Range<usize>>,
@@ -139,6 +136,12 @@ impl IOClient {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
         source.get(path.as_ref(), range).await
+    }
+
+    pub async fn single_url_get_size(&self, input: String) -> Result<usize> {
+        let (scheme, path) = parse_url(&input)?;
+        let source = self.get_source(&scheme).await?;
+        source.get_size(path.as_ref()).await
     }
 
     async fn single_url_download(
@@ -176,7 +179,7 @@ impl IOClient {
 }
 
 #[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
-pub(crate) enum SourceType {
+pub enum SourceType {
     File,
     Http,
     S3,
@@ -215,13 +218,43 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 
 lazy_static! {
-    static ref THREADED_RUNTIME: tokio::runtime::Runtime =
+    static ref THREADED_RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .unwrap();
+            .unwrap()
+    );
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<IOConfig, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
+}
+
+pub fn get_io_client(config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+    let read_handle = CLIENT_CACHE.blocking_read();
+    if let Some(client) = read_handle.get(&config) {
+        Ok(client.clone())
+    } else {
+        drop(read_handle);
+
+        let mut w_handle = CLIENT_CACHE.blocking_write();
+        if let Some(client) = w_handle.get(&config) {
+            Ok(client.clone())
+        } else {
+            let client = Arc::new(IOClient::new(config.clone())?);
+            w_handle.insert(config.as_ref().clone(), client.clone());
+            Ok(client)
+        }
+    }
+}
+
+pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
+    match multi_thread {
+        false => Ok(Arc::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?,
+        )),
+        true => Ok(THREADED_RUNTIME.clone()),
+    }
 }
 
 pub fn _url_download(
@@ -240,42 +273,13 @@ pub fn _url_download(
         }
     );
 
-    let _maybe_local_runtime: Option<tokio::runtime::Runtime>;
-
-    let runtime_handle = match multi_thread {
-        false => {
-            _maybe_local_runtime = Some(
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()?,
-            );
-            let val = _maybe_local_runtime.as_ref().unwrap();
-            val
-        }
-        _ => &THREADED_RUNTIME,
-    };
+    let runtime_handle = get_runtime(multi_thread)?;
     let _rt_guard = runtime_handle.enter();
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = {
-        let read_handle = CLIENT_CACHE.blocking_read();
-        if let Some(client) = read_handle.get(&config) {
-            client.clone()
-        } else {
-            drop(read_handle);
-
-            let mut w_handle = CLIENT_CACHE.blocking_write();
-            if let Some(client) = w_handle.get(&config) {
-                client.clone()
-            } else {
-                let client = Arc::new(IOClient::new(config.clone())?);
-                w_handle.insert(config.as_ref().clone(), client.clone());
-                client
-            }
-        }
-    };
+    let io_client = get_io_client(config)?;
 
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());

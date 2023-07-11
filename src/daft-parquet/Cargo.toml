@@ -1,0 +1,22 @@
+[dependencies]
+arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-table = {path = "../daft-table", default-features = false}
+futures = {workspace = true}
+log = {workspace = true}
+parquet2 = "0.17.2"
+pyo3 = {workspace = true, optional = true}
+pyo3-log = {workspace = true, optional = true}
+snafu = {workspace = true}
+tokio = {workspace = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python"]
+
+[package]
+edition = {workspace = true}
+name = "daft-parquet"
+version = {workspace = true}

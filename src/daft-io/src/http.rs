@@ -1,9 +1,9 @@
-use std::{ops::Range, sync::Arc};
+use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 
-use reqwest::header::RANGE;
+use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 
 use super::object_io::{GetResult, ObjectSource};
@@ -22,6 +22,9 @@ enum Error {
         source: reqwest::Error,
     },
 
+    #[snafu(display("Unable to determine size of {}", path))]
+    UnableToDetermineSize { path: String },
+
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
@@ -36,6 +39,16 @@ enum Error {
         path: String,
         source: url::ParseError,
     },
+
+    #[snafu(display(
+        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
+    ))]
+    UnableToParseUtf8 { path: String, source: FromUtf8Error },
+
+    #[snafu(display(
+        "Unable to parse data as Integer while reading header for file: {path}. {source}"
+    ))]
+    UnableToParseInteger { path: String, source: ParseIntError },
 }
 
 pub(crate) struct HttpSource {
@@ -106,6 +119,30 @@ impl ObjectSource for HttpSource {
         });
         Ok(GetResult::Stream(stream.boxed(), size_bytes))
     }
+
+    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+        let request = self.client.head(uri);
+        let response = request
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+        let response = response
+            .error_for_status()
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        let headers = response.headers();
+        match headers.get(CONTENT_LENGTH) {
+            Some(v) => {
+                let size_bytes = String::from_utf8(v.as_bytes().to_vec())
+                    .with_context(|_| UnableToParseUtf8Snafu::<String> { path: uri.into() })?;
+
+                Ok(size_bytes
+                    .parse()
+                    .with_context(|_| UnableToParseIntegerSnafu::<String> { path: uri.into() })?)
+            }
+            None => Err(Error::UnableToDetermineSize { path: uri.into() }.into()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,6 +191,8 @@ mod tests {
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
 
+        let size_from_get_size = client.get_size(parquet_file_path).await?;
+        assert_eq!(size_from_get_size, all_bytes.len());
         Ok(())
     }
 }
