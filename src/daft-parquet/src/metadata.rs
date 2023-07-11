@@ -24,7 +24,7 @@ pub async fn read_parquet_metadata(
     let default_end_len = std::cmp::min(DEFAULT_FOOTER_READ_SIZE, size);
 
     let start = size.saturating_sub(default_end_len);
-    let data = io_client
+    let mut data = io_client
         .single_url_get(uri.into(), Some(start..size))
         .await
         .context(UnableToOpenFileSnafu { path: uri })?
@@ -56,8 +56,26 @@ pub async fn read_parquet_metadata(
         &buffer[remaining..]
     } else {
         // the end of file read by default is not long enough, read again including the metadata.
-        todo!("need more data");
+
+        let start = size.saturating_sub(footer_len);
+        data = io_client
+            .single_url_get(uri.into(), Some(start..size))
+            .await
+            .context(UnableToOpenFileSnafu { path: uri })?
+            .bytes()
+            .await
+            .context(UnableToReadBytesSnafu { path: uri })?;
+        let buffer = data.as_ref();
+        if buffer[default_end_len - 4..] != PARQUET_MAGIC {
+            return Err(Error::InvalidParquetFile {
+                path: uri.into(),
+                footer: buffer[default_end_len - 4..].into(),
+            });
+        }
+        let remaining = buffer.len() - footer_len;
+        &buffer[remaining..]
     };
+
     let max_size = reader.len() * 2 + 1024;
     deserialize_metadata(reader, max_size).context(UnableToParseMetadataSnafu { path: uri })
 }

@@ -9,14 +9,18 @@ pub mod pylib {
     pub fn read_parquet(
         py: Python,
         uri: &str,
+        row_groups: Option<Vec<i64>>,
         size: Option<usize>,
         io_config: Option<PyIOConfig>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            Ok(
-                crate::read::read_parquet(uri, size, io_config.unwrap_or_default().config.into())?
-                    .into(),
-            )
+            Ok(crate::read::read_parquet(
+                uri,
+                row_groups.as_deref(),
+                size,
+                io_config.unwrap_or_default().config.into(),
+            )?
+            .into())
         })
     }
 }

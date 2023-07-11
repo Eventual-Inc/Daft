@@ -342,5 +342,7 @@ class Table:
         return Table.from_pydict, ({name: self.get_column(name) for name in names},)
 
     @classmethod
-    def read_parquet(cls, path: str, file_size: None | int = None, io_config: IOConfig | None = None) -> Table:
-        return _read_parquet(path, file_size, io_config)
+    def read_parquet(
+        cls, path: str, row_groups: list | None = None, file_size: None | int = None, io_config: IOConfig | None = None
+    ) -> Table:
+        return _read_parquet(uri=path, row_groups=row_groups, size=file_size, io_config=io_config)

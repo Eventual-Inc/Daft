@@ -14,16 +14,31 @@ use crate::metadata::read_parquet_metadata;
 
 async fn read_row_groups(
     uri: &str,
-    row_groups: &[usize],
+    row_groups: Option<&[i64]>,
     metadata: &FileMetaData,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
     let arrow_schema = infer_schema(metadata).unwrap();
     let daft_schema = daft_core::schema::Schema::try_from(&arrow_schema).unwrap();
     let mut daft_series = vec![vec![]; daft_schema.names().len()];
+    let num_row_groups = metadata.row_groups.len();
+
+    let row_groups = match row_groups {
+        Some(rg) => rg.to_vec(),
+        None => (0i64..num_row_groups as i64).collect(),
+    };
 
     for row_group in row_groups {
-        let rg = metadata.row_groups.get(*row_group).unwrap();
+        if !(0i64..num_row_groups as i64).contains(&row_group) {
+            return Err(super::Error::ParquetRowGroupOutOfIndex {
+                path: uri.into(),
+                row_group,
+                total_row_groups: num_row_groups as i64,
+            }
+            .into());
+        }
+
+        let rg = metadata.row_groups.get(row_group as usize).unwrap();
 
         let columns = rg.columns();
 
@@ -80,7 +95,12 @@ async fn read_row_groups(
     Table::new(daft_schema, compacted_series)
 }
 
-pub fn read_parquet(uri: &str, size: Option<usize>, io_config: Arc<IOConfig>) -> DaftResult<Table> {
+pub fn read_parquet(
+    uri: &str,
+    row_groups: Option<&[i64]>,
+    size: Option<usize>,
+    io_config: Arc<IOConfig>,
+) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
 
@@ -92,8 +112,7 @@ pub fn read_parquet(uri: &str, size: Option<usize>, io_config: Arc<IOConfig>) ->
             None => io_client.single_url_get_size(uri.into()).await?,
         };
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
-        let all_row_groups: Vec<_> = (0..metadata.row_groups.len()).collect();
-        read_row_groups(uri, all_row_groups.as_slice(), &metadata, io_client.clone()).await
+        read_row_groups(uri, row_groups, &metadata, io_client.clone()).await
     })
 }
 
@@ -109,7 +128,7 @@ mod tests {
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
         let io_config = Arc::new(IOConfig::default());
-        let table = read_parquet(file, None, io_config)?;
+        let table = read_parquet(file, None, None, io_config)?;
         assert_eq!(table.len(), 100);
 
         Ok(())

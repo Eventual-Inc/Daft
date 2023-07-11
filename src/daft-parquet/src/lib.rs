@@ -47,6 +47,18 @@ pub enum Error {
         footer_size: usize,
         file_size: usize,
     },
+
+    #[snafu(display(
+        "File: {} had a total of: {} row groups but requested {}",
+        path,
+        total_row_groups,
+        row_group
+    ))]
+    ParquetRowGroupOutOfIndex {
+        path: String,
+        row_group: i64,
+        total_row_groups: i64,
+    },
 }
 
 impl From<Error> for DaftError {
