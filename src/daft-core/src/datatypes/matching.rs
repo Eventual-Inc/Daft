@@ -240,3 +240,18 @@ macro_rules! with_match_daft_logical_types {(
         _ => panic!("{:?} not implemented for with_match_daft_logical_types", $key_type)
     }
 })}
+
+#[macro_export]
+macro_rules! with_match_daft_logical_primitive_types {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Decimal128(..) => __with_ty__! { i128 },
+        Duration(..) => __with_ty__! { i64 },
+        Date => __with_ty__! { i32 },
+        Timestamp(..) => __with_ty__! { i64 },
+        _ => panic!("no logical -> primitive conversion available for {:?}", $key_type)
+    }
+})}

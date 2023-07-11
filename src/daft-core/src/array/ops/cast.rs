@@ -250,9 +250,13 @@ pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String 
     } else {
         let modulus = i128::pow(10, scale as u32);
         let integral = val / modulus;
-        let decimals = (val % modulus).abs();
-        let scale = scale as usize;
-        format!("{}.{:0scale$}", integral, decimals)
+        if scale == 0 {
+            format!("{}", integral)
+        } else {
+            let decimals = (val % modulus).abs();
+            let scale = scale as usize;
+            format!("{}.{:0scale$}", integral, decimals)
+        }
     }
 }
 

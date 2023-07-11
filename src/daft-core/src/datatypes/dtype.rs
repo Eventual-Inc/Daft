@@ -171,6 +171,7 @@ impl DataType {
     pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
+            Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
             List(field) => List(Box::new(
@@ -205,7 +206,8 @@ impl DataType {
                 Box::new(Field::new("data", mode.get_dtype())),
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
-            _ => self.clone(),
+            t if t.is_physical() => self.clone(),
+            _ => unreachable!(),
         }
     }
 
