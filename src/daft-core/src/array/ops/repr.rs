@@ -4,8 +4,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-            TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            ImageArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray,
         ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
@@ -188,6 +188,21 @@ impl TimestampArray {
     }
 }
 
+impl Decimal128Array {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |val| -> String {
+                use crate::array::ops::cast::decimal128_to_str;
+                use crate::datatypes::DataType::Decimal128;
+                let Decimal128(precision, scale) = &self.field.dtype else { panic!("Wrong dtype for Decimal128Array: {}", self.field.dtype) };
+                decimal128_to_str(val, *precision as u8, *scale as i8)
+            }
+        );
+        Ok(res)
+    }
+}
+
 // Default implementation of html_value: html escape the str_value.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
@@ -210,6 +225,7 @@ impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(StructArray);
 impl_array_html_value!(ExtensionArray);
+impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);

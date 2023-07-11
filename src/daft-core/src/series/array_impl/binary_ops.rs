@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::ops::{DaftCompare, DaftLogical},
-    datatypes::{BooleanType, Float64Type, Utf8Type, Int128Array, logical::Decimal128Array},
+    datatypes::{logical::Decimal128Array, BooleanType, Float64Type, Int128Array, Utf8Type},
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
 };

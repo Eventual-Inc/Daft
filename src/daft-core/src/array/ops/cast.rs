@@ -3,8 +3,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-            LogicalArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            ImageArray, LogicalArray, TimestampArray,
         },
         DaftLogicalType,
     },
@@ -244,6 +244,18 @@ impl DateArray {
     }
 }
 
+pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String {
+    if scale < 0 {
+        unimplemented!();
+    } else {
+        let modulus = i128::pow(10, scale as u32);
+        let integral = val / modulus;
+        let decimals = (val % modulus).abs();
+        let scale = scale as usize;
+        format!("{}.{:0scale$}", integral, decimals)
+    }
+}
+
 pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts = {
         arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow().unwrap())
@@ -338,6 +350,16 @@ impl DurationArray {
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl Decimal128Array {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
+            _ => arrow_logical_cast(self, dtype),
         }
     }
 }

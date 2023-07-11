@@ -1,6 +1,7 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+    TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
@@ -334,6 +335,7 @@ macro_rules! impl_logicalarray_if_else {
     };
 }
 
+impl_logicalarray_if_else!(Decimal128Array);
 impl_logicalarray_if_else!(DateArray);
 impl_logicalarray_if_else!(DurationArray);
 impl_logicalarray_if_else!(TimestampArray);
