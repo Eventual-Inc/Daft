@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import io
+import os
 import pathlib
+import shutil
 from typing import Generator, TypeVar
 
 import numpy as np
@@ -14,6 +17,11 @@ import daft
 T = TypeVar("T")
 
 YieldFixture = Generator[T, None, None]
+
+
+###
+# Config fixtures
+###
 
 
 @pytest.fixture(scope="session")
@@ -46,70 +54,98 @@ def nginx_config() -> tuple[str, pathlib.Path]:
     )
 
 
+###
+# Mounting utilities: mount data and perform cleanup at the end of each test
+###
+
+
+@contextlib.contextmanager
+def mount_data_minio(
+    minio_io_config: daft.io.IOConfig, folder: pathlib.Path, bucket_name: str = "my-minio-bucket"
+) -> YieldFixture[list[str]]:
+    """Mounts data in `folder` into files in minio
+
+    Yields a list of S3 URLs
+    """
+    fs = s3fs.S3FileSystem(
+        key=minio_io_config.s3.key_id,
+        password=minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
+    )
+    fs.mkdir(bucket_name)
+
+    urls = []
+    for p in folder.glob("**/*"):
+        if not p.is_file():
+            continue
+        key = str(p.relative_to(folder))
+        url = f"s3://{bucket_name}/{key}"
+        fs.write_bytes(url, p.read_bytes())
+        urls.append(url)
+
+    try:
+        yield urls
+    finally:
+        fs.rm(bucket_name, recursive=True)
+
+
+@contextlib.contextmanager
+def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Path) -> YieldFixture[list[str]]:
+    """Mounts data in `folder` into servable static files in NGINX
+
+    Yields a list of HTTP URLs
+    """
+    server_url, static_assets_tmpdir = nginx_config
+    shutil.copytree(folder, static_assets_tmpdir, dirs_exist_ok=True)
+    yield [f"{server_url}/{p.relative_to(folder)}" for p in folder.glob("**/*") if p.is_file()]
+    for root, dirs, files in os.walk(static_assets_tmpdir, topdown=False):
+        for file in files:
+            os.remove(os.path.join(root, file))
+        for dir in dirs:
+            os.rmdir(os.path.join(root, dir))
+
+
+###
+# Image data test fixtures
+###
+
+
 @pytest.fixture(scope="session")
 def image_data() -> YieldFixture[bytes]:
-    """A small bit of fake image JPEG data"""
+    """Bytes of a small image"""
     bio = io.BytesIO()
     image = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     image.save(bio, format="JPEG")
     return bio.getvalue()
 
 
-###
-# NGINX-based fixtures
-###
+@pytest.fixture(scope="function")
+def image_data_folder(image_data, tmpdir) -> YieldFixture[str]:
+    """Dumps 10 small JPEG files into a tmpdir"""
+    tmpdir = pathlib.Path(tmpdir)
+
+    for i in range(10):
+        fp = tmpdir / f"{i}.jpeg"
+        fp.write_bytes(image_data)
+
+    yield tmpdir
 
 
 @pytest.fixture(scope="function")
-def mock_http_image_urls(nginx_config, image_data) -> YieldFixture[str]:
+def mock_http_image_urls(
+    nginx_config: tuple[str, pathlib.Path], image_data_folder: pathlib.Path
+) -> YieldFixture[list[str]]:
     """Uses the docker-compose Nginx server to serve HTTP image URLs
 
     This fixture yields:
         list[str]: URLs of files available on the HTTP server
     """
-    server_url, static_assets_tmpdir = nginx_config
-
-    # Add image files to the tmpdir
-    urls = []
-    for i in range(10):
-        image_filepath = static_assets_tmpdir / f"{i}.jpeg"
-        image_filepath.write_bytes(image_data)
-        urls.append(f"{server_url}/{image_filepath.relative_to(static_assets_tmpdir)}")
-
-    try:
+    with mount_data_nginx(nginx_config, image_data_folder) as urls:
         yield urls
-    # Remember to cleanup!
-    finally:
-        for child in static_assets_tmpdir.glob("*"):
-            child.unlink()
-
-
-###
-# S3-based fixtures
-###
 
 
 @pytest.fixture(scope="function")
-def minio_image_data_fixture(minio_io_config, image_data) -> YieldFixture[list[str]]:
+def minio_image_data_fixture(minio_io_config, image_data_folder) -> YieldFixture[list[str]]:
     """Populates the minio session with some fake data and yields (S3Config, paths)"""
-    fs = s3fs.S3FileSystem(
-        key=minio_io_config.s3.key_id,
-        password=minio_io_config.s3.access_key,
-        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
-    )
-    bucket = "image-bucket"
-    fs.mkdir(bucket)
-
-    # Add some images into `s3://image-bucket`
-    urls = []
-    for i in range(10):
-        key = f"{i}.jpeg"
-        url = f"s3://{bucket}/{key}"
-        fs.write_bytes(url, image_data)
-        urls.append(url)
-
-    try:
+    with mount_data_minio(minio_io_config, image_data_folder) as urls:
         yield urls
-    # Remember to cleanup!
-    finally:
-        fs.rm(bucket, recursive=True)

@@ -23,8 +23,7 @@ def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixtur
 
 @pytest.mark.integration()
 def test_url_download_minio_native_downloader(minio_io_config, minio_image_data_fixture, image_data):
-    urls = minio_image_data_fixture
-    data = {"urls": urls}
+    data = {"urls": minio_image_data_fixture}
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download(io_config=minio_io_config, use_native_downloader=True))
-    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(urls))]}
+    assert df.to_pydict() == {**data, "data": [image_data for _ in range(len(minio_image_data_fixture))]}
