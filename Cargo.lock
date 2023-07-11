@@ -902,7 +902,6 @@ dependencies = [
  "pyo3-log",
  "snafu",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]

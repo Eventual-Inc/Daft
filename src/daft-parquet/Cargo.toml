@@ -4,14 +4,13 @@ common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
-futures = "0.3.28"
+futures = {workspace = true}
 log = {workspace = true}
 parquet2 = "0.17.2"
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 snafu = {workspace = true}
-tokio = {version = "1.28.2", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
-tokio-util = "0.7.8"
+tokio = {workspace = true}
 
 [features]
 default = ["python"]

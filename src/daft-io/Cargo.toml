@@ -9,14 +9,14 @@ aws-sigv4 = "0.55.3"
 bytes = "1.4.0"
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
-futures = "0.3.28"
+futures = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu = {workspace = true}
-tokio = {version = "1.29.1", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
+tokio = {workspace = true}
 url = "2.4.0"
 
 [dependencies.reqwest]
