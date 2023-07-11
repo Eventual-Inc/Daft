@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from flytekit import current_context, task, workflow
+from flytekitplugins.ray import (  # noqa # pylint: disable=unused-import
+    RayJobConfig,
+    WorkerNodeConfig,
+)
 
 import daft
 
@@ -38,8 +42,8 @@ def produce_resized_image_dataset(limit: int) -> list[str]:
 
 
 @workflow()
-def wf():
-    produce_resized_image_dataset(limit=5)
+def wf(limit: int):
+    produce_resized_image_dataset(limit=limit)
 
 
 def daft_notebook_code(limit: int):
@@ -49,21 +53,21 @@ def daft_notebook_code(limit: int):
     parquet_df = parquet_df.select(parquet_df["URL"], parquet_df["TEXT"], parquet_df["AESTHETIC_SCORE"])
 
     # Filter for only "pretty" images
-    pretty_df = parquet_df.where(parquet_df["AESTHETIC_SCORE"] > 7)
+    filtered_df = parquet_df.where(parquet_df["TEXT"].str.contains("darkness"))
 
     # Download and resize images
-    pretty_df = pretty_df.with_column(
+    filtered_df = filtered_df.with_column(
         "image",
-        pretty_df["URL"].url.download(on_error="null").image.decode(),
+        filtered_df["URL"].url.download(on_error="null").image.decode(),
     )
-    pretty_df = pretty_df.with_column(
+    filtered_df = filtered_df.with_column(
         "resized_image",
-        pretty_df["image"].image.resize(32, 32),
+        filtered_df["image"].image.resize(32, 32),
     )
 
     # Write processed data out to Parquet file
     written_df = (
-        pretty_df.select("URL", "TEXT", "resized_image")
+        filtered_df.select("URL", "TEXT", "resized_image")
         .limit(limit)
         .write_parquet(
             # NOTE: In practice, you will be writing to cloud storage such as AWS S3.
