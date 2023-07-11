@@ -8,6 +8,7 @@ use daft_table::Table;
 use parquet2::{
     metadata::FileMetaData,
     read::{BasicDecompressor, PageReader},
+    FallibleStreamingIterator,
 };
 
 use crate::metadata::read_parquet_metadata;
@@ -18,8 +19,8 @@ async fn read_row_groups(
     metadata: &FileMetaData,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
-    let arrow_schema = infer_schema(metadata).unwrap();
-    let daft_schema = daft_core::schema::Schema::try_from(&arrow_schema).unwrap();
+    let arrow_schema = infer_schema(metadata)?;
+    let daft_schema = daft_core::schema::Schema::try_from(&arrow_schema)?;
     let mut daft_series = vec![vec![]; daft_schema.names().len()];
     let num_row_groups = metadata.row_groups.len();
 
@@ -49,12 +50,12 @@ async fn read_row_groups(
             // should be async
             let get_result = io_client
                 .single_url_get(uri.into(), Some(start as usize..end as usize))
-                .await
-                .unwrap();
+                .await?;
 
-            // // should stream this instead
-            let bytes = get_result.bytes().await.unwrap();
+            // should stream this instead
+            let bytes = get_result.bytes().await?;
             let buffer = bytes.to_vec();
+            println!("start stream");
             let pages = PageReader::new(
                 std::io::Cursor::new(buffer),
                 col,
@@ -64,33 +65,41 @@ async fn read_row_groups(
             );
 
             let decom = BasicDecompressor::new(pages, vec![]);
+
             let ptype = &col.descriptor().descriptor.primitive_type;
 
             let field = &arrow_schema.fields[ii];
-            let arr_iter = column_iter_to_arrays(
+            println!("cols: {:?}", columns);
+
+            let mut arr_iter = column_iter_to_arrays(
                 vec![decom],
                 vec![ptype],
                 field.clone(),
                 None,
                 col.num_values() as usize,
-            )
-            .unwrap();
-            let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>().unwrap();
+            )?;
+
+            let mut count = 0;
+            while let Some(val) = arr_iter.next() {
+                count += 1;
+                println!("{}", count);
+            }
+            println!("done reading arrays");
+
+            let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
             let ser = all_arrays
                 .into_iter()
                 .map(|a| Series::try_from((field.name.as_str(), cast_array_for_daft_if_needed(a))))
-                .collect::<DaftResult<Vec<Series>>>()
-                .unwrap();
+                .collect::<DaftResult<Vec<Series>>>()?;
 
-            // let series = ;
             daft_series[ii].extend(ser);
         }
     }
 
     let compacted_series = daft_series
         .into_iter()
-        .map(|s| Series::concat(s.iter().collect::<Vec<_>>().as_ref()).unwrap())
-        .collect();
+        .map(|s| Series::concat(s.iter().collect::<Vec<_>>().as_ref()))
+        .collect::<DaftResult<_>>()?;
 
     Table::new(daft_schema, compacted_series)
 }

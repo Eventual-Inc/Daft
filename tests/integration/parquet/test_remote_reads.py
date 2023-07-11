@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from daft.table import Table
+
 # Taken from our spreadsheet of files that Daft should be able to handle
 DAFT_CAN_READ_FILES = [
     (
@@ -149,10 +151,11 @@ def parquet_file(request) -> tuple[str, str]:
     return request.param
 
 
-@pytest.mark.integration()
+# @pytest.mark.integration()
 def test_parquet_read(parquet_file):
     name, url = parquet_file
-
+    print(name)
+    Table.read_parquet(url)
     # Test Daft reads
     # df = daft.read_parquet(url)
     # df.collect()
