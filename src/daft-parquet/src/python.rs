@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use daft_io::python::PyIOConfig;
+    use daft_io::{get_io_client, python::PyIOConfig};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
 
@@ -14,13 +14,9 @@ pub mod pylib {
         io_config: Option<PyIOConfig>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            Ok(crate::read::read_parquet(
-                uri,
-                row_groups.as_deref(),
-                size,
-                io_config.unwrap_or_default().config.into(),
-            )?
-            .into())
+            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+
+            Ok(crate::read::read_parquet(uri, row_groups.as_deref(), size, io_client)?.into())
         })
     }
 }

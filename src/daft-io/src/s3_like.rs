@@ -324,6 +324,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _head_impl(&self, uri: &str, region: &Region) -> super::Result<usize> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
             None => Err(Error::InvalidUrl {

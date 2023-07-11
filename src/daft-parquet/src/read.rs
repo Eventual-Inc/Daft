@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_io::{config::IOConfig, get_io_client, get_runtime, IOClient};
+use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
 use parquet2::{
     metadata::FileMetaData,
@@ -99,12 +99,10 @@ pub fn read_parquet(
     uri: &str,
     row_groups: Option<&[i64]>,
     size: Option<usize>,
-    io_config: Arc<IOConfig>,
+    io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
-
-    let io_client = get_io_client(io_config)?;
 
     runtime_handle.block_on(async {
         let size = match size {
@@ -121,14 +119,19 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::config::IOConfig;
+    use daft_io::{config::IOConfig, IOClient};
 
     use super::read_parquet;
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
-        let io_config = Arc::new(IOConfig::default());
-        let table = read_parquet(file, None, None, io_config)?;
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_parquet(file, None, None, io_client)?;
         assert_eq!(table.len(), 100);
 
         Ok(())
