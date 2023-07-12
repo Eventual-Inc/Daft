@@ -8,7 +8,6 @@ use daft_table::Table;
 use parquet2::{
     metadata::FileMetaData,
     read::{BasicDecompressor, PageReader},
-    FallibleStreamingIterator,
 };
 
 use crate::metadata::read_parquet_metadata;
@@ -42,49 +41,48 @@ async fn read_row_groups(
         let rg = metadata.row_groups.get(row_group as usize).unwrap();
 
         let columns = rg.columns();
+        for (ii, field) in arrow_schema.fields.iter().enumerate() {
+            let field_name = field.name.clone();
+            let mut decompressed_iters = vec![];
+            let mut ptypes = vec![];
+            let filtered_cols = columns
+                .iter()
+                .filter(|x| x.descriptor().path_in_schema[0] == field_name)
+                .collect::<Vec<_>>();
 
-        for (ii, col) in columns.iter().enumerate() {
-            let (start, len) = col.byte_range();
-            let end = start + len;
+            for col in filtered_cols {
+                let (start, len) = col.byte_range();
+                let end = start + len;
 
-            // should be async
-            let get_result = io_client
-                .single_url_get(uri.into(), Some(start as usize..end as usize))
-                .await?;
+                // should be async
+                let get_result = io_client
+                    .single_url_get(uri.into(), Some(start as usize..end as usize))
+                    .await?;
 
-            // should stream this instead
-            let bytes = get_result.bytes().await?;
-            let buffer = bytes.to_vec();
-            println!("start stream");
-            let pages = PageReader::new(
-                std::io::Cursor::new(buffer),
-                col,
-                Arc::new(|_, _| true),
-                vec![],
-                4 * 1024 * 1024,
-            );
+                // should stream this instead
+                let bytes = get_result.bytes().await?;
+                let buffer = bytes.to_vec();
+                let pages = PageReader::new(
+                    std::io::Cursor::new(buffer),
+                    col,
+                    Arc::new(|_, _| true),
+                    vec![],
+                    4 * 1024 * 1024,
+                );
 
-            let decom = BasicDecompressor::new(pages, vec![]);
+                decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
 
-            let ptype = &col.descriptor().descriptor.primitive_type;
-
-            let field = &arrow_schema.fields[ii];
-            println!("cols: {:?}", columns);
-
-            let mut arr_iter = column_iter_to_arrays(
-                vec![decom],
-                vec![ptype],
-                field.clone(),
-                None,
-                col.num_values() as usize,
-            )?;
-
-            let mut count = 0;
-            while let Some(val) = arr_iter.next() {
-                count += 1;
-                println!("{}", count);
+                ptypes.push(&col.descriptor().descriptor.primitive_type);
             }
-            println!("done reading arrays");
+
+            // let field = &arrow_schema.fields[ii];
+            let arr_iter = column_iter_to_arrays(
+                decompressed_iters,
+                ptypes,
+                field.clone(),
+                Some(4096),
+                rg.num_rows(),
+            )?;
 
             let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
             let ser = all_arrays

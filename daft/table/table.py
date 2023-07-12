@@ -345,4 +345,4 @@ class Table:
     def read_parquet(
         cls, path: str, row_groups: list | None = None, file_size: None | int = None, io_config: IOConfig | None = None
     ) -> Table:
-        return _read_parquet(uri=path, row_groups=row_groups, size=file_size, io_config=io_config)
+        return Table._from_pytable(_read_parquet(uri=path, row_groups=row_groups, size=file_size, io_config=io_config))
