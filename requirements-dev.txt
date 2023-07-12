@@ -14,6 +14,7 @@ hypothesis==6.79.2
 pytest==7.4.0
 pytest-benchmark==4.0.0
 pytest-cov==4.1.0
+pytest-memray==1.4.1
 
 # Testing dependencies
 lxml==4.9.2
