@@ -27,6 +27,3 @@ def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
     # Make sure the data is correct
     assert data.column_names == ["L_ORDERKEY"]
     assert len(data) == 18751674
-
-    # TODO(jay): Figure out how to track peak memory usage. Not sure yet how to aggregate this across calls.
-    benchmark.extra_info["peak_memory_usage"] = None
