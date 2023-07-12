@@ -244,7 +244,9 @@ def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, fl
 
 def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
-    pydict["obj"] = [decimal.Decimal("1.1") for _ in range(len(valid_data))]
+    pydict["obj"] = [
+        decimal.Decimal("12456789012345678901234567890123456789012345678901234567890") for _ in range(len(valid_data))
+    ]
     t = pa.Table.from_pydict(pydict)
     df = daft.from_arrow(t)
     assert set(df.column_names) == set(t.column_names)
