@@ -440,6 +440,9 @@ class DataType:
     def _is_image_type(self) -> builtins.bool:
         return self._dtype.is_image()
 
+    def _is_fixed_shape_image_type(self) -> builtins.bool:
+        return self._dtype.is_fixed_shape_image()
+
     def _is_logical_type(self) -> builtins.bool:
         return self._dtype.is_logical()
 

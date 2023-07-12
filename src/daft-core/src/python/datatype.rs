@@ -352,6 +352,10 @@ impl PyDataType {
         Ok(self.dtype.is_image())
     }
 
+    pub fn is_fixed_shape_image(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_image())
+    }
+
     pub fn is_tensor(&self) -> PyResult<bool> {
         Ok(self.dtype.is_tensor())
     }

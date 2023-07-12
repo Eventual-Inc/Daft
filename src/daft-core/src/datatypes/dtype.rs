@@ -302,7 +302,12 @@ impl DataType {
 
     #[inline]
     pub fn is_image(&self) -> bool {
-        matches!(self, DataType::Image(..) | DataType::FixedShapeImage(..))
+        matches!(self, DataType::Image(..))
+    }
+
+    #[inline]
+    pub fn is_fixed_shape_image(&self) -> bool {
+        matches!(self, DataType::FixedShapeImage(..))
     }
 
     #[inline]
