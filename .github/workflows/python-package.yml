@@ -34,19 +34,9 @@ jobs:
     - uses: moonrepo/setup-rust@v0
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-cargo
+    - uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
+        key: ${{ runner.os }}-build
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
@@ -128,19 +118,9 @@ jobs:
     - run: python tools/patch_package_version.py
     - name: Install Rust toolchain
       uses: moonrepo/setup-rust@v0
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-cargo
+    - uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-integration-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-integration-build-${{ env.cache-name }}-
-          ${{ runner.os }}-integration-build-
-          ${{ runner.os }}-
+        key: ${{ runner.os }}-integration-build
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: maturin build --release --compatibility linux --out dist
@@ -293,19 +273,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: moonrepo/setup-rust@v0
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-cargo
+    - uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-rust-package-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-rust-package-${{ env.cache-name }}-
-          ${{ runner.os }}-rust-package-
-          ${{ runner.os }}-
+        key: ${{ runner.os }}-rust-build
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - name: Generate code coverage
