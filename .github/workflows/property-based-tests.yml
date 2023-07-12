@@ -20,6 +20,8 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: moonrepo/setup-rust@v0
+      with:
+        cache: false
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
