@@ -116,8 +116,7 @@ jobs:
         architecture: x64
     - run: pip install -U twine toml maturin
     - run: python tools/patch_package_version.py
-    - name: Install Rust toolchain
-      uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v0
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-integration-build
