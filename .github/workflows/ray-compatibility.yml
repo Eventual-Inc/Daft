@@ -23,19 +23,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: moonrepo/setup-rust@v0
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-cargo
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-build
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
