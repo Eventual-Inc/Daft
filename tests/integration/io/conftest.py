@@ -96,8 +96,17 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
     Yields a list of HTTP URLs
     """
     server_url, static_assets_tmpdir = nginx_config
-    shutil.copytree(folder, static_assets_tmpdir, dirs_exist_ok=True)
+
+    # Copy data
+    for root, dirs, files in os.walk(folder, topdown=False):
+        for file in files:
+            shutil.copy2(os.path.join(root, file), os.path.join(static_assets_tmpdir, file))
+        for dir in dirs:
+            shutil.copytree(os.path.join(root, dir), os.path.join(static_assets_tmpdir, dir))
+
     yield [f"{server_url}/{p.relative_to(folder)}" for p in folder.glob("**/*") if p.is_file()]
+
+    # Delete data
     for root, dirs, files in os.walk(static_assets_tmpdir, topdown=False):
         for file in files:
             os.remove(os.path.join(root, file))
