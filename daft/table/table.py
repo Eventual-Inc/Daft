@@ -13,12 +13,6 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
 
-_RAY_DATA_EXTENSIONS_AVAILABLE = True
-try:
-    pass
-except ImportError:
-    _RAY_DATA_EXTENSIONS_AVAILABLE = False
-
 _NUMPY_AVAILABLE = True
 try:
     import numpy as np

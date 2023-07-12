@@ -8,6 +8,7 @@ import pytest
 
 from daft.datatype import DaftExtension, DataType
 from daft.series import Series
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -79,7 +80,7 @@ def test_fixed_shape_tensor_roundtrip(dtype):
     # Test Arrow roundtrip.
     arrow_arr = t.to_arrow()
 
-    if ARROW_VERSION >= (12, 0, 0):
+    if pyarrow_supports_fixed_shape_tensor():
         assert arrow_arr.type == pa.fixed_shape_tensor(dtype, shape)
     else:
         assert isinstance(arrow_arr.type, DaftExtension)

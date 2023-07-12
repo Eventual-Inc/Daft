@@ -7,6 +7,7 @@ import pyarrow as pa
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import ImageFormat, PySeries
 from daft.datatype import DataType
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 try:
@@ -29,6 +30,8 @@ try:
     import pandas as pd
 except ImportError:
     _PANDAS_AVAILABLE = False
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class Series:
@@ -71,7 +74,7 @@ class Series:
                 return series.cast(DataType.from_arrow_type(array.type))
             elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
                 return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
-            elif isinstance(array.type, pa.FixedShapeTensorType):
+            elif isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(DataType.from_arrow_type(array.type))
             else:
@@ -269,7 +272,7 @@ class Series:
                 # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
                 # elements have the same number of dimensions, without going through pylist roundtrip.
                 return ArrowTensorArray.from_numpy(self.to_pylist())
-        elif dtype._is_fixed_shape_tensor_type() and hasattr(pa, "fixed_shape_tensor"):
+        elif dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
             pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
             arrow_series = self._series.to_arrow()
             return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)

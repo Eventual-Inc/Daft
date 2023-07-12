@@ -296,24 +296,29 @@ impl PyDataType {
             let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
             let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
             match (&self.dtype, cast_tensor_to_ray_type) {
-                (DataType::FixedShapeTensor(dtype, shape), false) => pyarrow
-                    .getattr(pyo3::intern!(py, "fixed_shape_tensor"))
-                    .map_or_else(
+                (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
+                    if py
+                        .import(pyo3::intern!(py, "daft.utils"))?
+                        .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
+                        .call0()?
+                        .extract()?
+                    {
+                        pyarrow
+                            .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
+                            .call1((
+                                Self {
+                                    dtype: *dtype.clone(),
+                                }
+                                .to_arrow(None)?,
+                                pyo3::types::PyTuple::new(py, shape.clone()),
+                            ))?
+                            .to_object(py)
+                    } else {
                         // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                         // canonical tensor extension type.
-                        |_| ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow),
-                        |fst| {
-                            Ok(fst
-                                .call1((
-                                    Self {
-                                        dtype: *dtype.clone(),
-                                    }
-                                    .to_arrow(None)?,
-                                    pyo3::types::PyTuple::new(py, shape.clone()),
-                                ))?
-                                .to_object(py))
-                        },
-                    ),
+                        ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                    },
+                ),
                 (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
                     .import(pyo3::intern!(py, "ray.data.extensions"))?
                     .getattr(pyo3::intern!(py, "ArrowTensorType"))?

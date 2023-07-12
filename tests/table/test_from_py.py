@@ -13,6 +13,7 @@ from daft import DataType, TimeUnit
 from daft.context import get_context
 from daft.series import Series
 from daft.table import Table
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -135,7 +136,7 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
-if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name != "ray":
+if pyarrow_supports_fixed_shape_tensor():
     arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
     # NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
     # the shapes may be variable across partitions.

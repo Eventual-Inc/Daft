@@ -9,6 +9,7 @@ from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
 from daft.context import get_context
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import *
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -113,12 +114,8 @@ def test_series_concat_tensor_array_ray(chunks) -> None:
 
 
 @pytest.mark.skipif(
-    ARROW_VERSION < (12, 0, 0),
+    not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
-@pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
-    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
