@@ -10,7 +10,54 @@ use parquet2::{
     read::{BasicDecompressor, PageReader},
 };
 
-use crate::metadata::read_parquet_metadata;
+use crate::{
+    metadata::read_parquet_metadata,
+    read_planner::{self, ReadPlanBuilder},
+};
+
+fn plan_read_row_groups(
+    uri: &str,
+    row_groups: Option<&[i64]>,
+    metadata: &FileMetaData,
+) -> DaftResult<ReadPlanBuilder> {
+    let arrow_schema = infer_schema(metadata)?;
+    let num_row_groups = metadata.row_groups.len();
+    let mut read_plan = read_planner::ReadPlanBuilder::new();
+    let row_groups = match row_groups {
+        Some(rg) => rg.to_vec(),
+        None => (0i64..num_row_groups as i64).collect(),
+    };
+
+    for row_group in row_groups {
+        if !(0i64..num_row_groups as i64).contains(&row_group) {
+            return Err(super::Error::ParquetRowGroupOutOfIndex {
+                path: uri.into(),
+                row_group,
+                total_row_groups: num_row_groups as i64,
+            }
+            .into());
+        }
+
+        let rg = metadata.row_groups.get(row_group as usize).unwrap();
+
+        let columns = rg.columns();
+        for field in arrow_schema.fields.iter() {
+            let field_name = field.name.clone();
+            let filtered_cols = columns
+                .iter()
+                .filter(|x| x.descriptor().path_in_schema[0] == field_name)
+                .collect::<Vec<_>>();
+
+            for col in filtered_cols {
+                let (start, len) = col.byte_range();
+                let end = start + len;
+
+                read_plan.add_range(start as usize, end as usize);
+            }
+        }
+    }
+    Ok(read_plan)
+}
 
 async fn read_row_groups(
     uri: &str,
@@ -140,6 +187,28 @@ mod tests {
 
         let table = read_parquet(file, None, None, io_client)?;
         assert_eq!(table.len(), 100);
+
+        Ok(())
+    }
+
+    use crate::{read::plan_read_row_groups, read_planner::CoalescePass};
+    #[tokio::test]
+    async fn test_parquet_read_planner() -> DaftResult<()> {
+        let file = "https://huggingface.co/datasets/ChristophSchuhmann/improved_aesthetics_6.5plus/resolve/main/data/train-00000-of-00001-6f24a7497df494ae.parquet";
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let size = io_client.single_url_get_size(file.into()).await?;
+        let metadata = crate::metadata::read_parquet_metadata(file, size, io_client).await?;
+        let mut plan = plan_read_row_groups(file, None, &metadata)?;
+        println!("{}", plan);
+        plan.add_pass(Box::new(CoalescePass {
+            max_hole_size: 1024 * 1024,
+        }));
+        plan.run_passes()?;
+        println!("{}", plan);
 
         Ok(())
     }

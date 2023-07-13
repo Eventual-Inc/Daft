@@ -5,6 +5,7 @@ use snafu::Snafu;
 
 pub mod metadata;
 pub mod read;
+mod read_planner;
 
 #[cfg(feature = "python")]
 pub mod python;
