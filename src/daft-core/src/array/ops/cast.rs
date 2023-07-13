@@ -10,7 +10,8 @@ use crate::{
     },
     datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
     series::Series,
-    with_match_arrow_daft_types, with_match_daft_logical_types,
+    with_match_arrow_daft_types, with_match_daft_logical_primitive_types,
+    with_match_daft_logical_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -54,16 +55,35 @@ where
     // Get the result of the Arrow Logical->Target cast.
     let result_arrow_array = {
         // First, get corresponding Arrow LogicalArray of source DataArray
-        let source_arrow_array = cast(
-            to_cast.physical.data(),
-            &source_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?;
+        use DataType::*;
+        let source_arrow_array = match source_dtype {
+            // Wrapped primitives
+            Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                with_match_daft_logical_primitive_types!(source_dtype, |$T| {
+                    use arrow2::array::Array;
+                    to_cast
+                        .physical
+                        .data()
+                        .as_any()
+                        .downcast_ref::<arrow2::array::PrimitiveArray<$T>>()
+                        .unwrap()
+                        .clone()
+                        .to(source_arrow_type)
+                        .to_boxed()
+                })
+            }
+            _ => cast(
+                to_cast.physical.data(),
+                &source_arrow_type,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )?,
+        };
 
         // Then, cast source Arrow LogicalArray to target Arrow LogicalArray.
+
         cast(
             source_arrow_array.as_ref(),
             &target_arrow_type,
@@ -75,19 +95,35 @@ where
     };
 
     // If the target type is also Logical, get the Arrow Physical.
-    let target_physical_type = dtype.to_physical().to_arrow()?;
     let result_arrow_physical_array = {
-        if target_physical_type == target_arrow_type {
-            result_arrow_array
+        if dtype.is_logical() {
+            use DataType::*;
+            let target_physical_type = dtype.to_physical().to_arrow()?;
+            match dtype {
+                // Primitive wrapper types: change the arrow2 array's type field to primitive
+                Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                    with_match_daft_logical_primitive_types!(dtype, |$P| {
+                        use arrow2::array::Array;
+                        result_arrow_array
+                            .as_any()
+                            .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
+                            .unwrap()
+                            .clone()
+                            .to(target_physical_type)
+                            .to_boxed()
+                    })
+                }
+                _ => arrow2::compute::cast::cast(
+                    result_arrow_array.as_ref(),
+                    &target_physical_type,
+                    arrow2::compute::cast::CastOptions {
+                        wrapped: true,
+                        partial: false,
+                    },
+                )?,
+            }
         } else {
-            cast(
-                result_arrow_array.as_ref(),
-                &target_physical_type,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?
+            result_arrow_array
         }
     };
 

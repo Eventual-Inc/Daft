@@ -16,8 +16,8 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
 
     fn try_from(item: (&str, Box<dyn arrow2::array::Array>)) -> DaftResult<Self> {
         let (name, array) = item;
-        let self_arrow_type = array.data_type();
-        let dtype: DataType = self_arrow_type.into();
+        let source_arrow_type = array.data_type();
+        let dtype: DataType = source_arrow_type.into();
         let field = Arc::new(Field::new(name, dtype.clone()));
 
         let physical_type = dtype.to_physical();
