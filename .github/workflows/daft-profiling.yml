@@ -26,6 +26,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-profile
+        cache-all-crates: 'true'
 
     - name: Set up Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v4
