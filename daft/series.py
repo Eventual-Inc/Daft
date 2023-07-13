@@ -83,13 +83,7 @@ class Series:
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
             arr_type = array.type
-            if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(
-                arr_type, (ArrowTensorType, ArrowVariableShapedTensorType)
-            ):
-                from ray.air.util.transform_pyarrow import _concatenate_extension_column
-
-                combined_array = _concatenate_extension_column(array)
-            elif isinstance(arr_type, pa.BaseExtensionType):
+            if isinstance(arr_type, pa.BaseExtensionType):
                 combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
                 combined_array = arr_type.wrap_array(combined_storage_array)
             else:

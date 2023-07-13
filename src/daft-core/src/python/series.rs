@@ -367,7 +367,7 @@ fn infer_daft_dtype_for_sequence(
                     break;
                 }
             }
-        } else if let Ok(np_ndarray_type) = np_ndarray_type && let Ok(np_generic_type) = np_generic_type && obj.is_instance(pyo3::types::PyTuple::new(py, vec![np_ndarray_type, np_generic_type]))? {
+        } else if let Ok(np_ndarray_type) = np_ndarray_type && let Ok(np_generic_type) = np_generic_type && (obj.is_instance(np_ndarray_type)? || obj.is_instance(np_generic_type)?) {
             let np_dtype = obj.getattr(pyo3::intern!(py, "dtype"))?;
             let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| dt.getattr(pyo3::intern!(py, "_dtype")).unwrap().extract::<PyDataType>().unwrap().dtype);
             let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;

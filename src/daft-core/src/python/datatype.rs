@@ -330,18 +330,6 @@ impl PyDataType {
                         .to_arrow(None)?,
                     ))?
                     .to_object(py)),
-                // We don't export variable-shaped tensors as Ray's variable-shaped tensor type since the
-                // latter requires all tensor elements to have the same number of dimensions, which is a
-                // constraint that Daft does not have.
-                // (DataType::Tensor(dtype), true) => Ok(py
-                //     .import(pyo3::intern!(py, "ray.data.extensions"))?
-                //     .getattr(pyo3::intern!(py, "ArrowVariableShapedTensorType"))?
-                //     .call1((Self {
-                //         dtype: *dtype.clone(),
-                //         ndim: ???,
-                //     }
-                //     .to_arrow(None)?,))?
-                //     .to_object(py)),
                 (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
                     .getattr(py, pyo3::intern!(py, "type")),
             }

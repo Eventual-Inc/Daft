@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import builtins
+from typing import TYPE_CHECKING
 
-import numpy as np
 import pyarrow as pa
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
+
+if TYPE_CHECKING:
+    import numpy as np
 
 _RAY_DATA_EXTENSIONS_AVAILABLE = True
 _TENSOR_EXTENSION_TYPES = []
