@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     datatypes::{logical::LogicalArray, DataType, Field},
-    with_match_daft_logical_types, with_match_physical_daft_types,
+    with_match_daft_logical_primitive_types, with_match_daft_logical_types,
+    with_match_physical_daft_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -15,27 +16,46 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
 
     fn try_from(item: (&str, Box<dyn arrow2::array::Array>)) -> DaftResult<Self> {
         let (name, array) = item;
-        let self_arrow_type = array.data_type();
-        let dtype: DataType = self_arrow_type.into();
+        let source_arrow_type = array.data_type();
+        let dtype: DataType = source_arrow_type.into();
         let field = Arc::new(Field::new(name, dtype.clone()));
 
         let physical_type = dtype.to_physical();
 
         if dtype.is_logical() {
             let arrow_physical_type = physical_type.to_arrow()?;
-            let casted_array = arrow2::compute::cast::cast(
-                array.as_ref(),
-                &arrow_physical_type,
-                arrow2::compute::cast::CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?;
 
-            return Ok(with_match_daft_logical_types!(dtype, |$T| {
-                let physical = DataArray::try_from((Field::new(name, physical_type), casted_array))?;
+            use DataType::*;
+            let physical_arrow_array = match dtype {
+                // Primitive wrapper types: change the arrow2 array's type field to primitive
+                Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                    with_match_daft_logical_primitive_types!(dtype, |$P| {
+                        use arrow2::array::Array;
+                        array
+                            .as_any()
+                            .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
+                            .unwrap()
+                            .clone()
+                            .to(arrow_physical_type)
+                            .to_boxed()
+                    })
+                }
+                // Otherwise, use an Arrow cast to drop Extension types.
+                _ => arrow2::compute::cast::cast(
+                    array.as_ref(),
+                    &arrow_physical_type,
+                    arrow2::compute::cast::CastOptions {
+                        wrapped: true,
+                        partial: false,
+                    },
+                )?,
+            };
+
+            let res = with_match_daft_logical_types!(dtype, |$T| {
+                let physical = DataArray::try_from((Field::new(name, physical_type), physical_arrow_array))?;
                 LogicalArray::<$T>::new(field, physical).into_series()
-            }));
+            });
+            return Ok(res);
         }
 
         // is not logical but contains one

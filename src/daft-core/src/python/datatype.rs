@@ -158,6 +158,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn decimal128(precision: usize, scale: usize) -> PyResult<Self> {
+        Ok(DataType::Decimal128(precision, scale).into())
+    }
+
+    #[staticmethod]
     pub fn date() -> PyResult<Self> {
         Ok(DataType::Date.into())
     }

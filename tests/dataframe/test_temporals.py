@@ -11,7 +11,6 @@ import daft
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
-@pytest.mark.skip("Requires Daft duration type.")
 def test_temporal_arithmetic() -> None:
     now = datetime.now()
     now_tz = datetime.now(timezone.utc)

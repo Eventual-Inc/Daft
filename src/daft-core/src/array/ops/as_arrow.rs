@@ -5,8 +5,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-            TimestampArray,
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            ImageArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
         Utf8Array,
@@ -69,6 +69,7 @@ impl_asarrow_dataarray!(StructArray, array::StructArray);
 #[cfg(feature = "python")]
 impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
 
+impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);

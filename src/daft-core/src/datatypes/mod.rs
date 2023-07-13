@@ -10,7 +10,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use crate::array::DataArray;
 use arrow2::{
-    compute::{arithmetics::basic::NativeArithmetics, comparison::Simd8},
+    compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
 pub use binary_ops::try_physical_supertype;
@@ -91,6 +91,7 @@ impl_daft_arrow_datatype!(Int8Type, Int8);
 impl_daft_arrow_datatype!(Int16Type, Int16);
 impl_daft_arrow_datatype!(Int32Type, Int32);
 impl_daft_arrow_datatype!(Int64Type, Int64);
+impl_daft_arrow_datatype!(Int128Type, Int128);
 impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
@@ -108,6 +109,7 @@ impl_daft_arrow_datatype!(ExtensionType, Unknown);
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
 
+impl_daft_logical_datatype!(Decimal128Type, Unknown, Int128Type);
 impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
@@ -133,7 +135,6 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + ToPrimitive
-    + NativeArithmetics
 {
     type DAFTTYPE: DaftNumericType;
 }
@@ -154,6 +155,9 @@ impl NumericNative for i32 {
 }
 impl NumericNative for i64 {
     type DAFTTYPE = Int64Type;
+}
+impl NumericNative for i128 {
+    type DAFTTYPE = Int128Type;
 }
 impl NumericNative for u8 {
     type DAFTTYPE = UInt8Type;
@@ -199,6 +203,9 @@ impl DaftNumericType for Int32Type {
 impl DaftNumericType for Int64Type {
     type Native = i64;
 }
+impl DaftNumericType for Int128Type {
+    type Native = i128;
+}
 impl DaftNumericType for Float32Type {
     type Native = f32;
 }
@@ -208,7 +215,7 @@ impl DaftNumericType for Float64Type {
 
 pub trait DaftIntegerType: DaftNumericType
 where
-    Self::Native: arrow2::types::Index,
+    Self::Native: Ord,
 {
 }
 
@@ -220,6 +227,7 @@ impl DaftIntegerType for Int8Type {}
 impl DaftIntegerType for Int16Type {}
 impl DaftIntegerType for Int32Type {}
 impl DaftIntegerType for Int64Type {}
+impl DaftIntegerType for Int128Type {}
 
 pub trait DaftFloatType: DaftNumericType
 where
@@ -241,6 +249,7 @@ pub type Int8Array = DataArray<Int8Type>;
 pub type Int16Array = DataArray<Int16Type>;
 pub type Int32Array = DataArray<Int32Type>;
 pub type Int64Array = DataArray<Int64Type>;
+pub type Int128Array = DataArray<Int128Type>;
 pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;

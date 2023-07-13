@@ -4,7 +4,8 @@ use crate::datatypes::{BooleanArray, DaftLogicalType, DateType, Field};
 use common_error::DaftResult;
 
 use super::{
-    DataArray, DataType, DurationType, EmbeddingType, FixedShapeImageType, ImageType, TimestampType,
+    DataArray, DataType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
+    ImageType, TimestampType,
 };
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
@@ -106,6 +107,7 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     }
 }
 
+pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type DurationArray = LogicalArray<DurationType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;

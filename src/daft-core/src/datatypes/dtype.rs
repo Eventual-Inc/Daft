@@ -25,6 +25,8 @@ pub enum DataType {
     Int32,
     /// An [`i64`]
     Int64,
+    /// An [`i128`]
+    Int128,
     /// An [`u8`]
     UInt8,
     /// An [`u16`]
@@ -39,6 +41,9 @@ pub enum DataType {
     Float32,
     /// A [`f64`]
     Float64,
+    /// Fixed-precision decimal type.
+    /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
+    Decimal128(usize, usize),
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
     ///
     /// Time is measured as a Unix epoch, counting the seconds from
@@ -115,6 +120,7 @@ impl DataType {
             DataType::Int16 => Ok(ArrowType::Int16),
             DataType::Int32 => Ok(ArrowType::Int32),
             DataType::Int64 => Ok(ArrowType::Int64),
+            DataType::Int128 => Ok(ArrowType::Decimal(38, 0)),
             DataType::UInt8 => Ok(ArrowType::UInt8),
             DataType::UInt16 => Ok(ArrowType::UInt16),
             DataType::UInt32 => Ok(ArrowType::UInt32),
@@ -122,6 +128,7 @@ impl DataType {
             DataType::Float16 => Ok(ArrowType::Float16),
             DataType::Float32 => Ok(ArrowType::Float32),
             DataType::Float64 => Ok(ArrowType::Float64),
+            DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
             DataType::Timestamp(unit, timezone) => {
                 Ok(ArrowType::Timestamp(unit.to_arrow()?, timezone.clone()))
             }
@@ -164,6 +171,7 @@ impl DataType {
     pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
+            Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
             List(field) => List(Box::new(
@@ -198,7 +206,8 @@ impl DataType {
                 Box::new(Field::new("data", mode.get_dtype())),
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
-            _ => self.clone(),
+            t if t.is_physical() => self.clone(),
+            _ => unreachable!(),
         }
     }
 
@@ -214,6 +223,7 @@ impl DataType {
              | DataType::Int16
              | DataType::Int32
              | DataType::Int64
+             | DataType::Int128
              | DataType::UInt8
              | DataType::UInt16
              | DataType::UInt32
@@ -234,6 +244,7 @@ impl DataType {
                 | DataType::Int16
                 | DataType::Int32
                 | DataType::Int64
+                | DataType::Int128
                 | DataType::UInt8
                 | DataType::UInt16
                 | DataType::UInt32
@@ -285,7 +296,8 @@ impl DataType {
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
-            DataType::Date
+            DataType::Decimal128(..)
+                | DataType::Date
                 | DataType::Timestamp(..)
                 | DataType::Duration(..)
                 | DataType::Embedding(..)
@@ -358,6 +370,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::Duration(timeunit) => DataType::Duration(timeunit.into()),
             ArrowType::Binary | ArrowType::LargeBinary => DataType::Binary,
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
+            ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
                 DataType::List(Box::new(field.as_ref().into()))
             }

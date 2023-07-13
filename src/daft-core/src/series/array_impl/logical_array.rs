@@ -1,5 +1,6 @@
 use crate::datatypes::logical::{
-    DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray, TimestampArray,
+    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
+    TimestampArray,
 };
 use crate::datatypes::BooleanArray;
 
@@ -8,6 +9,7 @@ use crate::array::ops::GroupIndices;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
+use crate::with_match_daft_logical_primitive_types;
 use crate::with_match_integer_daft_types;
 use std::sync::Arc;
 
@@ -26,17 +28,35 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.clone().into_series()
             }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-                let arrow_logical_type = self.0.logical_type().to_arrow().unwrap();
+                let daft_type = self.0.logical_type();
+                let arrow_logical_type = daft_type.to_arrow().unwrap();
                 let physical_arrow_array = self.0.physical.data();
-                arrow2::compute::cast::cast(
-                    physical_arrow_array,
-                    &arrow_logical_type,
-                    arrow2::compute::cast::CastOptions {
-                        wrapped: true,
-                        partial: false,
-                    },
-                )
-                .unwrap()
+                use crate::datatypes::DataType::*;
+                match daft_type {
+                    // For wrapped primitive types, switch the datatype label on the arrow2 Array.
+                    Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                        with_match_daft_logical_primitive_types!(daft_type, |$P| {
+                            use arrow2::array::Array;
+                            physical_arrow_array
+                                .as_any()
+                                .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
+                                .unwrap()
+                                .clone()
+                                .to(arrow_logical_type)
+                                .to_boxed()
+                        })
+                    }
+                    // Otherwise, use arrow cast to make sure the result arrow2 array is of the correct type.
+                    _ => arrow2::compute::cast::cast(
+                        physical_arrow_array,
+                        &arrow_logical_type,
+                        arrow2::compute::cast::CastOptions {
+                            wrapped: true,
+                            partial: false,
+                        },
+                    )
+                    .unwrap(),
+                }
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -197,6 +217,7 @@ macro_rules! impl_series_like_for_logical_array {
     };
 }
 
+impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(DurationArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
