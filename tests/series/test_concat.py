@@ -9,6 +9,7 @@ from ray.data.extensions import ArrowTensorArray
 
 from daft import DataType, Series
 from daft.context import get_context
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import *
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
@@ -107,18 +108,14 @@ def test_series_concat_tensor_array_ray(chunks) -> None:
 
     concated = Series.concat(series)
 
-    assert concated.datatype() == DataType.python()
+    assert concated.datatype() == DataType.tensor(DataType.int64(), element_shape)
     expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
     np.testing.assert_equal(concated.to_pylist(), expected)
 
 
 @pytest.mark.skipif(
-    ARROW_VERSION < (12, 0, 0),
+    not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
-@pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
-    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
@@ -137,8 +134,8 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
 
     concated = Series.concat(series)
 
-    assert concated.datatype() == DataType.extension(
-        "arrow.fixed_shape_tensor", DataType.from_arrow_type(ext_arrays[0].type.storage_type), '{"shape":[2,2]}'
+    assert concated.datatype() == DataType.tensor(
+        DataType.from_arrow_type(ext_arrays[0].type.storage_type.value_type), (2, 2)
     )
     expected = [chunk[i] for chunk in chunks for i in range(len(chunk))]
     concated_arrow = concated.to_arrow()

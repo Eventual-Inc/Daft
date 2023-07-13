@@ -1,4 +1,7 @@
-use crate::datatypes::{DataType, Field, ImageMode, TimeUnit};
+use crate::{
+    datatypes::{DataType, Field, ImageMode, TimeUnit},
+    ffi,
+};
 use pyo3::{
     class::basic::CompareOp,
     exceptions::PyValueError,
@@ -268,8 +271,85 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
+        // TODO(Clark): Add support for non-numeric (e.g. string) tensor columns.
+        if !dtype.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for a tensor column must be numeric, but got: {}",
+                dtype.dtype
+            )));
+        }
+        let dtype = Box::new(dtype.dtype);
+        match shape {
+            Some(shape) => Ok(DataType::FixedShapeTensor(dtype, shape).into()),
+            None => Ok(DataType::Tensor(dtype).into()),
+        }
+    }
+
+    #[staticmethod]
     pub fn python() -> PyResult<Self> {
         Ok(DataType::Python.into())
+    }
+
+    pub fn to_arrow(&self, cast_tensor_type_for_ray: Option<bool>) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+            let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
+            match (&self.dtype, cast_tensor_to_ray_type) {
+                (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
+                    if py
+                        .import(pyo3::intern!(py, "daft.utils"))?
+                        .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
+                        .call0()?
+                        .extract()?
+                    {
+                        pyarrow
+                            .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
+                            .call1((
+                                Self {
+                                    dtype: *dtype.clone(),
+                                }
+                                .to_arrow(None)?,
+                                pyo3::types::PyTuple::new(py, shape.clone()),
+                            ))?
+                            .to_object(py)
+                    } else {
+                        // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
+                        // canonical tensor extension type.
+                        ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                    },
+                ),
+                (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
+                    .import(pyo3::intern!(py, "ray.data.extensions"))?
+                    .getattr(pyo3::intern!(py, "ArrowTensorType"))?
+                    .call1((
+                        pyo3::types::PyTuple::new(py, shape.clone()),
+                        Self {
+                            dtype: *dtype.clone(),
+                        }
+                        .to_arrow(None)?,
+                    ))?
+                    .to_object(py)),
+                (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                    .getattr(py, pyo3::intern!(py, "type")),
+            }
+        })
+    }
+
+    pub fn is_image(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_image())
+    }
+
+    pub fn is_fixed_shape_image(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_image())
+    }
+
+    pub fn is_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_tensor())
+    }
+
+    pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_tensor())
     }
 
     pub fn is_logical(&self) -> PyResult<bool> {
@@ -283,6 +363,11 @@ impl PyDataType {
         } else {
             Ok(false)
         }
+    }
+
+    #[staticmethod]
+    pub fn from_json(serialized: &str) -> PyResult<Self> {
+        Ok(DataType::from_json(serialized)?.into())
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

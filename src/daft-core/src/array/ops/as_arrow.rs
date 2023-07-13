@@ -6,7 +6,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
         Utf8Array,
@@ -76,3 +76,5 @@ impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(EmbeddingArray, array::FixedSizeListArray);
 impl_asarrow_logicalarray!(ImageArray, array::StructArray);
 impl_asarrow_logicalarray!(FixedShapeImageArray, array::FixedSizeListArray);
+impl_asarrow_logicalarray!(TensorArray, array::StructArray);
+impl_asarrow_logicalarray!(FixedShapeTensorArray, array::FixedSizeListArray);

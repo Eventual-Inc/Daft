@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod array;
 pub mod datatypes;
 #[cfg(feature = "python")]

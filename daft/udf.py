@@ -77,7 +77,7 @@ class PartialUDF:
             if self.udf.return_dtype == DataType.python():
                 return Series.from_pylist(result, name=name, pyobj="force")._series
             else:
-                return Series.from_pylist(result, name=name, pyobj="disallow").cast(self.udf.return_dtype)._series
+                return Series.from_pylist(result, name=name, pyobj="allow").cast(self.udf.return_dtype)._series
         elif _NUMPY_AVAILABLE and isinstance(result, np.ndarray):
             return Series.from_numpy(result, name=name).cast(self.udf.return_dtype)._series
         else:

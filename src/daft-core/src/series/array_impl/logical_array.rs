@@ -1,6 +1,6 @@
 use crate::datatypes::logical::{
-    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-    TimestampArray,
+    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+    FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::BooleanArray;
 
@@ -224,3 +224,5 @@ impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(ImageArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TimestampArray);
+impl_series_like_for_logical_array!(TensorArray);
+impl_series_like_for_logical_array!(FixedShapeTensorArray);

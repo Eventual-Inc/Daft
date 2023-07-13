@@ -117,6 +117,8 @@ impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
 impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
 impl_daft_logical_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListType);
+impl_daft_logical_datatype!(TensorType, Unknown, StructType);
+impl_daft_logical_datatype!(FixedShapeTensorType, Unknown, FixedSizeListType);
 
 pub trait NumericNative:
     PartialOrd

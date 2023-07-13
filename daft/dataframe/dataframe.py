@@ -1067,7 +1067,7 @@ class DataFrame:
         raise RuntimeError(message)
 
     @DataframePublicAPI
-    def to_pandas(self) -> "pd.DataFrame":
+    def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pd.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
         If results have not computed yet, collect will be called.
 
@@ -1081,11 +1081,13 @@ class DataFrame:
         result = self._result
         assert result is not None
 
-        pd_df = result.to_pandas(schema=self._plan.schema())
+        pd_df = result.to_pandas(
+            schema=self._plan.schema(), cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+        )
         return pd_df
 
     @DataframePublicAPI
-    def to_arrow(self) -> "pa.Table":
+    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pa.Table":
         """Converts the current DataFrame to a pyarrow Table.
         If results have not computed yet, collect will be called.
 
@@ -1099,7 +1101,7 @@ class DataFrame:
         result = self._result
         assert result is not None
 
-        return result.to_arrow()
+        return result.to_arrow(cast_tensors_to_ray_tensor_dtype)
 
     @DataframePublicAPI
     def to_pydict(self) -> Dict[str, List[Any]]:

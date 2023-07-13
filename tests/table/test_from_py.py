@@ -8,12 +8,12 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pac
 import pytest
-from ray.data.extensions import ArrowTensorArray, ArrowTensorType
 
 from daft import DataType, TimeUnit
 from daft.context import get_context
 from daft.series import Series
 from daft.table import Table
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -28,11 +28,10 @@ PYTHON_TYPE_ARRAYS = {
     "struct": [{"a": 1, "b": 2.0}, {"b": 3.0}],
     "empty_struct": [{}, {}],
     "null": [None, None],
+    "tensor": [np.ones((2, 2), np.int64), np.ones((3, 3), np.int64)],
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": list(np.arange(8).reshape(2, 2, 2)),
     "timestamp": [datetime.datetime.now(), datetime.datetime.now()],
 }
-
 
 PYTHON_INFERRED_TYPES = {
     "int": DataType.int64(),
@@ -45,9 +44,8 @@ PYTHON_INFERRED_TYPES = {
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
     "empty_struct": DataType.struct({"": DataType.null()}),
     "null": DataType.null(),
+    "tensor": DataType.tensor(DataType.int64()),
     # The following types are not natively supported and will be cast to Python object types.
-    # TODO(Clark): Change the tensor inferred type to be the canonical fixed-shape tensor extension type.
-    "tensor": DataType.python(),
     "timestamp": DataType.timestamp(TimeUnit.us()),
 }
 
@@ -67,8 +65,8 @@ ROUNDTRIP_TYPES = {
     "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
     "empty_struct": pa.struct({"": pa.null()}),
     "null": pa.null(),
+    "tensor": PYTHON_INFERRED_TYPES["tensor"].to_arrow_dtype(),
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "timestamp": pa.timestamp("us"),
 }
 
@@ -93,8 +91,22 @@ ARROW_TYPE_ARRAYS = {
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
     "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
+    "tensor": pa.ExtensionArray.from_storage(
+        ROUNDTRIP_TYPES["tensor"],
+        pa.array(
+            [
+                {"data": PYTHON_TYPE_ARRAYS["tensor"][0].ravel(), "shape": [2, 2]},
+                {"data": PYTHON_TYPE_ARRAYS["tensor"][1].ravel(), "shape": [3, 3]},
+            ],
+            pa.struct(
+                {
+                    "data": pa.large_list(pa.field("data", pa.int64())),
+                    "shape": pa.large_list(pa.field("shape", pa.uint64())),
+                }
+            ),
+        ),
+    ),
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": ArrowTensorArray.from_numpy(PYTHON_TYPE_ARRAYS["tensor"]),
     "timestamp": pa.array(PYTHON_TYPE_ARRAYS["timestamp"]),
 }
 
@@ -119,16 +131,20 @@ ARROW_ROUNDTRIP_TYPES = {
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
     "empty_struct": pa.struct({"": pa.null()}),
     "null": pa.null(),
+    "tensor": PYTHON_INFERRED_TYPES["tensor"].to_arrow_dtype(),
     # The following types are not natively supported and will be cast to Python object types.
-    "tensor": ArrowTensorType(shape=(2, 2), dtype=pa.int64()),
     "timestamp": pa.timestamp("us"),
 }
 
-if ARROW_VERSION >= (12, 0, 0) and get_context().runner_config.name != "ray":
-    ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = pa.fixed_shape_tensor(pa.int64(), (2, 2))
-    ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(
-        np.array(PYTHON_TYPE_ARRAYS["tensor"])
-    )
+if pyarrow_supports_fixed_shape_tensor():
+    arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+    # NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
+    # the shapes may be variable across partitions.
+    # PYTHON_TYPE_ARRAYS["canonical_tensor"] = list(np.arange(8).reshape(2, 2, 2))
+    # PYTHON_INFERRED_TYPES["canonical_tensor"] = DataType.tensor(DataType.int64(), (2, 2))
+    # ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+    ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+    ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.arange(8).reshape(2, 2, 2))
 
 
 def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
@@ -153,7 +169,7 @@ def test_from_pydict_roundtrip() -> None:
     arrs = {}
     for col_name, col in PYTHON_TYPE_ARRAYS.items():
         if col_name == "tensor":
-            arrs[col_name] = ArrowTensorArray.from_numpy(col)
+            arrs[col_name] = ARROW_TYPE_ARRAYS[col_name]
         else:
             arrs[col_name] = pa.array(col, type=schema.field(col_name).type)
     expected_table = pa.table(arrs, schema=schema)
@@ -190,9 +206,6 @@ def test_from_pandas_roundtrip() -> None:
     assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
         assert field.dtype == PANDAS_INFERRED_TYPES[field.name]
-    # pyarrow --> pandas doesn't preserve the datetime type for the "date" column, so we need to
-    # convert it before the comparison.
-    df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
     df["empty_struct"][0][""] = None

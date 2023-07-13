@@ -7,6 +7,17 @@ import pyarrow as pa
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import ImageFormat, PySeries
 from daft.datatype import DataType
+from daft.utils import pyarrow_supports_fixed_shape_tensor
+
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+try:
+    from ray.data.extensions import (
+        ArrowTensorArray,
+        ArrowTensorType,
+        ArrowVariableShapedTensorType,
+    )
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 _NUMPY_AVAILABLE = True
 try:
@@ -19,6 +30,8 @@ try:
     import pandas as pd
 except ImportError:
     _PANDAS_AVAILABLE = False
+
+ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class Series:
@@ -51,8 +64,22 @@ class Series:
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
             array = ensure_array(array)
-            pys = PySeries.from_arrow(name, array)
-            return Series._from_pyseries(pys)
+            if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
+                storage_series = Series.from_arrow(array.storage, name=name)
+                series = storage_series.cast(
+                    DataType.fixed_size_list(
+                        "item", DataType.from_arrow_type(array.type.scalar_type), int(np.prod(array.type.shape))
+                    )
+                )
+                return series.cast(DataType.from_arrow_type(array.type))
+            elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
+                return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+            elif isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
+                series = Series.from_arrow(array.storage, name=name)
+                return series.cast(DataType.from_arrow_type(array.type))
+            else:
+                pys = PySeries.from_arrow(name, array)
+                return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
             arr_type = array.type
@@ -61,9 +88,7 @@ class Series:
                 combined_array = arr_type.wrap_array(combined_storage_array)
             else:
                 combined_array = array.combine_chunks()
-
-            pys = PySeries.from_arrow(name, combined_array)
-            return Series._from_pyseries(pys)
+            return Series.from_arrow(combined_array)
         else:
             raise TypeError(f"expected either PyArrow Array or Chunked Array, got {type(array)}")
 
@@ -128,7 +153,7 @@ class Series:
         # TODO(Clark): Represent the tensor series with an Arrow extension type in order
         # to keep the series data contiguous.
         list_ndarray = [np.asarray(item) for item in data]
-        return cls.from_pylist(list_ndarray, name=name, pyobj="force")
+        return cls.from_pylist(list_ndarray, name=name, pyobj="allow")
 
     @classmethod
     def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
@@ -216,11 +241,37 @@ class Series:
     def datatype(self) -> DataType:
         return DataType._from_pydatatype(self._series.data_type())
 
-    def to_arrow(self) -> pa.Array:
+    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Array:
         """
         Convert this Series to an pyarrow array.
         """
-        return self._series.to_arrow()
+        dtype = self.datatype()
+        if cast_tensors_to_ray_tensor_dtype and (dtype._is_tensor_type() or dtype._is_fixed_shape_tensor_type()):
+            if not _RAY_DATA_EXTENSIONS_AVAILABLE:
+                raise ValueError("Trying to convert tensors to Ray tensor dtypes, but Ray is not installed.")
+            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=True)
+            if isinstance(pyarrow_dtype, ArrowTensorType):
+                assert dtype._is_fixed_shape_tensor_type()
+                arrow_series = self._series.to_arrow()
+                storage = arrow_series.storage
+                list_size = storage.type.list_size
+                storage = pa.ListArray.from_arrays(
+                    pa.array(list(range(0, (len(arrow_series) + 1) * list_size, list_size)), pa.int32()),
+                    storage.values,
+                )
+                return pa.ExtensionArray.from_storage(pyarrow_dtype, storage)
+            else:
+                # Variable-shaped tensor columns can't be converted directly to Ray's variable-shaped tensor extension
+                # type since it expects all tensor elements to have the same number of dimensions, which Daft does not enforce.
+                # TODO(Clark): Convert directly to Ray's variable-shaped tensor extension type when all tensor
+                # elements have the same number of dimensions, without going through pylist roundtrip.
+                return ArrowTensorArray.from_numpy(self.to_pylist())
+        elif dtype._is_fixed_shape_tensor_type() and pyarrow_supports_fixed_shape_tensor():
+            pyarrow_dtype = dtype.to_arrow_dtype(cast_tensor_to_ray_type=False)
+            arrow_series = self._series.to_arrow()
+            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
+        else:
+            return self._series.to_arrow()
 
     def to_pylist(self) -> list:
         """

@@ -1,7 +1,7 @@
 use crate::array::DataArray;
 use crate::datatypes::logical::{
-    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray, ImageArray,
-    TimestampArray,
+    DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+    FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
@@ -342,3 +342,5 @@ impl_logicalarray_if_else!(TimestampArray);
 impl_logicalarray_if_else!(EmbeddingArray);
 impl_logicalarray_if_else!(ImageArray);
 impl_logicalarray_if_else!(FixedShapeImageArray);
+impl_logicalarray_if_else!(TensorArray);
+impl_logicalarray_if_else!(FixedShapeTensorArray);

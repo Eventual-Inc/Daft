@@ -85,6 +85,10 @@ pub enum DataType {
     Image(Option<ImageMode>),
     /// A logical type for images with the same size (height x width).
     FixedShapeImage(ImageMode, u32, u32),
+    /// A logical type for tensors with variable shapes.
+    Tensor(Box<DataType>),
+    /// A logical type for tensors with the same shape.
+    FixedShapeTensor(Box<DataType>, Vec<u64>),
     Python,
     Unknown,
 }
@@ -153,14 +157,18 @@ impl DataType {
                 Box::new(dtype.to_arrow()?),
                 metadata.clone(),
             )),
-            DataType::Embedding(..) | DataType::Image(..) | DataType::FixedShapeImage(..) => {
+            DataType::Embedding(..)
+            | DataType::Image(..)
+            | DataType::FixedShapeImage(..)
+            | DataType::Tensor(..)
+            | DataType::FixedShapeTensor(..) => {
                 let physical = Box::new(self.to_physical());
-                let embedding_extension = DataType::Extension(
+                let logical_extension = DataType::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
                     physical,
                     Some(self.to_json()?),
                 );
-                embedding_extension.to_arrow()
+                logical_extension.to_arrow()
             }
             _ => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
@@ -206,8 +214,21 @@ impl DataType {
                 Box::new(Field::new("data", mode.get_dtype())),
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
-            t if t.is_physical() => self.clone(),
-            _ => unreachable!(),
+            Tensor(dtype) => Struct(vec![
+                Field::new("data", List(Box::new(Field::new("data", *dtype.clone())))),
+                Field::new(
+                    "shape",
+                    List(Box::new(Field::new("shape", DataType::UInt64))),
+                ),
+            ]),
+            FixedShapeTensor(dtype, shape) => FixedSizeList(
+                Box::new(Field::new("data", *dtype.clone())),
+                usize::try_from(shape.iter().product::<u64>()).unwrap(),
+            ),
+            _ => {
+                assert!(self.is_physical());
+                self.clone()
+            }
         }
     }
 
@@ -270,6 +291,26 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_tensor(&self) -> bool {
+        matches!(self, DataType::Tensor(..))
+    }
+
+    #[inline]
+    pub fn is_fixed_shape_tensor(&self) -> bool {
+        matches!(self, DataType::FixedShapeTensor(..))
+    }
+
+    #[inline]
+    pub fn is_image(&self) -> bool {
+        matches!(self, DataType::Image(..))
+    }
+
+    #[inline]
+    pub fn is_fixed_shape_image(&self) -> bool {
+        matches!(self, DataType::FixedShapeImage(..))
+    }
+
+    #[inline]
     pub fn is_null(&self) -> bool {
         match self {
             DataType::Null => true,
@@ -303,6 +344,8 @@ impl DataType {
                 | DataType::Embedding(..)
                 | DataType::Image(..)
                 | DataType::FixedShapeImage(..)
+                | DataType::Tensor(..)
+                | DataType::FixedShapeTensor(..)
         )
     }
 

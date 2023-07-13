@@ -91,7 +91,8 @@ def test_to_ray_dataset_with_py(n_partitions: int):
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
-    df = df.with_column("npcol", df["intcol"].apply(lambda _: np.ones((3, 3)), DataType.python()))
+    shape = (3, 3)
+    df = df.with_column("npcol", df["intcol"].apply(lambda _: np.ones(shape), DataType.tensor(DataType.int64(), shape)))
     ds = df.to_ray_dataset()
 
     if RAY_VERSION < (2, 4, 0):
@@ -123,7 +124,7 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
-    df = df.with_column("npcol", df["intcol"].apply(lambda x: np.ones((x, 3)), DataType.python()))
+    df = df.with_column("npcol", df["intcol"].apply(lambda x: np.ones((x, 3)), DataType.tensor(DataType.int64())))
     ds = df.to_ray_dataset()
 
     if RAY_VERSION < (2, 4, 0):

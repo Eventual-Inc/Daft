@@ -31,6 +31,7 @@ mod search_sorted;
 mod sort;
 mod sum;
 mod take;
+pub(crate) mod tensor;
 mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};

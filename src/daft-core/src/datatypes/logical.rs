@@ -5,7 +5,7 @@ use common_error::DaftResult;
 
 use super::{
     DataArray, DataType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
-    ImageType, TimestampType,
+    FixedShapeTensorType, ImageType, TensorType, TimestampType,
 };
 pub struct LogicalArray<L: DaftLogicalType> {
     pub field: Arc<Field>,
@@ -114,6 +114,8 @@ pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;
+pub type TensorArray = LogicalArray<TensorType>;
+pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 

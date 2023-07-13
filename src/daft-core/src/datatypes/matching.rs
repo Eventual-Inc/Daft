@@ -237,6 +237,8 @@ macro_rules! with_match_daft_logical_types {(
         Embedding(..) => __with_ty__! { EmbeddingType },
         Image(..) => __with_ty__! { ImageType },
         FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
+        Tensor(..) => __with_ty__! { TensorType },
+        FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
         _ => panic!("{:?} not implemented for with_match_daft_logical_types", $key_type)
     }
 })}

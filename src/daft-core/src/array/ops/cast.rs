@@ -1,34 +1,35 @@
 use super::as_arrow::AsArrow;
 use crate::{
-    array::DataArray,
+    array::{ops::image::ImageArraySidecarData, DataArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, LogicalArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
         },
-        DaftLogicalType,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedShapeTensorType,
+        FixedSizeListArray, ImageMode, StructArray, TensorType, TimeUnit, Utf8Array,
     },
-    datatypes::{DaftArrowBackedType, DataType, Field, Utf8Array},
-    series::Series,
+    series::{IntoSeries, Series},
     with_match_arrow_daft_types, with_match_daft_logical_primitive_types,
     with_match_daft_logical_types,
 };
 use common_error::{DaftError, DaftResult};
 
-use crate::{datatypes::TimeUnit, series::IntoSeries};
-use arrow2::compute::{
-    self,
-    cast::{can_cast_types, cast, CastOptions},
+use arrow2::{
+    array::Array,
+    compute::{
+        self,
+        cast::{can_cast_types, cast, CastOptions},
+    },
 };
 use std::sync::Arc;
 
 #[cfg(feature = "python")]
 use {
-    crate::array::{ops::image::ImageArrayVecs, pseudo_arrow::PseudoArrowArray},
-    crate::datatypes::{FixedSizeListArray, ImageMode, ListArray, PythonArray},
+    crate::array::pseudo_arrow::PseudoArrowArray,
+    crate::datatypes::{ListArray, PythonArray},
     crate::ffi,
     crate::with_match_numeric_daft_types,
-    arrow2::array::Array,
     log,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
@@ -154,53 +155,76 @@ where
             dtype
         )));
     }
-    let physical_type = dtype.to_physical();
-    let self_arrow_type = to_cast.data_type().to_arrow()?;
+    let target_physical_type = dtype.to_physical();
     let target_arrow_type = dtype.to_arrow()?;
-    if !can_cast_types(&self_arrow_type, &target_arrow_type) {
-        return Err(DaftError::TypeError(format!(
-            "can not cast {:?} to type: {:?}: Arrow types not castable",
-            to_cast.data_type(),
-            dtype
-        )));
-    }
+    let target_arrow_physical_type = target_physical_type.to_arrow()?;
+    let self_physical_type = to_cast.data_type().to_physical();
+    let self_arrow_type = to_cast.data_type().to_arrow()?;
+    let self_physical_arrow_type = self_physical_type.to_arrow()?;
 
-    let result_array = {
-        let target_arrow_physical = physical_type.to_arrow()?;
-        if target_arrow_physical == target_arrow_type {
-            cast(
-                to_cast.data(),
-                &target_arrow_type,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?
-        } else {
-            let arrow_logical = cast(
-                to_cast.data(),
-                &target_arrow_type,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?;
-            cast(
-                arrow_logical.as_ref(),
-                &target_arrow_physical,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )?
+    let result_array = if target_arrow_physical_type == target_arrow_type {
+        if !can_cast_types(&self_arrow_type, &target_arrow_type) {
+            return Err(DaftError::TypeError(format!(
+                "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
+                to_cast.data_type(),
+                dtype,
+                self_arrow_type,
+                target_arrow_type,
+            )));
         }
+        cast(
+            to_cast.data(),
+            &target_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?
+    } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
+        // Cast from logical Arrow2 type to logical Arrow2 type.
+        let arrow_logical = cast(
+            to_cast.data(),
+            &target_arrow_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?;
+        cast(
+            arrow_logical.as_ref(),
+            &target_arrow_physical_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?
+    } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
+        // Cast from physical Arrow2 type to physical Arrow2 type.
+        cast(
+            to_cast.data(),
+            &target_arrow_physical_type,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )?
+    } else {
+        return Err(DaftError::TypeError(format!(
+            "can not cast {:?} to type: {:?}: Arrow types not castable.\n{:?}, {:?},\nPhysical types: {:?}, {:?}",
+            to_cast.data_type(),
+            dtype,
+            self_arrow_type,
+            target_arrow_type,
+            self_physical_arrow_type,
+            target_arrow_physical_type,
+        )));
     };
 
     let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
 
     if dtype.is_logical() {
         with_match_daft_logical_types!(dtype, |$T| {
-            let physical = DataArray::try_from((Field::new(to_cast.name(), physical_type), result_array))?;
+            let physical = DataArray::try_from((Field::new(to_cast.name(), target_physical_type), result_array))?;
             return Ok(LogicalArray::<$T>::new(new_field.clone(), physical).into_series());
         })
     }
@@ -214,12 +238,11 @@ where
     T: DaftArrowBackedType,
 {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        #[cfg(feature = "python")]
-        {
-            use crate::python::PySeries;
-            use pyo3::prelude::*;
-
-            if dtype == &DataType::Python {
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => {
+                use crate::python::PySeries;
+                use pyo3::prelude::*;
                 // Convert something to Python.
 
                 // Use the existing logic on the Python side of the PyO3 layer
@@ -236,12 +259,10 @@ where
                         .getattr(pyo3::intern!(py, "_series"))?
                         .extract()
                 })?;
-
-                return Ok(new_pyseries.into());
+                Ok(new_pyseries.into())
             }
+            _ => arrow_cast(self, dtype),
         }
-
-        arrow_cast(self, dtype)
     }
 }
 
@@ -451,8 +472,8 @@ fn append_values_from_numpy<
     from_numpy_dtype_fn: &PyAny,
     enforce_dtype: Option<&DataType>,
     values_vec: &mut Vec<Tgt>,
-    shapes_vec: &mut Vec<Vec<u64>>,
-) -> DaftResult<usize> {
+    shapes_vec: &mut Vec<u64>,
+) -> DaftResult<(usize, usize)> {
     use crate::python::PyDataType;
     use std::num::Wrapping;
 
@@ -504,12 +525,17 @@ fn append_values_from_numpy<
             }
         };
         values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-        shapes_vec.push(pyarray.shape().iter().map(|v| *v as u64).collect::<Vec<u64>>());
-        Ok((sl.len()))
+        shapes_vec.extend(pyarray.shape().iter().map(|v| *v as u64));
+        Ok((sl.len(), pyarray.shape().len()))
     })
 }
 
-type ArrayPayload<Tgt> = (Vec<Tgt>, Option<Vec<i64>>, Option<Vec<Vec<u64>>>);
+type ArrayPayload<Tgt> = (
+    Vec<Tgt>,
+    Option<Vec<i64>>,
+    Option<Vec<u64>>,
+    Option<Vec<i64>>,
+);
 
 #[cfg(feature = "python")]
 fn extract_python_to_vec<
@@ -528,12 +554,14 @@ fn extract_python_to_vec<
         Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
 
     let mut offsets_vec: Vec<i64> = vec![];
-    let mut shapes_vec: Vec<Vec<u64>> = vec![];
+    let mut shapes_vec: Vec<u64> = vec![];
+    let mut shape_offsets_vec: Vec<i64> = vec![];
 
     if list_size.is_none() {
         offsets_vec.reserve(python_objects.len() + 1);
         offsets_vec.push(0);
-        shapes_vec.reserve(python_objects.len() + 1);
+        shape_offsets_vec.reserve(python_objects.len() + 1);
+        shape_offsets_vec.push(0);
     }
 
     let from_numpy_dtype = {
@@ -577,7 +605,7 @@ fn extract_python_to_vec<
                 // Path if object supports buffer/array protocols.
                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
                 let pyarray = np_as_array_fn.call1((object,))?;
-                let num_values = append_values_from_numpy(
+                let (num_values, shape_size) = append_values_from_numpy(
                     pyarray,
                     i,
                     from_numpy_dtype,
@@ -594,6 +622,7 @@ fn extract_python_to_vec<
                     }
                 } else {
                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
+                    shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
                 }
             } else {
                 // Path if object does not support buffer/array protocols.
@@ -653,7 +682,8 @@ fn extract_python_to_vec<
                     } else {
                         let offset = offsets_vec.last().unwrap() + collected.len() as i64;
                         offsets_vec.push(offset);
-                        shapes_vec.push(vec![1]);
+                        shapes_vec.extend(vec![1]);
+                        shape_offsets_vec.push(1i64);
                     }
                     values_vec.extend_from_slice(collected.as_slice());
                 } else {
@@ -668,14 +698,22 @@ fn extract_python_to_vec<
             let offset = offsets_vec.last().unwrap();
             offsets_vec.push(*offset);
             if let Some(shape_size) = shape_size {
-                shapes_vec.push(iter::repeat(1).take(shape_size).collect());
+                shapes_vec.extend(iter::repeat(1).take(shape_size));
+                shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
+            } else {
+                shape_offsets_vec.push(*shape_offsets_vec.last().unwrap());
             }
         }
     }
     if list_size.is_some() {
-        Ok((values_vec, None, None))
+        Ok((values_vec, None, None, None))
     } else {
-        Ok((values_vec, Some(offsets_vec), Some(shapes_vec)))
+        Ok((
+            values_vec,
+            Some(offsets_vec),
+            Some(shapes_vec),
+            Some(shape_offsets_vec),
+        ))
     }
 }
 
@@ -688,7 +726,7 @@ fn extract_python_like_to_fixed_size_list<
     child_field: &Field,
     list_size: usize,
 ) -> DaftResult<FixedSizeListArray> {
-    let (values_vec, _, _) = extract_python_to_vec::<Tgt>(
+    let (values_vec, _, _, _) = extract_python_to_vec::<Tgt>(
         py,
         python_objects,
         &child_field.dtype,
@@ -726,7 +764,7 @@ fn extract_python_like_to_list<
     python_objects: &PythonArray,
     child_field: &Field,
 ) -> DaftResult<ListArray> {
-    let (values_vec, offsets, _) =
+    let (values_vec, offsets, _, _) =
         extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None, None, None)?;
 
     let offsets = offsets.expect("Offsets should but non-None for dynamic list");
@@ -766,7 +804,7 @@ fn extract_python_like_to_image_array<
     // 3 dimensions - height x width x channel.
 
     let shape_size = 3;
-    let (values_vec, offsets, shapes) = extract_python_to_vec::<Tgt>(
+    let (values_vec, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
         py,
         python_objects,
         child_dtype,
@@ -777,23 +815,19 @@ fn extract_python_like_to_image_array<
 
     let offsets = offsets.expect("Offsets should but non-None for image struct array");
     let shapes = shapes.expect("Shapes should be non-None for image struct array");
+    let shape_offsets =
+        shape_offsets.expect("Shape offsets should be non-None for image struct array");
 
     let validity = python_objects.as_arrow().validity();
 
-    let num_rows = shapes.len();
+    let num_rows = offsets.len() - 1;
 
     let mut channels = Vec::<u16>::with_capacity(num_rows);
     let mut heights = Vec::<u32>::with_capacity(num_rows);
     let mut widths = Vec::<u32>::with_capacity(num_rows);
     let mut modes = Vec::<u8>::with_capacity(num_rows);
-    for (mut shape, is_valid) in iter::zip(
-        shapes.into_iter(),
-        validity
-            .unwrap_or(&arrow2::bitmap::Bitmap::from_iter(
-                iter::repeat(true).take(num_rows),
-            ))
-            .iter(),
-    ) {
+    for i in 0..num_rows {
+        let is_valid = validity.map_or(true, |v| v.get_bit(i));
         if !is_valid {
             // Handle invalid row by populating dummy data.
             channels.push(1);
@@ -802,6 +836,9 @@ fn extract_python_like_to_image_array<
             modes.push(mode_from_dtype.unwrap_or(ImageMode::L) as u8);
             continue;
         }
+        let shape_start = shape_offsets[i] as usize;
+        let shape_end = shape_offsets[i + 1] as usize;
+        let shape = &mut shapes[shape_start..shape_end].to_owned();
         if shape.len() == shape_size - 1 {
             shape.push(1);
         } else if shape.len() != shape_size {
@@ -837,16 +874,93 @@ fn extract_python_like_to_image_array<
     ImageArray::from_vecs(
         python_objects.name(),
         dtype.clone(),
-        ImageArrayVecs {
-            data: values_vec,
+        values_vec,
+        offsets,
+        ImageArraySidecarData {
             channels,
             heights,
             widths,
             modes,
-            offsets,
             validity: validity.cloned(),
         },
     )
+}
+
+#[cfg(feature = "python")]
+fn extract_python_like_to_tensor_array<
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+>(
+    py: Python<'_>,
+    python_objects: &PythonArray,
+    dtype: &DataType,
+    child_dtype: &DataType,
+) -> DaftResult<TensorArray> {
+    let (data, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
+        py,
+        python_objects,
+        child_dtype,
+        Some(child_dtype),
+        None,
+        None,
+    )?;
+
+    let offsets = offsets.expect("Offsets should but non-None for image struct array");
+    let shapes = shapes.expect("Shapes should be non-None for image struct array");
+    let shape_offsets =
+        shape_offsets.expect("Shape offsets should be non-None for image struct array");
+
+    let validity = python_objects.as_arrow().validity();
+
+    let num_rows = shapes.len();
+    let name = python_objects.name();
+    if data.is_empty() {
+        // Create an all-null array if the data array is empty.
+        let physical_type = dtype.to_physical();
+        let null_struct_array = arrow2::array::new_null_array(physical_type.to_arrow()?, num_rows);
+        let daft_struct_array =
+            StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
+        return Ok(TensorArray::new(
+            Field::new(name, dtype.clone()),
+            daft_struct_array,
+        ));
+    }
+    let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+    let arrow_dtype: arrow2::datatypes::DataType = Tgt::PRIMITIVE.into();
+
+    let data_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+        arrow2::datatypes::Field::new("data", arrow_dtype, true),
+    ));
+    let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
+        data_dtype,
+        offsets,
+        Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
+        validity.cloned(),
+    ));
+    let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+        arrow2::datatypes::Field::new("shape", arrow2::datatypes::DataType::UInt64, true),
+    ));
+    let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+    let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
+        shapes_dtype,
+        shape_offsets,
+        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
+        validity.cloned(),
+    ));
+
+    let values: Vec<Box<dyn arrow2::array::Array>> = vec![data_array, shapes_array];
+    let physical_type = dtype.to_physical();
+    let struct_array = Box::new(arrow2::array::StructArray::new(
+        physical_type.to_arrow()?,
+        values,
+        validity.cloned(),
+    ));
+
+    let daft_struct_array =
+        crate::datatypes::StructArray::new(Field::new(name, physical_type).into(), struct_array)?;
+    Ok(TensorArray::new(
+        Field::new(name, dtype.clone()),
+        daft_struct_array,
+    ))
 }
 
 #[cfg(feature = "python")]
@@ -938,6 +1052,23 @@ impl PythonArray {
                 );
                 Ok(image_array.into_series())
             }
+            DataType::Tensor(inner_dtype) => {
+                with_match_numeric_daft_types!(**inner_dtype, |$T| {
+                    type Tgt = <$T as DaftNumericType>::Native;
+                    pyo3::Python::with_gil(|py| {
+                        let result = extract_python_like_to_tensor_array::<Tgt>(py, self, dtype, &inner_dtype)?;
+                        Ok(result.into_series())
+                    })
+                })
+            }
+            DataType::FixedShapeTensor(..) => {
+                let result = self.cast(&dtype.to_physical())?;
+                let tensor_array = FixedShapeTensorArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.fixed_size_list()?.clone(),
+                );
+                Ok(tensor_array.into_series())
+            }
             // TODO: Add implementations for these types
             // DataType::Timestamp(_, _) => $self.timestamp().unwrap().$method($($args),*),
             dt => unimplemented!("dtype {:?} not supported", dt),
@@ -947,10 +1078,9 @@ impl PythonArray {
 
 impl EmbeddingArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
+        match (dtype, self.logical_type()) {
             #[cfg(feature = "python")]
-            DataType::Python => Python::with_gil(|py| {
-                let DataType::Embedding(_, size) = self.logical_type() else { panic!("EmbeddingArray should have an Embedding dtype.") };
+            (DataType::Python, DataType::Embedding(_, size)) => Python::with_gil(|py| {
                 let shape = (self.len(), *size);
                 let pyarrow = py.import("pyarrow")?;
                 // Only go through FFI layer once instead of for every embedding.
@@ -974,7 +1104,17 @@ impl EmbeddingArray {
                 )?
                 .into_series())
             }),
-            _ => self.physical.cast(dtype),
+            (DataType::Tensor(_), DataType::Embedding(inner_dtype, size)) => {
+                let image_shape = vec![*size as u64];
+                let fixed_shape_tensor_dtype =
+                    DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
+                let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                fixed_shape_tensor_array.cast(dtype)
+            }
+            // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
+            (_, _) => self.physical.cast(dtype),
         }
     }
 }
@@ -1014,6 +1154,84 @@ impl ImageArray {
                 )?
                 .into_series())
             }),
+            DataType::FixedShapeImage(mode, height, width) => {
+                let num_channels = mode.num_channels();
+                let image_shape = vec![*height as u64, *width as u64, num_channels as u64];
+                let fixed_shape_tensor_dtype =
+                    DataType::FixedShapeTensor(Box::new(mode.get_dtype()), image_shape);
+                let fixed_shape_tensor_array =
+                    self.cast(&fixed_shape_tensor_dtype).or_else(|e| {
+                        if num_channels == 1 {
+                            // Fall back to height x width shape if unit channel.
+                            self.cast(&DataType::FixedShapeTensor(
+                                Box::new(mode.get_dtype()),
+                                vec![*height as u64, *width as u64],
+                            ))
+                            .or(Err(e))
+                        } else {
+                            Err(e)
+                        }
+                    })?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                fixed_shape_tensor_array.cast(dtype)
+            }
+            DataType::Tensor(_) => {
+                let ndim = 3;
+                let mut shapes = Vec::with_capacity(ndim * self.len());
+                let shape_offsets = (0..=ndim * self.len())
+                    .step_by(ndim)
+                    .map(|v| v as i64)
+                    .collect::<Vec<i64>>();
+                let validity = self.as_arrow().validity();
+                let data_array = self.data_array();
+                let ca = self.channel_array();
+                let ha = self.height_array();
+                let wa = self.width_array();
+                for i in 0..self.len() {
+                    shapes.push(ha.value(i) as u64);
+                    shapes.push(wa.value(i) as u64);
+                    shapes.push(ca.value(i) as u64);
+                }
+                let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+                    arrow2::datatypes::Field::new(
+                        "shape",
+                        arrow2::datatypes::DataType::UInt64,
+                        true,
+                    ),
+                ));
+                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
+                    shapes_dtype,
+                    shape_offsets,
+                    Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
+                    validity.cloned(),
+                ));
+
+                let values: Vec<Box<dyn arrow2::array::Array>> =
+                    vec![data_array.to_boxed(), shapes_array];
+                let physical_type = dtype.to_physical();
+                let struct_array = Box::new(arrow2::array::StructArray::new(
+                    physical_type.to_arrow()?,
+                    values,
+                    validity.cloned(),
+                ));
+
+                let daft_struct_array = crate::datatypes::StructArray::new(
+                    Field::new(self.name(), physical_type).into(),
+                    struct_array,
+                )?;
+                Ok(
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
+                        .into_series(),
+                )
+            }
+            DataType::FixedShapeTensor(inner_dtype, _) => {
+                let tensor_dtype = DataType::Tensor(inner_dtype.clone());
+                let tensor_array = self.cast(&tensor_dtype)?;
+                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                tensor_array.cast(dtype)
+            }
             _ => self.physical.cast(dtype),
         }
     }
@@ -1061,6 +1279,333 @@ impl FixedShapeImageArray {
                     .into_series())
                 })
             }
+            (DataType::Tensor(_), DataType::FixedShapeImage(mode, height, width)) => {
+                let num_channels = mode.num_channels();
+                let image_shape = vec![*height as u64, *width as u64, num_channels as u64];
+                let fixed_shape_tensor_dtype =
+                    DataType::FixedShapeTensor(Box::new(mode.get_dtype()), image_shape);
+                let fixed_shape_tensor_array =
+                    self.cast(&fixed_shape_tensor_dtype).or_else(|e| {
+                        if num_channels == 1 {
+                            // Fall back to height x width shape if unit channel.
+                            self.cast(&DataType::FixedShapeTensor(
+                                Box::new(mode.get_dtype()),
+                                vec![*height as u64, *width as u64],
+                            ))
+                            .or(Err(e))
+                        } else {
+                            Err(e)
+                        }
+                    })?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                fixed_shape_tensor_array.cast(dtype)
+            }
+            (DataType::Image(_), DataType::FixedShapeImage(mode, _, _)) => {
+                let tensor_dtype = DataType::Tensor(Box::new(mode.get_dtype()));
+                let tensor_array = self.cast(&tensor_dtype)?;
+                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                tensor_array.cast(dtype)
+            }
+            // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
+            (_, _) => self.physical.cast(dtype),
+        }
+    }
+}
+
+impl TensorArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let mut ndarrays = Vec::with_capacity(self.len());
+                let da = self.data_array();
+                let sa = self.shape_array();
+                let pyarrow = py.import("pyarrow")?;
+                for (arrow_array, shape_array) in da.iter().zip(sa.iter()) {
+                    if let (Some(arrow_array), Some(shape_array)) = (arrow_array, shape_array) {
+                        let shape_array = shape_array
+                            .as_any()
+                            .downcast_ref::<arrow2::array::UInt64Array>()
+                            .unwrap();
+                        let shape = shape_array.values().to_vec();
+                        let py_array = ffi::to_py_array(arrow_array, py, pyarrow)?
+                            .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                            .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
+                        ndarrays.push(py_array);
+                    } else {
+                        ndarrays.push(py.None())
+                    }
+                }
+                let values_array =
+                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    values_array.to_boxed(),
+                )?
+                .into_series())
+            }),
+            DataType::FixedShapeTensor(inner_dtype, shape) => {
+                let da = self.data_array();
+                let sa = self.shape_array();
+                if !sa.iter().all(|s| {
+                    s.map_or(true, |s| {
+                        s.as_any()
+                            .downcast_ref::<arrow2::array::PrimitiveArray<u64>>()
+                            .unwrap()
+                            .iter()
+                            .eq(shape.iter().map(Some))
+                    })
+                }) {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?}; shapes: {:?}",
+                        dtype,
+                        shape,
+                        sa,
+                    )));
+                }
+                let size = shape.iter().product::<u64>() as usize;
+                let new_da = arrow2::compute::cast::cast(
+                    da,
+                    &arrow2::datatypes::DataType::FixedSizeList(
+                        Box::new(arrow2::datatypes::Field::new(
+                            "data",
+                            inner_dtype.to_arrow()?,
+                            true,
+                        )),
+                        size,
+                    ),
+                    Default::default(),
+                )?;
+                let inner_field = Box::new(Field::new("data", *inner_dtype.clone()));
+                let new_field = Arc::new(Field::new(
+                    "data",
+                    DataType::FixedSizeList(inner_field, size),
+                ));
+                let result = FixedSizeListArray::new(new_field, new_da)?;
+                let tensor_array =
+                    FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), result);
+                Ok(tensor_array.into_series())
+            }
+            DataType::Image(mode) => {
+                let sa = self.shape_array();
+                if !sa.iter().all(|s| {
+                    s.map_or(true, |s| {
+                        if s.len() != 3 && s.len() != 2 {
+                            // Images must have 2 or 3 dimensions: height x width or height x width x channel.
+                            // If image is 2 dimensions, 8-bit grayscale is assumed.
+                            return false;
+                        }
+                        if let Some(mode) = mode && s.as_any()
+                            .downcast_ref::<arrow2::array::PrimitiveArray<u64>>()
+                            .unwrap()
+                            .get(s.len() - 1)
+                            .unwrap() != mode.num_channels() as u64
+                        {
+                            // If type-level mode is defined, each image must have the implied number of channels.
+                            return false;
+                        }
+                        true
+                    })
+                }) {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast Tensor array to Image array with type {:?}: Tensor array shapes are not compatible: {:?}",
+                        dtype,
+                        sa,
+                    )));
+                }
+                let num_rows = self.len();
+                let mut channels = Vec::<u16>::with_capacity(num_rows);
+                let mut heights = Vec::<u32>::with_capacity(num_rows);
+                let mut widths = Vec::<u32>::with_capacity(num_rows);
+                let mut modes = Vec::<u8>::with_capacity(num_rows);
+                let da = self.data_array();
+                let validity = da.validity();
+                for i in 0..num_rows {
+                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    if !is_valid {
+                        // Handle invalid row by populating dummy data.
+                        channels.push(1);
+                        heights.push(1);
+                        widths.push(1);
+                        modes.push(mode.unwrap_or(ImageMode::L) as u8);
+                        continue;
+                    }
+                    let shape = sa.value(i);
+                    let shape = shape
+                        .as_any()
+                        .downcast_ref::<arrow2::array::PrimitiveArray<u64>>()
+                        .unwrap();
+                    assert!(shape.validity().map_or(true, |v| v.iter().all(|b| b)));
+                    let mut shape = shape.values().to_vec();
+                    if shape.len() == 2 {
+                        // Add unit channel dimension to grayscale height x width image.
+                        shape.push(1);
+                    }
+                    if shape.len() != 3 {
+                        return Err(DaftError::ValueError(format!(
+                            "Image expected to have {} dimensions, but has {}. Image shape = {:?}",
+                            3,
+                            shape.len(),
+                            shape,
+                        )));
+                    }
+                    heights.push(
+                        shape[0]
+                            .try_into()
+                            .expect("Image height should fit into a uint16"),
+                    );
+                    widths.push(
+                        shape[1]
+                            .try_into()
+                            .expect("Image width should fit into a uint16"),
+                    );
+                    channels.push(
+                        shape[2]
+                            .try_into()
+                            .expect("Number of channels should fit into a uint8"),
+                    );
+
+                    modes.push(mode.unwrap_or(ImageMode::try_from_num_channels(
+                        shape[2].try_into().unwrap(),
+                        &DataType::UInt8,
+                    )?) as u8);
+                }
+                Ok(ImageArray::from_list_array(
+                    self.name(),
+                    dtype.clone(),
+                    Box::new(da.clone()),
+                    ImageArraySidecarData {
+                        channels,
+                        heights,
+                        widths,
+                        modes,
+                        validity: validity.cloned(),
+                    },
+                )?
+                .into_series())
+            }
+            DataType::FixedShapeImage(mode, height, width) => {
+                let num_channels = mode.num_channels();
+                let image_shape = vec![*height as u64, *width as u64, num_channels as u64];
+                let fixed_shape_tensor_dtype =
+                    DataType::FixedShapeTensor(Box::new(mode.get_dtype()), image_shape);
+                let fixed_shape_tensor_array =
+                    self.cast(&fixed_shape_tensor_dtype).or_else(|e| {
+                        if num_channels == 1 {
+                            // Fall back to height x width shape if unit channel.
+                            self.cast(&DataType::FixedShapeTensor(
+                                Box::new(mode.get_dtype()),
+                                vec![*height as u64, *width as u64],
+                            ))
+                            .or(Err(e))
+                        } else {
+                            Err(e)
+                        }
+                    })?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                fixed_shape_tensor_array.cast(dtype)
+            }
+            _ => self.physical.cast(dtype),
+        }
+    }
+}
+
+impl FixedShapeTensorArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match (dtype, self.logical_type()) {
+            #[cfg(feature = "python")]
+            (DataType::Python, DataType::FixedShapeTensor(_, shape)) => {
+                pyo3::Python::with_gil(|py| {
+                    let pyarrow = py.import("pyarrow")?;
+                    let mut np_shape: Vec<u64> = vec![self.len() as u64];
+                    np_shape.extend(shape);
+                    // Only go through FFI layer once instead of for every tensor element.
+                    // We create an (N, [shape..]) ndarray view on the entire tensor array buffer
+                    // sans the validity mask, and then create a subndarray view for each ndarray
+                    // element in the PythonArray.
+                    let py_array = ffi::to_py_array(
+                        self.as_arrow().values().with_validity(None),
+                        py,
+                        pyarrow,
+                    )?
+                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(
+                        py,
+                        pyo3::intern!(py, "reshape"),
+                        (np_shape,),
+                    )?;
+                    let ndarrays = py_array
+                        .as_ref(py)
+                        .iter()?
+                        .map(|a| a.unwrap().to_object(py))
+                        .collect::<Vec<PyObject>>();
+                    let values_array =
+                        PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                    Ok(PythonArray::new(
+                        Field::new(self.name(), dtype.clone()).into(),
+                        values_array.to_boxed(),
+                    )?
+                    .into_series())
+                })
+            }
+            (DataType::Tensor(_), DataType::FixedShapeTensor(inner_dtype, tensor_shape)) => {
+                let ndim = tensor_shape.len();
+                let shapes = tensor_shape
+                    .iter()
+                    .cycle()
+                    .copied()
+                    .take(ndim * self.len())
+                    .collect();
+                let shape_offsets = (0..=ndim * self.len())
+                    .step_by(ndim)
+                    .map(|v| v as i64)
+                    .collect::<Vec<i64>>();
+                let physical_arr = self.as_arrow();
+                let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+                    arrow2::datatypes::Field::new("data", inner_dtype.to_arrow()?, true),
+                ));
+                let list_arr = cast(
+                    physical_arr,
+                    &list_dtype,
+                    CastOptions {
+                        wrapped: true,
+                        partial: false,
+                    },
+                )?;
+                let validity = self.as_arrow().validity();
+                let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+                    arrow2::datatypes::Field::new(
+                        "shape",
+                        arrow2::datatypes::DataType::UInt64,
+                        true,
+                    ),
+                ));
+                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
+                    shapes_dtype,
+                    shape_offsets,
+                    Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
+                    validity.cloned(),
+                ));
+
+                let values: Vec<Box<dyn arrow2::array::Array>> = vec![list_arr, shapes_array];
+                let physical_type = dtype.to_physical();
+                let struct_array = Box::new(arrow2::array::StructArray::new(
+                    physical_type.to_arrow()?,
+                    values,
+                    validity.cloned(),
+                ));
+
+                let daft_struct_array =
+                    StructArray::new(Field::new(self.name(), physical_type).into(), struct_array)?;
+                Ok(
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
+                        .into_series(),
+                )
+            }
+            // NOTE(Clark): Casting to FixedShapeImage is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
         }
     }

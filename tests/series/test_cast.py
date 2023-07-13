@@ -190,7 +190,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
 
 def test_series_cast_numpy_to_image() -> None:
     data = [
-        np.arange(12, dtype=np.uint8).reshape((3, 2, 2)),
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
         None,
     ]
@@ -236,7 +236,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     height = 2
     width = 2
     shape = (height, width, 3)
-    data = [np.arange(12).reshape(shape), np.arange(12, 24).reshape(shape), None]
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
     s = Series.from_pylist(data, pyobj="force")
 
     target_dtype = DataType.image("RGB", height, width)
@@ -249,6 +249,269 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     assert t.arr.lengths().to_pylist() == [12, 12, None]
 
     pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_numpy_to_tensor() -> None:
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.tensor(DataType.uint8())
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_numpy_to_fixed_shape_tensor() -> None:
+    shape = (2, 2)
+    data = [
+        np.arange(4, dtype=np.uint8).reshape(shape),
+        np.arange(4, 8, dtype=np.uint8).reshape(shape),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.tensor(DataType.uint8(), shape)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+    assert len(t) == len(data)
+
+    pydata = t.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_image_to_fixed_shape_image() -> None:
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB")
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.image("RGB", height, width)
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_image_to_tensor() -> None:
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB")
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8())
+
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_image_to_fixed_shape_tensor() -> None:
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB")
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8(), shape)
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_fixed_shape_image_to_image() -> None:
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB", height, width)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.image("RGB")
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_fixed_shape_image_to_fixed_shape_tensor() -> None:
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB", height, width)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8(), shape)
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_fixed_shape_image_to_tensor() -> None:
+    height = 2
+    width = 2
+    shape = (height, width, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.image("RGB", height, width)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8())
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_fixed_shape_tensor_to_tensor() -> None:
+    shape = (2, 2, 3)
+    data = [np.arange(12, dtype=np.uint8).reshape(shape), np.arange(12, 24, dtype=np.uint8).reshape(shape), None]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.tensor(DataType.uint8(), shape)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8())
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(pydata[:-1], data[:-1])
+
+
+def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
+    shape = (4,)
+    data = [
+        np.arange(4, dtype=np.uint8).reshape(shape),
+        np.arange(4, 8, dtype=np.uint8).reshape(shape),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.embedding("arr", DataType.uint8(), 4)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8(), shape)
+
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
+    assert pydata[-1] is None
+    np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_embedding_to_tensor() -> None:
+    shape = (4,)
+    data = [
+        np.arange(4, dtype=np.uint8).reshape(shape),
+        np.arange(4, 8, dtype=np.uint8).reshape(shape),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="force")
+
+    target_dtype = DataType.embedding("arr", DataType.uint8(), 4)
+
+    t = s.cast(target_dtype)
+
+    assert t.datatype() == target_dtype
+
+    target_dtype = DataType.tensor(DataType.uint8())
+
+    u = t.cast(target_dtype)
+
+    assert u.datatype() == target_dtype
+    assert len(u) == len(data)
+
+    pydata = u.to_pylist()
     assert pydata[-1] is None
     np.testing.assert_equal(data[:-1], pydata[:-1])
 

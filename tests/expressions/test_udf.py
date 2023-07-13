@@ -146,17 +146,17 @@ def test_udf_equality():
     assert not expr_structurally_equal(udf1("x"), udf1("y"))
 
 
-def test_udf_return_numpy():
-    @udf(return_dtype=DataType.python())
+def test_udf_return_tensor():
+    @udf(return_dtype=DataType.tensor(DataType.float64()))
     def np_udf(x):
-        return [np.ones((3,)) * i for i in x.to_pylist()]
+        return [np.ones((3, 3)) * i for i in x.to_pylist()]
 
     expr = np_udf(col("x"))
     table = Table.from_pydict({"x": [0, 1, 2]})
     result = table.eval_expression_list([expr])
     assert len(result.to_pydict()["x"]) == 3
     for i in range(3):
-        np.testing.assert_array_equal(result.to_pydict()["x"][i], np.ones((3,)) * i)
+        np.testing.assert_array_equal(result.to_pydict()["x"][i], np.ones((3, 3)) * i)
 
 
 @pytest.mark.skip(

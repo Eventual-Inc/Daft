@@ -7,6 +7,7 @@ import pytest
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.series import Series
+from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -134,18 +135,15 @@ def test_series_filter_on_extension_array(uuid_ext_type) -> None:
 
 
 @pytest.mark.skipif(
-    ARROW_VERSION < (12, 0, 0),
+    not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
-@pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
-    reason="Pickling canonical tensor extension type is not supported by pyarrow",
 )
 def test_series_filter_on_canonical_tensor_extension_array() -> None:
     arr = np.arange(20).reshape((5, 2, 2))
     data = pa.FixedShapeTensorArray.from_numpy_ndarray(arr)
 
     s = Series.from_arrow(data)
+    assert s.datatype() == DataType.tensor(DataType.int64(), (2, 2))
     pymask = [False, True, True, None, False]
     mask = Series.from_pylist(pymask)
 
@@ -153,7 +151,7 @@ def test_series_filter_on_canonical_tensor_extension_array() -> None:
 
     assert s.datatype() == result.datatype()
     expected = [val for val, keep in zip(s.to_pylist(), pymask) if keep]
-    assert result.to_pylist() == expected
+    np.testing.assert_equal(result.to_pylist(), expected)
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
