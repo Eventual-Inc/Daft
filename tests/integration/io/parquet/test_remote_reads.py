@@ -180,6 +180,7 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
     return table
 
 
+@pytest.mark.integration()
 def test_parquet_read(parquet_file):
     _, url = parquet_file
     daft_native_read = Table.read_parquet(url, io_config=IOConfig(s3=S3Config(anonymous=True)))
