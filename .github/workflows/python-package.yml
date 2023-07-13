@@ -39,7 +39,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
-        cache-all-crates: true
+        cache-all-crates: 'true'
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -126,7 +126,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-integration-build
-        cache-all-crates: true
+        cache-all-crates: 'true'
 
     # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
@@ -285,7 +285,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-rust-build
-        cache-all-crates: true
+        cache-all-crates: 'true'
 
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -369,7 +369,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
-        cache-all-crates: true
+        cache-all-crates: 'true'
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -439,7 +439,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
-        cache-all-crates: true
+        cache-all-crates: 'true'
 
     - uses: actions/cache@v3
       id: pre-commit-cache
