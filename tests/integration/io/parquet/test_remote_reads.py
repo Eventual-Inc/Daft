@@ -62,30 +62,26 @@ DAFT_CAN_READ_FILES = [
     #     "parquet-testing/data/fixed_length_byte_array.parquet",
     #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/fixed_length_byte_array.parquet",
     # ),
-    # Need Decimal Support in Daft
-    # (
-    #     "parquet-testing/data/fixed_length_decimal.parquet",
-    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/fixed_length_decimal.parquet",
-    # ),
-    # Need Decimal Support in Daft
-    # (
-    #     "parquet-testing/data/fixed_length_decimal_legacy.parquet",
-    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/fixed_length_decimal_legacy.parquet",
-    # ),
-    # Need Decimal Support in Daft
-    # (
-    #     "parquet-testing/data/int32_decimal.parquet",
-    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/int32_decimal.parquet",
-    # ),
+    (
+        "parquet-testing/data/fixed_length_decimal.parquet",
+        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/fixed_length_decimal.parquet",
+    ),
+    (
+        "parquet-testing/data/fixed_length_decimal_legacy.parquet",
+        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/fixed_length_decimal_legacy.parquet",
+    ),
+    (
+        "parquet-testing/data/int32_decimal.parquet",
+        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/int32_decimal.parquet",
+    ),
     (
         "parquet-testing/data/int32_with_null_pages.parquet",
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/int32_with_null_pages.parquet",
     ),
-    # Need Decimal Support in Daft
-    # (
-    #     "parquet-testing/data/int64_decimal.parquet",
-    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/int64_decimal.parquet",
-    # ),
+    (
+        "parquet-testing/data/int64_decimal.parquet",
+        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/int64_decimal.parquet",
+    ),
     (
         "parquet-testing/data/list_columns.parquet",
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/list_columns.parquet",
