@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use daft_io::IOClient;
 
@@ -33,10 +36,10 @@ pub async fn read_parquet_metadata(
         .context(UnableToReadBytesSnafu { path: uri })?;
 
     let buffer = data.as_ref();
-    if buffer[default_end_len - 4..] != PARQUET_MAGIC {
+    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
         return Err(Error::InvalidParquetFile {
             path: uri.into(),
-            footer: buffer[default_end_len - 4..].into(),
+            footer: buffer[buffer.len() - 4..].into(),
         });
     }
     let metadata_size = metadata_len(buffer, default_end_len);
@@ -66,10 +69,10 @@ pub async fn read_parquet_metadata(
             .await
             .context(UnableToReadBytesSnafu { path: uri })?;
         let buffer = data.as_ref();
-        if buffer[default_end_len - 4..] != PARQUET_MAGIC {
+        if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
             return Err(Error::InvalidParquetFile {
                 path: uri.into(),
-                footer: buffer[default_end_len - 4..].into(),
+                footer: buffer[buffer.len() - 4..].into(),
             });
         }
         let remaining = buffer.len() - footer_len;
@@ -77,7 +80,13 @@ pub async fn read_parquet_metadata(
     };
 
     let max_size = reader.len() * 2 + 1024;
-    deserialize_metadata(reader, max_size).context(UnableToParseMetadataSnafu { path: uri })
+
+    let start = Instant::now();
+    let metadata =
+        deserialize_metadata(reader, max_size).context(UnableToParseMetadataSnafu { path: uri });
+    println!("time {:?}", start.elapsed().as_secs());
+
+    metadata
 }
 
 #[cfg(test)]

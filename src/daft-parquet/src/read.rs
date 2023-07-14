@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, fmt::format, sync::Arc};
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
@@ -17,10 +17,32 @@ use crate::{
 
 fn plan_read_row_groups(
     uri: &str,
+    columns: Option<&[&str]>,
     row_groups: Option<&[i64]>,
     metadata: &FileMetaData,
 ) -> DaftResult<ReadPlanBuilder> {
     let arrow_schema = infer_schema(metadata)?;
+    let mut arrow_fields = arrow_schema.fields;
+    if let Some(columns) = columns {
+        let avail_names = arrow_fields
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<HashSet<_>>();
+        let mut names_to_keep = HashSet::new();
+        for col_name in columns {
+            if avail_names.contains(col_name) {
+                names_to_keep.insert(*col_name);
+            } else {
+                return Err(common_error::DaftError::FieldNotFound(format!(
+                    "Field: {} not found in {:?} when planning read for parquet file",
+                    col_name, avail_names
+                )));
+            }
+        }
+
+        arrow_fields.retain(|f| names_to_keep.contains(f.name.as_str()))
+    };
+
     let num_row_groups = metadata.row_groups.len();
     let mut read_plan = read_planner::ReadPlanBuilder::new();
     let row_groups = match row_groups {
@@ -41,7 +63,7 @@ fn plan_read_row_groups(
         let rg = metadata.row_groups.get(row_group as usize).unwrap();
 
         let columns = rg.columns();
-        for field in arrow_schema.fields.iter() {
+        for field in arrow_fields.iter() {
             let field_name = field.name.clone();
             let filtered_cols = columns
                 .iter()
@@ -194,15 +216,16 @@ mod tests {
     use crate::{read::plan_read_row_groups, read_planner::CoalescePass};
     #[tokio::test]
     async fn test_parquet_read_planner() -> DaftResult<()> {
-        let file = "https://huggingface.co/datasets/ChristophSchuhmann/improved_aesthetics_6.5plus/resolve/main/data/train-00000-of-00001-6f24a7497df494ae.parquet";
+        let file =
+            "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part_1RG.parquet";
 
         let mut io_config = IOConfig::default();
-        io_config.s3.anonymous = true;
+        // io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let size = io_client.single_url_get_size(file.into()).await?;
         let metadata = crate::metadata::read_parquet_metadata(file, size, io_client).await?;
-        let mut plan = plan_read_row_groups(file, None, &metadata)?;
+        let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), None, &metadata)?;
         println!("{}", plan);
         plan.add_pass(Box::new(CoalescePass {
             max_hole_size: 1024 * 1024,

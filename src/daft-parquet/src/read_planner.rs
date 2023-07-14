@@ -28,7 +28,7 @@ impl ReadPlanPass for CoalescePass {
         let mut curr_end = ranges.first().unwrap().end;
         let mut new_ranges = vec![];
         for range in ranges.iter().skip(1) {
-            if (range.start + self.max_hole_size) >= curr_end {
+            if range.start <= (curr_end + self.max_hole_size) {
                 curr_end = range.end.max(curr_end);
             } else {
                 new_ranges.push(curr_start..curr_end);
@@ -78,7 +78,13 @@ impl Display for ReadPlanBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "ReadPlanBuilder: {} ranges", self.ranges.len())?;
         for range in self.ranges.iter() {
-            writeln!(f, "{}-{}", range.start, range.end)?;
+            writeln!(
+                f,
+                "{}-{}, {}",
+                range.start,
+                range.end,
+                range.end - range.start
+            )?;
         }
         Ok(())
     }
