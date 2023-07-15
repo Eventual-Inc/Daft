@@ -191,6 +191,7 @@ fn read_row_groups_from_ranges(
 
 pub fn read_parquet(
     uri: &str,
+    columns: Option<&[&str]>,
     row_groups: Option<&[i64]>,
     size: Option<usize>,
     io_client: Arc<IOClient>,
@@ -204,7 +205,7 @@ pub fn read_parquet(
             None => io_client.single_url_get_size(uri.into()).await?,
         };
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
-        let mut plan = plan_read_row_groups(uri, None, row_groups, &metadata)?;
+        let mut plan = plan_read_row_groups(uri, columns, row_groups, &metadata)?;
 
         plan.add_pass(Box::new(SplitLargeRequestPass {
             max_request_size: 16 * 1024 * 1024,
@@ -221,7 +222,7 @@ pub fn read_parquet(
         DaftResult::Ok((metadata, plan.collect(io_client).await?))
     })?;
 
-    read_row_groups_from_ranges(&dl_ranges, None, row_groups, &metadata)
+    read_row_groups_from_ranges(&dl_ranges, columns, row_groups, &metadata)
 }
 
 #[cfg(test)]
@@ -241,7 +242,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, io_client)?;
+        let table = read_parquet(file, None, None, None, io_client)?;
         assert_eq!(table.len(), 100);
 
         Ok(())

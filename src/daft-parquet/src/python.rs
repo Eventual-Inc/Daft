@@ -9,6 +9,7 @@ pub mod pylib {
     pub fn read_parquet(
         py: Python,
         uri: &str,
+        columns: Option<Vec<&str>>,
         row_groups: Option<Vec<i64>>,
         size: Option<usize>,
         io_config: Option<PyIOConfig>,
@@ -16,7 +17,14 @@ pub mod pylib {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
 
-            Ok(crate::read::read_parquet(uri, row_groups.as_deref(), size, io_client)?.into())
+            Ok(crate::read::read_parquet(
+                uri,
+                columns.as_deref(),
+                row_groups.as_deref(),
+                size,
+                io_client,
+            )?
+            .into())
         })
     }
 }

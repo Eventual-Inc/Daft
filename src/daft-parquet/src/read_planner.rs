@@ -176,7 +176,7 @@ impl RangesContainer {
                 let index = index - 1;
                 let (byte_start, bytes_at_index) = &self.ranges[index];
                 let end = byte_start + bytes_at_index.len();
-                assert!(current_pos >= *byte_start && current_pos < end);
+                assert!(current_pos >= *byte_start && current_pos < end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {byte_start}, end: {end}");
                 let start_offset = current_pos - byte_start;
                 let end_offset = bytes_at_index.len().min(range.end - byte_start);
                 let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
