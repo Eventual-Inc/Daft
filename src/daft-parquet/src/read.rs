@@ -44,7 +44,7 @@ fn plan_read_row_groups(
     };
 
     let num_row_groups = metadata.row_groups.len();
-    let mut read_plan = read_planner::ReadPlanBuilder::new();
+    let mut read_plan = read_planner::ReadPlanBuilder::new(uri);
     let row_groups = match row_groups {
         Some(rg) => rg.to_vec(),
         None => (0i64..num_row_groups as i64).collect(),
@@ -213,26 +213,42 @@ mod tests {
         Ok(())
     }
 
-    use crate::{read::plan_read_row_groups, read_planner::CoalescePass};
+    use crate::{
+        read::plan_read_row_groups,
+        read_planner::{CoalescePass, ReadPlanBuilder},
+    };
+    use std::io::Read;
     #[tokio::test]
     async fn test_parquet_read_planner() -> DaftResult<()> {
-        let file =
-            "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part_1RG.parquet";
+        let file = "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part.parquet";
 
         let mut io_config = IOConfig::default();
         // io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let size = io_client.single_url_get_size(file.into()).await?;
-        let metadata = crate::metadata::read_parquet_metadata(file, size, io_client).await?;
-        let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), None, &metadata)?;
-        println!("{}", plan);
-        plan.add_pass(Box::new(CoalescePass {
-            max_hole_size: 1024 * 1024,
-        }));
-        plan.run_passes()?;
+        let metadata =
+            crate::metadata::read_parquet_metadata(file, size, io_client.clone()).await?;
+        // let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), Some(&[1,2]), &metadata)?;
+
+        let mut plan: ReadPlanBuilder = ReadPlanBuilder::new(file);
         println!("{}", plan);
 
+        plan.add_range(0, 10);
+        plan.add_range(10, 20);
+        plan.add_range(20, 30);
+
+        // plan.add_pass(Box::new(CoalescePass {
+        //     max_hole_size: 1024 * 1024,
+        //     max_request_size: 16 * 1024 * 1024
+        // }));
+        // plan.run_passes()?;
+        // println!("{}", plan);
+        let memory = plan.collect(io_client.clone()).await?;
+        let mut reader = memory.get_range_reader(1..30)?;
+        let mut buf = vec![0u8; 30];
+        let n = reader.read_to_end(&mut buf)?;
+        println!("n: {}", n);
         Ok(())
     }
 }
