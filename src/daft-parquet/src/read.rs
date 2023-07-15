@@ -16,7 +16,7 @@ use parquet2::{
 
 use crate::{
     metadata::read_parquet_metadata,
-    read_planner::{self, RangesContainer, ReadPlanBuilder},
+    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder},
 };
 
 fn plan_read_row_groups(
@@ -190,96 +190,6 @@ fn read_row_groups_from_ranges(
     Table::new(daft_schema, compacted_series)
 }
 
-async fn read_row_groups(
-    uri: &str,
-    row_groups: Option<&[i64]>,
-    metadata: &FileMetaData,
-    io_client: Arc<IOClient>,
-) -> DaftResult<Table> {
-    let arrow_schema = infer_schema(metadata)?;
-    let daft_schema = daft_core::schema::Schema::try_from(&arrow_schema)?;
-    let mut daft_series = vec![vec![]; daft_schema.names().len()];
-    let num_row_groups = metadata.row_groups.len();
-
-    let row_groups = match row_groups {
-        Some(rg) => rg.to_vec(),
-        None => (0i64..num_row_groups as i64).collect(),
-    };
-
-    for row_group in row_groups {
-        if !(0i64..num_row_groups as i64).contains(&row_group) {
-            return Err(super::Error::ParquetRowGroupOutOfIndex {
-                path: uri.into(),
-                row_group,
-                total_row_groups: num_row_groups as i64,
-            }
-            .into());
-        }
-
-        let rg = metadata.row_groups.get(row_group as usize).unwrap();
-
-        let columns = rg.columns();
-        for (ii, field) in arrow_schema.fields.iter().enumerate() {
-            let field_name = field.name.clone();
-            let mut decompressed_iters = vec![];
-            let mut ptypes = vec![];
-            let filtered_cols = columns
-                .iter()
-                .filter(|x| x.descriptor().path_in_schema[0] == field_name)
-                .collect::<Vec<_>>();
-
-            for col in filtered_cols {
-                let (start, len) = col.byte_range();
-                let end = start + len;
-
-                // should be async
-                let get_result = io_client
-                    .single_url_get(uri.into(), Some(start as usize..end as usize))
-                    .await?;
-
-                // should stream this instead
-                let bytes = get_result.bytes().await?;
-                let buffer = bytes.to_vec();
-                let pages = PageReader::new(
-                    std::io::Cursor::new(buffer),
-                    col,
-                    Arc::new(|_, _| true),
-                    vec![],
-                    4 * 1024 * 1024,
-                );
-
-                decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
-
-                ptypes.push(&col.descriptor().descriptor.primitive_type);
-            }
-
-            // let field = &arrow_schema.fields[ii];
-            let arr_iter = column_iter_to_arrays(
-                decompressed_iters,
-                ptypes,
-                field.clone(),
-                Some(4096),
-                rg.num_rows(),
-            )?;
-
-            let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
-            let ser = all_arrays
-                .into_iter()
-                .map(|a| Series::try_from((field.name.as_str(), cast_array_for_daft_if_needed(a))))
-                .collect::<DaftResult<Vec<Series>>>()?;
-
-            daft_series[ii].extend(ser);
-        }
-    }
-
-    let compacted_series = daft_series
-        .into_iter()
-        .map(|s| Series::concat(s.iter().collect::<Vec<_>>().as_ref()))
-        .collect::<DaftResult<_>>()?;
-
-    Table::new(daft_schema, compacted_series)
-}
-
 pub fn read_parquet(
     uri: &str,
     row_groups: Option<&[i64]>,
@@ -289,14 +199,25 @@ pub fn read_parquet(
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
 
-    runtime_handle.block_on(async {
+    let (metadata, dl_ranges) = runtime_handle.block_on(async {
         let size = match size {
             Some(size) => size,
             None => io_client.single_url_get_size(uri.into()).await?,
         };
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
-        read_row_groups(uri, row_groups, &metadata, io_client.clone()).await
-    })
+        let mut plan = plan_read_row_groups(uri, None, row_groups, &metadata)?;
+
+        plan.add_pass(Box::new(CoalescePass {
+            max_hole_size: 1024 * 1024,
+            max_request_size: 16 * 1024 * 1024,
+        }));
+        plan.run_passes()?;
+        println!("plan: {}", plan);
+
+        DaftResult::Ok((metadata, plan.collect(io_client).await?))
+    })?;
+
+    read_row_groups_from_ranges(&dl_ranges, None, row_groups, &metadata)
 }
 
 #[cfg(test)]

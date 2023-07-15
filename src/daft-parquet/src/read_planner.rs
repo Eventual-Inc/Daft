@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Display, io::Read, ops::Range, sync::Arc};
 
 use common_error::DaftResult;
 use daft_io::IOClient;
+use futures::{StreamExt, TryStreamExt};
 
 type RangeList = Vec<Range<usize>>;
 
@@ -82,15 +83,26 @@ impl ReadPlanBuilder {
     }
 
     pub async fn collect(self, io_client: Arc<IOClient>) -> DaftResult<RangesContainer> {
-        let mut stored_ranges = Vec::with_capacity(self.ranges.len());
-        for range in self.ranges.iter() {
-            // multithread this
-            let get_result = io_client
-                .single_url_get(self.source.clone(), Some(range.clone()))
-                .await?;
-            let bytes = get_result.bytes().await?;
-            stored_ranges.push((range.start, bytes.to_vec()));
-        }
+        let mut stored_ranges: Vec<_> =
+            futures::stream::iter(self.ranges.into_iter().map(|range| {
+                // multithread this
+                let owned_io_client = io_client.clone();
+                let owned_url = self.source.clone();
+                tokio::spawn(async move {
+                    let get_result = owned_io_client
+                        .single_url_get(owned_url, Some(range.clone()))
+                        .await?;
+                    let bytes = get_result.bytes().await?;
+                    DaftResult::Ok((range.start, bytes.to_vec()))
+                })
+            }))
+            .buffer_unordered(256)
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap()
+            .into_iter()
+            .collect::<DaftResult<_>>()?;
+
         stored_ranges.sort_by_key(|(start, _)| *start);
         Ok(RangesContainer {
             ranges: stored_ranges,
@@ -125,7 +137,6 @@ impl RangesContainer {
                 let index = index - 1;
                 let (byte_start, bytes_at_index) = &self.ranges[index];
                 let end = byte_start + bytes_at_index.len();
-                println!("curr pos: {current_pos}, byte_start: {byte_start}, byte_end: {end}, Range: {range:?}");
                 assert!(current_pos >= *byte_start && current_pos < end);
                 let start_offset = current_pos - byte_start;
                 let end_offset = bytes_at_index.len().min(range.end - byte_start);
@@ -148,7 +159,7 @@ impl RangesContainer {
 
         assert_eq!(current_pos, range.end);
 
-        Ok(MultiRead::new(slice_vec))
+        Ok(MultiRead::new(slice_vec, range.end - range.start))
     }
 }
 
@@ -156,26 +167,24 @@ pub(crate) struct MultiRead<'a> {
     sources: Vec<&'a [u8]>,
     pos_in_sources: usize,
     pos_in_current: usize,
+    bytes_read: usize,
+    total_size: usize,
 }
 
 impl<'a> MultiRead<'a> {
-    fn new(sources: Vec<&'a [u8]>) -> MultiRead<'a> {
-        for s in sources.iter() {
-            println!("len of slice: {}", s.len());
-        }
-
+    fn new(sources: Vec<&'a [u8]>, total_size: usize) -> MultiRead<'a> {
         MultiRead {
             sources,
             pos_in_sources: 0,
             pos_in_current: 0,
+            bytes_read: 0,
+            total_size,
         }
     }
 }
 
 impl Read for MultiRead<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        println!("buf len {}", buf.len());
-
         let current = loop {
             if self.pos_in_sources >= self.sources.len() {
                 return Ok(0); // EOF
@@ -190,7 +199,28 @@ impl Read for MultiRead<'_> {
         let read_size = buf.len().min(current.len() - self.pos_in_current);
         buf[..read_size].copy_from_slice(&current[self.pos_in_current..][..read_size]);
         self.pos_in_current += read_size;
+        self.bytes_read += read_size;
         Ok(read_size)
+    }
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        if self.bytes_read >= self.total_size {
+            return Ok(0);
+        }
+        let starting_bytes_read = self.bytes_read;
+        buf.reserve(self.total_size - self.bytes_read);
+        while self.bytes_read < self.total_size {
+            let current = self.sources[self.pos_in_sources];
+            let slice = &current[self.pos_in_current..];
+            buf.extend_from_slice(slice);
+            self.pos_in_current = 0;
+            self.pos_in_sources += 1;
+            self.bytes_read += slice.len();
+        }
+        println!(
+            "bytes read to end: {}",
+            self.bytes_read - starting_bytes_read
+        );
+        Ok(self.bytes_read - starting_bytes_read)
     }
 }
 
