@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display, io::Read, ops::Range, sync::Arc};
+use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
 
 use common_error::DaftResult;
 use daft_io::IOClient;
@@ -117,7 +117,7 @@ pub(crate) struct RangesContainer {
 impl RangesContainer {
     pub fn get_range_reader<'a>(&'a self, range: Range<usize>) -> DaftResult<MultiRead<'a>> {
         let mut current_pos = range.start;
-        let mut curr_index = 0;
+        let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |(v, _)| *v);
 
         let mut slice_vec: Vec<&'a [u8]> = vec![];

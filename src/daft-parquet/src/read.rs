@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    fmt::format,
     sync::Arc,
 };
 
@@ -244,16 +243,14 @@ mod tests {
     }
 
     use crate::{
-        read::plan_read_row_groups,
-        read::read_row_groups_from_ranges,
-        read_planner::{CoalescePass, ReadPlanBuilder},
+        read::plan_read_row_groups, read::read_row_groups_from_ranges, read_planner::CoalescePass,
     };
-    use std::io::Read;
+
     #[tokio::test]
     async fn test_parquet_read_planner() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part.parquet";
 
-        let mut io_config = IOConfig::default();
+        let io_config = IOConfig::default();
         // io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
