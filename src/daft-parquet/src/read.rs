@@ -15,7 +15,7 @@ use parquet2::{
 
 use crate::{
     metadata::read_parquet_metadata,
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder},
+    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
 };
 
 fn plan_read_row_groups(
@@ -205,6 +205,11 @@ pub fn read_parquet(
         };
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
         let mut plan = plan_read_row_groups(uri, None, row_groups, &metadata)?;
+
+        plan.add_pass(Box::new(SplitLargeRequestPass {
+            max_request_size: 16 * 1024 * 1024,
+            split_threshold: 24 * 1024 * 1024,
+        }));
 
         plan.add_pass(Box::new(CoalescePass {
             max_hole_size: 1024 * 1024,

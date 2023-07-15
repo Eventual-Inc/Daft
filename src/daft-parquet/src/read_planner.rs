@@ -48,6 +48,40 @@ impl ReadPlanPass for CoalescePass {
     }
 }
 
+pub struct SplitLargeRequestPass {
+    pub max_request_size: usize,
+    pub split_threshold: usize,
+}
+
+impl ReadPlanPass for SplitLargeRequestPass {
+    fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)> {
+        let mut ranges = ranges.clone();
+        let before_num_ranges = ranges.len();
+
+        // filter out zero length
+        ranges.retain(|v| v.end > v.start);
+
+        if ranges.is_empty() {
+            return Ok((before_num_ranges != ranges.len(), ranges));
+        }
+
+        let mut new_ranges = vec![];
+        for range in ranges.iter() {
+            if (range.end - range.start) > self.split_threshold {
+                let mut curr_start = range.start;
+                while curr_start < range.end {
+                    let target_end = range.end.min(curr_start + self.max_request_size);
+                    new_ranges.push(curr_start..target_end);
+                    curr_start = target_end;
+                }
+            } else {
+                new_ranges.push(range.clone());
+            }
+        }
+        Ok((before_num_ranges != new_ranges.len(), new_ranges))
+    }
+}
+
 pub(crate) struct ReadPlanBuilder {
     source: String,
     ranges: RangeList,
@@ -133,7 +167,12 @@ impl RangesContainer {
                 curr_index = index + 1;
             }
             Err(index) => {
-                assert!(index > 0);
+                assert!(
+                    index > 0,
+                    "range: {range:?}, start: {}, len: {}",
+                    &self.ranges[index].0,
+                    &self.ranges[index].1.len()
+                );
                 let index = index - 1;
                 let (byte_start, bytes_at_index) = &self.ranges[index];
                 let end = byte_start + bytes_at_index.len();
