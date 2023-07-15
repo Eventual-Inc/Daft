@@ -1,4 +1,8 @@
-use std::{collections::HashSet, fmt::format, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt::format,
+    sync::Arc,
+};
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
@@ -12,7 +16,7 @@ use parquet2::{
 
 use crate::{
     metadata::read_parquet_metadata,
-    read_planner::{self, ReadPlanBuilder},
+    read_planner::{self, RangesContainer, ReadPlanBuilder},
 };
 
 fn plan_read_row_groups(
@@ -79,6 +83,111 @@ fn plan_read_row_groups(
         }
     }
     Ok(read_plan)
+}
+
+fn read_row_groups_from_ranges(
+    reader: &RangesContainer,
+    columns: Option<&[&str]>,
+    row_groups: Option<&[i64]>,
+    metadata: &FileMetaData,
+) -> DaftResult<Table> {
+    let arrow_schema = infer_schema(metadata)?;
+
+    let mut arrow_fields = arrow_schema.fields;
+
+    if let Some(columns) = columns {
+        let avail_names = arrow_fields
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<HashSet<_>>();
+        let mut names_to_keep = HashSet::new();
+        for col_name in columns {
+            if avail_names.contains(col_name) {
+                names_to_keep.insert(*col_name);
+            } else {
+                return Err(common_error::DaftError::FieldNotFound(format!(
+                    "Field: {} not found in {:?} when planning read for parquet file",
+                    col_name, avail_names
+                )));
+            }
+        }
+
+        arrow_fields.retain(|f| names_to_keep.contains(f.name.as_str()))
+    };
+    let daft_schema = daft_core::schema::Schema::try_from(&arrow2::datatypes::Schema {
+        fields: arrow_fields.clone(),
+        metadata: BTreeMap::new(),
+    })?;
+
+    let mut daft_series = vec![vec![]; arrow_fields.len()];
+    let num_row_groups = metadata.row_groups.len();
+
+    let row_groups = match row_groups {
+        Some(rg) => rg.to_vec(),
+        None => (0i64..num_row_groups as i64).collect(),
+    };
+
+    for row_group in row_groups {
+        if !(0i64..num_row_groups as i64).contains(&row_group) {
+            panic!("out of row group index");
+        }
+
+        let rg = metadata.row_groups.get(row_group as usize).unwrap();
+
+        let columns = rg.columns();
+        for (ii, field) in arrow_fields.iter().enumerate() {
+            let field_name = field.name.clone();
+            let mut decompressed_iters = vec![];
+            let mut ptypes = vec![];
+            let filtered_cols = columns
+                .iter()
+                .filter(|x| x.descriptor().path_in_schema[0] == field_name)
+                .collect::<Vec<_>>();
+
+            for col in filtered_cols {
+                let (start, len) = col.byte_range();
+                let end = start + len;
+
+                // should stream this instead
+                let range_reader = reader.get_range_reader(start as usize..end as usize)?;
+                let pages = PageReader::new(
+                    range_reader,
+                    col,
+                    Arc::new(|_, _| true),
+                    vec![],
+                    4 * 1024 * 1024,
+                );
+
+                decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
+
+                ptypes.push(&col.descriptor().descriptor.primitive_type);
+            }
+
+            // let field = &arrow_schema.fields[ii];
+            let arr_iter = column_iter_to_arrays(
+                decompressed_iters,
+                ptypes,
+                field.clone(),
+                Some(4096),
+                rg.num_rows(),
+            )?;
+
+            let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
+            let ser = all_arrays
+                .into_iter()
+                .map(|a| Series::try_from((field.name.as_str(), cast_array_for_daft_if_needed(a))))
+                .collect::<DaftResult<Vec<Series>>>()?;
+
+            daft_series[ii].extend(ser);
+        }
+    }
+
+    let compacted_series = daft_series
+        .into_iter()
+        .map(|s| Series::concat(s.iter().collect::<Vec<_>>().as_ref()))
+        .collect::<DaftResult<_>>()?;
+
+    Table::new(daft_schema, compacted_series)
 }
 
 async fn read_row_groups(
@@ -215,6 +324,7 @@ mod tests {
 
     use crate::{
         read::plan_read_row_groups,
+        read::read_row_groups_from_ranges,
         read_planner::{CoalescePass, ReadPlanBuilder},
     };
     use std::io::Read;
@@ -229,26 +339,18 @@ mod tests {
         let size = io_client.single_url_get_size(file.into()).await?;
         let metadata =
             crate::metadata::read_parquet_metadata(file, size, io_client.clone()).await?;
-        // let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), Some(&[1,2]), &metadata)?;
+        let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), Some(&[1, 2]), &metadata)?;
 
-        let mut plan: ReadPlanBuilder = ReadPlanBuilder::new(file);
+        plan.add_pass(Box::new(CoalescePass {
+            max_hole_size: 1024 * 1024,
+            max_request_size: 16 * 1024 * 1024,
+        }));
+        plan.run_passes()?;
         println!("{}", plan);
-
-        plan.add_range(0, 10);
-        plan.add_range(10, 20);
-        plan.add_range(20, 30);
-
-        // plan.add_pass(Box::new(CoalescePass {
-        //     max_hole_size: 1024 * 1024,
-        //     max_request_size: 16 * 1024 * 1024
-        // }));
-        // plan.run_passes()?;
-        // println!("{}", plan);
         let memory = plan.collect(io_client.clone()).await?;
-        let mut reader = memory.get_range_reader(1..30)?;
-        let mut buf = vec![0u8; 30];
-        let n = reader.read_to_end(&mut buf)?;
-        println!("n: {}", n);
+        let table =
+            read_row_groups_from_ranges(&memory, Some(&["L_ORDERKEY"]), Some(&[1, 2]), &metadata)?;
+        println!("{}", table);
         Ok(())
     }
 }

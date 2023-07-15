@@ -125,10 +125,10 @@ impl RangesContainer {
                 let index = index - 1;
                 let (byte_start, bytes_at_index) = &self.ranges[index];
                 let end = byte_start + bytes_at_index.len();
-                println!("curr pos: {current_pos}, byte_start: {byte_start}, byte_end: {end}");
+                println!("curr pos: {current_pos}, byte_start: {byte_start}, byte_end: {end}, Range: {range:?}");
                 assert!(current_pos >= *byte_start && current_pos < end);
                 let start_offset = current_pos - byte_start;
-                let end_offset = bytes_at_index.len().min(range.end - current_pos);
+                let end_offset = bytes_at_index.len().min(range.end - byte_start);
                 let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
                 slice_vec.push(curr_slice);
                 current_pos += curr_slice.len();
@@ -139,7 +139,7 @@ impl RangesContainer {
             let (byte_start, bytes_at_index) = &self.ranges[curr_index];
             assert_eq!(*byte_start, current_pos);
             let start_offset = 0;
-            let end_offset = bytes_at_index.len().min(range.end - current_pos);
+            let end_offset = bytes_at_index.len().min(range.end - byte_start);
             let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
             slice_vec.push(curr_slice);
             current_pos += curr_slice.len();
