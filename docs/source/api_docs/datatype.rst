@@ -117,6 +117,7 @@ Machine Learning
     :nosignatures:
     :toctree: doc_gen/datatype_methods
 
+    daft.DataType.tensor
     daft.DataType.embedding
 
 Computer Vision

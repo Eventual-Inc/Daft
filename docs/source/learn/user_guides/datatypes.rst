@@ -5,7 +5,7 @@ All columns in a Daft DataFrame have a DataType \(also often abbreviated as ``dt
 
 All elements of a column are of the same dtype, or they can be the special Null value \(indicating a missing value\).
 
-Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like images and embeddings.
+Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings and dates - all the way up to more complex types like tensors and images.
 
 .. NOTE::
 
@@ -111,6 +111,7 @@ Complex Types
 
 Daft supports many more interesting complex DataTypes, for example:
 
+* :meth::`DataType.tensor() <daft.DataType.tensor>`: Multi-dimensional (potentially uniformly-shaped) tensors of data
 * :meth:`DataType.embedding() <daft.DataType.embedding>`: Lower-dimensional vector representation of data (e.g. words)
 * :meth:`DataType.image() <daft.DataType.image>`: NHWC images
 
