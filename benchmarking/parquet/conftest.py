@@ -11,11 +11,17 @@ import pytest
 import daft
 
 
-def daft_read(path: str, columns: list[str] | None = None) -> pa.Table:
+def daft_legacy_read(path: str, columns: list[str] | None = None) -> pa.Table:
     df = daft.read_parquet(path)
     if columns is not None:
         df = df.select(*columns)
     return df.to_arrow()
+
+
+def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
+    assert columns is None, "daft.Table.read_parquet does not support column pruning yet"
+    tbl = daft.table.Table.read_parquet(path, columns=columns)
+    return tbl.to_arrow()
 
 
 def pyarrow_read(path: str, columns: list[str] | None = None) -> pa.Table:
@@ -37,10 +43,24 @@ def boto3_get_object_read(path: str, columns: list[str] | None = None) -> pa.Tab
         return tbl
 
     with open(path, "rb") as f:
-        return papq.read_table(f, columns=columns)
+        data = io.BytesIO(f.read())
+        return papq.read_table(data, columns=columns)
 
 
-@pytest.fixture(params=[daft_read, pyarrow_read, boto3_get_object_read], ids=["daft", "pyarrow", "boto3_get_object"])
+@pytest.fixture(
+    params=[
+        daft_legacy_read,
+        daft_native_read,
+        pyarrow_read,
+        boto3_get_object_read,
+    ],
+    ids=[
+        "daft_legacy_read",
+        "daft_native_read",
+        "pyarrow",
+        "boto3_get_object",
+    ],
+)
 def read_fn(request):
     """Fixture which returns the function to read a PyArrow table from a path"""
     return request.param
