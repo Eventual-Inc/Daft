@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 PATHS = [
-    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_1RG.parquet",
-    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_8RG.parquet",
-    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_64RG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/1RG/daft_tpch_100g_32part_1RG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/8RG/daft_tpch_100g_32part_8RG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/64RG/daft_tpch_100g_32part_64RG.parquet",
 ]
 
 IDS = ["1RG", "8RG", "64RG"]
