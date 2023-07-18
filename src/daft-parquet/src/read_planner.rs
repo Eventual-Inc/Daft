@@ -260,10 +260,6 @@ impl Read for MultiRead<'_> {
             self.pos_in_sources += 1;
             self.bytes_read += slice.len();
         }
-        println!(
-            "bytes read to end: {}",
-            self.bytes_read - starting_bytes_read
-        );
         Ok(self.bytes_read - starting_bytes_read)
     }
 }
