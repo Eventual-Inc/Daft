@@ -422,8 +422,10 @@ mod tests {
         let parquet_file_path = "s3://daft-public-data/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
-        let mut config = S3Config::default();
-        config.anonymous = true;
+        let config = S3Config {
+            anonymous: true,
+            ..Default::default()
+        };
         let client = S3LikeSource::get_client(&config).await?;
         let parquet_file = client.get(parquet_file_path, None).await?;
         let bytes = parquet_file.bytes().await?;

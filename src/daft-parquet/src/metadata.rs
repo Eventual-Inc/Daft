@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use daft_io::IOClient;
 
@@ -79,7 +79,7 @@ pub async fn read_parquet_metadata(
         });
     }
 
-    let metadata = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;
         deserialize_metadata(reader, max_size)
@@ -88,9 +88,7 @@ pub async fn read_parquet_metadata(
     .context(JoinSnafu {
         path: uri.to_string(),
     })?
-    .context(UnableToParseMetadataSnafu { path: uri });
-
-    metadata
+    .context(UnableToParseMetadataSnafu { path: uri })
 }
 
 #[cfg(test)]

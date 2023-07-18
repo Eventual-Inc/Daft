@@ -12,12 +12,10 @@ use parquet2::{
     metadata::FileMetaData,
     read::{BasicDecompressor, PageReader},
 };
-use snafu::ResultExt;
 
 use crate::{
     metadata::read_parquet_metadata,
     read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
-    JoinSnafu,
 };
 
 fn plan_read_row_groups(
@@ -49,7 +47,7 @@ fn plan_read_row_groups(
     };
 
     let num_row_groups = metadata.row_groups.len();
-    let mut read_plan = read_planner::ReadPlanBuilder::new(&uri);
+    let mut read_plan = read_planner::ReadPlanBuilder::new(uri);
     let row_groups = match row_groups {
         Some(rg) => rg.to_vec(),
         None => (0i64..num_row_groups as i64).collect(),
@@ -273,7 +271,7 @@ mod tests {
         }));
         plan.run_passes()?;
         let memory = plan.collect(io_client.clone()).await?;
-        let table =
+        let _table =
             read_row_groups_from_ranges(&memory, Some(&["L_ORDERKEY"]), Some(&[1, 2]), &metadata)?;
         Ok(())
     }
