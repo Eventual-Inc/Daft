@@ -10,12 +10,11 @@ import pytest
 
 import daft
 
-
-def daft_legacy_read(path: str, columns: list[str] | None = None) -> pa.Table:
-    df = daft.read_parquet(path)
-    if columns is not None:
-        df = df.select(*columns)
-    return df.to_arrow()
+# def daft_legacy_read(path: str, columns: list[str] | None = None) -> pa.Table:
+#     df = daft.read_parquet(path)
+#     if columns is not None:
+#         df = df.select(*columns)
+#     return df.to_arrow()
 
 
 def pyarrow_read(path: str, columns: list[str] | None = None) -> pa.Table:
@@ -41,21 +40,19 @@ def boto3_get_object_read(path: str, columns: list[str] | None = None) -> pa.Tab
         return papq.read_table(data, columns=columns)
 
 
-# TODO(sammy/jay): Enable this in the `read_fn` fixture once we have column pruning support
-# def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
-#     assert columns is None, "daft.Table.read_parquet does not support column pruning yet"
-#     tbl = daft.table.Table.read_parquet(path, columns=columns)
-#     return tbl.to_arrow()
+def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
+    tbl = daft.table.Table.read_parquet(path, columns=columns)
+    return tbl.to_arrow()
 
 
 @pytest.fixture(
     params=[
-        daft_legacy_read,
+        daft_native_read,
         pyarrow_read,
         boto3_get_object_read,
     ],
     ids=[
-        "daft_legacy_read",
+        "daft_native_read",
         "pyarrow",
         "boto3_get_object",
     ],
