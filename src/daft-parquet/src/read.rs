@@ -254,7 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parquet_read_planner() -> DaftResult<()> {
-        let file = "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part.parquet";
+        let file = "s3://daft-public-data/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -263,7 +263,7 @@ mod tests {
         let size = io_client.single_url_get_size(file.into()).await?;
         let metadata =
             crate::metadata::read_parquet_metadata(file, size, io_client.clone()).await?;
-        let mut plan = plan_read_row_groups(file, Some(&["L_ORDERKEY"]), Some(&[1, 2]), &metadata)?;
+        let mut plan = plan_read_row_groups(file, Some(&["P_PARTKEY"]), Some(&[1, 2]), &metadata)?;
 
         plan.add_pass(Box::new(CoalescePass {
             max_hole_size: 1024 * 1024,
@@ -272,7 +272,7 @@ mod tests {
         plan.run_passes()?;
         let memory = plan.collect(io_client.clone()).await?;
         let _table =
-            read_row_groups_from_ranges(&memory, Some(&["L_ORDERKEY"]), Some(&[1, 2]), &metadata)?;
+            read_row_groups_from_ranges(&memory, Some(&["P_PARTKEY"]), Some(&[1, 2]), &metadata)?;
         Ok(())
     }
 }
