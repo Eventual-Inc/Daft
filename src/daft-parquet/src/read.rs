@@ -256,8 +256,8 @@ mod tests {
     async fn test_parquet_read_planner() -> DaftResult<()> {
         let file = "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part.parquet";
 
-        let io_config = IOConfig::default();
-        // io_config.s3.anonymous = true;
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
         let size = io_client.single_url_get_size(file.into()).await?;
