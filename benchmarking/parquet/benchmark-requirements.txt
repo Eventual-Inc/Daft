@@ -1,0 +1,5 @@
+pytest==7.4.0
+pytest-benchmark==4.0.0
+pytest-memray==1.4.1
+pyarrow==12.0.0
+boto3==1.28.3
