@@ -5,6 +5,7 @@ use snafu::Snafu;
 
 pub mod metadata;
 pub mod read;
+mod read_planner;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -58,6 +59,12 @@ pub enum Error {
         path: String,
         row_group: i64,
         total_row_groups: i64,
+    },
+
+    #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
+    JoinError {
+        path: String,
+        source: tokio::task::JoinError,
     },
 }
 

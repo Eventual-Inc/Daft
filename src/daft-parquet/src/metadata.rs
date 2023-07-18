@@ -5,7 +5,9 @@ use daft_io::IOClient;
 use parquet2::{metadata::FileMetaData, read::deserialize_metadata};
 use snafu::ResultExt;
 
-use crate::{Error, UnableToOpenFileSnafu, UnableToParseMetadataSnafu, UnableToReadBytesSnafu};
+use crate::{
+    Error, JoinSnafu, UnableToOpenFileSnafu, UnableToParseMetadataSnafu, UnableToReadBytesSnafu,
+};
 
 fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -33,10 +35,10 @@ pub async fn read_parquet_metadata(
         .context(UnableToReadBytesSnafu { path: uri })?;
 
     let buffer = data.as_ref();
-    if buffer[default_end_len - 4..] != PARQUET_MAGIC {
+    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
         return Err(Error::InvalidParquetFile {
             path: uri.into(),
-            footer: buffer[default_end_len - 4..].into(),
+            footer: buffer[buffer.len() - 4..].into(),
         });
     }
     let metadata_size = metadata_len(buffer, default_end_len);
@@ -50,10 +52,10 @@ pub async fn read_parquet_metadata(
         });
     }
 
-    let reader: &[u8] = if footer_len < buffer.len() {
+    let remaining;
+    if footer_len < buffer.len() {
         // the whole metadata is in the bytes we already read
-        let remaining = buffer.len() - footer_len;
-        &buffer[remaining..]
+        remaining = buffer.len() - footer_len;
     } else {
         // the end of file read by default is not long enough, read again including the metadata.
 
@@ -65,19 +67,28 @@ pub async fn read_parquet_metadata(
             .bytes()
             .await
             .context(UnableToReadBytesSnafu { path: uri })?;
-        let buffer = data.as_ref();
-        if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-            return Err(Error::InvalidParquetFile {
-                path: uri.into(),
-                footer: buffer[default_end_len - 4..].into(),
-            });
-        }
-        let remaining = buffer.len() - footer_len;
-        &buffer[remaining..]
+        remaining = data.len() - footer_len;
     };
 
-    let max_size = reader.len() * 2 + 1024;
-    deserialize_metadata(reader, max_size).context(UnableToParseMetadataSnafu { path: uri })
+    let buffer = data.as_ref();
+
+    if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
+        return Err(Error::InvalidParquetFile {
+            path: uri.into(),
+            footer: buffer[buffer.len() - 4..].into(),
+        });
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let reader = &data.as_ref()[remaining..];
+        let max_size = reader.len() * 2 + 1024;
+        deserialize_metadata(reader, max_size)
+    })
+    .await
+    .context(JoinSnafu {
+        path: uri.to_string(),
+    })?
+    .context(UnableToParseMetadataSnafu { path: uri })
 }
 
 #[cfg(test)]
