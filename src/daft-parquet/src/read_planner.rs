@@ -3,10 +3,11 @@ use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
 use common_error::DaftResult;
 use daft_io::IOClient;
 use futures::{StreamExt, TryStreamExt};
+use snafu::ResultExt;
 
 type RangeList = Vec<Range<usize>>;
 
-pub trait ReadPlanPass {
+pub trait ReadPlanPass: Send {
     fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)>;
 }
 
@@ -130,14 +131,15 @@ impl ReadPlanBuilder {
                     DaftResult::Ok((range.start, bytes.to_vec()))
                 })
             }))
+            // TODO(sammy): Use client pool in s3 client
             .buffer_unordered(256)
             .try_collect::<Vec<_>>()
             .await
-            .unwrap()
+            .context(super::JoinSnafu { path: self.source })?
             .into_iter()
             .collect::<DaftResult<_>>()?;
 
-        stored_ranges.sort_by_key(|(start, _)| *start);
+        stored_ranges.sort_unstable_by_key(|(start, _)| *start);
         Ok(RangesContainer {
             ranges: stored_ranges,
         })
@@ -223,6 +225,7 @@ impl<'a> MultiRead<'a> {
 }
 
 impl Read for MultiRead<'_> {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let current = loop {
             if self.pos_in_sources >= self.sources.len() {
@@ -241,6 +244,8 @@ impl Read for MultiRead<'_> {
         self.bytes_read += read_size;
         Ok(read_size)
     }
+
+    #[inline]
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
         if self.bytes_read >= self.total_size {
             return Ok(0);

@@ -60,6 +60,12 @@ pub enum Error {
         row_group: i64,
         total_row_groups: i64,
     },
+
+    #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
+    JoinError {
+        path: String,
+        source: tokio::task::JoinError,
+    },
 }
 
 impl From<Error> for DaftError {
