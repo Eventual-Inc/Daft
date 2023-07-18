@@ -3,20 +3,12 @@ from __future__ import annotations
 import pytest
 
 PATHS = [
-    "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part_1RG.parquet",
-    "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part.parquet",
-    # Disabled: too slow!
-    # "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part_18kRG.parquet"
-    # "s3://daft-public-data/test_fixtures/parquet-dev/daft_tpch_100g_32part_180kRG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_1RG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_8RG.parquet",
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/daft_tpch_100g_32part_64RG.parquet",
 ]
 
-IDS = [
-    "1",
-    "2k",
-    # Disabled: too slow!
-    # "18k",
-    # "180k",
-]
+IDS = ["1RG", "8RG", "64RG"]
 
 
 @pytest.mark.benchmark(group="num_rowgroups_single_column")
