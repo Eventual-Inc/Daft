@@ -17,7 +17,7 @@ IDS = ["1RG", "8RG", "64RG"]
     PATHS,
     ids=IDS,
 )
-def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
+def test_read_parquet_num_rowgroups_single_column(path, read_fn, benchmark):
     data = benchmark(read_fn, path, columns=["L_ORDERKEY"])
 
     # Make sure the data is correct
@@ -31,7 +31,7 @@ def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
     PATHS,
     ids=IDS,
 )
-def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
+def test_read_parquet_num_rowgroups_multi_contiguous_columns(path, read_fn, benchmark):
     data = benchmark(read_fn, path, columns=["L_ORDERKEY", "L_PARTKEY", "L_SUPPKEY"])
 
     # Make sure the data is correct
@@ -45,7 +45,7 @@ def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
     PATHS,
     ids=IDS,
 )
-def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
+def test_read_parquet_num_rowgroups_multi_sparse_columns(path, read_fn, benchmark):
     data = benchmark(read_fn, path, columns=["L_ORDERKEY", "L_TAX"])
 
     # Make sure the data is correct
@@ -59,7 +59,7 @@ def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
     PATHS,
     ids=IDS,
 )
-def test_read_parquet_num_rowgroups(path, read_fn, benchmark):
+def test_read_parquet_num_rowgroups_all_columns(path, read_fn, benchmark):
     data = benchmark(read_fn, path)
 
     # Make sure the data is correct
