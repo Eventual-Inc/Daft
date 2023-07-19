@@ -101,13 +101,13 @@ enum RangeCacheState {
 struct RangeCacheEntry {
     start: usize,
     end: usize,
-    state: std::sync::Mutex<RangeCacheState>,
+    state: tokio::sync::Mutex<RangeCacheState>,
 }
 
 impl RangeCacheEntry {
     async fn get_or_wait(&self) -> DaftResult<Bytes> {
         {
-            let mut _guard = self.state.lock().unwrap();
+            let mut _guard = self.state.lock().await;
             match &mut (*_guard) {
                 RangeCacheState::InFlight(f) => {
                     let v = f.await.context(JoinSnafu {})??;
@@ -165,7 +165,7 @@ impl ReadPlanBuilder {
             let entry = RangeCacheEntry {
                 start,
                 end,
-                state: std::sync::Mutex::new(state),
+                state: tokio::sync::Mutex::new(state),
             };
             entries.push(entry);
         }
