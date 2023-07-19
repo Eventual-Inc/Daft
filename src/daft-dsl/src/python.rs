@@ -353,6 +353,11 @@ impl PyExpr {
         Ok(lengths(&self.expr).into())
     }
 
+    pub fn list_contains(&self, element: &Self) -> PyResult<Self> {
+        use crate::functions::list::contains;
+        Ok(contains(&self.expr, &element.expr).into())
+    }
+
     pub fn url_download(
         &self,
         max_connections: i64,

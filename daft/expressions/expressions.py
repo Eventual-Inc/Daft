@@ -622,6 +622,18 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.list_lengths())
 
+    def contains(self, element: object | Expression) -> Expression:
+        """Checks if a list of elements contains the specified element
+
+        Args:
+            element (object | Expression): the element to check for, or column with the elements to check
+
+        Returns:
+            Expression: a Boolean expression which indicates whether or not the element was found in the list
+        """
+        element_expr = Expression._to_expression(element)
+        return Expression._from_pyexpr(self._expr.list_contains(element_expr._expr))
+
 
 class ExpressionsProjection(Iterable[Expression]):
     """A collection of Expressions that can be projected onto a Table to produce another Table

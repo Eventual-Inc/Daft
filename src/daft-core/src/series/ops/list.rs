@@ -1,5 +1,5 @@
 use crate::array::ops::as_arrow::AsArrow;
-use crate::datatypes::{DataType, UInt64Array, Utf8Array};
+use crate::datatypes::{BooleanArray, DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
 use common_error::DaftError;
 
@@ -58,6 +58,17 @@ impl Series {
             DataType::FixedSizeList(..) => self.fixed_size_list()?.join(delimiter),
             dt => Err(DaftError::TypeError(format!(
                 "Join not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.contains(elements),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.contains(elements),
+            dt => Err(DaftError::TypeError(format!(
+                "Contains not implemented for {}",
                 dt
             ))),
         }

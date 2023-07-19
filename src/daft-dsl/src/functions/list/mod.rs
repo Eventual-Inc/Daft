@@ -1,7 +1,9 @@
+mod contains;
 mod explode;
 mod join;
 mod lengths;
 
+use contains::ContainsEvaluator;
 use explode::ExplodeEvaluator;
 use join::JoinEvaluator;
 use lengths::LengthsEvaluator;
@@ -16,6 +18,7 @@ pub enum ListExpr {
     Explode,
     Join,
     Lengths,
+    Contains,
 }
 
 impl ListExpr {
@@ -26,6 +29,7 @@ impl ListExpr {
             Explode => &ExplodeEvaluator {},
             Join => &JoinEvaluator {},
             Lengths => &LengthsEvaluator {},
+            Contains => &ContainsEvaluator {},
         }
     }
 }
@@ -48,5 +52,12 @@ pub fn lengths(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Lengths),
         inputs: vec![input.clone()],
+    }
+}
+
+pub fn contains(input: &Expr, element: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::List(ListExpr::Contains),
+        inputs: vec![input.clone(), element.clone()],
     }
 }

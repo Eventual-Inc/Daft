@@ -1,9 +1,10 @@
-use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
+use crate::datatypes::{BooleanArray, FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
 
 use crate::series::Series;
 
 use arrow2;
 use arrow2::array::Array;
+use arrow2::compute::contains;
 
 use common_error::DaftResult;
 
@@ -33,6 +34,31 @@ fn join_arrow_list_of_utf8s(
                 result
             }
         })
+}
+
+fn list_contains(
+    name: &str,
+    list_arr: &dyn arrow2::array::Array,
+    elements: &Series,
+) -> DaftResult<BooleanArray> {
+    match elements.len() {
+        1 => Ok(BooleanArray::from((
+            name,
+            contains::contains(
+                list_arr,
+                // TODO(jay): This is a pretty brute-force broadcast which uses more memory than required
+                elements
+                    .broadcast(list_arr.len())?
+                    .inner
+                    .to_arrow()
+                    .as_ref(),
+            )?,
+        ))),
+        _ => Ok(BooleanArray::from((
+            name,
+            contains::contains(list_arr, elements.inner.to_arrow().as_ref())?,
+        ))),
+    }
 }
 
 impl ListArray {
@@ -114,6 +140,10 @@ impl ListArray {
             )))
         }
     }
+
+    pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
+        list_contains(self.name(), self.as_arrow(), elements)
+    }
 }
 
 impl FixedSizeListArray {
@@ -185,5 +215,9 @@ impl FixedSizeListArray {
                 Box::new(arrow2::array::Utf8Array::from_iter(result)),
             )))
         }
+    }
+
+    pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
+        list_contains(self.name(), self.as_arrow(), elements)
     }
 }
