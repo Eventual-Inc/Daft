@@ -891,6 +891,7 @@ name = "daft-parquet"
 version = "0.1.0"
 dependencies = [
  "arrow2",
+ "bytes",
  "common-error",
  "daft-core",
  "daft-io",

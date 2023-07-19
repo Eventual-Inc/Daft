@@ -84,7 +84,7 @@ fn plan_read_row_groups(
     Ok(read_plan)
 }
 
-fn read_row_groups_from_ranges(
+async fn read_row_groups_from_ranges(
     reader: &RangesContainer,
     columns: Option<&[&str]>,
     row_groups: Option<&[i64]>,
@@ -148,7 +148,9 @@ fn read_row_groups_from_ranges(
                 let end = start + len;
 
                 // should stream this instead
-                let range_reader = reader.get_range_reader(start as usize..end as usize)?;
+                let range_reader = reader
+                    .get_range_reader(start as usize..end as usize)
+                    .await?;
                 let pages = PageReader::new(
                     range_reader,
                     col,
@@ -199,7 +201,7 @@ pub fn read_parquet(
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
 
-    let (metadata, dl_ranges) = runtime_handle.block_on(async {
+    runtime_handle.block_on(async {
         let size = match size {
             Some(size) => size,
             None => io_client.single_url_get_size(uri.into()).await?,
@@ -219,10 +221,9 @@ pub fn read_parquet(
             max_request_size: 16 * 1024 * 1024,
         }));
         plan.run_passes()?;
-        DaftResult::Ok((metadata, plan.collect(io_client).await?))
-    })?;
-
-    read_row_groups_from_ranges(&dl_ranges, columns, row_groups, &metadata)
+        let dl_ranges = plan.collect(io_client)?;
+        read_row_groups_from_ranges(&dl_ranges, columns, row_groups, &metadata).await
+    })
 }
 
 #[cfg(test)]
@@ -270,9 +271,10 @@ mod tests {
             max_request_size: 16 * 1024 * 1024,
         }));
         plan.run_passes()?;
-        let memory = plan.collect(io_client.clone()).await?;
+        let memory = plan.collect(io_client.clone())?;
         let _table =
-            read_row_groups_from_ranges(&memory, Some(&["P_PARTKEY"]), Some(&[1, 2]), &metadata)?;
+            read_row_groups_from_ranges(&memory, Some(&["P_PARTKEY"]), Some(&[1, 2]), &metadata)
+                .await?;
         Ok(())
     }
 }

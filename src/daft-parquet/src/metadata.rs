@@ -85,9 +85,7 @@ pub async fn read_parquet_metadata(
         deserialize_metadata(reader, max_size)
     })
     .await
-    .context(JoinSnafu {
-        path: uri.to_string(),
-    })?
+    .context(JoinSnafu {})?
     .context(UnableToParseMetadataSnafu { path: uri })
 }
 

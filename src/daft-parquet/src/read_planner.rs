@@ -1,9 +1,13 @@
 use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
 
+use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::IOClient;
 use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
+use tokio::task::JoinHandle;
+
+use crate::JoinSnafu;
 
 type RangeList = Vec<Range<usize>>;
 
@@ -89,6 +93,33 @@ pub(crate) struct ReadPlanBuilder {
     passes: Vec<Box<dyn ReadPlanPass>>,
 }
 
+enum RangeCacheState {
+    InFlight(JoinHandle<DaftResult<bytes::Bytes>>),
+    Ready(bytes::Bytes),
+}
+
+struct RangeCacheEntry {
+    start: usize,
+    end: usize,
+    state: std::sync::Mutex<RangeCacheState>,
+}
+
+impl RangeCacheEntry {
+    async fn get_or_wait(&self) -> DaftResult<Bytes> {
+        {
+            let mut _guard = self.state.lock().unwrap();
+            match &mut (*_guard) {
+                RangeCacheState::InFlight(f) => {
+                    let v = f.await.context(JoinSnafu {})??;
+                    *_guard = RangeCacheState::Ready(v.clone());
+                    return Ok(v);
+                }
+                RangeCacheState::Ready(v) => Ok(v.clone()),
+            }
+        }
+    }
+}
+
 impl ReadPlanBuilder {
     pub fn new(source: &str) -> Self {
         ReadPlanBuilder {
@@ -117,103 +148,115 @@ impl ReadPlanBuilder {
         Ok(())
     }
 
-    pub async fn collect(self, io_client: Arc<IOClient>) -> DaftResult<RangesContainer> {
-        let mut stored_ranges: Vec<_> =
-            futures::stream::iter(self.ranges.into_iter().map(|range| {
-                // multithread this
-                let owned_io_client = io_client.clone();
-                let owned_url = self.source.clone();
-                tokio::spawn(async move {
-                    let get_result = owned_io_client
-                        .single_url_get(owned_url, Some(range.clone()))
-                        .await?;
-                    let bytes = get_result.bytes().await?;
-                    DaftResult::Ok((range.start, bytes.to_vec()))
-                })
-            }))
-            // TODO(sammy): Use client pool in s3 client
-            .buffer_unordered(256)
-            .try_collect::<Vec<_>>()
-            .await
-            .context(super::JoinSnafu { path: self.source })?
-            .into_iter()
-            .collect::<DaftResult<_>>()?;
-
-        stored_ranges.sort_unstable_by_key(|(start, _)| *start);
-        Ok(RangesContainer {
-            ranges: stored_ranges,
-        })
+    pub fn collect(self, io_client: Arc<IOClient>) -> DaftResult<RangesContainer> {
+        let mut entries = Vec::with_capacity(self.ranges.len());
+        for range in self.ranges {
+            let owned_io_client = io_client.clone();
+            let owned_url = self.source.clone();
+            let start = range.start;
+            let end = range.end;
+            let join_handle = tokio::spawn(async move {
+                let get_result = owned_io_client
+                    .single_url_get(owned_url, Some(range.clone()))
+                    .await?;
+                Ok(get_result.bytes().await?)
+            });
+            let state = RangeCacheState::InFlight(join_handle);
+            let entry = RangeCacheEntry {
+                start,
+                end,
+                state: std::sync::Mutex::new(state),
+            };
+            entries.push(entry);
+        }
+        Ok(RangesContainer { ranges: entries })
     }
 }
 
 pub(crate) struct RangesContainer {
-    ranges: Vec<(usize, Vec<u8>)>,
+    ranges: Vec<RangeCacheEntry>,
 }
 
 impl RangesContainer {
-    pub fn get_range_reader<'a>(&'a self, range: Range<usize>) -> DaftResult<MultiRead<'a>> {
+    pub async fn get_range_reader(&self, range: Range<usize>) -> DaftResult<MultiRead> {
         let mut current_pos = range.start;
         let mut curr_index;
-        let start_point = self.ranges.binary_search_by_key(&current_pos, |(v, _)| *v);
+        let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
 
-        let mut slice_vec: Vec<&'a [u8]> = vec![];
+        let mut needed_entries = vec![];
+        let mut ranges_to_slice = vec![];
         match start_point {
             Ok(index) => {
-                let (byte_start, bytes_at_index) = &self.ranges[index];
-                assert_eq!(*byte_start, current_pos);
+                let entry = &self.ranges[index];
+                let len = entry.end - entry.start;
+                assert_eq!(entry.start, current_pos);
                 let start_offset = 0;
-                let end_offset = bytes_at_index.len().min(range.end - current_pos);
-                let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
-                slice_vec.push(curr_slice);
-                current_pos += curr_slice.len();
+                let end_offset = len.min(range.end - current_pos);
+
+                needed_entries.push(entry);
+                ranges_to_slice.push(start_offset..end_offset);
+
+                current_pos += (end_offset - start_offset);
                 curr_index = index + 1;
             }
             Err(index) => {
                 assert!(
                     index > 0,
-                    "range: {range:?}, start: {}, len: {}",
-                    &self.ranges[index].0,
-                    &self.ranges[index].1.len()
+                    "range: {range:?}, start: {}, end: {}",
+                    &self.ranges[index].start,
+                    &self.ranges[index].end
                 );
                 let index = index - 1;
-                let (byte_start, bytes_at_index) = &self.ranges[index];
-                let end = byte_start + bytes_at_index.len();
-                assert!(current_pos >= *byte_start && current_pos < end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {byte_start}, end: {end}");
-                let start_offset = current_pos - byte_start;
-                let end_offset = bytes_at_index.len().min(range.end - byte_start);
-                let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
-                slice_vec.push(curr_slice);
-                current_pos += curr_slice.len();
+                let entry = &self.ranges[index];
+                let start = entry.start;
+                let end = entry.end;
+                let len = end - start;
+                assert!(current_pos >= start && current_pos < end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}");
+                let start_offset = current_pos - start;
+                let end_offset = len.min(range.end - start);
+                needed_entries.push(entry);
+                ranges_to_slice.push(start_offset..end_offset);
+                current_pos += (end_offset - start_offset);
                 curr_index = index + 1;
             }
         };
         while current_pos < range.end && curr_index < self.ranges.len() {
-            let (byte_start, bytes_at_index) = &self.ranges[curr_index];
-            assert_eq!(*byte_start, current_pos);
+            let entry = &self.ranges[curr_index];
+            let start = entry.start;
+            let end = entry.end;
+            let len = end - start;
+            assert_eq!(start, current_pos);
             let start_offset = 0;
-            let end_offset = bytes_at_index.len().min(range.end - byte_start);
-            let curr_slice = &bytes_at_index.as_slice()[start_offset..end_offset];
-            slice_vec.push(curr_slice);
-            current_pos += curr_slice.len();
+            let end_offset = len.min(range.end - start);
+            needed_entries.push(entry);
+            ranges_to_slice.push(start_offset..end_offset);
+            current_pos += (end_offset - start_offset);
             curr_index += 1;
         }
 
         assert_eq!(current_pos, range.end);
 
-        Ok(MultiRead::new(slice_vec, range.end - range.start))
+        let bytes_objects =
+            futures::future::try_join_all(needed_entries.iter().map(|e| e.get_or_wait())).await?;
+        let slices = bytes_objects
+            .into_iter()
+            .zip(ranges_to_slice)
+            .map(|(b, r)| b.slice(r))
+            .collect();
+        Ok(MultiRead::new(slices, range.end - range.start))
     }
 }
 
-pub(crate) struct MultiRead<'a> {
-    sources: Vec<&'a [u8]>,
+pub(crate) struct MultiRead {
+    sources: Vec<Bytes>,
     pos_in_sources: usize,
     pos_in_current: usize,
     bytes_read: usize,
     total_size: usize,
 }
 
-impl<'a> MultiRead<'a> {
-    fn new(sources: Vec<&'a [u8]>, total_size: usize) -> MultiRead<'a> {
+impl MultiRead {
+    fn new(sources: Vec<Bytes>, total_size: usize) -> MultiRead {
         MultiRead {
             sources,
             pos_in_sources: 0,
@@ -224,14 +267,14 @@ impl<'a> MultiRead<'a> {
     }
 }
 
-impl Read for MultiRead<'_> {
+impl Read for MultiRead {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let current = loop {
             if self.pos_in_sources >= self.sources.len() {
                 return Ok(0); // EOF
             }
-            let current = self.sources[self.pos_in_sources];
+            let current = &self.sources[self.pos_in_sources];
             if self.pos_in_current < current.len() {
                 break current;
             }
@@ -253,7 +296,7 @@ impl Read for MultiRead<'_> {
         let starting_bytes_read = self.bytes_read;
         buf.reserve(self.total_size - self.bytes_read);
         while self.bytes_read < self.total_size {
-            let current = self.sources[self.pos_in_sources];
+            let current = &self.sources[self.pos_in_sources];
             let slice = &current[self.pos_in_current..];
             buf.extend_from_slice(slice);
             self.pos_in_current = 0;
