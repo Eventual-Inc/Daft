@@ -23,13 +23,21 @@ impl FunctionEvaluator for ContainsEvaluator {
                 let element_field = element.to_field(schema)?;
 
                 match input_field.dtype {
-                    DataType::List(child) | DataType::FixedSizeList(child, _) => {
-                        if child.dtype != element_field.dtype {
-                            Err(DaftError::TypeError(format!("Expected element type to match child type of list, but received: {} vs {}", element_field.dtype, child.dtype)))
+                    DataType::List(child) => {
+                        if (child.dtype != element_field.dtype) && !element_field.dtype.is_null() {
+                            Err(DaftError::TypeError(format!(
+                                "Contains expected element of type {} but received: {}",
+                                child.dtype, element_field.dtype
+                            )))
                         } else {
                             Ok(Field::new(input.name()?, DataType::Boolean))
                         }
                     }
+                    // TODO(jaychia): arrow2::compute::contains contains does not support FixedSizeList, so we avoid failing at runtime here by failing early here
+                    DataType::FixedSizeList(..) => Err(DaftError::ValueError(
+                        "Contains not yet implemented for FixedSizeList. Please make an issue!"
+                            .to_string(),
+                    )),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to be a list type, received: {}",
                         input_field.dtype
