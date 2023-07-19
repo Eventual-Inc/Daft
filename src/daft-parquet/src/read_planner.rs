@@ -3,7 +3,6 @@ use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::IOClient;
-use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::task::JoinHandle;
 
@@ -112,7 +111,7 @@ impl RangeCacheEntry {
                 RangeCacheState::InFlight(f) => {
                     let v = f.await.context(JoinSnafu {})??;
                     *_guard = RangeCacheState::Ready(v.clone());
-                    return Ok(v);
+                    Ok(v)
                 }
                 RangeCacheState::Ready(v) => Ok(v.clone()),
             }
@@ -196,7 +195,7 @@ impl RangesContainer {
                 needed_entries.push(entry);
                 ranges_to_slice.push(start_offset..end_offset);
 
-                current_pos += (end_offset - start_offset);
+                current_pos += end_offset - start_offset;
                 curr_index = index + 1;
             }
             Err(index) => {
@@ -216,7 +215,7 @@ impl RangesContainer {
                 let end_offset = len.min(range.end - start);
                 needed_entries.push(entry);
                 ranges_to_slice.push(start_offset..end_offset);
-                current_pos += (end_offset - start_offset);
+                current_pos += end_offset - start_offset;
                 curr_index = index + 1;
             }
         };
@@ -230,7 +229,7 @@ impl RangesContainer {
             let end_offset = len.min(range.end - start);
             needed_entries.push(entry);
             ranges_to_slice.push(start_offset..end_offset);
-            current_pos += (end_offset - start_offset);
+            current_pos += end_offset - start_offset;
             curr_index += 1;
         }
 
