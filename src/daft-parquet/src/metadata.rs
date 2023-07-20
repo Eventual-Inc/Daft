@@ -17,7 +17,7 @@ pub async fn read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,
-) -> super::Result<FileMetaData> {
+) -> super::Result<Arc<FileMetaData>> {
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
 
@@ -79,14 +79,15 @@ pub async fn read_parquet_metadata(
         });
     }
 
-    tokio::task::spawn_blocking(move || {
+    let res = tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;
         deserialize_metadata(reader, max_size)
     })
     .await
     .context(JoinSnafu {})?
-    .context(UnableToParseMetadataSnafu { path: uri })
+    .context(UnableToParseMetadataSnafu { path: uri })?;
+    Ok(Arc::new(res))
 }
 
 #[cfg(test)]

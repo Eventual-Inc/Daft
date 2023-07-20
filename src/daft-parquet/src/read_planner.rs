@@ -147,7 +147,7 @@ impl ReadPlanBuilder {
         Ok(())
     }
 
-    pub fn collect(self, io_client: Arc<IOClient>) -> DaftResult<RangesContainer> {
+    pub fn collect(self, io_client: Arc<IOClient>) -> DaftResult<Arc<RangesContainer>> {
         let mut entries = Vec::with_capacity(self.ranges.len());
         for range in self.ranges {
             let owned_io_client = io_client.clone();
@@ -168,7 +168,7 @@ impl ReadPlanBuilder {
             };
             entries.push(entry);
         }
-        Ok(RangesContainer { ranges: entries })
+        Ok(Arc::new(RangesContainer { ranges: entries }))
     }
 }
 
