@@ -1,5 +1,4 @@
 use crate::datatypes::{BooleanArray, FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
-use crate::IntoSeries;
 
 use crate::series::Series;
 
@@ -35,6 +34,31 @@ fn join_arrow_list_of_utf8s(
                 result
             }
         })
+}
+
+fn arrow_list_contains(
+    list_elements: impl Iterator<Item = Option<Box<dyn arrow2::array::Array>>>,
+    elements: impl Iterator<Item = Box<dyn arrow2::array::Array>>,
+) -> DaftResult<arrow2::array::BooleanArray> {
+    let mut contains_elements: Vec<Option<bool>> = Vec::new();
+    for (arr, element) in list_elements.zip(elements) {
+        // NOTE: each element is size 1 and will be broadcasted to the size of `arr`
+        assert!(element.len() == 1);
+
+        match (arr, element.is_valid(0)) {
+            (_, false) | (None, _) => {
+                contains_elements.push(None);
+            }
+            (Some(arr), _) => {
+                let list_elements = Series::try_from(("", arr))?;
+                let search_element = Series::try_from(("", element))?;
+                let eq = list_elements.equal(&search_element)?;
+                let contains_element = eq.as_arrow().iter().any(|x| x.unwrap_or(false));
+                contains_elements.push(Some(contains_element));
+            }
+        }
+    }
+    Ok(arrow2::array::BooleanArray::from(contains_elements))
 }
 
 impl ListArray {
@@ -118,39 +142,16 @@ impl ListArray {
     }
 
     pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
-        // Broadcast `elements` if required. Note that this is potentially unnecessarily expensive.
-        let broadcasted_elements: Series;
-        let broadcasted_elements_ref = if elements.len() == 1 {
-            broadcasted_elements = elements.broadcast(self.len())?;
-            &broadcasted_elements
-        } else {
-            elements
-        };
-
-        let lengths = self.lengths()?;
-        let mut contains_elements: Vec<Option<bool>> = Vec::with_capacity(self.len());
-        for i in 0..self.len() {
-            let element_scalar_series = broadcasted_elements_ref
-                .take(&UInt64Array::from(("", vec![i as u64])).into_series())?;
-            let element_is_null = element_scalar_series.is_null()?.bool()?.as_arrow().value(0);
-            let list_is_null = !self.as_arrow().is_valid(i);
-            // Return Null if either the list or element we are searching are null
-            if element_is_null || list_is_null {
-                contains_elements.push(None)
-            // If the list has length 0, then it cannot contain any elements
-            } else if lengths.as_arrow().value(i) == 0 {
-                contains_elements.push(Some(false))
-            // Search the list for the specified element, both guaranteed to be non-empty and non-null
+        let elements_iterator: Box<dyn Iterator<Item = Box<dyn arrow2::array::Array>>> =
+            if elements.len() == 1 {
+                Box::new(std::iter::repeat(elements.to_arrow()))
             } else {
-                let list_elements = Series::try_from(("", self.as_arrow().value(i)))?;
-                let eq = list_elements.equal(&element_scalar_series)?;
-                let contains_element = eq.as_arrow().iter().any(|x| x.unwrap_or(false));
-                contains_elements.push(Some(contains_element));
-            }
-        }
+                assert!(elements.len() == self.len());
+                Box::new((0..self.len()).map(|i| elements.inner.to_arrow().sliced(i, 1)))
+            };
         Ok(BooleanArray::from((
             self.name(),
-            arrow2::array::BooleanArray::from(contains_elements),
+            arrow_list_contains(self.as_arrow().iter(), elements_iterator)?,
         )))
     }
 }
@@ -227,39 +228,16 @@ impl FixedSizeListArray {
     }
 
     pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
-        // Broadcast `elements` if required. Note that this is potentially unnecessarily expensive.
-        let broadcasted_elements: Series;
-        let broadcasted_elements_ref = if elements.len() == 1 {
-            broadcasted_elements = elements.broadcast(self.len())?;
-            &broadcasted_elements
-        } else {
-            elements
-        };
-
-        let lengths = self.lengths()?;
-        let mut contains_elements: Vec<Option<bool>> = Vec::with_capacity(self.len());
-        for i in 0..self.len() {
-            let element_scalar_series = broadcasted_elements_ref
-                .take(&UInt64Array::from(("", vec![i as u64])).into_series())?;
-            let element_is_null = element_scalar_series.is_null()?.bool()?.as_arrow().value(0);
-            let list_is_null = !self.as_arrow().is_valid(i);
-            // Return Null if either the list or element we are searching are null
-            if element_is_null || list_is_null {
-                contains_elements.push(None)
-            // If the list has length 0, then it cannot contain any elements
-            } else if lengths.as_arrow().value(i) == 0 {
-                contains_elements.push(Some(false))
-            // Search the list for the specified element, both guaranteed to be non-empty and non-null
+        let elements_iterator: Box<dyn Iterator<Item = Box<dyn arrow2::array::Array>>> =
+            if elements.len() == 1 {
+                Box::new(std::iter::repeat(elements.to_arrow()))
             } else {
-                let list_elements = Series::try_from(("", self.as_arrow().value(i)))?;
-                let eq = list_elements.equal(&element_scalar_series)?;
-                let contains_element = eq.as_arrow().iter().any(|x| x.unwrap_or(false));
-                contains_elements.push(Some(contains_element));
-            }
-        }
+                assert!(elements.len() == self.len());
+                Box::new((0..self.len()).map(|i| elements.inner.to_arrow().sliced(i, 1)))
+            };
         Ok(BooleanArray::from((
             self.name(),
-            arrow2::array::BooleanArray::from(contains_elements),
+            arrow_list_contains(self.as_arrow().iter(), elements_iterator)?,
         )))
     }
 }
