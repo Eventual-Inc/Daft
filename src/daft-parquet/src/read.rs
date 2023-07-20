@@ -256,10 +256,20 @@ pub fn read_parquet(
             Some(size) => size,
             None => io_client.single_url_get_size(uri.into()).await?,
         };
-
+        use std::time::Instant;
+        let now = Instant::now();
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
+        log::warn!(
+            "total time for read_parquet_metadata: {}",
+            now.elapsed().as_millis()
+        );
 
+        let now = Instant::now();
         let mut plan = plan_read_row_groups(uri, columns, row_groups, &metadata)?;
+        log::warn!(
+            "total time for plan_read_row_groups: {}",
+            now.elapsed().as_millis()
+        );
 
         plan.add_pass(Box::new(SplitLargeRequestPass {
             max_request_size: 16 * 1024 * 1024,
@@ -270,8 +280,15 @@ pub fn read_parquet(
             max_hole_size: 1024 * 1024,
             max_request_size: 16 * 1024 * 1024,
         }));
+
+        let now = Instant::now();
         plan.run_passes()?;
+        log::warn!("total time for run_passes: {}", now.elapsed().as_millis());
+
+        let now = Instant::now();
         let dl_ranges = plan.collect(io_client)?;
+        log::warn!("total time for plan.collect: {}", now.elapsed().as_millis());
+
         read_row_groups_from_ranges(dl_ranges, columns, row_groups, metadata).await
     })
 }
