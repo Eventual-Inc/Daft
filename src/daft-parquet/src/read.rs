@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    sync::Arc, ops::Deref,
+    sync::Arc,
 };
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
@@ -16,8 +16,9 @@ use snafu::ResultExt;
 use tokio::task::JoinHandle;
 
 use crate::{
-    metadata::{read_parquet_metadata, self},
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass}, JoinSnafu,
+    metadata::read_parquet_metadata,
+    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
+    JoinSnafu,
 };
 
 fn plan_read_row_groups(
@@ -141,28 +142,28 @@ async fn read_row_groups_from_ranges(
             let metadata = metadata.clone();
             let field = field.clone();
 
-            let handle = tokio::task::spawn( async move {
+            let handle = tokio::task::spawn(async move {
                 let metadata = metadata.clone();
-                let rg =  metadata.row_groups.get(row_group as usize).unwrap();
+                let rg = metadata.row_groups.get(row_group as usize).unwrap();
 
                 let columns = rg.columns();
-    
-    
+
                 let field_name = field.name.clone();
                 let filtered_cols = columns
                     .iter()
                     .filter(|x| x.descriptor().path_in_schema[0] == field_name)
                     .collect::<Vec<_>>();
-    
 
                 let mut decompressed_iters = vec![];
                 let mut ptypes = vec![];
 
-                let range_readers = futures::future::try_join_all(filtered_cols.iter().map(|col| {
-                    let (start, len) = col.byte_range();
-                    let end = start + len;
-                    reader.get_range_reader(start as usize..end as usize)
-                })).await?;
+                let range_readers =
+                    futures::future::try_join_all(filtered_cols.iter().map(|col| {
+                        let (start, len) = col.byte_range();
+                        let end = start + len;
+                        reader.get_range_reader(start as usize..end as usize)
+                    }))
+                    .await?;
 
                 for (col, range_reader) in filtered_cols.iter().zip(range_readers) {
                     let pages = PageReader::new(
@@ -172,9 +173,9 @@ async fn read_row_groups_from_ranges(
                         vec![],
                         4 * 1024 * 1024,
                     );
-    
+
                     decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
-    
+
                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
                 }
 
@@ -188,17 +189,25 @@ async fn read_row_groups_from_ranges(
                         Some(4096),
                         num_rows,
                     )?;
-    
+
                     let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
                     let ser = all_arrays
                         .into_iter()
-                        .map(|a| Series::try_from((field_name.as_str(), cast_array_for_daft_if_needed(a))))
+                        .map(|a| {
+                            Series::try_from((
+                                field_name.as_str(),
+                                cast_array_for_daft_if_needed(a),
+                            ))
+                        })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     DaftResult::Ok(ser)
-                }).await.context(JoinSnafu {}).unwrap().unwrap();
+                })
+                .await
+                .context(JoinSnafu {})
+                .unwrap()
+                .unwrap();
                 Ok(ser)
             });
-
 
             daft_series[ii].push(handle);
         }
@@ -207,14 +216,18 @@ async fn read_row_groups_from_ranges(
     let mut compacted_series = vec![];
 
     for handles in daft_series.into_iter() {
-        let all_series = futures::future::try_join_all(handles).await.unwrap().into_iter().collect::<DaftResult<Vec<_>>>()?;
-        let concated_series = Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref())?;
+        let all_series = futures::future::try_join_all(handles)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+        let concated_series =
+            Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref())?;
         compacted_series.push(concated_series)
     }
 
     Table::new(daft_schema, compacted_series)
 }
-
 
 pub fn read_parquet(
     uri: &str,
@@ -232,21 +245,43 @@ pub fn read_parquet(
             None => io_client.single_url_get_size(uri.into()).await?,
         };
 
-        let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
+        let (dl_ranges, metadata) = if columns.is_some() || row_groups.is_some() {
+            let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
+            let mut plan = plan_read_row_groups(uri, columns, row_groups, &metadata)?;
+            plan.add_pass(Box::new(SplitLargeRequestPass {
+                max_request_size: 16 * 1024 * 1024,
+                split_threshold: 24 * 1024 * 1024,
+            }));
 
-        let mut plan = plan_read_row_groups(uri, columns, row_groups, &metadata)?;
+            plan.add_pass(Box::new(CoalescePass {
+                max_hole_size: 1024 * 1024,
+                max_request_size: 16 * 1024 * 1024,
+            }));
+            plan.run_passes()?;
+            let dl_ranges = plan.collect(io_client)?;
+            (dl_ranges, metadata)
+        } else {
+            let owned_io_client = io_client.clone();
+            let owned_uri = uri.to_string();
 
-        plan.add_pass(Box::new(SplitLargeRequestPass {
-            max_request_size: 16 * 1024 * 1024,
-            split_threshold: 24 * 1024 * 1024,
-        }));
+            let metadata = tokio::task::spawn(async move {
+                read_parquet_metadata(&owned_uri, size, owned_io_client).await
+            });
+            let mut plan = ReadPlanBuilder::new(uri);
+            ReadPlanBuilder::add_range(&mut plan, 0, size);
+            plan.add_pass(Box::new(SplitLargeRequestPass {
+                max_request_size: 16 * 1024 * 1024,
+                split_threshold: 24 * 1024 * 1024,
+            }));
 
-        plan.add_pass(Box::new(CoalescePass {
-            max_hole_size: 1024 * 1024,
-            max_request_size: 16 * 1024 * 1024,
-        }));
-        plan.run_passes()?;
-        let dl_ranges = plan.collect(io_client)?;
+            plan.add_pass(Box::new(CoalescePass {
+                max_hole_size: 1024 * 1024,
+                max_request_size: 16 * 1024 * 1024,
+            }));
+            plan.run_passes()?;
+            let dl_ranges = plan.collect(io_client)?;
+            (dl_ranges, metadata.await.unwrap()?)
+        };
         read_row_groups_from_ranges(dl_ranges, columns, row_groups, metadata).await
     })
 }
