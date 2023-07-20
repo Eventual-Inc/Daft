@@ -1,4 +1,4 @@
-use crate::datatypes::{DataType, FixedShapeImageType, ImageFormat, ImageType};
+use crate::datatypes::{DataType, Field, FixedShapeImageType, ImageFormat, ImageType};
 
 use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
@@ -52,6 +52,27 @@ impl Series {
                 "datatype: {} does not support Image Resize. Occurred while resizing Series: {}",
                 self.data_type(),
                 self.name()
+            ))),
+        }
+    }
+
+    pub fn image_crop(&self, bbox: &Series) -> DaftResult<Series> {
+        let bbox_type = DataType::FixedSizeList(Box::new(Field::new("bbox", DataType::Float64)), 4);
+        let bbox = match &bbox.data_type() {
+            DataType::List(child) => bbox.cast(&bbox_type)?.fixed_size_list(),
+            DataType::FixedSizeList(field, 4) => bbox.cast(&bbox_type)?.fixed_size_list(),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected bbox for crop to be a list of size 4, but received instead: {}",
+                dt
+            ))),
+        }?;
+
+        match &self.data_type() {
+            DataType::Image(_) => self.image()?.crop(bbox),
+            DataType::FixedShapeImage(..) => self.fixed_size_image()?.crop(bbox),
+            dt => Err(DaftError::ValueError(format!(
+                "Expected input to crop to be an Image type, but received: {}",
+                dt
             ))),
         }
     }

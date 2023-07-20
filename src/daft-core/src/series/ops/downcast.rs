@@ -1,6 +1,6 @@
 use crate::datatypes::*;
 
-use crate::datatypes::logical::LogicalArray;
+use crate::datatypes::logical::{FixedShapeImageArray, ImageArray, LogicalArray};
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
@@ -125,6 +125,14 @@ impl Series {
 
     pub fn struct_(&self) -> DaftResult<&StructArray> {
         self.downcast()
+    }
+
+    pub fn image(&self) -> DaftResult<&ImageArray> {
+        self.downcast_logical()
+    }
+
+    pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
+        self.downcast_logical()
     }
 
     #[cfg(feature = "python")]
