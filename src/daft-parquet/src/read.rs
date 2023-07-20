@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    sync::Arc, ops::Deref,
+    ops::Deref,
+    sync::Arc,
 };
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
@@ -16,8 +17,9 @@ use snafu::ResultExt;
 use tokio::task::JoinHandle;
 
 use crate::{
-    metadata::{read_parquet_metadata, self},
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass}, JoinSnafu,
+    metadata::{self, read_parquet_metadata},
+    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
+    JoinSnafu,
 };
 
 fn plan_read_row_groups(
@@ -141,28 +143,28 @@ async fn read_row_groups_from_ranges(
             let metadata = metadata.clone();
             let field = field.clone();
 
-            let handle = tokio::task::spawn( async move {
+            let handle = tokio::task::spawn(async move {
                 let metadata = metadata.clone();
-                let rg =  metadata.row_groups.get(row_group as usize).unwrap();
+                let rg = metadata.row_groups.get(row_group as usize).unwrap();
 
                 let columns = rg.columns();
-    
-    
+
                 let field_name = field.name.clone();
                 let filtered_cols = columns
                     .iter()
                     .filter(|x| x.descriptor().path_in_schema[0] == field_name)
                     .collect::<Vec<_>>();
-    
 
                 let mut decompressed_iters = vec![];
                 let mut ptypes = vec![];
 
-                let range_readers = futures::future::try_join_all(filtered_cols.iter().map(|col| {
-                    let (start, len) = col.byte_range();
-                    let end = start + len;
-                    reader.get_range_reader(start as usize..end as usize)
-                })).await?;
+                let range_readers =
+                    futures::future::try_join_all(filtered_cols.iter().map(|col| {
+                        let (start, len) = col.byte_range();
+                        let end = start + len;
+                        reader.get_range_reader(start as usize..end as usize)
+                    }))
+                    .await?;
 
                 for (col, range_reader) in filtered_cols.iter().zip(range_readers) {
                     let pages = PageReader::new(
@@ -172,9 +174,9 @@ async fn read_row_groups_from_ranges(
                         vec![],
                         4 * 1024 * 1024,
                     );
-    
+
                     decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
-    
+
                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
                 }
 
@@ -188,17 +190,25 @@ async fn read_row_groups_from_ranges(
                         Some(4096),
                         num_rows,
                     )?;
-    
+
                     let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
                     let ser = all_arrays
                         .into_iter()
-                        .map(|a| Series::try_from((field_name.as_str(), cast_array_for_daft_if_needed(a))))
+                        .map(|a| {
+                            Series::try_from((
+                                field_name.as_str(),
+                                cast_array_for_daft_if_needed(a),
+                            ))
+                        })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     DaftResult::Ok(ser)
-                }).await.context(JoinSnafu {}).unwrap().unwrap();
+                })
+                .await
+                .context(JoinSnafu {})
+                .unwrap()
+                .unwrap();
                 Ok(ser)
             });
-
 
             daft_series[ii].push(handle);
         }
@@ -207,14 +217,29 @@ async fn read_row_groups_from_ranges(
     let mut compacted_series = vec![];
 
     for handles in daft_series.into_iter() {
-        let all_series = futures::future::try_join_all(handles).await.unwrap().into_iter().collect::<DaftResult<Vec<_>>>()?;
-        let concated_series = Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref())?;
-        compacted_series.push(concated_series)
+        let concated_series = tokio::task::spawn(async move {
+            let all_series = futures::future::try_join_all(handles)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            tokio::task::spawn_blocking(move || {
+                Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref())
+            })
+            .await
+            .unwrap()
+        });
+        compacted_series.push(concated_series);
     }
+    let compacted_series = futures::future::try_join_all(compacted_series)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect::<DaftResult<Vec<_>>>()?;
 
     Table::new(daft_schema, compacted_series)
 }
-
 
 pub fn read_parquet(
     uri: &str,
