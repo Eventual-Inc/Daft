@@ -261,14 +261,14 @@ pub fn read_parquet(
         let metadata = read_parquet_metadata(uri, size, io_client.clone()).await?;
         log::warn!(
             "total time for read_parquet_metadata: {}",
-            now.elapsed().as_millis()
+            now.elapsed().as_micros()
         );
 
         let now = Instant::now();
         let mut plan = plan_read_row_groups(uri, columns, row_groups, &metadata)?;
         log::warn!(
             "total time for plan_read_row_groups: {}",
-            now.elapsed().as_millis()
+            now.elapsed().as_micros()
         );
 
         plan.add_pass(Box::new(SplitLargeRequestPass {
@@ -283,11 +283,11 @@ pub fn read_parquet(
 
         let now = Instant::now();
         plan.run_passes()?;
-        log::warn!("total time for run_passes: {}", now.elapsed().as_millis());
+        log::warn!("total time for run_passes: {}", now.elapsed().as_micros());
 
         let now = Instant::now();
         let dl_ranges = plan.collect(io_client)?;
-        log::warn!("total time for plan.collect: {}", now.elapsed().as_millis());
+        log::warn!("total time for plan.collect: {}", now.elapsed().as_micros());
 
         read_row_groups_from_ranges(dl_ranges, columns, row_groups, metadata).await
     })
