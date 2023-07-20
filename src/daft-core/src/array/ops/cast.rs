@@ -310,9 +310,11 @@ pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String 
         if scale == 0 {
             format!("{}", integral)
         } else {
+            let sign = if val < 0 { "-" } else { "" };
+            let integral = integral.abs();
             let decimals = (val % modulus).abs();
             let scale = scale as usize;
-            format!("{}.{:0scale$}", integral, decimals)
+            format!("{}{}.{:0scale$}", sign, integral, decimals)
         }
     }
 }
