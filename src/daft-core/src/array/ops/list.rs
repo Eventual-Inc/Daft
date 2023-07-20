@@ -1,14 +1,15 @@
 use crate::datatypes::{BooleanArray, FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
+use crate::IntoSeries;
 
 use crate::series::Series;
 
 use arrow2;
 use arrow2::array::Array;
-use arrow2::compute::contains;
 
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+use super::DaftCompare;
 
 fn join_arrow_list_of_utf8s(
     list_element: Option<Box<dyn arrow2::array::Array>>,
@@ -34,31 +35,6 @@ fn join_arrow_list_of_utf8s(
                 result
             }
         })
-}
-
-fn list_contains(
-    name: &str,
-    list_arr: &dyn arrow2::array::Array,
-    elements: &Series,
-) -> DaftResult<BooleanArray> {
-    match elements.len() {
-        1 => Ok(BooleanArray::from((
-            name,
-            contains::contains(
-                list_arr,
-                // TODO(jay): This is a pretty brute-force broadcast which uses more memory than required
-                elements
-                    .broadcast(list_arr.len())?
-                    .inner
-                    .to_arrow()
-                    .as_ref(),
-            )?,
-        ))),
-        _ => Ok(BooleanArray::from((
-            name,
-            contains::contains(list_arr, elements.inner.to_arrow().as_ref())?,
-        ))),
-    }
 }
 
 impl ListArray {
@@ -142,7 +118,40 @@ impl ListArray {
     }
 
     pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
-        list_contains(self.name(), self.as_arrow(), elements)
+        // Broadcast `elements` if required. Note that this is potentially unnecessarily expensive.
+        let broadcasted_elements: Series;
+        let broadcasted_elements_ref = if elements.len() == 1 {
+            broadcasted_elements = elements.broadcast(self.len())?;
+            &broadcasted_elements
+        } else {
+            elements
+        };
+
+        let lengths = self.lengths()?;
+        let mut contains_elements: Vec<Option<bool>> = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            let element_scalar_series = broadcasted_elements_ref
+                .take(&UInt64Array::from(("", vec![i as u64])).into_series())?;
+            let element_is_null = element_scalar_series.is_null()?.bool()?.as_arrow().value(0);
+            let list_is_null = !self.as_arrow().is_valid(i);
+            // Return Null if either the list or element we are searching are null
+            if element_is_null || list_is_null {
+                contains_elements.push(None)
+            // If the list has length 0, then it cannot contain any elements
+            } else if lengths.as_arrow().value(i) == 0 {
+                contains_elements.push(Some(false))
+            // Search the list for the specified element, both guaranteed to be non-empty and non-null
+            } else {
+                let list_elements = Series::try_from(("", self.as_arrow().value(i)))?;
+                let eq = list_elements.equal(&element_scalar_series)?;
+                let contains_element = eq.as_arrow().iter().any(|x| x.unwrap_or(false));
+                contains_elements.push(Some(contains_element));
+            }
+        }
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::from(contains_elements),
+        )))
     }
 }
 
@@ -218,6 +227,39 @@ impl FixedSizeListArray {
     }
 
     pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
-        list_contains(self.name(), self.as_arrow(), elements)
+        // Broadcast `elements` if required. Note that this is potentially unnecessarily expensive.
+        let broadcasted_elements: Series;
+        let broadcasted_elements_ref = if elements.len() == 1 {
+            broadcasted_elements = elements.broadcast(self.len())?;
+            &broadcasted_elements
+        } else {
+            elements
+        };
+
+        let lengths = self.lengths()?;
+        let mut contains_elements: Vec<Option<bool>> = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            let element_scalar_series = broadcasted_elements_ref
+                .take(&UInt64Array::from(("", vec![i as u64])).into_series())?;
+            let element_is_null = element_scalar_series.is_null()?.bool()?.as_arrow().value(0);
+            let list_is_null = !self.as_arrow().is_valid(i);
+            // Return Null if either the list or element we are searching are null
+            if element_is_null || list_is_null {
+                contains_elements.push(None)
+            // If the list has length 0, then it cannot contain any elements
+            } else if lengths.as_arrow().value(i) == 0 {
+                contains_elements.push(Some(false))
+            // Search the list for the specified element, both guaranteed to be non-empty and non-null
+            } else {
+                let list_elements = Series::try_from(("", self.as_arrow().value(i)))?;
+                let eq = list_elements.equal(&element_scalar_series)?;
+                let contains_element = eq.as_arrow().iter().any(|x| x.unwrap_or(false));
+                contains_elements.push(Some(contains_element));
+            }
+        }
+        Ok(BooleanArray::from((
+            self.name(),
+            arrow2::array::BooleanArray::from(contains_elements),
+        )))
     }
 }

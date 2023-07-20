@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 import daft
 from daft.expressions import col
 from daft.table import Table
@@ -22,12 +20,10 @@ def test_list_contains_null():
 
 
 def test_fixed_size_list_contains():
-    dt = daft.DataType.fixed_size_list("e", daft.DataType.int64(), 1)
-    table = Table.from_pydict({"col": daft.Series.from_pylist([None, [1], [2], [None]]).cast(dt)})
-    # TODO(jaychia): Contains not yet implemented for FixedSizeList
-    with pytest.raises(ValueError) as err:
-        table.eval_expression_list([col("col").list.contains(daft.lit(1))])
-    assert "Contains not yet implemented for FixedSizeList." in str(err)
+    dt = daft.DataType.fixed_size_list("e", daft.DataType.string(), 1)
+    table = Table.from_pydict({"col": daft.Series.from_pylist([None, ["a"], ["b"], [None]]).cast(dt)})
+    result = table.eval_expression_list([col("col").list.contains("a")])
+    assert result.to_pydict() == {"col": [None, True, False, False]}
 
 
 def test_list_contains_other_col():

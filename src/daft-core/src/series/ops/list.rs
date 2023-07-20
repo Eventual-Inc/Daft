@@ -66,6 +66,9 @@ impl Series {
     pub fn contains(&self, elements: &Series) -> DaftResult<BooleanArray> {
         match self.data_type() {
             DataType::List(child) => self.list()?.contains(&elements.cast(&child.dtype)?),
+            DataType::FixedSizeList(child, _) => self
+                .fixed_size_list()?
+                .contains(&elements.cast(&child.dtype)?),
             dt => Err(DaftError::TypeError(format!(
                 "Contains not implemented for {}",
                 dt
