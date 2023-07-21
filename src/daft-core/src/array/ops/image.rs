@@ -225,48 +225,34 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn crop(&self, bbox: &BBox) -> Self {
-        match self {
+        // HACK(jay): The `.to_image()` method on SubImage takes in `'static` references for some reason
+        // This hack will ensure that `&self` adheres to that overly prescriptive bound
+        let inner =
+            unsafe { std::mem::transmute::<&DaftImageBuffer<'a>, &DaftImageBuffer<'static>>(self) };
+        match inner {
             DaftImageBuffer::L(imgbuf) => {
-                let imgbuf_copy = image_buffer_cow_to_vec(imgbuf);
                 let result =
-                    image::imageops::crop_imm(&imgbuf_copy, bbox.0, bbox.1, bbox.2, bbox.3)
-                        .to_image();
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
                 DaftImageBuffer::L(image_buffer_vec_to_cow(result))
             }
             DaftImageBuffer::LA(imgbuf) => {
-                let imgbuf_copy = image_buffer_cow_to_vec(imgbuf);
                 let result =
-                    image::imageops::crop_imm(&imgbuf_copy, bbox.0, bbox.1, bbox.2, bbox.3)
-                        .to_image();
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
                 DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
             }
             DaftImageBuffer::RGB(imgbuf) => {
-                let imgbuf_copy = image_buffer_cow_to_vec(imgbuf);
                 let result =
-                    image::imageops::crop_imm(&imgbuf_copy, bbox.0, bbox.1, bbox.2, bbox.3)
-                        .to_image();
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
                 DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
             }
             DaftImageBuffer::RGBA(imgbuf) => {
-                let imgbuf_copy = image_buffer_cow_to_vec(imgbuf);
                 let result =
-                    image::imageops::crop_imm(&imgbuf_copy, bbox.0, bbox.1, bbox.2, bbox.3)
-                        .to_image();
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
                 DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
             }
             _ => unimplemented!("Mode {self:?} not implemented"),
         }
     }
-}
-
-fn image_buffer_cow_to_vec<P, T>(input: &ImageBuffer<P, Cow<'_, [T]>>) -> ImageBuffer<P, Vec<T>>
-where
-    P: image::Pixel<Subpixel = T>,
-    Vec<T>: Deref<Target = [P::Subpixel]>,
-    T: ToOwned + std::clone::Clone,
-    [T]: ToOwned,
-{
-    ImageBuffer::from_raw(input.width(), input.height(), input.as_raw().to_vec()).unwrap()
 }
 
 fn image_buffer_vec_to_cow<'a, P, T>(input: ImageBuffer<P, Vec<T>>) -> ImageBuffer<P, Cow<'a, [T]>>
