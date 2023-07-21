@@ -3,10 +3,12 @@ use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::IOClient;
+use futures::StreamExt;
 use snafu::ResultExt;
 use tokio::task::JoinHandle;
 
 use crate::JoinSnafu;
+use tokio_util::io::StreamReader;
 
 type RangeList = Vec<Range<usize>>;
 
@@ -104,16 +106,16 @@ struct RangeCacheEntry {
 }
 
 impl RangeCacheEntry {
-    async fn get_or_wait(&self) -> DaftResult<Bytes> {
+    async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
         {
             let mut _guard = self.state.lock().await;
             match &mut (*_guard) {
                 RangeCacheState::InFlight(f) => {
-                    let v = f.await.context(JoinSnafu {})??;
+                    let v = f.await.context(JoinSnafu {}).unwrap().unwrap();
                     *_guard = RangeCacheState::Ready(v.clone());
-                    Ok(v)
+                    Ok(v.slice(range))
                 }
-                RangeCacheState::Ready(v) => Ok(v.clone()),
+                RangeCacheState::Ready(v) => Ok(v.slice(range)),
             }
         }
     }
@@ -177,7 +179,10 @@ pub(crate) struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub async fn get_range_reader(&self, range: Range<usize>) -> DaftResult<MultiRead> {
+    pub fn get_range_reader<'a>(
+        &'a self,
+        range: Range<usize>,
+    ) -> DaftResult<impl futures::AsyncRead + 'a> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -234,15 +239,22 @@ impl RangesContainer {
         }
 
         assert_eq!(current_pos, range.end);
+        println!("num needed entries: {}", needed_entries.len());
 
-        let bytes_objects =
-            futures::future::try_join_all(needed_entries.iter().map(|e| e.get_or_wait())).await?;
-        let slices = bytes_objects
-            .into_iter()
-            .zip(ranges_to_slice)
-            .map(|(b, r)| b.slice(r))
-            .collect();
-        Ok(MultiRead::new(slices, range.end - range.start))
+        let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
+            .then(|(e, r)| async move { e.get_or_wait(r).await });
+
+        let stream_reader = StreamReader::new(bytes_iter);
+        // let bytes_objects =
+        //     futures::future::try_join_all(needed_entries.iter().map(|e| e.get_or_wait())).await?;
+        // let slices = bytes_objects
+        //     .into_iter()
+        //     .zip(ranges_to_slice)
+        //     .map(|(b, r)| b.slice(r))
+        //     .collect();
+        // Ok(MultiRead::new(slices, range.end - range.start))
+        let convert = async_compat::Compat::new(stream_reader);
+        Ok(convert)
     }
 }
 

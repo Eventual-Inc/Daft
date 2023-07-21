@@ -1,19 +1,21 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::Deref,
-    sync::Arc,
-};
-
 use arrow2::io::parquet::read::{column_iter_to_arrays, infer_schema};
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
+use futures::{AsyncReadExt, StreamExt};
 use parquet2::{
     metadata::FileMetaData,
-    read::{BasicDecompressor, PageReader},
+    page,
+    read::{get_page_stream_from_column_start, BasicDecompressor, PageReader},
 };
 use snafu::ResultExt;
+use std::{
+    collections::{BTreeMap, HashSet},
+    ops::Deref,
+    sync::Arc,
+    time::Instant,
+};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -154,28 +156,55 @@ async fn read_row_groups_from_ranges(
                     .iter()
                     .filter(|x| x.descriptor().path_in_schema[0] == field_name)
                     .collect::<Vec<_>>();
-
+                println!("f_name: {field_name}, {}", filtered_cols.len());
                 let mut decompressed_iters = vec![];
                 let mut ptypes = vec![];
 
-                let range_readers =
-                    futures::future::try_join_all(filtered_cols.iter().map(|col| {
+                // let range_readers =
+                //     futures::future::try_join_all(filtered_cols.iter().map(|col| {
+                //         let (start, len) = col.byte_range();
+                //         let end = start + len;
+                //         reader.get_range_reader(start as usize..end as usize)
+                //     }))
+                //     .await?;
+
+                let range_readers: Vec<_> = filtered_cols
+                    .iter()
+                    .map(|col| {
                         let (start, len) = col.byte_range();
                         let end = start + len;
-                        reader.get_range_reader(start as usize..end as usize)
-                    }))
-                    .await?;
-
+                        reader
+                            .get_range_reader(start as usize..end as usize)
+                            .unwrap()
+                    })
+                    .collect();
                 for (col, range_reader) in filtered_cols.iter().zip(range_readers) {
-                    let pages = PageReader::new(
-                        range_reader,
-                        col,
-                        Arc::new(|_, _| true),
-                        vec![],
-                        4 * 1024 * 1024,
-                    );
+                    // let pages = PageReader::new(
+                    //     range_reader,
+                    //     col,
+                    //     Arc::new(|_, _| true),
+                    //     vec![],
+                    //     4 * 1024 * 1024,
+                    // );
+                    let mut pinned = Box::pin(range_reader);
+                    // let page_stream = get_page_stream_from_column_start(col, &mut pinned, vec![], Arc::new(|_, _| true),  4 * 1024 * 1024).await.unwrap();
+                    // futures::pin_mut!(page_stream);
+                    let mut buf = vec![0; 1024 * 1024];
 
-                    decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
+                    let mut now = Instant::now();
+                    while let Ok(val) = pinned.read(buf.as_mut_slice()).await {
+                        if val == 0 {
+                            break;
+                        }
+                        {
+                            println!("read {val} bytes in {}", now.elapsed().as_millis());
+                            now = Instant::now()
+                        }
+                    }
+
+                    decompressed_iters.push(BasicDecompressor::new(vec![].into_iter(), vec![]));
+
+                    // decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
 
                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
                 }

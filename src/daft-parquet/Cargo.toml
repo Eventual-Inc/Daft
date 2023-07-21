@@ -1,5 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+async-compat = "0.2.1"
 bytes = "1.4.0"
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -12,6 +13,8 @@ pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = "0.1.14"
+tokio-util = "0.7.8"
 
 [features]
 default = ["python"]
