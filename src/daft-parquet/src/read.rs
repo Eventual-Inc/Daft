@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle};
 
 use crate::{
     metadata::{self, read_parquet_metadata},
@@ -192,6 +192,7 @@ async fn read_row_groups_from_ranges(
                     let mut buf = vec![0; 1024 * 1024];
                     let mut counter = 0;
                     let mut now = Instant::now();
+                    use tokio::io::AsyncReadExt;
                     while let Ok(val) = pinned.read(buf.as_mut_slice()).await {
                         if val == 0 {
                             break;

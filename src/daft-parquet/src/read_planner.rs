@@ -182,7 +182,7 @@ impl RangesContainer {
     pub fn get_range_reader<'a>(
         &'a self,
         range: Range<usize>,
-    ) -> DaftResult<impl futures::AsyncRead + 'a> {
+    ) -> DaftResult<impl tokio::io::AsyncRead + 'a> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -253,8 +253,8 @@ impl RangesContainer {
         //     .map(|(b, r)| b.slice(r))
         //     .collect();
         // Ok(MultiRead::new(slices, range.end - range.start))
-        let convert = async_compat::Compat::new(stream_reader);
-        Ok(convert)
+        // let convert = async_compat::Compat::new(stream_reader);
+        Ok(stream_reader)
     }
 }
 
