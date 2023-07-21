@@ -1,4 +1,3 @@
-use crate::functions::image::ImageExpr;
 use crate::Expr;
 use common_error::DaftError;
 use daft_core::datatypes::DataType;
@@ -8,8 +7,6 @@ use common_error::DaftResult;
 
 use super::super::FunctionEvaluator;
 
-use super::super::FunctionExpr;
-
 pub struct CropEvaluator {}
 
 impl FunctionEvaluator for CropEvaluator {
@@ -17,7 +14,7 @@ impl FunctionEvaluator for CropEvaluator {
         "crop"
     }
 
-    fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _expr: &Expr) -> DaftResult<Field> {
         match inputs {
             [input, bbox] => {
                 let input_field = input.to_field(schema)?;
@@ -25,21 +22,24 @@ impl FunctionEvaluator for CropEvaluator {
 
                 // Validate the bbox field type
                 match &bbox_field.dtype {
-                    DataType::FixedSizeList(field, size) => {
-                        if *size != 4 {
-                            return Err(DaftError::TypeError(format!(
-                                "bbox FixedSizeList field must have size 4 for cropping"
-                            )));
-                        }
+                    DataType::FixedSizeList(_, size) if *size != 4 => {
+                        return Err(DaftError::TypeError(
+                            "bbox FixedSizeList field must have size 4 for cropping".to_string(),
+                        ));
                     }
-                    DataType::FixedSizeList(field, ..) | DataType::List(field) => {
-                        if !field.dtype.is_numeric() {
-                            return Err(DaftError::TypeError(format!(
-                                "bbox list field must have numeric child type"
-                            )));
-                        }
+                    DataType::FixedSizeList(field, _) | DataType::List(field)
+                        if !field.dtype.is_numeric() =>
+                    {
+                        return Err(DaftError::TypeError(
+                            "bbox list field must have numeric child type".to_string(),
+                        ));
                     }
-                    _ => (),
+                    DataType::FixedSizeList(..) | DataType::List(..) => (),
+                    _ => {
+                        return Err(DaftError::TypeError(
+                            "bbox list field must be List with numeric child type".to_string(),
+                        ));
+                    }
                 }
 
                 // Validate the input field type
