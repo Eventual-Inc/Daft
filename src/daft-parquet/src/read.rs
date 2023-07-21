@@ -97,10 +97,16 @@ use futures::stream::Stream;
 fn streaming_decompression<S: Stream<Item = parquet2::error::Result<CompressedPage>>>(
     input: S,
 ) -> impl Stream<Item = parquet2::error::Result<Page>> {
-    let mut buffer = vec![];
     stream! {
         for await compressed_page in input {
-            yield decompress(compressed_page?, &mut buffer);
+            let compressed_page = compressed_page?;
+            let page = tokio::task::spawn_blocking(move || {
+                let mut buffer = vec![];
+                decompress(compressed_page, &mut buffer)
+            }).await.unwrap();
+            yield page;
+
+            // yield decompress(compressed_page?, &mut buffer);
         }
     }
 }
