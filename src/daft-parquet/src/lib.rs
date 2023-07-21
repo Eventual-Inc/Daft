@@ -31,6 +31,10 @@ pub enum Error {
         path: String,
         source: parquet2::error::Error,
     },
+
+    #[snafu(display("Unable to decompress page {}", source))]
+    UnableToDecompressPage { source: parquet2::error::Error },
+
     #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
         path,

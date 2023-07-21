@@ -905,6 +905,7 @@ version = "0.1.0"
 dependencies = [
  "arrow2",
  "async-compat",
+ "async-stream",
  "bytes",
  "common-error",
  "daft-core",

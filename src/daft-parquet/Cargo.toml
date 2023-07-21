@@ -1,6 +1,7 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = "0.2.1"
+async-stream = "0.3.5"
 bytes = "1.4.0"
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}

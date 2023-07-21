@@ -5,9 +5,10 @@ use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
 use futures::{AsyncReadExt, StreamExt};
 use parquet2::{
+    fallible_streaming_iterator::{convert, Convert},
     metadata::FileMetaData,
-    page,
-    read::{get_page_stream_from_column_start, BasicDecompressor, PageReader},
+    page::{self, CompressedPage, Page},
+    read::{decompress, get_page_stream_from_column_start, BasicDecompressor, PageReader},
 };
 use snafu::ResultExt;
 use std::{
@@ -21,7 +22,7 @@ use tokio::task::JoinHandle;
 use crate::{
     metadata::{self, read_parquet_metadata},
     read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
-    JoinSnafu,
+    JoinSnafu, UnableToDecompressPageSnafu,
 };
 
 fn plan_read_row_groups(
@@ -88,6 +89,101 @@ fn plan_read_row_groups(
         }
     }
     Ok(read_plan)
+}
+
+use async_stream::stream;
+use futures::stream::Stream;
+
+fn streaming_decompression<S: Stream<Item = parquet2::error::Result<CompressedPage>>>(
+    input: S,
+) -> impl Stream<Item = parquet2::error::Result<Page>> {
+    let mut buffer = vec![];
+    stream! {
+        for await compressed_page in input {
+            yield decompress(compressed_page?, &mut buffer);
+        }
+    }
+}
+
+use parquet2::FallibleStreamingIterator;
+
+pub struct SyncIterator<T: Stream> {
+    curr: Option<T::Item>,
+    src: T,
+    rt: tokio::runtime::Handle,
+}
+
+impl<T: Unpin + Stream> SyncIterator<T> {
+    pub fn new(src: T) -> Self {
+        Self::new_with_handle(src, tokio::runtime::Handle::current())
+    }
+
+    pub fn new_with_handle(src: T, rt: tokio::runtime::Handle) -> Self {
+        Self {
+            curr: None,
+            src,
+            rt,
+        }
+    }
+}
+
+impl<T: Unpin + Stream> FallibleStreamingIterator for SyncIterator<T> {
+    type Error = parquet2::error::Error;
+    type Item = T::Item;
+    // fn next(&mut self) -> Option<Self::Item> {
+    //     self.rt.block_on(self.src.next())
+    // }
+    fn advance(&mut self) -> Result<(), Self::Error> {
+        self.curr = self.rt.block_on(self.src.next());
+        Ok(())
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.curr.as_ref()
+    }
+}
+
+pub struct VecIterator {
+    index: i64,
+    src: Vec<parquet2::error::Result<Page>>,
+}
+
+impl VecIterator {
+    pub fn new(src: Vec<parquet2::error::Result<Page>>) -> Self {
+        VecIterator {
+            index: -1,
+            src: src,
+        }
+    }
+}
+
+impl FallibleStreamingIterator for VecIterator {
+    type Error = parquet2::error::Error;
+    type Item = Page;
+    // fn next(&mut self) -> Option<Self::Item> {
+    //     self.rt.block_on(self.src.next())
+    // }
+    fn advance(&mut self) -> Result<(), Self::Error> {
+        self.index += 1;
+        if (self.index as usize) < self.src.len() {
+            if let Err(value) = self.src.get(self.index as usize).unwrap() {
+                return Err(value.clone());
+            }
+        }
+        Ok(())
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        if self.index < 0 || (self.index as usize) >= self.src.len() {
+            return None;
+        }
+
+        if let Ok(val) = self.src.get(self.index as usize).unwrap() {
+            return Some(val);
+        } else {
+            None
+        }
+    }
 }
 
 async fn read_row_groups_from_ranges(
@@ -187,27 +283,22 @@ async fn read_row_groups_from_ranges(
                     //     4 * 1024 * 1024,
                     // );
                     let mut pinned = Box::pin(range_reader);
-                    // let page_stream = get_page_stream_from_column_start(col, &mut pinned, vec![], Arc::new(|_, _| true),  4 * 1024 * 1024).await.unwrap();
+                    let compressed_page_stream = get_page_stream_from_column_start(
+                        col,
+                        &mut pinned,
+                        vec![],
+                        Arc::new(|_, _| true),
+                        4 * 1024 * 1024,
+                    )
+                    .await
+                    .unwrap();
                     // futures::pin_mut!(page_stream);
-                    let mut buf = vec![0; 1024 * 1024];
-                    let mut counter = 0;
-                    let mut now = Instant::now();
-                    use tokio::io::AsyncReadExt;
-                    while let Ok(val) = pinned.read(buf.as_mut_slice()).await {
-                        if val == 0 {
-                            break;
-                        }
-                        {
-                            println!(
-                                "{field_name} read {val} bytes in {}. chunk: {counter}",
-                                now.elapsed().as_millis()
-                            );
-                            now = Instant::now();
-                            counter += 1;
-                        }
-                    }
 
-                    decompressed_iters.push(BasicDecompressor::new(vec![].into_iter(), vec![]));
+                    let page_stream = streaming_decompression(compressed_page_stream);
+
+                    // futures::pin_mut!(page_stream);
+                    // let iterator = SyncIterator::new(page_stream);
+                    decompressed_iters.push(page_stream.collect::<Vec<_>>().await);
 
                     // decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
 
@@ -216,6 +307,11 @@ async fn read_row_groups_from_ranges(
 
                 let num_rows = rg.num_rows();
                 let field_name = field.name.clone();
+                let decompressed_iters = decompressed_iters
+                    .into_iter()
+                    .map(|i| VecIterator::new(i))
+                    .collect();
+
                 let ser = tokio::task::spawn_blocking(move || {
                     let arr_iter = column_iter_to_arrays(
                         decompressed_iters,

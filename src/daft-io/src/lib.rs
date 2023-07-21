@@ -16,7 +16,7 @@ pub use python::register_modules;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
-use futures::{StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 
 use snafu::Snafu;
 use url::ParseError;
