@@ -140,38 +140,19 @@ def test_image_crop_fixed_shape_same_mode_crop_col(fixed_shape_data_fixture):
     np.testing.assert_equal(result["images"], expected)
 
 
-# def test_image_resize_mixed_modes():
-#     rgba = np.ones((2, 2, 4), dtype=np.uint8)
-#     rgba[..., 1] = 2
-#     rgba[..., 2] = 3
-#     rgba[..., 3] = 4
+def test_bad_expr_input():
+    table = Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
 
-#     data = [
-#         rgba[..., :3],  # rgb
-#         rgba,  # RGBA
-#         np.arange(12, dtype=np.uint8).reshape((1, 4, 3)),  # RGB
-#         np.arange(12, dtype=np.uint8).reshape((3, 4)) * 10,  # L
-#         np.ones(24, dtype=np.uint8).reshape((3, 4, 2)) * 10,  # LA
-#         None,
-#     ]
+    # Test bad Expression calls
+    with pytest.raises(ValueError):
+        daft.col("x").image.crop("foo")
 
-#     s = Series.from_pylist(data, pyobj="force")
+    with pytest.raises(ValueError):
+        daft.col("x").image.crop([1, 2, 3, 4, 5])
 
-#     target_dtype = DataType.image()
+    with pytest.raises(ValueError):
+        daft.col("x").image.crop([1.0, 2.0, 3.0, 4.0])
 
-#     t = s.cast(target_dtype)
-
-#     assert t.datatype() == target_dtype
-
-#     resized = t.image.resize(5, 5)
-
-#     out = resized.cast(DataType.python()).to_pylist()
-
-#     def resize(arr):
-#         # Use opencv as a resizing baseline.
-#         arr = cv2.resize(arr, dsize=(5, 5), interpolation=cv2.INTER_LINEAR_EXACT)
-#         if arr.ndim == 2:
-#             arr = np.expand_dims(arr, -1)
-#         return arr
-
-#     np.testing.assert_equal(out, [resize(arr) if arr is not None else None for arr in data])
+    # Test calling on bad types
+    with pytest.raises(ValueError):
+        table.eval_expression_list([daft.col("x").image.crop((1, 2, 3, 4))])
