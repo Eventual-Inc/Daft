@@ -87,8 +87,8 @@ pub fn build_multi_array_is_equal(
 
     for (l, r) in left.iter().zip(right.iter()) {
         fn_list.push(build_is_equal(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.export_arrow_for_ffi().as_ref(),
+            r.export_arrow_for_ffi().as_ref(),
             nulls_equal,
             nan_equal,
         )?);

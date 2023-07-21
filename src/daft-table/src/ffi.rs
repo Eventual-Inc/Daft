@@ -64,7 +64,7 @@ pub fn table_to_record_batch(table: &Table, py: Python, pyarrow: &PyModule) -> P
 
     for i in 0..table.num_columns() {
         let s = table.get_column_by_index(i)?;
-        let arrow_array = s.to_arrow();
+        let arrow_array = s.export_arrow_for_ffi();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = daft_core::ffi::to_py_array(arrow_array, py, pyarrow)?;
         arrays.push(py_array);

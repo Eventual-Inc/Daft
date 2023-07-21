@@ -58,7 +58,7 @@ impl PySeries {
     }
 
     pub fn to_arrow(&self) -> PyResult<PyObject> {
-        let arrow_array = self.series.to_arrow();
+        let arrow_array = self.series.export_arrow_for_ffi();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;

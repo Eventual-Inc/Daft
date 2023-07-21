@@ -173,8 +173,11 @@ macro_rules! impl_series_like_for_data_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+            fn export_arrow_for_ffi(&self) -> Box<dyn arrow2::array::Array> {
                 logical_to_arrow(Cow::Borrowed(&self.0.data), self.field()).into_owned()
+            }
+            fn as_arrow(&self) -> &dyn arrow2::array::Array {
+                self.0.data.as_ref()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {

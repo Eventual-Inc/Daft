@@ -10,7 +10,8 @@ use super::Series;
 pub trait SeriesLike: Send + Sync + Any {
     #[allow(clippy::wrong_self_convention)]
     fn into_series(&self) -> Series;
-    fn to_arrow(&self) -> Box<dyn arrow2::array::Array>;
+    fn export_arrow_for_ffi(&self) -> Box<dyn arrow2::array::Array>;
+    fn as_arrow(&self) -> &dyn arrow2::array::Array;
     fn as_any(&self) -> &dyn std::any::Any;
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;

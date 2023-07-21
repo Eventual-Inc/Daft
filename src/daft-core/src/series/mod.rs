@@ -21,8 +21,23 @@ pub struct Series {
 }
 
 impl Series {
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        self.inner.to_arrow()
+    // Copies and exports this Series for exporting as an Arrow array
+    //
+    // This should mostly be called only when preparing data for crossing the FFI boundary into Python
+    // and has custom handling for some types to be compatible with Python
+    pub fn export_arrow_for_ffi(&self) -> Box<dyn arrow2::array::Array> {
+        self.inner.export_arrow_for_ffi()
+    }
+
+    // Retrieves the Arrow representation of this Series for internal use in kernels.
+    //
+    // Note that the Arrow array returned here will be the physical representation of the data,
+    // since not all Daft logical types have a direct analog in arrow2 (e.g. Extension types).
+    //
+    // This behavior is in contrast with `Series::export_arrow_for_ffi` which performs manipulations
+    // of the data to prepare it for crossing the FFI boundary.
+    pub fn as_arrow(&self) -> &dyn arrow2::array::Array {
+        self.inner.as_arrow()
     }
 
     pub fn data_type(&self) -> &DataType {

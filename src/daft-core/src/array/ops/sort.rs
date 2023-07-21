@@ -42,8 +42,8 @@ pub fn build_multi_array_bicompare(
 
     for ((l, r), desc) in left.iter().zip(right.iter()).zip(descending.iter()) {
         cmp_list.push(build_compare_with_nulls(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.export_arrow_for_ffi().as_ref(),
+            r.export_arrow_for_ffi().as_ref(),
             *desc,
         )?);
     }

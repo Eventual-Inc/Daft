@@ -27,7 +27,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+            fn export_arrow_for_ffi(&self) -> Box<dyn arrow2::array::Array> {
                 let daft_type = self.0.logical_type();
                 let arrow_logical_type = daft_type.to_arrow().unwrap();
                 let physical_arrow_array = self.0.physical.data();
@@ -57,6 +57,10 @@ macro_rules! impl_series_like_for_logical_array {
                     )
                     .unwrap(),
                 }
+            }
+
+            fn as_arrow(&self) -> &dyn arrow2::array::Array {
+                self.0.physical.data.as_ref()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
