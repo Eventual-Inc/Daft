@@ -198,7 +198,7 @@ async fn read_row_groups_from_ranges(
                         }
                         {
                             println!(
-                                "read {val} bytes in {}. chunk: {counter}",
+                                "{field_name} read {val} bytes in {}. chunk: {counter}",
                                 now.elapsed().as_millis()
                             );
                             now = Instant::now();
