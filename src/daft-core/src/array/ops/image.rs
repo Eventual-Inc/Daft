@@ -17,6 +17,7 @@ use num_traits::FromPrimitive;
 
 use std::ops::Deref;
 
+#[derive(Clone)]
 pub struct BBox(u32, u32, u32, u32);
 
 impl BBox {
@@ -505,10 +506,21 @@ impl ImageArray {
     }
 
     pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
-        let mut bboxes_iterator = bboxes
-            .as_arrow()
-            .iter()
-            .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox)));
+        let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
+            Box::new(std::iter::repeat(
+                bboxes
+                    .as_arrow()
+                    .get(0)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
+            ))
+        } else {
+            Box::new(
+                bboxes
+                    .as_arrow()
+                    .iter()
+                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
+            )
+        };
         let result = crop_images(self, &mut bboxes_iterator);
         Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
     }
@@ -707,10 +719,21 @@ impl FixedShapeImageArray {
     }
 
     pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
-        let mut bboxes_iterator = bboxes
-            .as_arrow()
-            .iter()
-            .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox)));
+        let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
+            Box::new(std::iter::repeat(
+                bboxes
+                    .as_arrow()
+                    .get(0)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
+            ))
+        } else {
+            Box::new(
+                bboxes
+                    .as_arrow()
+                    .iter()
+                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
+            )
+        };
         let result = crop_images(self, &mut bboxes_iterator);
         ImageArray::from_daft_image_buffers(self.name(), result.as_slice(), &Some(self.mode()))
     }
