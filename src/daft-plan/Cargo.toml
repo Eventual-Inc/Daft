@@ -1,0 +1,11 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "daft-plan"
+version = {workspace = true}
