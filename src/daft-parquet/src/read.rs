@@ -190,15 +190,19 @@ async fn read_row_groups_from_ranges(
                     // let page_stream = get_page_stream_from_column_start(col, &mut pinned, vec![], Arc::new(|_, _| true),  4 * 1024 * 1024).await.unwrap();
                     // futures::pin_mut!(page_stream);
                     let mut buf = vec![0; 1024 * 1024];
-
+                    let mut counter = 0;
                     let mut now = Instant::now();
                     while let Ok(val) = pinned.read(buf.as_mut_slice()).await {
                         if val == 0 {
                             break;
                         }
                         {
-                            println!("read {val} bytes in {}", now.elapsed().as_millis());
-                            now = Instant::now()
+                            println!(
+                                "read {val} bytes in {}. chunk: {counter}",
+                                now.elapsed().as_millis()
+                            );
+                            now = Instant::now();
+                            counter += 1;
                         }
                     }
 
