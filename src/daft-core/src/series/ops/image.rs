@@ -57,7 +57,7 @@ impl Series {
     }
 
     pub fn image_crop(&self, bbox: &Series) -> DaftResult<Series> {
-        let bbox_type = DataType::FixedSizeList(Box::new(Field::new("bbox", DataType::Float64)), 4);
+        let bbox_type = DataType::FixedSizeList(Box::new(Field::new("bbox", DataType::UInt32)), 4);
         let bbox = bbox.cast(&bbox_type)?;
         let bbox = bbox.fixed_size_list()?;
 

@@ -22,6 +22,7 @@ pub struct BBox(u32, u32, u32, u32);
 
 impl BBox {
     pub fn from_u32_arrow_array(arr: Box<dyn arrow2::array::Array>) -> Self {
+        assert!(arr.len() == 4);
         let mut iter = arr
             .as_any()
             .downcast_ref::<arrow2::array::UInt32Array>()

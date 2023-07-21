@@ -769,23 +769,23 @@ class ExpressionImageNamespace(ExpressionNamespace):
             raise TypeError(f"expected int for h but got {type(h)}")
         return Expression._from_pyexpr(self._expr.image_resize(w, h))
 
-    def crop(self, bbox: tuple[float, float, float, float] | Expression) -> Expression:
+    def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """
         Crops images with the provided bounding box
 
         Args:
-            bbox (tuple[float, float, float, float] | Expression): Either a tuple of (x1, y1, x2, y2)
-                coordinates for cropping, or a List Expression where each element is a length 4 List
+            bbox (tuple[float, float, float, float] | Expression): Either a tuple of (x, y, width, height)
+                parameters for cropping, or a List Expression where each element is a length 4 List
                 which represents the bounding box for the crop
 
         Returns:
             Expression: An Image expression representing the cropped image
         """
         if not isinstance(bbox, Expression):
-            if len(bbox) != 4 or not all([isinstance(x, float) for x in bbox]):
+            if len(bbox) != 4 or not all([isinstance(x, int) for x in bbox]):
                 raise ValueError(
-                    f"Expected `bbox` to be either a tuple of 4 floats or an Expression but received: {bbox}"
+                    f"Expected `bbox` to be either a tuple of 4 ints or an Expression but received: {bbox}"
                 )
-            bbox = Expression._to_expression(tuple(list(bbox)))
+            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list("", DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
