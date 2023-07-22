@@ -331,7 +331,7 @@ async fn read_row_groups_from_ranges(
                         decompressed_iters,
                         ptypes.iter().collect(),
                         field,
-                        None, // Some(4096),
+                        Some(4096),
                         num_rows,
                     );
 
