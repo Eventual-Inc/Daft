@@ -12,6 +12,7 @@ log = {workspace = true}
 parquet2 = "0.17.2"
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
+rayon = "1.7.0"
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = "0.1.14"

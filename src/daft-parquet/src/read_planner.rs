@@ -255,7 +255,7 @@ impl RangesContainer {
         // Ok(MultiRead::new(slices, range.end - range.start))
         let convert = async_compat::Compat::new(stream_reader);
 
-        Ok(futures::io::BufReader::new(convert))
+        Ok(convert)
     }
 }
 

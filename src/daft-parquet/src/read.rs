@@ -100,11 +100,14 @@ fn streaming_decompression<S: Stream<Item = parquet2::error::Result<CompressedPa
     stream! {
         for await compressed_page in input {
             let compressed_page = compressed_page?;
-            let page = tokio::task::spawn_blocking(move || {
+            let (send, recv) = tokio::sync::oneshot::channel();
+
+            rayon::spawn(move || {
                 let mut buffer = vec![];
-                decompress(compressed_page, &mut buffer)
-            }).await.unwrap();
-            yield page;
+                let _ = send.send(decompress(compressed_page, &mut buffer));
+
+            });
+            yield recv.await.expect("panic while decompressing page");
 
             // yield decompress(compressed_page?, &mut buffer);
         }
@@ -226,7 +229,7 @@ async fn read_row_groups_from_ranges(
         metadata: BTreeMap::new(),
     })?;
 
-    let mut daft_series: Vec<Vec<JoinHandle<_>>> = Vec::with_capacity(arrow_fields.len());
+    let mut daft_series: Vec<Vec<_>> = Vec::with_capacity(arrow_fields.len());
     let num_row_groups = metadata.row_groups.len();
 
     let row_groups = match row_groups {
@@ -322,32 +325,36 @@ async fn read_row_groups_from_ranges(
                     .map(|i| VecIterator::new(i))
                     .collect();
 
-                let ser = tokio::task::spawn_blocking(move || {
+                let (send, recv) = tokio::sync::oneshot::channel();
+                rayon::spawn(move || {
                     let arr_iter = column_iter_to_arrays(
                         decompressed_iters,
                         ptypes.iter().collect(),
                         field,
                         Some(4096),
                         num_rows,
-                    )?;
+                    );
 
-                    let all_arrays = arr_iter.collect::<arrow2::error::Result<Vec<_>>>()?;
-                    let ser = all_arrays
-                        .into_iter()
-                        .map(|a| {
-                            Series::try_from((
-                                field_name.as_str(),
-                                cast_array_for_daft_if_needed(a),
-                            ))
-                        })
-                        .collect::<DaftResult<Vec<Series>>>()?;
-                    DaftResult::Ok(ser)
-                })
-                .await
-                .context(JoinSnafu {})
-                .unwrap()
-                .unwrap();
-                Ok(ser)
+                    let all_arrays =
+                        arr_iter.and_then(|v| v.collect::<arrow2::error::Result<Vec<_>>>());
+                    let ser = all_arrays.and_then(|v| {
+                        Ok(v.into_iter()
+                            .map(|a| {
+                                Series::try_from((
+                                    field_name.as_str(),
+                                    cast_array_for_daft_if_needed(a),
+                                ))
+                            })
+                            .collect::<DaftResult<Vec<Series>>>()
+                            .unwrap())
+                    });
+                    let _ = send.send(ser);
+                });
+                // .await
+                // .context(JoinSnafu {})
+                // .unwrap()
+                // .unwrap();
+                recv.await.unwrap()
             });
 
             daft_series[ii].push(handle);
@@ -362,13 +369,17 @@ async fn read_row_groups_from_ranges(
                 .await
                 .unwrap()
                 .into_iter()
-                .collect::<DaftResult<Vec<_>>>()?;
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let (send, recv) = tokio::sync::oneshot::channel();
 
-            tokio::task::spawn_blocking(move || {
-                Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref())
-            })
-            .await
-            .unwrap()
+            rayon::spawn(move || {
+                let concated =
+                    Series::concat(all_series.iter().flatten().collect::<Vec<_>>().as_ref());
+
+                let _ = send.send(concated);
+            });
+
+            recv.await.unwrap()
         });
         compacted_series.push(concated_series);
     }
