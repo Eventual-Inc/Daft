@@ -304,7 +304,7 @@ async fn read_row_groups_from_ranges(
 
                     // futures::pin_mut!(page_stream);
                     // let iterator = SyncIterator::new(page_stream);
-                    
+
                     let now = Instant::now();
                     decompressed_iters.push(page_stream.collect::<Vec<_>>().await);
 
