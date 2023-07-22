@@ -331,7 +331,7 @@ async fn read_row_groups_from_ranges(
                         decompressed_iters,
                         ptypes.iter().collect(),
                         field,
-                        Some(4096),
+                        None, // Some(4096),
                         num_rows,
                     );
 
@@ -423,13 +423,13 @@ pub fn read_parquet(
         );
 
         plan.add_pass(Box::new(SplitLargeRequestPass {
-            max_request_size: 8 * 1024 * 1024,
-            split_threshold: 12 * 1024 * 1024,
+            max_request_size: 16 * 1024 * 1024,
+            split_threshold: 24 * 1024 * 1024,
         }));
 
         plan.add_pass(Box::new(CoalescePass {
             max_hole_size: 1024 * 1024,
-            max_request_size: 8 * 1024 * 1024,
+            max_request_size: 16 * 1024 * 1024,
         }));
 
         let now = Instant::now();
