@@ -172,6 +172,7 @@ Example: ``e1.list.join(e2)``
     :toctree: doc_gen/expression_methods
 
     daft.expressions.expressions.ExpressionListNamespace.join
+    daft.expressions.expressions.ExpressionListNamespace.lengths
 
 
 Changing Column Names/Types
