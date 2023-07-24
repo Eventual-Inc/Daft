@@ -17,6 +17,26 @@ use num_traits::FromPrimitive;
 
 use std::ops::Deref;
 
+#[derive(Clone)]
+pub struct BBox(u32, u32, u32, u32);
+
+impl BBox {
+    pub fn from_u32_arrow_array(arr: Box<dyn arrow2::array::Array>) -> Self {
+        assert!(arr.len() == 4);
+        let mut iter = arr
+            .as_any()
+            .downcast_ref::<arrow2::array::UInt32Array>()
+            .unwrap()
+            .iter();
+        BBox(
+            *iter.next().unwrap().unwrap(),
+            *iter.next().unwrap().unwrap(),
+            *iter.next().unwrap().unwrap(),
+            *iter.next().unwrap().unwrap(),
+        )
+    }
+}
+
 #[allow(clippy::upper_case_acronyms, dead_code)]
 #[derive(Debug)]
 pub enum DaftImageBuffer<'a> {
@@ -198,6 +218,36 @@ impl<'a> DaftImageBuffer<'a> {
             RGBA(imgbuf) => {
                 let result =
                     image::imageops::resize(imgbuf, w, h, image::imageops::FilterType::Triangle);
+                DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
+            }
+            _ => unimplemented!("Mode {self:?} not implemented"),
+        }
+    }
+
+    pub fn crop(&self, bbox: &BBox) -> Self {
+        // HACK(jay): The `.to_image()` method on SubImage takes in `'static` references for some reason
+        // This hack will ensure that `&self` adheres to that overly prescriptive bound
+        let inner =
+            unsafe { std::mem::transmute::<&DaftImageBuffer<'a>, &DaftImageBuffer<'static>>(self) };
+        match inner {
+            DaftImageBuffer::L(imgbuf) => {
+                let result =
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
+                DaftImageBuffer::L(image_buffer_vec_to_cow(result))
+            }
+            DaftImageBuffer::LA(imgbuf) => {
+                let result =
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
+                DaftImageBuffer::LA(image_buffer_vec_to_cow(result))
+            }
+            DaftImageBuffer::RGB(imgbuf) => {
+                let result =
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
+                DaftImageBuffer::RGB(image_buffer_vec_to_cow(result))
+            }
+            DaftImageBuffer::RGBA(imgbuf) => {
+                let result =
+                    image::imageops::crop_imm(imgbuf, bbox.0, bbox.1, bbox.2, bbox.3).to_image();
                 DaftImageBuffer::RGBA(image_buffer_vec_to_cow(result))
             }
             _ => unimplemented!("Mode {self:?} not implemented"),
@@ -442,6 +492,26 @@ impl ImageArray {
         Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
     }
 
+    pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
+        let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
+            Box::new(std::iter::repeat(
+                bboxes
+                    .as_arrow()
+                    .get(0)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
+            ))
+        } else {
+            Box::new(
+                bboxes
+                    .as_arrow()
+                    .iter()
+                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
+            )
+        };
+        let result = crop_images(self, &mut bboxes_iterator);
+        Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
+    }
+
     pub fn resize_to_fixed_shape_image_array(
         &self,
         w: u32,
@@ -562,6 +632,13 @@ impl AsImageObj for ImageArray {
 }
 
 impl FixedShapeImageArray {
+    fn mode(&self) -> ImageMode {
+        match &self.field.dtype {
+            DataType::FixedShapeImage(mode, _, _) => *mode,
+            _ => panic!("FixedShapeImageArray does not have the correct FixedShapeImage dtype"),
+        }
+    }
+
     pub fn from_daft_image_buffers(
         name: &str,
         inputs: &[Option<DaftImageBuffer<'_>>],
@@ -626,6 +703,26 @@ impl FixedShapeImageArray {
             DataType::FixedShapeImage(mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }
+    }
+
+    pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
+        let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
+            Box::new(std::iter::repeat(
+                bboxes
+                    .as_arrow()
+                    .get(0)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
+            ))
+        } else {
+            Box::new(
+                bboxes
+                    .as_arrow()
+                    .iter()
+                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
+            )
+        };
+        let result = crop_images(self, &mut bboxes_iterator);
+        ImageArray::from_daft_image_buffers(self.name(), result.as_slice(), &Some(self.mode()))
     }
 }
 
@@ -824,5 +921,25 @@ where
     images
         .into_iter()
         .map(|img| img.map(|img| img.resize(w, h)))
+        .collect::<Vec<_>>()
+}
+
+fn crop_images<'a, T>(
+    images: &'a LogicalArray<T>,
+    bboxes: &mut dyn Iterator<Item = Option<BBox>>,
+) -> Vec<Option<DaftImageBuffer<'a>>>
+where
+    T: DaftImageryType,
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
+        IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
+{
+    images
+        .into_iter()
+        .zip(bboxes)
+        .map(|(img, bbox)| match (img, bbox) {
+            (None, _) | (_, None) => None,
+            (Some(img), Some(bbox)) => Some(img.crop(&bbox)),
+        })
         .collect::<Vec<_>>()
 }

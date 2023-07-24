@@ -1,7 +1,9 @@
+mod crop;
 mod decode;
 mod encode;
 mod resize;
 
+use crop::CropEvaluator;
 use decode::DecodeEvaluator;
 use encode::EncodeEvaluator;
 use resize::ResizeEvaluator;
@@ -18,6 +20,7 @@ pub enum ImageExpr {
     Decode(),
     Encode { image_format: ImageFormat },
     Resize { w: u32, h: u32 },
+    Crop(),
 }
 
 impl ImageExpr {
@@ -29,6 +32,7 @@ impl ImageExpr {
             Decode() => &DecodeEvaluator {},
             Encode { .. } => &EncodeEvaluator {},
             Resize { .. } => &ResizeEvaluator {},
+            Crop { .. } => &CropEvaluator {},
         }
     }
 }
@@ -51,5 +55,12 @@ pub fn resize(input: &Expr, w: u32, h: u32) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Image(ImageExpr::Resize { w, h }),
         inputs: vec![input.clone()],
+    }
+}
+
+pub fn crop(input: &Expr, bbox: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Image(ImageExpr::Crop()),
+        inputs: vec![input.clone(), bbox.clone()],
     }
 }

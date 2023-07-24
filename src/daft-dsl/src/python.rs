@@ -338,6 +338,11 @@ impl PyExpr {
         Ok(resize(&self.expr, w as u32, h as u32).into())
     }
 
+    pub fn image_crop(&self, bbox: &Self) -> PyResult<Self> {
+        use crate::functions::image::crop;
+        Ok(crop(&self.expr, &bbox.expr).into())
+    }
+
     pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
         use crate::functions::list::join;
         Ok(join(&self.expr, &delimiter.expr).into())
