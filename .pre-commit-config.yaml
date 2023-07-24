@@ -20,6 +20,7 @@ repos:
   - id: check-yaml
     exclude: kubernetes-ops
   - id: pretty-format-json
+    exclude: tutorials/.*\.ipynb
     args:
     - --autofix
     - --no-sort-keys
