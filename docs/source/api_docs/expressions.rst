@@ -166,7 +166,7 @@ Nested
 
 Operations on nested types (such as List and FixedSizeList), accessible through the ``Expression.list`` method accessor.
 
-Example: ``e1.str.concat(e2)``
+Example: ``e1.list.join(e2)``
 
 .. autosummary::
     :toctree: doc_gen/expression_methods
