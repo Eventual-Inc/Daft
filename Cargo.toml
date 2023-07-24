@@ -46,7 +46,8 @@ members = [
   "src/daft-io",
   "src/daft-parquet",
   "src/daft-dsl",
-  "src/daft-table"
+  "src/daft-table",
+  "src/daft-plan"
 ]
 
 [workspace.dependencies]
