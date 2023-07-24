@@ -480,8 +480,8 @@ class Series:
         return SeriesDateNamespace.from_series(self)
 
     @property
-    def arr(self) -> SeriesArrayNamespace:
-        return SeriesArrayNamespace.from_series(self)
+    def list(self) -> SeriesListNamespace:
+        return SeriesListNamespace.from_series(self)
 
     @property
     def image(self) -> SeriesImageNamespace:
@@ -559,9 +559,9 @@ class SeriesDateNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.dt_day_of_week())
 
 
-class SeriesArrayNamespace(SeriesNamespace):
+class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
-        return Series._from_pyseries(self._series.arr_lengths())
+        return Series._from_pyseries(self._series.list_lengths())
 
 
 class SeriesImageNamespace(SeriesNamespace):

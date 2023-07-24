@@ -614,6 +614,14 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
 
+    def lengths(self) -> Expression:
+        """Gets the length of each list
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        return Expression._from_pyexpr(self._expr.list_lengths())
+
 
 class ExpressionsProjection(Iterable[Expression]):
     """A collection of Expressions that can be projected onto a Table to produce another Table

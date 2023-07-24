@@ -270,8 +270,8 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
-    pub fn arr_lengths(&self) -> PyResult<Self> {
-        Ok(self.series.arr_lengths()?.into_series().into())
+    pub fn list_lengths(&self) -> PyResult<Self> {
+        Ok(self.series.list_lengths()?.into_series().into())
     }
 
     pub fn image_decode(&self) -> PyResult<Self> {

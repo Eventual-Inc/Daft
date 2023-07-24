@@ -348,6 +348,11 @@ impl PyExpr {
         Ok(join(&self.expr, &delimiter.expr).into())
     }
 
+    pub fn list_lengths(&self) -> PyResult<Self> {
+        use crate::functions::list::lengths;
+        Ok(lengths(&self.expr).into())
+    }
+
     pub fn url_download(
         &self,
         max_connections: i64,
