@@ -81,7 +81,7 @@ def from_parquet(
     if use_native_downloader:
         assert isinstance(file, (str, pathlib.Path))
         # TODO(sammy): [RUST-PARQUET] Implement getting a schema from a Parquet file
-        # return Schema.from_parquet(file, io_config=io_config)
+        # return get_parquet_metadata([file], io_config=io_config)[0].get_daft_schema()
         raise NotImplementedError(
             "Not implemented: use Rust native downloader to retrieve a Daft Schema from a Parquet file"
         )
