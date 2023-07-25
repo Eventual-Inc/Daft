@@ -9,6 +9,7 @@ import pyarrow.parquet as papq
 
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
+from daft.io import IOConfig
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import Table
@@ -73,8 +74,18 @@ def from_json(
 def from_parquet(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
+    io_config: IOConfig | None = None,
+    use_native_downloader: bool = False,
 ) -> Schema:
     """Infers a Schema from a Parquet file"""
+    if use_native_downloader:
+        assert isinstance(file, (str, pathlib.Path))
+        # TODO(sammy): [RUST-PARQUET] Implement getting a schema from a Parquet file
+        # return Schema.from_parquet(file, io_config=io_config)
+        raise NotImplementedError(
+            "Not implemented: use Rust native downloader to retrieve a Daft Schema from a Parquet file"
+        )
+
     if not isinstance(file, (str, pathlib.Path)):
         # BytesIO path.
         f = file

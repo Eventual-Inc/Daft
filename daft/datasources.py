@@ -4,6 +4,8 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 
+from daft.io import IOConfig
+
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
 else:
@@ -41,5 +43,9 @@ class JSONSourceInfo(SourceInfo):
 
 @dataclass(frozen=True)
 class ParquetSourceInfo(SourceInfo):
+
+    use_native_downloader: bool
+    io_config: IOConfig | None
+
     def scan_type(self):
         return StorageType.PARQUET

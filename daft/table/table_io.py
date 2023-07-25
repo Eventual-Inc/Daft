@@ -16,6 +16,7 @@ from pyarrow.fs import FileSystem
 
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
+from daft.io import IOConfig
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
@@ -94,6 +95,8 @@ def read_parquet(
     schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: TableReadOptions = TableReadOptions(),
+    io_config: IOConfig | None = None,
+    use_native_downloader: bool = False,
 ) -> Table:
     """Reads a Table from a Parquet file
 
@@ -106,6 +109,16 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
+    if use_native_downloader:
+        assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
+        return Table.read_parquet(
+            str(file),
+            columns=read_options.column_names,
+            # TODO(sammy): [RUST-PARQUET] Add API to limit number of rows read here, instead of rowgroups
+            # num_rows=read_options.num_rows,
+            io_config=io_config,
+        )
+
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
         f = file

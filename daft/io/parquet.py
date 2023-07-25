@@ -8,6 +8,7 @@ from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
 from daft.datatype import DataType
+from daft.io import IOConfig
 from daft.io.common import _get_tabular_files_scan
 
 
@@ -16,6 +17,8 @@ def read_parquet(
     path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
+    io_config: Optional[IOConfig] = None,
+    use_native_downloader: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -31,6 +34,9 @@ def read_parquet(
             disable all schema inference on data being read, and throw an error if data being read is incompatible.
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
+        io_config (IOConfig): Config to be used with the native downloader
+        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
+            is currently experimental.
 
     returns:
         DataFrame: parsed DataFrame
@@ -41,7 +47,10 @@ def read_parquet(
     plan = _get_tabular_files_scan(
         path,
         schema_hints,
-        ParquetSourceInfo(),
+        ParquetSourceInfo(
+            io_config=io_config,
+            use_native_downloader=use_native_downloader,
+        ),
         fs,
     )
     return DataFrame(plan)
