@@ -78,7 +78,7 @@ pub async fn read_parquet_metadata(
             footer: buffer[buffer.len() - 4..].into(),
         });
     }
-
+    // use rayon here
     tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;
