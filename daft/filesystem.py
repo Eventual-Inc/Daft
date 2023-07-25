@@ -27,7 +27,6 @@ from pyarrow.fs import (
 )
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
-from daft.io import IOConfig
 
 _CACHED_FSES: dict[str, FileSystem] = {}
 
@@ -295,8 +294,6 @@ def glob_path_with_stats(
     path: str,
     source_info: SourceInfo | None,
     fs: fsspec.AbstractFileSystem,
-    io_config: IOConfig | None = None,
-    use_native_downloader: bool = False,
 ) -> list[ListingInfo]:
     """Glob a path, returning a list ListingInfo."""
     protocol = get_protocol_from_path(path)
@@ -331,9 +328,9 @@ def glob_path_with_stats(
 
     # Set number of rows if available.
     if isinstance(source_info, ParquetSourceInfo):
-        if use_native_downloader:
+        if source_info.use_native_downloader:
             # TODO(sammy): [RUST-PARQUET]
-            # file_metadata = get_parquet_metadata(list(filepaths_to_infos.keys()), io_config=io_config)
+            # file_metadata = get_parquet_metadata(list(filepaths_to_infos.keys()), io_config=source_info.io_config)
             # ... (for now we only need `file_metadata[i].num_rows` to be valid)
             raise NotImplementedError("[RUST-PARQUET] Implement batch read of metadata")
         else:
