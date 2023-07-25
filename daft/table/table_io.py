@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 from collections.abc import Generator
-from typing import IO, Union
+from typing import IO, TYPE_CHECKING, Union
 from uuid import uuid4
 
 import fsspec
@@ -16,10 +16,12 @@ from pyarrow.fs import FileSystem
 
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
-from daft.io import IOConfig
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
+
+if TYPE_CHECKING:
+    from daft.io import IOConfig
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 

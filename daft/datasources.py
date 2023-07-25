@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from daft.io import IOConfig
+if TYPE_CHECKING:
+    from daft.io import IOConfig
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol

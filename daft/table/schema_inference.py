@@ -9,7 +9,6 @@ import pyarrow.parquet as papq
 
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
-from daft.io import IOConfig
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import Table
@@ -17,6 +16,8 @@ from daft.table.table_io import FileInput, _open_stream
 
 if TYPE_CHECKING:
     import fsspec
+
+    from daft.io import IOConfig
 
 
 def from_csv(

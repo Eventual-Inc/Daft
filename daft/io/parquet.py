@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import fsspec
 
@@ -8,8 +8,10 @@ from daft.api_annotations import PublicAPI
 from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
 from daft.datatype import DataType
-from daft.io import IOConfig
 from daft.io.common import _get_tabular_files_scan
+
+if TYPE_CHECKING:
+    from daft.io import IOConfig
 
 
 @PublicAPI
@@ -17,7 +19,7 @@ def read_parquet(
     path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     fs: Optional[fsspec.AbstractFileSystem] = None,
-    io_config: Optional[IOConfig] = None,
+    io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
