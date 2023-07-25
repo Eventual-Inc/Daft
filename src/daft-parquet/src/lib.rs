@@ -3,12 +3,12 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
-pub mod metadata;
-pub mod read;
-mod read_planner;
 mod file;
+pub mod metadata;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod read;
+mod read_planner;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -32,16 +32,25 @@ pub enum Error {
         source: parquet2::error::Error,
     },
 
-    #[snafu(display("Unable to parse parquet metadata to arrow schema for file {}: {}", path, source))]
+    #[snafu(display(
+        "Unable to parse parquet metadata to arrow schema for file {}: {}",
+        path,
+        source
+    ))]
     UnableToParseSchemaFromMetadata {
         path: String,
         source: arrow2::error::Error,
     },
-    #[snafu(display("Field: {} not found in Parquet File: {} Available Fields: {:?}", field, path, available_fields))]
+    #[snafu(display(
+        "Field: {} not found in Parquet File: {} Available Fields: {:?}",
+        field,
+        path,
+        available_fields
+    ))]
     FieldNotFound {
         field: String,
         available_fields: Vec<String>,
-        path: String
+        path: String,
     },
     #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",

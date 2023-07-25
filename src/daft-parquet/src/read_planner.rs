@@ -83,15 +83,15 @@ impl ReadPlanPass for SplitLargeRequestPass {
     }
 }
 
-pub(crate) struct ReadPlanBuilder {
+pub(crate) struct ReadPlanner {
     source: String,
     ranges: RangeList,
     passes: Vec<Box<dyn ReadPlanPass>>,
 }
 
-impl ReadPlanBuilder {
+impl ReadPlanner {
     pub fn new(source: &str) -> Self {
-        ReadPlanBuilder {
+        ReadPlanner {
             source: source.into(),
             ranges: vec![],
             passes: vec![],
@@ -264,7 +264,7 @@ impl Read for MultiRead<'_> {
     }
 }
 
-impl Display for ReadPlanBuilder {
+impl Display for ReadPlanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "ReadPlanBuilder: {} ranges", self.ranges.len())?;
         for range in self.ranges.iter() {

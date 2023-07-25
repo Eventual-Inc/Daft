@@ -15,7 +15,7 @@ use parquet2::{
 
 use crate::{
     metadata::read_parquet_metadata,
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanBuilder, SplitLargeRequestPass},
+    read_planner::{self, CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
 };
 
 fn plan_read_row_groups(
@@ -23,7 +23,7 @@ fn plan_read_row_groups(
     columns: Option<&[&str]>,
     row_groups: Option<&[i64]>,
     metadata: &FileMetaData,
-) -> DaftResult<ReadPlanBuilder> {
+) -> DaftResult<ReadPlanner> {
     let arrow_schema = infer_schema(metadata)?;
     let mut arrow_fields = arrow_schema.fields;
     if let Some(columns) = columns {
@@ -47,7 +47,7 @@ fn plan_read_row_groups(
     };
 
     let num_row_groups = metadata.row_groups.len();
-    let mut read_plan = read_planner::ReadPlanBuilder::new(uri);
+    let mut read_plan = read_planner::ReadPlanner::new(uri);
     let row_groups = match row_groups {
         Some(rg) => rg.to_vec(),
         None => (0i64..num_row_groups as i64).collect(),
