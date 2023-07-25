@@ -804,7 +804,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.1.6"
+version = "0.1.9"
 dependencies = [
  "daft-core",
  "daft-dsl",
