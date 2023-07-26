@@ -40,11 +40,11 @@ impl ParquetReaderBuilder {
                 .context(UnableToParseSchemaFromMetadataSnafu::<String> { path: uri.into() })?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
-            metadata: metadata,
+            metadata,
             arrow_schema: schema,
             selected_columns: None,
             row_start_offset: 0,
-            num_rows: num_rows,
+            num_rows,
         })
     }
 
