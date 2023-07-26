@@ -1,21 +1,11 @@
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+
 use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
-use parquet2::{
-    metadata::FileMetaData,
-    read::{BasicDecompressor, PageReader},
-};
 
-use crate::{
-    file::ParquetReaderBuilder,
-    metadata::read_parquet_metadata,
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
-};
+use crate::file::ParquetReaderBuilder;
 
 pub fn read_parquet(
     uri: &str,
