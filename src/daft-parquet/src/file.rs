@@ -1,17 +1,22 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow2::io::parquet::read::infer_schema;
+use common_error::DaftResult;
+use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
+use parquet2::read::{BasicDecompressor, PageReader};
 use snafu::ResultExt;
 
 use crate::{
     metadata::read_parquet_metadata,
     read_planner::{self, CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
+    UnableToConvertParquetPagesToArrowSnafu, UnableToOpenFileSnafu,
     UnableToParseSchemaFromMetadataSnafu,
 };
+use arrow2::io::parquet::read::column_iter_to_arrays;
 
-struct ParquetReaderBuilder {
+pub(crate) struct ParquetReaderBuilder {
     uri: String,
     file_size: usize,
     metadata: parquet2::metadata::FileMetaData,
@@ -23,7 +28,12 @@ struct ParquetReaderBuilder {
 
 impl ParquetReaderBuilder {
     pub async fn from_uri(uri: &str, io_client: Arc<daft_io::IOClient>) -> super::Result<Self> {
-        let size = 10;
+        // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
+        let size = io_client
+            .single_url_get_size(uri.into())
+            .await
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
         let metadata = read_parquet_metadata(uri, size, io_client).await?;
         let num_rows = metadata.num_rows;
         let schema =
@@ -124,7 +134,7 @@ struct RowGroupRange {
     num_rows: usize,
 }
 
-struct ParquetFileReader {
+pub(crate) struct ParquetFileReader {
     uri: String,
     file_size: usize,
     metadata: parquet2::metadata::FileMetaData,
@@ -199,5 +209,89 @@ impl ParquetFileReader {
 
         read_planner.run_passes()?;
         Ok(read_planner.collect(io_client).await.unwrap())
+    }
+
+    pub fn read_from_ranges(self, ranges: RangesContainer) -> DaftResult<Table> {
+        let all_series = self
+            .arrow_schema
+            .fields
+            .iter()
+            .map(|field| {
+                let field_series = self
+                    .row_ranges
+                    .iter()
+                    .map(|row_range| {
+                        let rg = self
+                            .metadata
+                            .row_groups
+                            .get(row_range.row_group_index)
+                            .expect("Row Group index should be in bounds");
+                        let columns = rg.columns();
+                        let field_name = &field.name;
+                        let filtered_cols = columns
+                            .iter()
+                            .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
+                            .collect::<Vec<_>>();
+
+                        let mut decompressed_iters = Vec::with_capacity(filtered_cols.len());
+                        let mut ptypes = Vec::with_capacity(filtered_cols.len());
+
+                        for col in filtered_cols {
+                            let (start, len) = col.byte_range();
+                            let end = start + len;
+
+                            // should stream this instead
+                            let range_reader: read_planner::MultiRead<'_> =
+                                ranges.get_range_reader(start as usize..end as usize)?;
+                            let pages = PageReader::new(
+                                range_reader,
+                                col,
+                                Arc::new(|_, _| true),
+                                vec![],
+                                4 * 1024 * 1024,
+                            );
+
+                            decompressed_iters.push(BasicDecompressor::new(pages, vec![]));
+
+                            ptypes.push(&col.descriptor().descriptor.primitive_type);
+                        }
+
+                        let arr_iter = column_iter_to_arrays(
+                            decompressed_iters,
+                            ptypes,
+                            field.clone(),
+                            Some(4096),
+                            rg.num_rows(),
+                        )
+                        .context(
+                            UnableToConvertParquetPagesToArrowSnafu::<String> {
+                                path: self.uri.clone(),
+                            },
+                        )?;
+
+                        let all_arrays = arr_iter
+                            .collect::<arrow2::error::Result<Vec<_>>>()
+                            .context(UnableToConvertParquetPagesToArrowSnafu::<String> {
+                                path: self.uri.clone(),
+                            })?;
+                        all_arrays
+                            .into_iter()
+                            .map(|a| {
+                                Series::try_from((
+                                    field.name.as_str(),
+                                    cast_array_for_daft_if_needed(a),
+                                ))
+                            })
+                            .collect::<DaftResult<Vec<Series>>>()
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                Series::concat(&field_series.iter().flatten().collect::<Vec<_>>())
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let daft_schema = daft_core::schema::Schema::try_from(&self.arrow_schema)?;
+
+        Table::new(daft_schema, all_series)
     }
 }

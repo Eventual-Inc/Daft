@@ -33,6 +33,15 @@ pub enum Error {
     },
 
     #[snafu(display(
+        "Unable to create arrow arrays from parquet pages {}: {}",
+        path,
+        source
+    ))]
+    UnableToConvertParquetPagesToArrow {
+        path: String,
+        source: arrow2::error::Error,
+    },
+    #[snafu(display(
         "Unable to parse parquet metadata to arrow schema for file {}: {}",
         path,
         source

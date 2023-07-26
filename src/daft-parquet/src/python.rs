@@ -16,7 +16,6 @@ pub mod pylib {
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
-
             Ok(crate::read::read_parquet(
                 uri,
                 columns.as_deref(),

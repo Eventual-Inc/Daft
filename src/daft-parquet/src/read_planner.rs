@@ -151,7 +151,7 @@ pub(crate) struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub fn get_range_reader<'a>(&'a self, range: Range<usize>) -> DaftResult<MultiRead<'a>> {
+    pub fn get_range_reader<'a>(&'a self, range: Range<usize>) -> super::Result<MultiRead<'a>> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |(v, _)| *v);
