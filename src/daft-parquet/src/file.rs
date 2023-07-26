@@ -89,12 +89,10 @@ impl ParquetReaderBuilder {
     pub fn build(mut self) -> super::Result<ParquetFileReader> {
         let mut row_ranges = vec![];
 
-        let mut rg_iter = self.metadata.row_groups.iter().enumerate();
-
         let mut curr_row_index = 0;
         let mut rows_to_add = self.num_rows;
 
-        while let Some((i, rg)) = rg_iter.next() {
+        for (i, rg) in self.metadata.row_groups.iter().enumerate() {
             if (curr_row_index + rg.num_rows()) < self.row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
