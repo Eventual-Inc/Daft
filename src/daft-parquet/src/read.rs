@@ -4,6 +4,7 @@ use common_error::DaftResult;
 
 use daft_core::{
     datatypes::{Int32Array, UInt64Array, Utf8Array},
+    schema::Schema,
     DataType, IntoSeries, Series,
 };
 use daft_io::{get_runtime, IOClient};
@@ -39,7 +40,14 @@ pub fn read_parquet(
     reader.read_from_ranges(ranges)
 }
 
-// fn read_parquet_schema
+pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
+    let runtime_handle = get_runtime(true)?;
+    let _rt_guard = runtime_handle.enter();
+    let builder = runtime_handle
+        .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
+    Schema::try_from(builder.arrow_schema())
+}
+
 pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();

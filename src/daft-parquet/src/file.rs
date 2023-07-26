@@ -52,6 +52,10 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
+    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
+        &self.arrow_schema
+    }
+
     pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
         let avail_names = self
             .arrow_schema
