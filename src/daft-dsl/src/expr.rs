@@ -14,7 +14,7 @@ use std::{
 
 use super::functions::FunctionExpr;
 
-type ExprRef = Arc<Expr>;
+pub type ExprRef = Arc<Expr>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Expr {

@@ -9,7 +9,7 @@ mod pyobject;
 pub mod python;
 pub use expr::binary_op;
 pub use expr::col;
-pub use expr::{AggExpr, Expr, Operator};
+pub use expr::{AggExpr, Expr, ExprRef, Operator};
 pub use lit::{lit, null_lit};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
