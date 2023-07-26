@@ -3,16 +3,12 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use daft_core::{
-    array::ops::as_arrow,
     datatypes::{Int32Array, UInt64Array, Utf8Array},
     DataType, IntoSeries, Series,
 };
 use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
-use futures::{
-    future::{join_all, try_join_all},
-    StreamExt, TryFutureExt,
-};
+use futures::future::join_all;
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
