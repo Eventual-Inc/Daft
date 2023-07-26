@@ -18,7 +18,6 @@ use arrow2::io::parquet::read::column_iter_to_arrays;
 
 pub(crate) struct ParquetReaderBuilder {
     uri: String,
-    file_size: usize,
     metadata: parquet2::metadata::FileMetaData,
     arrow_schema: arrow2::datatypes::Schema,
     selected_columns: Option<HashSet<String>>,
@@ -41,7 +40,6 @@ impl ParquetReaderBuilder {
                 .context(UnableToParseSchemaFromMetadataSnafu::<String> { path: uri.into() })?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
-            file_size: size,
             metadata: metadata,
             arrow_schema: schema,
             selected_columns: None,
