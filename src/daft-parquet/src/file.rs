@@ -185,10 +185,7 @@ impl ParquetFileReader {
         Ok(read_planner)
     }
 
-    pub async fn prebuffer_ranges(
-        &self,
-        io_client: Arc<IOClient>,
-    ) -> super::Result<RangesContainer> {
+    pub async fn prebuffer_ranges(&self, io_client: Arc<IOClient>) -> DaftResult<RangesContainer> {
         let mut read_planner = self.naive_read_plan()?;
         // TODO(sammy) these values should be populated by io_client
         read_planner.add_pass(Box::new(SplitLargeRequestPass {
@@ -202,7 +199,7 @@ impl ParquetFileReader {
         }));
 
         read_planner.run_passes()?;
-        Ok(read_planner.collect(io_client).await.unwrap())
+        read_planner.collect(io_client).await
     }
 
     pub fn read_from_ranges(self, ranges: RangesContainer) -> DaftResult<Table> {
