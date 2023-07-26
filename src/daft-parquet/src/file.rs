@@ -118,7 +118,6 @@ impl ParquetReaderBuilder {
 
         ParquetFileReader::new(
             self.uri,
-            self.file_size,
             self.metadata,
             self.arrow_schema,
             row_ranges,
@@ -134,7 +133,6 @@ struct RowGroupRange {
 
 pub(crate) struct ParquetFileReader {
     uri: String,
-    file_size: usize,
     metadata: parquet2::metadata::FileMetaData,
     arrow_schema: arrow2::datatypes::Schema,
     row_ranges: Vec<RowGroupRange>,
@@ -143,14 +141,12 @@ pub(crate) struct ParquetFileReader {
 impl ParquetFileReader {
     fn new(
         uri: String,
-        file_size: usize,
         metadata: parquet2::metadata::FileMetaData,
         arrow_schema: arrow2::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
     ) -> super::Result<Self> {
         Ok(ParquetFileReader {
             uri,
-            file_size,
             metadata,
             arrow_schema,
             row_ranges,
