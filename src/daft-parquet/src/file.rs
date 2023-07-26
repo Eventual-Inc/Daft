@@ -76,7 +76,6 @@ impl ParquetReaderBuilder {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
     ) -> super::Result<Self> {
-        todo!("TODO Need to test this before merging");
         let start_offset = start_offset.unwrap_or(0);
         let num_rows = num_rows.unwrap_or(self.metadata.num_rows.saturating_sub(start_offset));
         self.row_start_offset = start_offset;
@@ -114,12 +113,7 @@ impl ParquetReaderBuilder {
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
 
-        ParquetFileReader::new(
-            self.uri,
-            self.metadata,
-            self.arrow_schema,
-            row_ranges,
-        )
+        ParquetFileReader::new(self.uri, self.metadata, self.arrow_schema, row_ranges)
     }
 }
 
@@ -253,7 +247,7 @@ impl ParquetFileReader {
                             ptypes,
                             field.clone(),
                             Some(4096),
-                            rg.num_rows(),
+                            rg.num_rows().min(row_range.start + row_range.num_rows),
                         )
                         .context(
                             UnableToConvertParquetPagesToArrowSnafu::<String> {
@@ -261,11 +255,27 @@ impl ParquetFileReader {
                             },
                         )?;
 
-                        let all_arrays = arr_iter
-                            .collect::<arrow2::error::Result<Vec<_>>>()
-                            .context(UnableToConvertParquetPagesToArrowSnafu::<String> {
-                                path: self.uri.clone(),
-                            })?;
+                        let mut all_arrays = vec![];
+
+                        let mut curr_index = 0;
+
+                        for arr in arr_iter {
+                            let arr = arr?;
+
+                            if (curr_index + arr.len()) < row_range.start {
+                                // throw arrays less than what we need
+                                curr_index += arr.len();
+                                continue;
+                            } else if curr_index < row_range.start {
+                                let offset = row_range.start.saturating_sub(curr_index);
+                                all_arrays.push(arr.sliced(offset, arr.len() - offset));
+                                curr_index += arr.len();
+                            } else {
+                                curr_index += arr.len();
+                                all_arrays.push(arr);
+                            }
+                        }
+
                         all_arrays
                             .into_iter()
                             .map(|a| {

@@ -348,10 +348,10 @@ class Table:
         cls,
         path: str,
         columns: list[str] | None = None,
-        row_groups: list[int] | None = None,
-        file_size: None | int = None,
+        start_offset: int | None = None,
+        num_rows: int | None = None,
         io_config: IOConfig | None = None,
     ) -> Table:
         return Table._from_pytable(
-            _read_parquet(uri=path, columns=columns, row_groups=row_groups, size=file_size, io_config=io_config)
+            _read_parquet(uri=path, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config)
         )

@@ -22,13 +22,12 @@ use crate::{
 pub fn read_parquet(
     uri: &str,
     columns: Option<&[&str]>,
-    row_groups: Option<&[i64]>,
-    size: Option<usize>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
-    assert!(row_groups.is_none());
     let (reader, ranges) = runtime_handle.block_on(async {
         let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
 
@@ -37,6 +36,7 @@ pub fn read_parquet(
         } else {
             builder
         };
+        let builder = builder.limit(start_offset, num_rows)?;
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client.clone()).await?;
         DaftResult::Ok((parquet_reader, ranges))
