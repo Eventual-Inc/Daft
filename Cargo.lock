@@ -908,6 +908,7 @@ dependencies = [
 name = "daft-plan"
 version = "0.1.0"
 dependencies = [
+ "daft-dsl",
  "pyo3",
 ]
 
