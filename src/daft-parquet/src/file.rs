@@ -48,6 +48,10 @@ impl ParquetReaderBuilder {
         })
     }
 
+    pub fn metadata(&self) -> &parquet2::metadata::FileMetaData {
+        &self.metadata
+    }
+
     pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
         let avail_names = self
             .arrow_schema

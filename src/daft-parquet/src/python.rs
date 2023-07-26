@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
+    use daft_core::python::PySeries;
     use daft_io::{get_io_client, python::PyIOConfig};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
@@ -26,8 +27,21 @@ pub mod pylib {
             .into())
         })
     }
+
+    #[pyfunction]
+    pub fn read_parquet_statistics(
+        py: Python,
+        uris: PySeries,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<PyTable> {
+        py.allow_threads(|| {
+            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            Ok(crate::read::read_parquet_statistics(&uris.series, io_client)?.into())
+        })
+    }
 }
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet))?;
+    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
     Ok(())
 }

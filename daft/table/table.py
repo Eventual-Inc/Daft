@@ -8,6 +8,7 @@ from loguru import logger
 from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
+from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -355,3 +356,14 @@ class Table:
         return Table._from_pytable(
             _read_parquet(uri=path, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config)
         )
+
+    @classmethod
+    def read_parquet_statistics(
+        cls,
+        paths: Series | list[str],
+        io_config: IOConfig | None = None,
+    ) -> Table:
+        if not isinstance(paths, Series):
+            paths = Series.from_pylist(paths)
+
+        return Table._from_pytable(_read_parquet_statistics(uris=paths._series, io_config=io_config))
