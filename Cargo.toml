@@ -86,7 +86,7 @@ version = "0.8.3"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
-version = "1.0.164"
+version = "1.0.177"
 
 [workspace.package]
 edition = "2021"
