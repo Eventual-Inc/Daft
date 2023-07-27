@@ -345,7 +345,7 @@ impl ParquetFileReader {
                                     decompressed_iters,
                                     ptypes.iter().collect(),
                                     field.clone(),
-                                    Some(4096),
+                                    Some(2048),
                                     num_rows,
                                 );
 
