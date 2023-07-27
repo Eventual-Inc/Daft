@@ -364,6 +364,6 @@ class Table:
         io_config: IOConfig | None = None,
     ) -> Table:
         if not isinstance(paths, Series):
-            paths = Series.from_pylist(paths)
-
+            paths = Series.from_pylist(paths, name="uris")
+        assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
         return Table._from_pytable(_read_parquet_statistics(uris=paths._series, io_config=io_config))

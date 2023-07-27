@@ -27,6 +27,7 @@ from pyarrow.fs import (
 )
 
 from daft.datasources import ParquetSourceInfo, SourceInfo
+from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
 
@@ -329,10 +330,11 @@ def glob_path_with_stats(
     # Set number of rows if available.
     if isinstance(source_info, ParquetSourceInfo):
         if source_info.use_native_downloader:
-            # TODO(sammy): [RUST-PARQUET]
-            # file_metadata = get_parquet_metadata(list(filepaths_to_infos.keys()), io_config=source_info.io_config)
-            # ... (for now we only need `file_metadata[i].num_rows` to be valid)
-            raise NotImplementedError("[RUST-PARQUET] Implement batch read of metadata")
+            parquet_statistics = Table.read_parquet_statistics(
+                list(filepaths_to_infos.keys()), source_info.io_config
+            ).to_pydict()
+            for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
+                filepaths_to_infos[path]["rows"] = num_rows
         else:
             parquet_metadatas = ThreadPoolExecutor().map(_get_parquet_metadata_single, filepaths_to_infos.keys())
             for path, parquet_metadata in zip(filepaths_to_infos.keys(), parquet_metadatas):

@@ -116,8 +116,7 @@ def read_parquet(
         return Table.read_parquet(
             str(file),
             columns=read_options.column_names,
-            # TODO(sammy): [RUST-PARQUET] Add API to limit number of rows read here, instead of rowgroups
-            # num_rows=read_options.num_rows,
+            num_rows=read_options.num_rows,
             io_config=io_config,
         )
 
