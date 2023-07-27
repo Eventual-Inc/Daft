@@ -113,12 +113,13 @@ def read_parquet(
     """
     if use_native_downloader:
         assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
-        return Table.read_parquet(
+        tbl = Table.read_parquet(
             str(file),
             columns=read_options.column_names,
             num_rows=read_options.num_rows,
             io_config=io_config,
         )
+        return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
