@@ -86,6 +86,12 @@ impl From<Error> for DaftError {
     }
 }
 
+impl From<Error> for std::io::Error {
+    fn from(err: Error) -> std::io::Error {
+        std::io::Error::new(std::io::ErrorKind::Other, err)
+    }
+}
+
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Default)]

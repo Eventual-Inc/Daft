@@ -51,6 +51,7 @@ members = [
 ]
 
 [workspace.dependencies]
+bytes = "1.4.0"
 futures = "0.3.28"
 html-escape = "0.2.13"
 num-derive = "0.3.3"
