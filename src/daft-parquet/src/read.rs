@@ -33,7 +33,7 @@ pub fn read_parquet(
     };
     let builder = builder.limit(start_offset, num_rows)?;
     let parquet_reader = builder.build()?;
-    let ranges = parquet_reader.prebuffer_ranges(io_client.clone())?;
+    let ranges = parquet_reader.prebuffer_ranges(io_client)?;
 
     runtime_handle.block_on(async { parquet_reader.read_from_ranges(ranges).await })
 }

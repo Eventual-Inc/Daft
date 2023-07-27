@@ -1,9 +1,9 @@
-use std::{fmt::Display, io::Read, ops::Range, sync::Arc};
+use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::IOClient;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use snafu::ResultExt;
 use tokio::task::JoinHandle;
 

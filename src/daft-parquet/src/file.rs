@@ -5,22 +5,18 @@ use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
-use futures::{
-    future::{try_join, try_join_all},
-    StreamExt, TryStreamExt,
-};
+use futures::{future::try_join_all, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
-    read::{get_page_stream_from_column_start, BasicDecompressor, PageReader},
+    read::get_page_stream_from_column_start,
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
 
 use crate::{
     metadata::read_parquet_metadata,
-    read_planner::{self, CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
-    JoinSnafu, OneShotRecvSnafu, UnableToConvertParquetPagesToArrowSnafu,
-    UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
+    read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
+    JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
     UnableToParseSchemaFromMetadataSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
@@ -60,10 +56,7 @@ pub struct VecIterator {
 
 impl VecIterator {
     pub fn new(src: Vec<parquet2::error::Result<Page>>) -> Self {
-        VecIterator {
-            index: -1,
-            src: src,
-        }
+        VecIterator { index: -1, src }
     }
 }
 
@@ -89,7 +82,7 @@ impl FallibleStreamingIterator for VecIterator {
         }
 
         if let Ok(val) = self.src.get(self.index as usize).unwrap() {
-            return Some(val);
+            Some(val)
         } else {
             None
         }
@@ -337,7 +330,7 @@ impl ParquetFileReader {
 
                             let decompressed_iters = decompressed_pages
                                 .into_iter()
-                                .map(|i| VecIterator::new(i))
+                                .map(VecIterator::new)
                                 .collect();
 
                             let (send, recv) = tokio::sync::oneshot::channel();
