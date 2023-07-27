@@ -1,5 +1,5 @@
 use crate::config::{IOConfig, S3Config};
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyBytes};
 
 #[derive(Clone, Default)]
 #[pyclass]
@@ -33,6 +33,20 @@ impl PyIOConfig {
         Ok(PyS3Config {
             config: self.config.s3.clone(),
         })
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.config = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self.config).unwrap()).to_object(py))
     }
 }
 
