@@ -19,8 +19,9 @@ use snafu::ResultExt;
 use crate::{
     metadata::read_parquet_metadata,
     read_planner::{self, CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
-    JoinSnafu, UnableToConvertParquetPagesToArrowSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToOpenFileSnafu, UnableToParseSchemaFromMetadataSnafu,
+    JoinSnafu, OneShotRecvSnafu, UnableToConvertParquetPagesToArrowSnafu,
+    UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
+    UnableToParseSchemaFromMetadataSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
 pub(crate) struct ParquetReaderBuilder {
@@ -382,7 +383,7 @@ impl ParquetFileReader {
 
                                 let _ = send.send(ser);
                             });
-                            recv.await.unwrap()
+                            recv.await.context(OneShotRecvSnafu {})?
                         });
                         Ok(handle)
                     })
@@ -405,7 +406,7 @@ impl ParquetFileReader {
                             Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>());
                         let _ = send.send(concated);
                     });
-                    recv.await.unwrap()
+                    recv.await.context(OneShotRecvSnafu {})?
                 });
                 Ok(concated_handle)
             })

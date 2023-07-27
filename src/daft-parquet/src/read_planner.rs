@@ -183,10 +183,10 @@ pub(crate) struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub fn get_range_reader<'a>(
-        &'a self,
+    pub fn get_range_reader(
+        &self,
         range: Range<usize>,
-    ) -> DaftResult<impl futures::AsyncRead + 'a> {
+    ) -> DaftResult<impl futures::AsyncRead + '_> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
