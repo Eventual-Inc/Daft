@@ -638,13 +638,14 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
 ###
 
 
-def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
         f.flush()
 
-        df = daft.read_parquet(f.name)
+        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -652,14 +653,15 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
         for f in (f1, f2):
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
             papq.write_table(table, f.name)
             f.flush()
 
-        df = daft.read_parquet([f1.name, f2.name])
+        df = daft.read_parquet([f1.name, f2.name], use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -697,7 +699,8 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -705,7 +708,7 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_parquet(f.name)
+        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -714,7 +717,8 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -729,6 +733,7 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
                 "petal_width": DataType.float32(),
                 "variety": DataType.string(),
             },
+            use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
 
