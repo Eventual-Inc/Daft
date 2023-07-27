@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from daft.daft import PyIOConfig as IOConfig
-from daft.daft import PyS3Config as S3Config
 from daft.io._csv import read_csv
 from daft.io._json import read_json
+from daft.io.config import IOConfig, S3Config
 from daft.io.file_path import from_glob_path
 from daft.io.parquet import read_parquet
 

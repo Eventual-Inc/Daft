@@ -881,6 +881,7 @@ dependencies = [
  "pyo3-log",
  "reqwest",
  "serde",
+ "serde_json",
  "snafu",
  "tempfile",
  "tokio",

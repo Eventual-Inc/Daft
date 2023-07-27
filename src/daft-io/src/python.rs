@@ -1,5 +1,6 @@
 use crate::config::{IOConfig, S3Config};
-use pyo3::{prelude::*, types::PyBytes};
+use common_error::DaftError;
+use pyo3::prelude::*;
 
 #[derive(Clone, Default)]
 #[pyclass]
@@ -35,18 +36,15 @@ impl PyIOConfig {
         })
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                self.config = bincode::deserialize(s.as_bytes()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self.config).unwrap()).to_object(py))
+    pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
+        let io_config_module = py.import("daft.io.config")?;
+        let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
+        Ok((
+            io_config_module
+                .getattr("_io_config_from_json")?
+                .to_object(py),
+            (json_string,),
+        ))
     }
 }
 
