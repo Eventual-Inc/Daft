@@ -44,8 +44,6 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
 
             });
             yield recv.await.expect("panic while decompressing page");
-
-            // yield decompress(compressed_page?, &mut buffer);
         }
     }
 }
@@ -412,7 +410,6 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        // let val = aa.await;
         let daft_schema = daft_core::schema::Schema::try_from(&self.arrow_schema)?;
 
         Table::new(daft_schema, all_series)
