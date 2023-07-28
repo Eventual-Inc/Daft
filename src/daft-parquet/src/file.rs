@@ -61,9 +61,6 @@ impl VecIterator {
 impl FallibleStreamingIterator for VecIterator {
     type Error = parquet2::error::Error;
     type Item = Page;
-    // fn next(&mut self) -> Option<Self::Item> {
-    //     self.rt.block_on(self.src.next())
-    // }
     fn advance(&mut self) -> Result<(), Self::Error> {
         self.index += 1;
         if (self.index as usize) < self.src.len() {
