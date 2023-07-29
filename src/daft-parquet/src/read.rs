@@ -23,21 +23,19 @@ pub fn read_parquet(
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
-    let (reader, ranges) = runtime_handle.block_on(async {
-        let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
+    let builder = runtime_handle
+        .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
 
-        let builder = if let Some(columns) = columns {
-            builder.prune_columns(columns)?
-        } else {
-            builder
-        };
-        let builder = builder.limit(start_offset, num_rows)?;
-        let parquet_reader = builder.build()?;
-        let ranges = parquet_reader.prebuffer_ranges(io_client.clone()).await?;
-        DaftResult::Ok((parquet_reader, ranges))
-    })?;
+    let builder = if let Some(columns) = columns {
+        builder.prune_columns(columns)?
+    } else {
+        builder
+    };
+    let builder = builder.limit(start_offset, num_rows)?;
+    let parquet_reader = builder.build()?;
+    let ranges = parquet_reader.prebuffer_ranges(io_client)?;
 
-    reader.read_from_ranges(ranges)
+    runtime_handle.block_on(async { parquet_reader.read_from_ranges(ranges).await })
 }
 
 pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
@@ -85,7 +83,7 @@ pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftR
         .into_iter()
         .zip(values.iter())
         .map(|(t, u)| {
-            t.with_context(|_| JoinSnafu::<String> {
+            t.with_context(|_| JoinSnafu {
                 path: u.unwrap().to_string(),
             })?
         })
