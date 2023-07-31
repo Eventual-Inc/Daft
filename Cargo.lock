@@ -932,7 +932,6 @@ dependencies = [
  "lazy_static",
  "log",
  "md5",
- "openssl-probe",
  "pyo3",
  "pyo3-log",
  "reqwest",
