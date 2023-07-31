@@ -10,7 +10,16 @@ pyo3-log = {workspace = true, optional = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "daft-core/python", "daft-table/python", "daft-dsl/python", "daft-io/python", "daft-parquet/python"]
+python = [
+  "dep:pyo3",
+  "dep:pyo3-log",
+  "daft-core/python",
+  "daft-table/python",
+  "daft-dsl/python",
+  "daft-io/python",
+  "daft-plan/python",
+  "daft-parquet/python"
+]
 
 [lib]
 crate-type = ["cdylib"]

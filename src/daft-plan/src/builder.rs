@@ -6,8 +6,9 @@ use crate::logical_plan::LogicalPlan;
 use crate::ops;
 use crate::source_info;
 
+#[derive(Clone)]
 pub struct LogicalPlanBuilder {
-    plan: Arc<LogicalPlan>,
+    _plan: Arc<LogicalPlan>,
 }
 
 // Create a new LogicalPlanBuilder for a Source node.
@@ -17,12 +18,12 @@ pub fn new_plan_from_source(filepaths: Vec<String>, schema: SchemaRef) -> Logica
         schema: schema.clone(),
     });
     let source_node = LogicalPlan::Source(ops::Source {
-        schema: schema.clone(),
+        schema,
         source_info: source_info.into(),
         filters: vec![], // Will be populated by plan optimizer.
         limit: None,     // Will be populated by plan optimizer.
     });
     LogicalPlanBuilder {
-        plan: source_node.into(),
+        _plan: source_node.into(),
     }
 }
