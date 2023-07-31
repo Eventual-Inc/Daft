@@ -41,6 +41,13 @@ pub enum Error {
         path: String,
         source: arrow2::error::Error,
     },
+
+    #[snafu(display("Unable to create page stream for parquet file {}: {}", path, source))]
+    UnableToCreateParquetPageStream {
+        path: String,
+        source: parquet2::error::Error,
+    },
+
     #[snafu(display(
         "Unable to parse parquet metadata to arrow schema for file {}: {}",
         path,
@@ -95,6 +102,13 @@ pub enum Error {
     JoinError {
         path: String,
         source: tokio::task::JoinError,
+    },
+    #[snafu(display(
+        "Sender of OneShot Channel Dropped before sending data over: {}",
+        source
+    ))]
+    OneShotRecvError {
+        source: tokio::sync::oneshot::error::RecvError,
     },
 }
 

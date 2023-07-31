@@ -1,5 +1,8 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+async-compat = "0.2.1"
+async-stream = "0.3.5"
+bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
@@ -9,8 +12,11 @@ log = {workspace = true}
 parquet2 = "0.17.2"
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
+rayon = "1.7.0"
 snafu = {workspace = true}
 tokio = {workspace = true}
+tokio-stream = "0.1.14"
+tokio-util = "0.7.8"
 
 [features]
 default = ["python"]
