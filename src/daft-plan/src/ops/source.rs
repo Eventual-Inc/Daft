@@ -22,7 +22,7 @@ pub struct Source {
 
 impl Source {
     pub(crate) fn new(schema: SchemaRef, source_info: Arc<SourceInfo>) -> Self {
-        Source {
+        Self {
             schema,
             source_info,
             filters: vec![], // Will be populated by plan optimizer.

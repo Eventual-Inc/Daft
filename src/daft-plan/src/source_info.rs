@@ -17,3 +17,9 @@ pub struct FilesInfo {
     pub filepaths: Vec<String>, // TODO: pull in some sort of URL crate for this
     pub schema: SchemaRef,
 }
+
+impl FilesInfo {
+    pub(crate) fn new(filepaths: Vec<String>, schema: SchemaRef) -> Self {
+        Self { filepaths, schema }
+    }
+}

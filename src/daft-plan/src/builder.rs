@@ -27,10 +27,10 @@ impl LogicalPlanBuilder {
 impl LogicalPlanBuilder {
     #[staticmethod]
     pub fn source(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
-        let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo {
+        let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo::new(
             filepaths,
-            schema: schema.schema.clone(),
-        });
+            schema.schema.clone(),
+        ));
         let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
