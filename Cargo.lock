@@ -925,7 +925,6 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sig-auth",
  "aws-sigv4",
- "bincode",
  "bytes",
  "common-error",
  "daft-core",
