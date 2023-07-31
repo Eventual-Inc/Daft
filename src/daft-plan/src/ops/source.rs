@@ -19,3 +19,14 @@ pub struct Source {
     /// Optional number of rows to read.
     pub limit: Option<usize>,
 }
+
+impl Source {
+    pub(crate) fn new(schema: SchemaRef, source_info: Arc<SourceInfo>) -> Self {
+        Source {
+            schema,
+            source_info,
+            filters: vec![], // Will be populated by plan optimizer.
+            limit: None,     // Will be populated by plan optimizer.
+        }
+    }
+}

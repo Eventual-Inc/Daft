@@ -1,29 +1,40 @@
 use std::sync::Arc;
 
-use daft_core::schema::SchemaRef;
-
 use crate::logical_plan::LogicalPlan;
-use crate::ops;
-use crate::source_info;
+use crate::{ops, source_info};
 
-#[derive(Clone)]
+#[cfg(feature = "python")]
+use daft_core::python::schema::PySchema;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
+#[cfg_attr(feature = "python", pyclass)]
 pub struct LogicalPlanBuilder {
     _plan: Arc<LogicalPlan>,
 }
 
-// Create a new LogicalPlanBuilder for a Source node.
-pub fn new_plan_from_source(filepaths: Vec<String>, schema: SchemaRef) -> LogicalPlanBuilder {
-    let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo {
-        filepaths,
-        schema: schema.clone(),
-    });
-    let source_node = LogicalPlan::Source(ops::Source {
-        schema,
-        source_info: source_info.into(),
-        filters: vec![], // Will be populated by plan optimizer.
-        limit: None,     // Will be populated by plan optimizer.
-    });
-    LogicalPlanBuilder {
-        _plan: source_node.into(),
+impl LogicalPlanBuilder {
+    // Create a new LogicalPlanBuilder for a Source node.
+    pub fn from_source(source: ops::Source) -> Self {
+        Self {
+            _plan: LogicalPlan::Source(source).into(),
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl LogicalPlanBuilder {
+    #[staticmethod]
+    pub fn source(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
+        let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo {
+            filepaths,
+            schema: schema.schema.clone(),
+        });
+        let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
+            schema.schema.clone(),
+            source_info.into(),
+        ));
+        Ok(logical_plan_builder)
     }
 }
