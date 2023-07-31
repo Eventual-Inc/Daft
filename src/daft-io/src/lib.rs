@@ -235,6 +235,13 @@ lazy_static! {
 }
 
 pub fn get_io_client(config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+
+    let r = openssl_probe::probe();
+
+    log::warn!("cert_dir: {:?}", r.cert_dir);
+    log::warn!("cert_file: {:?}", r.cert_file);
+
+
     let read_handle = CLIENT_CACHE.blocking_read();
     if let Some(client) = read_handle.get(&config) {
         Ok(client.clone())
