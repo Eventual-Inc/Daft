@@ -22,7 +22,7 @@ pub async fn read_parquet_metadata(
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
 
     /// The number of bytes read at the end of the parquet file on first read
-    const DEFAULT_FOOTER_READ_SIZE: usize = 1024 * 1024;
+    const DEFAULT_FOOTER_READ_SIZE: usize = 128 * 1024;
     let default_end_len = std::cmp::min(DEFAULT_FOOTER_READ_SIZE, size);
 
     let start = size.saturating_sub(default_end_len);
@@ -78,7 +78,7 @@ pub async fn read_parquet_metadata(
             footer: buffer[buffer.len() - 4..].into(),
         });
     }
-
+    // use rayon here
     tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;

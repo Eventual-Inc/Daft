@@ -6,7 +6,7 @@ aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]
 aws-sdk-s3 = "0.28.0"
 aws-sig-auth = "0.55.3"
 aws-sigv4 = "0.55.3"
-bytes = "1.4.0"
+bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
@@ -15,6 +15,7 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 url = "2.4.0"

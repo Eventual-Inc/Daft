@@ -243,7 +243,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v1.4.1
+      uses: isbang/compose-action@v1.5.0
       with:
         compose-file: ./tests/integration/docker-compose/docker-compose.yml
         down-flags: --volumes

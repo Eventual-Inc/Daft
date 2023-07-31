@@ -5,6 +5,7 @@ import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
 
+import daft
 from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
 from daft.io import IOConfig, S3Config
 from daft.table import Table
@@ -177,9 +178,20 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 
 
 @pytest.mark.integration()
-def test_parquet_read(parquet_file):
+def test_parquet_read_table(parquet_file):
     _, url = parquet_file
     daft_native_read = Table.read_parquet(url, io_config=IOConfig(s3=S3Config(anonymous=True)))
+    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
+    assert daft_native_read.schema() == pa_read.schema()
+    pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+
+
+@pytest.mark.integration()
+def test_parquet_read_df(parquet_file):
+    _, url = parquet_file
+    daft_native_read = daft.read_parquet(
+        url, io_config=IOConfig(s3=S3Config(anonymous=True)), use_native_downloader=True
+    )
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())

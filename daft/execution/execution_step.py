@@ -400,6 +400,8 @@ class ReadFile(SingleOutputInstruction):
                         schema=schema,
                         fs=fs,
                         read_options=read_options,
+                        io_config=scan._source_info.io_config,
+                        use_native_downloader=scan._source_info.use_native_downloader,
                     )
                     for fp in filepaths
                 ]

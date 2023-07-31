@@ -121,6 +121,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-compat"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b48b4ff0c2026db683dea961cd8ea874737f56cffca86fa84415eaddc51c00d"
+dependencies = [
+ "futures-core",
+ "futures-io",
+ "once_cell",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-recursion"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -721,7 +734,7 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "common-error"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "pyo3",
@@ -772,6 +785,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-deque"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6fd6f855243022dcecf8702fef0c297d4338e226845fe067f6341ad9fa0cef"
+dependencies = [
+ "cfg-if",
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae211234986c545741a7dc064309f67ee1e5ad243d0e48335adc0484d960bcc7"
+dependencies = [
+ "autocfg",
+ "cfg-if",
+ "crossbeam-utils",
+ "memoffset",
+ "scopeguard",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a22b2d63d4d1dc0b7f1b6b2747dd0088008a9be28b6ddf0b1e7d335e3037294"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -804,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "daft-core",
  "daft-dsl",
@@ -818,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "daft-core"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "base64",
@@ -848,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "daft-dsl"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "bincode",
  "common-error",
@@ -861,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "daft-io"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -881,6 +937,7 @@ dependencies = [
  "pyo3-log",
  "reqwest",
  "serde",
+ "serde_json",
  "snafu",
  "tempfile",
  "tokio",
@@ -889,9 +946,12 @@ dependencies = [
 
 [[package]]
 name = "daft-parquet"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
+ "async-compat",
+ "async-stream",
+ "bytes",
  "common-error",
  "daft-core",
  "daft-io",
@@ -901,13 +961,16 @@ dependencies = [
  "parquet2",
  "pyo3",
  "pyo3-log",
+ "rayon",
  "snafu",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]
 name = "daft-plan"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "daft-core",
  "daft-dsl",
@@ -917,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "daft-table"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "common-error",
@@ -971,9 +1034,9 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68b0cf012f1230e43cd00ebb729c6bb58707ecfa8ad08b52ef3a4ccd2697fc30"
+checksum = "304e6508efa593091e97a9abbc10f90aa7ca635b6d2784feff3c89d41dd12272"
 
 [[package]]
 name = "either"
@@ -2083,9 +2146,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-log"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c94ff6535a6bae58d7d0b85e60d4c53f7f84d0d0aa35d6a28c3f3e70bfe51444"
+checksum = "f47b0777feb17f61eea78667d61103758b243a871edc09a7786500a50467b605"
 dependencies = [
  "arc-swap",
  "log",
@@ -2159,6 +2222,28 @@ name = "rawpointer"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
+
+[[package]]
+name = "rayon"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d2df5196e37bcc87abebc0053e20787d73847bb33134a69841207dd0a47f03b"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
+dependencies = [
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-utils",
+ "num_cpus",
+]
 
 [[package]]
 name = "redox_syscall"
@@ -2471,9 +2556,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.100"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f1e14e89be7aa4c4b78bdbdc9eb5bf8517829a600ae8eaa39a6e1d960b5185c"
+checksum = "d03b412469450d4404fe8499a268edd7f8b79fecb074b0d812ad64ca21f4031b"
 dependencies = [
  "itoa",
  "ryu",
