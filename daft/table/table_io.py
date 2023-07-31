@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 from collections.abc import Generator
-from typing import IO, Union
+from typing import IO, TYPE_CHECKING, Union
 from uuid import uuid4
 
 import fsspec
@@ -19,6 +19,9 @@ from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
+
+if TYPE_CHECKING:
+    from daft.io import IOConfig
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -94,6 +97,8 @@ def read_parquet(
     schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: TableReadOptions = TableReadOptions(),
+    io_config: IOConfig | None = None,
+    use_native_downloader: bool = False,
 ) -> Table:
     """Reads a Table from a Parquet file
 
@@ -106,6 +111,16 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
+    if use_native_downloader:
+        assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
+        tbl = Table.read_parquet(
+            str(file),
+            columns=read_options.column_names,
+            num_rows=read_options.num_rows,
+            io_config=io_config,
+        )
+        return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
         f = file

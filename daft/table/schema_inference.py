@@ -17,6 +17,8 @@ from daft.table.table_io import FileInput, _open_stream
 if TYPE_CHECKING:
     import fsspec
 
+    from daft.io import IOConfig
+
 
 def from_csv(
     file: FileInput,
@@ -73,8 +75,14 @@ def from_json(
 def from_parquet(
     file: FileInput,
     fs: fsspec.AbstractFileSystem | None = None,
+    io_config: IOConfig | None = None,
+    use_native_downloader: bool = False,
 ) -> Schema:
     """Infers a Schema from a Parquet file"""
+    if use_native_downloader:
+        assert isinstance(file, (str, pathlib.Path))
+        return Schema.from_parquet(str(file), io_config=io_config)
+
     if not isinstance(file, (str, pathlib.Path)):
         # BytesIO path.
         f = file

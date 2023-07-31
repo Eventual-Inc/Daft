@@ -100,6 +100,8 @@ def sample_schema(
         return schema_inference.from_parquet(
             file=filepath,
             fs=fs,
+            io_config=source_info.io_config,
+            use_native_downloader=source_info.use_native_downloader,
         )
     else:
         raise NotImplementedError(f"Schema inference for {source_info} not implemented")
