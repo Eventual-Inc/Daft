@@ -734,7 +734,7 @@ checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "common-error"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "pyo3",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "daft-core",
  "daft-dsl",
@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "daft-core"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "base64",
@@ -903,7 +903,7 @@ dependencies = [
 
 [[package]]
 name = "daft-dsl"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "bincode",
  "common-error",
@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "daft-io"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "async-recursion",
  "async-trait",
@@ -945,7 +945,7 @@ dependencies = [
 
 [[package]]
 name = "daft-parquet"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -969,14 +969,14 @@ dependencies = [
 
 [[package]]
 name = "daft-plan"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "pyo3",
 ]
 
 [[package]]
 name = "daft-table"
-version = "0.1.0"
+version = "0.1.10"
 dependencies = [
  "arrow2",
  "common-error",
