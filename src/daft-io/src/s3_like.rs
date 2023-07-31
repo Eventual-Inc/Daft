@@ -171,6 +171,10 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
             Err(err) => Err(err),
         }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
     };
+    let r = openssl_probe::probe();
+
+    println!("cert_dir: {:?}", r.cert_dir);
+    println!("cert_file: {:?}", r.cert_file);
 
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
