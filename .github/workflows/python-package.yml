@@ -14,7 +14,7 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -102,7 +102,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-build:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     env:
       package-name: getdaft
@@ -138,7 +138,7 @@ jobs:
         path: dist
 
   integration-test-tpch:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -204,7 +204,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-io:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 30
     needs:
     - integration-test-build
@@ -284,7 +284,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -329,7 +329,7 @@ jobs:
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     needs:
     - unit-tests-with-coverage
     - rust-tests
@@ -365,7 +365,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   test-imports:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -428,7 +428,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   style:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204
     timeout-minutes: 15
     strategy:
       fail-fast: false
