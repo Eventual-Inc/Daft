@@ -8,8 +8,8 @@ This S3 implementation serves a small Parquet file at the location: `s3://{bucke
 
 We provide two different buckets, with slightly different behavior:
 
-1. "head-retries-bucket": this bucket throws errors during HEAD operations
-2. "get-retries-bucket": this bucket throws errors during the ranged GET operations
+1. "head-retries-parquet-bucket": this bucket throws errors during HEAD operations
+2. "get-retries-parquet-bucket": this bucket throws errors during the ranged GET operations
 """
 
 from __future__ import annotations

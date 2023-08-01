@@ -6,7 +6,7 @@ import pytest
 
 from daft.table import Table
 
-BUCKETS = ["head-retries-bucket", "get-retries-bucket"]
+BUCKETS = ["head-retries-parquet-bucket", "get-retries-parquet-bucket"]
 
 
 @pytest.mark.integration()
