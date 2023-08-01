@@ -86,10 +86,14 @@ def file_read(
                     partial_metadatas=[done_task.partition_metadata()],
                 ).add_instruction(
                     instruction=execution_step.ReadFile(
-                        partition_id=output_partition_index,
-                        logplan=scan_info,
                         index=i,
                         file_rows=file_rows[i],
+                        limit_rows=scan_info._limit_rows,
+                        schema=scan_info._schema,
+                        fs=scan_info._fs,
+                        columns_to_read=scan_info._column_names,
+                        source_info=scan_info._source_info,
+                        filepaths_column_name=scan_info._filepaths_column_name,
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
