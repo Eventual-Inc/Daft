@@ -65,7 +65,7 @@ def _get_files_scan_rustplan(
     schema_hints: dict[str, DataType] | None,
     source_info: SourceInfo,
     fs: fsspec.AbstractFileSystem | None,
-) -> LogicalPlanBuilder:
+) -> rust_logical_plan.RustLogicalPlanBuilder:
     """Returns a LogicalPlanBuilder with the file scan."""
     # Glob the path using the Runner
     runner_io = get_context().runner().runner_io()
