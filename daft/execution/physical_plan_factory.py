@@ -87,7 +87,14 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             )
 
         elif isinstance(node, logical_plan.FileWrite):
-            return physical_plan.file_write(child_plan, node)
+            return physical_plan.file_write(
+                child_plan=child_plan,
+                file_type=node._storage_type,
+                schema=node.schema(),
+                root_dir=node._root_dir,
+                compression=node._compression,
+                partition_cols=node._partition_cols,
+            )
 
         elif isinstance(node, logical_plan.LocalLimit):
             # Note that the GlobalLimit physical plan also dynamically dispatches its own LocalLimit instructions.

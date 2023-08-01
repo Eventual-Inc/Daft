@@ -14,6 +14,7 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 from __future__ import annotations
 
 import math
+import pathlib
 from collections import deque
 from typing import TYPE_CHECKING, Generator, Iterator, TypeVar, Union
 
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from daft.datasources import SourceInfo
+from daft.datasources import SourceInfo, StorageType
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -133,17 +134,27 @@ def file_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    write_info: logical_plan.FileWrite,
+    file_type: StorageType,
+    schema: Schema,
+    root_dir: str | pathlib.Path,
+    compression: str | None,
+    partition_cols: ExpressionsProjection | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
 
     yield from (
         step.add_instruction(
-            execution_step.WriteFile(partition_id=index, logplan=write_info),
+            execution_step.WriteFile(
+                file_type=file_type,
+                schema=schema,
+                root_dir=root_dir,
+                compression=compression,
+                partition_cols=partition_cols,
+            ),
         )
         if isinstance(step, PartitionTaskBuilder)
         else step
-        for index, step in enumerate_open_executions(child_plan)
+        for step in child_plan
     )
 
 

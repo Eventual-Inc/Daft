@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import pathlib
 import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, TypeVar
@@ -21,8 +22,7 @@ from daft.datasources import (
     StorageType,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical import logical_plan
-from daft.logical.logical_plan import FileWrite, JoinType
+from daft.logical.logical_plan import JoinType
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -441,8 +441,11 @@ class ReadFile(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class WriteFile(SingleOutputInstruction):
-    partition_id: int
-    logplan: logical_plan.FileWrite
+    file_type: StorageType
+    schema: Schema
+    root_dir: str | pathlib.Path
+    compression: str | None
+    partition_cols: ExpressionsProjection | None
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._write_file(inputs)
@@ -450,8 +453,7 @@ class WriteFile(SingleOutputInstruction):
     def _write_file(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         partition = self._handle_file_write(
-            inputs={self.logplan._children()[0].id(): input},
-            file_write=self.logplan,
+            input=input,
         )
         return [partition]
 
@@ -464,29 +466,27 @@ class WriteFile(SingleOutputInstruction):
             )
         ]
 
-    def _handle_file_write(self, inputs: dict[int, Table], file_write: FileWrite) -> Table:
-        child_id = file_write._children()[0].id()
-        assert file_write._storage_type == StorageType.PARQUET or file_write._storage_type == StorageType.CSV
-        if file_write._storage_type == StorageType.PARQUET:
+    def _handle_file_write(self, input: Table) -> Table:
+        assert self.file_type == StorageType.PARQUET or self.file_type == StorageType.CSV
+        if self.file_type == StorageType.PARQUET:
             file_names = table_io.write_parquet(
-                inputs[child_id],
-                path=file_write._root_dir,
-                compression=file_write._compression,
-                partition_cols=file_write._partition_cols,
+                input,
+                path=self.root_dir,
+                compression=self.compression,
+                partition_cols=self.partition_cols,
             )
         else:
             file_names = table_io.write_csv(
-                inputs[child_id],
-                path=file_write._root_dir,
-                compression=file_write._compression,
-                partition_cols=file_write._partition_cols,
+                input,
+                path=self.root_dir,
+                compression=self.compression,
+                partition_cols=self.partition_cols,
             )
 
-        output_schema = file_write.schema()
-        assert len(output_schema) == 1
+        assert len(self.schema) == 1
         return Table.from_pydict(
             {
-                output_schema.column_names()[0]: file_names,
+                self.schema.column_names()[0]: file_names,
             }
         )
 
