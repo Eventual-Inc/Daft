@@ -215,6 +215,11 @@ jobs:
       matrix:
         python-version: ['3.7']
         daft-runner: [py, ray]
+    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+    # This is used in the step "Assume GitHub Actions AWS Credentials"
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/checkout@v3
       with:
