@@ -123,7 +123,10 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             # Do the fanout.
             fanout_plan: physical_plan.InProgressPhysicalPlan
             if node._scheme == PartitionScheme.RANDOM:
-                fanout_plan = physical_plan.fanout_random(child_plan, node)
+                fanout_plan = physical_plan.fanout_random(
+                    child_plan=child_plan,
+                    num_partitions=node.num_partitions(),
+                )
             elif node._scheme == PartitionScheme.HASH:
                 fanout_instruction = execution_step.FanoutHash(
                     _num_outputs=node.num_partitions(),

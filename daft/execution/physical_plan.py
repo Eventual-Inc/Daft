@@ -34,7 +34,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical import logical_plan
 from daft.logical.logical_plan import JoinType
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -667,12 +666,12 @@ def sort(
     )
 
 
-def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], node: logical_plan.Repartition):
+def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
     """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions"""
     seed = 0
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            instruction = execution_step.FanoutRandom(node.num_partitions(), seed)
+            instruction = execution_step.FanoutRandom(num_partitions, seed)
             step = step.add_instruction(instruction)
         yield step
         seed += 1
