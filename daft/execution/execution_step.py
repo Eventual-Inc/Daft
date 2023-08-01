@@ -3,9 +3,10 @@ from __future__ import annotations
 import itertools
 import sys
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
-import fsspec
+if TYPE_CHECKING:
+    import fsspec
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol

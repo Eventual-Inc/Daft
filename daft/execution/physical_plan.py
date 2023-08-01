@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from typing import Generator, Iterator, TypeVar, Union
+from typing import TYPE_CHECKING, Generator, Iterator, TypeVar, Union
 
-import fsspec
+if TYPE_CHECKING:
+    import fsspec
+
 from loguru import logger
 
 from daft.datasources import SourceInfo
