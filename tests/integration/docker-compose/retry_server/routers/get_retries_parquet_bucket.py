@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Response
+from fastapi import FastAPI, Header, Request, Response
 
 from ..utils.parquet_generation import generate_parquet_file
 from ..utils.responses import get_response
@@ -14,10 +14,11 @@ MOCK_PARQUET_DATA_PATH = generate_parquet_file()
 
 ITEM_ID_TO_NUM_RETRIES: dict[tuple[str, tuple[int, int]], int] = {}
 
-router = APIRouter(prefix=f"/{BUCKET_NAME}")
+route = f"/{BUCKET_NAME}"
+app = FastAPI()
 
 
-@router.head(OBJECT_KEY_URL)
+@app.head(OBJECT_KEY_URL)
 async def bucket_head(status_code: int, num_errors: int, item_id: str):
     return Response(
         headers={
@@ -28,8 +29,9 @@ async def bucket_head(status_code: int, num_errors: int, item_id: str):
     )
 
 
-@router.get(OBJECT_KEY_URL)
+@app.get(OBJECT_KEY_URL)
 async def retryable_bucket_get(
+    request: Request,
     status_code: int,
     num_errors: int,
     item_id: str,
@@ -43,7 +45,7 @@ async def retryable_bucket_get(
     else:
         ITEM_ID_TO_NUM_RETRIES[key] += 1
     if ITEM_ID_TO_NUM_RETRIES[key] <= num_errors:
-        return get_response(BUCKET_NAME, status_code, num_errors, item_id)
+        return get_response(request.url, status_code)
 
     with open(MOCK_PARQUET_DATA_PATH.name, "rb") as f:
         f.seek(start)
