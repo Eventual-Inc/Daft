@@ -56,11 +56,7 @@ _RUNNER: Runner | None = None
 
 def _get_planner_from_env() -> bool:
     """Returns whether or not to use the new query planner."""
-    rust_planner_env = os.getenv("DAFT_DEVELOPER_RUST_QUERY_PLANNER")
-    rust_planner = bool(int(rust_planner_env)) if rust_planner_env is not None else None
-
-    default = False
-    return rust_planner or default
+    return bool(int(os.getenv("DAFT_DEVELOPER_RUST_QUERY_PLANNER", default="1")))
 
 
 @dataclasses.dataclass(frozen=True)
