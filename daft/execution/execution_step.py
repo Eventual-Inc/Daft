@@ -328,14 +328,7 @@ class ReadFile(SingleOutputInstruction):
         assert len(inputs) == 1
         [filepaths_partition] = inputs
         partition = self._handle_tabular_files_scan(
-            limit_rows=self.limit_rows,
-            fs=self.fs,
-            schema=self.schema,
-            columns_to_read=self.columns_to_read,
-            source_info=self.source_info,
             filepaths_partition=filepaths_partition,
-            filepaths_column_name=self.filepaths_column_name,
-            index=self.index,
         )
         return [partition]
 
@@ -356,82 +349,75 @@ class ReadFile(SingleOutputInstruction):
 
     def _handle_tabular_files_scan(
         self,
-        limit_rows: int | None,
-        fs: fsspec.AbstractFileSystem | None,
-        schema: Schema,
-        columns_to_read: list[str] | None,
-        source_info: SourceInfo,
         filepaths_partition: Table,
-        filepaths_column_name: str,
-        index: int | None = None,
     ) -> Table:
         data = filepaths_partition.to_pydict()
         assert (
-            filepaths_column_name in data
-        ), f"TabularFilesScan should be ran on vPartitions with '{filepaths_column_name}' column"
-        filepaths = data[filepaths_column_name]
+            self.filepaths_column_name in data
+        ), f"TabularFilesScan should be ran on vPartitions with '{self.filepaths_column_name}' column"
+        filepaths = data[self.filepaths_column_name]
 
-        if index is not None:
-            filepaths = [filepaths[index]]
+        if self.index is not None:
+            filepaths = [filepaths[self.index]]
 
         # Common options for reading vPartition
         read_options = TableReadOptions(
-            num_rows=limit_rows,
-            column_names=columns_to_read,  # read only specified columns
+            num_rows=self.limit_rows,
+            column_names=self.columns_to_read,  # read only specified columns
         )
 
-        if source_info.scan_type() == StorageType.CSV:
-            assert isinstance(source_info, CSVSourceInfo)
+        if self.source_info.scan_type() == StorageType.CSV:
+            assert isinstance(self.source_info, CSVSourceInfo)
             table = Table.concat(
                 [
                     table_io.read_csv(
                         file=fp,
-                        schema=schema,
-                        fs=fs,
+                        schema=self.schema,
+                        fs=self.fs,
                         csv_options=TableParseCSVOptions(
-                            delimiter=source_info.delimiter,
-                            header_index=0 if source_info.has_headers else None,
+                            delimiter=self.source_info.delimiter,
+                            header_index=0 if self.source_info.has_headers else None,
                         ),
                         read_options=read_options,
                     )
                     for fp in filepaths
                 ]
             )
-        elif source_info.scan_type() == StorageType.JSON:
-            assert isinstance(source_info, JSONSourceInfo)
+        elif self.source_info.scan_type() == StorageType.JSON:
+            assert isinstance(self.source_info, JSONSourceInfo)
             table = Table.concat(
                 [
                     table_io.read_json(
                         file=fp,
-                        schema=schema,
-                        fs=fs,
+                        schema=self.schema,
+                        fs=self.fs,
                         read_options=read_options,
                     )
                     for fp in filepaths
                 ]
             )
-        elif source_info.scan_type() == StorageType.PARQUET:
-            assert isinstance(source_info, ParquetSourceInfo)
+        elif self.source_info.scan_type() == StorageType.PARQUET:
+            assert isinstance(self.source_info, ParquetSourceInfo)
             table = Table.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
-                        schema=schema,
-                        fs=fs,
+                        schema=self.schema,
+                        fs=self.fs,
                         read_options=read_options,
-                        io_config=source_info.io_config,
-                        use_native_downloader=source_info.use_native_downloader,
+                        io_config=self.source_info.io_config,
+                        use_native_downloader=self.source_info.use_native_downloader,
                     )
                     for fp in filepaths
                 ]
             )
         else:
-            raise NotImplementedError(f"PyRunner has not implemented scan: {source_info.scan_type()}")
+            raise NotImplementedError(f"PyRunner has not implemented scan: {self.source_info.scan_type()}")
 
         expected_schema = (
-            Schema._from_fields([schema[name] for name in read_options.column_names])
+            Schema._from_fields([self.schema[name] for name in read_options.column_names])
             if read_options.column_names is not None
-            else schema
+            else self.schema
         )
         assert (
             table.schema() == expected_schema
