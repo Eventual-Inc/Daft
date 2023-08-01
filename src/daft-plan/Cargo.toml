@@ -1,4 +1,7 @@
 [dependencies]
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+indexmap = "2.0.0"
 pyo3 = {workspace = true, optional = true}
 
 [features]

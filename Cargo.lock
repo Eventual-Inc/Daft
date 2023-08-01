@@ -866,6 +866,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-parquet",
+ "daft-plan",
  "daft-table",
  "pyo3",
  "pyo3-log",
@@ -885,7 +886,7 @@ dependencies = [
  "fnv",
  "html-escape",
  "image",
- "indexmap",
+ "indexmap 1.9.3",
  "lazy_static",
  "log",
  "ndarray",
@@ -971,6 +972,9 @@ dependencies = [
 name = "daft-plan"
 version = "0.1.10"
 dependencies = [
+ "daft-core",
+ "daft-dsl",
+ "indexmap 2.0.0",
  "pyo3",
 ]
 
@@ -1054,6 +1058,12 @@ checksum = "071a31f4ee85403370b58aca746f01041ede6f0da2730960ad001edc2b71b394"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "equivalent"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
@@ -1277,7 +1287,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap",
+ "indexmap 1.9.3",
  "slab",
  "tokio",
  "tokio-util",
@@ -1301,6 +1311,12 @@ name = "hashbrown"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
+
+[[package]]
+name = "hashbrown"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c6201b9ff9fd90a5a3bac2e56a830d0caa509576f0e503818ee82c181b3437a"
 
 [[package]]
 name = "heck"
@@ -1484,6 +1500,16 @@ dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
  "serde",
+]
+
+[[package]]
+name = "indexmap"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5477fe2230a79769d8dc68e0eabf5437907c0457a5614a9e8dddb67f65eb65d"
+dependencies = [
+ "equivalent",
+ "hashbrown 0.14.0",
 ]
 
 [[package]]
