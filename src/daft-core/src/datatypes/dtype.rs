@@ -200,10 +200,9 @@ impl DataType {
             Image(mode) => Struct(vec![
                 Field::new(
                     "data",
-                    List(Box::new(Field::new(
-                        "data",
-                        mode.map_or(DataType::UInt8, |m| m.get_dtype()),
-                    ))),
+                    mode.map_or(DataType::Binary, |m| {
+                        List(Box::new(Field::new("data", m.get_dtype())))
+                    }),
                 ),
                 Field::new("channel", UInt16),
                 Field::new("height", UInt32),

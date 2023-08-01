@@ -22,6 +22,7 @@ use arrow2::{
         cast::{can_cast_types, cast, CastOptions},
     },
 };
+use pyo3::types::PyIterator;
 use std::sync::Arc;
 
 #[cfg(feature = "python")]
@@ -29,13 +30,15 @@ use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::{ListArray, PythonArray},
     crate::ffi,
+    crate::python::PyDataType,
     crate::with_match_numeric_daft_types,
     log,
-    ndarray::IntoDimension,
+    ndarray::{ArrayView, IntoDimension},
     num_traits::{NumCast, ToPrimitive},
-    numpy::{PyArray3, PyReadonlyArrayDyn},
+    numpy::{IxDyn, PyArray3, PyReadonlyArrayDyn},
     pyo3::prelude::*,
     std::iter,
+    std::num::Wrapping,
     std::ops::Deref,
 };
 
@@ -463,277 +466,1535 @@ macro_rules! pycast_then_arrowcast {
     }
 }
 
-#[cfg(feature = "python")]
-fn append_values_from_numpy<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
-    pyarray: &PyAny,
-    index: usize,
-    from_numpy_dtype_fn: &PyAny,
-    enforce_dtype: Option<&DataType>,
-    values_vec: &mut Vec<Tgt>,
-    shapes_vec: &mut Vec<u64>,
-) -> DaftResult<(usize, usize)> {
-    use crate::python::PyDataType;
-    use std::num::Wrapping;
+// #[cfg(feature = "python")]
+// fn append_values_from_numpy<
+//     'a,
+//     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+// >(
+//     pyarray: &'a PyAny,
+//     index: usize,
+//     from_numpy_dtype_fn: &PyAny,
+//     enforce_dtype: Option<&DataType>,
+// ) -> DaftResult<(
+//     std::slice::Iter<'a, Tgt::Bytes>,
+//     usize,
+//     std::slice::Iter<'a, u64>,
+//     usize,
+// )> {
+//     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
 
-    let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+//     let datatype = from_numpy_dtype_fn
+//         .call1((np_dtype,))?
+//         .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//         .extract::<PyDataType>()?;
+//     let datatype = datatype.dtype;
+//     if let Some(enforce_dtype) = enforce_dtype {
+//         if enforce_dtype != &datatype {
+//             return Err(DaftError::ValueError(format!(
+//                 "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+//             )));
+//         }
+//     }
+//     if !datatype.is_numeric() {
+//         return Err(DaftError::ValueError(format!(
+//             "Numpy array has unsupported type {} at index: {index}",
+//             datatype
+//         )));
+//     }
+//     with_match_numeric_daft_types!(datatype, |$N| {
+//         type Src = <$N as DaftNumericType>::Native;
+//         let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//         // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//         // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//         // Relevant:
+//         //  1. Must have non-negative strides.
 
-    let datatype = from_numpy_dtype_fn
-        .call1((np_dtype,))?
-        .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
-        .extract::<PyDataType>()?;
-    let datatype = datatype.dtype;
-    if let Some(enforce_dtype) = enforce_dtype {
-        if enforce_dtype != &datatype {
-            return Err(DaftError::ValueError(format!(
-                "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
-            )));
-        }
-    }
-    if !datatype.is_numeric() {
-        return Err(DaftError::ValueError(format!(
-            "Numpy array has unsupported type {} at index: {index}",
-            datatype
-        )));
-    }
-    with_match_numeric_daft_types!(datatype, |$N| {
-        type Src = <$N as DaftNumericType>::Native;
-        let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
-        // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
-        // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
-        // Relevant:
-        //  1. Must have non-negative strides.
+//         // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//         if pyarray.strides().iter().any(|s| *s < 0) {
+//             return Err(DaftError::ValueError(format!(
+//                 "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
+//                 pyarray.strides(), index
+//             )));
+//         }
 
-        // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
-        if pyarray.strides().iter().any(|s| *s < 0) {
-            return Err(DaftError::ValueError(format!(
-                "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
-                pyarray.strides(), index
-            )));
-        }
+//         let pyarray = pyarray.as_array();
+//         let owned_arr;
+//         // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+//         // This will only create a copy if the ndarray is non-contiguous.
+//         let sl: &[Src] = match pyarray.as_slice_memory_order() {
+//             Some(sl) => sl,
+//             None => {
+//                 owned_arr = pyarray.to_owned();
+//                 owned_arr.as_slice_memory_order().unwrap()
+//             }
+//         };
+//         Ok((sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0), sl.len(), pyarray.shape().iter().map(|v| *v as u64), pyarray.shape().len()))
+//     })
+// }
 
-        let pyarray = pyarray.as_array();
-        let owned_arr;
-        // Create 1D slice from potentially non-contiguous and non-C-order arrays.
-        // This will only create a copy if the ndarray is non-contiguous.
-        let sl: &[Src] = match pyarray.as_slice_memory_order() {
-            Some(sl) => sl,
-            None => {
-                owned_arr = pyarray.to_owned();
-                owned_arr.as_slice_memory_order().unwrap()
-            }
-        };
-        values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
-        shapes_vec.extend(pyarray.shape().iter().map(|v| *v as u64));
-        Ok((sl.len(), pyarray.shape().len()))
-    })
+// #[cfg(feature = "python")]
+// fn append_values_from_numpy<
+//     Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+// >(
+//     pyarray: &PyAny,
+//     index: usize,
+//     from_numpy_dtype_fn: &PyAny,
+//     enforce_dtype: Option<&DataType>,
+//     values_vec: &mut Vec<Tgt>,
+//     shapes_vec: &mut Vec<u64>,
+// ) -> DaftResult<(usize, usize)> {
+//     use crate::python::PyDataType;
+//     use std::num::Wrapping;
+
+//     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+//     let datatype = from_numpy_dtype_fn
+//         .call1((np_dtype,))?
+//         .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//         .extract::<PyDataType>()?;
+//     let datatype = datatype.dtype;
+//     if let Some(enforce_dtype) = enforce_dtype {
+//         if enforce_dtype != &datatype {
+//             return Err(DaftError::ValueError(format!(
+//                 "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+//             )));
+//         }
+//     }
+//     if !datatype.is_numeric() {
+//         return Err(DaftError::ValueError(format!(
+//             "Numpy array has unsupported type {} at index: {index}",
+//             datatype
+//         )));
+//     }
+//     with_match_numeric_daft_types!(datatype, |$N| {
+//         type Src = <$N as DaftNumericType>::Native;
+//         let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//         // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//         // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//         // Relevant:
+//         //  1. Must have non-negative strides.
+
+//         // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//         if pyarray.strides().iter().any(|s| *s < 0) {
+//             return Err(DaftError::ValueError(format!(
+//                 "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
+//                 pyarray.strides(), index
+//             )));
+//         }
+
+//         let pyarray = pyarray.as_array();
+//         let owned_arr;
+//         // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+//         // This will only create a copy if the ndarray is non-contiguous.
+//         let sl: &[Src] = match pyarray.as_slice_memory_order() {
+//             Some(sl) => sl,
+//             None => {
+//                 owned_arr = pyarray.to_owned();
+//                 owned_arr.as_slice_memory_order().unwrap()
+//             }
+//         };
+//         values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
+//         shapes_vec.extend(pyarray.shape().iter().map(|v| *v as u64));
+//         Ok((sl.len(), pyarray.shape().len()))
+//     })
+// }
+
+// struct TensorBuilder<T: TensorBufferBuilder> {
+//     tensor_buffer_builder: T,
+//     np_as_array_fn: PyAny,
+//     from_numpy_dtype_fn: PyAny,
+// }
+
+// impl TensorBuilder {
+//     fn add_ndarray(&self, pyarray: &PyAny) -> DaftResult<()> {
+//         let pyarray = self.np_as_array_fn.call1((pyarray,))?;
+//         let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+//         let datatype = self
+//             .from_numpy_dtype_fn
+//             .call1((np_dtype,))?
+//             .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//             .extract::<PyDataType>()?;
+//         let datatype = datatype.dtype;
+//         if !datatype.is_numeric() {
+//             return Err(DaftError::ValueError(format!(
+//                 "Numpy array has unsupported type {}",
+//                 datatype
+//             )));
+//         }
+//         with_match_numeric_daft_types!(datatype, |$N| {
+//             type Src = <$N as DaftNumericType>::Native;
+//             let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//             // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//             // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//             // Relevant:
+//             //  1. Must have non-negative strides.
+
+//             // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//             if pyarray.strides().iter().any(|s| *s < 0) {
+//                 return Err(DaftError::ValueError(format!(
+//                     "we only support numpy arrays with non-negative strides, but got {:?}",
+//                     pyarray.strides()
+//                 )));
+//             }
+
+//             self.tensor_buffer_builder.extend_with_ndarray(pyarray.as_array());
+//             Ok(())
+//         })
+//     }
+// }
+
+// struct ImageBuilder<T: ImageBufferBuilder> {
+//     image_buffer_builder: T,
+// }
+
+// impl ImageBuilder {
+//     fn add_image(&self, image: &PyAny) -> DaftResult<()> {
+//         todo!("todo");
+//     }
+// }
+
+// enum TypeBuilder {
+//     Tensor(TensorBuilder),
+//     Image(ImageBuilder),
+//     List(ListBuilder),
+// }
+
+// struct Builder {
+//     type_builder: TypeBuilder,
+//     py_obj_type_classifier: PyObjTypeClassifier,
+// }
+
+// impl Builder {
+//     fn add(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match (
+//             self.py_obj_type_classifier.classify(py_obj),
+//             self.type_builder,
+//         ) {
+//             (PyObjType::Ndarray | PyObjType::Image, TypeBuilder::Tensor(tensor_builder)) => {
+//                 tensor_builder.add_ndarray(py_obj)
+//             }
+//             (PyObjType::Image, TypeBuilder::Image(image_builder)) => {
+//                 image_builder.add_image(py_obj)
+//             }
+//             (PyObjType::Ndarray, TypeBuilder::Image(image_builder)) => {
+//                 image_builder.add_ndarray(py_obj)
+//             }
+//             (PyObjType::Iterator, TypeBuilder::List(list_builder)) => list_builder.add_iter(py_obj),
+//             (PyObjType::Ndarray, TypeBuilder::List(list_builder)) => {
+//                 list_builder.add_ndarray(py_obj)
+//             }
+//             (py_obj_type, type_builder) => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// impl<T> BufferBuilder for T
+// where
+//     T: TensorBufferBuilder + ImageBufferBuilder + ListBufferBuilder,
+// {
+//     fn extend<'a>(&'a self, py_obj: &'a PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Image | PyObjType::Ndarray => {
+//                 let ndarray = self.np_as_array_fn.call1((object,))?;
+//                 self.extend_with_ndarray(ndarray)
+//             }
+//             PyObjType::Iterator => todo!("not implemented"),
+//             PyObjType::Unknown(py_type) => {
+//                 unimplemented!(format!("not implemented for {}", py_type))
+//             }
+//         }
+//     }
+
+//     fn push_null(&self) {
+//         self.offsets.push(self.offsets.last());
+//         self.shape_offsets.push(self.shape_offsets.last());
+//     }
+// }
+
+// struct PrimitiveTensorBufferBuilder<T> {
+//     data: Vec<T>,
+//     offsets: Vec<i64>,
+//     shapes: Vec<u64>,
+//     shape_offsets: Vec<i64>,
+// }
+
+// impl<T> PrimitiveTensorBufferBuilder<T> {
+//     fn new(num_tensors: usize) -> Self {
+//         Self {
+//             data: Vec::with_capacity(num_tensors),
+//             offsets: Vec::with_capacity(num_tensors + 1),
+//             shapes: Vec::with_capacity(num_tensors),
+//             shape_offsets: Vec::with_capacity(num_tensors + 1),
+//         }
+//     }
+// }
+
+// fn ndarray_to_slice<'a, T>(ndarray: &'a ArrayView<'a, T, IxDyn>) -> &'a [T] {
+//     let owned_arr;
+//     // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+//     // This will only create a copy if the ndarray is non-contiguous.
+//     match ndarray.as_slice_memory_order() {
+//         Some(sl) => sl,
+//         None => {
+//             owned_arr = ndarray.to_owned();
+//             owned_arr.as_slice_memory_order().unwrap()
+//         }
+//     }
+// }
+
+// impl<T> TensorBufferBuilder for PrimitiveTensorBufferBuilder<T>
+// where
+//     T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+// {
+//     fn extend<'a, U>(&'a self, ndarray: &'a ArrayView<'a, U, IxDyn>)
+//     where
+//         U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+//     {
+//         let data = ndarray_to_slice(ndarray);
+//         self.data.extend(
+//             data.iter()
+//                 .map(|v| <Wrapping<T> as NumCast>::from(*v).unwrap().0),
+//         );
+//         self.offsets.push(self.offsets.last() + data.len() as u64);
+//         let shape = ndarray.shape();
+//         self.shapes.extend(shape.iter());
+//         self.shape_offsets
+//             .push(self.shape_offsets.last() + shape.len() as u64);
+//     }
+
+//     fn push_null(&self) {
+//         self.offsets.push(self.offsets.last());
+//         self.shape_offsets.push(self.shape_offsets.last());
+//     }
+// }
+
+// struct FixedShapePrimitiveTensorBufferBuilder<T> {
+//     data: Vec<T>,
+//     shape: Vec<u64>,
+// }
+
+// impl<T> FixedShapePrimitiveTensorBufferBuilder<T> {
+//     fn new(num_tensors: u64, shape: Vec<u64>) -> Self {
+//         Self {
+//             data: Vec::with_capacity(num_tensors),
+//             shape,
+//         }
+//     }
+// }
+
+// impl<T> TensorBufferBuilder for FixedShapePrimitiveTensorBufferBuilder<T>
+// where
+//     T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+// {
+//     fn extend<'a, U>(&'a self, ndarray: &'a ArrayView<'a, U, IxDyn>)
+//     where
+//         U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+//     {
+//         let data = ndarray_to_slice(ndarray);
+//         self.data.extend(
+//             data.iter()
+//                 .map(|v| <Wrapping<T> as NumCast>::from(*v).unwrap().0),
+//         );
+//     }
+
+//     fn push_null(&self) {
+//         self.offsets
+//             .push(self.offsets.last() + self.shape.iter().product() as u64);
+//     }
+// }
+
+// struct BinaryTensorBufferBuilder {
+//     data: Vec<u8>,
+//     offsets: Vec<i64>,
+//     dtypes: Vec<DataType>,
+// }
+
+// impl BinaryTensorBufferBuilder {
+//     fn new(num_tensors: usize) -> Self {
+//         Self {
+//             data: Vec::with_capacity(num_tensors),
+//             offsets: Vec::with_capacity(num_tensors + 1),
+//             dtypes: Vec::with_capacity(num_tensors),
+//         }
+//     }
+// }
+
+// impl TensorBufferBuilder for BinaryTensorBufferBuilder {
+//     fn extend<'a, U>(&'a self, ndarray: &'a ArrayView<'a, U, IxDyn>)
+//     where
+//         U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+//     {
+//         let data = ndarray_to_slice(ndarray);
+//         self.data
+//             .extend(data.iter().flat_map(|v| v.to_le_bytes().as_ref().iter()));
+//         self.offsets.push(self.offsets.last() + data.len() as u64);
+//         let shape = ndarray.shape();
+//         self.shapes.extend(shape.iter());
+//         self.shape_offsets
+//             .push(self.shape_offsets.last() + shape.len() as u64);
+//         self.dtypes
+//             .push(arrow2::datatypes::DataType::from(U::PRIMITIVE).into());
+//     }
+
+//     fn push_null(&self) {
+//         self.offsets.push(self.offsets.last());
+//         self.shape_offsets.push(self.shape_offsets.last());
+//     }
+// }
+
+// struct TensorData<T> {
+//     data: Vec<T>,
+//     data_offsets: Vec<i64>,
+//     shapes: Vec<u64>,
+//     shape_offsets: Vec<i64>,
+// }
+
+// struct HeterogeneousTypedTensorData {
+//     tensor_data: TensorData<u8>,
+//     dtypes: Vec<DataType>,
+// }
+
+// #[cfg(feature = "python")]
+// fn extract_tensor_from_ndarray<T>(
+//     py: Python<'_>,
+//     pyarray: PyAny,
+//     tensor_buffer_builder: &T,
+//     index: usize,
+//     from_numpy_dtype_fn: &PyAny,
+//     enforce_dtype: Option<&DataType>,
+// ) -> DaftResult<()>
+// where
+//     T: TensorBufferBuilder,
+// {
+//     let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+//     let datatype = from_numpy_dtype_fn
+//         .call1((np_dtype,))?
+//         .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//         .extract::<PyDataType>()?;
+//     let datatype = datatype.dtype;
+//     if let Some(enforce_dtype) = enforce_dtype {
+//         if enforce_dtype != &datatype {
+//             return Err(DaftError::ValueError(format!(
+//                 "Expected Numpy array to be of type: {enforce_dtype} but is {datatype} at index: {index}",
+//             )));
+//         }
+//     }
+//     if !datatype.is_numeric() {
+//         return Err(DaftError::ValueError(format!(
+//             "Numpy array has unsupported type {} at index: {index}",
+//             datatype
+//         )));
+//     }
+//     with_match_numeric_daft_types!(datatype, |$N| {
+//         type Src = <$N as DaftNumericType>::Native;
+//         let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//         // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//         // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//         // Relevant:
+//         //  1. Must have non-negative strides.
+
+//         // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//         if pyarray.strides().iter().any(|s| *s < 0) {
+//             return Err(DaftError::ValueError(format!(
+//                 "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
+//                 pyarray.strides(), index
+//             )));
+//         }
+
+//         let pyarray = pyarray.as_array();
+//         tensor_buffer_builder.extend(pyarray);
+//         Ok(())
+//         // let owned_arr;
+//         // // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+//         // // This will only create a copy if the ndarray is non-contiguous.
+//         // let sl: &[Src] = match pyarray.as_slice_memory_order() {
+//         //     Some(sl) => sl,
+//         //     None => {
+//         //         owned_arr = pyarray.to_owned();
+//         //         owned_arr.as_slice_memory_order().unwrap()
+//         //     }
+//         // };
+//         // values_vec.extend(sl.iter().map(|v| <Wrapping<Tgt> as NumCast>::from(*v).unwrap().0));
+//         // shapes_vec.extend(pyarray.shape().iter().map(|v| *v as u64));
+//         // Ok((sl.len(), pyarray.shape().len()))
+//     })
+//     // let pyarray: PyReadonlyArrayDyn<'_, T> = pyarray.extract()?;
+//     // // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//     // // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//     // // Relevant:
+//     // //  1. Must have non-negative strides.
+
+//     // // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//     // if pyarray.strides().iter().any(|s| *s < 0) {
+//     //     return Err(DaftError::ValueError(format!(
+//     //         "we only support numpy arrays with non-negative strides, but got {:?} at index: {}",
+//     //         pyarray.strides(),
+//     //         index
+//     //     )));
+//     // }
+
+//     // let pyarray = pyarray.as_array();
+//     // let owned_arr;
+//     // // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+//     // // This will only create a copy if the ndarray is non-contiguous.
+//     // let sl: &[T] = match pyarray.as_slice_memory_order() {
+//     //     Some(sl) => sl,
+//     //     None => {
+//     //         owned_arr = pyarray.to_owned();
+//     //         owned_arr.as_slice_memory_order().unwrap()
+//     //     }
+//     // };
+//     // Ok((sl, pyarray.shape(), datatype))
+// }
+
+// #[cfg(feature = "python")]
+// fn extract_tensors<'a, T>(
+//     py: Python<'_>,
+//     python_objects: &'a PythonArray,
+//     tensor_buffer_builder: &T,
+//     child_dtype: &DataType,
+//     enforce_dtype: Option<&DataType>,
+// ) -> DaftResult<()>
+// where
+//     T: TensorBufferBuilder,
+// {
+//     let from_numpy_dtype = {
+//         PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
+//             .getattr(pyo3::intern!(py, "DataType"))?
+//             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
+//     };
+
+//     let pytype = match child_dtype {
+//         dtype if dtype.is_integer() => Ok("int"),
+//         dtype if dtype.is_floating() => Ok("float"),
+//         dtype => Err(DaftError::ValueError(format!(
+//             "We only support numeric types when converting to List or FixedSizeList, got {dtype}"
+//         ))),
+//     }?;
+
+//     let py_type_fn = { PyModule::import(py, pyo3::intern!(py, "builtins"))?.getattr(pytype)? };
+//     let py_memory_view = py
+//         .import("builtins")?
+//         .getattr(pyo3::intern!(py, "memoryview"))?;
+//     for (i, object) in python_objects.as_arrow().iter().enumerate() {
+//         if let Some(object) = object {
+//             let object = object.into_py(py);
+//             let object = object.as_ref(py);
+
+//             let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
+//             let supports_array_interface_protocol =
+//                 object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
+//             let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
+
+//             if supports_buffer_protocol
+//                 || supports_array_interface_protocol
+//                 || supports_array_protocol
+//             {
+//                 // Path if object supports buffer/array protocols.
+//                 let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
+//                 let pyarray = np_as_array_fn.call1((object,))?;
+//                 extract_tensor_from_ndarray(
+//                     py,
+//                     pyarray,
+//                     tensor_buffer_builder,
+//                     i,
+//                     from_numpy_dtype,
+//                     enforce_dtype,
+//                 )?;
+//                 // let (array_values, num_values, array_shape, shape_size) =
+//                 //     append_values_from_numpy(pyarray, i, from_numpy_dtype, enforce_dtype)?;
+//                 if let Some(list_size) = list_size {
+//                     if ndarray_data.len() != list_size {
+//                         return Err(DaftError::ValueError(format!(
+//                                 "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+//                                 ndarray_data.len(), i
+//                             )));
+//                     }
+//                 } else {
+//                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
+//                     shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
+//                 }
+//             } else {
+//                 // Path if object does not support buffer/array protocols.
+//                 // Try a best-effort conversion of the elements.
+//                 let pyiter = object.iter();
+//                 if let Ok(pyiter) = pyiter {
+//                     // has an iter
+//                     let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
+//                     let collected = if child_dtype.is_integer() {
+//                         let int_iter = casted_iter
+//                             .map(|v| v.and_then(|v| v.extract::<i64>()))
+//                             .map(|v| {
+//                                 v.and_then(|v| {
+//                                     <Wrapping<Tgt> as NumCast>::from(v).ok_or(
+//                                         DaftError::ComputeError(format!(
+//                                             "Could not convert pyint to i64 at index {i}"
+//                                         ))
+//                                         .into(),
+//                                     )
+//                                 })
+//                             })
+//                             .map(|v| v.map(|v| v.0));
+
+//                         int_iter.collect::<PyResult<Vec<_>>>()
+//                     } else if child_dtype.is_floating() {
+//                         let float_iter = casted_iter
+//                             .map(|v| v.and_then(|v| v.extract::<f64>()))
+//                             .map(|v| {
+//                                 v.and_then(|v| {
+//                                     <Wrapping<Tgt> as NumCast>::from(v).ok_or(
+//                                         DaftError::ComputeError(
+//                                             "Could not convert pyfloat to f64".into(),
+//                                         )
+//                                         .into(),
+//                                     )
+//                                 })
+//                             })
+//                             .map(|v| v.map(|v| v.0));
+//                         float_iter.collect::<PyResult<Vec<_>>>()
+//                     } else {
+//                         unreachable!(
+//                             "dtype should either be int or float at this point; this is a bug"
+//                         );
+//                     };
+
+//                     if collected.is_err() {
+//                         log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
+//                     }
+//                     let collected: Vec<Tgt> = collected?;
+//                     if let Some(list_size) = list_size {
+//                         if collected.len() != list_size {
+//                             return Err(DaftError::ValueError(format!(
+//                                 "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+//                                 collected.len(), i
+//                             )));
+//                         }
+//                     } else {
+//                         let offset = offsets_vec.last().unwrap() + collected.len() as i64;
+//                         offsets_vec.push(offset);
+//                         shapes_vec.extend(vec![1]);
+//                         shape_offsets_vec.push(1i64);
+//                     }
+//                     values_vec.extend_from_slice(collected.as_slice());
+//                 } else {
+//                     return Err(DaftError::ValueError(format!(
+//                         "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
+//                         i, object.getattr(pyo3::intern!(py, "__class__"))?)));
+//                 }
+//             }
+//         } else if let Some(list_size) = list_size {
+//             values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
+//         } else {
+//             let offset = offsets_vec.last().unwrap();
+//             offsets_vec.push(*offset);
+//             if let Some(shape_size) = shape_size {
+//                 shapes_vec.extend(iter::repeat(1).take(shape_size));
+//                 shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
+//             } else {
+//                 shape_offsets_vec.push(*shape_offsets_vec.last().unwrap());
+//             }
+//         }
+//     }
+//     if list_size.is_some() {
+//         Ok((values_vec, None, None, None))
+//     } else {
+//         Ok((
+//             values_vec,
+//             Some(offsets_vec),
+//             Some(shapes_vec),
+//             Some(shape_offsets_vec),
+//         ))
+//     }
+// }
+
+// trait TensorBufferBuilder {
+//     fn extend_with_ndarray<'a, U>(&'a self, ndarray: ArrayView<'a, U, IxDyn>)
+//     where
+//         U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType;
+// }
+
+// trait NdarrayBufferBuilder {
+//     fn extend_with_ndarray<'a, U>(&'a self, ndarray: ArrayView<'a, U, IxDyn>)
+//     where
+//         U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType;
+// }
+
+// trait TensorBufferBuilder: NdarrayBufferBuilder {
+//     fn extend_with_pyarray(&self, py_array: &PyAny);
+// }
+
+// trait ImageBufferBuilder {
+//     fn extend_with_image(&self, py_img: &PyAny) -> DaftResult<()>;
+// }
+
+// trait ListBufferBuilder {
+//     fn extend_with_iter(&self, py_iter: &PyIterator) -> DaftResult<()>;
+// }
+
+// trait ArrayBuilder {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()>;
+
+//     fn push_null(&self);
+// }
+
+// struct TensorAdder<T: TensorBufferBuilder> {
+//     buffer_builder: &T,
+//     np_as_array_fn: PyAny,
+//     from_numpy_dtype_fn: PyAny,
+// }
+
+// impl<T> TensorAdder<T> {
+//     fn add_pyarray(&self, py_array: &PyAny) -> DaftResult<()> {
+//         let pyarray = self.np_as_array_fn.call1((pyarray,))?;
+//         let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+//         let datatype = self
+//             .from_numpy_dtype_fn
+//             .call1((np_dtype,))?
+//             .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//             .extract::<PyDataType>()?;
+//         let datatype = datatype.dtype;
+//         if !datatype.is_numeric() {
+//             return Err(DaftError::ValueError(format!(
+//                 "Numpy array has unsupported type {}",
+//                 datatype
+//             )));
+//         }
+//         with_match_numeric_daft_types!(datatype, |$N| {
+//             type Src = <$N as DaftNumericType>::Native;
+//             let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//             // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//             // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//             // Relevant:
+//             //  1. Must have non-negative strides.
+
+//             // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//             if pyarray.strides().iter().any(|s| *s < 0) {
+//                 return Err(DaftError::ValueError(format!(
+//                     "we only support numpy arrays with non-negative strides, but got {:?}",
+//                     pyarray.strides()
+//                 )));
+//             }
+
+//             self.buffer_builder.extend_with_ndarray(pyarray.as_array());
+//             Ok(())
+//         })
+//     }
+// }
+
+// struct ImageAdder<T: ImageBufferBuilder> {
+//     buffer_builder: &T,
+// }
+
+// impl<T> ImageAdder<T> {
+//     fn add_image(&self, py_img: &PyAny) -> DaftResult<()> {
+//         self.buffer_builder.extend_with_image(py_img)
+//     }
+// }
+
+// struct TensorArrayBuilder<'a, T> {
+//     array_adder: TensorAdder<PrimitiveTensorBufferBuilder<T>>,
+//     py_obj_type_classifier: PyObjTypeClassifier<'a>,
+// }
+
+// impl<'a, T> ArrayBuilder for TensorArrayBuilder<'a, T> {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Ndarray(..) | PyObjType::Image(..) => {
+//                 Ok(self.array_adder.add_pyarray(py_obj))
+//             }
+//             _ => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// struct FixedShapeTensorArrayBuilder<'a, T> {
+//     array_adder: TensorAdder<FixedShapePrimitiveTensorBufferBuilder<T>>,
+//     shape: Vec<u64>,
+//     py_obj_type_classifier: PyObjTypeClassifier<'a>,
+// }
+
+// impl<'a, T> ArrayBuilder for TensorArrayBuilder<'a, T> {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Ndarray(_, shape) => {
+//                 if shape != self.shape {
+//                     return Err(DaftError::ValueError(format!("Shape of ndarray doesn't match the shape on the fixed-shape tensor type: expected {}, got {}", self.shape, shape)));
+//                 }
+//                 Ok(self.array_adder.add_pyarray(py_obj))
+//             }
+//             PyObjType::Image(mode, height, width) => {
+//                 let shape = vec![height, width, mode.num_channels() as u64];
+//                 if shape != self.shape {
+//                     return Err(DaftError::ValueError(format!("Shape of image doesn't match the shape on the fixed-shape tensor type: expected {}, got {}", self.shape, shape)));
+//                 }
+//                 Ok(self.array_adder.add_pyarray(py_obj))
+//             }
+//             _ => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// struct Builder<'a, T> {
+//     buffer_builder: T,
+//     py_obj_type_classifier: PyObjTypeClassifier<'a>,
+//     np_as_array_fn: PyAny,
+//     from_numpy_dtype_fn: PyAny,
+// }
+
+// trait PushNull {
+//     fn push_null(&self);
+// }
+
+// impl<'a, T> PushNull for Builder<'a, T>
+// where
+//     T: BufferBuilder,
+// {
+//     fn push_null(&self) {
+//         self.buffer_builder.push_null();
+//     }
+// }
+
+// trait ExtendBuffer {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()>;
+// }
+
+// impl<'a, T> Builder<'a, T>
+// where
+//     T: TensorBufferBuilder,
+// {
+//     fn add_pyarray(&self, pyarray: &PyAny) -> DaftResult<()> {
+//         let pyarray = self.np_as_array_fn.call1((pyarray,))?;
+//         let np_dtype = pyarray.getattr(pyo3::intern!(pyarray.py(), "dtype"))?;
+
+//         let datatype = self
+//             .from_numpy_dtype_fn
+//             .call1((np_dtype,))?
+//             .getattr(pyo3::intern!(pyarray.py(), "_dtype"))?
+//             .extract::<PyDataType>()?;
+//         let datatype = datatype.dtype;
+//         if !datatype.is_numeric() {
+//             return Err(DaftError::ValueError(format!(
+//                 "Numpy array has unsupported type {}",
+//                 datatype
+//             )));
+//         }
+//         with_match_numeric_daft_types!(datatype, |$N| {
+//             type Src = <$N as DaftNumericType>::Native;
+//             let pyarray: PyReadonlyArrayDyn<'_, Src> = pyarray.extract()?;
+//             // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+//             // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+//             // Relevant:
+//             //  1. Must have non-negative strides.
+
+//             // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+//             if pyarray.strides().iter().any(|s| *s < 0) {
+//                 return Err(DaftError::ValueError(format!(
+//                     "we only support numpy arrays with non-negative strides, but got {:?}",
+//                     pyarray.strides()
+//                 )));
+//             }
+
+//             self.buffer_builder.extend_with_ndarray(pyarray.as_array());
+//             Ok(())
+//         })
+//     }
+// }
+
+// impl<'a, T> ExtendBuffer for Builder<'a, T>
+// where
+//     T: TensorBufferBuilder,
+// {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Ndarray | PyObjType::Image => Ok(self.add_pyarray(py_obj)),
+//             _ => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// impl<'a, T> Builder<'a, T>
+// where
+//     T: ImageBufferBuilder,
+// {
+//     fn add_image(&self, py_image: &PyAny) -> DaftResult<()> {
+//         todo!("not implemented yet");
+//     }
+// }
+
+// impl<'a, T> ExtendBuffer for Builder<'a, T>
+// where
+//     T: ImageBufferBuilder,
+// {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Image => Ok(self.add_image(py_obj)),
+//             PyObjType::Ndarray => Ok(self.add_pyarray(py_obj)),
+//             _ => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// impl<'a, T> Builder<'a, T>
+// where
+//     T: ListBufferBuilder,
+// {
+//     fn add_iter(&self, py_iter: &PyAny) -> DaftResult<()> {
+//         todo!("not implemented yet");
+//     }
+// }
+
+// impl<'a, T> ExtendBuffer for Builder<'a, T>
+// where
+//     T: ListBufferBuilder,
+// {
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()> {
+//         match self.py_obj_type_classifier.classify(py_obj) {
+//             PyObjType::Iterator => Ok(self.add_iter(py_obj)),
+//             PyObjType::Ndarray => Ok(self.add_pyarray(py_obj)),
+//             _ => unimplemented!("not implemented"),
+//         }
+//     }
+// }
+
+// struct HeterogeneousImageBufferBuilder {
+//     tensor_adder: TensorAdder<BinaryTensorBufferBuilder>,
+//     modes: Vec<ImageMode>,
+// }
+
+// impl ImageBufferBufferBuilder for HeterogeneousImageBufferBuilder {
+//     fn extend_with_image(&self, py_img: &PyAny) {
+//         let pil_mode = py_img
+//             .getattr(pyo3::intern!(py_img.py(), "mode"))?
+//             .extract::<&str>()?;
+//         let image_mode = ImageMode::from_pil_mode_str(pil_mode)?;
+//         self.modes.push(image_mode);
+//         self.tensor_adder.add_pyarray(py_img);
+//     }
+// }
+
+enum PyObjType {
+    Image,
+    Ndarray,
+    Iterator,
+    Unknown(String),
 }
 
-type ArrayPayload<Tgt> = (
-    Vec<Tgt>,
-    Option<Vec<i64>>,
-    Option<Vec<u64>>,
-    Option<Vec<i64>>,
-);
+// enum PyObjType {
+//     Image(ImageMode, u64, u64),
+//     Ndarray(DataType, Vec<u64>),
+//     Iterator,
+//     Unknown(String),
+// }
+
+struct PyObjTypeClassifier<'a> {
+    py_memory_view: &'a PyAny,
+    from_numpy_dtype_fn: &'a PyAny,
+    py_pil_image_type: Option<&'a PyAny>,
+}
+
+impl<'a> PyObjTypeClassifier<'a> {
+    fn new(py: Python<'a>) -> DaftResult<Self> {
+        Ok(Self {
+            py_memory_view: py
+                .import("builtins")?
+                .getattr(pyo3::intern!(py, "memoryview"))?,
+            from_numpy_dtype_fn: py
+                .import(pyo3::intern!(py, "daft.datatype"))?
+                .getattr(pyo3::intern!(py, "DataType"))?
+                .getattr(pyo3::intern!(py, "from_numpy_dtype"))?,
+            py_pil_image_type: py
+                .import("PIL.Image")
+                .and_then(|m| m.getattr(pyo3::intern!(py, "Image")))
+                .ok(),
+        })
+    }
+
+    fn classify(&self, py_obj: &PyAny) -> DaftResult<PyObjType> {
+        let py = py_obj.py();
+        let supports_buffer_protocol = self.py_memory_view.call1((py_obj,)).is_ok();
+        let supports_array_interface_protocol =
+            py_obj.hasattr(pyo3::intern!(py, "__array_interface__"))?;
+        let supports_array_protocol = py_obj.hasattr(pyo3::intern!(py, "__array__"))?;
+        let supports_iter_protocol = py_obj.hasattr(pyo3::intern!(py, "__iter__"))?;
+        let supports_sequence_protocol = py_obj.hasattr(pyo3::intern!(py, "__getitem__"))?;
+
+        if supports_buffer_protocol || supports_array_interface_protocol || supports_array_protocol
+        {
+            return Ok(PyObjType::Ndarray)
+            // let np_dtype = py_obj.getattr(pyo3::intern!(py, "dtype"))?;
+            // let datatype = self
+            //     .from_numpy_dtype_fn
+            //     .call1((np_dtype,))?
+            //     .getattr(pyo3::intern!(py, "_dtype"))?
+            //     .extract::<PyDataType>()?;
+            // let dtype = datatype.dtype;
+            // let shape = py_obj
+            //     .getattr(pyo3::intern!(py, "shape"))?
+            //     .extract::<Vec<u64>>()?;
+            // return Ok(PyObjType::Ndarray(dtype, shape));
+        } else if let Some(py_pil_image_type) = self.py_pil_image_type && py_obj.is_instance(py_pil_image_type)? {
+            return Ok(PyObjType::Image)
+            // let pil_mode = py_obj.getattr(pyo3::intern!(py, "mode"))?.extract::<&str>()?;
+            // let image_mode = ImageMode::from_pil_mode_str(pil_mode)?;
+            // let (width, height) = py_obj.getattr(pyo3::intern!(py, "size"))?.extract::<(u64, u64)>()?;
+            // return Ok(PyObjType::Image(image_mode, height, width));
+        } else if supports_iter_protocol || supports_sequence_protocol {
+            return Ok(PyObjType::Iterator);
+        } else {
+            return Ok(PyObjType::Unknown(py_obj.get_type().to_string()));
+        }
+    }
+}
+
+// trait BufferBuilder {
+//     type Output;
+
+//     fn finalize(&self) -> Self::Output;
+
+//     fn push_null(&self);
+// }
+
+trait Finalizable {
+    type Output;
+
+    fn finalize(self) -> Self::Output;
+}
+
+trait PushNull {
+    fn push_null(&mut self);
+}
+
+trait ExtendWithNdarray {
+    fn extend_with_ndarray<'a, U>(&mut self, ndarray: ArrayView<'a, U, IxDyn>) -> DaftResult<()>
+    where
+        U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType;
+}
+
+trait ExtendWithIter {
+    fn extend_with_iter(&mut self, py_iter: &PyIterator) -> DaftResult<()>;
+}
+
+trait AddPyArray {
+    fn add_py_array(&mut self, py_array: &PyAny) -> DaftResult<()>;
+}
+
+trait AddPyIter {
+    fn add_py_iter(&mut self, py_iter: &PyAny) -> DaftResult<()>;
+}
+
+trait AddImage {
+    fn add_image(&mut self, py_img: &PyAny) -> DaftResult<()>;
+}
+
+trait ExtendWithPyObj {
+    fn extend(&mut self, py_obj: &PyAny) -> DaftResult<()>;
+}
+
+// trait ArrayBuilder {
+//     type Output;
+
+//     fn extend(&self, py_obj: &PyAny) -> DaftResult<()>;
+
+//     fn push_null(&self);
+
+//     fn finalize(&self) -> Self::Output;
+// }
+
+struct TensorBufferBuilder<'a, T> {
+    buffer_extender: T,
+    np_as_array_fn: &'a PyAny,
+    from_numpy_dtype_fn: &'a PyAny,
+    py_obj_type_classifier: PyObjTypeClassifier<'a>,
+}
+
+impl<'a, T> TensorBufferBuilder<'a, T> {
+    fn new(buffer_extender: T, py: Python<'a>) -> DaftResult<Self> {
+        Ok(Self {
+            buffer_extender,
+            np_as_array_fn: py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?,
+            from_numpy_dtype_fn: py
+                .import(pyo3::intern!(py, "daft.datatype"))?
+                .getattr(pyo3::intern!(py, "DataType"))?
+                .getattr(pyo3::intern!(py, "from_numpy_dtype"))?,
+            py_obj_type_classifier: PyObjTypeClassifier::new(py)?,
+        })
+    }
+}
+
+impl<'a, T> ExtendWithPyObj for TensorBufferBuilder<'a, T>
+where
+    T: ExtendWithNdarray + ExtendWithIter,
+{
+    fn extend(&mut self, py_obj: &PyAny) -> DaftResult<()> {
+        match self.py_obj_type_classifier.classify(py_obj)? {
+            PyObjType::Ndarray | PyObjType::Image => self.add_py_array(py_obj),
+            PyObjType::Iterator => self.add_py_iter(py_obj),
+            _ => unimplemented!("not implemented"),
+        }
+    }
+}
+
+impl<'a, T> PushNull for TensorBufferBuilder<'a, T>
+where
+    T: PushNull,
+{
+    fn push_null(&mut self) {
+        self.buffer_extender.push_null();
+    }
+}
+
+impl<'a, T> Finalizable for TensorBufferBuilder<'a, T>
+where
+    T: Finalizable,
+{
+    type Output = T::Output;
+
+    fn finalize(self) -> Self::Output {
+        self.buffer_extender.finalize()
+    }
+}
+
+impl<'a, T> AddPyArray for TensorBufferBuilder<'a, T>
+where
+    T: ExtendWithNdarray,
+{
+    fn add_py_array(&mut self, py_array: &PyAny) -> DaftResult<()> {
+        let py_array = self.np_as_array_fn.call1((py_array,))?;
+        let np_dtype = py_array.getattr(pyo3::intern!(py_array.py(), "dtype"))?;
+
+        let datatype = self
+            .from_numpy_dtype_fn
+            .call1((np_dtype,))?
+            .getattr(pyo3::intern!(py_array.py(), "_dtype"))?
+            .extract::<PyDataType>()?;
+        let datatype = datatype.dtype;
+        if !datatype.is_numeric() {
+            return Err(DaftError::ValueError(format!(
+                "Numpy array has unsupported type {}",
+                datatype
+            )));
+        }
+        with_match_numeric_daft_types!(datatype, |$N| {
+            type Src = <$N as DaftNumericType>::Native;
+            let py_array: PyReadonlyArrayDyn<'_, Src> = py_array.extract()?;
+            // All of the conditions given in the ndarray::ArrayView::from_shape_ptr() docstring must be met in order to do
+            // the pyarray.as_array conversion: https://docs.rs/ndarray/0.15.6/ndarray/type.ArrayView.html#method.from_shape_ptr
+            // Relevant:
+            //  1. Must have non-negative strides.
+
+            // TODO(Clark): Double-check that we're covering all bases here for this unsafe handoff.
+            if py_array.strides().iter().any(|s| *s < 0) {
+                return Err(DaftError::ValueError(format!(
+                    "we only support numpy arrays with non-negative strides, but got {:?}",
+                    py_array.strides()
+                )));
+            }
+
+            self.buffer_extender.extend_with_ndarray(py_array.as_array())
+        })
+    }
+}
+
+impl<'a, T> AddPyIter for TensorBufferBuilder<'a, T>
+where
+    T: ExtendWithIter,
+{
+    fn add_py_iter(&mut self, py_iter: &PyAny) -> DaftResult<()> {
+        self.buffer_extender.extend_with_iter(py_iter.iter()?)
+    }
+}
+
+struct ImageBufferBuilder<'a, T> {
+    tensor_buffer_builder: TensorBufferBuilder<'a, T>,
+    modes: Vec<ImageMode>,
+    from_numpy_dtype_fn: &'a PyAny,
+    py_obj_type_classifier: PyObjTypeClassifier<'a>,
+}
+
+impl<'a, T> ImageBufferBuilder<'a, T> {
+    fn new(
+        tensor_buffer_builder: TensorBufferBuilder<'a, T>,
+        num_tensors: usize,
+        py: Python<'a>,
+    ) -> DaftResult<Self> {
+        Ok(Self {
+            tensor_buffer_builder,
+            modes: Vec::with_capacity(num_tensors),
+            from_numpy_dtype_fn: py
+                .import(pyo3::intern!(py, "daft.datatype"))?
+                .getattr(pyo3::intern!(py, "DataType"))?
+                .getattr(pyo3::intern!(py, "from_numpy_dtype"))?,
+            py_obj_type_classifier: PyObjTypeClassifier::new(py)?,
+        })
+    }
+}
+
+impl<'a, T> ExtendWithPyObj for ImageBufferBuilder<'a, T>
+where
+    T: ExtendWithNdarray,
+{
+    fn extend(&mut self, py_obj: &PyAny) -> DaftResult<()> {
+        match self.py_obj_type_classifier.classify(py_obj)? {
+            PyObjType::Image => self.add_image(py_obj),
+            PyObjType::Ndarray => self.add_py_array(py_obj),
+            _ => unimplemented!("not implemented"),
+        }
+    }
+}
+
+impl<'a, T> PushNull for ImageBufferBuilder<'a, T>
+where
+    T: PushNull,
+{
+    fn push_null(&mut self) {
+        self.tensor_buffer_builder.push_null();
+    }
+}
+
+struct ImageBuffers<T> {
+    tensor_buffers: T,
+    image_modes: Vec<ImageMode>,
+}
+
+impl<'a, T> Finalizable for ImageBufferBuilder<'a, T>
+where
+    T: Finalizable,
+{
+    type Output = ImageBuffers<T::Output>;
+
+    fn finalize(self) -> Self::Output {
+        Self::Output {
+            tensor_buffers: self.tensor_buffer_builder.finalize(),
+            image_modes: self.modes,
+        }
+    }
+}
+
+impl<'a, T: ExtendWithNdarray> AddImage for ImageBufferBuilder<'a, T> {
+    fn add_image(&mut self, py_img: &PyAny) -> DaftResult<()> {
+        let pil_mode = py_img
+            .getattr(pyo3::intern!(py_img.py(), "mode"))?
+            .extract::<&str>()?;
+        let image_mode = ImageMode::from_pil_mode_str(pil_mode)?;
+        self.modes.push(image_mode);
+        self.tensor_buffer_builder.add_py_array(py_img)
+    }
+}
+
+impl<'a, T: ExtendWithNdarray> AddPyArray for ImageBufferBuilder<'a, T> {
+    fn add_py_array(&mut self, py_array: &PyAny) -> DaftResult<()> {
+        let py = py_array.py();
+        let shape = py_array
+            .getattr(pyo3::intern!(py, "shape"))?
+            .extract::<Vec<u64>>()?;
+        if shape.len() != 3 && shape.len() != 2 {
+            return Err(DaftError::ValueError(format!(
+                "Image shapes must be 2D or 3D, but got: {:?}",
+                shape
+            )));
+        }
+        let num_channels = if shape.len() == 2 {
+            Ok(1u16)
+        } else {
+            u16::try_from(shape[2])
+        }
+        .map_err(|e| {
+            DaftError::ValueError(format!(
+                "Failed to interpret tensor channel dimension size as u16: {}",
+                e.to_string()
+            ))
+        })?;
+        let np_dtype = py_array.getattr(pyo3::intern!(py, "dtype"))?;
+        let datatype = self
+            .from_numpy_dtype_fn
+            .call1((np_dtype,))?
+            .getattr(pyo3::intern!(py, "_dtype"))?
+            .extract::<PyDataType>()?;
+        let dtype = datatype.dtype;
+        let image_mode = ImageMode::try_from_num_channels(num_channels, &dtype)?;
+        self.modes.push(image_mode);
+        self.tensor_buffer_builder.add_py_array(py_array)
+    }
+}
+
+struct PrimitiveTensorBufferExtender<T> {
+    data: Vec<T>,
+    offsets: Vec<i64>,
+    shapes: Vec<u64>,
+    shape_offsets: Vec<i64>,
+}
+
+impl<T> PrimitiveTensorBufferExtender<T> {
+    fn new(num_tensors: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(num_tensors),
+            offsets: Vec::with_capacity(num_tensors + 1),
+            shapes: Vec::with_capacity(num_tensors),
+            shape_offsets: Vec::with_capacity(num_tensors + 1),
+        }
+    }
+}
+
+fn ndarray_to_slice<'a, T>(ndarray: ArrayView<'a, T, IxDyn>) -> &[T]
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+    // This will only create a copy if the ndarray is non-contiguous.
+    ndarray.to_slice_memory_order().unwrap()
+    // let owned_arr;
+    // // Create 1D slice from potentially non-contiguous and non-C-order arrays.
+    // // This will only create a copy if the ndarray is non-contiguous.
+    // match ndarray.as_slice_memory_order() {
+    //     Some(sl) => sl,
+    //     None => {
+    //         owned_arr = ndarray.to_owned();
+    //         owned_arr.as_slice_memory_order().unwrap()
+    //     }
+    // }
+}
+
+impl<T> ExtendWithNdarray for PrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    fn extend_with_ndarray<'a, U>(&mut self, ndarray: ArrayView<'a, U, IxDyn>) -> DaftResult<()>
+    where
+        U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    {
+        let shape = ndarray.shape();
+        self.shapes.extend(shape.iter().map(|v| *v as u64));
+        self.shape_offsets
+            .push(self.shape_offsets.last().unwrap() + shape.len() as i64);
+        let data = ndarray_to_slice(ndarray);
+        self.data.extend(
+            data.iter()
+                .map(|v| <Wrapping<T> as NumCast>::from(*v).unwrap().0),
+        );
+        self.offsets
+            .push(self.offsets.last().unwrap() + data.len() as i64);
+        Ok(())
+    }
+}
+
+impl<T> ExtendWithIter for PrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    T: for<'p> FromPyObject<'p>,
+{
+    fn extend_with_iter(&mut self, py_iter: &PyIterator) -> DaftResult<()> {
+        let collected = py_iter.extract::<Vec<T>>()?;
+        self.data.extend(collected.iter());
+        self.offsets
+            .push(self.offsets.last().unwrap() + collected.len() as i64);
+        self.shapes.push(collected.len() as u64);
+        self.shape_offsets
+            .push(self.shape_offsets.last().unwrap() + 1i64);
+        Ok(())
+    }
+}
+
+impl<T> PushNull for PrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    fn push_null(&mut self) {
+        self.offsets.push(*self.offsets.last().unwrap());
+        self.shape_offsets.push(*self.shape_offsets.last().unwrap());
+    }
+}
+
+impl<T> Finalizable for PrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    type Output = Self;
+
+    fn finalize(self) -> Self::Output {
+        self
+    }
+}
+
+struct FixedShapePrimitiveTensorBufferExtender<T> {
+    data: Vec<T>,
+    shape: Vec<u64>,
+}
+
+impl<T> FixedShapePrimitiveTensorBufferExtender<T> {
+    fn new(num_tensors: usize, shape: Vec<u64>) -> Self {
+        Self {
+            data: Vec::with_capacity(num_tensors),
+            shape,
+        }
+    }
+}
+
+impl<T> ExtendWithNdarray for FixedShapePrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    fn extend_with_ndarray<'a, U>(&mut self, ndarray: ArrayView<'a, U, IxDyn>) -> DaftResult<()>
+    where
+        U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    {
+        if !ndarray
+            .shape()
+            .iter()
+            .map(|v| *v as u64)
+            .eq(self.shape.iter().map(|v| *v))
+        {
+            return Err(DaftError::ValueError(format!(
+                "Expected fixed-shape tensor of shape {:?}, got {:?}",
+                self.shape,
+                ndarray.shape()
+            )));
+        }
+        let data = ndarray_to_slice(ndarray);
+        self.data.extend(
+            data.iter()
+                .map(|v| <Wrapping<T> as NumCast>::from(*v).unwrap().0),
+        );
+        Ok(())
+    }
+}
+
+impl<T> ExtendWithIter for FixedShapePrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    T: for<'p> FromPyObject<'p>,
+{
+    fn extend_with_iter(&mut self, py_iter: &PyIterator) -> DaftResult<()> {
+        let collected = py_iter.extract::<Vec<T>>()?;
+        if self.shape.len() != 1 || self.shape[0] != collected.len() as u64 {
+            return Err(DaftError::ValueError(format!(
+                "Expected fixed-shape tensor of shape {:?}, got {:?}",
+                self.shape,
+                vec![collected.len()]
+            )));
+        }
+        self.data.extend(collected.iter());
+        Ok(())
+    }
+}
+
+impl<T> PushNull for FixedShapePrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    fn push_null(&mut self) {
+        self.data
+            .extend(iter::repeat(T::default()).take(self.shape.iter().product::<u64>() as usize));
+    }
+}
+
+impl<T> Finalizable for FixedShapePrimitiveTensorBufferExtender<T>
+where
+    T: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+{
+    type Output = Self;
+
+    fn finalize(self) -> Self::Output {
+        self
+    }
+}
+
+struct BinaryTensorBufferExtender {
+    data: Vec<u8>,
+    offsets: Vec<i64>,
+    shapes: Vec<u64>,
+    shape_offsets: Vec<i64>,
+    dtypes: Vec<DataType>,
+}
+
+impl BinaryTensorBufferExtender {
+    fn new(num_tensors: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(num_tensors),
+            offsets: Vec::with_capacity(num_tensors + 1),
+            shapes: Vec::with_capacity(num_tensors),
+            shape_offsets: Vec::with_capacity(num_tensors + 1),
+            dtypes: Vec::with_capacity(num_tensors),
+        }
+    }
+}
+
+impl ExtendWithNdarray for BinaryTensorBufferExtender {
+    fn extend_with_ndarray<'a, U>(&mut self, ndarray: ArrayView<'a, U, IxDyn>) -> DaftResult<()>
+    where
+        U: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    {
+        let shape = ndarray.shape();
+        self.shapes.extend(shape.iter().map(|v| *v as u64));
+        self.shape_offsets
+            .push(self.shape_offsets.last().unwrap() + shape.len() as i64);
+        let data = ndarray_to_slice(ndarray);
+        for v in data.iter() {
+            self.data.extend_from_slice(v.to_le_bytes().as_ref());
+        }
+        self.offsets
+            .push(self.offsets.last().unwrap() + data.len() as i64);
+        self.dtypes
+            .push((&arrow2::datatypes::DataType::from(U::PRIMITIVE)).into());
+        Ok(())
+    }
+}
+
+impl PushNull for BinaryTensorBufferExtender {
+    fn push_null(&mut self) {
+        self.offsets.push(*self.offsets.last().unwrap());
+        self.shape_offsets.push(*self.shape_offsets.last().unwrap());
+    }
+}
+
+impl Finalizable for BinaryTensorBufferExtender {
+    type Output = Self;
+
+    fn finalize(self) -> Self::Output {
+        self
+    }
+}
 
 #[cfg(feature = "python")]
-fn extract_python_to_vec<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_python_to_buffers<T>(
+    mut builder: T,
     py: Python<'_>,
     python_objects: &PythonArray,
-    child_dtype: &DataType,
-    enforce_dtype: Option<&DataType>,
-    list_size: Option<usize>,
-    shape_size: Option<usize>,
-) -> DaftResult<ArrayPayload<Tgt>> {
-    use std::num::Wrapping;
-
-    let mut values_vec: Vec<Tgt> =
-        Vec::with_capacity(list_size.unwrap_or(0) * python_objects.len());
-
-    let mut offsets_vec: Vec<i64> = vec![];
-    let mut shapes_vec: Vec<u64> = vec![];
-    let mut shape_offsets_vec: Vec<i64> = vec![];
-
-    if list_size.is_none() {
-        offsets_vec.reserve(python_objects.len() + 1);
-        offsets_vec.push(0);
-        shape_offsets_vec.reserve(python_objects.len() + 1);
-        shape_offsets_vec.push(0);
-    }
-
-    let from_numpy_dtype = {
-        PyModule::import(py, pyo3::intern!(py, "daft.datatype"))?
-            .getattr(pyo3::intern!(py, "DataType"))?
-            .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
-    };
-
-    let pytype = match child_dtype {
-        dtype if dtype.is_integer() => Ok("int"),
-        dtype if dtype.is_floating() => Ok("float"),
-        dtype => Err(DaftError::ValueError(format!(
-            "We only support numeric types when converting to List or FixedSizeList, got {dtype}"
-        ))),
-    }?;
-
-    let py_type_fn = { PyModule::import(py, pyo3::intern!(py, "builtins"))?.getattr(pytype)? };
-    let py_memory_view = py
-        .import("builtins")?
-        .getattr(pyo3::intern!(py, "memoryview"))?;
-
-    // TODO: use this to extract our the image mode
-    // let py_pil_image_type = py
-    //     .import("PIL.Image")
-    //     .and_then(|m| m.getattr(pyo3::intern!(py, "Image")));
-
-    for (i, object) in python_objects.as_arrow().iter().enumerate() {
+) -> DaftResult<T::Output>
+where
+    T: ExtendWithPyObj + PushNull + Finalizable,
+{
+    for object in python_objects.as_arrow().iter() {
         if let Some(object) = object {
             let object = object.into_py(py);
-            let object = object.as_ref(py);
-
-            let supports_buffer_protocol = py_memory_view.call1((object,)).is_ok();
-            let supports_array_interface_protocol =
-                object.hasattr(pyo3::intern!(py, "__array_interface__"))?;
-            let supports_array_protocol = object.hasattr(pyo3::intern!(py, "__array__"))?;
-
-            if supports_buffer_protocol
-                || supports_array_interface_protocol
-                || supports_array_protocol
-            {
-                // Path if object supports buffer/array protocols.
-                let np_as_array_fn = py.import("numpy")?.getattr(pyo3::intern!(py, "asarray"))?;
-                let pyarray = np_as_array_fn.call1((object,))?;
-                let (num_values, shape_size) = append_values_from_numpy(
-                    pyarray,
-                    i,
-                    from_numpy_dtype,
-                    enforce_dtype,
-                    &mut values_vec,
-                    &mut shapes_vec,
-                )?;
-                if let Some(list_size) = list_size {
-                    if num_values != list_size {
-                        return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                num_values, i
-                            )));
-                    }
-                } else {
-                    offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
-                    shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
-                }
-            } else {
-                // Path if object does not support buffer/array protocols.
-                // Try a best-effort conversion of the elements.
-                let pyiter = object.iter();
-                if let Ok(pyiter) = pyiter {
-                    // has an iter
-                    let casted_iter = pyiter.map(|v| v.and_then(|f| py_type_fn.call1((f,))));
-                    let collected = if child_dtype.is_integer() {
-                        let int_iter = casted_iter
-                            .map(|v| v.and_then(|v| v.extract::<i64>()))
-                            .map(|v| {
-                                v.and_then(|v| {
-                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
-                                        DaftError::ComputeError(format!(
-                                            "Could not convert pyint to i64 at index {i}"
-                                        ))
-                                        .into(),
-                                    )
-                                })
-                            })
-                            .map(|v| v.map(|v| v.0));
-
-                        int_iter.collect::<PyResult<Vec<_>>>()
-                    } else if child_dtype.is_floating() {
-                        let float_iter = casted_iter
-                            .map(|v| v.and_then(|v| v.extract::<f64>()))
-                            .map(|v| {
-                                v.and_then(|v| {
-                                    <Wrapping<Tgt> as NumCast>::from(v).ok_or(
-                                        DaftError::ComputeError(
-                                            "Could not convert pyfloat to f64".into(),
-                                        )
-                                        .into(),
-                                    )
-                                })
-                            })
-                            .map(|v| v.map(|v| v.0));
-                        float_iter.collect::<PyResult<Vec<_>>>()
-                    } else {
-                        unreachable!(
-                            "dtype should either be int or float at this point; this is a bug"
-                        );
-                    };
-
-                    if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
-                    }
-                    let collected: Vec<Tgt> = collected?;
-                    if let Some(list_size) = list_size {
-                        if collected.len() != list_size {
-                            return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                collected.len(), i
-                            )));
-                        }
-                    } else {
-                        let offset = offsets_vec.last().unwrap() + collected.len() as i64;
-                        offsets_vec.push(offset);
-                        shapes_vec.extend(vec![1]);
-                        shape_offsets_vec.push(1i64);
-                    }
-                    values_vec.extend_from_slice(collected.as_slice());
-                } else {
-                    return Err(DaftError::ValueError(format!(
-                        "Python Object is neither array-like or an iterable at index {}. Can not convert to a list. object type: {}",
-                        i, object.getattr(pyo3::intern!(py, "__class__"))?)));
-                }
-            }
-        } else if let Some(list_size) = list_size {
-            values_vec.extend(iter::repeat(Tgt::default()).take(list_size));
+            builder.extend(object.as_ref(py))?;
         } else {
-            let offset = offsets_vec.last().unwrap();
-            offsets_vec.push(*offset);
-            if let Some(shape_size) = shape_size {
-                shapes_vec.extend(iter::repeat(1).take(shape_size));
-                shape_offsets_vec.push(shape_offsets_vec.last().unwrap() + shape_size as i64);
-            } else {
-                shape_offsets_vec.push(*shape_offsets_vec.last().unwrap());
-            }
+            builder.push_null();
         }
     }
-    if list_size.is_some() {
-        Ok((values_vec, None, None, None))
-    } else {
-        Ok((
-            values_vec,
-            Some(offsets_vec),
-            Some(shapes_vec),
-            Some(shape_offsets_vec),
-        ))
-    }
+    Ok(builder.finalize())
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_fixed_size_list<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_python_like_to_fixed_size_list<Tgt>(
     py: Python<'_>,
     python_objects: &PythonArray,
     child_field: &Field,
     list_size: usize,
-) -> DaftResult<FixedSizeListArray> {
-    let (values_vec, _, _, _) = extract_python_to_vec::<Tgt>(
+) -> DaftResult<FixedSizeListArray>
+where
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    Tgt: for<'p> FromPyObject<'p>,
+{
+    let n_rows = python_objects.len();
+    let builder = TensorBufferBuilder::new(
+        FixedShapePrimitiveTensorBufferExtender::<Tgt>::new(n_rows, vec![list_size as u64]),
         py,
-        python_objects,
-        &child_field.dtype,
-        None,
-        Some(list_size),
-        None,
     )?;
+    let buffer = extract_python_to_buffers(builder, py, python_objects)?;
+    let values_vec = buffer.data;
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
@@ -757,17 +2018,20 @@ fn extract_python_like_to_fixed_size_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_list<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_python_like_to_list<Tgt>(
     py: Python<'_>,
     python_objects: &PythonArray,
     child_field: &Field,
-) -> DaftResult<ListArray> {
-    let (values_vec, offsets, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None, None, None)?;
-
-    let offsets = offsets.expect("Offsets should but non-None for dynamic list");
+) -> DaftResult<ListArray>
+where
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    Tgt: for<'p> FromPyObject<'p>,
+{
+    let n_rows = python_objects.len();
+    let builder = TensorBufferBuilder::new(PrimitiveTensorBufferExtender::<Tgt>::new(n_rows), py)?;
+    let buffers = extract_python_to_buffers(builder, py, python_objects)?;
+    let values_vec = buffers.data;
+    let offsets = buffers.offsets;
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
@@ -792,35 +2056,34 @@ fn extract_python_like_to_list<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_image_array<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_python_like_to_image_array<Tgt>(
     py: Python<'_>,
     python_objects: &PythonArray,
     dtype: &DataType,
     child_dtype: &DataType,
     mode_from_dtype: Option<ImageMode>,
-) -> DaftResult<ImageArray> {
+) -> DaftResult<ImageArray>
+where
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    Tgt: for<'p> FromPyObject<'p>,
+{
     // 3 dimensions - height x width x channel.
 
     let shape_size = 3;
-    let (values_vec, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
+    let num_rows = python_objects.len();
+    let builder = ImageBufferBuilder::new(
+        TensorBufferBuilder::new(BinaryTensorBufferExtender::new(num_rows), py)?,
+        num_rows,
         py,
-        python_objects,
-        child_dtype,
-        Some(child_dtype),
-        None,
-        Some(shape_size),
     )?;
-
-    let offsets = offsets.expect("Offsets should but non-None for image struct array");
-    let shapes = shapes.expect("Shapes should be non-None for image struct array");
-    let shape_offsets =
-        shape_offsets.expect("Shape offsets should be non-None for image struct array");
+    let buffers = extract_python_to_buffers(builder, py, python_objects)?;
+    let values_vec = buffers.tensor_buffers.data;
+    let offsets = buffers.tensor_buffers.offsets;
+    let shapes = buffers.tensor_buffers.shapes;
+    let shape_offsets = buffers.tensor_buffers.shape_offsets;
+    let image_modes = buffers.image_modes;
 
     let validity = python_objects.as_arrow().validity();
-
-    let num_rows = offsets.len() - 1;
 
     let mut channels = Vec::<u16>::with_capacity(num_rows);
     let mut heights = Vec::<u32>::with_capacity(num_rows);
@@ -838,6 +2101,7 @@ fn extract_python_like_to_image_array<
         }
         let shape_start = shape_offsets[i] as usize;
         let shape_end = shape_offsets[i + 1] as usize;
+        assert!(shape_end > shape_start);
         let shape = &mut shapes[shape_start..shape_end].to_owned();
         if shape.len() == shape_size - 1 {
             shape.push(1);
@@ -866,10 +2130,13 @@ fn extract_python_like_to_image_array<
                 .expect("Number of channels should fit into a uint8"),
         );
 
-        modes.push(mode_from_dtype.unwrap_or(ImageMode::try_from_num_channels(
-            shape[2].try_into().unwrap(),
-            child_dtype,
-        )?) as u8);
+        if let Some(mode_from_dtype) = mode_from_dtype && mode_from_dtype != image_modes[i] {
+            return Err(DaftError::ValueError(format!(
+                "Expected type-level image mode {}, but got {} for index {}",
+                mode_from_dtype, image_modes[i], i
+            )));
+        }
+        modes.push(mode_from_dtype.unwrap_or(image_modes[i]) as u8);
     }
     ImageArray::from_vecs(
         python_objects.name(),
@@ -887,27 +2154,23 @@ fn extract_python_like_to_image_array<
 }
 
 #[cfg(feature = "python")]
-fn extract_python_like_to_tensor_array<
-    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
->(
+fn extract_python_like_to_tensor_array<Tgt>(
     py: Python<'_>,
     python_objects: &PythonArray,
     dtype: &DataType,
     child_dtype: &DataType,
-) -> DaftResult<TensorArray> {
-    let (data, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
-        py,
-        python_objects,
-        child_dtype,
-        Some(child_dtype),
-        None,
-        None,
-    )?;
-
-    let offsets = offsets.expect("Offsets should but non-None for image struct array");
-    let shapes = shapes.expect("Shapes should be non-None for image struct array");
-    let shape_offsets =
-        shape_offsets.expect("Shape offsets should be non-None for image struct array");
+) -> DaftResult<TensorArray>
+where
+    Tgt: numpy::Element + NumCast + ToPrimitive + arrow2::types::NativeType,
+    Tgt: for<'p> FromPyObject<'p>,
+{
+    let n_rows = python_objects.len();
+    let builder = TensorBufferBuilder::new(PrimitiveTensorBufferExtender::<Tgt>::new(n_rows), py)?;
+    let buffers = extract_python_to_buffers(builder, py, python_objects)?;
+    let data = buffers.data;
+    let offsets = buffers.offsets;
+    let shapes = buffers.shapes;
+    let shape_offsets = buffers.shape_offsets;
 
     let validity = python_objects.as_arrow().validity();
 
