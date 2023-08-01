@@ -34,7 +34,15 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         child_plan = _get_physical_plan(child_node, psets)
 
         if isinstance(node, logical_plan.TabularFilesScan):
-            return physical_plan.file_read(child_plan=child_plan, scan_info=node)
+            return physical_plan.file_read(
+                child_plan=child_plan,
+                limit_rows=node._limit_rows,
+                schema=node._schema,
+                fs=node._fs,
+                columns_to_read=node._column_names,
+                source_info=node._source_info,
+                filepaths_column_name=node._filepaths_column_name,
+            )
 
         elif isinstance(node, logical_plan.Filter):
             return physical_plan.pipeline_instruction(

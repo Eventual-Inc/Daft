@@ -17,8 +17,10 @@ import math
 from collections import deque
 from typing import Generator, Iterator, TypeVar, Union
 
+import fsspec
 from loguru import logger
 
+from daft.datasources import SourceInfo
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -29,6 +31,7 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.logical import logical_plan
+from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata
 
@@ -59,7 +62,13 @@ def partition_read(
 
 def file_read(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    scan_info: logical_plan.TabularFilesScan,
+    # Max number of rows to read.
+    limit_rows: int | None,
+    schema: Schema,
+    fs: fsspec.AbstractFileSystem | None,
+    columns_to_read: list[str] | None,
+    source_info: SourceInfo,
+    filepaths_column_name: str,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
 
@@ -88,12 +97,12 @@ def file_read(
                     instruction=execution_step.ReadFile(
                         index=i,
                         file_rows=file_rows[i],
-                        limit_rows=scan_info._limit_rows,
-                        schema=scan_info._schema,
-                        fs=scan_info._fs,
-                        columns_to_read=scan_info._column_names,
-                        source_info=scan_info._source_info,
-                        filepaths_column_name=scan_info._filepaths_column_name,
+                        limit_rows=limit_rows,
+                        schema=schema,
+                        fs=fs,
+                        columns_to_read=columns_to_read,
+                        source_info=source_info,
+                        filepaths_column_name=filepaths_column_name,
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
