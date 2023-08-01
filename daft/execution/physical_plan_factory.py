@@ -101,7 +101,11 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.local_limit(child_plan, node._num)
 
         elif isinstance(node, logical_plan.GlobalLimit):
-            return physical_plan.global_limit(child_plan, node)
+            return physical_plan.global_limit(
+                child_plan=child_plan,
+                limit_rows=node._num,
+                num_partitions=node.num_partitions(),
+            )
 
         elif isinstance(node, logical_plan.Repartition):
             # Case: simple repartition (split)
@@ -144,7 +148,11 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.sort(child_plan, node)
 
         elif isinstance(node, logical_plan.Coalesce):
-            return physical_plan.coalesce(child_plan, node)
+            return physical_plan.coalesce(
+                child_plan=child_plan,
+                from_num_partitions=node._children()[0].num_partitions(),
+                to_num_partitions=node.num_partitions(),
+            )
 
         else:
             raise NotImplementedError(f"Unsupported plan type {node}")

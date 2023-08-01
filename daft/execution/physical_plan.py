@@ -282,13 +282,14 @@ def local_limit(
 
 def global_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    global_limit: logical_plan.GlobalLimit,
+    limit_rows: int,
+    num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Return the first n rows from the `child_plan`."""
 
-    remaining_rows = global_limit._num
+    remaining_rows = limit_rows
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
-    remaining_partitions = global_limit.num_partitions()
+    remaining_partitions = num_partitions
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
@@ -472,18 +473,19 @@ def split(
 
 def coalesce(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    coalesce: logical_plan.Coalesce,
+    from_num_partitions: int,
+    to_num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Coalesce the results of the child_plan into fewer partitions.
 
     The current implementation only does partition merging, no rebalancing.
     """
 
-    coalesce_from = coalesce._children()[0].num_partitions()
-    coalesce_to = coalesce.num_partitions()
-    assert coalesce_to <= coalesce_from, f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
+    assert (
+        to_num_partitions <= from_num_partitions
+    ), f"Cannot coalesce upwards from {from_num_partitions} to {to_num_partitions} partitions."
 
-    boundaries = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to + 1)]
+    boundaries = [math.ceil((from_num_partitions / to_num_partitions) * i) for i in range(to_num_partitions + 1)]
     starts, stops = boundaries[:-1], boundaries[1:]
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
