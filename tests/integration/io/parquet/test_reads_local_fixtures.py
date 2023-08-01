@@ -11,7 +11,7 @@ BUCKETS = ["head-retries-bucket", "get-retries-bucket"]
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("status_code", [400, 404])
+@pytest.mark.parametrize("status_code", [400, 403, 404])
 @pytest.mark.parametrize("bucket", BUCKETS)
 def test_non_retryable_errors(status_code: int, bucket: str):
     io_config = IOConfig(s3=S3Config(endpoint_url="http://127.0.0.1:8000"))
@@ -22,7 +22,24 @@ def test_non_retryable_errors(status_code: int, bucket: str):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("status_code", [500, 503])
+@pytest.mark.parametrize(
+    "status_code",
+    [
+        500,
+        503,
+        504,
+        # TODO: We should also retry correctly on these error codes (PyArrow does retry appropriately here)
+        # These are marked as retryable error codes, see:
+        # https://github.com/aws/aws-sdk-cpp/blob/8a9550f1db04b33b3606602ba181d68377f763df/src/aws-cpp-sdk-core/include/aws/core/http/HttpResponse.h#L113-L131
+        # 509,
+        # 408,
+        # 429,
+        # 419,
+        # 440,
+        # 598,
+        # 599,
+    ],
+)
 @pytest.mark.parametrize("bucket", BUCKETS)
 def test_retryable_errors(status_code: int, bucket: str):
     io_config = IOConfig(s3=S3Config(endpoint_url="http://127.0.0.1:8000"))
