@@ -34,4 +34,4 @@ services:
       context: .
       dockerfile: Dockerfile.s3_retry_server
     ports:
-    - 8000:8000
+    - 8001:8000
