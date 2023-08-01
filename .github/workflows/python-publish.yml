@@ -60,7 +60,7 @@ jobs:
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
       uses: messense/maturin-action@v1
       with:
-        target: aarch64
+        target: aarch64-unknown-linux-gnu
         manylinux: auto
         args: --profile release-lto --out dist --sdist
 
