@@ -54,12 +54,18 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 _RUNNER: Runner | None = None
 
 
+def _get_planner_from_env() -> bool:
+    """Returns whether or not to use the new query planner."""
+    return bool(int(os.getenv("DAFT_DEVELOPER_RUST_QUERY_PLANNER", default="1")))
+
+
 @dataclasses.dataclass(frozen=True)
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
+    use_rust_planner: bool = dataclasses.field(default_factory=_get_planner_from_env)
 
     def runner(self) -> Runner:
         global _RUNNER
