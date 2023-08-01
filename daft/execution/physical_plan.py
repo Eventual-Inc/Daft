@@ -30,7 +30,9 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     SingleOutputPartitionTask,
 )
+from daft.expressions import ExpressionsProjection
 from daft.logical import logical_plan
+from daft.logical.logical_plan import JoinType
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata
@@ -159,7 +161,10 @@ def pipeline_instruction(
 def join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
-    join: logical_plan.Join,
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    output_projection: ExpressionsProjection,
+    how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
 
@@ -184,7 +189,14 @@ def join(
                 resource_request=ResourceRequest(
                     memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
                 ),
-            ).add_instruction(instruction=execution_step.Join(join))
+            ).add_instruction(
+                instruction=execution_step.Join(
+                    left_on=left_on,
+                    right_on=right_on,
+                    output_projection=output_projection,
+                    how=how,
+                )
+            )
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.

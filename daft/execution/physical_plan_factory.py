@@ -150,7 +150,10 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.join(
                 left_plan=_get_physical_plan(left_child, psets),
                 right_plan=_get_physical_plan(right_child, psets),
-                join=node,
+                left_on=node._left_on,
+                right_on=node._right_on,
+                output_projection=node._output_projection,
+                how=node._how,
             )
 
         elif isinstance(node, logical_plan.Concat):
