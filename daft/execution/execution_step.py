@@ -534,7 +534,7 @@ class Project(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class LocalCount(SingleOutputInstruction):
-    logplan: logical_plan.LocalCount
+    schema: Schema
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._count(inputs)
@@ -542,7 +542,7 @@ class LocalCount(SingleOutputInstruction):
     def _count(self, inputs: list[Table]) -> list[Table]:
         [input] = inputs
         partition = Table.from_pydict({"count": [len(input)]})
-        assert partition.schema() == self.logplan.schema()
+        assert partition.schema() == self.schema
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
