@@ -5,10 +5,11 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Union
 import fsspec
 
 from daft.api_annotations import PublicAPI
+from daft.context import get_context
 from daft.dataframe import DataFrame
 from daft.datasources import ParquetSourceInfo
 from daft.datatype import DataType
-from daft.io.common import _get_tabular_files_scan
+from daft.io.common import _get_files_scan_rustplan, _get_tabular_files_scan
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -43,16 +44,31 @@ def read_parquet(
     returns:
         DataFrame: parsed DataFrame
     """
+
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of Parquet filepaths")
 
-    plan = _get_tabular_files_scan(
-        path,
-        schema_hints,
-        ParquetSourceInfo(
-            io_config=io_config,
-            use_native_downloader=use_native_downloader,
-        ),
-        fs,
-    )
+    context = get_context()
+
+    if context.use_rust_planner:
+        plan = _get_files_scan_rustplan(
+            path,
+            schema_hints,
+            ParquetSourceInfo(
+                io_config=io_config,
+                use_native_downloader=use_native_downloader,
+            ),
+            fs,
+        )
+    else:
+        plan = _get_tabular_files_scan(
+            path,
+            schema_hints,
+            ParquetSourceInfo(
+                io_config=io_config,
+                use_native_downloader=use_native_downloader,
+            ),
+            fs,
+        )
+
     return DataFrame(plan)

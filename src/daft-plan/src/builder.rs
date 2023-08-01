@@ -10,14 +10,14 @@ use pyo3::prelude::*;
 
 #[cfg_attr(feature = "python", pyclass)]
 pub struct LogicalPlanBuilder {
-    _plan: Arc<LogicalPlan>,
+    plan: Arc<LogicalPlan>,
 }
 
 impl LogicalPlanBuilder {
     // Create a new LogicalPlanBuilder for a Source node.
     pub fn from_source(source: ops::Source) -> Self {
         Self {
-            _plan: LogicalPlan::Source(source).into(),
+            plan: LogicalPlan::Source(source).into(),
         }
     }
 }
@@ -36,5 +36,9 @@ impl LogicalPlanBuilder {
             source_info.into(),
         ));
         Ok(logical_plan_builder)
+    }
+
+    pub fn schema(&self) -> PyResult<PySchema> {
+        Ok(self.plan.schema().into())
     }
 }
