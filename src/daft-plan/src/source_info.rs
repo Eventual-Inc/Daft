@@ -1,24 +1,24 @@
 use daft_core::schema::SchemaRef;
 
 pub enum SourceInfo {
-    FilesInfo(FilesInfo),
+    ParquetFilesInfo(ParquetFilesInfo),
 }
 
 impl SourceInfo {
     pub fn schema(&self) -> SchemaRef {
         use SourceInfo::*;
         match self {
-            FilesInfo(files_info) => files_info.schema.clone(),
+            ParquetFilesInfo(pq_info) => pq_info.schema.clone(),
         }
     }
 }
 
-pub struct FilesInfo {
+pub struct ParquetFilesInfo {
     pub filepaths: Vec<String>, // TODO: pull in some sort of URL crate for this
     pub schema: SchemaRef,
 }
 
-impl FilesInfo {
+impl ParquetFilesInfo {
     pub(crate) fn new(filepaths: Vec<String>, schema: SchemaRef) -> Self {
         Self { filepaths, schema }
     }

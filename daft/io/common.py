@@ -86,7 +86,7 @@ def _get_files_scan_rustplan(
     filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
     rs_schema = inferred_or_provided_schema._schema
 
-    builder = LogicalPlanBuilder.source(filepaths, rs_schema)
+    builder = LogicalPlanBuilder.read_parquet(filepaths, rs_schema)
     pybuilder = rust_logical_plan.RustLogicalPlanBuilder(builder)
 
     return pybuilder

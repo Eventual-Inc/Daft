@@ -26,11 +26,10 @@ impl LogicalPlanBuilder {
 #[pymethods]
 impl LogicalPlanBuilder {
     #[staticmethod]
-    pub fn source(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
-        let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo::new(
-            filepaths,
-            schema.schema.clone(),
-        ));
+    pub fn read_parquet(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
+        let source_info = source_info::SourceInfo::ParquetFilesInfo(
+            source_info::ParquetFilesInfo::new(filepaths, schema.schema.clone()),
+        );
         let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
