@@ -215,6 +215,11 @@ jobs:
       matrix:
         python-version: ['3.7']
         daft-runner: [py, ray]
+    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+    # This is used in the step "Assume GitHub Actions AWS Credentials"
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/checkout@v3
       with:
@@ -242,6 +247,12 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.0
       with:

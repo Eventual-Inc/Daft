@@ -54,6 +54,14 @@ def nginx_config() -> tuple[str, pathlib.Path]:
     )
 
 
+@pytest.fixture(scope="session")
+def retry_server_s3_config() -> daft.io.IOConfig:
+    """Returns the URL to the local retry_server fixture"""
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001"),
+    )
+
+
 ###
 # Mounting utilities: mount data and perform cleanup at the end of each test
 ###
