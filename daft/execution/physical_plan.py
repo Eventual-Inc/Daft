@@ -576,7 +576,9 @@ def reduce(
 
 def sort(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    sort_info: logical_plan.Sort,
+    sort_by: ExpressionsProjection,
+    descending: list[bool],
+    num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Sort the result of `child_plan` according to `sort_info`."""
 
@@ -601,7 +603,7 @@ def sort(
                 partial_metadatas=None,
             )
             .add_instruction(
-                instruction=execution_step.Sample(sort_by=sort_info._sort_by),
+                instruction=execution_step.Sample(sort_by=sort_by),
             )
             .finalize_partition_task_single_output()
         )
@@ -622,9 +624,9 @@ def sort(
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
-                num_quantiles=sort_info.num_partitions(),
-                sort_by=sort_info._sort_by,
-                descending=sort_info._descending,
+                num_quantiles=num_partitions,
+                sort_by=sort_by,
+                descending=descending,
             ),
         )
         .finalize_partition_task_single_output()
@@ -646,9 +648,9 @@ def sort(
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
-                _num_outputs=sort_info.num_partitions(),
-                sort_by=sort_info._sort_by,
-                descending=sort_info._descending,
+                _num_outputs=num_partitions,
+                sort_by=sort_by,
+                descending=descending,
             ),
         )
         for source in consume_deque(source_materializations)
@@ -657,10 +659,10 @@ def sort(
     # Execute a sorting reduce on it.
     yield from reduce(
         fanout_plan=range_fanout_plan,
-        num_partitions=sort_info.num_partitions(),
+        num_partitions=num_partitions,
         reduce_instruction=execution_step.ReduceMergeAndSort(
-            sort_by=sort_info._sort_by,
-            descending=sort_info._descending,
+            sort_by=sort_by,
+            descending=descending,
         ),
     )
 

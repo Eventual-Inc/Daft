@@ -145,7 +145,12 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             )
 
         elif isinstance(node, logical_plan.Sort):
-            return physical_plan.sort(child_plan, node)
+            return physical_plan.sort(
+                child_plan=child_plan,
+                sort_by=node._sort_by,
+                descending=node._descending,
+                num_partitions=node.num_partitions(),
+            )
 
         elif isinstance(node, logical_plan.Coalesce):
             return physical_plan.coalesce(
