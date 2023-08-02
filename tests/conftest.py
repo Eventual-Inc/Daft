@@ -5,6 +5,12 @@ import pyarrow as pa
 import pytest
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "integration: mark test as an integration test that runs with external dependencies"
+    )
+
+
 class UuidType(pa.ExtensionType):
     NAME = "daft.uuid"
 
