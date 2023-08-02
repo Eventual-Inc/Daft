@@ -19,6 +19,7 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
 )
 
 from daft.api_annotations import DataframePublicAPI
@@ -530,7 +531,20 @@ class DataFrame:
         Returns:
             DataFrame: Filtered DataFrame.
         """
-        plan = logical_plan.Filter(self._plan, ExpressionsProjection([predicate]))
+        use_rust_planner = get_context().use_rust_planner
+
+        if use_rust_planner:
+            new_builder = cast(
+                rust_logical_plan.RustLogicalPlanBuilder,
+                self._plan,
+            ).builder.filter(predicate._expr)
+
+            plan = cast(
+                logical_plan.LogicalPlan,
+                rust_logical_plan.RustLogicalPlanBuilder(new_builder),
+            )
+        else:
+            plan = logical_plan.Filter(self._plan, ExpressionsProjection([predicate]))
         return DataFrame(plan)
 
     @DataframePublicAPI
