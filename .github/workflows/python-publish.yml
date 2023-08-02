@@ -43,12 +43,12 @@ jobs:
       with:
         target: aarch64-unknown-linux-gnu
         manylinux: auto
-        args: --profile release-lto --out dist --sdist
-    - name: Install and test built wheel - x86_64
-      run: |
-        pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
-        rm -rf daft
-        pytest -v
+        args: --profile release --out dist --sdist # TODO MAKE THIS LTO
+    # - name: Install and test built wheel - arm64
+    #   run: |
+    #     pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+    #     rm -rf daft
+    #     pytest -v
 
     - name: Upload wheels
       uses: actions/upload-artifact@v3
@@ -75,77 +75,81 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  build-and-test:
-    name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
-    runs-on: ${{ matrix.os }}-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu, macos]
-        compile_arch: [x86_64, aarch64]
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        architecture: x64
-    - run: pip install -U twine toml
-    - run: python tools/patch_package_version.py
-    - uses: moonrepo/setup-rust@v0
-    - name: Build wheels - x86
-      if: ${{ matrix.compile_arch == 'x86_64' }}
-      uses: messense/maturin-action@v1
-      with:
-        target: x86_64
-        manylinux: auto
-        args: --profile release-lto --out dist --sdist
-      env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-    - name: Build wheels - Mac aarch64
-      if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
-      uses: messense/maturin-action@v1
-      with:
-        target: aarch64
-        manylinux: auto
-        args: --profile release-lto --out dist --sdist
-      env:
-        RUSTFLAGS: -Ctarget-cpu=apple-m1
+  # build-and-test:
+  #   name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
+  #   runs-on: ${{ matrix.os }}-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu, macos]
+  #       compile_arch: [x86_64, aarch64]
+  #       exclude:
+  #         - os: ubuntu
+  #           compile_arch: aarch64
 
-    - name: Install and test built wheel - x86_64
-      if: ${{ matrix.compile_arch == 'x86_64' }}
-      run: |
-        pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
-        pytest -v
+  #   steps:
+  #   - uses: actions/checkout@v3
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - uses: actions/setup-python@v4
+  #     with:
+  #       python-version: ${{ env.PYTHON_VERSION }}
+  #       architecture: x64
+  #   - run: pip install -U twine toml
+  #   - run: python tools/patch_package_version.py
+  #   - uses: moonrepo/setup-rust@v0
+  #   - name: Build wheels - x86
+  #     if: ${{ matrix.compile_arch == 'x86_64' }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: x86_64
+  #       manylinux: auto
+  #       args: --profile release-lto --out dist --sdist
+  #     env:
+  #       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+  #   - name: Build wheels - Mac aarch64
+  #     if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
+  #     uses: messense/maturin-action@v1
+  #     with:
+  #       target: aarch64
+  #       manylinux: auto
+  #       args: --profile release-lto --out dist --sdist
+  #     env:
+  #       RUSTFLAGS: -Ctarget-cpu=apple-m1
 
-    - name: Upload wheels
-      uses: actions/upload-artifact@v3
-      with:
-        name: wheels
-        path: dist
+  #   - name: Install and test built wheel - x86_64
+  #     if: ${{ matrix.compile_arch == 'x86_64' }}
+  #     run: |
+  #       pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
+  #       rm -rf daft
+  #       pytest -v
 
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
-      if: failure()
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: Release: Building Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  #   - name: Upload wheels
+  #     uses: actions/upload-artifact@v3
+  #     with:
+  #       name: wheels
+  #       path: dist
+
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v1.24.0
+  #     if: failure()
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: Release: Building Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #     env:
+  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 
   # publish:
