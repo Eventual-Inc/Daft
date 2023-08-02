@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm, macos-latest]
+        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm]
         daft-runner: [py, ray]
     steps:
     - uses: actions/checkout@v3
@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm, macos-latest]
+        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm]
         daft-runner: [py, ray]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
