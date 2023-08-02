@@ -9,8 +9,8 @@ on:
 
 jobs:
   integration-test-tpch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm, macos-latest]
+    timeout-minutes: 15
     env:
       package-name: getdaft
     strategy:
