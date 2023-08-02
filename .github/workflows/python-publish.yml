@@ -36,9 +36,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
-      with:
-        python-version: 3.11.4 # only version available for 22.04
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
     - name: Build wheels - Linux aarch64
