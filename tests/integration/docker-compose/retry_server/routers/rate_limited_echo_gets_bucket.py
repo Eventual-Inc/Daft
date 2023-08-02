@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 
 from ..utils.responses import get_response
 
-BUCKET_NAME = "99-per-second-rate-limited-gets-bucket"
+BUCKET_NAME = "80-per-second-rate-limited-gets-bucket"
 OBJECT_KEY_URL = "/{item_id}"
 
 route = f"/{BUCKET_NAME}"
@@ -24,7 +24,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 @app.get(OBJECT_KEY_URL)
-@limiter.shared_limit(limit_value="99/second", scope="my_shared_limit")
+@limiter.shared_limit(limit_value="80/second", scope="my_shared_limit")
 async def rate_limited_bucket_get(request: Request, item_id: str):
     """This endpoint will just echo the `item_id` and return that as the response body"""
     result = item_id.encode("utf-8")
