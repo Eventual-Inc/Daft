@@ -25,7 +25,7 @@ jobs:
         fetch-depth: 0
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
+        python3 -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
@@ -86,7 +86,7 @@ jobs:
         fetch-depth: 0
     - name: Setup Virtual Env
       run: |
-        python -m venv venv
+        python3 -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
