@@ -94,6 +94,7 @@ jobs:
         brew install docker docker-compose
         mkdir -p ~/.docker/cli-plugins
         ln -sfn /usr/local/opt/docker-compose/bin/docker-compose ~/.docker/cli-plugins/docker-compose
+        colima delete
         colima start --mount-type virtiofs
 
         # For testcontainers to find the Colima socket
