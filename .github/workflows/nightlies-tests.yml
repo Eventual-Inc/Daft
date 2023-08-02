@@ -1,0 +1,68 @@
+name: Verify platforms nightly wheels
+
+on:
+  schedule:
+  - cron: 0 13 * * *
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-test-tpch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.7']
+        daft-runner: [py, ray]
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
+        rm -rf daft
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-tpch-data
+      with:
+        path: data/tpch-dbgen
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+    - name: Run TPCH integration tests
+      run: |
+        pytest tests/integration/test_tpch.py --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        # - name: Send Slack notification on failure
+        #   uses: slackapi/slack-github-action@v1.24.0
+        #   if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+        #   with:
+        #     payload: |
+        #       {
+        #         "blocks": [
+        #           {
+        #             "type": "section",
+        #             "text": {
+        #               "type": "mrkdwn",
+        #               "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+        #             }
+        #           }
+        #         ]
+        #       }
+        #   env:
+        #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
