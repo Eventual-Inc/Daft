@@ -40,7 +40,7 @@ jobs:
     - run: python tools/patch_package_version.py
 
 
-    - run: docker run --rm --workdir $(pwd) -v $(pwd):$(pwd) --entrypoint ls messense/manylinux2014-cross:aarch64-arm64
+    - run: docker run --rm --workdir $(pwd) -v $(pwd):$(pwd) --entrypoint ci/build_linux_arm64.sh messense/manylinux2014-cross:aarch64-arm64
     # - name: Build wheels - Linux aarch64
     #   uses: messense/maturin-action@v1
     #   with:
