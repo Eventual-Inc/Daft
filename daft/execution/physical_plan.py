@@ -14,11 +14,16 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 from __future__ import annotations
 
 import math
+import pathlib
 from collections import deque
-from typing import Generator, Iterator, TypeVar, Union
+from typing import TYPE_CHECKING, Generator, Iterator, TypeVar, Union
+
+if TYPE_CHECKING:
+    import fsspec
 
 from loguru import logger
 
+from daft.datasources import SourceInfo, StorageType
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -28,7 +33,9 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     SingleOutputPartitionTask,
 )
-from daft.logical import logical_plan
+from daft.expressions import ExpressionsProjection
+from daft.logical.logical_plan import JoinType
+from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata
 
@@ -59,7 +66,13 @@ def partition_read(
 
 def file_read(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    scan_info: logical_plan.TabularFilesScan,
+    # Max number of rows to read.
+    limit_rows: int | None,
+    schema: Schema,
+    fs: fsspec.AbstractFileSystem | None,
+    columns_to_read: list[str] | None,
+    source_info: SourceInfo,
+    filepaths_column_name: str,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
 
@@ -86,10 +99,14 @@ def file_read(
                     partial_metadatas=[done_task.partition_metadata()],
                 ).add_instruction(
                     instruction=execution_step.ReadFile(
-                        partition_id=output_partition_index,
-                        logplan=scan_info,
                         index=i,
                         file_rows=file_rows[i],
+                        limit_rows=limit_rows,
+                        schema=schema,
+                        fs=fs,
+                        columns_to_read=columns_to_read,
+                        source_info=source_info,
+                        filepaths_column_name=filepaths_column_name,
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
@@ -116,17 +133,27 @@ def file_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    write_info: logical_plan.FileWrite,
+    file_type: StorageType,
+    schema: Schema,
+    root_dir: str | pathlib.Path,
+    compression: str | None,
+    partition_cols: ExpressionsProjection | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
 
     yield from (
         step.add_instruction(
-            execution_step.WriteFile(partition_id=index, logplan=write_info),
+            execution_step.WriteFile(
+                file_type=file_type,
+                schema=schema,
+                root_dir=root_dir,
+                compression=compression,
+                partition_cols=partition_cols,
+            ),
         )
         if isinstance(step, PartitionTaskBuilder)
         else step
-        for index, step in enumerate_open_executions(child_plan)
+        for step in child_plan
     )
 
 
@@ -146,7 +173,10 @@ def pipeline_instruction(
 def join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
-    join: logical_plan.Join,
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    output_projection: ExpressionsProjection,
+    how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
 
@@ -171,7 +201,14 @@ def join(
                 resource_request=ResourceRequest(
                     memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
                 ),
-            ).add_instruction(instruction=execution_step.Join(join))
+            ).add_instruction(
+                instruction=execution_step.Join(
+                    left_on=left_on,
+                    right_on=right_on,
+                    output_projection=output_projection,
+                    how=how,
+                )
+            )
             yield join_step
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.
@@ -244,13 +281,14 @@ def local_limit(
 
 def global_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    global_limit: logical_plan.GlobalLimit,
+    limit_rows: int,
+    num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Return the first n rows from the `child_plan`."""
 
-    remaining_rows = global_limit._num
+    remaining_rows = limit_rows
     assert remaining_rows >= 0, f"Invalid value for limit: {remaining_rows}"
-    remaining_partitions = global_limit.num_partitions()
+    remaining_partitions = num_partitions
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
@@ -434,18 +472,19 @@ def split(
 
 def coalesce(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    coalesce: logical_plan.Coalesce,
+    from_num_partitions: int,
+    to_num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Coalesce the results of the child_plan into fewer partitions.
 
     The current implementation only does partition merging, no rebalancing.
     """
 
-    coalesce_from = coalesce._children()[0].num_partitions()
-    coalesce_to = coalesce.num_partitions()
-    assert coalesce_to <= coalesce_from, f"Cannot coalesce upwards from {coalesce_from} to {coalesce_to} partitions."
+    assert (
+        to_num_partitions <= from_num_partitions
+    ), f"Cannot coalesce upwards from {from_num_partitions} to {to_num_partitions} partitions."
 
-    boundaries = [math.ceil((coalesce_from / coalesce_to) * i) for i in range(coalesce_to + 1)]
+    boundaries = [math.ceil((from_num_partitions / to_num_partitions) * i) for i in range(to_num_partitions + 1)]
     starts, stops = boundaries[:-1], boundaries[1:]
     # For each output partition, the number of input partitions to merge in.
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
@@ -536,7 +575,9 @@ def reduce(
 
 def sort(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    sort_info: logical_plan.Sort,
+    sort_by: ExpressionsProjection,
+    descending: list[bool],
+    num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Sort the result of `child_plan` according to `sort_info`."""
 
@@ -561,7 +602,7 @@ def sort(
                 partial_metadatas=None,
             )
             .add_instruction(
-                instruction=execution_step.Sample(sort_by=sort_info._sort_by),
+                instruction=execution_step.Sample(sort_by=sort_by),
             )
             .finalize_partition_task_single_output()
         )
@@ -582,9 +623,9 @@ def sort(
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
-                num_quantiles=sort_info.num_partitions(),
-                sort_by=sort_info._sort_by,
-                descending=sort_info._descending,
+                num_quantiles=num_partitions,
+                sort_by=sort_by,
+                descending=descending,
             ),
         )
         .finalize_partition_task_single_output()
@@ -606,9 +647,9 @@ def sort(
             ),
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
-                _num_outputs=sort_info.num_partitions(),
-                sort_by=sort_info._sort_by,
-                descending=sort_info._descending,
+                _num_outputs=num_partitions,
+                sort_by=sort_by,
+                descending=descending,
             ),
         )
         for source in consume_deque(source_materializations)
@@ -617,20 +658,20 @@ def sort(
     # Execute a sorting reduce on it.
     yield from reduce(
         fanout_plan=range_fanout_plan,
-        num_partitions=sort_info.num_partitions(),
+        num_partitions=num_partitions,
         reduce_instruction=execution_step.ReduceMergeAndSort(
-            sort_by=sort_info._sort_by,
-            descending=sort_info._descending,
+            sort_by=sort_by,
+            descending=descending,
         ),
     )
 
 
-def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], node: logical_plan.Repartition):
+def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions: int):
     """Splits the results of `child_plan` randomly into a list of `node.num_partitions()` number of partitions"""
     seed = 0
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            instruction = execution_step.FanoutRandom(node.num_partitions(), seed)
+            instruction = execution_step.FanoutRandom(num_partitions, seed)
             step = step.add_instruction(instruction)
         yield step
         seed += 1

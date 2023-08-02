@@ -34,7 +34,15 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         child_plan = _get_physical_plan(child_node, psets)
 
         if isinstance(node, logical_plan.TabularFilesScan):
-            return physical_plan.file_read(child_plan=child_plan, scan_info=node)
+            return physical_plan.file_read(
+                child_plan=child_plan,
+                limit_rows=node._limit_rows,
+                schema=node._schema,
+                fs=node._fs,
+                columns_to_read=node._column_names,
+                source_info=node._source_info,
+                filepaths_column_name=node._filepaths_column_name,
+            )
 
         elif isinstance(node, logical_plan.Filter):
             return physical_plan.pipeline_instruction(
@@ -67,7 +75,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         elif isinstance(node, logical_plan.LocalCount):
             return physical_plan.pipeline_instruction(
                 child_plan=child_plan,
-                pipeable_instruction=execution_step.LocalCount(logplan=node),
+                pipeable_instruction=execution_step.LocalCount(schema=node.schema()),
                 resource_request=node.resource_request(),
             )
 
@@ -79,14 +87,25 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             )
 
         elif isinstance(node, logical_plan.FileWrite):
-            return physical_plan.file_write(child_plan, node)
+            return physical_plan.file_write(
+                child_plan=child_plan,
+                file_type=node._storage_type,
+                schema=node.schema(),
+                root_dir=node._root_dir,
+                compression=node._compression,
+                partition_cols=node._partition_cols,
+            )
 
         elif isinstance(node, logical_plan.LocalLimit):
             # Note that the GlobalLimit physical plan also dynamically dispatches its own LocalLimit instructions.
             return physical_plan.local_limit(child_plan, node._num)
 
         elif isinstance(node, logical_plan.GlobalLimit):
-            return physical_plan.global_limit(child_plan, node)
+            return physical_plan.global_limit(
+                child_plan=child_plan,
+                limit_rows=node._num,
+                num_partitions=node.num_partitions(),
+            )
 
         elif isinstance(node, logical_plan.Repartition):
             # Case: simple repartition (split)
@@ -104,7 +123,10 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             # Do the fanout.
             fanout_plan: physical_plan.InProgressPhysicalPlan
             if node._scheme == PartitionScheme.RANDOM:
-                fanout_plan = physical_plan.fanout_random(child_plan, node)
+                fanout_plan = physical_plan.fanout_random(
+                    child_plan=child_plan,
+                    num_partitions=node.num_partitions(),
+                )
             elif node._scheme == PartitionScheme.HASH:
                 fanout_instruction = execution_step.FanoutHash(
                     _num_outputs=node.num_partitions(),
@@ -126,10 +148,19 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             )
 
         elif isinstance(node, logical_plan.Sort):
-            return physical_plan.sort(child_plan, node)
+            return physical_plan.sort(
+                child_plan=child_plan,
+                sort_by=node._sort_by,
+                descending=node._descending,
+                num_partitions=node.num_partitions(),
+            )
 
         elif isinstance(node, logical_plan.Coalesce):
-            return physical_plan.coalesce(child_plan, node)
+            return physical_plan.coalesce(
+                child_plan=child_plan,
+                from_num_partitions=node._children()[0].num_partitions(),
+                to_num_partitions=node.num_partitions(),
+            )
 
         else:
             raise NotImplementedError(f"Unsupported plan type {node}")
@@ -142,7 +173,10 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.join(
                 left_plan=_get_physical_plan(left_child, psets),
                 right_plan=_get_physical_plan(right_child, psets),
-                join=node,
+                left_on=node._left_on,
+                right_on=node._right_on,
+                output_projection=node._output_projection,
+                how=node._how,
             )
 
         elif isinstance(node, logical_plan.Concat):
