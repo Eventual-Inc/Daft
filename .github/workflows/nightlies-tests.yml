@@ -103,6 +103,8 @@ jobs:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
+    - uses: docker-practice/actions-setup-docker@master
+      if: runner.os == 'macos'
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.0
       with:
