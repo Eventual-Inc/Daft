@@ -8,16 +8,21 @@ This S3 implementation serves a small Parquet file at the location: `s3://{bucke
 
 We provide two different buckets, with slightly different behavior:
 
-1. "head-retries-bucket": this bucket throws errors during HEAD operations
-2. "get-retries-bucket": this bucket throws errors during the ranged GET operations
+1. "head-retries-parquet-bucket": this bucket throws errors during HEAD operations
+2. "get-retries-parquet-bucket": this bucket throws errors during the ranged GET operations
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .routers import get_retries_bucket, head_retries_bucket
+from .routers import (
+    get_retries_parquet_bucket,
+    head_retries_parquet_bucket,
+    rate_limited_echo_gets_bucket,
+)
 
 app = FastAPI()
-app.include_router(get_retries_bucket.router)
-app.include_router(head_retries_bucket.router)
+app.mount(get_retries_parquet_bucket.route, get_retries_parquet_bucket.app)
+app.mount(head_retries_parquet_bucket.route, head_retries_parquet_bucket.app)
+app.mount(rate_limited_echo_gets_bucket.route, rate_limited_echo_gets_bucket.app)
