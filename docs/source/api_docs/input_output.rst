@@ -5,6 +5,26 @@ Input/Output
 
 .. currentmodule:: daft
 
+Configuration
+-------------
+
+.. NOTE::
+    Daft is currently building out its own native code for reading/writing data. These configuration objects allow
+    users to control behavior when Daft runs native code, but otherwise will have no effect.
+
+    These configurations are currently used in:
+
+    1. :func:`daft.read_parquet`: controls behavior when reading DataFrames Parquet files using the native downloader
+    2. :func:`Expression.url.download() <daft.expressions.expressions.ExpressionUrlNamespace.download>`: controls behavior when downloading bytes from URLs using the native downloader
+    3. :func:`Table.read_parquet <daft.table.table.Table.read_parquet>`: (Advanced usecase!) controls behavior when reading a Daft Table from a Parquet file
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_configs
+
+    daft.io.IOConfig
+    daft.io.S3Config
+
 In-Memory Data
 --------------
 
@@ -62,6 +82,8 @@ Files
 
 Parquet
 ~~~~~~~
+
+.. _daft-read-parquet:
 
 .. autosummary::
     :nosignatures:
