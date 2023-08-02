@@ -1,4 +1,4 @@
-FROM nginx:alpine
+FROM public.ecr.aws/nginx/nginx:perl
 
 WORKDIR /app
 COPY ./nginx-serve-static-files.conf /etc/nginx/nginx.conf

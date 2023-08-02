@@ -1,0 +1,139 @@
+name: Verify platforms nightly wheels
+
+on:
+  schedule:
+  - cron: 0 13 * * *
+  workflow_dispatch:
+  workflow_run:
+    workflows: [daft-publish]
+    types:
+    - completed
+
+jobs:
+  integration-test-tpch:
+    runs-on: ${{ matrix.runner-name }}
+    timeout-minutes: 15
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm, macos-latest]
+        daft-runner: [py, ray]
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - name: Setup Virtual Env
+      run: |
+        python3 -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
+        rm -rf daft
+    - uses: actions/cache@v3
+      env:
+        cache-name: cache-tpch-data
+      with:
+        path: data/tpch-dbgen
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+    - name: Run TPCH integration tests
+      run: |
+        pytest tests/integration/test_tpch.py --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] TPCH Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+
+  integration-test-io:
+    runs-on: ${{ matrix.runner-name }}
+    timeout-minutes: 30
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm, macos-latest]
+        daft-runner: [py, ray]
+    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+    # This is used in the step "Assume GitHub Actions AWS Credentials"
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: docker-practice/actions-setup-docker@master
+      timeout-minutes: 15
+      if: runner.os == 'macos'
+    - name: Setup Virtual Env
+      run: |
+        python3 -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
+        rm -rf daft
+    - name: Prepare tmpdirs for IO services
+      run: |
+        mkdir -p /tmp/daft-integration-testing/nginx
+        chmod +rw /tmp/daft-integration-testing/nginx
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
+    - name: Spin up IO services
+      uses: isbang/compose-action@v1.5.0
+      with:
+        compose-file: ./tests/integration/docker-compose/docker-compose.yml
+        down-flags: --volumes
+    - name: Run IO integration tests
+      run: |
+        pytest tests/integration/io -m 'integration' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+          "blocks": [
+              {
+              "type": "section",
+              "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] IO Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+              }
+              }
+          ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
