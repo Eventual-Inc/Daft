@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 
 use crate::source_info::SourceInfo;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.

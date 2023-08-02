@@ -8,6 +8,7 @@ use crate::source_info::{FileFormat, FilesInfo, SourceInfo};
 use {daft_core::python::schema::PySchema, daft_dsl::python::PyExpr, pyo3::prelude::*};
 
 #[cfg_attr(feature = "python", pyclass)]
+#[derive(Debug)]
 pub struct LogicalPlanBuilder {
     plan: Arc<LogicalPlan>,
 }

@@ -2,7 +2,7 @@ use daft_core::schema::SchemaRef;
 
 use crate::ops::*;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LogicalPlan {
     Source(Source),
     Filter(Filter),

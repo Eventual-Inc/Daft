@@ -4,7 +4,7 @@ use daft_dsl::ExprRef;
 
 use crate::LogicalPlan;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Filter {
     // The Boolean expression to filter on.
     pub predicate: ExprRef,
