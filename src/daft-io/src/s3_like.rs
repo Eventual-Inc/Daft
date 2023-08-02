@@ -142,9 +142,9 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
 
     let builder = if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
-            config.access_key.clone().unwrap(),
             config.key_id.clone().unwrap(),
-            None,
+            config.access_key.clone().unwrap(),
+            config.session_token.clone(),
         );
         builder.credentials_provider(creds)
     } else if config.access_key.is_some() || config.key_id.is_some() {
