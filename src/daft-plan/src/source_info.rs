@@ -13,13 +13,24 @@ impl SourceInfo {
     }
 }
 
+pub enum FileFormat {
+    Parquet,
+    Csv,
+    Json,
+}
+
 pub struct FilesInfo {
+    pub file_format: FileFormat,
     pub filepaths: Vec<String>, // TODO: pull in some sort of URL crate for this
     pub schema: SchemaRef,
 }
 
 impl FilesInfo {
-    pub(crate) fn new(filepaths: Vec<String>, schema: SchemaRef) -> Self {
-        Self { filepaths, schema }
+    pub(crate) fn new(file_format: FileFormat, filepaths: Vec<String>, schema: SchemaRef) -> Self {
+        Self {
+            file_format,
+            filepaths,
+            schema,
+        }
     }
 }

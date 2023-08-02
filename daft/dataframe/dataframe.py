@@ -29,7 +29,7 @@ from daft.datasources import StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.logical import logical_plan
+from daft.logical import logical_plan, rust_logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
@@ -65,7 +65,7 @@ class DataFrame:
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
-        if not isinstance(plan, logical_plan.LogicalPlan):
+        if not isinstance(plan, (logical_plan.LogicalPlan, rust_logical_plan.RustLogicalPlanBuilder)):
             if isinstance(plan, dict):
                 raise ValueError(
                     f"DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"

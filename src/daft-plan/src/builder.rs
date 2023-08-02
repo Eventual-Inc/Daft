@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::logical_plan::LogicalPlan;
-use crate::{ops, source_info};
+use crate::ops;
+use crate::source_info::{FileFormat, FilesInfo, SourceInfo};
 
 #[cfg(feature = "python")]
 use daft_core::python::schema::PySchema;
@@ -10,14 +11,14 @@ use pyo3::prelude::*;
 
 #[cfg_attr(feature = "python", pyclass)]
 pub struct LogicalPlanBuilder {
-    _plan: Arc<LogicalPlan>,
+    plan: Arc<LogicalPlan>,
 }
 
 impl LogicalPlanBuilder {
     // Create a new LogicalPlanBuilder for a Source node.
     pub fn from_source(source: ops::Source) -> Self {
         Self {
-            _plan: LogicalPlan::Source(source).into(),
+            plan: LogicalPlan::Source(source).into(),
         }
     }
 }
@@ -26,8 +27,9 @@ impl LogicalPlanBuilder {
 #[pymethods]
 impl LogicalPlanBuilder {
     #[staticmethod]
-    pub fn source(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
-        let source_info = source_info::SourceInfo::FilesInfo(source_info::FilesInfo::new(
+    pub fn read_parquet(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
+        let source_info = SourceInfo::FilesInfo(FilesInfo::new(
+            FileFormat::Parquet,
             filepaths,
             schema.schema.clone(),
         ));
@@ -36,5 +38,9 @@ impl LogicalPlanBuilder {
             source_info.into(),
         ));
         Ok(logical_plan_builder)
+    }
+
+    pub fn schema(&self) -> PyResult<PySchema> {
+        Ok(self.plan.schema().into())
     }
 }
