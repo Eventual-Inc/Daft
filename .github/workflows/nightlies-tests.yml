@@ -43,25 +43,25 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        # - name: Send Slack notification on failure
-        #   uses: slackapi/slack-github-action@v1.24.0
-        #   if: ${{ failure() && (github.ref == 'refs/heads/main') }}
-        #   with:
-        #     payload: |
-        #       {
-        #         "blocks": [
-        #           {
-        #             "type": "section",
-        #             "text": {
-        #               "type": "mrkdwn",
-        #               "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-        #             }
-        #           }
-        #         ]
-        #       }
-        #   env:
-        #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] TPCH Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 
   integration-test-io:
@@ -80,10 +80,6 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: douglascamata/setup-docker-macos-action@v1-alpha
-      if: runner.os == 'macos'
-
-
     - uses: actions/checkout@v3
       with:
         submodules: true
@@ -107,6 +103,8 @@ jobs:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
+    - uses: docker-practice/actions-setup-docker@master
+      if: runner.os == 'macos'
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.0
       with:
@@ -117,22 +115,22 @@ jobs:
         pytest tests/integration/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-    # - name: Send Slack notification on failure
-    #   uses: slackapi/slack-github-action@v1.24.0
-    #   if: ${{ failure() && (github.ref == 'refs/heads/main') }}
-    #   with:
-    #     payload: |
-    #         {
-    #         "blocks": [
-    #             {
-    #             "type": "section",
-    #             "text": {
-    #                 "type": "mrkdwn",
-    #                 "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-    #             }
-    #             }
-    #         ]
-    #         }
-    #   env:
-    #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-    #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+          "blocks": [
+              {
+              "type": "section",
+              "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] IO Integration Tests on nightly wheel <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+              }
+              }
+          ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
