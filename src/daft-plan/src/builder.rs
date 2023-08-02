@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::logical_plan::LogicalPlan;
-use crate::{ops, source_info};
+use crate::ops;
+use crate::source_info::{FileFormat, FilesInfo, SourceInfo};
 
 #[cfg(feature = "python")]
 use daft_core::python::schema::PySchema;
@@ -27,9 +28,11 @@ impl LogicalPlanBuilder {
 impl LogicalPlanBuilder {
     #[staticmethod]
     pub fn read_parquet(filepaths: Vec<String>, schema: &PySchema) -> PyResult<LogicalPlanBuilder> {
-        let source_info = source_info::SourceInfo::ParquetFilesInfo(
-            source_info::ParquetFilesInfo::new(filepaths, schema.schema.clone()),
-        );
+        let source_info = SourceInfo::FilesInfo(FilesInfo::new(
+            FileFormat::Parquet,
+            filepaths,
+            schema.schema.clone(),
+        ));
         let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
