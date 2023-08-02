@@ -61,7 +61,7 @@ jobs:
       uses: messense/maturin-action@v1
       with:
         target: aarch64-unknown-linux-gnu
-        manylinux: auto
+        manylinux: 2_28
         args: --profile release-lto --out dist --sdist
 
     - name: Build wheels - Mac aarch64
