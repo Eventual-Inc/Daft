@@ -38,7 +38,7 @@ jobs:
         fetch-depth: 0
     - uses: actions/setup-python@v4
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
+        python-version: 3.10.11
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
     - name: Build wheels - Linux aarch64
