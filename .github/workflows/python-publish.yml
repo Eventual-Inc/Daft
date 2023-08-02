@@ -38,12 +38,15 @@ jobs:
         fetch-depth: 0
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
-    - name: Build wheels - Linux aarch64
-      uses: messense/maturin-action@v1
-      with:
-        target: aarch64-unknown-linux-gnu
-        manylinux: auto
-        args: --profile release --out dist --sdist # TODO MAKE THIS LTO
+
+
+    - run: docker run -v $(pwd)/data:/data --rm --entrypoint ls messense/manylinux2014-cross:aarch64-arm64
+    # - name: Build wheels - Linux aarch64
+    #   uses: messense/maturin-action@v1
+    #   with:
+    #     target: aarch64-unknown-linux-gnu
+    #     manylinux: auto
+    #     args: --profile release --out dist --sdist # TODO MAKE THIS LTO
     # - name: Install and test built wheel - arm64
     #   run: |
     #     pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
