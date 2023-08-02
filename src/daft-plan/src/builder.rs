@@ -5,9 +5,7 @@ use crate::ops;
 use crate::source_info::{FileFormat, FilesInfo, SourceInfo};
 
 #[cfg(feature = "python")]
-use daft_core::python::schema::PySchema;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
+use {daft_core::python::schema::PySchema, daft_dsl::python::PyExpr, pyo3::prelude::*};
 
 #[cfg_attr(feature = "python", pyclass)]
 pub struct LogicalPlanBuilder {
@@ -19,6 +17,11 @@ impl LogicalPlanBuilder {
     pub fn from_source(source: ops::Source) -> Self {
         Self {
             plan: LogicalPlan::Source(source).into(),
+        }
+    }
+    pub fn from_filter(filter: ops::Filter) -> Self {
+        Self {
+            plan: LogicalPlan::Filter(filter).into(),
         }
     }
 }
@@ -36,6 +39,14 @@ impl LogicalPlanBuilder {
         let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
+        ));
+        Ok(logical_plan_builder)
+    }
+
+    pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
+        let logical_plan_builder = LogicalPlanBuilder::from_filter(ops::Filter::new(
+            predicate.expr.clone().into(),
+            self.plan.clone(),
         ));
         Ok(logical_plan_builder)
     }
