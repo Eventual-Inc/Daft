@@ -8,6 +8,8 @@ on:
     workflows: [daft-publish]
     types:
     - completed
+  pull_request:
+    branches: [main]
 
 jobs:
   integration-test-tpch:
@@ -86,9 +88,17 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: docker-practice/actions-setup-docker@master
-      timeout-minutes: 15
+    - name: Setup docker (missing on MacOS)
       if: runner.os == 'macos'
+      run: |
+        brew install docker docker-compose
+        colima start
+
+        # For testcontainers to find the Colima socket
+        # https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#cannot-connect-to-the-docker-daemon-at-unixvarrundockersock-is-the-docker-daemon-running
+        sudo ln -sf $HOME/.colima/default/docker.sock /var/run/docker.sock
+
+
     - name: Setup Virtual Env
       run: |
         python3 -m venv venv
