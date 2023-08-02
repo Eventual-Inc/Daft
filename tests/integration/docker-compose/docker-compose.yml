@@ -26,3 +26,12 @@ services:
     - /tmp/daft-integration-testing/nginx:/app/static:rw
     ports:
     - 8080:8080
+
+  # Custom FastAPI server which mocks an s3 endpoint and serves retryable objects
+  s3-retry-server:
+    image: python-s3-retry-server
+    build:
+      context: .
+      dockerfile: Dockerfile.s3_retry_server
+    ports:
+    - 8001:8000

@@ -60,8 +60,8 @@ jobs:
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
       uses: messense/maturin-action@v1
       with:
-        target: aarch64
-        manylinux: auto
+        target: aarch64-unknown-linux-gnu
+        manylinux: 2_28
         args: --profile release-lto --out dist --sdist
 
     - name: Build wheels - Mac aarch64
