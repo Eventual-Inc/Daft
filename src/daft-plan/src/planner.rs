@@ -46,6 +46,7 @@ impl PhysicalPlanner {
                     Arc::new(input_physical),
                 )))
             }
+            LogicalPlan::Aggregate(..) => todo!(),
         }
     }
 }
