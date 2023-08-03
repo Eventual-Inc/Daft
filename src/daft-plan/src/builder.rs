@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use daft_dsl::Expr;
+
 use crate::logical_plan::LogicalPlan;
 use crate::planner::PhysicalPlanner;
 use crate::source_info::{FileInfo, PyFileFormatConfig, SourceInfo};
@@ -9,7 +11,7 @@ use crate::{ops, PartitionScheme, PartitionSpec};
 use {
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::{prelude::*, types::PyList},
+    pyo3::{exceptions::PyValueError, prelude::*},
 };
 
 #[cfg_attr(feature = "python", pyclass)]
@@ -64,8 +66,21 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
-    pub fn aggregate(&self, aggregates: &PyList) -> PyResult<LogicalPlanBuilder> {
-        todo!()
+    pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
+        use crate::ops::Aggregate;
+        let agg_exprs = agg_exprs
+            .iter()
+            .map(|expr| match &expr.expr {
+                Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+                _ => Err(PyValueError::new_err(format!(
+                    "Expected aggregation expression, but got: {}",
+                    expr.expr
+                ))),
+            })
+            .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
+        let logical_plan: LogicalPlan = Aggregate::new(agg_exprs, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {
