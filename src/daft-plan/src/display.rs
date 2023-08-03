@@ -1,4 +1,4 @@
-use std::fmt::{self, Write};
+use std::fmt::{self, Display, Write};
 
 pub(crate) trait TreeDisplay {
     // Required method: Get a list of lines representing this node. No trailing newlines.
@@ -78,5 +78,15 @@ impl TreeDisplay for crate::LogicalPlan {
 
     fn get_children(&self) -> Vec<&Self> {
         self.children()
+    }
+}
+
+// Single node display.
+impl Display for crate::LogicalPlan {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for line in self.multiline_display() {
+            writeln!(f, "{line}")?;
+        }
+        Ok(())
     }
 }

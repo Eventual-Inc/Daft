@@ -47,8 +47,12 @@ impl Source {
             }
         }
         res.push(format!("  Output schema: {}", self.schema.short_string()));
-        res.push(format!("  Filters: {:?}", self.filters));
-        res.push(format!("  Limit: {:?}", self.limit));
+        if self.filters.is_empty() {
+            res.push(format!("  Filters: {:?}", self.filters));
+        }
+        if let Some(limit) = self.limit {
+            res.push(format!("  Limit: {}", limit));
+        }
         res
     }
 }
