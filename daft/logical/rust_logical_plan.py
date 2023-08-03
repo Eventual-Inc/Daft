@@ -13,3 +13,6 @@ class RustLogicalPlanBuilder:
     def schema(self) -> Schema:
         pyschema = self.builder.schema()
         return Schema._from_pyschema(pyschema)
+
+    def __repr__(self) -> str:
+        return self.builder.repr_ascii()

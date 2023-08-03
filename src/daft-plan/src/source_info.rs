@@ -1,5 +1,6 @@
 use daft_core::schema::SchemaRef;
 
+#[derive(Debug)]
 pub enum SourceInfo {
     FilesInfo(FilesInfo),
 }
@@ -13,12 +14,14 @@ impl SourceInfo {
     }
 }
 
+#[derive(Debug)]
 pub enum FileFormat {
     Parquet,
     Csv,
     Json,
 }
 
+#[derive(Debug)]
 pub struct FilesInfo {
     pub file_format: FileFormat,
     pub filepaths: Vec<String>, // TODO: pull in some sort of URL crate for this

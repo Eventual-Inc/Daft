@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 
 use crate::source_info::SourceInfo;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.
@@ -28,5 +28,31 @@ impl Source {
             filters: vec![], // Will be populated by plan optimizer.
             limit: None,     // Will be populated by plan optimizer.
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+
+        use SourceInfo::*;
+        match &*self.source_info {
+            FilesInfo(files_info) => {
+                res.push(format!("Source: {:?}", files_info.file_format));
+                for fp in files_info.filepaths.iter() {
+                    res.push(format!("  {}", fp));
+                }
+                res.push(format!(
+                    "  File schema: {}",
+                    files_info.schema.short_string()
+                ));
+            }
+        }
+        res.push(format!("  Output schema: {}", self.schema.short_string()));
+        if self.filters.is_empty() {
+            res.push(format!("  Filters: {:?}", self.filters));
+        }
+        if let Some(limit) = self.limit {
+            res.push(format!("  Limit: {}", limit));
+        }
+        res
     }
 }
