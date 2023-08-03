@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import boto3
 import pytest
+from botocore import session
 
 import daft
 from daft.io import IOConfig, S3Config
@@ -9,8 +9,8 @@ from daft.io import IOConfig, S3Config
 
 @pytest.fixture(scope="session")
 def io_config() -> IOConfig:
-    """Create IOConfig with boto's current session"""
-    sess = boto3.session.Session()
+    """Create IOConfig with botocore's current session"""
+    sess = session.Session()
     creds = sess.get_credentials()
 
     return IOConfig(
@@ -33,7 +33,7 @@ def test_url_download_aws_s3_public_bucket_with_creds(small_images_s3_paths, io_
 
 
 @pytest.mark.integration()
-def test_read_parquet_aws_s3_private_bucket_with_creds(io_config):
-    filename = "s3://eventual-data-test-bucket/benchmarking/1M-writethrough.parquet/part-00000-ca6132d9-d056-45ad-8d67-e19cf896bc8a-c000.parquet"
+def test_read_parquet_aws_s3_public_bucket_with_creds(io_config):
+    filename = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
     df = daft.read_parquet(filename, io_config=io_config, use_native_downloader=True).collect()
     assert len(df) == 2603
