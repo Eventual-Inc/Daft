@@ -6,12 +6,6 @@ import s3fs
 import daft
 
 
-@pytest.fixture(scope="session")
-def small_images_s3_paths() -> list[str]:
-    """Paths to small *.jpg files in a public S3 bucket"""
-    return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)]
-
-
 @pytest.mark.integration()
 def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
     fs = s3fs.S3FileSystem(anon=True)

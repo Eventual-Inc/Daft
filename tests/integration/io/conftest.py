@@ -166,3 +166,9 @@ def minio_image_data_fixture(minio_io_config, image_data_folder) -> YieldFixture
     """Populates the minio session with some fake data and yields (S3Config, paths)"""
     with mount_data_minio(minio_io_config, image_data_folder) as urls:
         yield urls
+
+
+@pytest.fixture(scope="session")
+def small_images_s3_paths() -> list[str]:
+    """Paths to small *.jpg files in a public S3 bucket"""
+    return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)]

@@ -55,6 +55,7 @@ impl PyS3Config {
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
+        session_token: Option<String>,
         access_key: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
@@ -63,6 +64,7 @@ impl PyS3Config {
                 region_name,
                 endpoint_url,
                 key_id,
+                session_token,
                 access_key,
                 anonymous: anonymous.unwrap_or(false),
             },
