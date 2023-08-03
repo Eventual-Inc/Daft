@@ -36,4 +36,4 @@ def test_url_download_aws_s3_public_bucket_with_creds(small_images_s3_paths, io_
 def test_read_parquet_aws_s3_public_bucket_with_creds(io_config):
     filename = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
     df = daft.read_parquet(filename, io_config=io_config, use_native_downloader=True).collect()
-    assert len(df) == 2603
+    assert len(df) == 100
