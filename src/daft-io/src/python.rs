@@ -51,7 +51,7 @@ impl IOConfig {
         Ok(format!("{}", self.config))
     }
 
-    /// Configurations to be used when accessing URLs with the `s3://` scheme
+    /// Configurations to be used when accessing s3 URLs
     #[getter]
     pub fn s3(&self) -> PyResult<S3Config> {
         Ok(S3Config {
