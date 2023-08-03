@@ -40,7 +40,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 schema=node._schema,
                 fs=node._fs,
                 columns_to_read=node._column_names,
-                source_info=node._source_info,
+                file_format_config=node._file_format_config,
                 filepaths_column_name=node._filepaths_column_name,
             )
 

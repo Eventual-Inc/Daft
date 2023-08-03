@@ -26,7 +26,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.datasources import ParquetSourceInfo, SourceInfo
+from daft.daft import FileFormat, FileFormatConfig, ParquetSourceConfig
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -293,7 +293,7 @@ def _path_is_glob(path: str) -> bool:
 
 def glob_path_with_stats(
     path: str,
-    source_info: SourceInfo | None,
+    file_format_config: FileFormatConfig | None,
     fs: fsspec.AbstractFileSystem,
 ) -> list[ListingInfo]:
     """Glob a path, returning a list ListingInfo."""
@@ -328,10 +328,12 @@ def glob_path_with_stats(
         raise FileNotFoundError(f"File or directory not found: {path}")
 
     # Set number of rows if available.
-    if isinstance(source_info, ParquetSourceInfo):
-        if source_info.use_native_downloader:
+    if file_format_config.file_format() == FileFormat.Parquet:
+        config = file_format_config.config
+        assert isinstance(config, ParquetSourceConfig)
+        if config.use_native_downloader:
             parquet_statistics = Table.read_parquet_statistics(
-                list(filepaths_to_infos.keys()), source_info.io_config
+                list(filepaths_to_infos.keys()), config.io_config
             ).to_pydict()
             for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
                 filepaths_to_infos[path]["rows"] = num_rows

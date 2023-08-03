@@ -3,14 +3,14 @@ from __future__ import annotations
 import itertools
 import pathlib
 from abc import abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
 
 import fsspec
 
-from daft.datasources import SourceInfo, StorageType
+from daft.daft import FileFormat, FileFormatConfig, PartitionScheme, PartitionSpec
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col
@@ -210,7 +210,7 @@ class TabularFilesScan(UnaryNode):
         self,
         *,
         schema: Schema,
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
@@ -221,7 +221,7 @@ class TabularFilesScan(UnaryNode):
     ) -> None:
         if num_partitions is None:
             num_partitions = filepaths_child.num_partitions()
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=num_partitions)
+        pspec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=num_partitions)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
@@ -238,7 +238,7 @@ class TabularFilesScan(UnaryNode):
 
         self._column_names = columns
         self._columns = self._schema
-        self._source_info = source_info
+        self._file_format_config = file_format_config
         self._fs = fs
         self._limit_rows = limit_rows
 
@@ -258,7 +258,9 @@ class TabularFilesScan(UnaryNode):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
+        return self._repr_helper(
+            columns_pruned=len(self._columns) - len(self.schema()), file_format_config=self._file_format_config
+        )
 
     def required_columns(self) -> list[set[str]]:
         return [{self._filepaths_column_name} | self._predicate.required_columns()]
@@ -272,7 +274,7 @@ class TabularFilesScan(UnaryNode):
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
-            and self._source_info == other._source_info
+            and self._file_format_config == other._file_format_config
             and self._filepaths_column_name == other._filepaths_column_name
         )
 
@@ -280,7 +282,7 @@ class TabularFilesScan(UnaryNode):
         child = self._filepaths_child.rebuild()
         return TabularFilesScan(
             schema=self.schema(),
-            source_info=self._source_info,
+            file_format_config=self._file_format_config,
             fs=self._fs,
             predicate=self._predicate if self._predicate is not None else None,
             columns=self._column_names,
@@ -292,7 +294,7 @@ class TabularFilesScan(UnaryNode):
         assert len(new_children) == 1
         return TabularFilesScan(
             schema=self.schema(),
-            source_info=self._source_info,
+            file_format_config=self._file_format_config,
             fs=self._fs,
             predicate=self._predicate,
             columns=self._column_names,
@@ -306,7 +308,7 @@ class InMemoryScan(UnaryNode):
         self, cache_entry: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
     ) -> None:
         if partition_spec is None:
-            partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
 
         super().__init__(schema=schema, partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
         self._cache_entry = cache_entry
@@ -345,14 +347,13 @@ class FileWrite(UnaryNode):
         self,
         input: LogicalPlan,
         root_dir: str | pathlib.Path,
-        storage_type: StorageType,
+        file_format: FileFormat,
         partition_cols: ExpressionsProjection | None = None,
         compression: str | None = None,
     ) -> None:
-        assert (
-            storage_type == StorageType.PARQUET or storage_type == StorageType.CSV
-        ), "only parquet and csv is supported currently"
-        self._storage_type = storage_type
+        if file_format != FileFormat.Parquet and file_format != FileFormat.Csv:
+            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
+        self._file_format = file_format
         self._root_dir = root_dir
         self._compression = compression
         if partition_cols is not None:
@@ -378,7 +379,7 @@ class FileWrite(UnaryNode):
         return (
             isinstance(other, FileWrite)
             and self.schema() == other.schema()
-            and self._storage_type == other._storage_type
+            and self._file_format == other._file_format
             and self._root_dir == other._root_dir
             and self._compression == other._compression
         )
@@ -391,7 +392,7 @@ class FileWrite(UnaryNode):
         return FileWrite(
             new_children[0],
             root_dir=self._root_dir,
-            storage_type=self._storage_type,
+            file_format=self._file_format,
             partition_cols=self._partition_cols,
             compression=self._compression,
         )
@@ -482,7 +483,7 @@ class Sort(UnaryNode):
     def __init__(
         self, input: LogicalPlan, sort_by: ExpressionsProjection, descending: list[bool] | bool = False
     ) -> None:
-        pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
+        pspec = PartitionSpec(scheme=PartitionScheme.Range, num_partitions=input.num_partitions(), by=sort_by)
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._sort_by = sort_by
@@ -658,21 +659,21 @@ class LocalCount(UnaryNode):
         return LocalCount(input=self._children()[0].rebuild())
 
 
-class PartitionScheme(Enum):
-    UNKNOWN = "UNKNOWN"
-    RANGE = "RANGE"
-    HASH = "HASH"
-    RANDOM = "RANDOM"
+# class PartitionScheme(Enum):
+#     UNKNOWN = "UNKNOWN"
+#     RANGE = "RANGE"
+#     HASH = "HASH"
+#     RANDOM = "RANDOM"
 
-    def __repr__(self) -> str:
-        return self.value
+#     def __repr__(self) -> str:
+#         return self.value
 
 
-@dataclass(frozen=True)
-class PartitionSpec:
-    scheme: PartitionScheme
-    num_partitions: int
-    by: ExpressionsProjection | None = None
+# @dataclass(frozen=True)
+# class PartitionSpec:
+#     scheme: PartitionScheme
+#     num_partitions: int
+#     by: ExpressionsProjection | None = None
 
 
 class Repartition(UnaryNode):
@@ -682,7 +683,7 @@ class Repartition(UnaryNode):
         pspec = PartitionSpec(
             scheme=scheme,
             num_partitions=num_partitions,
-            by=partition_by if len(partition_by) > 0 else None,
+            by=[part._expr for part in partition_by] if len(partition_by) > 0 else None,
         )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
@@ -731,7 +732,7 @@ class Repartition(UnaryNode):
 class Coalesce(UnaryNode):
     def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
         pspec = PartitionSpec(
-            scheme=PartitionScheme.UNKNOWN,
+            scheme=PartitionScheme.Unknown,
             num_partitions=num_partitions,
         )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
@@ -865,7 +866,7 @@ class HTTPRequest(LogicalPlan):
         schema: Schema,
     ) -> None:
         self._output_schema = schema
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+        pspec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.ROW)
 
     def schema(self) -> Schema:
@@ -975,8 +976,8 @@ class Join(BinaryNode):
                 self._right_columns.resolve_schema(right.schema())
             )
 
-        left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
-        right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
+        left_pspec = PartitionSpec(scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._left_on)
+        right_pspec = PartitionSpec(scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._right_on)
 
         new_left = Repartition(
             left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
@@ -1038,7 +1039,7 @@ class Concat(BinaryNode):
         self._bottom = bottom
 
         new_partition_spec = PartitionSpec(
-            PartitionScheme.UNKNOWN,
+            PartitionScheme.Unknown,
             num_partitions=(top.partition_spec().num_partitions + bottom.partition_spec().num_partitions),
             by=None,
         )

@@ -972,10 +972,16 @@ dependencies = [
 name = "daft-plan"
 version = "0.1.10"
 dependencies = [
+ "arrow2",
+ "bincode",
+ "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-io",
+ "daft-table",
  "indexmap 2.0.0",
  "pyo3",
+ "serde",
 ]
 
 [[package]]

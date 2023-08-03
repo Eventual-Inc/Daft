@@ -6,8 +6,8 @@ import fsspec
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
+from daft.daft import FileFormatConfig, ParquetSourceConfig
 from daft.dataframe import DataFrame
-from daft.datasources import ParquetSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_files_scan_rustplan, _get_tabular_files_scan
 from daft.logical.logical_plan import LogicalPlan
@@ -51,16 +51,15 @@ def read_parquet(
 
     context = get_context()
 
+    parquet_config = ParquetSourceConfig(use_native_downloader=use_native_downloader, io_config=io_config)
+    file_format_config = FileFormatConfig.from_parquet_config(parquet_config)
     if context.use_rust_planner:
         plan = cast(
             LogicalPlan,
             _get_files_scan_rustplan(
                 path,
                 schema_hints,
-                ParquetSourceInfo(
-                    io_config=io_config,
-                    use_native_downloader=use_native_downloader,
-                ),
+                file_format_config,
                 fs,
             ),
         )  # Cast for temporary type checking.
@@ -68,10 +67,7 @@ def read_parquet(
         plan = _get_tabular_files_scan(
             path,
             schema_hints,
-            ParquetSourceInfo(
-                io_config=io_config,
-                use_native_downloader=use_native_downloader,
-            ),
+            file_format_config,
             fs,
         )
 
