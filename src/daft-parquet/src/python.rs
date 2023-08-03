@@ -4,7 +4,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::python::{schema::PySchema, PySeries};
-    use daft_io::{get_io_client, python::PyIOConfig};
+    use daft_io::{get_io_client, python::IOConfig};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
 
@@ -15,7 +15,7 @@ pub mod pylib {
         columns: Option<Vec<&str>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
-        io_config: Option<PyIOConfig>,
+        io_config: Option<IOConfig>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
@@ -34,7 +34,7 @@ pub mod pylib {
     pub fn read_parquet_schema(
         py: Python,
         uri: &str,
-        io_config: Option<PyIOConfig>,
+        io_config: Option<IOConfig>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
@@ -46,7 +46,7 @@ pub mod pylib {
     pub fn read_parquet_statistics(
         py: Python,
         uris: PySeries,
-        io_config: Option<PyIOConfig>,
+        io_config: Option<IOConfig>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;

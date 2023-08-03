@@ -1,25 +1,27 @@
-use crate::config::{IOConfig, S3Config};
+use crate::config;
 use common_error::DaftError;
 use pyo3::prelude::*;
 
+/// Configurations for controlling Daft's behavior when working with files accessed through the S3 API
 #[derive(Clone, Default)]
 #[pyclass]
-pub struct PyS3Config {
-    pub config: S3Config,
+pub struct S3Config {
+    pub config: config::S3Config,
 }
 
+/// Configurations for controlling Daft's behavior around data Input/Output
 #[derive(Clone, Default)]
 #[pyclass]
-pub struct PyIOConfig {
-    pub config: IOConfig,
+pub struct IOConfig {
+    pub config: config::IOConfig,
 }
 
 #[pymethods]
-impl PyIOConfig {
+impl IOConfig {
     #[new]
-    pub fn new(s3: Option<PyS3Config>) -> Self {
-        PyIOConfig {
-            config: IOConfig {
+    pub fn new(s3: Option<S3Config>) -> Self {
+        IOConfig {
+            config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
             },
         }
@@ -29,9 +31,10 @@ impl PyIOConfig {
         Ok(format!("{}", self.config))
     }
 
+    /// Configurations for controlling Daft's behavior when working with files with the `s3://` URL prefix
     #[getter]
-    pub fn s3(&self) -> PyResult<PyS3Config> {
-        Ok(PyS3Config {
+    pub fn s3(&self) -> PyResult<S3Config> {
+        Ok(S3Config {
             config: self.config.s3.clone(),
         })
     }
@@ -49,7 +52,7 @@ impl PyIOConfig {
 }
 
 #[pymethods]
-impl PyS3Config {
+impl S3Config {
     #[new]
     pub fn new(
         region_name: Option<String>,
@@ -59,8 +62,8 @@ impl PyS3Config {
         access_key: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
-        PyS3Config {
-            config: S3Config {
+        S3Config {
+            config: config::S3Config {
                 region_name,
                 endpoint_url,
                 key_id,
@@ -97,7 +100,7 @@ impl PyS3Config {
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_class::<PyS3Config>()?;
-    parent.add_class::<PyIOConfig>()?;
+    parent.add_class::<S3Config>()?;
+    parent.add_class::<IOConfig>()?;
     Ok(())
 }

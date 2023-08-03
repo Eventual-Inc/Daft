@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 
-from daft.daft import PyIOConfig as IOConfig
-from daft.daft import PyS3Config as S3Config
+from daft.daft import IOConfig, S3Config
 
 
 def _io_config_from_json(io_config_json: str) -> IOConfig:

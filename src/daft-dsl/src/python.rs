@@ -6,7 +6,7 @@ use daft_core::{
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
-use daft_io::python::PyIOConfig;
+use daft_io::python::IOConfig;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -358,7 +358,7 @@ impl PyExpr {
         max_connections: i64,
         raise_error_on_failure: bool,
         multi_thread: bool,
-        config: Option<PyIOConfig>,
+        config: Option<IOConfig>,
     ) -> PyResult<Self> {
         if max_connections <= 0 {
             return Err(PyValueError::new_err(format!(
