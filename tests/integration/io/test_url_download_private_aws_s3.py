@@ -21,6 +21,18 @@ def io_config() -> IOConfig:
 
 
 @pytest.mark.integration()
+def test_url_download_aws_s3_private_bucket_(small_images_s3_paths, io_config):
+    data = {"urls": small_images_s3_paths}
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(use_native_downloader=True, io_config=io_config))
+
+    data = df.to_pydict()
+    assert len(data["data"]) == 6
+    for img_bytes in data["data"]:
+        assert img_bytes is not None
+
+
+@pytest.mark.integration()
 def test_url_download_aws_s3_private_bucket_parquet(io_config):
     filename = "s3://eventual-data-test-bucket/benchmarking/1M-writethrough.parquet/part-00000-ca6132d9-d056-45ad-8d67-e19cf896bc8a-c000.parquet"
     df = daft.read_parquet(filename, io_config=io_config, use_native_downloader=True).collect()
