@@ -838,6 +838,39 @@ class DataFrame:
     def _agg(
         self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
     ) -> "DataFrame":
+        use_rust_planner = get_context().use_rust_planner
+
+        if use_rust_planner:
+            return self._agg_rust_planner(to_agg, group_by)
+        else:
+            return self._agg_old(to_agg, group_by)
+
+    def _agg_rust_planner(
+        self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
+    ) -> "DataFrame":
+        exprs_to_agg: List[Tuple[Expression, str]] = list(
+            zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
+        )
+        exprs = []
+        for expr, op in exprs_to_agg:
+            if op == "sum":
+                exprs.append(expr._sum())
+            else:
+                raise NotImplementedError()
+
+        new_builder = cast(
+            rust_logical_plan.RustLogicalPlanBuilder,
+            self._plan,
+        ).builder.aggregate([expr._expr for expr in exprs])
+        plan = cast(
+            logical_plan.LogicalPlan,
+            rust_logical_plan.RustLogicalPlanBuilder(new_builder),
+        )
+        return DataFrame(plan)
+
+    def _agg_old(
+        self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
+    ) -> "DataFrame":
         exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
