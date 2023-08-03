@@ -32,10 +32,53 @@ pub fn read_parquet(
         builder
     };
     let builder = builder.limit(start_offset, num_rows)?;
+
+    let metadata_num_rows = builder.metadata().num_rows;
+    let metadata_num_columns = builder.arrow_schema().fields.len();
+
     let parquet_reader = builder.build()?;
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
+    let table = runtime_handle.block_on(async { parquet_reader.read_from_ranges(ranges).await })?;
 
-    runtime_handle.block_on(async { parquet_reader.read_from_ranges(ranges).await })
+    match (start_offset, num_rows) {
+        (None, None) if metadata_num_rows != table.len() => {
+            Err(super::Error::ParquetNumRowMismatch {
+                path: uri.into(),
+                metadata_num_rows,
+                read_rows: table.len(),
+            })
+        }
+        (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+            Err(super::Error::ParquetNumRowMismatch {
+                path: uri.into(),
+                metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                read_rows: table.len(),
+            })
+        }
+        (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
+            path: uri.into(),
+            metadata_num_rows: n.max(metadata_num_rows),
+            read_rows: table.len(),
+        }),
+        _ => Ok(()),
+    }?;
+
+    let expected_num_columns = if let Some(columns) = columns {
+        columns.len()
+    } else {
+        metadata_num_columns
+    };
+
+    if table.num_columns() != expected_num_columns {
+        return Err(super::Error::ParquetNumColumnMismatch {
+            path: uri.into(),
+            metadata_num_columns: expected_num_columns,
+            read_columns: table.num_columns(),
+        }
+        .into());
+    }
+
+    Ok(table)
 }
 
 pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
