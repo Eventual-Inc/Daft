@@ -2,14 +2,34 @@ use crate::config;
 use common_error::DaftError;
 use pyo3::prelude::*;
 
-/// Configurations for controlling Daft's behavior when working with files accessed through the S3 API
+/// Create configurations to be used when accessing an S3-compatible system
+///
+/// Args:
+///     region_name: Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
+///         If wrongly provided, Daft will attempt to auto-detect the buckets' region at the cost of extra S3 requests.
+///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
+///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
+///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
+///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
+///
+/// Example:
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct S3Config {
     pub config: config::S3Config,
 }
 
-/// Configurations for controlling Daft's behavior around data Input/Output
+/// Create configurations to be used when accessing storage
+///
+/// Args:
+///     s3: Configurations to use when accessing URLs with the `s3://` scheme
+///
+/// Example:
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct IOConfig {
@@ -31,7 +51,7 @@ impl IOConfig {
         Ok(format!("{}", self.config))
     }
 
-    /// Configurations for controlling Daft's behavior when working with files with the `s3://` URL prefix
+    /// Configurations to be used when accessing URLs with the `s3://` scheme
     #[getter]
     pub fn s3(&self) -> PyResult<S3Config> {
         Ok(S3Config {
@@ -78,21 +98,25 @@ impl S3Config {
         Ok(format!("{}", self.config))
     }
 
+    /// Region to use when accessing AWS S3
     #[getter]
     pub fn region_name(&self) -> PyResult<Option<String>> {
         Ok(self.config.region_name.clone())
     }
 
+    /// S3-compatible endpoint to use
     #[getter]
     pub fn endpoint_url(&self) -> PyResult<Option<String>> {
         Ok(self.config.endpoint_url.clone())
     }
 
+    /// AWS Access Key ID
     #[getter]
     pub fn key_id(&self) -> PyResult<Option<String>> {
         Ok(self.config.key_id.clone())
     }
 
+    /// AWS Secret Access Key
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
