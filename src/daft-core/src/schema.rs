@@ -108,10 +108,18 @@ impl Schema {
 
         res
     }
+
+    pub fn short_string(&self) -> String {
+        self.fields
+            .iter()
+            .map(|(name, field)| format!("{} {:?}", name, field.dtype))
+            .collect::<Vec<String>>()
+            .join(", ")
+    }
 }
 
 impl Display for Schema {
-    // `f` is a buffer, and this method must write the formatted string into it
+    // Produces an ASCII table.
     fn fmt(&self, f: &mut Formatter) -> Result {
         let mut table = prettytable::Table::new();
 

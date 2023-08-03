@@ -55,4 +55,8 @@ impl LogicalPlanBuilder {
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.plan.schema().into())
     }
+
+    pub fn repr_ascii(&self) -> PyResult<String> {
+        Ok(self.plan.repr_ascii())
+    }
 }

@@ -29,4 +29,26 @@ impl Source {
             limit: None,     // Will be populated by plan optimizer.
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+
+        use SourceInfo::*;
+        match &*self.source_info {
+            FilesInfo(files_info) => {
+                res.push(format!("Source: {:?}", files_info.file_format));
+                for fp in files_info.filepaths.iter() {
+                    res.push(format!("  {}", fp));
+                }
+                res.push(format!(
+                    "  File schema: {}",
+                    files_info.schema.short_string()
+                ));
+            }
+        }
+        res.push(format!("  Output schema: {}", self.schema.short_string()));
+        res.push(format!("  Filters: {:?}", self.filters));
+        res.push(format!("  Limit: {:?}", self.limit));
+        res
+    }
 }
