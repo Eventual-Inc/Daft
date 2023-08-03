@@ -9,7 +9,7 @@ pub mod pylib {
     use pyo3::{pyfunction, PyResult, Python};
 
     #[pyfunction]
-    pub fn read_parquet(
+    pub fn _read_parquet(
         py: Python,
         uri: &str,
         columns: Option<Vec<&str>>,
@@ -55,7 +55,7 @@ pub mod pylib {
     }
 }
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet))?;
+    parent.add_wrapped(wrap_pyfunction!(pylib::_read_parquet))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_schema))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
     Ok(())
