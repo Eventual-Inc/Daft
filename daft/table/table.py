@@ -7,7 +7,7 @@ from loguru import logger
 
 from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
-from daft.daft import read_parquet as _read_parquet
+from daft.daft import _read_parquet
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection

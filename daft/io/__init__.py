@@ -4,9 +4,9 @@ import sys
 
 from daft.io._csv import read_csv
 from daft.io._json import read_json
+from daft.io._parquet import read_parquet
 from daft.io.config import IOConfig, S3Config
 from daft.io.file_path import from_glob_path
-from daft.io.parquet import read_parquet
 
 
 def _set_linux_cert_paths():
