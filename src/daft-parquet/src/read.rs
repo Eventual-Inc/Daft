@@ -57,7 +57,7 @@ pub fn read_parquet(
         }
         (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
             path: uri.into(),
-            metadata_num_rows: n.max(metadata_num_rows),
+            metadata_num_rows: n.min(metadata_num_rows),
             read_rows: table.len(),
         }),
         _ => Ok(()),
