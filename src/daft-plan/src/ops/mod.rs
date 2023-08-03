@@ -1,3 +1,4 @@
+mod agg;
 mod filter;
 mod limit;
 mod source;
