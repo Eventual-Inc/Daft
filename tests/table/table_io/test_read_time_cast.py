@@ -41,7 +41,7 @@ from tests.table.table_io.test_parquet import _parquet_write_helper
     ],
 )
 def test_parquet_cast_at_read_time(data, schema, expected):
-    f = _parquet_write_helper(data)
-    table = table_io.read_parquet(f, schema)
-    assert table.schema() == schema
-    assert table.to_arrow() == expected.to_arrow()
+    with _parquet_write_helper(data) as f:
+        table = table_io.read_parquet(f, schema)
+        assert table.schema() == schema
+        assert table.to_arrow() == expected.to_arrow()
