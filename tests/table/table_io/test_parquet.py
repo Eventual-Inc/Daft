@@ -157,9 +157,8 @@ def test_parquet_read_data_select_columns(use_native_downloader):
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-@pytest.mark.parametrize("store_schema", [True, False])
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
-def test_parquet_read_timestamps(use_native_downloader, store_schema, use_deprecated_int96_timestamps):
+def test_parquet_read_timestamps(use_native_downloader, use_deprecated_int96_timestamps):
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
         "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
@@ -177,7 +176,6 @@ def test_parquet_read_timestamps(use_native_downloader, store_schema, use_deprec
         pa.Table.from_pydict(data),
         papq_write_table_kwargs={
             "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
-            "store_schema": store_schema,
             "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
         },
     ) as f:
