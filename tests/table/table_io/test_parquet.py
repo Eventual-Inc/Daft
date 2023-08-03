@@ -157,32 +157,36 @@ def test_parquet_read_data_select_columns(use_native_downloader):
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_parquet_read_int96(use_native_downloader):
+@pytest.mark.parametrize("store_schema", [True, False])
+@pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
+def test_parquet_read_timestamps(use_native_downloader, store_schema, use_deprecated_int96_timestamps):
+    data = {
+        "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
+        "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
+    }
+    schema = [
+        ("timestamp_ms", DataType.timestamp(TimeUnit.ms())),
+        ("timestamp_us", DataType.timestamp(TimeUnit.us())),
+    ]
+    # int64 timestamps cannot support nanosecond resolutions
+    if use_deprecated_int96_timestamps:
+        data["timestamp_ns"] = pa.array([1, 2, 3], pa.timestamp("ns"))
+        schema.append(("timestamp_ns", DataType.timestamp(TimeUnit.ns())))
+
     with _parquet_write_helper(
-        pa.Table.from_pydict(
-            {
-                "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
-                "timestamp_ns": pa.array([1, 2, 3], pa.timestamp("ns")),
-            }
-        ),
-        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True},
+        pa.Table.from_pydict(data),
+        papq_write_table_kwargs={
+            "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
+            "store_schema": store_schema,
+            "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+        },
     ) as f:
-        schema = Schema._from_field_name_and_types(
-            [
-                ("timestamp_ms", DataType.timestamp(TimeUnit.ms())),
-                ("timestamp_ns", DataType.timestamp(TimeUnit.ns())),
-            ]
-        )
-        expected = Table.from_pydict(
-            {
-                "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
-                "timestamp_ns": pa.array([1, 2, 3], pa.timestamp("ns")),
-            }
-        )
+        schema = Schema._from_field_name_and_types(schema)
+        expected = Table.from_pydict(data)
         table = table_io.read_parquet(
             f,
             schema,
-            read_options=TableReadOptions(column_names=["timestamp_ms", "timestamp_ns"]),
+            read_options=TableReadOptions(column_names=schema.column_names()),
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
