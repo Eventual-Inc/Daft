@@ -98,6 +98,30 @@ pub enum Error {
         total_row_groups: i64,
     },
 
+    #[snafu(display(
+        "Parquet file: {} metadata listed {} rows but only read: {} ",
+        path,
+        metadata_num_rows,
+        read_rows
+    ))]
+    ParquetNumRowMismatch {
+        path: String,
+        metadata_num_rows: usize,
+        read_rows: usize,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} metadata listed {} columns but only read: {} ",
+        path,
+        metadata_num_columns,
+        read_columns
+    ))]
+    ParquetNumColumnMismatch {
+        path: String,
+        metadata_num_columns: usize,
+        read_columns: usize,
+    },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,
