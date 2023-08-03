@@ -11,7 +11,7 @@ use {
     },
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::prelude::*,
+    pyo3::{prelude::*, types::PyList},
 };
 
 #[cfg_attr(feature = "python", pyclass)]
@@ -21,23 +21,8 @@ pub struct LogicalPlanBuilder {
 }
 
 impl LogicalPlanBuilder {
-    // Create a new LogicalPlanBuilder for a Source node.
-    pub fn from_source(source: ops::Source) -> Self {
-        Self {
-            plan: LogicalPlan::Source(source).into(),
-        }
-    }
-
-    pub fn from_filter(filter: ops::Filter) -> Self {
-        Self {
-            plan: LogicalPlan::Filter(filter).into(),
-        }
-    }
-
-    pub fn from_limit(limit: ops::Limit) -> Self {
-        Self {
-            plan: LogicalPlan::Limit(limit).into(),
-        }
+    pub fn new(plan: Arc<LogicalPlan>) -> Self {
+        Self { plan }
     }
 }
 
@@ -57,26 +42,32 @@ impl LogicalPlanBuilder {
             file_format_config.into(),
         );
         let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);
-        let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
+        let logical_plan: LogicalPlan = ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
             partition_spec.into(),
-        ));
+        ).into();        
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan_builder = LogicalPlanBuilder::from_filter(ops::Filter::new(
+        let logical_plan: LogicalPlan = ops::Filter::new(
             predicate.expr.clone(),
             self.plan.clone(),
-        ));
+        ).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
     pub fn limit(&self, limit: i64) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan_builder =
-            LogicalPlanBuilder::from_limit(ops::Limit::new(limit, self.plan.clone()));
+        let logical_plan: LogicalPlan = ops::Limit::new(limit, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
+    }
+
+    pub fn aggregate(&self, aggregates: &PyList) -> PyResult<LogicalPlanBuilder> {
+        todo!()
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

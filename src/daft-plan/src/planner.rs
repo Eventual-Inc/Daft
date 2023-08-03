@@ -43,5 +43,6 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 Arc::new(input_physical),
             )))
         }
+        LogicalPlan::Aggregate(..) => todo!(),
     }
 }
