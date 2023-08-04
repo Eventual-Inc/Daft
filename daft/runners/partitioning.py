@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -10,6 +11,11 @@ import pyarrow as pa
 
 from daft.logical.schema import Schema
 from daft.table import Table
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -28,6 +34,18 @@ class TableReadOptions:
 
     num_rows: int | None = None
     column_names: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class TableParseParquetOptions:
+    """Options for parsing Parquet
+
+    Args:
+        int96_timestamps_precision: Precision to use when reading int96 timestamps, defaults to "ns" which
+            means that Parquet INT96 timestamps outside the range of years 1678-2262 will overflow.
+    """
+
+    int96_timestamps_precision: Literal["ns"] | Literal["us"] | Literal["ms"] = "ns"
 
 
 @dataclass(frozen=True)
