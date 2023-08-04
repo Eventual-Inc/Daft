@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
+use daft_core::datatypes::TimeUnit;
 use daft_core::{
     datatypes::{Int32Array, UInt64Array, Utf8Array},
     schema::Schema,
@@ -19,6 +20,7 @@ async fn read_parquet_single(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    int96_timestamps_coerce_to_unit: &TimeUnit,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
@@ -30,8 +32,10 @@ async fn read_parquet_single(
     };
     let builder = builder.limit(start_offset, num_rows)?;
 
+    let builder = builder.set_int96_timestamps_coerce_to_unit(int96_timestamps_coerce_to_unit);
+
     let metadata_num_rows = builder.metadata().num_rows;
-    let metadata_num_columns = builder.arrow_schema().fields.len();
+    let metadata_num_columns = builder.parquet_schema().fields().len();
 
     let parquet_reader = builder.build()?;
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
@@ -123,12 +127,19 @@ pub fn read_parquet_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
-pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
+pub fn read_parquet_schema(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    int96_timestamps_coerce_to_unit: &TimeUnit,
+) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle
         .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
-    Schema::try_from(builder.arrow_schema())
+
+    let builder = builder.set_int96_timestamps_coerce_to_unit(int96_timestamps_coerce_to_unit);
+
+    Schema::try_from(builder.build()?.arrow_schema())
 }
 
 pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {
@@ -207,6 +218,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use daft_core::datatypes::TimeUnit;
     use daft_io::{config::IOConfig, IOClient};
 
     use super::read_parquet;
@@ -219,7 +231,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, io_client)?;
+        let table = read_parquet(file, None, None, None, &TimeUnit::Nanoseconds, io_client)?;
         assert_eq!(table.len(), 100);
 
         Ok(())

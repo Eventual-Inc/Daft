@@ -216,7 +216,7 @@ def test_parquet_read_int96_timestamps_overflow(use_native_downloader, coerce_to
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            parquet_options=TableParseParquetOptions(int96_timestamps_precision=coerce_to),
+            parquet_options=TableParseParquetOptions(int96_timestamps_coerce_to_unit=coerce_to),
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

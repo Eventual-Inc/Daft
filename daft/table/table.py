@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -14,6 +15,11 @@ from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 _NUMPY_AVAILABLE = True
 try:
@@ -352,10 +358,18 @@ class Table:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
+        int96_timestamps_coerce_to_unit: Literal["ns"] | Literal["us"] | Literal["ms"] = "ns",
         io_config: IOConfig | None = None,
     ) -> Table:
         return Table._from_pytable(
-            _read_parquet(uri=path, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config)
+            _read_parquet(
+                uri=path,
+                columns=columns,
+                start_offset=start_offset,
+                num_rows=num_rows,
+                int96_timestamps_coerce_to_unit=int96_timestamps_coerce_to_unit,
+                io_config=io_config,
+            )
         )
 
     @classmethod

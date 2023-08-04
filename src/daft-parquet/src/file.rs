@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow2::io::parquet::read::infer_schema;
 use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{datatypes::TimeUnit, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
@@ -20,13 +20,14 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
+
 pub(crate) struct ParquetReaderBuilder {
     uri: String,
     metadata: parquet2::metadata::FileMetaData,
-    arrow_schema: arrow2::datatypes::Schema,
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
+    int96_timestamps_coerce_to_unit: TimeUnit,
 }
 use parquet2::read::decompress;
 
@@ -94,16 +95,13 @@ impl ParquetReaderBuilder {
 
         let metadata = read_parquet_metadata(uri, size, io_client).await?;
         let num_rows = metadata.num_rows;
-        let schema =
-            infer_schema(&metadata)
-                .context(UnableToParseSchemaFromMetadataSnafu::<String> { path: uri.into() })?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
             metadata,
-            arrow_schema: schema,
             selected_columns: None,
             row_start_offset: 0,
             num_rows,
+            int96_timestamps_coerce_to_unit: TimeUnit::Nanoseconds,
         })
     }
 
@@ -111,16 +109,16 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
-        &self.arrow_schema
+    pub fn parquet_schema(&self) -> &parquet2::metadata::SchemaDescriptor {
+        self.metadata().schema()
     }
 
     pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
         let avail_names = self
-            .arrow_schema
-            .fields
+            .parquet_schema()
+            .fields()
             .iter()
-            .map(|f| f.name.as_str())
+            .map(|f| f.name())
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
@@ -150,7 +148,15 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
-    pub fn build(mut self) -> super::Result<ParquetFileReader> {
+    pub fn set_int96_timestamps_coerce_to_unit(
+        mut self,
+        int96_timestamps_coerce_to_unit: &TimeUnit,
+    ) -> Self {
+        self.int96_timestamps_coerce_to_unit = int96_timestamps_coerce_to_unit.to_owned();
+        self
+    }
+
+    pub fn build(self) -> super::Result<ParquetFileReader> {
         let mut row_ranges = vec![];
 
         let mut curr_row_index = 0;
@@ -174,13 +180,22 @@ impl ParquetReaderBuilder {
             curr_row_index += rg.num_rows();
         }
 
+        // TODO(jay): Add arrow2 functionality to perform schema inference by taking into account the
+        // self.int96_timestamps_coerce_to_unit option, where Parquet int96 fields should be coerced
+        // into Arrow datetimes with the specified TimeUnit.
+        let mut arrow_schema = infer_schema(&self.metadata).context(
+            UnableToParseSchemaFromMetadataSnafu::<String> {
+                path: self.uri.clone(),
+            },
+        )?;
+
         if let Some(names_to_keep) = self.selected_columns {
-            self.arrow_schema
+            arrow_schema
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
 
-        ParquetFileReader::new(self.uri, self.metadata, self.arrow_schema, row_ranges)
+        ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
     }
 }
 
@@ -211,6 +226,10 @@ impl ParquetFileReader {
             arrow_schema,
             row_ranges: Arc::new(row_ranges),
         })
+    }
+
+    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
+        &self.arrow_schema
     }
 
     fn naive_read_plan(&self) -> super::Result<ReadPlanner> {
@@ -330,6 +349,7 @@ impl ParquetFileReader {
 
                             let (send, recv) = tokio::sync::oneshot::channel();
                             rayon::spawn(move || {
+                                // TODO(jay): Fix arrow2 to handle the pytype=Int96/dtype=Timestamp(ms/us) cases
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
                                     ptypes.iter().collect(),

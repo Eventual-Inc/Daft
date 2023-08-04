@@ -41,11 +41,11 @@ class TableParseParquetOptions:
     """Options for parsing Parquet
 
     Args:
-        int96_timestamps_precision: Precision to use when reading int96 timestamps, defaults to "ns" which
+        int96_timestamps_coerce_to_unit: Precision to use when reading int96 timestamps, defaults to "ns" which
             means that Parquet INT96 timestamps outside the range of years 1678-2262 will overflow.
     """
 
-    int96_timestamps_precision: Literal["ns"] | Literal["us"] | Literal["ms"] = "ns"
+    int96_timestamps_coerce_to_unit: Literal["ns"] | Literal["us"] | Literal["ms"] = "ns"
 
 
 @dataclass(frozen=True)
