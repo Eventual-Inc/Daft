@@ -328,7 +328,7 @@ def glob_path_with_stats(
         raise FileNotFoundError(f"File or directory not found: {path}")
 
     # Set number of rows if available.
-    if file_format_config.file_format() == FileFormat.Parquet:
+    if file_format_config is not None and file_format_config.file_format() == FileFormat.Parquet:
         config = file_format_config.config
         assert isinstance(config, ParquetSourceConfig)
         if config.use_native_downloader:

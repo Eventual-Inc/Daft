@@ -89,7 +89,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         elif isinstance(node, logical_plan.FileWrite):
             return physical_plan.file_write(
                 child_plan=child_plan,
-                file_type=node._storage_type,
+                file_format=node._file_format,
                 schema=node.schema(),
                 root_dir=node._root_dir,
                 compression=node._compression,

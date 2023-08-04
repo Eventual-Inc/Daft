@@ -648,11 +648,8 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native
         df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
-        # df = df.where(daft.col("sepal_length") > 4.8)
-
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
-        # assert len(pd_df) == len(valid_data) - 1
         assert len(pd_df) == len(valid_data)
 
 

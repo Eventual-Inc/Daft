@@ -659,23 +659,6 @@ class LocalCount(UnaryNode):
         return LocalCount(input=self._children()[0].rebuild())
 
 
-# class PartitionScheme(Enum):
-#     UNKNOWN = "UNKNOWN"
-#     RANGE = "RANGE"
-#     HASH = "HASH"
-#     RANDOM = "RANDOM"
-
-#     def __repr__(self) -> str:
-#         return self.value
-
-
-# @dataclass(frozen=True)
-# class PartitionSpec:
-#     scheme: PartitionScheme
-#     num_partitions: int
-#     by: ExpressionsProjection | None = None
-
-
 class Repartition(UnaryNode):
     def __init__(
         self, input: LogicalPlan, partition_by: ExpressionsProjection, num_partitions: int, scheme: PartitionScheme
