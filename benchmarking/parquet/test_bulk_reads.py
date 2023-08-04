@@ -8,7 +8,7 @@ PATH = "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/8RG/da
 @pytest.mark.benchmark(group="num_files_single_column")
 @pytest.mark.parametrize(
     "num_files",
-    [2, 4, 8],
+    [1, 2, 4, 8],
 )
 def test_read_parquet_num_files_single_column(num_files, bulk_read_fn, benchmark):
     data = benchmark(bulk_read_fn, [PATH] * num_files, columns=["L_ORDERKEY"])
@@ -22,7 +22,7 @@ def test_read_parquet_num_files_single_column(num_files, bulk_read_fn, benchmark
 @pytest.mark.benchmark(group="num_rowgroups_all_columns")
 @pytest.mark.parametrize(
     "num_files",
-    [2, 4, 8],
+    [1, 2, 4],
 )
 def test_read_parquet_num_files_all_columns(num_files, bulk_read_fn, benchmark):
     data = benchmark(bulk_read_fn, [PATH] * num_files)
