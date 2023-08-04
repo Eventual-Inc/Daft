@@ -10,7 +10,7 @@ PATH = (
 @pytest.mark.benchmark(group="num_files_single_column")
 @pytest.mark.parametrize(
     "num_files",
-    [1, 2, 4, 8, 16, 32],
+    [1, 2, 4, 8, 16, 32, 64],
 )
 def test_read_parquet_num_files_single_column(num_files, bulk_read_fn, benchmark):
     data = benchmark(bulk_read_fn, [PATH] * num_files, columns=["L_ORDERKEY"])
