@@ -3,8 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use crate::logical_plan::LogicalPlan;
-use crate::ops::{Filter as LogicalFilter, Limit as LogicalLimit, Source};
-use crate::physical_ops::{Filter, Limit, TabularScanParquet};
+use crate::ops::{
+    Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit, Source,
+};
+use crate::physical_ops::{Aggregate, Filter, Limit, TabularScanParquet};
 use crate::physical_plan::PhysicalPlan;
 use crate::source_info::FileFormatConfig;
 
@@ -43,6 +45,19 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 Arc::new(input_physical),
             )))
         }
-        LogicalPlan::Aggregate(..) => todo!(),
+        LogicalPlan::Aggregate(LogicalAggregate {
+            schema,
+            aggregations,
+            group_by,
+            input,
+        }) => {
+            let input_physical = self.plan(input)?;
+            Ok(PhysicalPlan::Aggregate(Aggregate::new(
+                input_physical.into(),
+                aggregations.clone(),
+                group_by.clone(),
+                schema.clone(),
+            )))
+        }
     }
 }
