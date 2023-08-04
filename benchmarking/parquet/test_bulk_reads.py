@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-PATH = "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/8RG/daft_tpch_100g_32part_8RG.parquet"
+PATH = (
+    "s3://eventual-dev-benchmarking-fixtures/parquet-benchmarking/tpch/200MB-2RG/daft_200MB_lineitem_chunk.RG-2.parquet"
+)
 
 
 @pytest.mark.benchmark(group="num_files_single_column")
