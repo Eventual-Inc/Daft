@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import multiprocessing
-from functools import partial
 
 import boto3
 import pyarrow as pa
@@ -11,6 +9,12 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+
+# def daft_legacy_read(path: str, columns: list[str] | None = None) -> pa.Table:
+#     df = daft.read_parquet(path)
+#     if columns is not None:
+#         df = df.select(*columns)
+#     return df.to_arrow()
 
 
 def pyarrow_read(path: str, columns: list[str] | None = None) -> pa.Table:
@@ -71,19 +75,11 @@ def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
 
 
 def pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-
-    pool = multiprocessing.Pool()
-
-    downloader = partial(pyarrow_read, columns=columns)
-
-    return [table for table in pool.map(downloader, paths)]
+    return [pyarrow_read(f, columns=columns) for f in paths]
 
 
 def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    pool = multiprocessing.Pool()
-    downloader = partial(boto3_get_object_read, columns=columns)
-
-    return [table for table in pool.map(downloader, paths)]
+    return [boto3_get_object_read(f, columns=columns) for f in paths]
 
 
 @pytest.fixture(
@@ -94,8 +90,8 @@ def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
     ],
     ids=[
         "daft_bulk_read",
-        "pyarrow_mp_bulk_read",
-        "boto3_mp_bulk_read",
+        "pyarrow_bulk_read",
+        "boto3_bulk_read",
     ],
 )
 def bulk_read_fn(request):
