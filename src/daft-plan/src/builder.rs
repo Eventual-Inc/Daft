@@ -1,12 +1,18 @@
 use std::sync::Arc;
 
-use crate::logical_plan::LogicalPlan;
-use crate::planner::PhysicalPlanner;
-use crate::source_info::{FileInfo, PyFileFormatConfig, SourceInfo};
-use crate::{ops, PartitionScheme, PartitionSpec};
+use crate::{logical_plan::LogicalPlan, ops};
 
 #[cfg(feature = "python")]
-use {daft_core::python::schema::PySchema, daft_dsl::python::PyExpr, pyo3::prelude::*};
+use {
+    crate::{
+        planner::plan,
+        source_info::{FileInfo, PyFileFormatConfig, SourceInfo},
+        PartitionScheme, PartitionSpec,
+    },
+    daft_core::python::schema::PySchema,
+    daft_dsl::python::PyExpr,
+    pyo3::prelude::*,
+};
 
 #[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug)]
@@ -82,8 +88,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn to_partition_tasks(&self) -> PyResult<PyObject> {
-        let planner = PhysicalPlanner {};
-        let physical_plan = planner.plan(self.plan.as_ref())?;
+        let physical_plan = plan(self.plan.as_ref())?;
         Python::with_gil(|py| physical_plan.to_partition_tasks(py))
     }
 

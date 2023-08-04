@@ -3,7 +3,6 @@ from __future__ import annotations
 import itertools
 import pathlib
 from abc import abstractmethod
-from dataclasses import asdict
 from enum import Enum, IntEnum
 from pprint import pformat
 from typing import Any, Generic, TypeVar
@@ -182,7 +181,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             elif isinstance(v, Schema):
                 v = list([col(field.name) for field in v])
             elif isinstance(v, PartitionSpec):
-                v = asdict(v)
+                v = {"scheme": v.scheme, "num_partitions": v.num_partitions, "by": v.by}
                 if isinstance(v["by"], ExpressionsProjection):
                     v["by"] = list(v["by"])
             reduced_types[k] = v
@@ -483,7 +482,11 @@ class Sort(UnaryNode):
     def __init__(
         self, input: LogicalPlan, sort_by: ExpressionsProjection, descending: list[bool] | bool = False
     ) -> None:
-        pspec = PartitionSpec(scheme=PartitionScheme.Range, num_partitions=input.num_partitions(), by=sort_by)
+        pspec = PartitionSpec(
+            scheme=PartitionScheme.Range,
+            num_partitions=input.num_partitions(),
+            by=sort_by.to_inner_py_exprs(),
+        )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._sort_by = sort_by
@@ -666,13 +669,13 @@ class Repartition(UnaryNode):
         pspec = PartitionSpec(
             scheme=scheme,
             num_partitions=num_partitions,
-            by=[part._expr for part in partition_by] if len(partition_by) > 0 else None,
+            by=partition_by.to_inner_py_exprs() if len(partition_by) > 0 else None,
         )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
-        if scheme in (PartitionScheme.RANDOM, PartitionScheme.UNKNOWN) and len(partition_by.to_name_set()) > 0:
+        if scheme in (PartitionScheme.Random, PartitionScheme.Unknown) and len(partition_by.to_name_set()) > 0:
             raise ValueError(f"Can not pass in {scheme} and partition_by args")
 
     def __repr__(self) -> str:
@@ -959,11 +962,15 @@ class Join(BinaryNode):
                 self._right_columns.resolve_schema(right.schema())
             )
 
-        left_pspec = PartitionSpec(scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._left_on)
-        right_pspec = PartitionSpec(scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._right_on)
+        left_pspec = PartitionSpec(
+            scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._left_on.to_inner_py_exprs()
+        )
+        right_pspec = PartitionSpec(
+            scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._right_on.to_inner_py_exprs()
+        )
 
         new_left = Repartition(
-            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.Hash
         )
 
         if num_partitions == 1 and left.num_partitions() == 1:
@@ -972,7 +979,7 @@ class Join(BinaryNode):
             left = new_left
 
         new_right = Repartition(
-            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.Hash
         )
         if num_partitions == 1 and right.num_partitions() == 1:
             right = right

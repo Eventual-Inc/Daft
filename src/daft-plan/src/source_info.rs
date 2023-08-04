@@ -7,15 +7,19 @@ use daft_core::{
     Series,
 };
 use daft_io::config::IOConfig;
-use daft_io::python::IOConfig as PyIOConfig;
 use daft_table::Table;
 
 #[cfg(feature = "python")]
-use pyo3::{
-    exceptions::PyValueError,
-    pyclass, pymethods,
-    types::{PyBytes, PyTuple},
-    IntoPy, PyObject, PyResult, Python,
+use {
+    daft_io::python::IOConfig as PyIOConfig,
+    pyo3::{
+        exceptions::PyValueError,
+        pyclass,
+        pyclass::CompareOp,
+        pymethods,
+        types::{PyBytes, PyTuple},
+        IntoPy, PyObject, PyResult, Python,
+    },
 };
 
 use serde::Deserialize;
@@ -37,7 +41,7 @@ impl SourceInfo {
         Self {
             schema,
             file_info,
-            file_format_config: file_format_config.clone(),
+            file_format_config,
         }
     }
 }
@@ -105,12 +109,38 @@ impl FileInfo {
     }
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "python", pyclass)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum FileFormat {
     Parquet,
     Csv,
     Json,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl FileFormat {
+    #[new]
+    #[pyo3(signature = (*args))]
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            // Create dummy variant, to be overridden by __setstate__.
+            0 => Ok(Self::Json),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new FileFormat, got : {}",
+                args.len()
+            ))),
+        }
+    }
+
+    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
+        *self = bincode::deserialize(state.as_bytes()).unwrap();
+        Ok(())
+    }
+
+    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
+    }
 }
 
 impl From<&FileFormatConfig> for FileFormat {
@@ -123,7 +153,7 @@ impl From<&FileFormatConfig> for FileFormat {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
@@ -142,12 +172,10 @@ impl FileFormatConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
-    #[pyo3(get)]
     pub use_native_downloader: bool,
-
     pub io_config: Option<IOConfig>,
 }
 
@@ -160,6 +188,11 @@ impl ParquetSourceConfig {
             use_native_downloader,
             io_config: io_config.map(|c| c.config),
         }
+    }
+
+    #[getter]
+    pub fn get_use_native_downloader(&self) -> PyResult<bool> {
+        Ok(self.use_native_downloader)
     }
 
     #[getter]
@@ -177,8 +210,8 @@ impl ParquetSourceConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
     pub delimiter: String,
     pub has_headers: bool,
@@ -205,8 +238,8 @@ impl CsvSourceConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(get_all))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct JsonSourceConfig {}
 
 #[cfg(feature = "python")]
@@ -229,7 +262,10 @@ impl JsonSourceConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
-#[cfg_attr(feature = "python", pyclass(name = "FileFormatConfig"))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", name = "FileFormatConfig")
+)]
 pub struct PyFileFormatConfig(Arc<FileFormatConfig>);
 
 #[cfg(feature = "python")]
@@ -239,6 +275,7 @@ impl PyFileFormatConfig {
     #[pyo3(signature = (*args))]
     pub fn new(args: &PyTuple) -> PyResult<Self> {
         match args.len() {
+            // Create dummy inner FileFormatConfig, to be overridden by __setstate__.
             0 => Ok(Arc::new(FileFormatConfig::Json(JsonSourceConfig::new())).into()),
             _ => Err(PyValueError::new_err(format!(
                 "expected no arguments to make new PyFileFormatConfig, got : {}",
@@ -275,6 +312,14 @@ impl PyFileFormatConfig {
 
     fn file_format(&self) -> FileFormat {
         self.0.as_ref().into()
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
+        match op {
+            CompareOp::Eq => self.0 == other.0,
+            CompareOp::Ne => !self.__richcmp__(other, CompareOp::Eq),
+            _ => unimplemented!("not implemented"),
+        }
     }
 
     pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {

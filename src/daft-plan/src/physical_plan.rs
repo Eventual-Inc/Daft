@@ -16,7 +16,8 @@ pub enum PhysicalPlan {
     Limit(Limit),
 }
 
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg(feature = "python")]
+#[pyclass]
 struct PartitionIterator {
     parts: Vec<PyObject>,
     index: usize,
@@ -34,6 +35,17 @@ impl PartitionIterator {
         slf.parts.get(index).map(|part| part.clone_ref(slf.py()))
     }
 }
+
+#[cfg(feature = "python")]
+type PyScanArgs<'a> = (
+    &'a PyAny,
+    Option<usize>,
+    &'a PyAny,
+    Option<&'a PyAny>,
+    Option<Vec<String>>,
+    PyFileFormatConfig,
+    String,
+);
 
 #[cfg(feature = "python")]
 impl PhysicalPlan {
@@ -65,15 +77,7 @@ impl PhysicalPlan {
                     .getattr(pyo3::intern!(py, "Schema"))?
                     .getattr(pyo3::intern!(py, "_from_pyschema"))?
                     .call1((PySchema::from(schema.clone()),))?;
-                let args: (
-                    &PyAny,
-                    Option<usize>,
-                    &PyAny,
-                    Option<&PyAny>,
-                    Option<Vec<String>>,
-                    PyFileFormatConfig,
-                    String,
-                ) = (
+                let args: PyScanArgs = (
                     in_memory_scan_iter,
                     *limit,
                     py_schema,
@@ -122,10 +126,10 @@ impl PhysicalPlan {
                     py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
                 let local_limit_iter = py_physical_plan
                     .getattr(pyo3::intern!(py, "local_limit"))?
-                    .call1((upstream_iter, *limit as i64))?;
+                    .call1((upstream_iter, *limit))?;
                 let global_limit_iter = py_physical_plan
                     .getattr(pyo3::intern!(py, "global_limit"))?
-                    .call1((local_limit_iter, *limit as i64, *num_partitions as i64))?;
+                    .call1((local_limit_iter, *limit, *num_partitions as i64))?;
                 Ok(global_limit_iter.into())
             }
         }

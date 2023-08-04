@@ -495,7 +495,7 @@ class DataFrame:
                 plan,
                 partition_by=all_exprs,
                 num_partitions=self.num_partitions(),
-                scheme=logical_plan.PartitionScheme.HASH,
+                scheme=PartitionScheme.Hash,
             )
             plan = logical_plan.LocalDistinct(plan, all_exprs)
         return DataFrame(plan)
@@ -668,10 +668,10 @@ class DataFrame:
             DataFrame: Repartitioned DataFrame.
         """
         if len(partition_by) == 0:
-            scheme = logical_plan.PartitionScheme.RANDOM
+            scheme = PartitionScheme.Random
             exprs: ExpressionsProjection = ExpressionsProjection([])
         else:
-            scheme = logical_plan.PartitionScheme.HASH
+            scheme = PartitionScheme.Hash
             exprs = self.__column_input_to_expression(partition_by)
 
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
@@ -700,7 +700,7 @@ class DataFrame:
             split_op = logical_plan.Repartition(
                 self._plan,
                 num_partitions=num,
-                scheme=logical_plan.PartitionScheme.UNKNOWN,
+                scheme=PartitionScheme.Unknown,
                 partition_by=ExpressionsProjection([]),
             )
             return DataFrame(split_op)

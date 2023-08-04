@@ -3,6 +3,7 @@ from __future__ import annotations
 from loguru import logger
 
 from daft import resource_request
+from daft.daft import PartitionScheme
 from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
@@ -14,7 +15,6 @@ from daft.logical.logical_plan import (
     LocalAggregate,
     LocalLimit,
     LogicalPlan,
-    PartitionScheme,
     Projection,
     Repartition,
     Sort,
@@ -291,7 +291,7 @@ class DropRepartition(Rule[LogicalPlan]):
         """
         if (
             parent.partition_spec() == child.partition_spec()
-            and parent.partition_spec().scheme != PartitionScheme.RANGE
+            and parent.partition_spec().scheme != PartitionScheme.Range
         ):
             logger.debug(f"Dropping Repartition due to same spec: {parent} ")
             return child
