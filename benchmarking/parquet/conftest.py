@@ -60,3 +60,39 @@ def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
 def read_fn(request):
     """Fixture which returns the function to read a PyArrow table from a path"""
     return request.param
+
+
+def bulk_read_adapter(func):
+    def fn(files: list[str]) -> list[pa.Table]:
+        return [func(f) for f in files]
+
+    return fn
+
+
+def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
+    return [daft_native_read(f, columns=columns) for f in paths]
+
+
+def pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
+    return [pyarrow_read(f, columns=columns) for f in paths]
+
+
+def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
+    return [boto3_get_object_read(f, columns=columns) for f in paths]
+
+
+@pytest.fixture(
+    params=[
+        daft_bulk_read,
+        pyarrow_bulk_read,
+        boto_bulk_read,
+    ],
+    ids=[
+        "daft_bulk_read",
+        "pyarrow_bulk_read",
+        "boto3_bulk_read",
+    ],
+)
+def bulk_read_fn(request):
+    """Fixture which returns the function to read a PyArrow table from a path"""
+    return request.param
