@@ -48,16 +48,15 @@ impl LogicalPlanBuilder {
             schema.schema.clone(),
             source_info.into(),
             partition_spec.into(),
-        ).into();        
+        )
+        .into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan: LogicalPlan = ops::Filter::new(
-            predicate.expr.clone(),
-            self.plan.clone(),
-        ).into();
+        let logical_plan: LogicalPlan =
+            ops::Filter::new(predicate.expr.clone(), self.plan.clone()).into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
