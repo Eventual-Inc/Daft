@@ -14,6 +14,7 @@ pub enum PhysicalPlan {
     TabularScanParquet(TabularScanParquet),
     Filter(Filter),
     Limit(Limit),
+    Aggregate(Aggregate),
 }
 
 #[cfg_attr(feature = "python", pyclass)]
@@ -128,6 +129,7 @@ impl PhysicalPlan {
                     .call1((local_limit_iter, *limit as i64, *num_partitions as i64))?;
                 Ok(global_limit_iter.into())
             }
+            PhysicalPlan::Aggregate(..) => todo!(),
         }
     }
 }
