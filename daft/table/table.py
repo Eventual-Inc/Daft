@@ -7,7 +7,8 @@ from loguru import logger
 
 from daft.arrow_utils import ensure_table
 from daft.daft import PyTable as _PyTable
-from daft.daft import _read_parquet
+from daft.daft import read_parquet as _read_parquet
+from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
@@ -356,6 +357,20 @@ class Table:
         return Table._from_pytable(
             _read_parquet(uri=path, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config)
         )
+
+    @classmethod
+    def read_parquet_bulk(
+        cls,
+        paths: list[str],
+        columns: list[str] | None = None,
+        start_offset: int | None = None,
+        num_rows: int | None = None,
+        io_config: IOConfig | None = None,
+    ) -> list[Table]:
+        pytables = _read_parquet_bulk(
+            uris=paths, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config
+        )
+        return [Table._from_pytable(t) for t in pytables]
 
     @classmethod
     def read_parquet_statistics(

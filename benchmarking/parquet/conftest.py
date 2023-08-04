@@ -70,7 +70,8 @@ def bulk_read_adapter(func):
 
 
 def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    return [daft_native_read(f, columns=columns) for f in paths]
+    tables = daft.table.Table.read_parquet_bulk(paths, columns=columns)
+    return [t.to_arrow() for t in tables]
 
 
 def pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
