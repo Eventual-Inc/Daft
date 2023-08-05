@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow2::array::Array;
 use common_error::DaftResult;
 use daft_core::{
+    impl_bincode_py_state_serialization,
     schema::{Schema, SchemaRef},
     Series,
 };
@@ -132,16 +133,9 @@ impl FileFormat {
             ))),
         }
     }
-
-    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-        *self = bincode::deserialize(state.as_bytes()).unwrap();
-        Ok(())
-    }
-
-    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
-    }
 }
+
+impl_bincode_py_state_serialization!(FileFormat);
 
 impl From<&FileFormatConfig> for FileFormat {
     fn from(file_format_config: &FileFormatConfig) -> Self {
@@ -199,16 +193,9 @@ impl ParquetSourceConfig {
     fn get_io_config(&self) -> PyResult<Option<PyIOConfig>> {
         Ok(self.io_config.as_ref().map(|c| c.clone().into()))
     }
-
-    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-        *self = bincode::deserialize(state.as_bytes()).unwrap();
-        Ok(())
-    }
-
-    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
-    }
 }
+
+impl_bincode_py_state_serialization!(ParquetSourceConfig);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
@@ -227,16 +214,9 @@ impl CsvSourceConfig {
             has_headers,
         }
     }
-
-    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-        *self = bincode::deserialize(state.as_bytes()).unwrap();
-        Ok(())
-    }
-
-    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
-    }
 }
+
+impl_bincode_py_state_serialization!(CsvSourceConfig);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
@@ -249,16 +229,9 @@ impl JsonSourceConfig {
     fn new() -> Self {
         Self {}
     }
-
-    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-        *self = bincode::deserialize(state.as_bytes()).unwrap();
-        Ok(())
-    }
-
-    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
-    }
 }
+
+impl_bincode_py_state_serialization!(JsonSourceConfig);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -321,16 +294,9 @@ impl PyFileFormatConfig {
             _ => unimplemented!("not implemented"),
         }
     }
-
-    pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-        *self = bincode::deserialize(state.as_bytes()).unwrap();
-        Ok(())
-    }
-
-    pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
-    }
 }
+
+impl_bincode_py_state_serialization!(PyFileFormatConfig);
 
 impl From<PyFileFormatConfig> for Arc<FileFormatConfig> {
     fn from(file_format_config: PyFileFormatConfig) -> Self {
