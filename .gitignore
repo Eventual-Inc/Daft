@@ -33,3 +33,5 @@ log/
 
 # docs autogen
 /docs/source/api_docs/doc_gen/
+
+.idea
