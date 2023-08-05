@@ -317,8 +317,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
-    def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
+    def from_arrow_type(cls, arrow_type: pa.lib.DataType, metadata: pa.lib.KeyValueMetadata = None) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
+        if metadata and b"image" in metadata:
+            return cls.image()
+
         if pa.types.is_int8(arrow_type):
             return cls.int8()
         elif pa.types.is_int16(arrow_type):

@@ -10,10 +10,12 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+from daft import col
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableReadOptions
 from daft.table import Table, schema_inference, table_io
+from tests.cookbook.assets import ASSET_FOLDER
 
 
 def test_read_input(tmpdir):
@@ -188,3 +190,17 @@ def test_parquet_read_timestamps(use_native_downloader, use_deprecated_int96_tim
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+def test_write_read_images(tmpdir):
+    tmpdir = str(tmpdir) + "/test.parquet"
+    df = (
+        daft.from_glob_path(f"{ASSET_FOLDER}/images/**")
+        .with_column("image", col("path").url.download().image.decode().image.resize(1, 1))
+    )
+    target_dtype = DataType.image()
+    assert df.schema()["image"].dtype == target_dtype
+    expected = df.collect()
+    df.write_parquet(tmpdir)
+
+    df2 = daft.read_parquet(tmpdir)
+    assert str(df2.collect()) == str(expected)

@@ -19,6 +19,7 @@ from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.table import Table
+from daft.datatype import DataType
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -262,6 +263,20 @@ def _to_file(
             ]
         )
         arrow_table = arrow_table.cast(downcasted_schema)
+
+    arrow_fields = []
+    for field, arrow_field in zip(table.schema(), arrow_table.schema):
+        metadata = arrow_field.metadata or {}
+        if field.dtype == DataType.image():
+            metadata['image'] = "true"
+        f = pa.field(
+            name=arrow_field.name,
+            type=arrow_field.type,
+            nullable=arrow_field.nullable,
+            metadata=metadata,
+        )
+        arrow_fields.append(f)
+    arrow_table = arrow_table.cast(pa.schema(arrow_fields))
 
     if file_format == "parquet":
         format = pads.ParquetFileFormat()
