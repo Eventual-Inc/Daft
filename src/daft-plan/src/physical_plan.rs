@@ -3,6 +3,7 @@ use {
     crate::source_info::PyFileFormatConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
+    daft_dsl::Expr,
     daft_table::python::PyTable,
     pyo3::{pyclass, pymethods, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, ToPyObject},
 };
@@ -129,7 +130,27 @@ impl PhysicalPlan {
                     .call1((local_limit_iter, *limit as i64, *num_partitions as i64))?;
                 Ok(global_limit_iter.into())
             }
-            PhysicalPlan::Aggregate(..) => todo!(),
+            PhysicalPlan::Aggregate(Aggregate {
+                aggregations,
+                group_by,
+                input,
+                ..
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py)?;
+                let aggs_as_pyexprs: Vec<PyExpr> = aggregations
+                    .iter()
+                    .map(|agg_expr| PyExpr::from(Expr::Agg(agg_expr.clone())))
+                    .collect();
+                let groupbys_as_pyexprs: Vec<PyExpr> = group_by
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "local_aggregate"))?
+                    .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+                Ok(py_iter.into())
+            }
         }
     }
 }
