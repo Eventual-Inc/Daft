@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, Expr};
 
 use crate::physical_plan::PhysicalPlan;
 
@@ -14,7 +14,7 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub group_by: Vec<ExprRef>,
+    pub group_by: Vec<Expr>,
 
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -24,7 +24,7 @@ impl Aggregate {
     pub(crate) fn new(
         input: Arc<PhysicalPlan>,
         aggregations: Vec<AggExpr>,
-        group_by: Vec<ExprRef>,
+        group_by: Vec<Expr>,
         schema: SchemaRef,
     ) -> Self {
         Self {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{AggExpr, ExprRef};
+use daft_dsl::{AggExpr, Expr};
 
 use crate::LogicalPlan;
 
@@ -14,7 +14,7 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub group_by: Vec<ExprRef>,
+    pub group_by: Vec<Expr>,
 
     // Upstream node.
     pub input: Arc<LogicalPlan>,
@@ -23,7 +23,7 @@ pub struct Aggregate {
 impl Aggregate {
     pub(crate) fn new(aggregations: Vec<AggExpr>, input: Arc<LogicalPlan>) -> Self {
         // TEMP: No groupbys supported for now.
-        let group_by: Vec<ExprRef> = vec![];
+        let group_by: Vec<Expr> = vec![];
 
         // Resolve the schema from the expressions.
         let schema = {

@@ -27,7 +27,7 @@ impl LogicalPlan {
             Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
-            Self::Aggregate(..) => todo!(),
+            Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
         }
     }
 
