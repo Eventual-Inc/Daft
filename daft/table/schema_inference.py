@@ -95,4 +95,4 @@ def from_parquet(
     pqf = papq.ParquetFile(f)
     arrow_schema = pqf.metadata.schema.to_arrow_schema()
 
-    return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
+    return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type, f.metadata)) for f in arrow_schema])

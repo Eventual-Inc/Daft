@@ -159,11 +159,13 @@ class Table:
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> pa.Table:
         python_fields = set()
         tensor_fields = set()
+
         for field in self.schema():
             if field.dtype._is_python_type():
                 python_fields.add(field.name)
             elif field.dtype._is_tensor_type() or field.dtype._is_fixed_shape_tensor_type():
                 tensor_fields.add(field.name)
+
         if python_fields or tensor_fields:
             table = {}
             for colname in self.column_names():
@@ -176,7 +178,11 @@ class Table:
 
             return pa.Table.from_pydict(table)
         else:
-            return pa.Table.from_batches([self._table.to_arrow_record_batch()])
+            record_batch = self._table.to_arrow_record_batch()
+            # record_batch.schema.metadata = metadata
+
+            # pa.RecordBatch.from_arrays()
+            return pa.Table.from_batches([record_batch])
 
     def to_pydict(self) -> dict[str, list]:
         return {colname: self.get_column(colname).to_pylist() for colname in self.column_names()}
