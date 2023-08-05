@@ -9,7 +9,7 @@ pub mod pylib {
     use pyo3::{pyfunction, PyResult, Python};
 
     #[pyfunction]
-    pub fn _read_parquet(
+    pub fn read_parquet(
         py: Python,
         uri: &str,
         columns: Option<Vec<&str>>,
@@ -27,6 +27,30 @@ pub mod pylib {
                 io_client,
             )?
             .into())
+        })
+    }
+
+    #[pyfunction]
+    pub fn read_parquet_bulk(
+        py: Python,
+        uris: Vec<&str>,
+        columns: Option<Vec<&str>>,
+        start_offset: Option<usize>,
+        num_rows: Option<usize>,
+        io_config: Option<IOConfig>,
+    ) -> PyResult<Vec<PyTable>> {
+        py.allow_threads(|| {
+            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            Ok(crate::read::read_parquet_bulk(
+                uris.as_ref(),
+                columns.as_deref(),
+                start_offset,
+                num_rows,
+                io_client,
+            )?
+            .into_iter()
+            .map(|v| v.into())
+            .collect())
         })
     }
 
@@ -55,7 +79,8 @@ pub mod pylib {
     }
 }
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_wrapped(wrap_pyfunction!(pylib::_read_parquet))?;
+    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet))?;
+    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_bulk))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_schema))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
     Ok(())

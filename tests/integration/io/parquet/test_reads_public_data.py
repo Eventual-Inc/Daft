@@ -187,6 +187,17 @@ def test_parquet_read_table(parquet_file):
 
 
 @pytest.mark.integration()
+def test_parquet_read_table_bulk(parquet_file):
+    _, url = parquet_file
+    daft_native_reads = Table.read_parquet_bulk([url] * 2, io_config=IOConfig(s3=S3Config(anonymous=True)))
+    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
+
+    for daft_native_read in daft_native_reads:
+        assert daft_native_read.schema() == pa_read.schema()
+        pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+
+
+@pytest.mark.integration()
 def test_parquet_read_df(parquet_file):
     _, url = parquet_file
     daft_native_read = daft.read_parquet(
