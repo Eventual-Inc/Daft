@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fmt::{Display, Formatter, Result},
     sync::Arc,
 };
@@ -83,6 +83,16 @@ impl Schema {
                 "Cannot union two schemas with overlapping keys".to_string(),
             )),
         }
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
+        let arrow_fields: DaftResult<Vec<arrow2::datatypes::Field>> =
+            self.fields.iter().map(|(_, f)| f.to_arrow()).collect();
+        let arrow_fields = arrow_fields?;
+        Ok(arrow2::datatypes::Schema {
+            fields: arrow_fields,
+            metadata: BTreeMap::new(),
+        })
     }
 
     pub fn repr_html(&self) -> String {

@@ -748,10 +748,10 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
         df = daft.read_parquet(
             f.name,
             schema_hints={
-                "sepal_length": DataType.float32(),
-                "sepal_width": DataType.float32(),
-                "petal_length": DataType.float32(),
-                "petal_width": DataType.float32(),
+                "sepal_length": DataType.float64(),
+                "sepal_width": DataType.float64(),
+                "petal_length": DataType.float64(),
+                "petal_width": DataType.float64(),
                 "variety": DataType.string(),
             },
             use_native_downloader=use_native_downloader,

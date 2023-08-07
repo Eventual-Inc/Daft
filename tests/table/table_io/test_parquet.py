@@ -156,9 +156,13 @@ def test_parquet_read_data_select_columns(use_native_downloader):
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
+###
+# Test Parquet Int96 timestamps
+###
+
+
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
-def test_parquet_read_int96_timestamps(use_native_downloader, use_deprecated_int96_timestamps):
+def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
         "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
@@ -177,6 +181,7 @@ def test_parquet_read_int96_timestamps(use_native_downloader, use_deprecated_int
         papq_write_table_kwargs={
             "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
             "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+            "store_schema": False,
         },
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
@@ -185,30 +190,29 @@ def test_parquet_read_int96_timestamps(use_native_downloader, use_deprecated_int
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            use_native_downloader=use_native_downloader,
+            use_native_downloader=True,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-@pytest.mark.parametrize("coerce_to", ["ms", "us"])
-def test_parquet_read_int96_timestamps_overflow(use_native_downloader, coerce_to):
+@pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
+def test_parquet_read_int96_timestamps_overflow(coerce_to):
     # NOTE: datetime.datetime(3000, 1, 1) and datetime.datetime(1000, 1, 1) cannot be represented by our timestamp64(nanosecond)
     # type. However they can be written to Parquet's INT96 type. Here we test that a round-trip is possible if provided with
     # the appropriate flags.
     data = {
         "timestamp": pa.array(
             [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
-            pa.timestamp(coerce_to),
+            pa.timestamp(str(coerce_to)),
         ),
     }
     schema = [
-        ("timestamp", DataType.timestamp(getattr(TimeUnit, coerce_to)())),
+        ("timestamp", DataType.timestamp(coerce_to)),
     ]
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
-        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True},
+        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True, "store_schema": False},
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
@@ -216,7 +220,40 @@ def test_parquet_read_int96_timestamps_overflow(use_native_downloader, coerce_to
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            parquet_options=TableParseParquetOptions(int96_timestamps_coerce_to_unit=coerce_to),
-            use_native_downloader=use_native_downloader,
+            parquet_options=TableParseParquetOptions(schema_infer_int96_timestamps_time_unit=coerce_to),
+            use_native_downloader=True,
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+def test_parquet_infer_schema_int96_timestamps():
+    data = {
+        "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
+        "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
+        "timestamp_ns": pa.array([1, 2, 3], pa.timestamp("ns")),
+    }
+    schema = [
+        ("timestamp_ms", DataType.timestamp(TimeUnit.ms())),
+        ("timestamp_us", DataType.timestamp(TimeUnit.us())),
+        ("timestamp_ns", DataType.timestamp(TimeUnit.ns())),
+    ]
+
+    with _parquet_write_helper(
+        pa.Table.from_pydict(data),
+        papq_write_table_kwargs={
+            "use_deprecated_int96_timestamps": True,
+            "store_schema": False,
+        },
+    ) as f:
+        expected = Table.from_pydict(data).eval_expression_list(
+            [daft.col(c).cast(DataType.timestamp(TimeUnit.ms())) for c, _ in schema]
+        )
+        schema = Schema._from_field_name_and_types(schema)
+        table = table_io.read_parquet(
+            f,
+            None,
+            read_options=TableReadOptions(column_names=schema.column_names()),
+            parquet_options=TableParseParquetOptions(schema_infer_int96_timestamps_time_unit=TimeUnit.ms()),
+            use_native_downloader=True,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

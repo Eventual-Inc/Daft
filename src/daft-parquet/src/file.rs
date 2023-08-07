@@ -27,7 +27,8 @@ pub(crate) struct ParquetReaderBuilder {
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
-    int96_timestamps_coerce_to_unit: TimeUnit,
+    user_provided_arrow_schema: Option<arrow2::datatypes::Schema>,
+    schema_infer_int96_timestamps_time_unit: TimeUnit,
 }
 use parquet2::read::decompress;
 
@@ -101,7 +102,8 @@ impl ParquetReaderBuilder {
             selected_columns: None,
             row_start_offset: 0,
             num_rows,
-            int96_timestamps_coerce_to_unit: TimeUnit::Nanoseconds,
+            user_provided_arrow_schema: None,
+            schema_infer_int96_timestamps_time_unit: TimeUnit::Nanoseconds,
         })
     }
 
@@ -148,11 +150,20 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
-    pub fn set_int96_timestamps_coerce_to_unit(
+    pub fn set_schema_infer_int96_timestamps_time_unit(
         mut self,
-        int96_timestamps_coerce_to_unit: &TimeUnit,
+        schema_infer_int96_timestamps_time_unit: &TimeUnit,
     ) -> Self {
-        self.int96_timestamps_coerce_to_unit = int96_timestamps_coerce_to_unit.to_owned();
+        self.schema_infer_int96_timestamps_time_unit =
+            schema_infer_int96_timestamps_time_unit.to_owned();
+        self
+    }
+
+    pub fn set_user_provided_arrow_schema(
+        mut self,
+        schema: Option<arrow2::datatypes::Schema>,
+    ) -> Self {
+        self.user_provided_arrow_schema = schema;
         self
     }
 
@@ -180,14 +191,19 @@ impl ParquetReaderBuilder {
             curr_row_index += rg.num_rows();
         }
 
-        // TODO(jay): Add arrow2 functionality to perform schema inference by taking into account the
-        // self.int96_timestamps_coerce_to_unit option, where Parquet int96 fields should be coerced
-        // into Arrow datetimes with the specified TimeUnit.
-        let mut arrow_schema = infer_schema(&self.metadata).context(
-            UnableToParseSchemaFromMetadataSnafu::<String> {
-                path: self.uri.clone(),
-            },
-        )?;
+        let mut arrow_schema = match self.user_provided_arrow_schema {
+            Some(s) => s,
+            // TODO(jay): Add arrow2 functionality to perform schema inference by taking into account the
+            // self.schema_infer_int96_timestamps_time_unit option, where Parquet int96 fields should be coerced
+            // into Arrow datetimes with the specified TimeUnit.
+            None => {
+                infer_schema(&self.metadata).context(UnableToParseSchemaFromMetadataSnafu::<
+                    String,
+                > {
+                    path: self.uri.clone(),
+                })?
+            }
+        };
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema

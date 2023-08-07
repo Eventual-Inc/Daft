@@ -7,19 +7,20 @@ import pyarrow as pa
 from loguru import logger
 
 from daft.arrow_utils import ensure_table
+from daft.daft import PyParquetSchemaOptions as _PyParquetSchemaOptions
 from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
 
 if sys.version_info < (3, 8):
-    from typing_extensions import Literal
+    pass
 else:
-    from typing import Literal
+    pass
 
 _NUMPY_AVAILABLE = True
 try:
@@ -358,8 +359,9 @@ class Table:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        int96_timestamps_coerce_to_unit: Literal["ns"] | Literal["us"] | Literal["ms"] = "ns",
         io_config: IOConfig | None = None,
+        schema: Schema | None = None,
+        schema_infer_int96_timestamps_time_unit: TimeUnit = TimeUnit.ns(),
     ) -> Table:
         return Table._from_pytable(
             _read_parquet(
@@ -367,8 +369,11 @@ class Table:
                 columns=columns,
                 start_offset=start_offset,
                 num_rows=num_rows,
-                int96_timestamps_coerce_to_unit=int96_timestamps_coerce_to_unit,
                 io_config=io_config,
+                schema_options=_PyParquetSchemaOptions(
+                    schema=schema._schema if schema is not None else None,
+                    inference_option_int96_timestamps_time_unit=schema_infer_int96_timestamps_time_unit._timeunit,
+                ),
             )
         )
 

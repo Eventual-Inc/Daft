@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Iterator
 
 from daft.daft import PyField as _PyField
+from daft.daft import PyParquetSchemaOptions as _PyParquetSchemaOptions
 from daft.daft import PySchema as _PySchema
 from daft.daft import read_parquet_schema as _read_parquet_schema
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
+
+if sys.version_info < (3, 8):
+    pass
+else:
+    pass
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
@@ -119,5 +126,18 @@ class Schema:
         self._schema.__setstate__(state)
 
     @classmethod
-    def from_parquet(cls, path: str, io_config: IOConfig | None = None) -> Schema:
-        return Schema._from_pyschema(_read_parquet_schema(uri=path, io_config=io_config))
+    def from_parquet(
+        cls,
+        path: str,
+        io_config: IOConfig | None = None,
+        schema_infer_int96_timestamps_time_unit: TimeUnit = TimeUnit.ns(),
+    ) -> Schema:
+        return Schema._from_pyschema(
+            _read_parquet_schema(
+                uri=path,
+                io_config=io_config,
+                schema_options=_PyParquetSchemaOptions(
+                    schema=None, inference_option_int96_timestamps_time_unit=schema_infer_int96_timestamps_time_unit
+                ),
+            )
+        )

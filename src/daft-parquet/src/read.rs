@@ -15,12 +15,22 @@ use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
+
+pub struct ParquetSchemaInferenceOptions {
+    pub int96_timestamps_time_unit: TimeUnit,
+}
+
+pub enum ParquetSchemaOptions {
+    UserProvidedSchema(Arc<Schema>),
+    InferenceOptions(ParquetSchemaInferenceOptions),
+}
+
 async fn read_parquet_single(
     uri: &str,
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
-    int96_timestamps_coerce_to_unit: &TimeUnit,
+    schema_options: ParquetSchemaOptions,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
@@ -32,7 +42,15 @@ async fn read_parquet_single(
     };
     let builder = builder.limit(start_offset, num_rows)?;
 
-    let builder = builder.set_int96_timestamps_coerce_to_unit(int96_timestamps_coerce_to_unit);
+    // Schema inference options
+    let builder = match schema_options {
+        ParquetSchemaOptions::UserProvidedSchema(s) => {
+            builder.set_user_provided_arrow_schema(Some(s.to_arrow()?))
+        }
+        ParquetSchemaOptions::InferenceOptions(opts) => {
+            builder.set_schema_infer_int96_timestamps_time_unit(&opts.int96_timestamps_time_unit)
+        }
+    };
 
     let metadata_num_rows = builder.metadata().num_rows;
     let metadata_num_columns = builder.parquet_schema().fields().len();
@@ -130,14 +148,16 @@ pub fn read_parquet_bulk(
 pub fn read_parquet_schema(
     uri: &str,
     io_client: Arc<IOClient>,
-    int96_timestamps_coerce_to_unit: &TimeUnit,
+    schema_inference_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle
         .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
 
-    let builder = builder.set_int96_timestamps_coerce_to_unit(int96_timestamps_coerce_to_unit);
+    let builder = builder.set_schema_infer_int96_timestamps_time_unit(
+        &schema_inference_options.int96_timestamps_time_unit,
+    );
 
     Schema::try_from(builder.build()?.arrow_schema())
 }
@@ -218,7 +238,6 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::datatypes::TimeUnit;
     use daft_io::{config::IOConfig, IOClient};
 
     use super::read_parquet;
@@ -231,7 +250,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, &TimeUnit::Nanoseconds, io_client)?;
+        let table = read_parquet(file, None, None, None, io_client)?;
         assert_eq!(table.len(), 100);
 
         Ok(())
