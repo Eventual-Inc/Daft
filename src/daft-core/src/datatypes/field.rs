@@ -12,15 +12,33 @@ pub type Metadata = std::collections::BTreeMap<String, String>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct Field {
+    /// User-visible, user-addressable name for this field.
     pub name: String,
+
+    /// Internally-visible, internally-addressable semantic identifier for this field.
+    pub id: FieldID,
+
     pub dtype: DataType,
     pub metadata: Arc<Metadata>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
+pub struct FieldID {
+    pub id: String,
+}
+
+impl FieldID {
+    pub fn new<S: Into<String>>(id: S) -> Self {
+        Self { id: id.into() }
+    }
+}
+
 impl Field {
     pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
+        let name: String = name.into();
         Self {
-            name: name.into(),
+            name: name.clone(),
+            id: FieldID::new(name),
             dtype,
             metadata: Default::default(),
         }
@@ -29,8 +47,18 @@ impl Field {
     pub fn with_metadata<M: Into<Arc<Metadata>>>(self, metadata: M) -> Self {
         Self {
             name: self.name,
+            id: self.id,
             dtype: self.dtype,
             metadata: metadata.into(),
+        }
+    }
+
+    pub fn with_id(self, id: FieldID) -> Self {
+        Self {
+            name: self.name,
+            id,
+            dtype: self.dtype,
+            metadata: self.metadata,
         }
     }
 
@@ -44,6 +72,7 @@ impl Field {
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {
         Self {
             name: name.into(),
+            id: self.id.clone(),
             dtype: self.dtype.clone(),
             metadata: self.metadata.clone(),
         }
@@ -56,6 +85,7 @@ impl Field {
         let list_dtype = DataType::List(Box::new(self.clone()));
         Ok(Self {
             name: self.name.clone(),
+            id: self.id.clone(),
             dtype: list_dtype,
             metadata: self.metadata.clone(),
         })
@@ -66,6 +96,7 @@ impl From<&ArrowField> for Field {
     fn from(af: &ArrowField) -> Self {
         Self {
             name: af.name.clone(),
+            id: FieldID::new(af.name.clone()),
             dtype: af.data_type().into(),
             metadata: af.metadata.clone().into(),
         }
