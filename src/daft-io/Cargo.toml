@@ -5,7 +5,7 @@ aws-config = {version = "0.55.3"}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = "0.28.0"
 aws-sig-auth = "0.55.3"
-aws-sigv4 = "0.55.3"
+aws-sigv4 = "0.56.0"
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
