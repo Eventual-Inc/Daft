@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.daft import LogicalPlanBuilder
+from daft.daft import LogicalPlanBuilder, PartitionSpec
 from daft.logical.schema import Schema
 
 
@@ -13,6 +13,9 @@ class RustLogicalPlanBuilder:
     def schema(self) -> Schema:
         pyschema = self.builder.schema()
         return Schema._from_pyschema(pyschema)
+
+    def partition_spec(self) -> PartitionSpec:
+        return self.builder.partition_spec()
 
     def __repr__(self) -> str:
         return self.builder.repr_ascii()

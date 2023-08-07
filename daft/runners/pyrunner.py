@@ -3,20 +3,21 @@ from __future__ import annotations
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, cast
 
 import fsspec
 import psutil
 import pyarrow as pa
 from loguru import logger
 
-from daft.datasources import SourceInfo
+from daft.context import get_context
+from daft.daft import FileFormatConfig
 from daft.execution import physical_plan, physical_plan_factory
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical import logical_plan
+from daft.logical import logical_plan, rust_logical_plan
 from daft.logical.optimizer import (
     DropProjections,
     DropRepartition,
@@ -83,7 +84,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
     def glob_paths_details(
         self,
         source_paths: list[str],
-        source_info: SourceInfo | None = None,
+        file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> LocalPartitionSet:
         all_files_infos = []
@@ -91,7 +92,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
             if fs is None:
                 fs = get_filesystem_from_path(source_path)
 
-            files_info = glob_path_with_stats(source_path, source_info, fs)
+            files_info = glob_path_with_stats(source_path, file_format_config, fs)
 
             if len(files_info) == 0:
                 raise FileNotFoundError(f"No files found at {source_path}")
@@ -123,7 +124,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[Table],
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
         # Naively retrieve the first filepath in the PartitionSet
@@ -136,7 +137,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
             raise ValueError("No files to get schema from")
         first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
-        return runner_io.sample_schema(first_filepath, source_info, fs)
+        return runner_io.sample_schema(first_filepath, file_format_config, fs)
 
 
 class PyRunner(Runner[Table]):
@@ -187,13 +188,24 @@ class PyRunner(Runner[Table]):
         return pset_entry
 
     def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
-        logplan = self.optimize(logplan)
-        psets = {
-            key: entry.value.values()
-            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
-            if entry.value is not None
-        }
-        plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
+        context = get_context()
+        if context.use_rust_planner:
+            # TODO(Clark): Integrate partition set cache?
+            # TODO(Clark): Abstract optimization pass, logical --> physical translation,
+            # and generation of partition tasks behind a query planner abstraction.
+            builder = cast(
+                rust_logical_plan.RustLogicalPlanBuilder,
+                logplan,
+            ).builder
+            plan = physical_plan.materialize(builder.to_partition_tasks())
+        else:
+            logplan = self.optimize(logplan)
+            psets = {
+                key: entry.value.values()
+                for key, entry in self._part_set_cache._uuid_to_partition_set.items()
+                if entry.value is not None
+            }
+            plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
             partitions_gen = self._physical_plan_to_partitions(plan)
@@ -213,10 +225,8 @@ class PyRunner(Runner[Table]):
 
                 # Dispatch->Await loop.
                 while True:
-
                     # Dispatch loop.
                     while True:
-
                         if next_step is None:
                             # Blocked on already dispatched tasks; await some tasks.
                             break

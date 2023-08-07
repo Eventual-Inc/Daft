@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from daft.daft import PartitionScheme
 from daft.execution import execution_step, physical_plan
 from daft.logical import logical_plan
-from daft.logical.logical_plan import LogicalPlan, PartitionScheme
+from daft.logical.logical_plan import LogicalPlan
 
 PartitionT = TypeVar("PartitionT")
 
@@ -40,7 +41,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 schema=node._schema,
                 fs=node._fs,
                 columns_to_read=node._column_names,
-                source_info=node._source_info,
+                file_format_config=node._file_format_config,
                 filepaths_column_name=node._filepaths_column_name,
             )
 
@@ -89,7 +90,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
         elif isinstance(node, logical_plan.FileWrite):
             return physical_plan.file_write(
                 child_plan=child_plan,
-                file_type=node._storage_type,
+                file_format=node._file_format,
                 schema=node.schema(),
                 root_dir=node._root_dir,
                 compression=node._compression,
@@ -109,7 +110,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
 
         elif isinstance(node, logical_plan.Repartition):
             # Case: simple repartition (split)
-            if node._scheme == PartitionScheme.UNKNOWN:
+            if node._scheme == PartitionScheme.Unknown:
                 return physical_plan.flatten_plan(
                     physical_plan.split(
                         child_plan,
@@ -122,12 +123,12 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
 
             # Do the fanout.
             fanout_plan: physical_plan.InProgressPhysicalPlan
-            if node._scheme == PartitionScheme.RANDOM:
+            if node._scheme == PartitionScheme.Random:
                 fanout_plan = physical_plan.fanout_random(
                     child_plan=child_plan,
                     num_partitions=node.num_partitions(),
                 )
-            elif node._scheme == PartitionScheme.HASH:
+            elif node._scheme == PartitionScheme.Hash:
                 fanout_instruction = execution_step.FanoutHash(
                     _num_outputs=node.num_partitions(),
                     partition_by=node._partition_by,

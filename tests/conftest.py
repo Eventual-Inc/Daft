@@ -4,6 +4,14 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+from daft.context import (
+    DaftContext,
+    _set_context,
+    get_context,
+    set_new_planner,
+    set_old_planner,
+)
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -34,6 +42,15 @@ def uuid_ext_type() -> UuidType:
     pa.register_extension_type(ext_type)
     yield ext_type
     pa.unregister_extension_type(ext_type.NAME)
+
+
+@pytest.fixture(params=[False, True])
+def use_new_planner(request) -> DaftContext:
+    old_ctx = get_context()
+    if request.param and old_ctx.is_ray_runner:
+        pytest.skip()
+    yield set_new_planner() if request.param else set_old_planner()
+    _set_context(old_ctx)
 
 
 def assert_df_equals(

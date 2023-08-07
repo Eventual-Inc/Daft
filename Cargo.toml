@@ -89,7 +89,7 @@ features = ["std"]
 version = "0.4.19"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "abi3-py37"]
+features = ["extension-module", "multiple-pymethods", "abi3-py37"]
 version = "0.19.1"
 
 [workspace.dependencies.pyo3-log]

@@ -25,8 +25,8 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
+from daft.daft import FileFormat, PartitionScheme, PartitionSpec
 from daft.dataframe.preview import DataFramePreview
-from daft.datasources import StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
@@ -83,7 +83,8 @@ class DataFrame:
 
     @property
     def _plan(self) -> logical_plan.LogicalPlan:
-        if self._result_cache is None:
+        # TODO(Clark): Add caching for Rust query planner.
+        if self._result_cache is None or get_context().use_rust_planner:
             return self.__plan
         else:
             return logical_plan.InMemoryScan(self._result_cache, self.__plan.schema(), self.__plan.partition_spec())
@@ -347,7 +348,7 @@ class DataFrame:
             df._plan,
             root_dir=root_dir,
             partition_cols=cols,
-            storage_type=StorageType.PARQUET,
+            file_format=FileFormat.Parquet,
             compression=compression,
         )
 
@@ -390,7 +391,7 @@ class DataFrame:
             df._plan,
             root_dir=root_dir,
             partition_cols=cols,
-            storage_type=StorageType.CSV,
+            file_format=FileFormat.Csv,
         )
 
         # Block and write, then retrieve data and return a new disconnected DataFrame
@@ -494,7 +495,7 @@ class DataFrame:
                 plan,
                 partition_by=all_exprs,
                 num_partitions=self.num_partitions(),
-                scheme=logical_plan.PartitionScheme.HASH,
+                scheme=PartitionScheme.Hash,
             )
             plan = logical_plan.LocalDistinct(plan, all_exprs)
         return DataFrame(plan)
@@ -620,9 +621,20 @@ class DataFrame:
         Returns:
             DataFrame: Limited DataFrame
         """
-        local_limit = logical_plan.LocalLimit(self._plan, num=num)
-        global_limit = logical_plan.GlobalLimit(local_limit, num=num)
-        return DataFrame(global_limit)
+        if get_context().use_rust_planner:
+            new_builder = cast(
+                rust_logical_plan.RustLogicalPlanBuilder,
+                self._plan,
+            ).builder.limit(num)
+
+            plan = cast(
+                logical_plan.LogicalPlan,
+                rust_logical_plan.RustLogicalPlanBuilder(new_builder),
+            )
+        else:
+            local_limit = logical_plan.LocalLimit(self._plan, num=num)
+            plan = logical_plan.GlobalLimit(local_limit, num=num)
+        return DataFrame(plan)
 
     @DataframePublicAPI
     def count_rows(self) -> int:
@@ -656,10 +668,10 @@ class DataFrame:
             DataFrame: Repartitioned DataFrame.
         """
         if len(partition_by) == 0:
-            scheme = logical_plan.PartitionScheme.RANDOM
+            scheme = PartitionScheme.Random
             exprs: ExpressionsProjection = ExpressionsProjection([])
         else:
-            scheme = logical_plan.PartitionScheme.HASH
+            scheme = PartitionScheme.Hash
             exprs = self.__column_input_to_expression(partition_by)
 
         repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
@@ -688,7 +700,7 @@ class DataFrame:
             split_op = logical_plan.Repartition(
                 self._plan,
                 num_partitions=num,
-                scheme=logical_plan.PartitionScheme.UNKNOWN,
+                scheme=PartitionScheme.Unknown,
                 partition_by=ExpressionsProjection([]),
             )
             return DataFrame(split_op)
@@ -1030,7 +1042,7 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            num_preview_rows: Number of rows to preview. Defaults to 10
+            num_preview_rows: Number of rows to preview. Defaults to 8.
 
         Returns:
             DataFrame: DataFrame with materialized results.
@@ -1217,9 +1229,7 @@ class DataFrame:
             logical_plan.InMemoryScan(
                 cache_entry=cache_entry,
                 schema=schema,
-                partition_spec=logical_plan.PartitionSpec(
-                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-                ),
+                partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
             )
         )
 
@@ -1288,9 +1298,7 @@ class DataFrame:
             logical_plan.InMemoryScan(
                 cache_entry=cache_entry,
                 schema=schema,
-                partition_spec=logical_plan.PartitionSpec(
-                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-                ),
+                partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
             )
         )
 

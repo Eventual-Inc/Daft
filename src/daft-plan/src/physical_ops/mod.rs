@@ -1,7 +1,7 @@
 mod filter;
 mod limit;
-mod source;
+mod parquet;
 
 pub use filter::Filter;
 pub use limit::Limit;
-pub use source::Source;
+pub use parquet::TabularScanParquet;

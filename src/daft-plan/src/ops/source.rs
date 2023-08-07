@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 
-use crate::source_info::SourceInfo;
+use crate::{source_info::SourceInfo, PartitionSpec};
 
 #[derive(Clone, Debug)]
 pub struct Source {
@@ -14,6 +14,8 @@ pub struct Source {
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
 
+    pub partition_spec: Arc<PartitionSpec>,
+
     /// Optional filters to apply to the source data.
     pub filters: Vec<ExprRef>,
     /// Optional number of rows to read.
@@ -21,10 +23,15 @@ pub struct Source {
 }
 
 impl Source {
-    pub(crate) fn new(schema: SchemaRef, source_info: Arc<SourceInfo>) -> Self {
+    pub(crate) fn new(
+        schema: SchemaRef,
+        source_info: Arc<SourceInfo>,
+        partition_spec: Arc<PartitionSpec>,
+    ) -> Self {
         Self {
             schema,
             source_info,
+            partition_spec,
             filters: vec![], // Will be populated by plan optimizer.
             limit: None,     // Will be populated by plan optimizer.
         }
@@ -33,19 +40,22 @@ impl Source {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 
-        use SourceInfo::*;
-        match &*self.source_info {
-            FilesInfo(files_info) => {
-                res.push(format!("Source: {:?}", files_info.file_format));
-                for fp in files_info.filepaths.iter() {
-                    res.push(format!("  {}", fp));
-                }
-                res.push(format!(
-                    "  File schema: {}",
-                    files_info.schema.short_string()
-                ));
-            }
+        res.push(format!(
+            "Source: {:?}",
+            self.source_info.file_format_config.var_name()
+        ));
+        for fp in self.source_info.file_info.file_paths.iter() {
+            res.push(format!("  {}", fp));
         }
+        res.push(format!(
+            "  File schema: {}",
+            self.source_info.schema.short_string()
+        ));
+
+        res.push(format!(
+            "  Format-specific config: {:?}",
+            self.source_info.file_format_config
+        ));
         res.push(format!("  Output schema: {}", self.schema.short_string()));
         if self.filters.is_empty() {
             res.push(format!("  Filters: {:?}", self.filters));

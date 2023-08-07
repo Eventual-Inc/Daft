@@ -6,6 +6,7 @@ import fsspec
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
+from daft.daft import PartitionScheme, PartitionSpec
 from daft.dataframe import DataFrame
 from daft.logical import logical_plan
 
@@ -47,6 +48,6 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
     filepath_plan = logical_plan.InMemoryScan(
         cache_entry=cache_entry,
         schema=runner_io.FS_LISTING_SCHEMA,
-        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()),
+        partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
     )
     return DataFrame(filepath_plan)
