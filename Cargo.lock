@@ -395,7 +395,7 @@ dependencies = [
  "percent-encoding",
  "regex",
  "sha2",
- "time 0.3.23",
+ "time 0.3.25",
  "tracing",
 ]
 
@@ -569,7 +569,7 @@ dependencies = [
  "num-integer",
  "ryu",
  "serde",
- "time 0.3.23",
+ "time 0.3.25",
 ]
 
 [[package]]
