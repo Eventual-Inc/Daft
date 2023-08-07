@@ -29,7 +29,7 @@ Pillow==9.5.0
 opencv-python==4.8.0.74
 
 # Ray
-ray[data, default]==2.6.0
+ray[data, default]==2.6.2
 pydantic<2  # pin pydantic because Ray uses broken APIs
 
 # AWS
