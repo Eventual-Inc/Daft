@@ -28,8 +28,18 @@ pub struct FieldID {
 }
 
 impl FieldID {
-    pub fn new<S: Into<String>>(id: S) -> Self {
-        Self { id: id.into() }
+    pub fn from_name(name: String) -> Self {
+        Self {
+            id: Self::sanitize(name),
+        }
+    }
+
+    /// Escape parentheses within a string,
+    /// since we will use parentheses as delimiters in our semantic expression IDs.
+    fn sanitize(name: String) -> String {
+        name.replace('(', "\\x28")
+            .replace(')', "\\x29")
+            .replace('\\', "\\x5c")
     }
 }
 
@@ -38,7 +48,7 @@ impl Field {
         let name: String = name.into();
         Self {
             name: name.clone(),
-            id: FieldID::new(name),
+            id: FieldID::from_name(name),
             dtype,
             metadata: Default::default(),
         }
@@ -96,7 +106,7 @@ impl From<&ArrowField> for Field {
     fn from(af: &ArrowField) -> Self {
         Self {
             name: af.name.clone(),
-            id: FieldID::new(af.name.clone()),
+            id: FieldID::from_name(af.name.clone()),
             dtype: af.data_type().into(),
             metadata: af.metadata.clone().into(),
         }
