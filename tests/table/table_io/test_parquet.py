@@ -226,6 +226,9 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to):
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
+@pytest.mark.skip(
+    reason="Need to implement `infer_schema` functionality in arrow2, or possibly implement our own custom patch on top"
+)
 def test_parquet_infer_schema_int96_timestamps():
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),

@@ -4,7 +4,9 @@ import sys
 from typing import TYPE_CHECKING, Iterator
 
 from daft.daft import PyField as _PyField
-from daft.daft import PyParquetSchemaOptions as _PyParquetSchemaOptions
+from daft.daft import (
+    PyParquetSchemaInferenceOptions as _PyParquetSchemaInferenceOptions,
+)
 from daft.daft import PySchema as _PySchema
 from daft.daft import read_parquet_schema as _read_parquet_schema
 from daft.datatype import DataType, TimeUnit
@@ -136,8 +138,8 @@ class Schema:
             _read_parquet_schema(
                 uri=path,
                 io_config=io_config,
-                schema_options=_PyParquetSchemaOptions(
-                    schema=None, inference_option_int96_timestamps_time_unit=schema_infer_int96_timestamps_time_unit
+                schema_inference_options=_PyParquetSchemaInferenceOptions(
+                    int96_timestamps_time_unit=schema_infer_int96_timestamps_time_unit._timeunit,
                 ),
             )
         )

@@ -139,11 +139,15 @@ def read_parquet(
 
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=parquet_options.schema_infer_int96_timestamps_time_unit)
+        pqf = papq.ParquetFile(
+            f, coerce_int96_timestamp_unit=str(parquet_options.schema_infer_int96_timestamps_time_unit)
+        )
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
         table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=parquet_options.schema_infer_int96_timestamps_time_unit)
+        pqf = papq.ParquetFile(
+            f, coerce_int96_timestamp_unit=str(parquet_options.schema_infer_int96_timestamps_time_unit)
+        )
         # Only read the required row groups.
         rows_needed = read_options.num_rows
         for i in range(pqf.metadata.num_row_groups):
@@ -159,7 +163,7 @@ def read_parquet(
         table = papq.read_table(
             f,
             columns=read_options.column_names,
-            coerce_int96_timestamp_unit=parquet_options.schema_infer_int96_timestamps_time_unit,
+            coerce_int96_timestamp_unit=str(parquet_options.schema_infer_int96_timestamps_time_unit),
         )
 
     return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)

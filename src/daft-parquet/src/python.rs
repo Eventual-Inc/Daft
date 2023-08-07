@@ -3,7 +3,6 @@ use pyo3::prelude::*;
 pub mod pylib {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
     use daft_core::datatypes::TimeUnit;
     use daft_core::python::datatype::PyTimeUnit;
     use daft_core::python::{schema::PySchema, PySeries};
@@ -18,47 +17,26 @@ pub mod pylib {
             int96_timestamps_time_unit: TimeUnit::Nanoseconds,
         });
 
-    /// Python wrapper for ParquetSchemaOptions
+    /// Python wrapper for ParquetSchemaInferenceOptions
     ///
-    /// Represents the options for parsing Schemas from Parquet files. If `schema` is provided, then
-    /// all the `inference_option_*` will be ignored when parsing Schemas.
+    /// Represents the options for inferring Schemas from Parquet files
     #[pyclass]
-    pub struct PyParquetSchemaOptions {
-        schema: Option<PySchema>,
-        inference_option_int96_timestamps_time_unit: Option<PyTimeUnit>,
+    #[derive(Clone)]
+    pub struct PyParquetSchemaInferenceOptions {
+        int96_timestamps_time_unit: PyTimeUnit,
     }
 
     #[pymethods]
-    impl PyParquetSchemaOptions {
+    impl PyParquetSchemaInferenceOptions {
         #[new]
-        fn new(
-            schema: Option<PySchema>,
-            inference_option_int96_timestamps_time_unit: Option<PyTimeUnit>,
-        ) -> Self {
-            PyParquetSchemaOptions {
-                schema,
-                inference_option_int96_timestamps_time_unit,
+        fn new(int96_timestamps_time_unit: PyTimeUnit) -> Self {
+            PyParquetSchemaInferenceOptions {
+                int96_timestamps_time_unit,
             }
         }
     }
 
-    impl TryFrom<&PyParquetSchemaOptions> for ParquetSchemaOptions {
-        type Error = DaftError;
-        fn try_from(value: &PyParquetSchemaOptions) -> DaftResult<Self> {
-            match &value.schema {
-                Some(s) => Ok(ParquetSchemaOptions::UserProvidedSchema(s.schema.clone())),
-                None => Ok(ParquetSchemaOptions::InferenceOptions(
-                    ParquetSchemaInferenceOptions {
-                        int96_timestamps_time_unit: value
-                            .inference_option_int96_timestamps_time_unit
-                            .as_ref()
-                            .map_or(TimeUnit::Nanoseconds, |tu| tu.timeunit),
-                    },
-                )),
-            }
-        }
-    }
-
+    #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet(
         py: Python,
@@ -67,13 +45,19 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         io_config: Option<IOConfig>,
-        schema_options: Option<&PyParquetSchemaOptions>,
+        schema: Option<PySchema>,
+        schema_inference_options: Option<PyParquetSchemaInferenceOptions>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
-            let schema_options = match schema_options {
-                None => DEFAULT_SCHEMA_OPTIONS,
-                Some(opts) => opts.try_into()?,
+            let schema_options = match (schema, schema_inference_options) {
+                (None, None) => DEFAULT_SCHEMA_OPTIONS,
+                (Some(schema), _) => ParquetSchemaOptions::UserProvidedSchema(schema.schema),
+                (_, Some(opts)) => {
+                    ParquetSchemaOptions::InferenceOptions(ParquetSchemaInferenceOptions {
+                        int96_timestamps_time_unit: opts.int96_timestamps_time_unit.timeunit,
+                    })
+                }
             };
             Ok(crate::read::read_parquet(
                 uri,
@@ -116,12 +100,18 @@ pub mod pylib {
         py: Python,
         uri: &str,
         io_config: Option<IOConfig>,
-        schema_options: Option<&PyParquetSchemaOptions>,
+        schema: Option<PySchema>,
+        schema_inference_options: Option<PyParquetSchemaInferenceOptions>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
-            let schema_options = match schema_options {
-                None => DEFAULT_SCHEMA_OPTIONS,
-                Some(opts) => opts.try_into()?,
+            let schema_options = match (schema, schema_inference_options) {
+                (None, None) => DEFAULT_SCHEMA_OPTIONS,
+                (Some(schema), _) => ParquetSchemaOptions::UserProvidedSchema(schema.schema),
+                (_, Some(opts)) => {
+                    ParquetSchemaOptions::InferenceOptions(ParquetSchemaInferenceOptions {
+                        int96_timestamps_time_unit: opts.int96_timestamps_time_unit.timeunit,
+                    })
+                }
             };
             match schema_options {
                 ParquetSchemaOptions::UserProvidedSchema(s) => Ok(PySchema { schema: s }),
@@ -150,6 +140,6 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_bulk))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_schema))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
-    parent.add_class::<pylib::PyParquetSchemaOptions>()?;
+    parent.add_class::<pylib::PyParquetSchemaInferenceOptions>()?;
     Ok(())
 }
