@@ -2,7 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow2::io::parquet::read::infer_schema;
 use common_error::DaftResult;
-use daft_core::{datatypes::TimeUnit, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
@@ -28,7 +28,6 @@ pub(crate) struct ParquetReaderBuilder {
     row_start_offset: usize,
     num_rows: usize,
     user_provided_arrow_schema: Option<arrow2::datatypes::Schema>,
-    schema_infer_int96_timestamps_time_unit: TimeUnit,
 }
 use parquet2::read::decompress;
 
@@ -103,7 +102,6 @@ impl ParquetReaderBuilder {
             row_start_offset: 0,
             num_rows,
             user_provided_arrow_schema: None,
-            schema_infer_int96_timestamps_time_unit: TimeUnit::Nanoseconds,
         })
     }
 
@@ -148,15 +146,6 @@ impl ParquetReaderBuilder {
         self.row_start_offset = start_offset;
         self.num_rows = num_rows;
         Ok(self)
-    }
-
-    pub fn set_schema_infer_int96_timestamps_time_unit(
-        mut self,
-        schema_infer_int96_timestamps_time_unit: &TimeUnit,
-    ) -> Self {
-        self.schema_infer_int96_timestamps_time_unit =
-            schema_infer_int96_timestamps_time_unit.to_owned();
-        self
     }
 
     pub fn set_user_provided_arrow_schema(

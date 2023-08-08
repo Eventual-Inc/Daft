@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import pyarrow as pa
 
-from daft.datatype import TimeUnit
 from daft.logical.schema import Schema
 from daft.table import Table
 
@@ -35,18 +34,6 @@ class TableReadOptions:
 
     num_rows: int | None = None
     column_names: list[str] | None = None
-
-
-@dataclass(frozen=True)
-class TableParseParquetOptions:
-    """Options for parsing Parquet
-
-    Args:
-        schema_infer_int96_timestamps_time_unit: Precision to use when reading int96 timestamps, defaults to "ns" which
-            means that Parquet INT96 timestamps outside the range of years 1678-2262 will overflow.
-    """
-
-    schema_infer_int96_timestamps_time_unit: TimeUnit = TimeUnit.ns()
 
 
 @dataclass(frozen=True)

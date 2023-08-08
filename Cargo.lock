@@ -93,7 +93,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.1"
-source = "git+https://github.com/Eventual-Inc/arrow2?branch=clark/expand-casting-support#46bc134e386f597eed00a0396ea2de224d12943c"
+source = "git+https://github.com/Eventual-Inc/arrow2?branch=clark/expand-casting-support#37600dfb67447f2b9f1d4336c1a49af15d59ce2b"
 dependencies = [
  "ahash",
  "arrow-format",

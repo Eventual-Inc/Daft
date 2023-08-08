@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use daft_core::datatypes::TimeUnit;
 use daft_core::{
     datatypes::{Int32Array, UInt64Array, Utf8Array},
     schema::Schema,
@@ -15,14 +14,9 @@ use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-
-pub struct ParquetSchemaInferenceOptions {
-    pub int96_timestamps_time_unit: TimeUnit,
-}
-
 pub enum ParquetSchemaOptions {
     UserProvidedSchema(Arc<Schema>),
-    InferenceOptions(ParquetSchemaInferenceOptions),
+    InferenceOptions,
 }
 
 async fn read_parquet_single(
@@ -47,9 +41,8 @@ async fn read_parquet_single(
         ParquetSchemaOptions::UserProvidedSchema(s) => {
             builder.set_user_provided_arrow_schema(Some(s.to_arrow()?))
         }
-        ParquetSchemaOptions::InferenceOptions(opts) => {
-            builder.set_schema_infer_int96_timestamps_time_unit(&opts.int96_timestamps_time_unit)
-        }
+        // TODO: add builder options to customize schema inference
+        ParquetSchemaOptions::InferenceOptions => builder,
     };
 
     let metadata_num_rows = builder.metadata().num_rows;
@@ -100,6 +93,7 @@ async fn read_parquet_single(
     Ok(table)
 }
 
+<<<<<<< HEAD
 pub fn read_parquet(
     uri: &str,
     columns: Option<&[&str]>,
@@ -150,14 +144,13 @@ pub fn read_parquet_schema(
     io_client: Arc<IOClient>,
     schema_inference_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
+=======
+pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
+>>>>>>> 9f13bd76 (Remove unused schema inference logic and options)
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle
         .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
-
-    let builder = builder.set_schema_infer_int96_timestamps_time_unit(
-        &schema_inference_options.int96_timestamps_time_unit,
-    );
 
     Schema::try_from(builder.build()?.arrow_schema())
 }

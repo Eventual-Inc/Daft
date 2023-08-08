@@ -7,14 +7,11 @@ import pyarrow as pa
 from loguru import logger
 
 from daft.arrow_utils import ensure_table
-from daft.daft import (
-    PyParquetSchemaInferenceOptions as _PyParquetSchemaInferenceOptions,
-)
 from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
@@ -363,7 +360,6 @@ class Table:
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
         schema: Schema | None = None,
-        schema_infer_int96_timestamps_time_unit: TimeUnit = TimeUnit.ns(),
     ) -> Table:
         return Table._from_pytable(
             _read_parquet(
@@ -373,9 +369,6 @@ class Table:
                 num_rows=num_rows,
                 io_config=io_config,
                 schema=schema._schema if schema is not None else None,
-                schema_inference_options=_PyParquetSchemaInferenceOptions(
-                    int96_timestamps_time_unit=schema_infer_int96_timestamps_time_unit._timeunit,
-                ),
             )
         )
 

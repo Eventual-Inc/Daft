@@ -12,7 +12,7 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
-from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
+from daft.runners.partitioning import TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 
@@ -220,43 +220,6 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to):
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            parquet_options=TableParseParquetOptions(schema_infer_int96_timestamps_time_unit=coerce_to),
-            use_native_downloader=True,
-        )
-        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
-
-
-@pytest.mark.skip(
-    reason="Need to implement `infer_schema` functionality in arrow2, or possibly implement our own custom patch on top"
-)
-def test_parquet_infer_schema_int96_timestamps():
-    data = {
-        "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
-        "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
-        "timestamp_ns": pa.array([1, 2, 3], pa.timestamp("ns")),
-    }
-    schema = [
-        ("timestamp_ms", DataType.timestamp(TimeUnit.ms())),
-        ("timestamp_us", DataType.timestamp(TimeUnit.us())),
-        ("timestamp_ns", DataType.timestamp(TimeUnit.ns())),
-    ]
-
-    with _parquet_write_helper(
-        pa.Table.from_pydict(data),
-        papq_write_table_kwargs={
-            "use_deprecated_int96_timestamps": True,
-            "store_schema": False,
-        },
-    ) as f:
-        expected = Table.from_pydict(data).eval_expression_list(
-            [daft.col(c).cast(DataType.timestamp(TimeUnit.ms())) for c, _ in schema]
-        )
-        schema = Schema._from_field_name_and_types(schema)
-        table = table_io.read_parquet(
-            f,
-            None,
-            read_options=TableReadOptions(column_names=schema.column_names()),
-            parquet_options=TableParseParquetOptions(schema_infer_int96_timestamps_time_unit=TimeUnit.ms()),
             use_native_downloader=True,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
