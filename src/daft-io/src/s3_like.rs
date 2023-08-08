@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 
@@ -139,6 +140,14 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     } else {
         builder
     };
+
+    let retry_config = s3::config::retry::RetryConfig::standard()
+        .with_retry_mode(aws_config::retry::RetryMode::Adaptive)
+        .with_max_attempts(3);
+    let builder = builder.retry_config(retry_config);
+
+    let sleep_impl = Arc::new(TokioSleep::new());
+    let builder = builder.sleep_impl(sleep_impl);
 
     let builder = if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
