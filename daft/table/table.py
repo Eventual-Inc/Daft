@@ -388,7 +388,7 @@ class Table:
             start_offset=start_offset,
             num_rows=num_rows,
             io_config=io_config,
-            infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit,
+            infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit._timeunit,
         )
         return [Table._from_pytable(t) for t in pytables]
 

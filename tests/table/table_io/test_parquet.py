@@ -239,9 +239,8 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
-def test_parquet_read_int96_timestamps_schema_inference(coerce_to, use_native_downloader):
+def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
     data = {
         "timestamp": pa.array(
             [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
