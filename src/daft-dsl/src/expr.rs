@@ -76,35 +76,35 @@ impl AggExpr {
         }
     }
 
-    pub fn resolve_field_id(&self, schema: &Schema) -> FieldID {
+    pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         use AggExpr::*;
         match self {
             Count(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_count({child_id})"))
             }
             Sum(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_sum({child_id})"))
             }
             Mean(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_mean({child_id})"))
             }
             Min(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_min({child_id})"))
             }
             Max(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_max({child_id})"))
             }
             List(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_list({child_id})"))
             }
             Concat(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("local_concat({child_id})"))
             }
         }
@@ -267,41 +267,46 @@ impl Expr {
         binary_op(Operator::And, self, other)
     }
 
-    pub fn resolve_field_id(&self, schema: &Schema) -> FieldID {
+    pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         use Expr::*;
         match self {
             // Base case - anonymous column reference.
             // Look up the column name in the provided schema and get its field ID.
-            Column(name) => schema.get_field(name).unwrap().id.clone(),
+            Column(name) => schema
+                .get_field(name)
+                .unwrap()
+                .id
+                .clone()
+                .unwrap_or(FieldID::new(&**name)),
 
             // Base case - literal.
             Literal(value) => FieldID::new(format!("Literal({value:?})")),
 
             // Recursive cases.
             Cast(expr, dtype) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.cast({dtype})"))
             }
             Not(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not()"))
             }
             IsNull(expr) => {
-                let child_id = expr.resolve_field_id(schema);
+                let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_null()"))
             }
             Function { func, inputs } => {
                 let inputs = inputs
                     .iter()
-                    .map(|expr| expr.resolve_field_id(schema).id)
+                    .map(|expr| expr.semantic_id(schema).id)
                     .collect::<Vec<String>>()
                     .join(", ");
                 // TODO: check for function idempotency here.
                 FieldID::new(format!("Function_{func:?}({inputs})"))
             }
             BinaryOp { op, left, right } => {
-                let left_id = left.resolve_field_id(schema);
-                let right_id = right.resolve_field_id(schema);
+                let left_id = left.semantic_id(schema);
+                let right_id = right.semantic_id(schema);
                 // TODO: check for symmetry here.
                 FieldID::new(format!("({left_id} {op} {right_id})"))
             }
@@ -311,17 +316,17 @@ impl Expr {
                 if_false,
                 predicate,
             } => {
-                let if_true = if_true.resolve_field_id(schema);
-                let if_false = if_false.resolve_field_id(schema);
-                let predicate = predicate.resolve_field_id(schema);
+                let if_true = if_true.semantic_id(schema);
+                let if_false = if_false.semantic_id(schema);
+                let predicate = predicate.semantic_id(schema);
                 FieldID::new(format!("({if_true} if {predicate} else {if_false})"))
             }
 
             // Alias: ID does not change.
-            Alias(expr, ..) => expr.resolve_field_id(schema),
+            Alias(expr, ..) => expr.semantic_id(schema),
 
             // Agg: Separate path.
-            Agg(agg_expr) => agg_expr.resolve_field_id(schema),
+            Agg(agg_expr) => agg_expr.semantic_id(schema),
         }
     }
 
@@ -411,7 +416,7 @@ impl Expr {
                     Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
                 }
             }
-        }.map(|field| field.with_id(self.resolve_field_id(schema)))
+        }.map(|field| field.with_id(self.semantic_id(schema)))
     }
 
     pub fn name(&self) -> DaftResult<&str> {

@@ -16,7 +16,7 @@ pub struct Field {
     pub name: String,
 
     /// Internal semantic identifier for this field, used by the query planner only.
-    pub id: FieldID,
+    pub id: Option<FieldID>,
 
     pub dtype: DataType,
     pub metadata: Arc<Metadata>,
@@ -57,8 +57,8 @@ impl Field {
     pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
         let name: String = name.into();
         Self {
-            name: name.clone(),
-            id: FieldID::from_name(name),
+            name,
+            id: None,
             dtype,
             metadata: Default::default(),
         }
@@ -76,7 +76,7 @@ impl Field {
     pub fn with_id(self, id: FieldID) -> Self {
         Self {
             name: self.name,
-            id,
+            id: Some(id),
             dtype: self.dtype,
             metadata: self.metadata,
         }
@@ -116,7 +116,7 @@ impl From<&ArrowField> for Field {
     fn from(af: &ArrowField) -> Self {
         Self {
             name: af.name.clone(),
-            id: FieldID::from_name(af.name.clone()),
+            id: None,
             dtype: af.data_type().into(),
             metadata: af.metadata.clone().into(),
         }
