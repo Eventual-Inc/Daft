@@ -354,7 +354,6 @@ impl ParquetFileReader {
 
                             let (send, recv) = tokio::sync::oneshot::channel();
                             rayon::spawn(move || {
-                                // TODO(jay): Fix arrow2 to handle the pytype=Int96/dtype=Timestamp(ms/us) cases
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
                                     ptypes.iter().collect(),

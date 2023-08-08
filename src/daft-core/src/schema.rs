@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     fmt::{Display, Formatter, Result},
     sync::Arc,
 };
@@ -91,7 +91,7 @@ impl Schema {
         let arrow_fields = arrow_fields?;
         Ok(arrow2::datatypes::Schema {
             fields: arrow_fields,
-            metadata: BTreeMap::new(),
+            metadata: Default::default(),
         })
     }
 
