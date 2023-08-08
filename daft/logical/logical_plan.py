@@ -3,30 +3,224 @@ from __future__ import annotations
 import itertools
 import pathlib
 from abc import abstractmethod
-from dataclasses import asdict, dataclass
-from enum import Enum, IntEnum
+from enum import IntEnum
 from pprint import pformat
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 import fsspec
 
-from daft.datasources import SourceInfo, StorageType
+from daft.context import get_context
+from daft.daft import FileFormat, FileFormatConfig, PartitionScheme, PartitionSpec
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.expressions.testing import expr_structurally_equal
 from daft.internal.treenode import TreeNode
+from daft.logical.builder import JoinType, LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.table import Table
 
+if TYPE_CHECKING:
+    from daft.planner.py_planner import PyQueryPlanner
+
 
 class OpLevel(IntEnum):
     ROW = 1
     PARTITION = 2
     GLOBAL = 3
+
+
+class PyLogicalPlanBuilder(LogicalPlanBuilder):
+    def __init__(self, plan: LogicalPlan):
+        self._plan = plan
+
+    def to_planner(self) -> PyQueryPlanner:
+        from daft.planner.py_planner import PyQueryPlanner
+
+        return PyQueryPlanner(self._plan)
+
+    def schema(self) -> Schema:
+        return self._plan.schema()
+
+    def partition_spec(self) -> PartitionSpec:
+        return self._plan.partition_spec()
+
+    def resource_request(self) -> ResourceRequest:
+        return self._plan.resource_request()
+
+    def pretty_print(self) -> str:
+        return self._plan.pretty_print()
+
+    def optimize(self) -> PyLogicalPlanBuilder:
+        from daft.internal.rule_runner import (
+            FixedPointPolicy,
+            Once,
+            RuleBatch,
+            RuleRunner,
+        )
+        from daft.logical.optimizer import (
+            DropProjections,
+            DropRepartition,
+            FoldProjections,
+            PruneColumns,
+            PushDownClausesIntoScan,
+            PushDownLimit,
+            PushDownPredicates,
+        )
+
+        optimizer = RuleRunner(
+            [
+                RuleBatch(
+                    "SinglePassPushDowns",
+                    Once,
+                    [
+                        DropRepartition(),
+                        PushDownPredicates(),
+                        PruneColumns(),
+                        FoldProjections(),
+                        PushDownClausesIntoScan(),
+                    ],
+                ),
+                RuleBatch(
+                    "PushDownLimitsAndRepartitions",
+                    FixedPointPolicy(3),
+                    [PushDownLimit(), DropRepartition(), DropProjections()],
+                ),
+            ]
+        )
+        plan = optimizer.optimize(self._plan)
+        return plan.to_builder()
+
+    @classmethod
+    def from_in_memory_scan(
+        cls, partition: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
+    ) -> PyLogicalPlanBuilder:
+        return InMemoryScan(cache_entry=partition, schema=schema, partition_spec=partition_spec).to_builder()
+
+    @classmethod
+    def from_tabular_scan(
+        cls,
+        *,
+        paths: list[str],
+        file_format_config: FileFormatConfig,
+        schema_hint: Schema | None,
+        fs: fsspec.AbstractFileSystem | None,
+    ) -> PyLogicalPlanBuilder:
+        # Glob the path using the Runner
+        runner_io = get_context().runner().runner_io()
+        file_info_partition_set = runner_io.glob_paths_details(paths, file_format_config, fs)
+
+        # Infer schema if no hints provided
+        inferred_or_provided_schema = (
+            schema_hint
+            if schema_hint is not None
+            else runner_io.get_schema_from_first_filepath(file_info_partition_set, file_format_config, fs)
+        )
+        cache_entry = get_context().runner().put_partition_set_into_cache(file_info_partition_set)
+        filepath_plan = InMemoryScan(
+            cache_entry=cache_entry,
+            schema=runner_io.FS_LISTING_SCHEMA,
+            partition_spec=PartitionSpec(PartitionScheme.Unknown, file_info_partition_set.num_partitions()),
+        )
+
+        return TabularFilesScan(
+            schema=inferred_or_provided_schema,
+            predicate=None,
+            columns=None,
+            file_format_config=file_format_config,
+            fs=fs,
+            filepaths_child=filepath_plan,
+            filepaths_column_name=runner_io.FS_LISTING_PATH_COLUMN_NAME,
+            # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
+            # one partition per filepath. This will change in the future and our logic here should change accordingly.
+            num_partitions=len(file_info_partition_set),
+        ).to_builder()
+
+    def project(
+        self,
+        projection: ExpressionsProjection,
+        custom_resource_request: ResourceRequest = ResourceRequest(),
+    ) -> PyLogicalPlanBuilder:
+        return Projection(self._plan, projection, custom_resource_request=custom_resource_request).to_builder()
+
+    def filter(self, predicate: Expression):
+        return Filter(self._plan, ExpressionsProjection([predicate])).to_builder()
+
+    def limit(self, num_rows: int) -> LogicalPlanBuilder:
+        local_limit = LocalLimit(self._plan, num=num_rows)
+        plan = GlobalLimit(local_limit, num=num_rows)
+        return plan.to_builder()
+
+    def explode(self, explode_expressions: ExpressionsProjection) -> PyLogicalPlanBuilder:
+        return Explode(self._plan, explode_expressions).to_builder()
+
+    def count(self) -> LogicalPlanBuilder:
+        local_count_op = LocalCount(self._plan)
+        coalease_op = Coalesce(local_count_op, 1)
+        local_sum_op = LocalAggregate(coalease_op, [col("count")._sum()])
+        return local_sum_op.to_builder()
+
+    def distinct(self) -> PyLogicalPlanBuilder:
+        all_exprs = ExpressionsProjection.from_schema(self._plan.schema())
+        plan: LogicalPlan = LocalDistinct(self._plan, all_exprs)
+        if self.num_partitions() > 1:
+            plan = Repartition(
+                plan,
+                partition_by=all_exprs,
+                num_partitions=self.num_partitions(),
+                scheme=PartitionScheme.Hash,
+            )
+            plan = LocalDistinct(plan, all_exprs)
+        return plan.to_builder()
+
+    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> PyLogicalPlanBuilder:
+        return Sort(self._plan, sort_by=sort_by, descending=descending).to_builder()
+
+    def repartition(
+        self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
+    ) -> PyLogicalPlanBuilder:
+        return Repartition(
+            self._plan, num_partitions=num_partitions, partition_by=partition_by, scheme=scheme
+        ).to_builder()
+
+    def coalesce(self, num_partitions: int) -> PyLogicalPlanBuilder:
+        return Coalesce(self._plan, num_partitions).to_builder()
+
+    def join(  # type: ignore[override]
+        self,
+        right: PyLogicalPlanBuilder,
+        left_on: ExpressionsProjection,
+        right_on: ExpressionsProjection,
+        how: JoinType = JoinType.INNER,
+    ) -> PyLogicalPlanBuilder:
+        return Join(
+            self._plan,
+            right._plan,
+            left_on=left_on,
+            right_on=right_on,
+            how=how,
+        ).to_builder()
+
+    def concat(self, other: PyLogicalPlanBuilder) -> PyLogicalPlanBuilder:  # type: ignore[override]
+        return Concat(self._plan, other._plan).to_builder()
+
+    def write_tabular(
+        self,
+        root_dir: str | pathlib.Path,
+        file_format: FileFormat,
+        partition_cols: ExpressionsProjection | None = None,
+        compression: str | None = None,
+    ) -> PyLogicalPlanBuilder:
+        return FileWrite(
+            self._plan,
+            root_dir=root_dir,
+            partition_cols=partition_cols,
+            file_format=file_format,
+            compression=compression,
+        ).to_builder()
 
 
 class LogicalPlan(TreeNode["LogicalPlan"]):
@@ -55,6 +249,12 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
         Implementations should override this if they allow for customized ResourceRequests.
         """
         return ResourceRequest()
+
+    def num_partitions(self) -> int:
+        return self._partition_spec.num_partitions
+
+    def to_builder(self) -> PyLogicalPlanBuilder:
+        return PyLogicalPlanBuilder(self)
 
     @abstractmethod
     def required_columns(self) -> list[set[str]]:
@@ -85,9 +285,6 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             "The == operation is not implemented. "
             "Use .is_eq() to check if expressions are 'equal' (ignores differences in IDs but checks for the same expression structure)"
         )
-
-    def num_partitions(self) -> int:
-        return self._partition_spec.num_partitions
 
     def partition_spec(self) -> PartitionSpec:
         return self._partition_spec
@@ -182,7 +379,7 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
             elif isinstance(v, Schema):
                 v = list([col(field.name) for field in v])
             elif isinstance(v, PartitionSpec):
-                v = asdict(v)
+                v = {"scheme": v.scheme, "num_partitions": v.num_partitions, "by": v.by}
                 if isinstance(v["by"], ExpressionsProjection):
                     v["by"] = list(v["by"])
             reduced_types[k] = v
@@ -210,7 +407,7 @@ class TabularFilesScan(UnaryNode):
         self,
         *,
         schema: Schema,
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
@@ -221,7 +418,7 @@ class TabularFilesScan(UnaryNode):
     ) -> None:
         if num_partitions is None:
             num_partitions = filepaths_child.num_partitions()
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=num_partitions)
+        pspec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=num_partitions)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.PARTITION)
 
         if predicate is not None:
@@ -238,7 +435,7 @@ class TabularFilesScan(UnaryNode):
 
         self._column_names = columns
         self._columns = self._schema
-        self._source_info = source_info
+        self._file_format_config = file_format_config
         self._fs = fs
         self._limit_rows = limit_rows
 
@@ -258,7 +455,9 @@ class TabularFilesScan(UnaryNode):
         return self._output_schema
 
     def __repr__(self) -> str:
-        return self._repr_helper(columns_pruned=len(self._columns) - len(self.schema()), source_info=self._source_info)
+        return self._repr_helper(
+            columns_pruned=len(self._columns) - len(self.schema()), file_format_config=self._file_format_config
+        )
 
     def required_columns(self) -> list[set[str]]:
         return [{self._filepaths_column_name} | self._predicate.required_columns()]
@@ -272,7 +471,7 @@ class TabularFilesScan(UnaryNode):
             and self.schema() == other.schema()
             and self._predicate == other._predicate
             and self._columns == other._columns
-            and self._source_info == other._source_info
+            and self._file_format_config == other._file_format_config
             and self._filepaths_column_name == other._filepaths_column_name
         )
 
@@ -280,7 +479,7 @@ class TabularFilesScan(UnaryNode):
         child = self._filepaths_child.rebuild()
         return TabularFilesScan(
             schema=self.schema(),
-            source_info=self._source_info,
+            file_format_config=self._file_format_config,
             fs=self._fs,
             predicate=self._predicate if self._predicate is not None else None,
             columns=self._column_names,
@@ -292,7 +491,7 @@ class TabularFilesScan(UnaryNode):
         assert len(new_children) == 1
         return TabularFilesScan(
             schema=self.schema(),
-            source_info=self._source_info,
+            file_format_config=self._file_format_config,
             fs=self._fs,
             predicate=self._predicate,
             columns=self._column_names,
@@ -306,7 +505,7 @@ class InMemoryScan(UnaryNode):
         self, cache_entry: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
     ) -> None:
         if partition_spec is None:
-            partition_spec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
 
         super().__init__(schema=schema, partition_spec=partition_spec, op_level=OpLevel.GLOBAL)
         self._cache_entry = cache_entry
@@ -345,14 +544,13 @@ class FileWrite(UnaryNode):
         self,
         input: LogicalPlan,
         root_dir: str | pathlib.Path,
-        storage_type: StorageType,
+        file_format: FileFormat,
         partition_cols: ExpressionsProjection | None = None,
         compression: str | None = None,
     ) -> None:
-        assert (
-            storage_type == StorageType.PARQUET or storage_type == StorageType.CSV
-        ), "only parquet and csv is supported currently"
-        self._storage_type = storage_type
+        if file_format != FileFormat.Parquet and file_format != FileFormat.Csv:
+            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
+        self._file_format = file_format
         self._root_dir = root_dir
         self._compression = compression
         if partition_cols is not None:
@@ -378,7 +576,7 @@ class FileWrite(UnaryNode):
         return (
             isinstance(other, FileWrite)
             and self.schema() == other.schema()
-            and self._storage_type == other._storage_type
+            and self._file_format == other._file_format
             and self._root_dir == other._root_dir
             and self._compression == other._compression
         )
@@ -391,7 +589,7 @@ class FileWrite(UnaryNode):
         return FileWrite(
             new_children[0],
             root_dir=self._root_dir,
-            storage_type=self._storage_type,
+            file_format=self._file_format,
             partition_cols=self._partition_cols,
             compression=self._compression,
         )
@@ -482,7 +680,11 @@ class Sort(UnaryNode):
     def __init__(
         self, input: LogicalPlan, sort_by: ExpressionsProjection, descending: list[bool] | bool = False
     ) -> None:
-        pspec = PartitionSpec(scheme=PartitionScheme.RANGE, num_partitions=input.num_partitions(), by=sort_by)
+        pspec = PartitionSpec(
+            scheme=PartitionScheme.Range,
+            num_partitions=input.num_partitions(),
+            by=sort_by.to_inner_py_exprs(),
+        )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._sort_by = sort_by
@@ -658,23 +860,6 @@ class LocalCount(UnaryNode):
         return LocalCount(input=self._children()[0].rebuild())
 
 
-class PartitionScheme(Enum):
-    UNKNOWN = "UNKNOWN"
-    RANGE = "RANGE"
-    HASH = "HASH"
-    RANDOM = "RANDOM"
-
-    def __repr__(self) -> str:
-        return self.value
-
-
-@dataclass(frozen=True)
-class PartitionSpec:
-    scheme: PartitionScheme
-    num_partitions: int
-    by: ExpressionsProjection | None = None
-
-
 class Repartition(UnaryNode):
     def __init__(
         self, input: LogicalPlan, partition_by: ExpressionsProjection, num_partitions: int, scheme: PartitionScheme
@@ -682,13 +867,13 @@ class Repartition(UnaryNode):
         pspec = PartitionSpec(
             scheme=scheme,
             num_partitions=num_partitions,
-            by=partition_by if len(partition_by) > 0 else None,
+            by=partition_by.to_inner_py_exprs() if len(partition_by) > 0 else None,
         )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._partition_by = partition_by
         self._scheme = scheme
-        if scheme in (PartitionScheme.RANDOM, PartitionScheme.UNKNOWN) and len(partition_by.to_name_set()) > 0:
+        if scheme in (PartitionScheme.Random, PartitionScheme.Unknown) and len(partition_by.to_name_set()) > 0:
             raise ValueError(f"Can not pass in {scheme} and partition_by args")
 
     def __repr__(self) -> str:
@@ -731,7 +916,7 @@ class Repartition(UnaryNode):
 class Coalesce(UnaryNode):
     def __init__(self, input: LogicalPlan, num_partitions: int) -> None:
         pspec = PartitionSpec(
-            scheme=PartitionScheme.UNKNOWN,
+            scheme=PartitionScheme.Unknown,
             num_partitions=num_partitions,
         )
         super().__init__(input.schema(), partition_spec=pspec, op_level=OpLevel.GLOBAL)
@@ -865,7 +1050,7 @@ class HTTPRequest(LogicalPlan):
         schema: Schema,
     ) -> None:
         self._output_schema = schema
-        pspec = PartitionSpec(scheme=PartitionScheme.UNKNOWN, num_partitions=1)
+        pspec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
         super().__init__(schema, partition_spec=pspec, op_level=OpLevel.ROW)
 
     def schema(self) -> Schema:
@@ -924,12 +1109,6 @@ class HTTPResponse(UnaryNode):
         )
 
 
-class JoinType(Enum):
-    INNER = "inner"
-    LEFT = "left"
-    RIGHT = "right"
-
-
 class Join(BinaryNode):
     def __init__(
         self,
@@ -975,11 +1154,15 @@ class Join(BinaryNode):
                 self._right_columns.resolve_schema(right.schema())
             )
 
-        left_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._left_on)
-        right_pspec = PartitionSpec(scheme=PartitionScheme.HASH, num_partitions=num_partitions, by=self._right_on)
+        left_pspec = PartitionSpec(
+            scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._left_on.to_inner_py_exprs()
+        )
+        right_pspec = PartitionSpec(
+            scheme=PartitionScheme.Hash, num_partitions=num_partitions, by=self._right_on.to_inner_py_exprs()
+        )
 
         new_left = Repartition(
-            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+            left, partition_by=self._left_on, num_partitions=num_partitions, scheme=PartitionScheme.Hash
         )
 
         if num_partitions == 1 and left.num_partitions() == 1:
@@ -988,7 +1171,7 @@ class Join(BinaryNode):
             left = new_left
 
         new_right = Repartition(
-            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.HASH
+            right, partition_by=self._right_on, num_partitions=num_partitions, scheme=PartitionScheme.Hash
         )
         if num_partitions == 1 and right.num_partitions() == 1:
             right = right
@@ -1038,7 +1221,7 @@ class Concat(BinaryNode):
         self._bottom = bottom
 
         new_partition_spec = PartitionSpec(
-            PartitionScheme.UNKNOWN,
+            PartitionScheme.Unknown,
             num_partitions=(top.partition_spec().num_partitions + bottom.partition_spec().num_partitions),
             by=None,
         )

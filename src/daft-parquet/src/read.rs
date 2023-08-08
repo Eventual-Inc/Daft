@@ -9,22 +9,19 @@ use daft_core::{
 };
 use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
-use futures::future::join_all;
+use futures::future::{join_all, try_join_all};
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-pub fn read_parquet(
+async fn read_parquet_single(
     uri: &str,
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     io_client: Arc<IOClient>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
-    let builder = runtime_handle
-        .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
+    let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
 
     let builder = if let Some(columns) = columns {
         builder.prune_columns(columns)?
@@ -38,7 +35,7 @@ pub fn read_parquet(
 
     let parquet_reader = builder.build()?;
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
-    let table = runtime_handle.block_on(async { parquet_reader.read_from_ranges(ranges).await })?;
+    let table = parquet_reader.read_from_ranges(ranges).await?;
 
     match (start_offset, num_rows) {
         (None, None) if metadata_num_rows != table.len() => {
@@ -79,6 +76,51 @@ pub fn read_parquet(
     }
 
     Ok(table)
+}
+
+pub fn read_parquet(
+    uri: &str,
+    columns: Option<&[&str]>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    io_client: Arc<IOClient>,
+) -> DaftResult<Table> {
+    let runtime_handle = get_runtime(true)?;
+    let _rt_guard = runtime_handle.enter();
+    runtime_handle.block_on(async {
+        read_parquet_single(uri, columns, start_offset, num_rows, io_client).await
+    })
+}
+
+pub fn read_parquet_bulk(
+    uris: &[&str],
+    columns: Option<&[&str]>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    io_client: Arc<IOClient>,
+) -> DaftResult<Vec<Table>> {
+    let runtime_handle = get_runtime(true)?;
+    let _rt_guard = runtime_handle.enter();
+    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
+
+    let tables = runtime_handle
+        .block_on(async move {
+            try_join_all(uris.iter().map(|uri| {
+                let uri = uri.to_string();
+                let owned_columns = owned_columns.clone();
+                let io_client = io_client.clone();
+                tokio::task::spawn(async move {
+                    let columns = owned_columns
+                        .as_ref()
+                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
+                    read_parquet_single(&uri, columns.as_deref(), start_offset, num_rows, io_client)
+                        .await
+                })
+            }))
+            .await
+        })
+        .context(JoinSnafu { path: "UNKNOWN" })?;
+    tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
 pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {

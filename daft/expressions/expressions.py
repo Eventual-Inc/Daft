@@ -724,6 +724,9 @@ class ExpressionsProjection(Iterable[Expression]):
             raise ValueError(f"{name} not found in ExpressionsProjection")
         return self._output_name_to_exprs[name]
 
+    def to_inner_py_exprs(self) -> list[_PyExpr]:
+        return [expr._expr for expr in self]
+
     def resolve_schema(self, schema: Schema) -> Schema:
         fields = [e._to_field(schema) for e in self]
         return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])

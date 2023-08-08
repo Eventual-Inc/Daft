@@ -123,6 +123,12 @@ impl S3Config {
     }
 }
 
+impl From<config::IOConfig> for IOConfig {
+    fn from(config: config::IOConfig) -> Self {
+        Self { config }
+    }
+}
+
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<S3Config>()?;
     parent.add_class::<IOConfig>()?;

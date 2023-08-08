@@ -25,13 +25,14 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
+from daft.daft import FileFormat, PartitionScheme, PartitionSpec
 from daft.dataframe.preview import DataFramePreview
-from daft.datasources import StorageType
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.logical import logical_plan, rust_logical_plan
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
+from daft.logical.builder import JoinType, LogicalPlanBuilder
+from daft.logical.logical_plan import PyLogicalPlanBuilder
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -59,34 +60,41 @@ class DataFrame:
     number of items (rows) as all other columns.
     """
 
-    def __init__(self, plan: logical_plan.LogicalPlan) -> None:
+    def __init__(self, builder: LogicalPlanBuilder) -> None:
         """Constructs a DataFrame according to a given LogicalPlan. Users are expected instead to call
         the classmethods on DataFrame to create a DataFrame.
 
         Args:
             plan: LogicalPlan describing the steps required to arrive at this DataFrame
         """
-        if not isinstance(plan, (logical_plan.LogicalPlan, rust_logical_plan.RustLogicalPlanBuilder)):
-            if isinstance(plan, dict):
+        if not isinstance(builder, LogicalPlanBuilder):
+            if isinstance(builder, dict):
                 raise ValueError(
                     f"DataFrames should be constructed with a dictionary of columns using `daft.from_pydict`"
                 )
-            if isinstance(plan, list):
+            if isinstance(builder, list):
                 raise ValueError(
                     f"DataFrames should be constructed with a list of dictionaries using `daft.from_pylist`"
                 )
-            raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlan, received: {plan}")
+            raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlanBuilder, received: {builder}")
 
-        self.__plan = plan
+        self.__builder = builder
         self._result_cache: Optional[PartitionCacheEntry] = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
 
     @property
-    def _plan(self) -> logical_plan.LogicalPlan:
-        if self._result_cache is None:
-            return self.__plan
+    def _builder(self) -> LogicalPlanBuilder:
+        # TODO(Clark): Add caching for Rust query planner.
+        if self._result_cache is None or get_context().use_rust_planner:
+            return self.__builder
         else:
-            return logical_plan.InMemoryScan(self._result_cache, self.__plan.schema(), self.__plan.partition_spec())
+            return self.__builder.from_in_memory_scan(
+                self._result_cache, self.__builder.schema(), self.__builder.partition_spec()
+            )
+
+    def _get_current_builder(self) -> LogicalPlanBuilder:
+        """Returns the current logical plan builder, without any caching optimizations."""
+        return self.__builder
 
     @property
     def _result(self) -> Optional[PartitionSet]:
@@ -94,14 +102,6 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
-
-    def plan(self) -> logical_plan.LogicalPlan:
-        """Returns `LogicalPlan` that will be executed to compute the result of this DataFrame.
-
-        Returns:
-            logical_plan.LogicalPlan: LogicalPlan to compute this DataFrame.
-        """
-        return self.__plan
 
     @DataframePublicAPI
     def explain(self, show_optimized: bool = False) -> None:
@@ -114,17 +114,17 @@ class DataFrame:
 
         if self._result_cache is not None:
             print("Result is cached and will skip computation\n")
-            print(self._plan.pretty_print())
+            print(self._builder.pretty_print())
 
             print("However here is the logical plan used to produce this result:\n")
 
-        plan = self.__plan
+        builder = self.__builder
         if show_optimized:
-            plan = get_context().runner().optimize(plan)
-        print(plan.pretty_print())
+            builder = builder.optimize()
+        print(builder.pretty_print())
 
     def num_partitions(self) -> int:
-        return self.__plan.num_partitions()
+        return self.__builder.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -133,7 +133,7 @@ class DataFrame:
         Returns:
             Schema: schema of the DataFrame
         """
-        return self.__plan.schema()
+        return self.__builder.schema()
 
     @property
     def column_names(self) -> List[str]:
@@ -142,7 +142,7 @@ class DataFrame:
         Returns:
             List[str]: Column names of this DataFrame.
         """
-        return self.__plan.schema().column_names()
+        return self.__builder.schema().column_names()
 
     @property
     def columns(self) -> List[Expression]:
@@ -151,7 +151,7 @@ class DataFrame:
         Returns:
             List[Expression]: Columns of this DataFrame.
         """
-        return [col(field.name) for field in self.__plan.schema()]
+        return [col(field.name) for field in self.__builder.schema()]
 
     @DataframePublicAPI
     def show(self, n: int = 8) -> "DataFrameDisplay":
@@ -199,7 +199,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._plan)
+            partitions_iter = context.runner().run_iter_tables(self._builder)
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -225,7 +225,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter(self._plan)
+            partitions_iter = context.runner().run_iter(self._builder)
             yield from partitions_iter
 
     @DataframePublicAPI
@@ -296,13 +296,10 @@ class DataFrame:
 
         result_pset = LocalPartitionSet({i: part for i, part in enumerate(parts)})
 
-        cache_entry = get_context().runner().put_partition_set_into_cache(result_pset)
-
-        plan = logical_plan.InMemoryScan(
-            cache_entry=cache_entry,
-            schema=parts[0].schema(),
-        )
-        return cls(plan)
+        context = get_context()
+        cache_entry = context.runner().put_partition_set_into_cache(result_pset)
+        builder = context.logical_plan_builder_class().from_in_memory_scan(cache_entry, parts[0].schema())
+        return cls(builder)
 
     ###
     # Write methods
@@ -340,22 +337,20 @@ class DataFrame:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
                 assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            df = self.repartition(self.num_partitions(), *cols)
+            self.repartition(self.num_partitions(), *cols)
         else:
-            df = self
-        plan = logical_plan.FileWrite(
-            df._plan,
+            pass
+        builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            storage_type=StorageType.PARQUET,
+            file_format=FileFormat.Parquet,
             compression=compression,
         )
-
         # Block and write, then retrieve data and return a new disconnected DataFrame
-        write_df = DataFrame(plan)
+        write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._plan)
+        return DataFrame(write_df._builder)
 
     @DataframePublicAPI
     def write_csv(
@@ -383,21 +378,20 @@ class DataFrame:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
                 assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            df = self.repartition(self.num_partitions(), *cols)
+            self.repartition(self.num_partitions(), *cols)
         else:
-            df = self
-        plan = logical_plan.FileWrite(
-            df._plan,
+            pass
+        builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            storage_type=StorageType.CSV,
+            file_format=FileFormat.Csv,
         )
 
         # Block and write, then retrieve data and return a new disconnected DataFrame
-        write_df = DataFrame(plan)
+        write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._plan)
+        return DataFrame(write_df._builder)
 
     ###
     # DataFrame operations
@@ -412,18 +406,18 @@ class DataFrame:
         result: Optional[Expression]
 
         if isinstance(item, int):
-            schema = self._plan.schema()
+            schema = self._builder.schema()
             if item < -len(schema) or item >= len(schema):
                 raise ValueError(f"{item} out of bounds for {schema}")
             result = ExpressionsProjection.from_schema(schema)[item]
             assert result is not None
             return result
         elif isinstance(item, str):
-            schema = self._plan.schema()
+            schema = self._builder.schema()
             field = schema[item]
             return col(field.name)
         elif isinstance(item, Iterable):
-            schema = self._plan.schema()
+            schema = self._builder.schema()
 
             columns = []
             for it in item:
@@ -433,13 +427,13 @@ class DataFrame:
                 elif isinstance(it, int):
                     if it < -len(schema) or it >= len(schema):
                         raise ValueError(f"{it} out of bounds for {schema}")
-                    field = list(self._plan.schema())[it]
+                    field = list(self._builder.schema())[it]
                     columns.append(col(field.name))
                 else:
                     raise ValueError(f"unknown indexing type: {type(it)}")
             return self.select(*columns)
         elif isinstance(item, slice):
-            schema = self._plan.schema()
+            schema = self._builder.schema()
             columns_exprs: ExpressionsProjection = ExpressionsProjection.from_schema(schema)
             selected_columns = columns_exprs[item]
             return self.select(*selected_columns)
@@ -471,11 +465,8 @@ class DataFrame:
             DataFrame: new DataFrame that will select the passed in columns
         """
         assert len(columns) > 0
-        projection = logical_plan.Projection(
-            self._plan,
-            self.__column_input_to_expression(columns),
-        )
-        return DataFrame(projection)
+        builder = self._builder.project(self.__column_input_to_expression(columns))
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def distinct(self) -> "DataFrame":
@@ -487,17 +478,9 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame that has only  unique rows.
         """
-        all_exprs = ExpressionsProjection.from_schema(self._plan.schema())
-        plan: logical_plan.LogicalPlan = logical_plan.LocalDistinct(self._plan, all_exprs)
-        if self.num_partitions() > 1:
-            plan = logical_plan.Repartition(
-                plan,
-                partition_by=all_exprs,
-                num_partitions=self.num_partitions(),
-                scheme=logical_plan.PartitionScheme.HASH,
-            )
-            plan = logical_plan.LocalDistinct(plan, all_exprs)
-        return DataFrame(plan)
+        ExpressionsProjection.from_schema(self._builder.schema())
+        builder = self._builder.distinct()
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":
@@ -515,8 +498,9 @@ class DataFrame:
             DataFrame: DataFrame with some columns excluded.
         """
         names_to_skip = set(names)
-        el = ExpressionsProjection([col(e.name) for e in self._plan.schema() if e.name not in names_to_skip])
-        return DataFrame(logical_plan.Projection(self._plan, el))
+        el = ExpressionsProjection([col(e.name) for e in self._builder.schema() if e.name not in names_to_skip])
+        builder = self._builder.project(el)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def where(self, predicate: Expression) -> "DataFrame":
@@ -531,21 +515,8 @@ class DataFrame:
         Returns:
             DataFrame: Filtered DataFrame.
         """
-        use_rust_planner = get_context().use_rust_planner
-
-        if use_rust_planner:
-            new_builder = cast(
-                rust_logical_plan.RustLogicalPlanBuilder,
-                self._plan,
-            ).builder.filter(predicate._expr)
-
-            plan = cast(
-                logical_plan.LogicalPlan,
-                rust_logical_plan.RustLogicalPlanBuilder(new_builder),
-            )
-        else:
-            plan = logical_plan.Filter(self._plan, ExpressionsProjection([predicate]))
-        return DataFrame(plan)
+        builder = self._builder.filter(predicate)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def with_column(
@@ -569,15 +540,11 @@ class DataFrame:
             raise TypeError(f"resource_request should be a ResourceRequest, but got {type(resource_request)}")
 
         prev_schema_as_cols = ExpressionsProjection(
-            [col(field.name) for field in self._plan.schema() if field.name != column_name]
+            [col(field.name) for field in self._builder.schema() if field.name != column_name]
         )
         new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
-        projection = logical_plan.Projection(
-            self._plan,
-            new_schema,
-            custom_resource_request=resource_request,
-        )
-        return DataFrame(projection)
+        builder = self._builder.project(new_schema, resource_request)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def sort(
@@ -604,8 +571,9 @@ class DataFrame:
             by = [
                 by,
             ]
-        sort = logical_plan.Sort(self._plan, self.__column_input_to_expression(by), descending=desc)
-        return DataFrame(sort)
+        sort_by = self.__column_input_to_expression(by)
+        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def limit(self, num: int) -> "DataFrame":
@@ -620,9 +588,8 @@ class DataFrame:
         Returns:
             DataFrame: Limited DataFrame
         """
-        local_limit = logical_plan.LocalLimit(self._plan, num=num)
-        global_limit = logical_plan.GlobalLimit(local_limit, num=num)
-        return DataFrame(global_limit)
+        builder = self._builder.limit(num)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def count_rows(self) -> int:
@@ -631,11 +598,11 @@ class DataFrame:
         Returns:
             int: count of the number of rows in this DataFrame.
         """
-        local_count_op = logical_plan.LocalCount(self._plan)
-        coalease_op = logical_plan.Coalesce(local_count_op, 1)
-        local_sum_op = logical_plan.LocalAggregate(coalease_op, [col("count")._sum()])
-        num_rows = DataFrame(local_sum_op).to_pydict()["count"][0]
-        return num_rows
+        builder = self._builder.count()
+        count_df = DataFrame(builder)
+        # Expects builder to produce a single-partition, single-row DataFrame containing
+        # a "count" column, where the lone value represents the row count for the DataFrame.
+        return count_df.to_pydict()["count"][0]
 
     @DataframePublicAPI
     def repartition(self, num: int, *partition_by: ColumnInputType) -> "DataFrame":
@@ -656,14 +623,14 @@ class DataFrame:
             DataFrame: Repartitioned DataFrame.
         """
         if len(partition_by) == 0:
-            scheme = logical_plan.PartitionScheme.RANDOM
+            scheme = PartitionScheme.Random
             exprs: ExpressionsProjection = ExpressionsProjection([])
         else:
-            scheme = logical_plan.PartitionScheme.HASH
+            scheme = PartitionScheme.Hash
             exprs = self.__column_input_to_expression(partition_by)
 
-        repartition_op = logical_plan.Repartition(self._plan, num_partitions=num, partition_by=exprs, scheme=scheme)
-        return DataFrame(repartition_op)
+        builder = self._builder.repartition(num_partitions=num, partition_by=exprs, scheme=scheme)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def into_partitions(self, num: int) -> "DataFrame":
@@ -681,22 +648,21 @@ class DataFrame:
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
         """
-        current_partitions = self._plan.num_partitions()
+        current_partitions = self._builder.num_partitions()
 
         if num > current_partitions:
             # Do a split (increase the number of partitions).
-            split_op = logical_plan.Repartition(
-                self._plan,
+            builder = self._builder.repartition(
                 num_partitions=num,
-                scheme=logical_plan.PartitionScheme.UNKNOWN,
                 partition_by=ExpressionsProjection([]),
+                scheme=PartitionScheme.Unknown,
             )
-            return DataFrame(split_op)
+            return DataFrame(builder)
 
         elif num < current_partitions:
             # Do a coalese (decrease the number of partitions).
-            coalesce_op = logical_plan.Coalesce(self._plan, num)
-            return DataFrame(coalesce_op)
+            builder = self._builder.coalesce(num)
+            return DataFrame(builder)
 
         else:
             return self
@@ -742,10 +708,8 @@ class DataFrame:
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
-        join_op = logical_plan.Join(
-            self._plan, other._plan, left_on=left_exprs, right_on=right_exprs, how=logical_plan.JoinType.INNER
-        )
-        return DataFrame(join_op)
+        builder = self._builder.join(other._builder, left_on=left_exprs, right_on=right_exprs, how=JoinType.INNER)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
@@ -767,7 +731,8 @@ class DataFrame:
             raise ValueError(
                 f"DataFrames must have exactly the same schema for concatenation! Expected:\n{self.schema()}\n\nReceived:\n{other.schema()}"
             )
-        return DataFrame(logical_plan.Concat(self._plan, other._plan))
+        builder = self._builder.concat(other._builder)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
@@ -867,7 +832,8 @@ class DataFrame:
             DataFrame: DataFrame with exploded column
         """
         parsed_exprs = self.__column_input_to_expression(columns)
-        return DataFrame(logical_plan.Explode(self._plan, parsed_exprs))
+        builder = self._builder.explode(parsed_exprs)
+        return DataFrame(builder)
 
     def _agg(
         self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
@@ -875,7 +841,9 @@ class DataFrame:
         exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
-        builder = AggregationPlanBuilder(self._plan, group_by=group_by)
+        # TODO(Clark): Port AggregationPlanBuilder to new LogicalPlanBuilder once Charles has merged in his PR.
+        logical_plan_builder = cast(PyLogicalPlanBuilder, self._builder)
+        builder = AggregationPlanBuilder(logical_plan_builder._plan, group_by=group_by)
         for expr, op in exprs_to_agg:
             if op == "sum":
                 builder.add_sum(expr.name(), expr)
@@ -893,7 +861,7 @@ class DataFrame:
                 builder.add_concat(expr.name(), expr)
             else:
                 raise NotImplementedError(f"LogicalPlan construction for operation not implemented: {op}")
-        return DataFrame(builder.build())
+        return DataFrame(builder.build().to_builder())
 
     @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1017,7 +985,7 @@ class DataFrame:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
-            self._result_cache = context.runner().run(self._plan)
+            self._result_cache = context.runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -1030,7 +998,7 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            num_preview_rows: Number of rows to preview. Defaults to 10
+            num_preview_rows: Number of rows to preview. Defaults to 8.
 
         Returns:
             DataFrame: DataFrame with materialized results.
@@ -1096,7 +1064,7 @@ class DataFrame:
         assert result is not None
 
         pd_df = result.to_pandas(
-            schema=self._plan.schema(), cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
+            schema=self._builder.schema(), cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
         )
         return pd_df
 
@@ -1203,25 +1171,23 @@ class DataFrame:
     @classmethod
     def _from_ray_dataset(cls, ds: "RayDataset") -> "DataFrame":
         """Creates a DataFrame from a Ray Dataset."""
-        if get_context().runner_config.name != "ray":
+        context = get_context()
+        if context.runner_config.name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = get_context().runner().runner_io()
+        ray_runner_io = context.runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
-        return cls(
-            logical_plan.InMemoryScan(
-                cache_entry=cache_entry,
-                schema=schema,
-                partition_spec=logical_plan.PartitionSpec(
-                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-                ),
-            )
+        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        builder = context.logical_plan_builder_class().from_in_memory_scan(
+            cache_entry,
+            schema=schema,
+            partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
         )
+        return cls(builder)
 
     @DataframePublicAPI
     def to_dask_dataframe(
@@ -1274,25 +1240,23 @@ class DataFrame:
         """Creates a Daft DataFrame from a Dask DataFrame."""
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
-        if get_context().runner_config.name != "ray":
+        context = get_context()
+        if context.runner_config.name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = get_context().runner().runner_io()
+        ray_runner_io = context.runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
-        return cls(
-            logical_plan.InMemoryScan(
-                cache_entry=cache_entry,
-                schema=schema,
-                partition_spec=logical_plan.PartitionSpec(
-                    logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()
-                ),
-            )
+        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        builder = context.logical_plan_builder_class().from_in_memory_scan(
+            cache_entry,
+            schema=schema,
+            partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
         )
+        return cls(builder)
 
 
 @dataclass
@@ -1301,7 +1265,7 @@ class GroupedDataFrame:
     group_by: ExpressionsProjection
 
     def __post_init__(self):
-        resolved_groupby_schema = self.group_by.resolve_schema(self.df._plan.schema())
+        resolved_groupby_schema = self.group_by.resolve_schema(self.df._builder.schema())
         for field, e in zip(resolved_groupby_schema, self.group_by):
             if field.dtype == DataType.null():
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")

@@ -12,6 +12,9 @@ import fsspec
 import pyarrow as pa
 from loguru import logger
 
+from daft.logical.builder import LogicalPlanBuilder
+from daft.planner.planner import QueryPlanner
+
 try:
     import ray
 except ImportError:
@@ -20,9 +23,8 @@ except ImportError:
     )
     raise
 
-from daft.datasources import SourceInfo
+from daft.daft import FileFormatConfig
 from daft.datatype import DataType
-from daft.execution import physical_plan_factory
 from daft.execution.execution_step import (
     FanoutInstruction,
     Instruction,
@@ -33,17 +35,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
-from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical import logical_plan
-from daft.logical.optimizer import (
-    DropProjections,
-    DropRepartition,
-    FoldProjections,
-    PruneColumns,
-    PushDownClausesIntoScan,
-    PushDownLimit,
-    PushDownPredicates,
-)
 from daft.resource_request import ResourceRequest
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -78,7 +69,7 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 def _glob_path_into_details_vpartitions(
     paths: list[str],
     schema: Schema,
-    source_info: SourceInfo | None,
+    file_format_config: FileFormatConfig | None,
     fs: fsspec.AbstractFileSystem | None,
 ) -> list[tuple[PartID, Table]]:
     all_listing_infos = []
@@ -86,7 +77,7 @@ def _glob_path_into_details_vpartitions(
         if fs is None:
             fs = get_filesystem_from_path(path)
 
-        listing_infos = glob_path_with_stats(path, source_info, fs)
+        listing_infos = glob_path_with_stats(path, file_format_config, fs)
         if len(listing_infos) == 0:
             raise FileNotFoundError(f"No files found at {path}")
         all_listing_infos.extend(listing_infos)
@@ -148,7 +139,7 @@ def remote_len_partition(p: Table) -> int:
 def sample_schema_from_filepath_vpartition(
     p: Table,
     filepath_column: str,
-    source_info: SourceInfo,
+    file_format_config: FileFormatConfig,
     fs: fsspec.AbstractFileSystem | None,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a Table containing filepaths"""
@@ -156,7 +147,7 @@ def sample_schema_from_filepath_vpartition(
 
     # Currently just samples the Schema from the first file
     first_filepath = p.to_pydict()[filepath_column][0]
-    return runner_io.sample_schema(first_filepath, source_info, fs)
+    return runner_io.sample_schema(first_filepath, file_format_config, fs)
 
 
 @dataclass
@@ -235,18 +226,20 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
     def glob_paths_details(
         self,
         source_paths: list[str],
-        source_info: SourceInfo | None = None,
+        file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> RayPartitionSet:
         partition_refs = ray.get(
-            _glob_path_into_details_vpartitions.remote(source_paths, RayRunnerIO.FS_LISTING_SCHEMA, source_info, fs=fs)
+            _glob_path_into_details_vpartitions.remote(
+                source_paths, RayRunnerIO.FS_LISTING_SCHEMA, file_format_config, fs=fs
+            )
         )
         return RayPartitionSet({part_id: part for part_id, part in partition_refs})
 
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[ray.ObjectRef],
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
         nonempty_partitions: list[ray.ObjectRef] = [
@@ -261,7 +254,7 @@ class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
             sample_schema_from_filepath_vpartition.remote(
                 partition,
                 RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME,
-                source_info,
+                file_format_config,
                 fs,
             )
         )
@@ -407,7 +400,6 @@ class Scheduler:
         self.results_by_df: dict[str, Queue] = defaultdict(Queue)
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
-
         # Case: thread is terminated and no longer exists.
         # Should only be hit for repeated calls to next() after StopIteration.
         if result_uuid not in self.threads_by_df:
@@ -425,16 +417,15 @@ class Scheduler:
 
     def run_plan(
         self,
-        plan: logical_plan.LogicalPlan,
+        planner: QueryPlanner,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
-
         t = threading.Thread(
             target=self._run_plan,
             name=result_uuid,
             kwargs={
-                "plan": plan,
+                "planner": planner,
                 "psets": psets,
                 "result_uuid": result_uuid,
             },
@@ -444,13 +435,14 @@ class Scheduler:
 
     def _run_plan(
         self,
-        plan: logical_plan.LogicalPlan,
+        planner: QueryPlanner,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
         from loguru import logger
 
-        phys_plan = physical_plan_factory.get_materializing_physical_plan(plan, psets)
+        # Get executable tasks from planner.
+        tasks = planner.plan(psets)
 
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
@@ -468,7 +460,7 @@ class Scheduler:
         )
         with profiler(profile_filename):
             try:
-                next_step = next(phys_plan)
+                next_step = next(tasks)
 
                 while True:  # Loop: Dispatch -> await.
                     while True:  # Loop: Dispatch (get tasks -> batch dispatch).
@@ -486,7 +478,7 @@ class Scheduler:
                             elif isinstance(next_step, ray.ObjectRef):
                                 # A final result.
                                 self.results_by_df[result_uuid].put(next_step)
-                                next_step = next(phys_plan)
+                                next_step = next(tasks)
 
                             # next_step is a task.
 
@@ -499,12 +491,12 @@ class Scheduler:
                                 next_step.set_result(
                                     [RayMaterializedResult(partition) for partition in next_step.inputs]
                                 )
-                                next_step = next(phys_plan)
+                                next_step = next(tasks)
 
                             else:
                                 # Add the task to the batch.
                                 tasks_to_dispatch.append(next_step)
-                                next_step = next(phys_plan)
+                                next_step = next(tasks)
 
                         # Dispatch the batch of tasks.
                         logger.debug(
@@ -562,7 +554,7 @@ class Scheduler:
                     )
 
                     if next_step is None:
-                        next_step = next(phys_plan)
+                        next_step = next(tasks)
 
             except StopIteration as e:
                 self.results_by_df[result_uuid].put(e)
@@ -612,26 +604,6 @@ class RayRunner(Runner[ray.ObjectRef]):
         if ray.is_initialized():
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context.")
         self.ray_context = ray.init(address=address, ignore_reinit_error=True)
-        self._optimizer = RuleRunner(
-            [
-                RuleBatch(
-                    "SinglePassPushDowns",
-                    Once,
-                    [
-                        DropRepartition(),
-                        PushDownPredicates(),
-                        PruneColumns(),
-                        FoldProjections(),
-                        PushDownClausesIntoScan(),
-                    ],
-                ),
-                RuleBatch(
-                    "PushDownLimitsAndRepartitions",
-                    FixedPointPolicy(3),
-                    [PushDownLimit(), DropRepartition(), DropProjections()],
-                ),
-            ]
-        )
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
@@ -643,8 +615,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
             )
 
-    def run_iter(self, plan: logical_plan.LogicalPlan) -> Iterator[ray.ObjectRef]:
-        plan = self.optimize(plan)
+    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[ray.ObjectRef]:
+        # Optimize the logical plan.
+        builder = builder.optimize()
+        # Finalize the logical plan and get a query planner for translating the
+        # logical plan to executable tasks.
+        planner = builder.to_planner()
 
         psets = {
             key: entry.value.values()
@@ -655,7 +631,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
                 self.scheduler_actor.run_plan.remote(
-                    plan=plan,
+                    planner=planner,
                     psets=psets,
                     result_uuid=result_uuid,
                 )
@@ -663,7 +639,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         else:
             self.scheduler.run_plan(
-                plan=plan,
+                planner=planner,
                 psets=psets,
                 result_uuid=result_uuid,
             )
@@ -678,14 +654,14 @@ class RayRunner(Runner[ray.ObjectRef]):
                 return
             yield result
 
-    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
-        for ref in self.run_iter(plan):
+    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
+        for ref in self.run_iter(builder):
             yield ray.get(ref)
 
-    def run(self, plan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
 
-        partitions_iter = self.run_iter(plan)
+        partitions_iter = self.run_iter(builder)
 
         for i, partition in enumerate(partitions_iter):
             result_pset.set_partition(i, partition)
@@ -699,9 +675,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
 
         return self._part_set_cache.put_partition_set(pset=pset)
-
-    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
-        return self._optimizer.optimize(plan)
 
     def runner_io(self) -> RayRunnerIO:
         return RayRunnerIO()

@@ -6,8 +6,8 @@ import fsspec
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
+from daft.daft import PartitionScheme, PartitionSpec
 from daft.dataframe import DataFrame
-from daft.logical import logical_plan
 
 
 @PublicAPI
@@ -41,12 +41,14 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata
             parsed from the provided filesystem.
     """
-    runner_io = get_context().runner().runner_io()
+    context = get_context()
+    runner_io = context.runner().runner_io()
     partition_set = runner_io.glob_paths_details([path], fs=fs)
-    cache_entry = get_context().runner().put_partition_set_into_cache(partition_set)
-    filepath_plan = logical_plan.InMemoryScan(
-        cache_entry=cache_entry,
+    cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+    builder_cls = context.logical_plan_builder_class()
+    builder = builder_cls.from_in_memory_scan(
+        cache_entry,
         schema=runner_io.FS_LISTING_SCHEMA,
-        partition_spec=logical_plan.PartitionSpec(logical_plan.PartitionScheme.UNKNOWN, partition_set.num_partitions()),
+        partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
     )
-    return DataFrame(filepath_plan)
+    return DataFrame(builder)

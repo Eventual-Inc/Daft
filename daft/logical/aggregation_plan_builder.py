@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from daft.daft import PartitionScheme
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical import logical_plan
 
@@ -89,7 +90,7 @@ class AggregationPlanBuilder:
                 preshuffle_agg_plan,
                 num_partitions=self._plan.num_partitions(),
                 partition_by=self.group_by,
-                scheme=logical_plan.PartitionScheme.HASH,
+                scheme=PartitionScheme.Hash,
             )
 
         # 3. Perform post-shuffle aggregations (this is effectively now global aggregation)

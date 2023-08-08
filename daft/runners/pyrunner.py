@@ -10,22 +10,12 @@ import psutil
 import pyarrow as pa
 from loguru import logger
 
-from daft.datasources import SourceInfo
-from daft.execution import physical_plan, physical_plan_factory
+from daft.daft import FileFormatConfig
+from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
-from daft.internal.rule_runner import FixedPointPolicy, Once, RuleBatch, RuleRunner
-from daft.logical import logical_plan
-from daft.logical.optimizer import (
-    DropProjections,
-    DropRepartition,
-    FoldProjections,
-    PruneColumns,
-    PushDownClausesIntoScan,
-    PushDownLimit,
-    PushDownPredicates,
-)
+from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners import runner_io
@@ -83,7 +73,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
     def glob_paths_details(
         self,
         source_paths: list[str],
-        source_info: SourceInfo | None = None,
+        file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> LocalPartitionSet:
         all_files_infos = []
@@ -91,7 +81,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
             if fs is None:
                 fs = get_filesystem_from_path(source_path)
 
-            files_info = glob_path_with_stats(source_path, source_info, fs)
+            files_info = glob_path_with_stats(source_path, file_format_config, fs)
 
             if len(files_info) == 0:
                 raise FileNotFoundError(f"No files found at {source_path}")
@@ -123,7 +113,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[Table],
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
         # Naively retrieve the first filepath in the PartitionSet
@@ -136,7 +126,7 @@ class PyRunnerIO(runner_io.RunnerIO[Table]):
             raise ValueError("No files to get schema from")
         first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
 
-        return runner_io.sample_schema(first_filepath, source_info, fs)
+        return runner_io.sample_schema(first_filepath, file_format_config, fs)
 
 
 class PyRunner(Runner[Table]):
@@ -144,40 +134,15 @@ class PyRunner(Runner[Table]):
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
 
-        self._optimizer = RuleRunner(
-            [
-                RuleBatch(
-                    "SinglePassPushDowns",
-                    Once,
-                    [
-                        DropRepartition(),
-                        PushDownPredicates(),
-                        PruneColumns(),
-                        FoldProjections(),
-                        PushDownClausesIntoScan(),
-                    ],
-                ),
-                RuleBatch(
-                    "PushDownLimitsAndRepartitions",
-                    FixedPointPolicy(3),
-                    [PushDownLimit(), DropRepartition(), DropProjections()],
-                ),
-            ]
-        )
-
         self.num_cpus = multiprocessing.cpu_count()
         self.num_gpus = cuda_device_count()
         self.bytes_memory = psutil.virtual_memory().total
 
-    def optimize(self, plan: logical_plan.LogicalPlan) -> logical_plan.LogicalPlan:
-        # From PyRunner
-        return self._optimizer.optimize(plan)
-
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
 
-    def run(self, logplan: logical_plan.LogicalPlan) -> PartitionCacheEntry:
-        partitions = list(self.run_iter(logplan))
+    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+        partitions = list(self.run_iter(builder))
 
         result_pset = LocalPartitionSet({})
         for i, partition in enumerate(partitions):
@@ -186,21 +151,26 @@ class PyRunner(Runner[Table]):
         pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
 
-    def run_iter(self, logplan: logical_plan.LogicalPlan) -> Iterator[Table]:
-        logplan = self.optimize(logplan)
+    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
+        # Optimize the logical plan.
+        builder = builder.optimize()
+        # Finalize the logical plan and get a query planner for translating the
+        # logical plan to executable tasks.
+        planner = builder.to_planner()
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
-        plan = physical_plan_factory.get_materializing_physical_plan(logplan, psets)
+        # Get executable tasks from planner.
+        tasks = planner.plan(psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            partitions_gen = self._physical_plan_to_partitions(plan)
+            partitions_gen = self._physical_plan_to_partitions(tasks)
             yield from partitions_gen
 
-    def run_iter_tables(self, plan: logical_plan.LogicalPlan) -> Iterator[Table]:
-        return self.run_iter(plan)
+    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
+        return self.run_iter(builder)
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()
@@ -213,10 +183,8 @@ class PyRunner(Runner[Table]):
 
                 # Dispatch->Await loop.
                 while True:
-
                     # Dispatch loop.
                     while True:
-
                         if next_step is None:
                             # Blocked on already dispatched tasks; await some tasks.
                             break

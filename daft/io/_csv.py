@@ -5,8 +5,8 @@ from typing import Dict, List, Optional, Union
 import fsspec
 
 from daft.api_annotations import PublicAPI
+from daft.daft import CsvSourceConfig, FileFormatConfig
 from daft.dataframe import DataFrame
-from daft.datasources import CSVSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
 
@@ -50,13 +50,7 @@ def read_csv(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of CSV filepaths")
 
-    plan = _get_tabular_files_scan(
-        path,
-        schema_hints,
-        CSVSourceInfo(
-            delimiter=delimiter,
-            has_headers=has_headers,
-        ),
-        fs,
-    )
-    return DataFrame(plan)
+    csv_config = CsvSourceConfig(delimiter=delimiter, has_headers=has_headers)
+    file_format_config = FileFormatConfig.from_csv_config(csv_config)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    return DataFrame(builder)

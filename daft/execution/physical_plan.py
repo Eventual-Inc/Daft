@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from daft.datasources import SourceInfo, StorageType
+from daft.daft import FileFormat, FileFormatConfig
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -34,7 +34,7 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.logical_plan import JoinType
+from daft.logical.builder import JoinType
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata
@@ -71,7 +71,7 @@ def file_read(
     schema: Schema,
     fs: fsspec.AbstractFileSystem | None,
     columns_to_read: list[str] | None,
-    source_info: SourceInfo,
+    file_format_config: FileFormatConfig,
     filepaths_column_name: str,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
@@ -93,7 +93,6 @@ def file_read(
 
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(len(vpartition)):
-
                 file_read_step = PartitionTaskBuilder[PartitionT](
                     inputs=[done_task.partition()],
                     partial_metadatas=[done_task.partition_metadata()],
@@ -105,7 +104,7 @@ def file_read(
                         schema=schema,
                         fs=fs,
                         columns_to_read=columns_to_read,
-                        source_info=source_info,
+                        file_format_config=file_format_config,
                         filepaths_column_name=filepaths_column_name,
                     ),
                     # Set the filesize as the memory request.
@@ -133,7 +132,7 @@ def file_read(
 
 def file_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
-    file_type: StorageType,
+    file_format: FileFormat,
     schema: Schema,
     root_dir: str | pathlib.Path,
     compression: str | None,
@@ -144,7 +143,7 @@ def file_write(
     yield from (
         step.add_instruction(
             execution_step.WriteFile(
-                file_type=file_type,
+                file_format=file_format,
                 schema=schema,
                 root_dir=root_dir,
                 compression=compression,
@@ -492,7 +491,6 @@ def coalesce(
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     while True:
-
         # See if we can emit a coalesced partition.
         num_partitions_to_merge = merges_per_result[0]
         ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]

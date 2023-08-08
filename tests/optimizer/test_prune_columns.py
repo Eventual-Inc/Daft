@@ -29,7 +29,7 @@ def test_prune_columns_projection_projection(valid_data: list[dict[str, float]],
     df_optimized = df.select("sepal_length").select("sepal_length")
 
     assert df_unoptimized.column_names == ["sepal_length"]
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 def test_prune_columns_projection_projection_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
@@ -40,7 +40,7 @@ def test_prune_columns_projection_projection_aliases(valid_data: list[dict[str, 
     df_optimized = df.select(col("sepal_length").alias("foo")).select(col("foo").alias("bar"))
 
     assert df_unoptimized.column_names == ["bar"]
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 def test_prune_columns_local_aggregate(valid_data: list[dict[str, float]], optimizer) -> None:
@@ -62,7 +62,7 @@ def test_prune_columns_local_aggregate(valid_data: list[dict[str, float]], optim
     )
 
     assert df_unoptimized.column_names == ["sepal_length"]
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 def test_prune_columns_local_aggregate_aliases(valid_data: list[dict[str, float]], optimizer) -> None:
@@ -84,7 +84,7 @@ def test_prune_columns_local_aggregate_aliases(valid_data: list[dict[str, float]
     )
 
     assert df_unoptimized.column_names == ["bar"]
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 @pytest.mark.parametrize(
@@ -132,7 +132,7 @@ def test_projection_join_pruning(
         .join(df.select(*[s.replace("right.", "") for s in right_selection], "variety"), on="variety")
         .select(*left_selection_final, *right_selection_final, *key_selection_final)
     )
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 def test_projection_concat_pruning(valid_data, optimizer):
@@ -141,10 +141,10 @@ def test_projection_concat_pruning(valid_data, optimizer):
     concatted = df1.concat(df2)
 
     selected = concatted.select("sepal_length")
-    optimized = optimizer(selected.plan())
+    optimized = optimizer(selected._get_current_builder()._plan)
 
     expected = df1.select(col("sepal_length")).concat(df2.select(col("sepal_length"))).select(col("sepal_length"))
-    assert_plan_eq(optimized, expected.plan())
+    assert_plan_eq(optimized, expected._get_current_builder()._plan)
 
 
 @pytest.mark.parametrize(
@@ -221,7 +221,7 @@ def test_local_aggregate_join_prune(
         .groupby("variety")
         .agg([*key_final_aggregation, *left_final_aggregation, *right_final_aggregation])
     )
-    assert_plan_eq(optimizer(df_unoptimized.plan()), df_optimized.plan())
+    assert_plan_eq(optimizer(df_unoptimized._get_current_builder()._plan), df_optimized._get_current_builder()._plan)
 
 
 def test_projection_on_scan(valid_data_json_path, optimizer):
@@ -229,4 +229,4 @@ def test_projection_on_scan(valid_data_json_path, optimizer):
     df = df.with_column("sepal_length", col("sepal_length") + 1)
 
     # Projection cannot be pushed down into TabularFileScan
-    assert_plan_eq(optimizer(df.plan()), df.plan())
+    assert_plan_eq(optimizer(df._get_current_builder()._plan), df._get_current_builder()._plan)

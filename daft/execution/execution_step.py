@@ -14,15 +14,15 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
-from daft.datasources import (
-    CSVSourceInfo,
-    JSONSourceInfo,
-    ParquetSourceInfo,
-    SourceInfo,
-    StorageType,
+from daft.daft import (
+    CsvSourceConfig,
+    FileFormat,
+    FileFormatConfig,
+    JsonSourceConfig,
+    ParquetSourceConfig,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.logical_plan import JoinType
+from daft.logical.builder import JoinType
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -318,7 +318,7 @@ class ReadFile(SingleOutputInstruction):
     schema: Schema
     fs: fsspec.AbstractFileSystem | None
     columns_to_read: list[str] | None
-    source_info: SourceInfo
+    file_format_config: FileFormatConfig
     filepaths_column_name: str
 
     def run(self, inputs: list[Table]) -> list[Table]:
@@ -366,8 +366,10 @@ class ReadFile(SingleOutputInstruction):
             column_names=self.columns_to_read,  # read only specified columns
         )
 
-        if self.source_info.scan_type() == StorageType.CSV:
-            assert isinstance(self.source_info, CSVSourceInfo)
+        file_format = self.file_format_config.file_format()
+        config = self.file_format_config.config
+        if file_format == FileFormat.Csv:
+            assert isinstance(config, CsvSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_csv(
@@ -375,16 +377,16 @@ class ReadFile(SingleOutputInstruction):
                         schema=self.schema,
                         fs=self.fs,
                         csv_options=TableParseCSVOptions(
-                            delimiter=self.source_info.delimiter,
-                            header_index=0 if self.source_info.has_headers else None,
+                            delimiter=config.delimiter,
+                            header_index=0 if config.has_headers else None,
                         ),
                         read_options=read_options,
                     )
                     for fp in filepaths
                 ]
             )
-        elif self.source_info.scan_type() == StorageType.JSON:
-            assert isinstance(self.source_info, JSONSourceInfo)
+        elif file_format == FileFormat.Json:
+            assert isinstance(config, JsonSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_json(
@@ -396,8 +398,8 @@ class ReadFile(SingleOutputInstruction):
                     for fp in filepaths
                 ]
             )
-        elif self.source_info.scan_type() == StorageType.PARQUET:
-            assert isinstance(self.source_info, ParquetSourceInfo)
+        elif file_format == FileFormat.Parquet:
+            assert isinstance(config, ParquetSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_parquet(
@@ -405,14 +407,14 @@ class ReadFile(SingleOutputInstruction):
                         schema=self.schema,
                         fs=self.fs,
                         read_options=read_options,
-                        io_config=self.source_info.io_config,
-                        use_native_downloader=self.source_info.use_native_downloader,
+                        io_config=config.io_config,
+                        use_native_downloader=config.use_native_downloader,
                     )
                     for fp in filepaths
                 ]
             )
         else:
-            raise NotImplementedError(f"PyRunner has not implemented scan: {self.source_info.scan_type()}")
+            raise NotImplementedError(f"PyRunner has not implemented scan: {file_format}")
 
         expected_schema = (
             Schema._from_fields([self.schema[name] for name in read_options.column_names])
@@ -427,7 +429,7 @@ class ReadFile(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class WriteFile(SingleOutputInstruction):
-    file_type: StorageType
+    file_format: FileFormat
     schema: Schema
     root_dir: str | pathlib.Path
     compression: str | None
@@ -453,20 +455,23 @@ class WriteFile(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: Table) -> Table:
-        assert self.file_type == StorageType.PARQUET or self.file_type == StorageType.CSV
-        if self.file_type == StorageType.PARQUET:
+        if self.file_format == FileFormat.Parquet:
             file_names = table_io.write_parquet(
                 input,
                 path=self.root_dir,
                 compression=self.compression,
                 partition_cols=self.partition_cols,
             )
-        else:
+        elif self.file_format == FileFormat.Csv:
             file_names = table_io.write_csv(
                 input,
                 path=self.root_dir,
                 compression=self.compression,
                 partition_cols=self.partition_cols,
+            )
+        else:
+            raise ValueError(
+                f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}"
             )
 
         assert len(self.schema) == 1

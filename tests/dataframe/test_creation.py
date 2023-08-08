@@ -21,7 +21,7 @@ from daft.context import get_context
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-from tests.conftest import UuidType
+from tests.conftest import *
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -639,7 +639,7 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader, use_new_planner) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -654,7 +654,28 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet_with_filter(
+    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
+) -> None:
+    with tempfile.NamedTemporaryFile("w") as f:
+        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+        papq.write_table(table, f.name)
+        f.flush()
+
+        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
+        assert df.column_names == COL_NAMES
+
+        df = df.where(daft.col("sepal_length") > 4.8)
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data) - 1
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_multiple_parquets(
+    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
+) -> None:
     with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
         for f in (f1, f2):
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})

@@ -26,7 +26,7 @@ def optimizer() -> RuleRunner[LogicalPlan]:
 def test_drop_projections(valid_data: list[dict[str, float]], optimizer) -> None:
     df = daft.from_pylist(valid_data)
     projection_df = df.select("petal_length", "petal_width", "sepal_length", "sepal_width", "variety")
-    assert_plan_eq(optimizer(projection_df.plan()), df.plan())
+    assert_plan_eq(optimizer(projection_df._get_current_builder()._plan), df._get_current_builder()._plan)
 
 
 @pytest.mark.parametrize(
@@ -45,4 +45,4 @@ def test_drop_projections(valid_data: list[dict[str, float]], optimizer) -> None
 def test_cannot_drop_projections(valid_data: list[dict[str, float]], selection, optimizer) -> None:
     df = daft.from_pylist(valid_data)
     projection_df = df.select(*selection)
-    assert_plan_eq(optimizer(projection_df.plan()), projection_df.plan())
+    assert_plan_eq(optimizer(projection_df._get_current_builder()._plan), projection_df._get_current_builder()._plan)

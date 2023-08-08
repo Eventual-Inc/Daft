@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Generic, Iterator, TypeVar
 
+from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.logical_plan import LogicalPlan
 from daft.runners.partitioning import (
     PartitionCacheEntry,
@@ -30,16 +31,16 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def run(self, plan: LogicalPlan) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
         ...
 
     @abstractmethod
-    def run_iter(self, plan: LogicalPlan) -> Iterator[PartitionT]:
+    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[PartitionT]:
         """Similar to run(), but yield the individual partitions as they are completed."""
         ...
 
     @abstractmethod
-    def run_iter_tables(self, plan: LogicalPlan) -> Iterator[Table]:
+    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
         """Similar to run_iter(), but always dereference and yield Table objects."""
         ...
 

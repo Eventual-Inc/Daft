@@ -5,12 +5,12 @@ from typing import Generic, TypeVar
 
 import fsspec
 
-from daft.datasources import (
-    CSVSourceInfo,
-    JSONSourceInfo,
-    ParquetSourceInfo,
-    SourceInfo,
-    StorageType,
+from daft.daft import (
+    CsvSourceConfig,
+    FileFormat,
+    FileFormatConfig,
+    JsonSourceConfig,
+    ParquetSourceConfig,
 )
 from daft.datatype import DataType
 from daft.filesystem import get_filesystem_from_path
@@ -47,7 +47,7 @@ class RunnerIO(Generic[PartitionT]):
     def glob_paths_details(
         self,
         source_path: list[str],
-        source_info: SourceInfo | None = None,
+        file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
     ) -> PartitionSet[PartitionT]:
         """Globs the specified filepath to construct Partitions containing file and dir metadata
@@ -64,7 +64,7 @@ class RunnerIO(Generic[PartitionT]):
     def get_schema_from_first_filepath(
         self,
         listing_details_partitions: PartitionSet[PartitionT],
-        source_info: SourceInfo,
+        file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
         raise NotImplementedError()
@@ -72,36 +72,38 @@ class RunnerIO(Generic[PartitionT]):
 
 def sample_schema(
     filepath: str,
-    source_info: SourceInfo,
+    file_format_config: FileFormatConfig,
     fs: fsspec.AbstractFileSystem | None,
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
     if fs is None:
         fs = get_filesystem_from_path(filepath)
 
-    if source_info.scan_type() == StorageType.CSV:
-        assert isinstance(source_info, CSVSourceInfo)
+    file_format = file_format_config.file_format()
+    config = file_format_config.config
+    if file_format == FileFormat.Csv:
+        assert isinstance(config, CsvSourceConfig)
         return schema_inference.from_csv(
             file=filepath,
             fs=fs,
             csv_options=TableParseCSVOptions(
-                delimiter=source_info.delimiter,
-                header_index=0 if source_info.has_headers else None,
+                delimiter=config.delimiter,
+                header_index=0 if config.has_headers else None,
             ),
         )
-    elif source_info.scan_type() == StorageType.JSON:
-        assert isinstance(source_info, JSONSourceInfo)
+    elif file_format == FileFormat.Json:
+        assert isinstance(config, JsonSourceConfig)
         return schema_inference.from_json(
             file=filepath,
             fs=fs,
         )
-    elif source_info.scan_type() == StorageType.PARQUET:
-        assert isinstance(source_info, ParquetSourceInfo)
+    elif file_format == FileFormat.Parquet:
+        assert isinstance(config, ParquetSourceConfig)
         return schema_inference.from_parquet(
             file=filepath,
             fs=fs,
-            io_config=source_info.io_config,
-            use_native_downloader=source_info.use_native_downloader,
+            io_config=config.io_config,
+            use_native_downloader=config.use_native_downloader,
         )
     else:
-        raise NotImplementedError(f"Schema inference for {source_info} not implemented")
+        raise NotImplementedError(f"Schema inference for {file_format} not implemented")

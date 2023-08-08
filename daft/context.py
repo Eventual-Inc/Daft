@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from loguru import logger
 
 if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner import Runner
 
 
@@ -104,12 +105,24 @@ class DaftContext:
     def is_ray_runner(self) -> bool:
         return isinstance(self.runner_config, _RayRunnerConfig)
 
+    def logical_plan_builder_class(self) -> type[LogicalPlanBuilder]:
+        from daft.logical.logical_plan import PyLogicalPlanBuilder
+        from daft.logical.rust_logical_plan import RustLogicalPlanBuilder
+
+        return RustLogicalPlanBuilder if self.use_rust_planner else PyLogicalPlanBuilder
+
 
 _DaftContext = DaftContext()
 
 
 def get_context() -> DaftContext:
     return _DaftContext
+
+
+def _set_context(ctx: DaftContext):
+    global _DaftContext
+
+    _DaftContext = ctx
 
 
 def set_runner_ray(
@@ -135,23 +148,24 @@ def set_runner_ray(
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
+    old_ctx = get_context()
+    if old_ctx.disallow_set_runner:
         if noop_if_initialized:
             warnings.warn(
                 "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
             )
-            return _DaftContext
+            return old_ctx
         raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
+    new_ctx = dataclasses.replace(
+        old_ctx,
         runner_config=_RayRunnerConfig(
             address=address,
             max_task_backlog=max_task_backlog,
         ),
         disallow_set_runner=True,
     )
-    return _DaftContext
+    _set_context(new_ctx)
+    return new_ctx
 
 
 def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
@@ -162,12 +176,49 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-    global _DaftContext
-    if _DaftContext.disallow_set_runner:
+    old_ctx = get_context()
+    if old_ctx.disallow_set_runner:
         raise RuntimeError("Cannot set runner more than once")
-    _DaftContext = dataclasses.replace(
-        _DaftContext,
+    new_ctx = dataclasses.replace(
+        old_ctx,
         runner_config=_PyRunnerConfig(use_thread_pool=use_thread_pool),
         disallow_set_runner=True,
     )
-    return _DaftContext
+    _set_context(new_ctx)
+    return new_ctx
+
+
+def set_new_planner() -> DaftContext:
+    """Enable the new query planner.
+
+    WARNING: The new query planner is currently experimental and only partially implemented.
+
+    Alternatively, users can set this behavior via an environment variable: DAFT_DEVELOPER_RUST_QUERY_PLANNER=1
+
+    Returns:
+        DaftContext: Daft context after enabling the new query planner.
+    """
+    old_ctx = get_context()
+    new_ctx = dataclasses.replace(
+        old_ctx,
+        use_rust_planner=True,
+    )
+    _set_context(new_ctx)
+    return new_ctx
+
+
+def set_old_planner() -> DaftContext:
+    """Enable the old query planner.
+
+    Alternatively, users can set this behavior via an environment variable: DAFT_DEVELOPER_RUST_QUERY_PLANNER=0
+
+    Returns:
+        DaftContext: Daft context after enabling the old query planner.
+    """
+    old_ctx = get_context()
+    new_ctx = dataclasses.replace(
+        old_ctx,
+        use_rust_planner=False,
+    )
+    _set_context(new_ctx)
+    return new_ctx

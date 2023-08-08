@@ -5,8 +5,8 @@ from typing import Dict, List, Optional, Union
 import fsspec
 
 from daft.api_annotations import PublicAPI
+from daft.daft import FileFormatConfig, JsonSourceConfig
 from daft.dataframe import DataFrame
-from daft.datasources import JSONSourceInfo
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
 
@@ -38,10 +38,7 @@ def read_json(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of JSON filepaths")
 
-    plan = _get_tabular_files_scan(
-        path,
-        schema_hints,
-        JSONSourceInfo(),
-        fs,
-    )
-    return DataFrame(plan)
+    json_config = JsonSourceConfig()
+    file_format_config = FileFormatConfig.from_json_config(json_config)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    return DataFrame(builder)

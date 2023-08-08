@@ -972,10 +972,16 @@ dependencies = [
 name = "daft-plan"
 version = "0.1.10"
 dependencies = [
+ "arrow2",
+ "bincode",
+ "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-io",
+ "daft-table",
  "indexmap 2.0.0",
  "pyo3",
+ "serde",
 ]
 
 [[package]]
@@ -1532,6 +1538,12 @@ checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "inventory"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a53088c87cf71c9d4f3372a2cb9eea1e7b8a0b1bf8b7f7d23fe5b76dbb07e63b"
 
 [[package]]
 name = "ipnet"
@@ -2104,6 +2116,7 @@ checksum = "ffb88ae05f306b4bfcde40ac4a51dc0b05936a9207a4b75b798c7729c4258a59"
 dependencies = [
  "cfg-if",
  "indoc",
+ "inventory",
  "libc",
  "memoffset",
  "parking_lot",
