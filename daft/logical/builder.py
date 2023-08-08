@@ -64,7 +64,7 @@ class LogicalPlanBuilder(ABC):
     @abstractmethod
     def pretty_print(self) -> str:
         """
-        Pretty prints the currentj underlying logical plan.
+        Pretty prints the current underlying logical plan.
         """
 
     @abstractmethod
@@ -73,7 +73,7 @@ class LogicalPlanBuilder(ABC):
         Optimize the underlying logical plan.
         """
 
-    ### Logical operator building methods.
+    ### Logical operator builder methods.
 
     @classmethod
     @abstractmethod
