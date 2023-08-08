@@ -19,7 +19,6 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
-    cast,
 )
 
 from daft.api_annotations import DataframePublicAPI
@@ -30,9 +29,7 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.logical.builder import JoinType, LogicalPlanBuilder
-from daft.logical.logical_plan import PyLogicalPlanBuilder
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -841,27 +838,9 @@ class DataFrame:
         exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
-        # TODO(Clark): Port AggregationPlanBuilder to new LogicalPlanBuilder once Charles has merged in his PR.
-        logical_plan_builder = cast(PyLogicalPlanBuilder, self._builder)
-        builder = AggregationPlanBuilder(logical_plan_builder._plan, group_by=group_by)
-        for expr, op in exprs_to_agg:
-            if op == "sum":
-                builder.add_sum(expr.name(), expr)
-            elif op == "min":
-                builder.add_min(expr.name(), expr)
-            elif op == "max":
-                builder.add_max(expr.name(), expr)
-            elif op == "count":
-                builder.add_count(expr.name(), expr)
-            elif op == "list":
-                builder.add_list(expr.name(), expr)
-            elif op == "mean":
-                builder.add_mean(expr.name(), expr)
-            elif op == "concat":
-                builder.add_concat(expr.name(), expr)
-            else:
-                raise NotImplementedError(f"LogicalPlan construction for operation not implemented: {op}")
-        return DataFrame(builder.build().to_builder())
+
+        builder = self._builder.agg(exprs_to_agg, group_by)
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> "DataFrame":

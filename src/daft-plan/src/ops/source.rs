@@ -57,7 +57,7 @@ impl Source {
             self.source_info.file_format_config
         ));
         res.push(format!("  Output schema: {}", self.schema.short_string()));
-        if self.filters.is_empty() {
+        if !self.filters.is_empty() {
             res.push(format!("  Filters: {:?}", self.filters));
         }
         if let Some(limit) = self.limit {
