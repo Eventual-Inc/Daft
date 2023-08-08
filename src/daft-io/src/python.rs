@@ -11,6 +11,8 @@ use pyo3::prelude::*;
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 500ms
+///     num_tries: Number of attempts to make a connection, defaults to 5
 ///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
 ///
 /// Example:
@@ -28,7 +30,7 @@ pub struct S3Config {
 ///     s3: Configurations to use when accessing URLs with the `s3://` scheme
 ///
 /// Example:
-///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
@@ -73,6 +75,7 @@ impl IOConfig {
 
 #[pymethods]
 impl S3Config {
+    #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(
         region_name: Option<String>,
