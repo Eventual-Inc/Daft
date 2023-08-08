@@ -12,10 +12,10 @@ pub type Metadata = std::collections::BTreeMap<String, String>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct Field {
-    /// User-visible, user-addressable name for this field.
+    /// User-provided name for this field, which can be directly seen and used by Table users.
     pub name: String,
 
-    /// Internally-visible, internally-addressable semantic identifier for this field.
+    /// Internal semantic identifier for this field, used by the query planner only.
     pub id: FieldID,
 
     pub dtype: DataType,
