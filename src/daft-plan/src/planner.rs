@@ -51,7 +51,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             group_by,
             input,
         }) => {
-            let input_physical = self.plan(input)?;
+            let input_physical = plan(input)?;
             Ok(PhysicalPlan::Aggregate(Aggregate::new(
                 input_physical.into(),
                 aggregations.clone(),
