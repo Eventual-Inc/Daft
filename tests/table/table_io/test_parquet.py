@@ -15,6 +15,8 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
+PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
+
 
 def test_read_input(tmpdir):
     tmpdir = pathlib.Path(tmpdir)
@@ -177,13 +179,16 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         data["timestamp_ns"] = pa.array([1, 2, 3], pa.timestamp("ns"))
         schema.append(("timestamp_ns", DataType.timestamp(TimeUnit.ns())))
 
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
+        "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
-        papq_write_table_kwargs={
-            "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
-            "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
-            "store_schema": False,
-        },
+        papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
@@ -212,9 +217,15 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
         ("timestamp", DataType.timestamp(coerce_to)),
     ]
 
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": True,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
-        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True, "store_schema": False},
+        papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
@@ -242,9 +253,15 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, use_native_do
     ]
     expected = Schema._from_field_name_and_types(schema)
 
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": True,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
-        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True, "store_schema": False},
+        papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema.from_parquet(f, infer_schema_int96_timestamps_coerce_timeunit=coerce_to)
         assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"
