@@ -6,7 +6,9 @@ use crate::logical_plan::LogicalPlan;
 use crate::ops::{
     Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit, Source,
 };
-use crate::physical_ops::{Aggregate, Filter, Limit, TabularScanParquet};
+use crate::physical_ops::{
+    Aggregate, Filter, Limit, TabularScanCsv, TabularScanJson, TabularScanParquet,
+};
 use crate::physical_plan::PhysicalPlan;
 use crate::source_info::{ExternalInfo, FileFormatConfig, SourceInfo};
 
@@ -36,7 +38,22 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                         filters.to_vec(),
                     )))
                 }
-                _ => todo!("format not implemented"),
+                FileFormatConfig::Csv(_) => Ok(PhysicalPlan::TabularScanCsv(TabularScanCsv::new(
+                    schema.clone(),
+                    ext_info.clone(),
+                    partition_spec.clone(),
+                    *limit,
+                    filters.to_vec(),
+                ))),
+                FileFormatConfig::Json(_) => {
+                    Ok(PhysicalPlan::TabularScanJson(TabularScanJson::new(
+                        schema.clone(),
+                        ext_info.clone(),
+                        partition_spec.clone(),
+                        *limit,
+                        filters.to_vec(),
+                    )))
+                }
             },
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => Ok(PhysicalPlan::InMemoryScan(
