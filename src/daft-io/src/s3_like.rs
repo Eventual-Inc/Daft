@@ -1,17 +1,26 @@
 use async_trait::async_trait;
-use reqwest::StatusCode;
+use aws_sigv4::http_request::SignableBody;
+use aws_smithy_http::body::SdkBody;
+use aws_smithy_http::result::SdkError;
+use aws_smithy_runtime::client::auth::no_auth::NO_AUTH_SCHEME_ID;
+use aws_smithy_runtime_api::box_error::BoxError;
+use aws_smithy_runtime_api::client::auth::{AuthSchemeOptionResolverParams, AuthSchemeOptionResolver};
+use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
+use reqwest::{StatusCode};
 use s3::operation::head_object::HeadObjectError;
+use aws_runtime::auth::sigv4::{HttpSignatureType, SigV4OperationSigningConfig};
+
 
 use crate::config::S3Config;
-use crate::SourceType;
+use crate::{SourceType, http};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::Response;
-use s3::config::{Credentials, Region};
-use s3::error::SdkError;
+
+use s3::config::{Credentials, Region, SharedInterceptor, Interceptor, ConfigBag};
+// use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
 use snafu::{IntoError, ResultExt, Snafu};
 use url::ParseError;
@@ -31,19 +40,91 @@ pub(crate) struct S3LikeSource {
     s3_config: S3Config,
     anonymous: bool,
 }
+use s3::config::interceptors::{InterceptorContext, BeforeTransmitInterceptorContextMut};
+
+#[derive(Debug, Default)]
+pub struct AnonymousInterceptor;
+
+impl AnonymousInterceptor {
+    /// Creates a new `RecursionDetectionInterceptor`
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl Interceptor for AnonymousInterceptor {
+    fn name(&self) -> &'static str {
+        "AnonymousInterceptor"
+    }
+    fn modify_before_deserialization(&self,context: &mut s3::config::interceptors::BeforeDeserializationInterceptorContextMut<'_>,runtime_components: &RuntimeComponents,cfg: &mut ConfigBag,) -> Result<(),BoxError> {
+
+        Ok(())
+    }
+
+    fn modify_before_signing(
+        &self,
+        context: &mut BeforeTransmitInterceptorContextMut<'_>,
+        runtime_components: &RuntimeComponents,
+        cfg: &mut ConfigBag,
+    ) -> Result<(), BoxError> {
+        if let Some(mut config) = cfg.load::<SigV4OperationSigningConfig>().cloned() {
+            config.signing_options.payload_override = Some(SignableBody::UnsignedPayload);
+            cfg.interceptor_state().store_put::<SigV4OperationSigningConfig>(config);
+        } else {
+            return Err("SigV4 Anonymous mode requires the SigV4OperationSigningConfig to be in the config bag. \
+                This is a bug. Please file an issue."
+                .into());
+        }
+
+        cfg.interceptor_state().store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+            ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(vec![NO_AUTH_SCHEME_ID]),
+        ));
+
+        let params = cfg
+        .interceptor_state().load::<AuthSchemeOptionResolverParams>()
+        .expect("auth scheme option resolver params must be set");
+        log::warn!("params: {:?}", params);
+
+
+        let option_resolver = runtime_components.auth_scheme_option_resolver();
+        let options = option_resolver.resolve_auth_scheme_options(params)?;
+        log::warn!("OPTIONS: {:?}", options);
+
+
+        // cfg.interceptor_state().store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+        //     ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(vec![NO_AUTH_SCHEME_ID]),
+        // ));
+        // cfg.interceptor_state().store_put(::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
+        //     ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
+        // ));
+
+        // if let Some(mut config) = cfg.load::<AuthSchemeOptionResolverParams>() {
+        //     config.
+        //     config.signing_options.payload_override = Some(SignableBody::UnsignedPayload);
+        //     cfg.interceptor_state().store_put::<SigV4OperationSigningConfig>(config);
+        // } else {
+        //     return Err("SigV4 Anonymous mode requires the SigV4OperationSigningConfig to be in the config bag. \
+        //         This is a bug. Please file an issue."
+        //         .into());
+        // }
+
+
+        Ok(())
+
+    }
+}
 
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(display("Unable to open {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToOpenFile {
         path: String,
-        source: SdkError<GetObjectError, Response>,
+        source: SdkError<GetObjectError, ::http::Response<SdkBody>>,
     },
 
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
         path: String,
-        source: SdkError<HeadObjectError, Response>,
+        source: SdkError<HeadObjectError, ::http::Response<SdkBody>>,
     },
 
     #[snafu(display("Unable to query the region for {}: {}", path, source))]
@@ -121,18 +202,18 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
-
     let conf: SdkConfig = if anonymous {
-        aws_config::SdkConfig::builder().build()
+        aws_config::from_env().no_credentials().load().await
     } else {
         aws_config::load_from_env().await
     };
+
     let builder = aws_sdk_s3::config::Builder::from(&conf);
     let builder = match &config.endpoint_url {
         None => builder,
         Some(endpoint) => builder.endpoint_url(endpoint),
     };
-    let builder = if let Some(region) = &config.region_name {
+    let builder: s3::config::Builder = if let Some(region) = &config.region_name {
         builder.region(Region::new(region.to_owned()))
     } else if conf.region().is_none() && config.region_name.is_none() {
         builder.region(DEFAULT_REGION)
@@ -154,12 +235,15 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     } else {
         builder
     };
+    let builder_copy = builder.clone();
 
     let s3_conf = builder.build();
+
     if !config.anonymous {
         use CredentialsError::*;
         match s3_conf
             .credentials_cache()
+            .expect("Credentials Provider should be configured")
             .provide_cached_credentials()
             .await {
             Ok(_) => Ok(()),
@@ -172,6 +256,15 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
         }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
     };
 
+
+
+    // let s3_conf = if anonymous {
+    //     builder_copy.
+
+    // } else {
+    //     s3_conf
+    // };
+
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 
@@ -180,9 +273,18 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     let mut client_map = HashMap::new();
     let default_region = client.conf().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
+
+    let config = if anonymous {
+        let mut c = config.clone();
+        c.anonymous = true;
+        c
+    } else {
+        config.clone()
+    };
+
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
-        s3_config: config.clone(),
+        s3_config: config,
         default_region,
         anonymous,
     })
@@ -250,28 +352,8 @@ impl S3LikeSource {
                 )),
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
+            let response = request.send().await;
 
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
 
             match response {
                 Ok(v) => {
@@ -290,7 +372,7 @@ impl S3LikeSource {
                 }
 
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
+                    let bad_response = err.raw();
                     match bad_response.status() {
                         StatusCode::MOVED_PERMANENTLY => {
                             let headers = bad_response.headers();
@@ -309,7 +391,7 @@ impl S3LikeSource {
                             log::warn!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
                             self._get_impl(uri, range, &new_region).await
                         }
-                        _ => Err(UnableToOpenFileSnafu { path: uri }
+                        _ => Err(UnableToOpenFileSnafu::<String> { path: uri.into()}
                             .into_error(SdkError::ServiceError(err))
                             .into()),
                     }
@@ -341,33 +423,13 @@ impl S3LikeSource {
                 .bucket(bucket)
                 .key(key);
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
+            let response = request.send().await;
 
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
 
             match response {
                 Ok(v) => Ok(v.content_length() as usize),
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
+                    let bad_response = err.raw();
                     match bad_response.status() {
                         StatusCode::MOVED_PERMANENTLY => {
                             let headers = bad_response.headers();
