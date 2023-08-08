@@ -12,7 +12,7 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
-from daft.runners.partitioning import TableReadOptions
+from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 
@@ -161,8 +161,9 @@ def test_parquet_read_data_select_columns(use_native_downloader):
 ###
 
 
+@pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
-def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
+def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_native_downloader):
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
         "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
@@ -190,13 +191,14 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            use_native_downloader=True,
+            use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
+@pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
-def test_parquet_read_int96_timestamps_overflow(coerce_to):
+def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader):
     # NOTE: datetime.datetime(3000, 1, 1) and datetime.datetime(1000, 1, 1) cannot be represented by our timestamp64(nanosecond)
     # type. However they can be written to Parquet's INT96 type. Here we test that a round-trip is possible if provided with
     # the appropriate flags.
@@ -220,6 +222,7 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to):
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            use_native_downloader=True,
+            parquet_options=TableParseParquetOptions(infer_schema_int96_timestamps_coerce_timeunit=coerce_to),
+            use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

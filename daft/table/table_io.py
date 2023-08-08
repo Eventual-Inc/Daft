@@ -17,7 +17,11 @@ from pyarrow.fs import FileSystem
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
-from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
+from daft.runners.partitioning import (
+    TableParseCSVOptions,
+    TableParseParquetOptions,
+    TableReadOptions,
+)
 from daft.table import Table
 
 if TYPE_CHECKING:
@@ -97,6 +101,7 @@ def read_parquet(
     schema: Schema,
     fs: fsspec.AbstractFileSystem | None = None,
     read_options: TableReadOptions = TableReadOptions(),
+    parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
     io_config: IOConfig | None = None,
     use_native_downloader: bool = False,
 ) -> Table:
@@ -118,9 +123,9 @@ def read_parquet(
             columns=read_options.column_names,
             num_rows=read_options.num_rows,
             io_config=io_config,
-            schema=schema,
+            infer_schema_int96_timestamps_coerce_timeunit=parquet_options.infer_schema_int96_timestamps_coerce_timeunit,
         )
-        return tbl
+        return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
@@ -133,11 +138,15 @@ def read_parquet(
 
     # If no rows required, we manually construct an empty table with the right schema
     if read_options.num_rows == 0:
-        pqf = papq.ParquetFile(f)
+        pqf = papq.ParquetFile(
+            f, coerce_int96_timestamp_unit=str(parquet_options.infer_schema_int96_timestamps_coerce_timeunit)
+        )
         arrow_schema = pqf.metadata.schema.to_arrow_schema()
         table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
     elif read_options.num_rows is not None:
-        pqf = papq.ParquetFile(f)
+        pqf = papq.ParquetFile(
+            f, coerce_int96_timestamp_unit=str(parquet_options.infer_schema_int96_timestamps_coerce_timeunit)
+        )
         # Only read the required row groups.
         rows_needed = read_options.num_rows
         for i in range(pqf.metadata.num_row_groups):
@@ -153,6 +162,7 @@ def read_parquet(
         table = papq.read_table(
             f,
             columns=read_options.column_names,
+            coerce_int96_timestamp_unit=str(parquet_options.infer_schema_int96_timestamps_coerce_timeunit),
         )
 
     return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)

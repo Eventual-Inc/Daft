@@ -15,6 +15,7 @@ use snafu::ResultExt;
 
 use crate::{
     metadata::read_parquet_metadata,
+    read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
     UnableToParseSchemaFromMetadataSnafu,
@@ -27,7 +28,7 @@ pub(crate) struct ParquetReaderBuilder {
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
-    user_provided_arrow_schema: Option<arrow2::datatypes::Schema>,
+    schema_inference_options: ParquetSchemaInferenceOptions,
 }
 use parquet2::read::decompress;
 
@@ -101,7 +102,7 @@ impl ParquetReaderBuilder {
             selected_columns: None,
             row_start_offset: 0,
             num_rows,
-            user_provided_arrow_schema: None,
+            schema_inference_options: Default::default(),
         })
     }
 
@@ -148,11 +149,8 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
-    pub fn set_user_provided_arrow_schema(
-        mut self,
-        schema: Option<arrow2::datatypes::Schema>,
-    ) -> Self {
-        self.user_provided_arrow_schema = schema;
+    pub fn set_infer_schema_options(mut self, opts: &ParquetSchemaInferenceOptions) -> Self {
+        self.schema_inference_options = opts.clone();
         self
     }
 
@@ -180,19 +178,12 @@ impl ParquetReaderBuilder {
             curr_row_index += rg.num_rows();
         }
 
-        let mut arrow_schema = match self.user_provided_arrow_schema {
-            Some(s) => s,
-            // TODO(jay): Add arrow2 functionality to perform schema inference by taking into account the
-            // self.schema_infer_int96_timestamps_time_unit option, where Parquet int96 fields should be coerced
-            // into Arrow datetimes with the specified TimeUnit.
-            None => {
-                infer_schema(&self.metadata).context(UnableToParseSchemaFromMetadataSnafu::<
-                    String,
-                > {
-                    path: self.uri.clone(),
-                })?
-            }
-        };
+        // TODO(jay): Add our own inference wrapper here
+        let mut arrow_schema = infer_schema(&self.metadata).context(
+            UnableToParseSchemaFromMetadataSnafu::<String> {
+                path: self.uri.clone(),
+            },
+        )?;
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema

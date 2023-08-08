@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pyarrow as pa
 
+from daft.datatype import TimeUnit
 from daft.logical.schema import Schema
 from daft.table import Table
 
@@ -47,6 +48,17 @@ class TableParseCSVOptions:
 
     delimiter: str = ","
     header_index: int | None = 0
+
+
+@dataclass(frozen=True)
+class TableParseParquetOptions:
+    """Options for parsing Parquet files
+
+    Args:
+        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit to use when parsing Int96 fields
+    """
+
+    infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns()
 
 
 @dataclass(frozen=True)

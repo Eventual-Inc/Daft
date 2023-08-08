@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Iterator
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.daft import read_parquet_schema as _read_parquet_schema
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 
 if sys.version_info < (3, 8):
     pass
@@ -129,10 +129,12 @@ class Schema:
         cls,
         path: str,
         io_config: IOConfig | None = None,
+        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns(),
     ) -> Schema:
         return Schema._from_pyschema(
             _read_parquet_schema(
                 uri=path,
                 io_config=io_config,
+                infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit,
             )
         )

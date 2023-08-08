@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 
 use daft_core::{
-    datatypes::{Int32Array, UInt64Array, Utf8Array},
+    datatypes::{Int32Array, TimeUnit, UInt64Array, Utf8Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -14,9 +14,29 @@ use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-pub enum ParquetSchemaOptions {
-    UserProvidedSchema(Arc<Schema>),
-    InferenceOptions,
+#[derive(Clone)]
+pub struct ParquetSchemaInferenceOptions {
+    infer_schema_int96_timestamps_coerce_timeunit: TimeUnit,
+}
+
+impl ParquetSchemaInferenceOptions {
+    pub fn new(infer_schema_int96_timestamps_coerce_timeunit: Option<TimeUnit>) -> Self {
+        let default: ParquetSchemaInferenceOptions = Default::default();
+        let infer_schema_int96_timestamps_coerce_timeunit =
+            infer_schema_int96_timestamps_coerce_timeunit
+                .unwrap_or(default.infer_schema_int96_timestamps_coerce_timeunit);
+        ParquetSchemaInferenceOptions {
+            infer_schema_int96_timestamps_coerce_timeunit,
+        }
+    }
+}
+
+impl Default for ParquetSchemaInferenceOptions {
+    fn default() -> Self {
+        ParquetSchemaInferenceOptions {
+            infer_schema_int96_timestamps_coerce_timeunit: TimeUnit::Nanoseconds,
+        }
+    }
 }
 
 async fn read_parquet_single(
@@ -24,10 +44,11 @@ async fn read_parquet_single(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
-    schema_options: ParquetSchemaOptions,
     io_client: Arc<IOClient>,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
+    let builder = builder.set_infer_schema_options(schema_infer_options);
 
     let builder = if let Some(columns) = columns {
         builder.prune_columns(columns)?
@@ -35,15 +56,6 @@ async fn read_parquet_single(
         builder
     };
     let builder = builder.limit(start_offset, num_rows)?;
-
-    // Schema inference options
-    let builder = match schema_options {
-        ParquetSchemaOptions::UserProvidedSchema(s) => {
-            builder.set_user_provided_arrow_schema(Some(s.to_arrow()?))
-        }
-        // TODO: add builder options to customize schema inference
-        ParquetSchemaOptions::InferenceOptions => builder,
-    };
 
     let metadata_num_rows = builder.metadata().num_rows;
     let metadata_num_columns = builder.parquet_schema().fields().len();
@@ -93,18 +105,26 @@ async fn read_parquet_single(
     Ok(table)
 }
 
-<<<<<<< HEAD
 pub fn read_parquet(
     uri: &str,
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     io_client: Arc<IOClient>,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        read_parquet_single(uri, columns, start_offset, num_rows, io_client).await
+        read_parquet_single(
+            uri,
+            columns,
+            start_offset,
+            num_rows,
+            io_client,
+            schema_infer_options,
+        )
+        .await
     })
 }
 
@@ -114,6 +134,7 @@ pub fn read_parquet_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     io_client: Arc<IOClient>,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
@@ -125,12 +146,20 @@ pub fn read_parquet_bulk(
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let io_client = io_client.clone();
+                let schema_infer_options = schema_infer_options.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
-                    read_parquet_single(&uri, columns.as_deref(), start_offset, num_rows, io_client)
-                        .await
+                    read_parquet_single(
+                        &uri,
+                        columns.as_deref(),
+                        start_offset,
+                        num_rows,
+                        io_client,
+                        &schema_infer_options,
+                    )
+                    .await
                 })
             }))
             .await
@@ -144,13 +173,11 @@ pub fn read_parquet_schema(
     io_client: Arc<IOClient>,
     schema_inference_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
-=======
-pub fn read_parquet_schema(uri: &str, io_client: Arc<IOClient>) -> DaftResult<Schema> {
->>>>>>> 9f13bd76 (Remove unused schema inference logic and options)
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle
         .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
+    let builder = builder.set_infer_schema_options(schema_inference_options);
 
     Schema::try_from(builder.build()?.arrow_schema())
 }
@@ -243,7 +270,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, io_client)?;
+        let table = read_parquet(file, None, None, None, io_client, Default::default())?;
         assert_eq!(table.len(), 100);
 
         Ok(())
