@@ -40,10 +40,5 @@ def read_json(
 
     json_config = JsonSourceConfig()
     file_format_config = FileFormatConfig.from_json_config(json_config)
-    plan = _get_tabular_files_scan(
-        path,
-        schema_hints,
-        file_format_config,
-        fs,
-    )
-    return DataFrame(plan)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    return DataFrame(builder)

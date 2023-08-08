@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from loguru import logger
 
 if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner import Runner
 
 
@@ -103,6 +104,12 @@ class DaftContext:
     @property
     def is_ray_runner(self) -> bool:
         return isinstance(self.runner_config, _RayRunnerConfig)
+
+    def logical_plan_builder_class(self) -> type[LogicalPlanBuilder]:
+        from daft.logical.logical_plan import PyLogicalPlanBuilder
+        from daft.logical.rust_logical_plan import RustLogicalPlanBuilder
+
+        return RustLogicalPlanBuilder if self.use_rust_planner else PyLogicalPlanBuilder
 
 
 _DaftContext = DaftContext()

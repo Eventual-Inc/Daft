@@ -34,7 +34,7 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.logical_plan import JoinType
+from daft.logical.builder import JoinType
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata
