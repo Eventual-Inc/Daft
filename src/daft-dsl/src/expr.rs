@@ -411,7 +411,7 @@ impl Expr {
                     Err(_) => Err(DaftError::TypeError(format!("Expected if_true and if_false arguments for if_else to be castable to the same supertype, but received {if_true_field} and {if_false_field}")))
                 }
             }
-        }
+        }.map(|field| field.with_id(self.resolve_field_id(schema)))
     }
 
     pub fn name(&self) -> DaftResult<&str> {
