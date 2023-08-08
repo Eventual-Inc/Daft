@@ -1,17 +1,20 @@
 #[cfg(feature = "python")]
 use {
-    crate::source_info::PyFileFormatConfig,
+    crate::source_info::{ExternalInfo, InMemoryInfo, PyFileFormatConfig},
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     daft_table::python::PyTable,
     pyo3::{pyclass, pymethods, PyAny, PyObject, PyRef, PyRefMut, PyResult, Python, ToPyObject},
+    std::collections::HashMap,
 };
 
 use crate::physical_ops::*;
 
 #[derive(Debug)]
 pub enum PhysicalPlan {
+    #[cfg(feature = "python")]
+    InMemoryScan(InMemoryScan),
     TabularScanParquet(TabularScanParquet),
     Filter(Filter),
     Limit(Limit),
@@ -51,15 +54,38 @@ type PyScanArgs<'a> = (
 
 #[cfg(feature = "python")]
 impl PhysicalPlan {
-    pub fn to_partition_tasks(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn to_partition_tasks(
+        &self,
+        py: Python<'_>,
+        psets: &HashMap<String, Vec<PyObject>>,
+    ) -> PyResult<PyObject> {
         match self {
+            PhysicalPlan::InMemoryScan(InMemoryScan {
+                in_memory_info: InMemoryInfo { cache_key, .. },
+                ..
+            }) => {
+                let partition_iter = PartitionIterator {
+                    parts: psets[cache_key].clone(),
+                    index: 0usize,
+                };
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "partition_read"))?
+                    .call1((partition_iter,))?;
+                Ok(py_iter.into())
+            }
             PhysicalPlan::TabularScanParquet(TabularScanParquet {
                 schema,
-                source_info,
+                external_info:
+                    ExternalInfo {
+                        file_info,
+                        file_format_config,
+                        ..
+                    },
                 limit,
                 ..
             }) => {
-                let file_info_table: PyTable = source_info.file_info.to_table()?.into();
+                let file_info_table: PyTable = file_info.to_table()?.into();
                 let py_from_pytable_func = py
                     .import(pyo3::intern!(py, "daft.table"))?
                     .getattr(pyo3::intern!(py, "Table"))?
@@ -85,7 +111,7 @@ impl PhysicalPlan {
                     py_schema,
                     None,
                     None,
-                    PyFileFormatConfig::from(source_info.file_format_config.clone()),
+                    PyFileFormatConfig::from(file_format_config.clone()),
                     "path".to_string(),
                 );
                 let py_iter = py_physical_plan
@@ -94,7 +120,7 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::Filter(Filter { input, predicate }) => {
-                let upstream_iter = input.to_partition_tasks(py)?;
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let expressions_mod =
                     py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
                 let py_predicate = expressions_mod
@@ -123,7 +149,7 @@ impl PhysicalPlan {
                 limit,
                 num_partitions,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py)?;
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let py_physical_plan =
                     py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
                 let local_limit_iter = py_physical_plan
@@ -140,7 +166,7 @@ impl PhysicalPlan {
                 input,
                 ..
             }) => {
-                let upstream_iter = input.to_partition_tasks(py)?;
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let aggs_as_pyexprs: Vec<PyExpr> = aggregations
                     .iter()
                     .map(|agg_expr| PyExpr::from(Expr::Agg(agg_expr.clone())))

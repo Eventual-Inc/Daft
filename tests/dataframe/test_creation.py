@@ -83,17 +83,17 @@ def test_create_dataframe_empty_list() -> None:
 ###
 
 
-def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_list(valid_data: list[dict[str, float]], use_new_planner) -> None:
     df = daft.from_pylist(valid_data)
     assert set(df.column_names) == set(COL_NAMES)
 
 
-def test_create_dataframe_list_empty() -> None:
+def test_create_dataframe_list_empty(use_new_planner) -> None:
     df = daft.from_pylist([])
     assert df.column_names == []
 
 
-def test_create_dataframe_list_ragged_keys() -> None:
+def test_create_dataframe_list_ragged_keys(use_new_planner) -> None:
     df = daft.from_pylist(
         [
             {"foo": 1},
@@ -108,12 +108,12 @@ def test_create_dataframe_list_ragged_keys() -> None:
     }
 
 
-def test_create_dataframe_list_empty_dicts() -> None:
+def test_create_dataframe_list_empty_dicts(use_new_planner) -> None:
     df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
 
 
-def test_create_dataframe_list_non_dicts() -> None:
+def test_create_dataframe_list_non_dicts(use_new_planner) -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pylist([1, 2, 3])
     assert "Expected list of dictionaries of {column_name: value}" in str(e.value)
@@ -124,24 +124,24 @@ def test_create_dataframe_list_non_dicts() -> None:
 ###
 
 
-def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_pydict(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = daft.from_pydict(pydict)
     assert set(df.column_names) == set(COL_NAMES)
 
 
-def test_create_dataframe_empty_pydict() -> None:
+def test_create_dataframe_empty_pydict(use_new_planner) -> None:
     df = daft.from_pydict({})
     assert df.column_names == []
 
 
-def test_create_dataframe_pydict_ragged_col_lens() -> None:
+def test_create_dataframe_pydict_ragged_col_lens(use_new_planner) -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
     assert "Expected all columns to be of the same length" in str(e.value)
 
 
-def test_create_dataframe_pydict_bad_columns() -> None:
+def test_create_dataframe_pydict_bad_columns(use_new_planner) -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pydict({"foo": "somestring"})
     assert "Creating a Series from data of type" in str(e.value)
@@ -153,7 +153,7 @@ def test_create_dataframe_pydict_bad_columns() -> None:
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) -> None:
+def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple, use_new_planner) -> None:
     t = pa.Table.from_pydict({k: [valid_data[i][k] for i in range(len(valid_data))] for k in valid_data[0].keys()})
     if multiple:
         t = [t, t, t]
@@ -167,7 +167,7 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     arr = np.ones((len(valid_data),) + shape)
@@ -190,7 +190,7 @@ def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -
     not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
 )
-def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     dtype = pa.fixed_shape_tensor(pa.int64(), shape)
@@ -207,7 +207,9 @@ def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, floa
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
+def test_create_dataframe_arrow_extension_type(
+    valid_data: list[dict[str, float]], uuid_ext_type: UuidType, use_new_planner
+) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
     pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
@@ -231,7 +233,7 @@ class PyExtType(pa.PyExtensionType):
         return PyExtType, ()
 
 
-def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     uuid_type = PyExtType()
     storage_array = pa.array([f"foo-{i}".encode() for i in range(len(valid_data))], pa.binary())
@@ -242,7 +244,7 @@ def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, fl
         daft.from_arrow(t)
 
 
-def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = [
         decimal.Decimal("12456789012345678901234567890123456789012345678901234567890") for _ in range(len(valid_data))
@@ -264,7 +266,7 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -> None:
+def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple, use_new_planner) -> None:
     pd_df = pd.DataFrame(valid_data)
     if multiple:
         pd_df = [pd_df, pd_df, pd_df]
@@ -276,7 +278,7 @@ def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
-def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
     pd_df = pd.DataFrame(pydict)
@@ -288,7 +290,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
-def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]], use_new_planner) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     pydict["tensor"] = TensorArray(np.ones((len(valid_data),) + shape))
@@ -335,7 +337,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
         pytest.param(np.ones((3, 3, 3)), DataType.tensor(DataType.float64()), id="np_nested_nd"),
     ],
 )
-def test_load_pydict_types(data, expected_dtype):
+def test_load_pydict_types(data, expected_dtype, use_new_planner):
     data_dict = {"x": data}
     daft_df = daft.from_pydict(data_dict)
     daft_df.collect()

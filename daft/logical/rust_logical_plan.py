@@ -56,7 +56,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def from_in_memory_scan(
         cls, partition: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
     ) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        if partition_spec is None:
+            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
+        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, partition_spec)
+        return cls(builder)
 
     @classmethod
     def from_tabular_scan(
@@ -83,7 +86,7 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
         rs_schema = inferred_or_provided_schema._schema
         builder = _LogicalPlanBuilder.table_scan(filepaths, rs_schema, file_format_config)
-        return RustLogicalPlanBuilder(builder)
+        return cls(builder)
 
     def project(
         self,
@@ -134,7 +137,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         to_agg: list[tuple[Expression, str]],
         group_by: ExpressionsProjection | None,
     ) -> RustLogicalPlanBuilder:
-
         exprs = []
         for expr, op in to_agg:
             if op == "sum":
