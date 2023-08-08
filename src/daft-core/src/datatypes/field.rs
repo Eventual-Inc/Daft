@@ -28,18 +28,28 @@ pub struct FieldID {
 }
 
 impl FieldID {
-    pub fn from_name(name: String) -> Self {
-        Self {
-            id: Self::sanitize(name),
-        }
+    pub fn new<S: Into<String>>(id: S) -> Self {
+        Self { id: id.into() }
     }
 
-    /// Escape parentheses within a string,
-    /// since we will use parentheses as delimiters in our semantic expression IDs.
-    fn sanitize(name: String) -> String {
-        name.replace('(', "\\x28")
+    /// Create a Field ID directly from a real column name.
+    /// Performs sanitization on the name so it can be composed.
+    pub fn from_name(name: String) -> Self {
+        // Escape parentheses within a string,
+        // since we will use parentheses as delimiters in our semantic expression IDs.
+        let sanitized = name
+            .replace('.', "\\x2e")
+            .replace(',', "\\x2c")
+            .replace('(', "\\x28")
             .replace(')', "\\x29")
-            .replace('\\', "\\x5c")
+            .replace('\\', "\\x5c");
+        Self::new(sanitized)
+    }
+}
+
+impl Display for FieldID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.id)
     }
 }
 

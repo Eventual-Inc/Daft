@@ -1,5 +1,8 @@
 use daft_core::{
-    datatypes::DataType, datatypes::Field, schema::Schema, utils::supertype::try_get_supertype,
+    datatypes::DataType,
+    datatypes::{Field, FieldID},
+    schema::Schema,
+    utils::supertype::try_get_supertype,
 };
 
 use crate::{functions::FunctionEvaluator, lit};
@@ -70,6 +73,40 @@ impl AggExpr {
         match self {
             Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) | List(expr)
             | Concat(expr) => expr.name(),
+        }
+    }
+
+    pub fn resolve_field_id(&self, schema: &Schema) -> FieldID {
+        use AggExpr::*;
+        match self {
+            Count(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_count({child_id})"))
+            }
+            Sum(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_sum({child_id})"))
+            }
+            Mean(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_mean({child_id})"))
+            }
+            Min(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_min({child_id})"))
+            }
+            Max(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_max({child_id})"))
+            }
+            List(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_list({child_id})"))
+            }
+            Concat(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("local_concat({child_id})"))
+            }
         }
     }
 
@@ -228,6 +265,64 @@ impl Expr {
 
     pub fn and(&self, other: &Self) -> Self {
         binary_op(Operator::And, self, other)
+    }
+
+    pub fn resolve_field_id(&self, schema: &Schema) -> FieldID {
+        use Expr::*;
+        match self {
+            // Base case - anonymous column reference.
+            // Look up the column name in the provided schema and get its field ID.
+            Column(name) => schema.get_field(name).unwrap().id.clone(),
+
+            // Base case - literal.
+            Literal(value) => FieldID::new(format!("Literal({value:?})")),
+
+            // Recursive cases.
+            Cast(expr, dtype) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("{child_id}.cast({dtype})"))
+            }
+            Not(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("{child_id}.not()"))
+            }
+            IsNull(expr) => {
+                let child_id = expr.resolve_field_id(schema);
+                FieldID::new(format!("{child_id}.is_null()"))
+            }
+            Function { func, inputs } => {
+                let inputs = inputs
+                    .iter()
+                    .map(|expr| expr.resolve_field_id(schema).id)
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                // TODO: check for function idempotency here.
+                FieldID::new(format!("Function_{func:?}({inputs})"))
+            }
+            BinaryOp { op, left, right } => {
+                let left_id = left.resolve_field_id(schema);
+                let right_id = right.resolve_field_id(schema);
+                // TODO: check for symmetry here.
+                FieldID::new(format!("({left_id} {op} {right_id})"))
+            }
+
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true = if_true.resolve_field_id(schema);
+                let if_false = if_false.resolve_field_id(schema);
+                let predicate = predicate.resolve_field_id(schema);
+                FieldID::new(format!("({if_true} if {predicate} else {if_false})"))
+            }
+
+            // Alias: ID does not change.
+            Alias(expr, ..) => expr.resolve_field_id(schema),
+
+            // Agg: Separate path.
+            Agg(agg_expr) => agg_expr.resolve_field_id(schema),
+        }
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
