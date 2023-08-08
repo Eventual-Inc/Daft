@@ -16,7 +16,7 @@ use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
 #[derive(Clone)]
 pub struct ParquetSchemaInferenceOptions {
-    infer_schema_int96_timestamps_coerce_timeunit: TimeUnit,
+    pub infer_schema_int96_timestamps_coerce_timeunit: TimeUnit,
 }
 
 impl ParquetSchemaInferenceOptions {

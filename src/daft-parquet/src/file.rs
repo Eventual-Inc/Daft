@@ -1,14 +1,16 @@
 use std::{collections::HashSet, sync::Arc};
 
-use arrow2::io::parquet::read::infer_schema;
+use arrow2::io::parquet::read::infer_schema as arrow2_infer_schema;
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
+    metadata::FileMetaData,
     page::{CompressedPage, Page},
     read::get_page_stream_from_column_start,
+    schema::types::{ParquetType, PhysicalType, PrimitiveType},
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
@@ -31,6 +33,46 @@ pub(crate) struct ParquetReaderBuilder {
     schema_inference_options: ParquetSchemaInferenceOptions,
 }
 use parquet2::read::decompress;
+
+fn infer_schema(
+    uri: &str,
+    metadata: &FileMetaData,
+    infer_schema_options: &ParquetSchemaInferenceOptions,
+) -> super::Result<arrow2::datatypes::Schema> {
+    let mut arrow2_schema =
+        arrow2_infer_schema(metadata).context(UnableToParseSchemaFromMetadataSnafu::<String> {
+            path: uri.to_string(),
+        })?;
+    let parquet_schema = metadata.schema();
+    let int96_fields = parquet_schema
+        .fields()
+        .iter()
+        .filter(|f| matches!(f, ParquetType::PrimitiveType(PrimitiveType {physical_type: pt, ..}) if pt == &PhysicalType::Int96))
+        .map(|f| f.name())
+        .collect::<HashSet<_>>();
+    arrow2_schema.fields = arrow2_schema
+        .fields
+        .iter()
+        .map(|f| {
+            if int96_fields.contains(f.name.as_str()) {
+                arrow2::datatypes::Field::new(
+                    f.name.clone(),
+                    arrow2::datatypes::DataType::Timestamp(
+                        infer_schema_options
+                            .infer_schema_int96_timestamps_coerce_timeunit
+                            .to_arrow()
+                            .unwrap(),
+                        None,
+                    ),
+                    f.is_nullable,
+                )
+            } else {
+                f.clone()
+            }
+        })
+        .collect();
+    Ok(arrow2_schema)
+}
 
 fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<CompressedPage>>>(
     input: S,
@@ -179,10 +221,10 @@ impl ParquetReaderBuilder {
         }
 
         // TODO(jay): Add our own inference wrapper here
-        let mut arrow_schema = infer_schema(&self.metadata).context(
-            UnableToParseSchemaFromMetadataSnafu::<String> {
-                path: self.uri.clone(),
-            },
+        let mut arrow_schema = infer_schema(
+            self.uri.as_str(),
+            &self.metadata,
+            &self.schema_inference_options,
         )?;
 
         if let Some(names_to_keep) = self.selected_columns {
