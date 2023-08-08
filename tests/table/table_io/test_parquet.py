@@ -226,3 +226,25 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
+def test_parquet_read_int96_timestamps_schema_inference(coerce_to, use_native_downloader):
+    data = {
+        "timestamp": pa.array(
+            [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
+            pa.timestamp(str(coerce_to)),
+        ),
+    }
+    schema = [
+        ("timestamp", DataType.timestamp(coerce_to)),
+    ]
+    expected = Schema._from_field_name_and_types(schema)
+
+    with _parquet_write_helper(
+        pa.Table.from_pydict(data),
+        papq_write_table_kwargs={"use_deprecated_int96_timestamps": True, "store_schema": False},
+    ) as f:
+        schema = Schema.from_parquet(f, infer_schema_int96_timestamps_coerce_timeunit=coerce_to)
+        assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"

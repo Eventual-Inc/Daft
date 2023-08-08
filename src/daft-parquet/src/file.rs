@@ -44,6 +44,8 @@ fn infer_schema(
             path: uri.to_string(),
         })?;
     let parquet_schema = metadata.schema();
+
+    // TODO(jay): Need to handle the recursive nested cases as well -- this currently only handles top-level int96 fields
     let int96_fields = parquet_schema
         .fields()
         .iter()

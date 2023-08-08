@@ -135,6 +135,6 @@ class Schema:
             _read_parquet_schema(
                 uri=path,
                 io_config=io_config,
-                infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit,
+                infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit._timeunit,
             )
         )
