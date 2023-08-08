@@ -22,7 +22,7 @@ from daft.daft import (
     ParquetSourceConfig,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.logical_plan import JoinType
+from daft.logical.builder import JoinType
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest

@@ -52,10 +52,5 @@ def read_csv(
 
     csv_config = CsvSourceConfig(delimiter=delimiter, has_headers=has_headers)
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
-    plan = _get_tabular_files_scan(
-        path,
-        schema_hints,
-        file_format_config,
-        fs,
-    )
-    return DataFrame(plan)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    return DataFrame(builder)

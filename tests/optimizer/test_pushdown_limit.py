@@ -26,11 +26,11 @@ def test_limit_pushdown_repartition(valid_data: list[dict[str, float]], optimize
     df = daft.from_pylist(valid_data)
     unoptimized_df = df.repartition(3).limit(1)
     optimized_df = df.limit(1).repartition(3)
-    assert_plan_eq(optimizer(unoptimized_df.plan()), optimized_df.plan())
+    assert_plan_eq(optimizer(unoptimized_df._get_current_builder()._plan), optimized_df._get_current_builder()._plan)
 
 
 def test_limit_pushdown_projection(valid_data: list[dict[str, float]], optimizer) -> None:
     df = daft.from_pylist(valid_data)
     unoptimized_df = df.select("variety").limit(1)
     optimized_df = df.limit(1).select("variety")
-    assert_plan_eq(optimizer(unoptimized_df.plan()), optimized_df.plan())
+    assert_plan_eq(optimizer(unoptimized_df._get_current_builder()._plan), optimized_df._get_current_builder()._plan)
