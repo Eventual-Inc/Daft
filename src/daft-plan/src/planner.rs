@@ -4,10 +4,11 @@ use common_error::DaftResult;
 
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
-    Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit, Source,
+    Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit,
+    Sort as LogicalSort, Source,
 };
 use crate::physical_ops::{
-    Aggregate, Filter, Limit, TabularScanCsv, TabularScanJson, TabularScanParquet,
+    Aggregate, Filter, Limit, Sort, TabularScanCsv, TabularScanJson, TabularScanParquet,
 };
 use crate::physical_plan::PhysicalPlan;
 use crate::source_info::{ExternalInfo, FileFormatConfig, SourceInfo};
@@ -73,6 +74,20 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 *limit,
                 logical_plan.partition_spec().num_partitions,
                 Arc::new(input_physical),
+            )))
+        }
+        LogicalPlan::Sort(LogicalSort {
+            input,
+            sort_by,
+            descending,
+        }) => {
+            let input_physical = plan(input)?;
+            let num_partitions = logical_plan.partition_spec().num_partitions;
+            Ok(PhysicalPlan::Sort(Sort::new(
+                sort_by.clone(),
+                descending.clone(),
+                num_partitions,
+                input_physical.into(),
             )))
         }
         LogicalPlan::Aggregate(LogicalAggregate {

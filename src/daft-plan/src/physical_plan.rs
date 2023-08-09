@@ -22,6 +22,7 @@ pub enum PhysicalPlan {
     TabularScanJson(TabularScanJson),
     Filter(Filter),
     Limit(Limit),
+    Sort(Sort),
     Aggregate(Aggregate),
 }
 
@@ -161,6 +162,28 @@ impl PhysicalPlan {
                     .getattr(pyo3::intern!(py, "global_limit"))?
                     .call1((local_limit_iter, *limit, *num_partitions as i64))?;
                 Ok(global_limit_iter.into())
+            }
+            PhysicalPlan::Sort(Sort {
+                input,
+                sort_by,
+                descending,
+                num_partitions,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let sort_by_pyexprs: Vec<PyExpr> = sort_by
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "sort"))?
+                    .call1((
+                        upstream_iter,
+                        sort_by_pyexprs,
+                        descending.clone(),
+                        *num_partitions,
+                    ))?;
+                Ok(py_iter.into())
             }
             PhysicalPlan::Aggregate(Aggregate {
                 aggregations,

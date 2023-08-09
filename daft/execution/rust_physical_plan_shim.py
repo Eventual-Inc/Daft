@@ -39,3 +39,18 @@ def tabular_scan(
     return physical_plan.file_read(
         file_info_iter, limit, Schema._from_pyschema(schema), None, None, file_format_config, filepaths_column_name
     )
+
+
+def sort(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.sort(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        num_partitions=num_partitions,
+    )

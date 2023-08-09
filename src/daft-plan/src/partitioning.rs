@@ -49,17 +49,31 @@ pub struct PartitionSpec {
     pub by: Option<Vec<Expr>>,
 }
 
+impl PartitionSpec {
+    pub fn new_internal(
+        scheme: PartitionScheme,
+        num_partitions: usize,
+        by: Option<Vec<Expr>>,
+    ) -> Self {
+        Self {
+            scheme,
+            num_partitions,
+            by,
+        }
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl PartitionSpec {
     #[new]
     #[pyo3(signature = (scheme=PartitionScheme::Unknown, num_partitions=0usize, by=None))]
     pub fn new(scheme: PartitionScheme, num_partitions: usize, by: Option<Vec<PyExpr>>) -> Self {
-        Self {
+        Self::new_internal(
             scheme,
             num_partitions,
-            by: by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
-        }
+            by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
+        )
     }
 
     #[getter]

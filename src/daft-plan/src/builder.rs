@@ -89,6 +89,18 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn sort(
+        &self,
+        sort_by: Vec<PyExpr>,
+        descending: Vec<bool>,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
+        let logical_plan: LogicalPlan =
+            ops::Sort::new(sort_by_exprs, descending, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
         let agg_exprs = agg_exprs

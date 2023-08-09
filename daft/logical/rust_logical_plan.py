@@ -113,7 +113,11 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         raise NotImplementedError("not implemented")
 
     def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        sort_by_exprs = [expr._expr for expr in sort_by]
+        if not isinstance(descending, list):
+            descending = [descending] * len(sort_by_exprs)
+        builder = self._builder.sort(sort_by_exprs, descending)
+        return RustLogicalPlanBuilder(builder)
 
     def repartition(
         self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
@@ -146,8 +150,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
 
         builder = self._builder.aggregate([expr._expr for expr in exprs])
         return RustLogicalPlanBuilder(builder)
-
-        raise NotImplementedError("not implemented")
 
     def concat(self, other: LogicalPlanBuilder) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
