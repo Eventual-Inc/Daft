@@ -233,7 +233,7 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            parquet_options=TableParseParquetOptions(infer_schema_int96_timestamps_coerce_timeunit=coerce_to),
+            parquet_options=TableParseParquetOptions(coerce_int96_timestamp_unit=coerce_to),
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
@@ -262,5 +262,5 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
         pa.Table.from_pydict(data),
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
-        schema = Schema.from_parquet(f, infer_schema_int96_timestamps_coerce_timeunit=coerce_to)
+        schema = Schema.from_parquet(f, coerce_int96_timestamp_unit=coerce_to)
         assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"

@@ -183,7 +183,7 @@ impl ParquetReaderBuilder {
             &Some(arrow2::io::parquet::read::schema::SchemaInferenceOptions {
                 int96_coerce_to_timeunit: self
                     .schema_inference_options
-                    .infer_schema_int96_timestamps_coerce_timeunit
+                    .coerce_int96_timestamp_unit
                     .to_arrow(),
             }),
         )

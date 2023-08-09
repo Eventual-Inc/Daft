@@ -55,10 +55,10 @@ class TableParseParquetOptions:
     """Options for parsing Parquet files
 
     Args:
-        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit to use when parsing Int96 fields
+        coerce_int96_timestamp_unit: TimeUnit to use when parsing Int96 fields
     """
 
-    infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns()
+    coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns()
 
 
 @dataclass(frozen=True)

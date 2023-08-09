@@ -19,12 +19,12 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         io_config: Option<IOConfig>,
-        infer_schema_int96_timestamps_coerce_timeunit: Option<PyTimeUnit>,
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                infer_schema_int96_timestamps_coerce_timeunit.map(|tu| tu.timeunit),
+                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             Ok(crate::read::read_parquet(
                 uri,
@@ -46,12 +46,12 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         io_config: Option<IOConfig>,
-        infer_schema_int96_timestamps_coerce_timeunit: Option<PyTimeUnit>,
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                infer_schema_int96_timestamps_coerce_timeunit.map(|tu| tu.timeunit),
+                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             Ok(crate::read::read_parquet_bulk(
                 uris.as_ref(),
@@ -72,11 +72,11 @@ pub mod pylib {
         py: Python,
         uri: &str,
         io_config: Option<IOConfig>,
-        infer_schema_int96_timestamps_coerce_timeunit: Option<PyTimeUnit>,
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                infer_schema_int96_timestamps_coerce_timeunit.map(|tu| tu.timeunit),
+                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
             Ok(Arc::new(crate::read::read_parquet_schema(

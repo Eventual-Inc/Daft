@@ -129,12 +129,12 @@ class Schema:
         cls,
         path: str,
         io_config: IOConfig | None = None,
-        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns(),
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Schema:
         return Schema._from_pyschema(
             _read_parquet_schema(
                 uri=path,
                 io_config=io_config,
-                infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit._timeunit,
+                coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
             )
         )

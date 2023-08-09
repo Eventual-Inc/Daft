@@ -16,17 +16,16 @@ use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
 #[derive(Clone)]
 pub struct ParquetSchemaInferenceOptions {
-    pub infer_schema_int96_timestamps_coerce_timeunit: TimeUnit,
+    pub coerce_int96_timestamp_unit: TimeUnit,
 }
 
 impl ParquetSchemaInferenceOptions {
-    pub fn new(infer_schema_int96_timestamps_coerce_timeunit: Option<TimeUnit>) -> Self {
+    pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
         let default: ParquetSchemaInferenceOptions = Default::default();
-        let infer_schema_int96_timestamps_coerce_timeunit =
-            infer_schema_int96_timestamps_coerce_timeunit
-                .unwrap_or(default.infer_schema_int96_timestamps_coerce_timeunit);
+        let coerce_int96_timestamp_unit =
+            coerce_int96_timestamp_unit.unwrap_or(default.coerce_int96_timestamp_unit);
         ParquetSchemaInferenceOptions {
-            infer_schema_int96_timestamps_coerce_timeunit,
+            coerce_int96_timestamp_unit,
         }
     }
 }
@@ -34,7 +33,7 @@ impl ParquetSchemaInferenceOptions {
 impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
         ParquetSchemaInferenceOptions {
-            infer_schema_int96_timestamps_coerce_timeunit: TimeUnit::Nanoseconds,
+            coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
         }
     }
 }

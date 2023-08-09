@@ -359,7 +359,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
-        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns(),
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Table:
         return Table._from_pytable(
             _read_parquet(
@@ -368,7 +368,7 @@ class Table:
                 start_offset=start_offset,
                 num_rows=num_rows,
                 io_config=io_config,
-                infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit._timeunit,
+                coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
             )
         )
 
@@ -380,7 +380,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
-        infer_schema_int96_timestamps_coerce_timeunit: TimeUnit = TimeUnit.ns(),
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> list[Table]:
         pytables = _read_parquet_bulk(
             uris=paths,
@@ -388,7 +388,7 @@ class Table:
             start_offset=start_offset,
             num_rows=num_rows,
             io_config=io_config,
-            infer_schema_int96_timestamps_coerce_timeunit=infer_schema_int96_timestamps_coerce_timeunit._timeunit,
+            coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
         return [Table._from_pytable(t) for t in pytables]
 
