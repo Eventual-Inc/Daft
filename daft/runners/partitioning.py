@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -8,8 +9,14 @@ from uuid import uuid4
 
 import pyarrow as pa
 
+from daft.datatype import TimeUnit
 from daft.logical.schema import Schema
 from daft.table import Table
+
+if sys.version_info < (3, 8):
+    pass
+else:
+    pass
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -41,6 +48,17 @@ class TableParseCSVOptions:
 
     delimiter: str = ","
     header_index: int | None = 0
+
+
+@dataclass(frozen=True)
+class TableParseParquetOptions:
+    """Options for parsing Parquet files
+
+    Args:
+        coerce_int96_timestamp_unit: TimeUnit to use when parsing Int96 fields
+    """
+
+    coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns()
 
 
 @dataclass(frozen=True)

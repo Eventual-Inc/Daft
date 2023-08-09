@@ -81,8 +81,7 @@ class DataFrame:
 
     @property
     def _builder(self) -> LogicalPlanBuilder:
-        # TODO(Clark): Add caching for Rust query planner.
-        if self._result_cache is None or get_context().use_rust_planner:
+        if self._result_cache is None:
             return self.__builder
         else:
             return self.__builder.from_in_memory_scan(

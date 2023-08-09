@@ -1,7 +1,5 @@
 use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
 
-use common_error::DaftResult;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -14,12 +12,12 @@ pub enum TimeUnit {
 
 impl TimeUnit {
     #![allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&self) -> DaftResult<ArrowTimeUnit> {
+    pub fn to_arrow(&self) -> ArrowTimeUnit {
         match self {
-            TimeUnit::Nanoseconds => Ok(ArrowTimeUnit::Nanosecond),
-            TimeUnit::Microseconds => Ok(ArrowTimeUnit::Microsecond),
-            TimeUnit::Milliseconds => Ok(ArrowTimeUnit::Millisecond),
-            TimeUnit::Seconds => Ok(ArrowTimeUnit::Second),
+            TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
+            TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+            TimeUnit::Seconds => ArrowTimeUnit::Second,
         }
     }
 }

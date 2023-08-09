@@ -27,16 +27,40 @@ use serde::Deserialize;
 use serde::Serialize;
 
 #[derive(Debug)]
-pub struct SourceInfo {
+pub enum SourceInfo {
+    #[cfg(feature = "python")]
+    InMemoryInfo(InMemoryInfo),
+    ExternalInfo(ExternalInfo),
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug, Clone)]
+pub struct InMemoryInfo {
+    pub cache_key: String,
+    pub cache_entry: PyObject,
+}
+
+#[cfg(feature = "python")]
+impl InMemoryInfo {
+    pub fn new(cache_key: String, cache_entry: PyObject) -> Self {
+        Self {
+            cache_key,
+            cache_entry,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalInfo {
     pub schema: SchemaRef,
-    pub file_info: FileInfo,
+    pub file_info: Arc<FileInfo>,
     pub file_format_config: Arc<FileFormatConfig>,
 }
 
-impl SourceInfo {
+impl ExternalInfo {
     pub fn new(
         schema: SchemaRef,
-        file_info: FileInfo,
+        file_info: Arc<FileInfo>,
         file_format_config: Arc<FileFormatConfig>,
     ) -> Self {
         Self {

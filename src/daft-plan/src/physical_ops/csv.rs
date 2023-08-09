@@ -6,7 +6,7 @@ use daft_dsl::ExprRef;
 use crate::{source_info::ExternalInfo, PartitionSpec};
 
 #[derive(Debug)]
-pub struct TabularScanParquet {
+pub struct TabularScanCsv {
     pub schema: SchemaRef,
     pub external_info: ExternalInfo,
     pub partition_spec: Arc<PartitionSpec>,
@@ -14,7 +14,7 @@ pub struct TabularScanParquet {
     pub filters: Vec<ExprRef>,
 }
 
-impl TabularScanParquet {
+impl TabularScanCsv {
     pub(crate) fn new(
         schema: SchemaRef,
         external_info: ExternalInfo,

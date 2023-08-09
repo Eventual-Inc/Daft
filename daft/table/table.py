@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -10,10 +11,15 @@ from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
+
+if sys.version_info < (3, 8):
+    pass
+else:
+    pass
 
 _NUMPY_AVAILABLE = True
 try:
@@ -353,9 +359,17 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Table:
         return Table._from_pytable(
-            _read_parquet(uri=path, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config)
+            _read_parquet(
+                uri=path,
+                columns=columns,
+                start_offset=start_offset,
+                num_rows=num_rows,
+                io_config=io_config,
+                coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+            )
         )
 
     @classmethod
@@ -366,9 +380,15 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> list[Table]:
         pytables = _read_parquet_bulk(
-            uris=paths, columns=columns, start_offset=start_offset, num_rows=num_rows, io_config=io_config
+            uris=paths,
+            columns=columns,
+            start_offset=start_offset,
+            num_rows=num_rows,
+            io_config=io_config,
+            coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
         return [Table._from_pytable(t) for t in pytables]
 
