@@ -269,7 +269,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, io_client, Default::default())?;
+        let table = read_parquet(file, None, None, None, io_client, &Default::default())?;
         assert_eq!(table.len(), 100);
 
         Ok(())
