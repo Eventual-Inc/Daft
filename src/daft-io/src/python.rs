@@ -23,23 +23,16 @@ use pyo3::prelude::*;
 pub struct S3Config {
     pub config: config::S3Config,
 }
-
 /// Create configurations to be used when accessing Azure Blob Storage
 ///
 /// Args:
-///     region_name: Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
-///         If wrongly provided, Daft will attempt to auto-detect the buckets' region at the cost of extra S3 requests.
-///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
-///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
-///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
-///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
-///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
-///     num_tries: Number of attempts to make a connection, defaults to 5
-///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
+///     storage_account: Azure Storage Account, defaults to reading from `AZURE_STORAGE_ACCOUNT` environment variable.
+///     access_key: Azure Secret Access Key, defaults to reading from `AZURE_STORAGE_KEY` environment variable
+///     anonymous: Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///
 /// Example:
-///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
-///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
+///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
+///     >>> daft.read_parquet("az://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct AzureConfig {
