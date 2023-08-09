@@ -10,5 +10,4 @@ class RustQueryPlanner(QueryPlanner):
         self._builder = builder
 
     def plan(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
-        # TODO(Clark): Integrate partition set cache.
-        return physical_plan.materialize(self._builder.to_partition_tasks())
+        return physical_plan.materialize(self._builder.to_partition_tasks(psets))
