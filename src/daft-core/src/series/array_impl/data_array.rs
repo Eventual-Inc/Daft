@@ -137,9 +137,11 @@ fn logical_to_arrow<'a>(
                 .as_any()
                 .downcast_ref::<arrow2::array::PrimitiveArray<i64>>()
                 .unwrap();
-            let casted: Box<dyn arrow2::array::Array> = Box::new(downcasted.clone().to(
-                arrow2::datatypes::DataType::Duration(unit.to_arrow().unwrap()),
-            ));
+            let casted: Box<dyn arrow2::array::Array> = Box::new(
+                downcasted
+                    .clone()
+                    .to(arrow2::datatypes::DataType::Duration(unit.to_arrow())),
+            );
             Cow::Owned(casted)
         }
 
