@@ -272,12 +272,7 @@ impl Expr {
         match self {
             // Base case - anonymous column reference.
             // Look up the column name in the provided schema and get its field ID.
-            Column(name) => schema
-                .get_field(name)
-                .unwrap()
-                .id
-                .clone()
-                .unwrap_or(FieldID::new(&**name)),
+            Column(name) => FieldID::new(&**name),
 
             // Base case - literal.
             Literal(value) => FieldID::new(format!("Literal({value:?})")),
