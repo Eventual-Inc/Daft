@@ -42,7 +42,7 @@ def test_disallowed_sort_bytes():
 
 @pytest.mark.parametrize("desc", [True, False])
 @pytest.mark.parametrize("n_partitions", [1, 3])
-def test_single_float_col_sort(desc: bool, n_partitions: int):
+def test_single_float_col_sort(desc: bool, n_partitions: int, use_new_planner):
     df = daft.from_pydict({"A": [1.0, None, 3.0, float("nan"), 2.0]})
     df = df.repartition(n_partitions)
     df = df.sort("A", desc=desc)
@@ -60,7 +60,7 @@ def test_single_float_col_sort(desc: bool, n_partitions: int):
 
 @pytest.mark.skip(reason="Issue: https://github.com/Eventual-Inc/Daft/issues/546")
 @pytest.mark.parametrize("n_partitions", [1, 3])
-def test_multi_float_col_sort(n_partitions: int):
+def test_multi_float_col_sort(n_partitions: int, use_new_planner):
     df = daft.from_pydict(
         {
             "A": [1.0, 1.0, None, None, float("nan"), float("nan"), float("nan")],
@@ -107,7 +107,7 @@ def test_multi_float_col_sort(n_partitions: int):
 
 @pytest.mark.parametrize("desc", [True, False])
 @pytest.mark.parametrize("n_partitions", [1, 3])
-def test_single_string_col_sort(desc: bool, n_partitions: int):
+def test_single_string_col_sort(desc: bool, n_partitions: int, use_new_planner):
     df = daft.from_pydict({"A": ["0", None, "1", "", "01"]})
     df = df.repartition(n_partitions)
     df = df.sort("A", desc=desc)
@@ -126,7 +126,7 @@ def test_single_string_col_sort(desc: bool, n_partitions: int):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_int_sort_with_nulls(repartition_nparts):
+def test_int_sort_with_nulls(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [2, None, 1],
@@ -147,7 +147,7 @@ def test_int_sort_with_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_str_sort_with_nulls(repartition_nparts):
+def test_str_sort_with_nulls(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [1, None, 2],
@@ -167,7 +167,7 @@ def test_str_sort_with_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 4, 6])
-def test_sort_with_nulls_multikey(repartition_nparts):
+def test_sort_with_nulls_multikey(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id1": [2, None, 2, None, 1],
@@ -205,7 +205,7 @@ def test_sort_with_all_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
-def test_sort_with_empty(repartition_nparts):
+def test_sort_with_empty(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [1],
@@ -220,7 +220,7 @@ def test_sort_with_empty(repartition_nparts):
     assert len(resultset["values"]) == 0
 
 
-def test_sort_with_all_null_type_column():
+def test_sort_with_all_null_type_column(use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [None, None, None],

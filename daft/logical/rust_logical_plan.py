@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING
 
 import fsspec
 
+from daft import DataType
 from daft.context import get_context
 from daft.daft import FileFormat, FileFormatConfig
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import PartitionScheme, PartitionSpec
+from daft.errors import ExpressionTypeError
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.logical.builder import JoinType, LogicalPlanBuilder
 from daft.logical.schema import Schema
@@ -113,6 +115,11 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         raise NotImplementedError("not implemented")
 
     def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
+        resolved_sort_by_schema = sort_by.resolve_schema(self.schema())
+        for f, sort_by_expr in zip(resolved_sort_by_schema, sort_by):
+            if f.dtype == DataType.null() or f.dtype == DataType.binary() or f.dtype == DataType.bool():
+                raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
+
         sort_by_exprs = [expr._expr for expr in sort_by]
         if not isinstance(descending, list):
             descending = [descending] * len(sort_by_exprs)
@@ -122,7 +129,9 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def repartition(
         self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
     ) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        partition_by_exprs = [expr._expr for expr in partition_by]
+        builder = self._builder.repartition(num_partitions, partition_by_exprs, scheme)
+        return RustLogicalPlanBuilder(builder)
 
     def coalesce(self, num_partitions: int) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")

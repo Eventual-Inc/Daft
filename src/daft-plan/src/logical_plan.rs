@@ -10,6 +10,7 @@ pub enum LogicalPlan {
     Filter(Filter),
     Limit(Limit),
     Sort(Sort),
+    Repartition(Repartition),
     Aggregate(Aggregate),
 }
 
@@ -20,6 +21,7 @@ impl LogicalPlan {
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Sort(Sort { input, .. }) => input.schema(),
+            Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Aggregate(Aggregate { schema, .. }) => schema.clone(),
         }
     }
@@ -35,6 +37,17 @@ impl LogicalPlan {
                 Some(sort_by.clone()),
             )
             .into(),
+            Self::Repartition(Repartition {
+                num_partitions,
+                partition_by,
+                scheme,
+                ..
+            }) => PartitionSpec::new_internal(
+                scheme.clone(),
+                *num_partitions,
+                Some(partition_by.clone()),
+            )
+            .into(),
             Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
         }
     }
@@ -45,6 +58,7 @@ impl LogicalPlan {
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
+            Self::Repartition(Repartition { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
         }
     }
@@ -55,6 +69,7 @@ impl LogicalPlan {
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Sort(sort) => sort.multiline_display(),
+            Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
         }
     }
@@ -80,4 +95,5 @@ impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Sort);
+impl_from_data_struct_for_logical_plan!(Repartition);
 impl_from_data_struct_for_logical_plan!(Aggregate);

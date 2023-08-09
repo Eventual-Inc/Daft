@@ -101,6 +101,27 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn repartition(
+        &self,
+        num_partitions: usize,
+        partition_by: Vec<PyExpr>,
+        scheme: PartitionScheme,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let partition_by_exprs: Vec<Expr> = partition_by
+            .iter()
+            .map(|expr| expr.clone().into())
+            .collect();
+        let logical_plan: LogicalPlan = ops::Repartition::new(
+            num_partitions,
+            partition_by_exprs,
+            scheme,
+            self.plan.clone(),
+        )
+        .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
         let agg_exprs = agg_exprs

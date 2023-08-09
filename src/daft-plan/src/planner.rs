@@ -5,13 +5,15 @@ use common_error::DaftResult;
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
     Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit,
-    Sort as LogicalSort, Source,
+    Repartition as LogicalRepartition, Sort as LogicalSort, Source,
 };
 use crate::physical_ops::{
-    Aggregate, Filter, Limit, Sort, TabularScanCsv, TabularScanJson, TabularScanParquet,
+    Aggregate, Filter, Limit, ReduceMerge, Sort, Split, SplitByHash, SplitRandom, TabularScanCsv,
+    TabularScanJson, TabularScanParquet,
 };
 use crate::physical_plan::PhysicalPlan;
 use crate::source_info::{ExternalInfo, FileFormatConfig, SourceInfo};
+use crate::PartitionScheme;
 
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
@@ -89,6 +91,37 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 num_partitions,
                 input_physical.into(),
             )))
+        }
+        LogicalPlan::Repartition(LogicalRepartition {
+            input,
+            num_partitions,
+            partition_by,
+            scheme,
+        }) => {
+            let input_physical = Arc::new(plan(input)?);
+            match scheme {
+                PartitionScheme::Unknown => Ok(PhysicalPlan::Split(Split::new(
+                    input.partition_spec().num_partitions,
+                    *num_partitions,
+                    input_physical,
+                ))),
+                PartitionScheme::Random => {
+                    let split_op = PhysicalPlan::SplitRandom(SplitRandom::new(
+                        *num_partitions,
+                        input_physical,
+                    ));
+                    Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
+                }
+                PartitionScheme::Hash => {
+                    let split_op = PhysicalPlan::SplitByHash(SplitByHash::new(
+                        *num_partitions,
+                        partition_by.clone(),
+                        input_physical,
+                    ));
+                    Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
+                }
+                PartitionScheme::Range => unreachable!("Repartitioning by range is not supported"),
+            }
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             schema,
