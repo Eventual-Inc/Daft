@@ -30,11 +30,6 @@ impl Default for S3Config {
     }
 }
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct IOConfig {
-    pub s3: S3Config,
-}
-
 impl Display for S3Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
@@ -60,13 +55,40 @@ impl Display for S3Config {
     }
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct AzureConfig {
+    pub storage_account: Option<String>,
+    pub access_key: Option<String>,
+    pub anonymous: bool,
+}
+
+impl Display for AzureConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "AzureConfig
+    storage_account: {:?}
+    access_key: {:?}
+    anonymous: {:?}",
+            self.storage_account, self.access_key, self.anonymous
+        )
+    }
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct IOConfig {
+    pub s3: S3Config,
+    pub azure: AzureConfig,
+}
+
 impl Display for IOConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
             f,
             "IOConfig:
+{}
 {}",
-            self.s3
+            self.s3, self.azure
         )
     }
 }

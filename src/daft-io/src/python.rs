@@ -24,6 +24,28 @@ pub struct S3Config {
     pub config: config::S3Config,
 }
 
+/// Create configurations to be used when accessing Azure Blob Storage
+///
+/// Args:
+///     region_name: Name of the region to be used (used when accessing AWS S3), defaults to "us-east-1".
+///         If wrongly provided, Daft will attempt to auto-detect the buckets' region at the cost of extra S3 requests.
+///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
+///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
+///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
+///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
+///     num_tries: Number of attempts to make a connection, defaults to 5
+///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
+///
+/// Example:
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct AzureConfig {
+    pub config: config::AzureConfig,
+}
+
 /// Create configurations to be used when accessing storage
 ///
 /// Args:
@@ -41,10 +63,11 @@ pub struct IOConfig {
 #[pymethods]
 impl IOConfig {
     #[new]
-    pub fn new(s3: Option<S3Config>) -> Self {
+    pub fn new(s3: Option<S3Config>, azure: Option<AzureConfig>) -> Self {
         IOConfig {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
+                azure: azure.unwrap_or_default().config,
             },
         }
     }
@@ -59,6 +82,20 @@ impl IOConfig {
         Ok(S3Config {
             config: self.config.s3.clone(),
         })
+    }
+
+    /// Configurations to be used when accessing Azure URLs
+    #[getter]
+    pub fn azure(&self) -> PyResult<AzureConfig> {
+        Ok(AzureConfig {
+            config: self.config.azure.clone(),
+        })
+    }
+
+    #[staticmethod]
+    pub fn from_json(input: &str) -> PyResult<Self> {
+        let config: config::IOConfig = serde_json::from_str(input).map_err(DaftError::from)?;
+        Ok(config.into())
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
@@ -150,6 +187,42 @@ impl S3Config {
     }
 }
 
+#[pymethods]
+impl AzureConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    pub fn new(
+        storage_account: Option<String>,
+        access_key: Option<String>,
+        anonymous: Option<bool>,
+    ) -> Self {
+        let def = config::AzureConfig::default();
+        AzureConfig {
+            config: config::AzureConfig {
+                storage_account: storage_account.or(def.storage_account),
+                access_key: access_key.or(def.access_key),
+                anonymous: anonymous.unwrap_or(def.anonymous),
+            },
+        }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    /// Storage Account to use when accessing Azure Storage
+    #[getter]
+    pub fn storage_account(&self) -> PyResult<Option<String>> {
+        Ok(self.config.storage_account.clone())
+    }
+
+    /// Azure Secret Access Key
+    #[getter]
+    pub fn access_key(&self) -> PyResult<Option<String>> {
+        Ok(self.config.access_key.clone())
+    }
+}
+
 impl From<config::IOConfig> for IOConfig {
     fn from(config: config::IOConfig) -> Self {
         Self { config }
@@ -157,7 +230,9 @@ impl From<config::IOConfig> for IOConfig {
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<AzureConfig>()?;
     parent.add_class::<S3Config>()?;
     parent.add_class::<IOConfig>()?;
+
     Ok(())
 }

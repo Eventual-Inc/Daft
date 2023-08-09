@@ -16,7 +16,7 @@ use snafu::ResultExt;
 use crate::{
     metadata::read_parquet_metadata,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
-    JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
+    JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
@@ -87,11 +87,7 @@ impl FallibleStreamingIterator for VecIterator {
 impl ParquetReaderBuilder {
     pub async fn from_uri(uri: &str, io_client: Arc<daft_io::IOClient>) -> super::Result<Self> {
         // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
-        let size = io_client
-            .single_url_get_size(uri.into())
-            .await
-            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
-
+        let size = io_client.single_url_get_size(uri.into()).await?;
         let metadata = read_parquet_metadata(uri, size, io_client).await?;
         let num_rows = metadata.num_rows;
         let schema =

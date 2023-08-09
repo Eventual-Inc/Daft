@@ -82,7 +82,7 @@ impl Display for DaftError {
             #[cfg(feature = "python")]
             Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
             Self::IoError(e) => write!(f, "DaftError::IoError {e}"),
-            Self::External(e) => write!(f, "DaftError::External {:?}", e),
+            Self::External(e) => write!(f, "DaftError::External {}", e),
             Self::FileNotFound { path, source } => {
                 write!(f, "DaftError::FileNotFound {path}: {source}")
             }
