@@ -55,8 +55,11 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     @classmethod
     def from_in_memory_scan(
         cls, partition: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
-    ) -> LogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+    ) -> RustLogicalPlanBuilder:
+        if partition_spec is None:
+            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
+        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, partition_spec)
+        return cls(builder)
 
     @classmethod
     def from_tabular_scan(
@@ -83,41 +86,41 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
         rs_schema = inferred_or_provided_schema._schema
         builder = _LogicalPlanBuilder.table_scan(filepaths, rs_schema, file_format_config)
-        return RustLogicalPlanBuilder(builder)
+        return cls(builder)
 
     def project(
         self,
         projection: ExpressionsProjection,
         custom_resource_request: ResourceRequest = ResourceRequest(),
-    ) -> LogicalPlanBuilder:
+    ) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def filter(self, predicate: Expression) -> LogicalPlanBuilder:
+    def filter(self, predicate: Expression) -> RustLogicalPlanBuilder:
         builder = self._builder.filter(predicate._expr)
         return RustLogicalPlanBuilder(builder)
 
-    def limit(self, num_rows: int) -> LogicalPlanBuilder:
+    def limit(self, num_rows: int) -> RustLogicalPlanBuilder:
         builder = self._builder.limit(num_rows)
         return RustLogicalPlanBuilder(builder)
 
-    def explode(self, explode_expressions: ExpressionsProjection) -> LogicalPlanBuilder:
+    def explode(self, explode_expressions: ExpressionsProjection) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def count(self) -> LogicalPlanBuilder:
+    def count(self) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def distinct(self) -> LogicalPlanBuilder:
+    def distinct(self) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> LogicalPlanBuilder:
+    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
     def repartition(
         self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
-    ) -> LogicalPlanBuilder:
+    ) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def coalesce(self, num_partitions: int) -> LogicalPlanBuilder:
+    def coalesce(self, num_partitions: int) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
     def join(
@@ -126,10 +129,27 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.INNER,
-    ) -> LogicalPlanBuilder:
+    ) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+    def agg(
+        self,
+        to_agg: list[tuple[Expression, str]],
+        group_by: ExpressionsProjection | None,
+    ) -> RustLogicalPlanBuilder:
+        exprs = []
+        for expr, op in to_agg:
+            if op == "sum":
+                exprs.append(expr._sum())
+            else:
+                raise NotImplementedError()
+
+        builder = self._builder.aggregate([expr._expr for expr in exprs])
+        return RustLogicalPlanBuilder(builder)
+
+        raise NotImplementedError("not implemented")
+
+    def concat(self, other: LogicalPlanBuilder) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
     def write_tabular(
@@ -138,5 +158,5 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         file_format: FileFormat,
         partition_cols: ExpressionsProjection | None = None,
         compression: str | None = None,
-    ) -> LogicalPlanBuilder:
+    ) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")

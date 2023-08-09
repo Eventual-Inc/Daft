@@ -11,6 +11,8 @@ use pyo3::prelude::*;
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
+///     num_tries: Number of attempts to make a connection, defaults to 5
 ///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
 ///
 /// Example:
@@ -28,7 +30,7 @@ pub struct S3Config {
 ///     s3: Configurations to use when accessing URLs with the `s3://` scheme
 ///
 /// Example:
-///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
@@ -73,6 +75,7 @@ impl IOConfig {
 
 #[pymethods]
 impl S3Config {
+    #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(
         region_name: Option<String>,
@@ -80,16 +83,22 @@ impl S3Config {
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
+        retry_initial_backoff_ms: Option<u32>,
+        num_tries: Option<u32>,
         anonymous: Option<bool>,
     ) -> Self {
+        let def = config::S3Config::default();
         S3Config {
             config: config::S3Config {
-                region_name,
-                endpoint_url,
-                key_id,
-                session_token,
-                access_key,
-                anonymous: anonymous.unwrap_or(false),
+                region_name: region_name.or(def.region_name),
+                endpoint_url: endpoint_url.or(def.endpoint_url),
+                key_id: key_id.or(def.key_id),
+                session_token: session_token.or(def.session_token),
+                access_key: access_key.or(def.access_key),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(def.retry_initial_backoff_ms),
+                num_tries: num_tries.unwrap_or(def.num_tries),
+                anonymous: anonymous.unwrap_or(def.anonymous),
             },
         }
     }
@@ -116,10 +125,28 @@ impl S3Config {
         Ok(self.config.key_id.clone())
     }
 
+    /// AWS Session Token
+    #[getter]
+    pub fn session_token(&self) -> PyResult<Option<String>> {
+        Ok(self.config.session_token.clone())
+    }
+
     /// AWS Secret Access Key
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
+    }
+
+    /// AWS Retry Initial Backoff Time in Milliseconds
+    #[getter]
+    pub fn retry_initial_backoff_ms(&self) -> PyResult<u32> {
+        Ok(self.config.retry_initial_backoff_ms)
+    }
+
+    /// AWS Number Retries
+    #[getter]
+    pub fn num_tries(&self) -> PyResult<u32> {
+        Ok(self.config.num_tries)
     }
 }
 

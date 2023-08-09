@@ -3,7 +3,10 @@ use std::sync::Arc;
 use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 
-use crate::{source_info::SourceInfo, PartitionSpec};
+use crate::{
+    source_info::{ExternalInfo, SourceInfo},
+    PartitionSpec,
+};
 
 #[derive(Clone, Debug)]
 pub struct Source {
@@ -40,24 +43,27 @@ impl Source {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 
-        res.push(format!(
-            "Source: {:?}",
-            self.source_info.file_format_config.var_name()
-        ));
-        for fp in self.source_info.file_info.file_paths.iter() {
-            res.push(format!("  {}", fp));
+        match self.source_info.as_ref() {
+            SourceInfo::ExternalInfo(ExternalInfo {
+                schema,
+                file_info,
+                file_format_config,
+            }) => {
+                res.push(format!("Source: {:?}", file_format_config.var_name()));
+                for fp in file_info.file_paths.iter() {
+                    res.push(format!("  {}", fp));
+                }
+                res.push(format!("  File schema: {}", schema.short_string()));
+                res.push(format!(
+                    "  Format-specific config: {:?}",
+                    file_format_config
+                ));
+            }
+            #[cfg(feature = "python")]
+            SourceInfo::InMemoryInfo(_) => {}
         }
-        res.push(format!(
-            "  File schema: {}",
-            self.source_info.schema.short_string()
-        ));
-
-        res.push(format!(
-            "  Format-specific config: {:?}",
-            self.source_info.file_format_config
-        ));
         res.push(format!("  Output schema: {}", self.schema.short_string()));
-        if self.filters.is_empty() {
+        if !self.filters.is_empty() {
             res.push(format!("  Filters: {:?}", self.filters));
         }
         if let Some(limit) = self.limit {

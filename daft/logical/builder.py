@@ -137,6 +137,13 @@ class LogicalPlanBuilder(ABC):
         pass
 
     @abstractmethod
+    def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None) -> LogicalPlanBuilder:
+        """
+        to_agg: (<expression identifying column>, <string identifying agg operation>)
+        TODO - clean this up after old logical plan is removed
+        """
+
+    @abstractmethod
     def join(
         self,
         right: LogicalPlanBuilder,

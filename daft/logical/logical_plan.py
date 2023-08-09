@@ -16,6 +16,7 @@ from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.expressions.testing import expr_structurally_equal
 from daft.internal.treenode import TreeNode
+from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.logical.builder import JoinType, LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
@@ -206,6 +207,32 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
 
     def concat(self, other: PyLogicalPlanBuilder) -> PyLogicalPlanBuilder:  # type: ignore[override]
         return Concat(self._plan, other._plan).to_builder()
+
+    def agg(
+        self,
+        to_agg: list[tuple[Expression, str]],
+        group_by: ExpressionsProjection | None,
+    ) -> PyLogicalPlanBuilder:
+        agg_builder = AggregationPlanBuilder(self._plan, group_by=group_by)
+        for expr, op in to_agg:
+            if op == "sum":
+                agg_builder.add_sum(expr.name(), expr)
+            elif op == "min":
+                agg_builder.add_min(expr.name(), expr)
+            elif op == "max":
+                agg_builder.add_max(expr.name(), expr)
+            elif op == "count":
+                agg_builder.add_count(expr.name(), expr)
+            elif op == "list":
+                agg_builder.add_list(expr.name(), expr)
+            elif op == "mean":
+                agg_builder.add_mean(expr.name(), expr)
+            elif op == "concat":
+                agg_builder.add_concat(expr.name(), expr)
+            else:
+                raise NotImplementedError(f"LogicalPlan construction for operation not implemented: {op}")
+
+        return agg_builder.build().to_builder()
 
     def write_tabular(
         self,

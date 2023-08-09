@@ -9,6 +9,7 @@ pub enum LogicalPlan {
     Source(Source),
     Filter(Filter),
     Limit(Limit),
+    Aggregate(Aggregate),
 }
 
 impl LogicalPlan {
@@ -17,6 +18,7 @@ impl LogicalPlan {
             Self::Source(Source { schema, .. }) => schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Aggregate(Aggregate { schema, .. }) => schema.clone(),
         }
     }
 
@@ -25,14 +27,16 @@ impl LogicalPlan {
             Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
+            Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
         }
     }
 
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
-            Self::Filter(filter) => vec![&filter.input],
-            Self::Limit(limit) => vec![&limit.input],
+            Self::Filter(Filter { input, .. }) => vec![input],
+            Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input],
         }
     }
 
@@ -41,6 +45,7 @@ impl LogicalPlan {
             Self::Source(source) => source.multiline_display(),
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
+            Self::Aggregate(aggregate) => aggregate.multiline_display(),
         }
     }
 
@@ -50,3 +55,18 @@ impl LogicalPlan {
         s
     }
 }
+
+macro_rules! impl_from_data_struct_for_logical_plan {
+    ($name:ident) => {
+        impl From<$name> for LogicalPlan {
+            fn from(data: $name) -> Self {
+                Self::$name(data)
+            }
+        }
+    };
+}
+
+impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(Filter);
+impl_from_data_struct_for_logical_plan!(Aggregate);
+impl_from_data_struct_for_logical_plan!(Limit);

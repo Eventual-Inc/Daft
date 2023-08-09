@@ -93,7 +93,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.1"
-source = "git+https://github.com/Eventual-Inc/arrow2?branch=clark/expand-casting-support#46bc134e386f597eed00a0396ea2de224d12943c"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=84b2c0c0#84b2c0c0ec8f7a4e160bf3eaf1bcea474f3c58c4"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -926,6 +926,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sig-auth",
  "aws-sigv4",
+ "aws-smithy-async",
  "bytes",
  "common-error",
  "daft-core",

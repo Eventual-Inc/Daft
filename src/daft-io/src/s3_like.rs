@@ -1,9 +1,10 @@
 use async_trait::async_trait;
+use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 
 use crate::config::S3Config;
-use crate::SourceType;
+use crate::{InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
@@ -13,7 +14,7 @@ use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
 use s3::error::SdkError;
 use s3::operation::get_object::GetObjectError;
-use snafu::{IntoError, ResultExt, Snafu};
+use snafu::{ensure, IntoError, ResultExt, Snafu};
 use url::ParseError;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -25,6 +26,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
+use std::time::Duration;
 pub(crate) struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     default_region: Region,
@@ -139,6 +141,22 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     } else {
         builder
     };
+
+    ensure!(
+        config.num_tries > 0,
+        InvalidArgumentSnafu {
+            msg: "num_tries must be greater than zero"
+        }
+    );
+    let retry_config = s3::config::retry::RetryConfig::standard()
+        .with_max_attempts(config.num_tries)
+        .with_initial_backoff(Duration::from_millis(
+            config.retry_initial_backoff_ms as u64,
+        ));
+    let builder = builder.retry_config(retry_config);
+
+    let sleep_impl = Arc::new(TokioSleep::new());
+    let builder = builder.sleep_impl(sleep_impl);
 
     let builder = if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(

@@ -1,17 +1,20 @@
 use std::sync::Arc;
 
+use daft_dsl::Expr;
+
 use crate::{logical_plan::LogicalPlan, ops};
 
 #[cfg(feature = "python")]
 use {
     crate::{
         planner::plan,
-        source_info::{FileInfo, PyFileFormatConfig, SourceInfo},
+        source_info::{ExternalInfo, FileInfo, InMemoryInfo, PyFileFormatConfig, SourceInfo},
         PartitionScheme, PartitionSpec,
     },
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
-    pyo3::prelude::*,
+    pyo3::{exceptions::PyValueError, prelude::*},
+    std::collections::HashMap,
 };
 
 #[cfg_attr(feature = "python", pyclass)]
@@ -21,23 +24,8 @@ pub struct LogicalPlanBuilder {
 }
 
 impl LogicalPlanBuilder {
-    // Create a new LogicalPlanBuilder for a Source node.
-    pub fn from_source(source: ops::Source) -> Self {
-        Self {
-            plan: LogicalPlan::Source(source).into(),
-        }
-    }
-
-    pub fn from_filter(filter: ops::Filter) -> Self {
-        Self {
-            plan: LogicalPlan::Filter(filter).into(),
-        }
-    }
-
-    pub fn from_limit(limit: ops::Limit) -> Self {
-        Self {
-            plan: LogicalPlan::Limit(limit).into(),
-        }
+    pub fn new(plan: Arc<LogicalPlan>) -> Self {
+        Self { plan }
     }
 }
 
@@ -45,37 +33,76 @@ impl LogicalPlanBuilder {
 #[pymethods]
 impl LogicalPlanBuilder {
     #[staticmethod]
+    pub fn in_memory_scan(
+        partition_key: &str,
+        cache_entry: &PyAny,
+        schema: &PySchema,
+        partition_spec: &PartitionSpec,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
+            partition_key.into(),
+            cache_entry.to_object(cache_entry.py()),
+        ));
+        let logical_plan: LogicalPlan = ops::Source::new(
+            schema.schema.clone(),
+            source_info.into(),
+            partition_spec.clone().into(),
+        )
+        .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
+    #[staticmethod]
     pub fn table_scan(
         file_paths: Vec<String>,
         schema: &PySchema,
         file_format_config: PyFileFormatConfig,
     ) -> PyResult<LogicalPlanBuilder> {
         let num_partitions = file_paths.len();
-        let source_info = SourceInfo::new(
+        let source_info = SourceInfo::ExternalInfo(ExternalInfo::new(
             schema.schema.clone(),
-            FileInfo::new(file_paths, None, None, None),
+            FileInfo::new(file_paths, None, None, None).into(),
             file_format_config.into(),
-        );
+        ));
         let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);
-        let logical_plan_builder = LogicalPlanBuilder::from_source(ops::Source::new(
+        let logical_plan: LogicalPlan = ops::Source::new(
             schema.schema.clone(),
             source_info.into(),
             partition_spec.into(),
-        ));
+        )
+        .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan_builder = LogicalPlanBuilder::from_filter(ops::Filter::new(
-            predicate.expr.clone(),
-            self.plan.clone(),
-        ));
+        let logical_plan: LogicalPlan =
+            ops::Filter::new(predicate.expr.clone(), self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
     pub fn limit(&self, limit: i64) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan_builder =
-            LogicalPlanBuilder::from_limit(ops::Limit::new(limit, self.plan.clone()));
+        let logical_plan: LogicalPlan = ops::Limit::new(limit, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
+    pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
+        use crate::ops::Aggregate;
+        let agg_exprs = agg_exprs
+            .iter()
+            .map(|expr| match &expr.expr {
+                Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+                _ => Err(PyValueError::new_err(format!(
+                    "Expected aggregation expression, but got: {}",
+                    expr.expr
+                ))),
+            })
+            .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
+        let logical_plan: LogicalPlan = Aggregate::new(agg_exprs, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
 
@@ -87,9 +114,9 @@ impl LogicalPlanBuilder {
         Ok(self.plan.partition_spec().as_ref().clone())
     }
 
-    pub fn to_partition_tasks(&self) -> PyResult<PyObject> {
+    pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
         let physical_plan = plan(self.plan.as_ref())?;
-        Python::with_gil(|py| physical_plan.to_partition_tasks(py))
+        Python::with_gil(|py| physical_plan.to_partition_tasks(py, &psets))
     }
 
     pub fn repr_ascii(&self) -> PyResult<String> {
