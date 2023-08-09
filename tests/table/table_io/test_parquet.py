@@ -12,8 +12,10 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
-from daft.runners.partitioning import TableReadOptions
+from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
+
+PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
 def test_read_input(tmpdir):
@@ -156,9 +158,14 @@ def test_parquet_read_data_select_columns(use_native_downloader):
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
+###
+# Test Parquet Int96 timestamps
+###
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 @pytest.mark.parametrize("use_deprecated_int96_timestamps", [True, False])
-def test_parquet_read_timestamps(use_native_downloader, use_deprecated_int96_timestamps):
+def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_native_downloader):
     data = {
         "timestamp_ms": pa.array([1, 2, 3], pa.timestamp("ms")),
         "timestamp_us": pa.array([1, 2, 3], pa.timestamp("us")),
@@ -172,12 +179,16 @@ def test_parquet_read_timestamps(use_native_downloader, use_deprecated_int96_tim
         data["timestamp_ns"] = pa.array([1, 2, 3], pa.timestamp("ns"))
         schema.append(("timestamp_ns", DataType.timestamp(TimeUnit.ns())))
 
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
+        "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
-        papq_write_table_kwargs={
-            "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
-            "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
-        },
+        papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
@@ -188,3 +199,68 @@ def test_parquet_read_timestamps(use_native_downloader, use_deprecated_int96_tim
             use_native_downloader=use_native_downloader,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
+def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader):
+    # NOTE: datetime.datetime(3000, 1, 1) and datetime.datetime(1000, 1, 1) cannot be represented by our timestamp64(nanosecond)
+    # type. However they can be written to Parquet's INT96 type. Here we test that a round-trip is possible if provided with
+    # the appropriate flags.
+    data = {
+        "timestamp": pa.array(
+            [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
+            pa.timestamp(str(coerce_to)),
+        ),
+    }
+    schema = [
+        ("timestamp", DataType.timestamp(coerce_to)),
+    ]
+
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": True,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
+    with _parquet_write_helper(
+        pa.Table.from_pydict(data),
+        papq_write_table_kwargs=papq_write_table_kwargs,
+    ) as f:
+        schema = Schema._from_field_name_and_types(schema)
+        expected = Table.from_pydict(data)
+        table = table_io.read_parquet(
+            f,
+            schema,
+            read_options=TableReadOptions(column_names=schema.column_names()),
+            parquet_options=TableParseParquetOptions(coerce_int96_timestamp_unit=coerce_to),
+            use_native_downloader=use_native_downloader,
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
+def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
+    data = {
+        "timestamp": pa.array(
+            [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
+            pa.timestamp(str(coerce_to)),
+        ),
+    }
+    schema = [
+        ("timestamp", DataType.timestamp(coerce_to)),
+    ]
+    expected = Schema._from_field_name_and_types(schema)
+
+    papq_write_table_kwargs = {
+        "use_deprecated_int96_timestamps": True,
+    }
+    if PYARROW_GE_7_0_0:
+        papq_write_table_kwargs["store_schema"] = False
+
+    with _parquet_write_helper(
+        pa.Table.from_pydict(data),
+        papq_write_table_kwargs=papq_write_table_kwargs,
+    ) as f:
+        schema = Schema.from_parquet(f, coerce_int96_timestamp_unit=coerce_to)
+        assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"

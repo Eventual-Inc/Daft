@@ -320,9 +320,8 @@ pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String 
 }
 
 pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts = {
-        arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow().unwrap())
-    };
+    let chrono_ts =
+        { arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow()) };
     let format_str = match unit {
         TimeUnit::Seconds => "%Y-%m-%dT%H:%M:%S",
         TimeUnit::Milliseconds => "%Y-%m-%dT%H:%M:%S%.3f",
@@ -343,7 +342,7 @@ pub(super) fn timestamp_to_str_offset(
         TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
         TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
     };
-    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), offset)
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset)
         .to_rfc3339_opts(seconds_format, false)
 }
 
@@ -354,7 +353,7 @@ pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz)
         TimeUnit::Microseconds => chrono::SecondsFormat::Micros,
         TimeUnit::Nanoseconds => chrono::SecondsFormat::Nanos,
     };
-    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow().unwrap(), tz)
+    arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz)
         .to_rfc3339_opts(seconds_format, false)
 }
 

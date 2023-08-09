@@ -85,6 +85,16 @@ impl Schema {
         }
     }
 
+    pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
+        let arrow_fields: DaftResult<Vec<arrow2::datatypes::Field>> =
+            self.fields.iter().map(|(_, f)| f.to_arrow()).collect();
+        let arrow_fields = arrow_fields?;
+        Ok(arrow2::datatypes::Schema {
+            fields: arrow_fields,
+            metadata: Default::default(),
+        })
+    }
+
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 

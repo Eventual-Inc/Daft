@@ -134,11 +134,11 @@ impl DataType {
             DataType::Float64 => Ok(ArrowType::Float64),
             DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
             DataType::Timestamp(unit, timezone) => {
-                Ok(ArrowType::Timestamp(unit.to_arrow()?, timezone.clone()))
+                Ok(ArrowType::Timestamp(unit.to_arrow(), timezone.clone()))
             }
             DataType::Date => Ok(ArrowType::Date32),
-            DataType::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow()?)),
-            DataType::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow()?)),
+            DataType::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
+            DataType::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
             DataType::Binary => Ok(ArrowType::LargeBinary),
             DataType::Utf8 => Ok(ArrowType::LargeUtf8),
             DataType::FixedSizeList(field, size) => {

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use arrow2::io::parquet::read::infer_schema;
+use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::IOClient;
@@ -15,18 +15,20 @@ use snafu::ResultExt;
 
 use crate::{
     metadata::read_parquet_metadata,
+    read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu, UnableToOpenFileSnafu,
     UnableToParseSchemaFromMetadataSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
+
 pub(crate) struct ParquetReaderBuilder {
     uri: String,
     metadata: parquet2::metadata::FileMetaData,
-    arrow_schema: arrow2::datatypes::Schema,
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
+    schema_inference_options: ParquetSchemaInferenceOptions,
 }
 use parquet2::read::decompress;
 
@@ -94,16 +96,13 @@ impl ParquetReaderBuilder {
 
         let metadata = read_parquet_metadata(uri, size, io_client).await?;
         let num_rows = metadata.num_rows;
-        let schema =
-            infer_schema(&metadata)
-                .context(UnableToParseSchemaFromMetadataSnafu::<String> { path: uri.into() })?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
             metadata,
-            arrow_schema: schema,
             selected_columns: None,
             row_start_offset: 0,
             num_rows,
+            schema_inference_options: Default::default(),
         })
     }
 
@@ -111,16 +110,16 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
-        &self.arrow_schema
+    pub fn parquet_schema(&self) -> &parquet2::metadata::SchemaDescriptor {
+        self.metadata().schema()
     }
 
     pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
         let avail_names = self
-            .arrow_schema
-            .fields
+            .parquet_schema()
+            .fields()
             .iter()
-            .map(|f| f.name.as_str())
+            .map(|f| f.name())
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
@@ -150,7 +149,12 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
-    pub fn build(mut self) -> super::Result<ParquetFileReader> {
+    pub fn set_infer_schema_options(mut self, opts: &ParquetSchemaInferenceOptions) -> Self {
+        self.schema_inference_options = opts.clone();
+        self
+    }
+
+    pub fn build(self) -> super::Result<ParquetFileReader> {
         let mut row_ranges = vec![];
 
         let mut curr_row_index = 0;
@@ -174,13 +178,26 @@ impl ParquetReaderBuilder {
             curr_row_index += rg.num_rows();
         }
 
+        let mut arrow_schema = infer_schema_with_options(
+            &self.metadata,
+            &Some(arrow2::io::parquet::read::schema::SchemaInferenceOptions {
+                int96_coerce_to_timeunit: self
+                    .schema_inference_options
+                    .coerce_int96_timestamp_unit
+                    .to_arrow(),
+            }),
+        )
+        .context(UnableToParseSchemaFromMetadataSnafu::<String> {
+            path: self.uri.clone(),
+        })?;
+
         if let Some(names_to_keep) = self.selected_columns {
-            self.arrow_schema
+            arrow_schema
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
 
-        ParquetFileReader::new(self.uri, self.metadata, self.arrow_schema, row_ranges)
+        ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
     }
 }
 
@@ -211,6 +228,10 @@ impl ParquetFileReader {
             arrow_schema,
             row_ranges: Arc::new(row_ranges),
         })
+    }
+
+    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
+        &self.arrow_schema
     }
 
     fn naive_read_plan(&self) -> super::Result<ReadPlanner> {
