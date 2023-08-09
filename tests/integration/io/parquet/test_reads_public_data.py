@@ -37,10 +37,10 @@ DAFT_CAN_READ_FILES = [
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/binary.parquet",
     ),
     # Needs Decimals decoding from byte arrays
-    # (
-    #     "parquet-testing/data/byte_array_decimal.parquet",
-    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/byte_array_decimal.parquet",
-    # ),
+    (
+        "parquet-testing/data/byte_array_decimal.parquet",
+        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/byte_array_decimal.parquet",
+    ),
     (
         "parquet-testing/data/data_index_bloom_encoding_stats.parquet",
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/data_index_bloom_encoding_stats.parquet",
