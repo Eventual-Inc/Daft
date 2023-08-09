@@ -122,6 +122,12 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn distinct(&self) -> PyResult<LogicalPlanBuilder> {
+        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
         let agg_exprs = agg_exprs

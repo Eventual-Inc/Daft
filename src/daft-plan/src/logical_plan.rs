@@ -11,6 +11,7 @@ pub enum LogicalPlan {
     Limit(Limit),
     Sort(Sort),
     Repartition(Repartition),
+    Distinct(Distinct),
     Aggregate(Aggregate),
 }
 
@@ -22,6 +23,7 @@ impl LogicalPlan {
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
+            Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(Aggregate { schema, .. }) => schema.clone(),
         }
     }
@@ -48,6 +50,7 @@ impl LogicalPlan {
                 Some(partition_by.clone()),
             )
             .into(),
+            Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
             Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
         }
     }
@@ -59,6 +62,7 @@ impl LogicalPlan {
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
         }
     }
@@ -70,6 +74,7 @@ impl LogicalPlan {
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
+            Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
         }
     }
@@ -96,4 +101,5 @@ impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
+impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);

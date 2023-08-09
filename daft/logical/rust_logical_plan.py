@@ -112,7 +112,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         raise NotImplementedError("not implemented")
 
     def distinct(self) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        builder = self._builder.distinct()
+        return RustLogicalPlanBuilder(builder)
 
     def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
         resolved_sort_by_schema = sort_by.resolve_schema(self.schema())

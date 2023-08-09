@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_dsl::Expr;
 
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
-    Aggregate as LogicalAggregate, Filter as LogicalFilter, Limit as LogicalLimit,
-    Repartition as LogicalRepartition, Sort as LogicalSort, Source,
+    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Filter as LogicalFilter,
+    Limit as LogicalLimit, Repartition as LogicalRepartition, Sort as LogicalSort, Source,
 };
 use crate::physical_ops::{
     Aggregate, Filter, Limit, ReduceMerge, Sort, Split, SplitByHash, SplitRandom, TabularScanCsv,
@@ -121,6 +122,38 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
                 }
                 PartitionScheme::Range => unreachable!("Repartitioning by range is not supported"),
+            }
+        }
+        LogicalPlan::Distinct(LogicalDistinct { input }) => {
+            let input_physical = plan(input)?;
+            let col_exprs = input
+                .schema()
+                .names()
+                .iter()
+                .map(|name| Expr::Column(name.clone().into()))
+                .collect::<Vec<Expr>>();
+            let agg_op = PhysicalPlan::Aggregate(Aggregate::new(
+                input_physical.into(),
+                vec![],
+                col_exprs.clone(),
+                input.schema(),
+            ));
+            let num_partitions = logical_plan.partition_spec().num_partitions;
+            if num_partitions > 1 {
+                let split_op = PhysicalPlan::SplitByHash(SplitByHash::new(
+                    num_partitions,
+                    col_exprs.clone(),
+                    agg_op.into(),
+                ));
+                let reduce_op = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                Ok(PhysicalPlan::Aggregate(Aggregate::new(
+                    reduce_op.into(),
+                    vec![],
+                    col_exprs,
+                    input.schema(),
+                )))
+            } else {
+                Ok(agg_op)
             }
         }
         LogicalPlan::Aggregate(LogicalAggregate {
