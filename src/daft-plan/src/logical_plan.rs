@@ -18,7 +18,7 @@ impl LogicalPlan {
             Self::Source(Source { schema, .. }) => schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
-            Self::Aggregate(Aggregate { schema, .. }) => schema.clone(),
+            Self::Aggregate(aggregate) => aggregate.schema(),
         }
     }
 

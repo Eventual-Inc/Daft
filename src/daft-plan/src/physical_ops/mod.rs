@@ -1,4 +1,5 @@
 mod agg;
+mod coalesce;
 mod csv;
 mod filter;
 #[cfg(feature = "python")]
@@ -8,6 +9,7 @@ mod limit;
 mod parquet;
 
 pub use agg::Aggregate;
+pub use coalesce::Coalesce;
 pub use csv::TabularScanCsv;
 pub use filter::Filter;
 #[cfg(feature = "python")]

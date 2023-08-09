@@ -147,8 +147,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         builder = self._builder.aggregate([expr._expr for expr in exprs])
         return RustLogicalPlanBuilder(builder)
 
-        raise NotImplementedError("not implemented")
-
     def concat(self, other: LogicalPlanBuilder) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 

@@ -23,6 +23,7 @@ pub enum PhysicalPlan {
     Filter(Filter),
     Limit(Limit),
     Aggregate(Aggregate),
+    Coalesce(Coalesce),
 }
 
 #[cfg(feature = "python")]
@@ -181,6 +182,18 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "local_aggregate"))?
                     .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Coalesce(Coalesce {
+                input,
+                num_from,
+                num_to,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "coalesce"))?
+                    .call1((upstream_iter, *num_from as i64, *num_to as i64))?;
                 Ok(py_iter.into())
             }
         }
