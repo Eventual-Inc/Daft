@@ -73,9 +73,10 @@ snafu = "0.7.4"
 tokio = {version = "1.29.1", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 
 [workspace.dependencies.arrow2]
-branch = "clark/expand-casting-support"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
+# branch = "jay/decimal-binary-types"
+rev = "2834446a10545156bdf9c2898577e87e07d4d42d"
 version = "0.17.1"
 
 [workspace.dependencies.bincode]
