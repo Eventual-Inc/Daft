@@ -17,10 +17,42 @@ pub struct Field {
     pub metadata: Arc<Metadata>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
+pub struct FieldID {
+    pub id: String,
+}
+
+impl FieldID {
+    pub fn new<S: Into<String>>(id: S) -> Self {
+        Self { id: id.into() }
+    }
+
+    /// Create a Field ID directly from a real column name.
+    /// Performs sanitization on the name so it can be composed.
+    pub fn from_name(name: String) -> Self {
+        // Escape parentheses within a string,
+        // since we will use parentheses as delimiters in our semantic expression IDs.
+        let sanitized = name
+            .replace('.', "\\x2e")
+            .replace(',', "\\x2c")
+            .replace('(', "\\x28")
+            .replace(')', "\\x29")
+            .replace('\\', "\\x5c");
+        Self::new(sanitized)
+    }
+}
+
+impl Display for FieldID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.id)
+    }
+}
+
 impl Field {
     pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
+        let name: String = name.into();
         Self {
-            name: name.into(),
+            name,
             dtype,
             metadata: Default::default(),
         }
