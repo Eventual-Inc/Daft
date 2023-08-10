@@ -1,10 +1,12 @@
 #![feature(async_closure)]
 
+mod azure_blob;
 pub mod config;
 mod http;
 mod local;
 mod object_io;
 mod s3_like;
+use azure_blob::AzureBlobSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
@@ -36,10 +38,10 @@ use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Generic {} error: {:?}", store, source))]
+    #[snafu(display("Generic {} error: {}", store, source))]
     Generic { store: SourceType, source: DynError },
 
-    #[snafu(display("Object at location {} not found: {:?}", path, source))]
+    #[snafu(display("Object at location {} not found: {}", path, source))]
     NotFound { path: String, source: DynError },
 
     #[snafu(display("Invalid Argument: {:?}", msg))]
@@ -68,6 +70,13 @@ pub enum Error {
 
     #[snafu(display("Failed to load Credentials for store: {store} {source}"))]
     UnableToCreateClient { store: SourceType, source: DynError },
+
+    #[snafu(display("Unauthorized to access store: {store} for file: {path}\nYou may need to set valid Credentials\n{source}"))]
+    Unauthorized {
+        store: SourceType,
+        path: String,
+        source: DynError,
+    },
 
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
@@ -125,6 +134,9 @@ impl IOClient {
             SourceType::Http => HttpSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::S3 => {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
+            }
+            SourceType::AzureBlob => {
+                AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
             }
         };
 
@@ -189,6 +201,7 @@ pub enum SourceType {
     File,
     Http,
     S3,
+    AzureBlob,
 }
 
 impl std::fmt::Display for SourceType {
@@ -197,6 +210,7 @@ impl std::fmt::Display for SourceType {
             SourceType::File => write!(f, "file"),
             SourceType::Http => write!(f, "http"),
             SourceType::S3 => write!(f, "s3"),
+            SourceType::AzureBlob => write!(f, "AzureBlob"),
         }
     }
 }
@@ -219,6 +233,7 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "file" => Ok((SourceType::File, fixed_input)),
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" => Ok((SourceType::S3, fixed_input)),
+        "az" | "abfs" => Ok((SourceType::AzureBlob, fixed_input)),
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
