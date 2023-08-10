@@ -3,7 +3,7 @@ async-recursion = "1.0.4"
 async-trait = "0.1.71"
 aws-config = {version = "0.55.3"}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = "0.28.0"
+aws-sdk-s3 = "0.29.0"
 aws-sig-auth = "0.55.3"
 aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
