@@ -159,7 +159,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     ));
                     let result_plan = PhysicalPlan::Coalesce(Coalesce::new(
                         result_plan.into(),
-                        logical_plan.partition_spec().num_partitions,
+                        num_input_partitions,
                         1,
                     ));
                     PhysicalPlan::Aggregate(Aggregate::new(
