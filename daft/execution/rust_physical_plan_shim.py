@@ -39,3 +39,42 @@ def tabular_scan(
     return physical_plan.file_read(
         file_info_iter, limit, Schema._from_pyschema(schema), None, None, file_format_config, filepaths_column_name
     )
+
+
+def sort(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    sort_by: list[PyExpr],
+    descending: list[bool],
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
+    return physical_plan.sort(
+        child_plan=input,
+        sort_by=expr_projection,
+        descending=descending,
+        num_partitions=num_partitions,
+    )
+
+
+def split_by_hash(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    num_partitions: int,
+    partition_by: list[PyExpr],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_by])
+    fanout_instruction = execution_step.FanoutHash(
+        _num_outputs=num_partitions,
+        partition_by=expr_projection,
+    )
+    return physical_plan.pipeline_instruction(
+        input,
+        fanout_instruction,
+        ResourceRequest(),  # TODO(Clark): Propagate resource request.
+    )
+
+
+def reduce_merge(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    reduce_instruction = execution_step.ReduceMerge()
+    return physical_plan.reduce(input, reduce_instruction)

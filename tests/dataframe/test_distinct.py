@@ -9,7 +9,7 @@ from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_nulls(repartition_nparts):
+def test_distinct_with_nulls(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [1, None, None, None],
@@ -47,7 +47,7 @@ def test_distinct_with_all_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
-def test_distinct_with_empty(repartition_nparts):
+def test_distinct_with_empty(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [1],
