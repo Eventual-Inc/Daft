@@ -160,7 +160,7 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *limit))?;
                 let global_limit_iter = py_physical_plan
                     .getattr(pyo3::intern!(py, "global_limit"))?
-                    .call1((local_limit_iter, *limit, *num_partitions as i64))?;
+                    .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
             PhysicalPlan::Aggregate(Aggregate {
@@ -193,7 +193,7 @@ impl PhysicalPlan {
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "coalesce"))?
-                    .call1((upstream_iter, *num_from as i64, *num_to as i64))?;
+                    .call1((upstream_iter, *num_from, *num_to))?;
                 Ok(py_iter.into())
             }
         }
