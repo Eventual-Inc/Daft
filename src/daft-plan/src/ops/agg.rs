@@ -7,9 +7,6 @@ use crate::LogicalPlan;
 
 #[derive(Clone, Debug)]
 pub struct Aggregate {
-    /// The schema of the output of this node.
-    pub schema: SchemaRef,
-
     /// Aggregations to apply.
     pub aggregations: Vec<AggExpr>,
 
@@ -25,27 +22,27 @@ impl Aggregate {
         // TEMP: No groupbys supported for now.
         let group_by: Vec<Expr> = vec![];
 
-        // Resolve the schema from the expressions.
-        let schema = {
-            let source_schema = input.schema();
-
-            let fields = group_by
-                .iter()
-                .map(|expr| expr.to_field(&source_schema).unwrap())
-                .chain(
-                    aggregations
-                        .iter()
-                        .map(|agg_expr| agg_expr.to_field(&source_schema).unwrap()),
-                )
-                .collect();
-            Schema::new(fields).unwrap().into()
-        };
         Self {
-            schema,
             aggregations,
             group_by,
             input,
         }
+    }
+
+    pub(crate) fn schema(&self) -> SchemaRef {
+        let source_schema = self.input.schema();
+
+        let fields = self
+            .group_by
+            .iter()
+            .map(|expr| expr.to_field(&source_schema).unwrap())
+            .chain(
+                self.aggregations
+                    .iter()
+                    .map(|agg_expr| agg_expr.to_field(&source_schema).unwrap()),
+            )
+            .collect();
+        Schema::new(fields).unwrap().into()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -54,7 +51,7 @@ impl Aggregate {
         if !self.group_by.is_empty() {
             res.push(format!("  Group by: {:?}", self.group_by));
         }
-        res.push(format!("  Output schema: {}", self.schema.short_string()));
+        res.push(format!("  Output schema: {}", self.schema().short_string()));
         res
     }
 }

@@ -38,6 +38,9 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def __init__(self, plan: LogicalPlan):
         self._plan = plan
 
+    def __repr__(self) -> str:
+        return self._plan.pretty_print()
+
     def to_planner(self) -> PyQueryPlanner:
         from daft.planner.py_planner import PyQueryPlanner
 

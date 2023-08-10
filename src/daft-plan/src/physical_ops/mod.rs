@@ -1,4 +1,5 @@
 mod agg;
+mod coalesce;
 mod csv;
 mod fanout;
 mod filter;
@@ -12,6 +13,7 @@ mod sort;
 mod split;
 
 pub use agg::Aggregate;
+pub use coalesce::Coalesce;
 pub use csv::TabularScanCsv;
 pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;

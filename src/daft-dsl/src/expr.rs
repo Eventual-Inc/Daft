@@ -81,31 +81,31 @@ impl AggExpr {
         match self {
             Count(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_count({child_id})"))
+                FieldID::new(format!("{child_id}.local_count()"))
             }
             Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_sum({child_id})"))
+                FieldID::new(format!("{child_id}.local_sum()"))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_mean({child_id})"))
+                FieldID::new(format!("{child_id}.local_mean()"))
             }
             Min(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_min({child_id})"))
+                FieldID::new(format!("{child_id}.local_min()"))
             }
             Max(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_max({child_id})"))
+                FieldID::new(format!("{child_id}.local_max()"))
             }
             List(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_list({child_id})"))
+                FieldID::new(format!("{child_id}.local_list()"))
             }
             Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("local_concat({child_id})"))
+                FieldID::new(format!("{child_id}.local_concat()"))
             }
         }
     }

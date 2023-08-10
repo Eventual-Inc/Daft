@@ -30,6 +30,7 @@ pub enum PhysicalPlan {
     FanoutByRange(FanoutByRange),
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
+    Coalesce(Coalesce),
 }
 
 #[cfg(feature = "python")]
@@ -166,7 +167,7 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *limit))?;
                 let global_limit_iter = py_physical_plan
                     .getattr(pyo3::intern!(py, "global_limit"))?
-                    .call1((local_limit_iter, *limit, *num_partitions as i64))?;
+                    .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
             PhysicalPlan::Sort(Sort {
@@ -260,6 +261,18 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "local_aggregate"))?
                     .call1((upstream_iter, aggs_as_pyexprs, groupbys_as_pyexprs))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Coalesce(Coalesce {
+                input,
+                num_from,
+                num_to,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "coalesce"))?
+                    .call1((upstream_iter, *num_from, *num_to))?;
                 Ok(py_iter.into())
             }
         }

@@ -24,7 +24,7 @@ impl LogicalPlan {
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
-            Self::Aggregate(Aggregate { schema, .. }) => schema.clone(),
+            Self::Aggregate(aggregate) => aggregate.schema(),
         }
     }
 

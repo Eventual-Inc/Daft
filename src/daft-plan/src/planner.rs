@@ -8,10 +8,7 @@ use crate::ops::{
     Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Filter as LogicalFilter,
     Limit as LogicalLimit, Repartition as LogicalRepartition, Sort as LogicalSort, Source,
 };
-use crate::physical_ops::{
-    Aggregate, FanoutByHash, FanoutRandom, Filter, Limit, ReduceMerge, Sort, Split, TabularScanCsv,
-    TabularScanJson, TabularScanParquet,
-};
+use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
 use crate::source_info::{ExternalInfo, FileFormatConfig, SourceInfo};
 use crate::PartitionScheme;
@@ -136,7 +133,6 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 input_physical.into(),
                 vec![],
                 col_exprs.clone(),
-                input.schema(),
             ));
             let num_partitions = logical_plan.partition_spec().num_partitions;
             if num_partitions > 1 {
@@ -150,25 +146,109 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     reduce_op.into(),
                     vec![],
                     col_exprs,
-                    input.schema(),
                 )))
             } else {
                 Ok(agg_op)
             }
         }
         LogicalPlan::Aggregate(LogicalAggregate {
-            schema,
             aggregations,
             group_by,
             input,
         }) => {
-            let input_physical = plan(input)?;
-            Ok(PhysicalPlan::Aggregate(Aggregate::new(
-                input_physical.into(),
-                aggregations.clone(),
-                group_by.clone(),
-                schema.clone(),
-            )))
+            use daft_dsl::AggExpr::*;
+            let result_plan = plan(input)?;
+
+            if !group_by.is_empty() {
+                unimplemented!("{:?}", group_by);
+            }
+
+            let num_input_partitions = logical_plan.partition_spec().num_partitions;
+
+            let result_plan = match num_input_partitions {
+                1 => PhysicalPlan::Aggregate(Aggregate::new(
+                    result_plan.into(),
+                    aggregations.clone(),
+                    vec![],
+                )),
+                _ => {
+                    // Resolve and assign intermediate names for the aggregations.
+                    let schema = logical_plan.schema();
+                    let intermediate_names: Vec<daft_core::datatypes::FieldID> = aggregations
+                        .iter()
+                        .map(|agg_expr| agg_expr.semantic_id(&schema))
+                        .collect();
+
+                    let first_stage_aggs: Vec<daft_dsl::AggExpr> = aggregations
+                        .iter()
+                        .zip(intermediate_names.iter())
+                        .map(|(agg_expr, field_id)| match agg_expr {
+                            Count(e) => Count(e.alias(field_id.id.clone()).into()),
+                            Sum(e) => Sum(e.alias(field_id.id.clone()).into()),
+                            Mean(e) => Mean(e.alias(field_id.id.clone()).into()),
+                            Min(e) => Min(e.alias(field_id.id.clone()).into()),
+                            Max(e) => Max(e.alias(field_id.id.clone()).into()),
+                            List(e) => List(e.alias(field_id.id.clone()).into()),
+                            Concat(e) => Concat(e.alias(field_id.id.clone()).into()),
+                        })
+                        .collect();
+
+                    let second_stage_aggs: Vec<daft_dsl::AggExpr> = intermediate_names
+                        .iter()
+                        .zip(schema.fields.keys())
+                        .zip(aggregations.iter())
+                        .map(|((field_id, original_name), agg_expr)| match agg_expr {
+                            Count(_) => Count(
+                                daft_dsl::Expr::Column(field_id.id.clone().into())
+                                    .alias(&**original_name)
+                                    .into(),
+                            ),
+                            Sum(_) => Sum(daft_dsl::Expr::Column(field_id.id.clone().into())
+                                .alias(&**original_name)
+                                .into()),
+                            Mean(_) => Mean(
+                                daft_dsl::Expr::Column(field_id.id.clone().into())
+                                    .alias(&**original_name)
+                                    .into(),
+                            ),
+                            Min(_) => Min(daft_dsl::Expr::Column(field_id.id.clone().into())
+                                .alias(&**original_name)
+                                .into()),
+                            Max(_) => Max(daft_dsl::Expr::Column(field_id.id.clone().into())
+                                .alias(&**original_name)
+                                .into()),
+                            List(_) => List(
+                                daft_dsl::Expr::Column(field_id.id.clone().into())
+                                    .alias(&**original_name)
+                                    .into(),
+                            ),
+                            Concat(_) => Concat(
+                                daft_dsl::Expr::Column(field_id.id.clone().into())
+                                    .alias(&**original_name)
+                                    .into(),
+                            ),
+                        })
+                        .collect();
+
+                    let result_plan = PhysicalPlan::Aggregate(Aggregate::new(
+                        result_plan.into(),
+                        first_stage_aggs,
+                        vec![],
+                    ));
+                    let result_plan = PhysicalPlan::Coalesce(Coalesce::new(
+                        result_plan.into(),
+                        num_input_partitions,
+                        1,
+                    ));
+                    PhysicalPlan::Aggregate(Aggregate::new(
+                        result_plan.into(),
+                        second_stage_aggs,
+                        vec![],
+                    ))
+                }
+            };
+
+            Ok(result_plan)
         }
     }
 }
