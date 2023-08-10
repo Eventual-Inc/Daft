@@ -139,15 +139,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def coalesce(self, num_partitions: int) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
 
-    def join(
-        self,
-        right: LogicalPlanBuilder,
-        left_on: ExpressionsProjection,
-        right_on: ExpressionsProjection,
-        how: JoinType = JoinType.INNER,
-    ) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
-
     def agg(
         self,
         to_agg: list[tuple[Expression, str]],
@@ -163,8 +154,18 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         builder = self._builder.aggregate([expr._expr for expr in exprs])
         return RustLogicalPlanBuilder(builder)
 
-    def concat(self, other: LogicalPlanBuilder) -> RustLogicalPlanBuilder:
+    def join(  # type: ignore[override]
+        self,
+        right: RustLogicalPlanBuilder,
+        left_on: ExpressionsProjection,
+        right_on: ExpressionsProjection,
+        how: JoinType = JoinType.INNER,
+    ) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
+
+    def concat(self, other: RustLogicalPlanBuilder) -> RustLogicalPlanBuilder:  # type: ignore[override]
+        builder = self._builder.concat(other._builder)
+        return RustLogicalPlanBuilder(builder)
 
     def write_tabular(
         self,

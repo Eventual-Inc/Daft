@@ -5,9 +5,9 @@ use daft_dsl::Expr;
 
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
-    Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Filter as LogicalFilter,
-    Limit as LogicalLimit, Repartition as LogicalRepartition, Sink as LogicalSink,
-    Sort as LogicalSort, Source,
+    Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
+    Filter as LogicalFilter, Limit as LogicalLimit, Repartition as LogicalRepartition,
+    Sink as LogicalSink, Sort as LogicalSort, Source,
 };
 use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
@@ -251,6 +251,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             };
 
             Ok(result_plan)
+        }
+        LogicalPlan::Concat(LogicalConcat { other, input }) => {
+            let input_physical = plan(input)?;
+            let other_physical = plan(other)?;
+            Ok(PhysicalPlan::Concat(Concat::new(
+                other_physical.into(),
+                input_physical.into(),
+            )))
         }
         LogicalPlan::Sink(LogicalSink {
             schema,

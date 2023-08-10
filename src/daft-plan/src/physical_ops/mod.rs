@@ -1,5 +1,6 @@
 mod agg;
 mod coalesce;
+mod concat;
 mod csv;
 mod fanout;
 mod filter;
@@ -14,6 +15,7 @@ mod split;
 
 pub use agg::Aggregate;
 pub use coalesce::Coalesce;
+pub use concat::Concat;
 pub use csv::{TabularScanCsv, TabularWriteCsv};
 pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;

@@ -148,6 +148,21 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn concat(&self, other: &Self) -> PyResult<LogicalPlanBuilder> {
+        let self_schema = self.plan.schema();
+        let other_schema = other.plan.schema();
+        if self_schema != other_schema {
+            return Err(PyValueError::new_err(format!(
+                "Both DataFrames must have the same schema to concatenate them, but got: {}, {}",
+                self_schema, other_schema
+            )));
+        }
+        let logical_plan: LogicalPlan =
+            ops::Concat::new(other.plan.clone(), self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn table_write(
         &self,
         root_dir: &str,
