@@ -49,7 +49,6 @@ def aws_public_s3_config() -> daft.io.IOConfig:
 def azure_storage_public_config() -> daft.io.IOConfig:
     return daft.io.IOConfig(
         azure=daft.io.AzureConfig(
-            # NOTE: no keys or endpoints specified for an AWS public s3 bucket
             storage_account="dafttestdata",
             anonymous=True,
         )
