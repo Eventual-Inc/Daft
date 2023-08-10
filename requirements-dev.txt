@@ -40,6 +40,7 @@ s3fs==2023.6.0; python_version >= '3.8'
 urllib3<2; python_version < '3.8'
 
 # Azure
+adlfs==2022.2.0; python_version < '3.8'
 adlfs==2023.8.0
 
 # Documentation
