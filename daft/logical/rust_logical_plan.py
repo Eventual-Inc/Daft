@@ -116,6 +116,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return RustLogicalPlanBuilder(builder)
 
     def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
+        # Disallow sorting by null, binary, and boolean columns.
+        # TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
         resolved_sort_by_schema = sort_by.resolve_schema(self.schema())
         for f, sort_by_expr in zip(resolved_sort_by_schema, sort_by):
             if f.dtype == DataType.null() or f.dtype == DataType.binary() or f.dtype == DataType.bool():

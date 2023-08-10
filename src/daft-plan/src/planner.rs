@@ -9,7 +9,7 @@ use crate::ops::{
     Limit as LogicalLimit, Repartition as LogicalRepartition, Sort as LogicalSort, Source,
 };
 use crate::physical_ops::{
-    Aggregate, Filter, Limit, ReduceMerge, Sort, Split, SplitByHash, SplitRandom, TabularScanCsv,
+    Aggregate, FanoutByHash, FanoutRandom, Filter, Limit, ReduceMerge, Sort, Split, TabularScanCsv,
     TabularScanJson, TabularScanParquet,
 };
 use crate::physical_plan::PhysicalPlan;
@@ -107,14 +107,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     input_physical,
                 ))),
                 PartitionScheme::Random => {
-                    let split_op = PhysicalPlan::SplitRandom(SplitRandom::new(
+                    let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
                         *num_partitions,
                         input_physical,
                     ));
                     Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
                 }
                 PartitionScheme::Hash => {
-                    let split_op = PhysicalPlan::SplitByHash(SplitByHash::new(
+                    let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                         *num_partitions,
                         partition_by.clone(),
                         input_physical,
@@ -140,7 +140,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             ));
             let num_partitions = logical_plan.partition_spec().num_partitions;
             if num_partitions > 1 {
-                let split_op = PhysicalPlan::SplitByHash(SplitByHash::new(
+                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     num_partitions,
                     col_exprs.clone(),
                     agg_op.into(),

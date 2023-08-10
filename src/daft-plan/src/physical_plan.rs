@@ -24,10 +24,10 @@ pub enum PhysicalPlan {
     Limit(Limit),
     Sort(Sort),
     Split(Split),
-    SplitRandom(SplitRandom),
-    SplitByHash(SplitByHash),
+    FanoutRandom(FanoutRandom),
+    FanoutByHash(FanoutByHash),
     #[allow(dead_code)]
-    SplitByRange(SplitByRange),
+    FanoutByRange(FanoutByRange),
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
 }
@@ -203,7 +203,7 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
                 Ok(py_iter.into())
             }
-            PhysicalPlan::SplitRandom(SplitRandom {
+            PhysicalPlan::FanoutRandom(FanoutRandom {
                 input,
                 num_partitions,
             }) => {
@@ -214,7 +214,7 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *num_partitions))?;
                 Ok(py_iter.into())
             }
-            PhysicalPlan::SplitByHash(SplitByHash {
+            PhysicalPlan::FanoutByHash(FanoutByHash {
                 input,
                 num_partitions,
                 partition_by,
@@ -230,8 +230,8 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *num_partitions, partition_by_pyexprs))?;
                 Ok(py_iter.into())
             }
-            PhysicalPlan::SplitByRange(_) => unimplemented!(
-                "SplitByRange not implemented, since only use case (sorting) doesn't need it yet."
+            PhysicalPlan::FanoutByRange(_) => unimplemented!(
+                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
             ),
             PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
