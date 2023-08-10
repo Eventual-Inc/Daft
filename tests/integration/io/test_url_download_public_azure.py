@@ -7,7 +7,7 @@ import daft
 
 @pytest.mark.integration()
 def test_url_download_public_azure(azure_storage_public_config) -> None:
-    data = {"urls": ["public-anonymous/mvp.parquet"]}
+    data = {"urls": ["az://public-anonymous/mvp.parquet"]}
     df = daft.from_pydict(data)
     df = df.with_column(
         "data", df["urls"].url.download(io_config=azure_storage_public_config, use_native_downloader=True)

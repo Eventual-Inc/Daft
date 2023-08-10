@@ -41,8 +41,7 @@ def test_url_download_http_error_codes(nginx_config, use_native_downloader, stat
         assert e.value.code == status_code
     # When using native downloader, we throw a ValueError
     else:
-        with pytest.raises(ValueError) as e:
-            df.collect()
         # NOTE: We may want to add better errors in the future to provide a better
         # user-facing I/O error with the error code
-        assert f"Status({status_code})" in str(e.value)
+        with pytest.raises(ValueError, match=f"{status_code}") as e:
+            df.collect()
