@@ -220,7 +220,7 @@ def test_parquet_read_df(parquet_file, public_storage_io_config):
     if url.startswith("az"):
         import adlfs
 
-        fs = adlfs.AzureBlobFileSystem(account_name="dafttestdata", anonymous=True)
+        fs = adlfs.AzureBlobFileSystem(account_name="dafttestdata", anon=True)
     else:
         fs = None
     daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config, use_native_downloader=True, fs=fs)
