@@ -6,12 +6,14 @@ use daft_dsl::Expr;
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
     Aggregate as LogicalAggregate, Distinct as LogicalDistinct, Filter as LogicalFilter,
-    Limit as LogicalLimit, Repartition as LogicalRepartition, Sort as LogicalSort, Source,
+    Limit as LogicalLimit, Repartition as LogicalRepartition, Sink as LogicalSink,
+    Sort as LogicalSort, Source,
 };
 use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
-use crate::source_info::{ExternalInfo, FileFormatConfig, SourceInfo};
-use crate::PartitionScheme;
+use crate::sink_info::{OutputFileInfo, SinkInfo};
+use crate::source_info::{ExternalInfo as ExternalSourceInfo, FileFormatConfig, SourceInfo};
+use crate::{FileFormat, PartitionScheme};
 
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
@@ -26,7 +28,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             filters,
         }) => match source_info.as_ref() {
             SourceInfo::ExternalInfo(
-                ext_info @ ExternalInfo {
+                ext_info @ ExternalSourceInfo {
                     file_format_config, ..
                 },
             ) => match file_format_config.as_ref() {
@@ -249,6 +251,38 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             };
 
             Ok(result_plan)
+        }
+        LogicalPlan::Sink(LogicalSink {
+            schema,
+            sink_info,
+            input,
+        }) => {
+            let input_physical = plan(input)?;
+            match sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(file_info @ OutputFileInfo { file_format, .. }) => {
+                    match file_format {
+                        FileFormat::Parquet => {
+                            Ok(PhysicalPlan::TabularWriteParquet(TabularWriteParquet::new(
+                                schema.clone(),
+                                file_info.clone(),
+                                input_physical.into(),
+                            )))
+                        }
+                        FileFormat::Csv => Ok(PhysicalPlan::TabularWriteCsv(TabularWriteCsv::new(
+                            schema.clone(),
+                            file_info.clone(),
+                            input_physical.into(),
+                        ))),
+                        FileFormat::Json => {
+                            Ok(PhysicalPlan::TabularWriteJson(TabularWriteJson::new(
+                                schema.clone(),
+                                file_info.clone(),
+                                input_physical.into(),
+                            )))
+                        }
+                    }
+                }
+            }
         }
     }
 }

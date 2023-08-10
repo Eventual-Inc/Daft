@@ -6,6 +6,7 @@ mod partitioning;
 mod physical_ops;
 mod physical_plan;
 mod planner;
+mod sink_info;
 mod source_info;
 
 pub use builder::LogicalPlanBuilder;

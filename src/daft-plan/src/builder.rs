@@ -1,18 +1,21 @@
 use std::sync::Arc;
 
-use daft_dsl::Expr;
-
-use crate::{logical_plan::LogicalPlan, ops};
+use crate::logical_plan::LogicalPlan;
 
 #[cfg(feature = "python")]
 use {
     crate::{
+        ops,
         planner::plan,
-        source_info::{ExternalInfo, FileInfo, InMemoryInfo, PyFileFormatConfig, SourceInfo},
-        PartitionScheme, PartitionSpec,
+        sink_info::{OutputFileInfo, SinkInfo},
+        source_info::{
+            ExternalInfo as ExternalSourceInfo, FileInfo as InputFileInfo, InMemoryInfo,
+            PyFileFormatConfig, SourceInfo,
+        },
+        FileFormat, PartitionScheme, PartitionSpec,
     },
-    daft_core::python::schema::PySchema,
-    daft_dsl::python::PyExpr,
+    daft_core::{datatypes::Field, python::schema::PySchema, schema::Schema, DataType},
+    daft_dsl::{python::PyExpr, Expr},
     pyo3::{exceptions::PyValueError, prelude::*},
     std::collections::HashMap,
 };
@@ -60,9 +63,9 @@ impl LogicalPlanBuilder {
         file_format_config: PyFileFormatConfig,
     ) -> PyResult<LogicalPlanBuilder> {
         let num_partitions = file_paths.len();
-        let source_info = SourceInfo::ExternalInfo(ExternalInfo::new(
+        let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
             schema.schema.clone(),
-            FileInfo::new(file_paths, None, None, None).into(),
+            InputFileInfo::new(file_paths, None, None, None).into(),
             file_format_config.into(),
         ));
         let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);
@@ -141,6 +144,32 @@ impl LogicalPlanBuilder {
             })
             .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
         let logical_plan: LogicalPlan = Aggregate::new(agg_exprs, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
+    pub fn table_write(
+        &self,
+        root_dir: &str,
+        file_format: FileFormat,
+        partition_cols: Option<Vec<PyExpr>>,
+        compression: Option<String>,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let part_cols =
+            partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<Expr>>());
+        let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
+            root_dir.into(),
+            file_format,
+            part_cols,
+            compression,
+        ));
+        let fields = vec![Field::new("file_paths", DataType::Utf8)];
+        let logical_plan: LogicalPlan = ops::Sink::new(
+            Schema::new(fields)?.into(),
+            sink_info.into(),
+            self.plan.clone(),
+        )
+        .into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }
