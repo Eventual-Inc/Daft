@@ -14,17 +14,8 @@ pub use python::register_modules;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Unable to open file {}: {}", path, source))]
-    UnableToOpenFile {
-        path: String,
-        source: daft_io::Error,
-    },
-
-    #[snafu(display("Unable to read data from file {}: {}", path, source))]
-    UnableToReadBytes {
-        path: String,
-        source: daft_io::Error,
-    },
+    #[snafu(display("{source}"))]
+    IOError { source: daft_io::Error },
 
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadata {
@@ -138,7 +129,16 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
-        DaftError::External(err.into())
+        match err {
+            Error::IOError { source } => source.into(),
+            _ => DaftError::External(err.into()),
+        }
+    }
+}
+
+impl From<daft_io::Error> for Error {
+    fn from(err: daft_io::Error) -> Self {
+        Error::IOError { source: err }
     }
 }
 

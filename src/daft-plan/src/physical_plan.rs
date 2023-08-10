@@ -22,6 +22,13 @@ pub enum PhysicalPlan {
     TabularScanJson(TabularScanJson),
     Filter(Filter),
     Limit(Limit),
+    Sort(Sort),
+    Split(Split),
+    FanoutRandom(FanoutRandom),
+    FanoutByHash(FanoutByHash),
+    #[allow(dead_code)]
+    FanoutByRange(FanoutByRange),
+    ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Coalesce(Coalesce),
 }
@@ -162,6 +169,78 @@ impl PhysicalPlan {
                     .getattr(pyo3::intern!(py, "global_limit"))?
                     .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
+            }
+            PhysicalPlan::Sort(Sort {
+                input,
+                sort_by,
+                descending,
+                num_partitions,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let sort_by_pyexprs: Vec<PyExpr> = sort_by
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "sort"))?
+                    .call1((
+                        upstream_iter,
+                        sort_by_pyexprs,
+                        descending.clone(),
+                        *num_partitions,
+                    ))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Split(Split {
+                input,
+                input_num_partitions,
+                output_num_partitions,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "split"))?
+                    .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::FanoutRandom(FanoutRandom {
+                input,
+                num_partitions,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "fanout_random"))?
+                    .call1((upstream_iter, *num_partitions))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::FanoutByHash(FanoutByHash {
+                input,
+                num_partitions,
+                partition_by,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let partition_by_pyexprs: Vec<PyExpr> = partition_by
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "split_by_hash"))?
+                    .call1((upstream_iter, *num_partitions, partition_by_pyexprs))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::FanoutByRange(_) => unimplemented!(
+                "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
+            ),
+            PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "reduce_merge"))?
+                    .call1((upstream_iter,))?;
+                Ok(py_iter.into())
             }
             PhysicalPlan::Aggregate(Aggregate {
                 aggregations,

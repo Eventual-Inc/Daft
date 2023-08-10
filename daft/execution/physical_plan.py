@@ -528,7 +528,6 @@ def coalesce(
 
 def reduce(
     fanout_plan: InProgressPhysicalPlan[PartitionT],
-    num_partitions: int,
     reduce_instruction: ReduceInstruction,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Reduce the result of fanout_plan.
@@ -656,7 +655,6 @@ def sort(
     # Execute a sorting reduce on it.
     yield from reduce(
         fanout_plan=range_fanout_plan,
-        num_partitions=num_partitions,
         reduce_instruction=execution_step.ReduceMergeAndSort(
             sort_by=sort_by,
             descending=descending,

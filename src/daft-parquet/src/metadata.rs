@@ -5,9 +5,7 @@ use daft_io::IOClient;
 use parquet2::{metadata::FileMetaData, read::deserialize_metadata};
 use snafu::ResultExt;
 
-use crate::{
-    Error, JoinSnafu, UnableToOpenFileSnafu, UnableToParseMetadataSnafu, UnableToReadBytesSnafu,
-};
+use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
 
 fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -28,11 +26,9 @@ pub async fn read_parquet_metadata(
     let start = size.saturating_sub(default_end_len);
     let mut data = io_client
         .single_url_get(uri.into(), Some(start..size))
-        .await
-        .context(UnableToOpenFileSnafu { path: uri })?
+        .await?
         .bytes()
-        .await
-        .context(UnableToReadBytesSnafu { path: uri })?;
+        .await?;
 
     let buffer = data.as_ref();
     if buffer[buffer.len() - 4..] != PARQUET_MAGIC {
@@ -62,11 +58,9 @@ pub async fn read_parquet_metadata(
         let start = size.saturating_sub(footer_len);
         data = io_client
             .single_url_get(uri.into(), Some(start..size))
-            .await
-            .context(UnableToOpenFileSnafu { path: uri })?
+            .await?
             .bytes()
-            .await
-            .context(UnableToReadBytesSnafu { path: uri })?;
+            .await?;
         remaining = data.len() - footer_len;
     };
 

@@ -2,13 +2,16 @@ use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
 
-use crate::{ops::*, PartitionSpec};
+use crate::{ops::*, PartitionScheme, PartitionSpec};
 
 #[derive(Clone, Debug)]
 pub enum LogicalPlan {
     Source(Source),
     Filter(Filter),
     Limit(Limit),
+    Sort(Sort),
+    Repartition(Repartition),
+    Distinct(Distinct),
     Aggregate(Aggregate),
 }
 
@@ -18,6 +21,9 @@ impl LogicalPlan {
             Self::Source(Source { schema, .. }) => schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Sort(Sort { input, .. }) => input.schema(),
+            Self::Repartition(Repartition { input, .. }) => input.schema(),
+            Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(aggregate) => aggregate.schema(),
         }
     }
@@ -27,6 +33,24 @@ impl LogicalPlan {
             Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
+            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                input.partition_spec().num_partitions,
+                Some(sort_by.clone()),
+            )
+            .into(),
+            Self::Repartition(Repartition {
+                num_partitions,
+                partition_by,
+                scheme,
+                ..
+            }) => PartitionSpec::new_internal(
+                scheme.clone(),
+                *num_partitions,
+                Some(partition_by.clone()),
+            )
+            .into(),
+            Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
             Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
         }
     }
@@ -36,6 +60,9 @@ impl LogicalPlan {
             Self::Source(..) => vec![],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Sort(Sort { input, .. }) => vec![input],
+            Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
         }
     }
@@ -45,6 +72,9 @@ impl LogicalPlan {
             Self::Source(source) => source.multiline_display(),
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
+            Self::Sort(sort) => sort.multiline_display(),
+            Self::Repartition(repartition) => repartition.multiline_display(),
+            Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
         }
     }
@@ -68,5 +98,8 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 
 impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Filter);
-impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Limit);
+impl_from_data_struct_for_logical_plan!(Sort);
+impl_from_data_struct_for_logical_plan!(Repartition);
+impl_from_data_struct_for_logical_plan!(Distinct);
+impl_from_data_struct_for_logical_plan!(Aggregate);

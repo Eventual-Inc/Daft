@@ -46,6 +46,16 @@ def aws_public_s3_config() -> daft.io.IOConfig:
 
 
 @pytest.fixture(scope="session")
+def azure_storage_public_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        azure=daft.io.AzureConfig(
+            storage_account="dafttestdata",
+            anonymous=True,
+        )
+    )
+
+
+@pytest.fixture(scope="session")
 def nginx_config() -> tuple[str, pathlib.Path]:
     """Returns the (nginx_server_url, static_files_tmpdir) as a tuple"""
     return (
