@@ -41,7 +41,7 @@ urllib3<2; python_version < '3.8'
 
 # Azure
 adlfs==2022.2.0; python_version < '3.8'
-adlfs==2023.8.0
+adlfs==2023.8.0; python_version >= '3.8'
 
 # Documentation
 myst-nb>=0.16.0
