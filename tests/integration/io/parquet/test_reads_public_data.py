@@ -7,7 +7,6 @@ from pyarrow import parquet as pq
 
 import daft
 from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
-from daft.io import IOConfig, S3Config
 from daft.table import Table
 
 # Taken from our spreadsheet of files that Daft should be able to handle
@@ -158,7 +157,19 @@ DAFT_CAN_READ_FILES = [
         "parquet-benchmarking/mvp",
         "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
     ),
+    (
+        "azure/mvp",
+        "az://public-anonymous/mvp.parquet",
+    ),
 ]
+
+
+@pytest.fixture(scope="session")
+def public_storage_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        azure=daft.io.AzureConfig(storage_account="dafttestdata", anonymous=True),
+        s3=daft.io.S3Config(region_name="us-west-2", anonymous=True),
+    )
 
 
 @pytest.fixture(scope="session", params=DAFT_CAN_READ_FILES, ids=[name for name, _ in DAFT_CAN_READ_FILES])
@@ -172,24 +183,28 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
     if get_protocol_from_path(path) == "s3":
         kwargs["anon"] = True
+    if get_protocol_from_path(path) == "az":
+        kwargs["account_name"] = "dafttestdata"
+        kwargs["anon"] = True
+
     fs = get_filesystem_from_path(path, **kwargs)
     table = pq.read_table(path, filesystem=fs)
     return table
 
 
 @pytest.mark.integration()
-def test_parquet_read_table(parquet_file):
+def test_parquet_read_table(parquet_file, public_storage_io_config):
     _, url = parquet_file
-    daft_native_read = Table.read_parquet(url, io_config=IOConfig(s3=S3Config(anonymous=True)))
+    daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 
 @pytest.mark.integration()
-def test_parquet_read_table_bulk(parquet_file):
+def test_parquet_read_table_bulk(parquet_file, public_storage_io_config):
     _, url = parquet_file
-    daft_native_reads = Table.read_parquet_bulk([url] * 2, io_config=IOConfig(s3=S3Config(anonymous=True)))
+    daft_native_reads = Table.read_parquet_bulk([url] * 2, io_config=public_storage_io_config)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
 
     for daft_native_read in daft_native_reads:
@@ -198,11 +213,17 @@ def test_parquet_read_table_bulk(parquet_file):
 
 
 @pytest.mark.integration()
-def test_parquet_read_df(parquet_file):
+def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
-    daft_native_read = daft.read_parquet(
-        url, io_config=IOConfig(s3=S3Config(anonymous=True)), use_native_downloader=True
-    )
+    # This is a hack until we remove `fsspec.info`, `fsspec.glob` and `fsspec.glob` from  `daft.read_parquet`.
+    # We rely on the native downloaders impl for that
+    if url.startswith("az"):
+        import adlfs
+
+        fs = adlfs.AzureBlobFileSystem(account_name="dafttestdata", anonymous=True)
+    else:
+        fs = None
+    daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config, use_native_downloader=True, fs=fs)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())

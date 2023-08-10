@@ -39,6 +39,9 @@ s3fs==2023.6.0; python_version >= '3.8'
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 urllib3<2; python_version < '3.8'
 
+# Azure
+adlfs==2023.8.0
+
 # Documentation
 myst-nb>=0.16.0
 Sphinx <= 5

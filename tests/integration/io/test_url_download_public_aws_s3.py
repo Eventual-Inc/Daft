@@ -33,9 +33,6 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs_wrong_region(small_images
 
 
 @pytest.mark.integration()
-@pytest.mark.skip(
-    reason='[ISSUE #1091] We do not yet support "anonymous-mode" (no credentials) for accessing public buckets with the native downloader'
-)
 def test_url_download_aws_s3_public_bucket_native_downloader(aws_public_s3_config, small_images_s3_paths):
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)

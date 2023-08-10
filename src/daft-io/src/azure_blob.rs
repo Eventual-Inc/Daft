@@ -106,7 +106,7 @@ impl AzureBlobSource {
             log::warn!("Azure access key not found, Set either `AzureConfig.access_key` or the `AZURE_STORAGE_KEY` environment variable. Defaulting to anonymous mode.");
             StorageCredentials::anonymous()
         };
-
+        log::warn!("{:?}", storage_credentials);
         let blob_client = BlobServiceClient::new(storage_account, storage_credentials);
 
         Ok(AzureBlobSource {
