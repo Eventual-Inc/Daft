@@ -43,10 +43,10 @@ pub struct AzureConfig {
 ///
 /// Args:
 ///     s3: Configurations to use when accessing URLs with the `s3://` scheme
-///
+///     azure: Configurations to use when accessing URLs with the `az://` or `abfs://` scheme
 /// Example:
-///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10))
-///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True))
+///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path"], io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct IOConfig {
