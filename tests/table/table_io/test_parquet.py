@@ -15,7 +15,7 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
+PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
 
 def test_read_input(tmpdir):
@@ -183,7 +183,7 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
         "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
     }
-    if PYARROW_GE_7_0_0:
+    if PYARROW_GE_11_0_0:
         papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
@@ -220,7 +220,7 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
     }
-    if PYARROW_GE_7_0_0:
+    if PYARROW_GE_11_0_0:
         papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
@@ -255,7 +255,7 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
     }
-    if PYARROW_GE_7_0_0:
+    if PYARROW_GE_11_0_0:
         papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
