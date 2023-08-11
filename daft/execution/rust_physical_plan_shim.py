@@ -6,6 +6,7 @@ from daft.context import get_context
 from daft.daft import FileFormat, FileFormatConfig, PyExpr, PySchema, PyTable
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
+from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.table import Table
@@ -48,6 +49,31 @@ def project(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.Project(expr_projection),
+        resource_request=ResourceRequest(),  # TODO(Clark): Use real ResourceRequest.
+    )
+
+
+class ShimExplodeOp(MapPartitionOp):
+    explode_columns: ExpressionsProjection
+
+    def __init__(self, explode_columns: ExpressionsProjection) -> None:
+        self.explode_columns = explode_columns
+
+    def get_output_schema(self) -> Schema:
+        raise NotImplementedError("Output schema shouldn't be needed at execution time")
+
+    def run(self, input_partition: Table) -> Table:
+        return input_partition.explode(self.explode_columns)
+
+
+def explode(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT], explode_exprs: list[PyExpr]
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    explode_expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in explode_exprs])
+    explode_op = ShimExplodeOp(explode_expr_projection)
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=execution_step.MapPartition(explode_op),
         resource_request=ResourceRequest(),  # TODO(Clark): Use real ResourceRequest.
     )
 

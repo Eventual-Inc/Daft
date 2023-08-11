@@ -28,6 +28,7 @@ pub enum PhysicalPlan {
     Project(Project),
     Filter(Filter),
     Limit(Limit),
+    Explode(Explode),
     Sort(Sort),
     Split(Split),
     Flatten(Flatten),
@@ -221,6 +222,21 @@ impl PhysicalPlan {
                     .getattr(pyo3::intern!(py, "global_limit"))?
                     .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
+            }
+            PhysicalPlan::Explode(Explode {
+                input,
+                explode_exprs,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let explode_pyexprs: Vec<PyExpr> = explode_exprs
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "explode"))?
+                    .call1((upstream_iter, explode_pyexprs))?;
+                Ok(py_iter.into())
             }
             PhysicalPlan::Sort(Sort {
                 input,

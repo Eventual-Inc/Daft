@@ -111,6 +111,25 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn explode(
+        &self,
+        explode_pyexprs: Vec<PyExpr>,
+        exploded_schema: &PySchema,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let explode_exprs = explode_pyexprs
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let logical_plan: LogicalPlan = ops::Explode::new(
+            explode_exprs,
+            exploded_schema.clone().into(),
+            self.plan.clone(),
+        )
+        .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn sort(
         &self,
         sort_by: Vec<PyExpr>,

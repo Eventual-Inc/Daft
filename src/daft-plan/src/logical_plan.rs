@@ -10,6 +10,7 @@ pub enum LogicalPlan {
     Project(Project),
     Filter(Filter),
     Limit(Limit),
+    Explode(Explode),
     Sort(Sort),
     Repartition(Repartition),
     Coalesce(Coalesce),
@@ -28,6 +29,9 @@ impl LogicalPlan {
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
+            Self::Explode(Explode {
+                exploded_schema, ..
+            }) => exploded_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Coalesce(Coalesce { input, .. }) => input.schema(),
@@ -44,6 +48,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => input.partition_spec(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
+            Self::Explode(Explode { input, .. }) => input.partition_spec(),
             Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
                 PartitionScheme::Range,
                 input.partition_spec().num_partitions,
@@ -82,6 +87,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Explode(Explode { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
             Self::Coalesce(Coalesce { input, .. }) => vec![input],
@@ -98,6 +104,9 @@ impl LogicalPlan {
             Self::Project(Project { projection, .. }) => vec![format!("Project: {projection:?}")],
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
+            Self::Explode(Explode { explode_exprs, .. }) => {
+                vec![format!("Explode: {explode_exprs:?}")]
+            }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Coalesce(Coalesce { num_to, .. }) => vec![format!("Coalesce: {num_to}")],
@@ -129,6 +138,7 @@ impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);
+impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
 impl_from_data_struct_for_logical_plan!(Coalesce);

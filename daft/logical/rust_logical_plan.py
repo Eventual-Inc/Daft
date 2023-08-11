@@ -120,7 +120,21 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return RustLogicalPlanBuilder(builder)
 
     def explode(self, explode_expressions: ExpressionsProjection) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        # TODO(Clark): Move this logic to Rust side after we've ported ExpressionsProjection.
+        explode_expressions = ExpressionsProjection([expr._explode() for expr in explode_expressions])
+        input_schema = self.schema()
+        explode_schema = explode_expressions.resolve_schema(input_schema)
+        output_fields = []
+        for f in input_schema:
+            if f.name in explode_schema.column_names():
+                output_fields.append(explode_schema[f.name])
+            else:
+                output_fields.append(f)
+
+        exploded_schema = Schema._from_field_name_and_types([(f.name, f.dtype) for f in output_fields])
+        explode_pyexprs = [expr._expr for expr in explode_expressions]
+        builder = self._builder.explode(explode_pyexprs, exploded_schema._schema)
+        return RustLogicalPlanBuilder(builder)
 
     def count(self) -> RustLogicalPlanBuilder:
         raise NotImplementedError("not implemented")
