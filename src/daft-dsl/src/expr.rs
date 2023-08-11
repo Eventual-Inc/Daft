@@ -293,7 +293,7 @@ impl Expr {
             Function { func, inputs } => {
                 let inputs = inputs
                     .iter()
-                    .map(|expr| expr.semantic_id(schema).id)
+                    .map(|expr| expr.semantic_id(schema).id.to_string())
                     .collect::<Vec<String>>()
                     .join(", ");
                 // TODO: check for function idempotency here.
