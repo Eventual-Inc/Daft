@@ -27,10 +27,11 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
+
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
                 let daft_type = self.0.logical_type();
                 let arrow_logical_type = daft_type.to_arrow().unwrap();
-                let physical_arrow_array = self.0.physical.data();
+                let physical_arrow_array = self.0.physical.0.data();
                 use crate::datatypes::DataType::*;
                 match daft_type {
                     // For wrapped primitive types, switch the datatype label on the arrow2 Array.
@@ -59,13 +60,18 @@ macro_rules! impl_series_like_for_logical_array {
                 }
             }
 
+            fn as_arrow(&self) -> Box<dyn arrow2::array::Array> {
+                // TODO(jay): Figure out if this is the correct behavior? Apparently to_arrow is FFI.
+                self.to_arrow()
+            }
+
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
 
             fn broadcast(&self, num: usize) -> DaftResult<Series> {
                 use crate::array::ops::broadcast::Broadcastable;
-                let data_array = self.0.physical.broadcast(num)?;
+                let data_array = self.0.physical.0.broadcast(num)?;
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
 
@@ -82,11 +88,13 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn filter(&self, mask: &crate::datatypes::BooleanArray) -> DaftResult<Series> {
-                Ok(self.0.filter(mask)?.into_series())
+                // TODO: This seems wrong? We need to wrap it back into the correct logical type
+                Ok(self.0.physical.0.filter(mask)?.into_series())
             }
 
             fn head(&self, num: usize) -> DaftResult<Series> {
-                Ok(self.0.head(num)?.into_series())
+                // TODO: This seems wrong? We need to wrap it back into the correct logical type
+                Ok(self.0.physical.0.head(num)?.into_series())
             }
 
             fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
@@ -99,7 +107,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn is_null(&self) -> DaftResult<Series> {
                 use crate::array::ops::DaftIsNull;
 
-                Ok(DaftIsNull::is_null(&self.0.physical)?.into_series())
+                Ok(DaftIsNull::is_null(&self.0.physical.0)?.into_series())
             }
 
             fn len(&self) -> usize {
@@ -115,11 +123,11 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn rename(&self, name: &str) -> Series {
-                self.0.rename(name).into_series()
+                self.0.physical.0.rename(name).into_series()
             }
 
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
-                Ok(self.0.slice(start, end)?.into_series())
+                Ok(self.0.physical.0.slice(start, end)?.into_series())
             }
 
             fn sort(&self, descending: bool) -> DaftResult<Series> {
@@ -143,16 +151,16 @@ macro_rules! impl_series_like_for_logical_array {
             fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 use crate::array::ops::DaftCompareAggable;
                 let data_array = match groups {
-                    Some(groups) => DaftCompareAggable::grouped_min(&self.0.physical, groups)?,
-                    None => DaftCompareAggable::min(&self.0.physical)?,
+                    Some(groups) => DaftCompareAggable::grouped_min(&self.0.physical.0, groups)?,
+                    None => DaftCompareAggable::min(&self.0.physical.0)?,
                 };
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
             fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 use crate::array::ops::DaftCompareAggable;
                 let data_array = match groups {
-                    Some(groups) => DaftCompareAggable::grouped_max(&self.0.physical, groups)?,
-                    None => DaftCompareAggable::max(&self.0.physical)?,
+                    Some(groups) => DaftCompareAggable::grouped_max(&self.0.physical.0, groups)?,
+                    None => DaftCompareAggable::max(&self.0.physical.0)?,
                 };
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
@@ -160,8 +168,8 @@ macro_rules! impl_series_like_for_logical_array {
                 use crate::array::ops::DaftListAggable;
                 use crate::datatypes::ListArray;
                 let data_array = match groups {
-                    Some(groups) => self.0.physical.grouped_list(groups)?,
-                    None => self.0.physical.list()?,
+                    Some(groups) => self.0.physical.0.grouped_list(groups)?,
+                    None => self.0.physical.0.list()?,
                 };
                 let new_field = self.field().to_list_field()?;
                 Ok(ListArray::new(Arc::new(new_field), data_array.data)?.into_series())

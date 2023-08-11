@@ -8,6 +8,7 @@ impl DateArray {
     pub fn day(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
+            .0
             .as_arrow()
             .clone()
             .to(arrow2::datatypes::DataType::Date32);
@@ -18,6 +19,7 @@ impl DateArray {
     pub fn month(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
+            .0
             .as_arrow()
             .clone()
             .to(arrow2::datatypes::DataType::Date32);
@@ -28,6 +30,7 @@ impl DateArray {
     pub fn year(&self) -> DaftResult<Int32Array> {
         let input_array = self
             .physical
+            .0
             .as_arrow()
             .clone()
             .to(arrow2::datatypes::DataType::Date32);
@@ -38,6 +41,7 @@ impl DateArray {
     pub fn day_of_week(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
+            .0
             .as_arrow()
             .clone()
             .to(arrow2::datatypes::DataType::Date32);

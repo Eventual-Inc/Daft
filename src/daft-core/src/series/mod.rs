@@ -13,7 +13,8 @@ use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;
 
-use self::series_like::SeriesLike;
+pub(crate) use self::array_impl::ArrayWrapper;
+pub(crate) use self::series_like::SeriesLike;
 
 #[derive(Clone)]
 pub struct Series {

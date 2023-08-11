@@ -1,6 +1,10 @@
 use arrow2::array::Array;
 
-use crate::{array::DataArray, datatypes::DaftPhysicalType};
+use crate::{
+    array::DataArray,
+    datatypes::{logical::LogicalArray, DaftLogicalType, DaftPhysicalType},
+    series::{ArrayWrapper, SeriesLike},
+};
 use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
@@ -47,5 +51,22 @@ where
                 DataArray::try_from((field.clone(), cat_array))
             }
         }
+    }
+}
+
+impl<T> LogicalArray<T>
+where
+    T: DaftLogicalType,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
+{
+    pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
+        if arrays.is_empty() {
+            return Err(common_error::DaftError::ValueError(
+                "Need at least 1 logical array to concat".to_string(),
+            ));
+        }
+
+        // WIP: SeriesLike to implement concat so we can forward it to `array.physical`
+        todo!()
     }
 }

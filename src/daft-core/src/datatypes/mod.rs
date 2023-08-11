@@ -35,8 +35,9 @@ pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
 
 pub trait DaftArrowBackedType: Send + Sync + DaftPhysicalType + 'static {}
 
+/// A DaftLogicalType applies a logical "interpretation" on its ChildArray
 pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
-    type PhysicalType: DaftArrowBackedType;
+    type ChildArrayType;
 }
 
 macro_rules! impl_daft_arrow_datatype {
@@ -70,7 +71,7 @@ macro_rules! impl_daft_non_arrow_datatype {
 }
 
 macro_rules! impl_daft_logical_datatype {
-    ($ca:ident, $variant:ident, $physical_type:ident) => {
+    ($ca:ident, $variant:ident, $child_array_type:ident) => {
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -81,7 +82,7 @@ macro_rules! impl_daft_logical_datatype {
         }
 
         impl DaftLogicalType for $ca {
-            type PhysicalType = $physical_type;
+            type ChildArrayType = $child_array_type;
         }
     };
 }
@@ -110,16 +111,16 @@ impl_daft_arrow_datatype!(ExtensionType, Unknown);
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
 
-impl_daft_logical_datatype!(Decimal128Type, Unknown, Int128Type);
-impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
-impl_daft_logical_datatype!(DateType, Date, Int32Type);
-impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
-impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
-impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
-impl_daft_logical_datatype!(ImageType, Unknown, StructType);
-impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListType);
-impl_daft_logical_datatype!(TensorType, Unknown, StructType);
-impl_daft_logical_datatype!(FixedShapeTensorType, Unknown, FixedSizeListType);
+impl_daft_logical_datatype!(Decimal128Type, Unknown, Int128Array);
+impl_daft_logical_datatype!(TimestampType, Unknown, Int64Array);
+impl_daft_logical_datatype!(DateType, Date, Int32Array);
+impl_daft_logical_datatype!(TimeType, Unknown, Int64Array);
+impl_daft_logical_datatype!(DurationType, Unknown, Int64Array);
+impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListArray);
+impl_daft_logical_datatype!(ImageType, Unknown, StructArray);
+impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListArray);
+impl_daft_logical_datatype!(TensorType, Unknown, StructArray);
+impl_daft_logical_datatype!(FixedShapeTensorType, Unknown, FixedSizeListArray);
 
 pub trait NumericNative:
     PartialOrd

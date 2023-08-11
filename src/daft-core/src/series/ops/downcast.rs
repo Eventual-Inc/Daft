@@ -2,7 +2,7 @@ use crate::datatypes::*;
 
 use crate::datatypes::logical::{FixedShapeImageArray, ImageArray, LogicalArray};
 use crate::series::array_impl::ArrayWrapper;
-use crate::series::Series;
+use crate::series::{Series, SeriesLike};
 use common_error::DaftResult;
 
 impl Series {
@@ -20,8 +20,15 @@ impl Series {
         }
     }
 
-    pub fn downcast_logical<L: DaftLogicalType>(&self) -> DaftResult<&LogicalArray<L>> {
-        match self.inner.as_any().downcast_ref() {
+    pub fn downcast_logical<L: DaftLogicalType>(&self) -> DaftResult<&LogicalArray<L>>
+    where
+        ArrayWrapper<<L as DaftLogicalType>::ChildArrayType>: SeriesLike,
+    {
+        match self
+            .inner
+            .as_any()
+            .downcast_ref::<ArrayWrapper<&LogicalArray<L>>>()
+        {
             Some(ArrayWrapper(arr)) => Ok(arr),
             None => panic!(
                 "Attempting to downcast {:?} to {:?}",
@@ -132,7 +139,7 @@ impl Series {
     }
 
     pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
-        self.downcast_logical()
+        self.downcast_logical::<FixedShapeImageType>()
     }
 
     #[cfg(feature = "python")]

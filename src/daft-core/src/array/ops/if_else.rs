@@ -328,7 +328,7 @@ macro_rules! impl_logicalarray_if_else {
     ($ArrayT:ty) => {
         impl $ArrayT {
             pub fn if_else(&self, other: &Self, predicate: &BooleanArray) -> DaftResult<Self> {
-                let new_array = self.physical.if_else(&other.physical, predicate)?;
+                let new_array = self.physical.0.if_else(&other.physical.0, predicate)?;
                 Ok(Self::new(self.field.clone(), new_array))
             }
         }

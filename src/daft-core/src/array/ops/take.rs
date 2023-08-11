@@ -51,7 +51,7 @@ macro_rules! impl_logicalarray_take {
                 I: DaftIntegerType,
                 <I as DaftNumericType>::Native: arrow2::types::Index,
             {
-                let new_array = self.physical.take(idx)?;
+                let new_array = self.physical.0.take(idx)?;
                 Ok(Self::new(self.field.clone(), new_array))
             }
         }
@@ -164,7 +164,7 @@ impl TensorArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let new_array = self.physical.take(idx)?;
+        let new_array = self.physical.0.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 
@@ -206,7 +206,7 @@ impl FixedShapeTensorArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let new_array = self.physical.take(idx)?;
+        let new_array = self.physical.0.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 

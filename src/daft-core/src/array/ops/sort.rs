@@ -596,28 +596,28 @@ impl PythonArray {
 
 impl Decimal128Array {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+        let new_array = self.physical.0.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl DateArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+        let new_array = self.physical.0.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl DurationArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+        let new_array = self.physical.0.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl TimestampArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+        let new_array = self.physical.0.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }

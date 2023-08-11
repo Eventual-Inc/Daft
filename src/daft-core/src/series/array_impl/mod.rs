@@ -4,6 +4,7 @@ pub mod logical_array;
 
 use super::Series;
 
+#[derive(Clone)]
 pub struct ArrayWrapper<T>(pub T);
 
 pub trait IntoSeries {

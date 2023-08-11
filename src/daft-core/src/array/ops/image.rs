@@ -9,6 +9,7 @@ use crate::datatypes::{
     BinaryArray, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageFormat, ImageMode,
     StructArray,
 };
+use crate::series::{ArrayWrapper, SeriesLike};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
@@ -321,6 +322,7 @@ pub trait AsImageObj {
 pub struct ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
 {
     cursor: usize,
     image_array: &'a LogicalArray<T>,
@@ -329,6 +331,7 @@ where
 impl<'a, T> ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
 {
     pub fn new(image_array: &'a LogicalArray<T>) -> Self {
         Self {
@@ -341,6 +344,7 @@ where
 impl<'a, T> Iterator for ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
     LogicalArray<T>: AsImageObj,
 {
     type Item = Option<DaftImageBuffer<'a>>;
@@ -365,35 +369,35 @@ impl ImageArray {
     }
 
     pub fn data_array(&self) -> &arrow2::array::ListArray<i64> {
-        let p = self.physical.as_arrow();
+        let p = self.physical.0.as_arrow();
         const IMAGE_DATA_IDX: usize = 0;
         let array = p.values().get(IMAGE_DATA_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
-        let p = self.physical.as_arrow();
+        let p = self.physical.0.as_arrow();
         const IMAGE_CHANNEL_IDX: usize = 1;
         let array = p.values().get(IMAGE_CHANNEL_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
     pub fn height_array(&self) -> &arrow2::array::UInt32Array {
-        let p = self.physical.as_arrow();
+        let p = self.physical.0.as_arrow();
         const IMAGE_HEIGHT_IDX: usize = 2;
         let array = p.values().get(IMAGE_HEIGHT_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
     pub fn width_array(&self) -> &arrow2::array::UInt32Array {
-        let p = self.physical.as_arrow();
+        let p = self.physical.0.as_arrow();
         const IMAGE_WIDTH_IDX: usize = 3;
         let array = p.values().get(IMAGE_WIDTH_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
     }
 
     pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
-        let p = self.physical.as_arrow();
+        let p = self.physical.0.as_arrow();
         const IMAGE_MODE_IDX: usize = 4;
         let array = p.values().get(IMAGE_MODE_IDX).unwrap();
         array.as_ref().as_any().downcast_ref().unwrap()
@@ -581,7 +585,7 @@ impl ImageArray {
 impl AsImageObj for ImageArray {
     fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
         assert!(idx < self.len());
-        if !self.physical.is_valid(idx) {
+        if !self.physical.0.is_valid(idx) {
             return None;
         }
 
@@ -729,7 +733,7 @@ impl FixedShapeImageArray {
 impl AsImageObj for FixedShapeImageArray {
     fn as_image_obj<'a>(&'a self, idx: usize) -> Option<DaftImageBuffer<'a>> {
         assert!(idx < self.len());
-        if !self.physical.is_valid(idx) {
+        if !self.physical.0.is_valid(idx) {
             return None;
         }
 
@@ -770,6 +774,7 @@ impl<'a, T> IntoIterator for &'a LogicalArray<T>
 where
     T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
 {
     type Item = Option<DaftImageBuffer<'a>>;
     type IntoIter = ImageBufferIter<'a, T>;
@@ -822,6 +827,7 @@ fn encode_images<'a, T>(
 where
     T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
     &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
@@ -915,6 +921,7 @@ fn resize_images<'a, T>(images: &'a LogicalArray<T>, w: u32, h: u32) -> Vec<Opti
 where
     T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
     &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
@@ -931,6 +938,7 @@ fn crop_images<'a, T>(
 where
     T: DaftImageryType,
     LogicalArray<T>: AsImageObj,
+    ArrayWrapper<T::ChildArrayType>: SeriesLike,
     &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {

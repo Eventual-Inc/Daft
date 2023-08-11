@@ -53,7 +53,7 @@ macro_rules! impl_asarrow_logicalarray {
         impl AsArrow for $da {
             type Output = $output;
             fn as_arrow(&self) -> &Self::Output {
-                self.physical.data().as_any().downcast_ref().unwrap()
+                self.physical.0.data().as_any().downcast_ref().unwrap()
             }
         }
     };

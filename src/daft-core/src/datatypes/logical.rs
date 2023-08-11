@@ -1,26 +1,38 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::datatypes::{BooleanArray, DaftLogicalType, DateType, Field};
+use crate::datatypes::{DaftLogicalType, DateType, Field};
+use crate::series::{ArrayWrapper, SeriesLike};
 use common_error::DaftResult;
 
 use super::{
-    DataArray, DataType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
+    DataType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
     FixedShapeTensorType, ImageType, TensorType, TimestampType,
 };
-pub struct LogicalArray<L: DaftLogicalType> {
+
+pub struct LogicalArray<L: DaftLogicalType>
+where
+    ArrayWrapper<L::ChildArrayType>: SeriesLike,
+{
     pub field: Arc<Field>,
-    pub physical: DataArray<L::PhysicalType>,
+    pub physical: ArrayWrapper<L::ChildArrayType>,
     marker_: PhantomData<L>,
 }
 
-impl<L: DaftLogicalType> Clone for LogicalArray<L> {
+impl<L: DaftLogicalType> Clone for LogicalArray<L>
+where
+    ArrayWrapper<L::ChildArrayType>: SeriesLike,
+{
     fn clone(&self) -> Self {
-        LogicalArray::new(self.field.clone(), self.physical.clone())
+        LogicalArray::new(self.field.clone(), dyn_clone::clone(&self.physical).0)
     }
 }
 
-impl<L: DaftLogicalType + 'static> LogicalArray<L> {
-    pub fn new<F: Into<Arc<Field>>>(field: F, physical: DataArray<L::PhysicalType>) -> Self {
+impl<L: DaftLogicalType + 'static> LogicalArray<L>
+where
+    ArrayWrapper<L::ChildArrayType>: SeriesLike,
+{
+    pub fn new<F: Into<Arc<Field>>>(field: F, physical: L::ChildArrayType) -> Self {
+        let physical = ArrayWrapper(physical);
         let field = field.into();
         assert!(
             field.dtype.is_logical(),
@@ -36,25 +48,20 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         );
 
         LogicalArray {
-            physical,
             field,
+            physical,
             marker_: PhantomData,
         }
     }
 
-    pub fn empty(name: &str, dtype: &DataType) -> Self {
-        let field = Field::new(name, dtype.clone());
-        Self::new(field, DataArray::empty(name, &dtype.to_physical()))
+    pub fn empty(name: &str, dtype: &DataType) -> Self 
+    {
+        // TODO: Implement ::empty() -- how do we know what concrete type to use for self.physical though?
+        todo!()
     }
 
     pub fn name(&self) -> &str {
         self.field.name.as_ref()
-    }
-
-    pub fn rename(&self, name: &str) -> Self {
-        let new_field = self.field.rename(name);
-        let new_array = self.physical.rename(name);
-        Self::new(new_field, new_array)
     }
 
     pub fn field(&self) -> &Field {
@@ -79,31 +86,6 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
 
     pub fn size_bytes(&self) -> DaftResult<usize> {
         self.physical.size_bytes()
-    }
-
-    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
-        let new_array = self.physical.slice(start, end)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-
-    pub fn head(&self, num: usize) -> DaftResult<Self> {
-        self.slice(0, num)
-    }
-
-    pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        if arrays.is_empty() {
-            return Err(common_error::DaftError::ValueError(
-                "Need at least 1 logical array to concat".to_string(),
-            ));
-        }
-        let physicals: Vec<_> = arrays.iter().map(|a| &a.physical).collect();
-        let concatd = DataArray::<L::PhysicalType>::concat(physicals.as_slice())?;
-        Ok(Self::new(arrays.first().unwrap().field.clone(), concatd))
-    }
-
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let new_array = self.physical.filter(mask)?;
-        Ok(Self::new(self.field.clone(), new_array))
     }
 }
 

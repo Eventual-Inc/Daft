@@ -179,6 +179,11 @@ macro_rules! impl_series_like_for_data_array {
                 logical_to_arrow(Cow::Borrowed(&self.0.data), self.field()).into_owned()
             }
 
+            fn as_arrow(&self) -> Box<dyn arrow2::array::Array> {
+                // TODO(jay): Figure out if this is the correct behavior? Apparently to_arrow is FFI.
+                self.to_arrow()
+            }
+
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
