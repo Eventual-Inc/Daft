@@ -24,12 +24,12 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, PartitionScheme, PartitionSpec
+from daft.daft import FileFormat, JoinType, PartitionScheme, PartitionSpec
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.logical.builder import JoinType, LogicalPlanBuilder
+from daft.logical.builder import LogicalPlanBuilder
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -700,11 +700,13 @@ class DataFrame:
                 raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
             left_on = on
             right_on = on
-        assert how == "inner", "only inner joins are currently supported"
+        join_type = JoinType.from_join_type_str(how)
+        if join_type != JoinType.Inner:
+            raise ValueError(f"Only inner joins are currently supported, but got: {how}")
 
         left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
         right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
-        builder = self._builder.join(other._builder, left_on=left_exprs, right_on=right_exprs, how=JoinType.INNER)
+        builder = self._builder.join(other._builder, left_on=left_exprs, right_on=right_exprs, how=join_type)
         return DataFrame(builder)
 
     @DataframePublicAPI

@@ -1,5 +1,6 @@
 mod builder;
 mod display;
+mod join;
 mod logical_plan;
 mod ops;
 mod partitioning;
@@ -10,6 +11,7 @@ mod sink_info;
 mod source_info;
 
 pub use builder::LogicalPlanBuilder;
+pub use join::JoinType;
 pub use logical_plan::LogicalPlan;
 pub use partitioning::{PartitionScheme, PartitionSpec};
 pub use source_info::{
@@ -29,6 +31,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<PartitionSpec>()?;
     parent.add_class::<PartitionScheme>()?;
+    parent.add_class::<JoinType>()?;
 
     Ok(())
 }

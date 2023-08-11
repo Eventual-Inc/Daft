@@ -40,6 +40,7 @@ pub enum PhysicalPlan {
     Aggregate(Aggregate),
     Coalesce(Coalesce),
     Concat(Concat),
+    Join(Join),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -358,6 +359,41 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "concat"))?
                     .call1((upstream_input_iter, upstream_other_iter))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Join(Join {
+                right,
+                left_on,
+                right_on,
+                output_projection,
+                join_type,
+                input,
+            }) => {
+                let upstream_input_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_right_iter = right.to_partition_tasks(py, psets)?;
+                let left_on_pyexprs: Vec<PyExpr> = left_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let right_on_pyexprs: Vec<PyExpr> = right_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let output_projection_pyexprs: Vec<PyExpr> = output_projection
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "join"))?
+                    .call1((
+                        upstream_input_iter,
+                        upstream_right_iter,
+                        left_on_pyexprs,
+                        right_on_pyexprs,
+                        output_projection_pyexprs,
+                        *join_type,
+                    ))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularWriteParquet(TabularWriteParquet {

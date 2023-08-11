@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use daft_core::schema::SchemaRef;
 
@@ -17,6 +17,7 @@ pub enum LogicalPlan {
     Distinct(Distinct),
     Aggregate(Aggregate),
     Concat(Concat),
+    Join(Join),
     Sink(Sink),
 }
 
@@ -38,6 +39,7 @@ impl LogicalPlan {
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(aggregate) => aggregate.schema(),
             Self::Concat(Concat { input, .. }) => input.schema(),
+            Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
         }
     }
@@ -77,6 +79,27 @@ impl LogicalPlan {
                 None,
             )
             .into(),
+            Self::Join(Join {
+                input,
+                right,
+                left_on,
+                ..
+            }) => match max(
+                input.partition_spec().num_partitions,
+                right.partition_spec().num_partitions,
+            ) {
+                // NOTE: This duplicates the repartitioning logic in the planner, where we
+                // conditionally repartition the left and right tables.
+                // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
+                // to be an entirely planner-side concept.
+                1 => input.partition_spec(),
+                num_partitions => PartitionSpec::new_internal(
+                    PartitionScheme::Hash,
+                    num_partitions,
+                    Some(left_on.clone()),
+                )
+                .into(),
+            },
             Self::Sink(Sink { input, .. }) => input.partition_spec(),
         }
     }
@@ -94,6 +117,7 @@ impl LogicalPlan {
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Concat(Concat { input, other }) => vec![input, other],
+            Self::Join(Join { input, right, .. }) => vec![input, right],
             Self::Sink(Sink { input, .. }) => vec![input],
         }
     }
@@ -113,6 +137,7 @@ impl LogicalPlan {
             Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Concat(_) => vec!["Concat".to_string()],
+            Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
         }
     }
@@ -145,4 +170,5 @@ impl_from_data_struct_for_logical_plan!(Coalesce);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Concat);
+impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);

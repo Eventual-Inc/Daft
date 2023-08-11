@@ -18,11 +18,11 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormat,
     FileFormatConfig,
+    JoinType,
     JsonSourceConfig,
     ParquetSourceConfig,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.builder import JoinType
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -654,7 +654,7 @@ class Join(SingleOutputInstruction):
             left_on=self.left_on,
             right_on=self.right_on,
             output_projection=self.output_projection,
-            how=self.how.value,
+            how=self.how,
         )
         return [result]
 
