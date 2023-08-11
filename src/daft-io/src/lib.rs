@@ -3,6 +3,7 @@
 mod azure_blob;
 pub mod config;
 mod http;
+mod google_cloud;
 mod local;
 mod object_io;
 mod s3_like;
