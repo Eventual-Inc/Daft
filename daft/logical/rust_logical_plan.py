@@ -173,4 +173,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         partition_cols: ExpressionsProjection | None = None,
         compression: str | None = None,
     ) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
+            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
+        part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
+        builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression)
+        return RustLogicalPlanBuilder(builder)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterator, TypeVar, cast
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, PyExpr, PySchema, PyTable
+from daft.daft import FileFormat, FileFormatConfig, PyExpr, PySchema, PyTable
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -78,3 +78,20 @@ def reduce_merge(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     reduce_instruction = execution_step.ReduceMerge()
     return physical_plan.reduce(input, reduce_instruction)
+
+
+def write_file(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    file_format: FileFormat,
+    schema: PySchema,
+    root_dir: str,
+    compression: str | None,
+    partition_cols: list[PyExpr] | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    if partition_cols is not None:
+        expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
+    else:
+        expr_projection = None
+    return physical_plan.file_write(
+        input, file_format, Schema._from_pyschema(schema), root_dir, compression, expr_projection
+    )

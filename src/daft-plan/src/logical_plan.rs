@@ -13,6 +13,7 @@ pub enum LogicalPlan {
     Repartition(Repartition),
     Distinct(Distinct),
     Aggregate(Aggregate),
+    Sink(Sink),
 }
 
 impl LogicalPlan {
@@ -25,6 +26,7 @@ impl LogicalPlan {
             Self::Repartition(Repartition { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(aggregate) => aggregate.schema(),
+            Self::Sink(Sink { schema, .. }) => schema.clone(),
         }
     }
 
@@ -52,6 +54,7 @@ impl LogicalPlan {
             .into(),
             Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
             Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
+            Self::Sink(Sink { input, .. }) => input.partition_spec(),
         }
     }
 
@@ -64,6 +67,7 @@ impl LogicalPlan {
             Self::Repartition(Repartition { input, .. }) => vec![input],
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::Sink(Sink { input, .. }) => vec![input],
         }
     }
 
@@ -76,6 +80,7 @@ impl LogicalPlan {
             Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::Sink(sink) => sink.multiline_display(),
         }
     }
 
@@ -103,3 +108,4 @@ impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
+impl_from_data_struct_for_logical_plan!(Sink);

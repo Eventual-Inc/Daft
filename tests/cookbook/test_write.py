@@ -7,7 +7,7 @@ from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
-def test_parquet_write(tmp_path):
+def test_parquet_write(tmp_path, use_new_planner):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path)
@@ -28,7 +28,7 @@ def test_parquet_write_with_partitioning(tmp_path):
     assert len(pd_df.to_pandas()) == 5
 
 
-def test_csv_write(tmp_path):
+def test_csv_write(tmp_path, use_new_planner):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path)

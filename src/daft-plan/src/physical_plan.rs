@@ -1,6 +1,11 @@
 #[cfg(feature = "python")]
 use {
-    crate::source_info::{ExternalInfo, FileInfo, InMemoryInfo, PyFileFormatConfig},
+    crate::{
+        sink_info::OutputFileInfo,
+        source_info::{
+            ExternalInfo, FileFormat, FileFormatConfig, FileInfo, InMemoryInfo, PyFileFormatConfig,
+        },
+    },
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
@@ -11,7 +16,7 @@ use {
     std::sync::Arc,
 };
 
-use crate::{physical_ops::*, source_info::FileFormatConfig};
+use crate::physical_ops::*;
 
 #[derive(Debug)]
 pub enum PhysicalPlan {
@@ -31,6 +36,9 @@ pub enum PhysicalPlan {
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Coalesce(Coalesce),
+    TabularWriteParquet(TabularWriteParquet),
+    TabularWriteJson(TabularWriteJson),
+    TabularWriteCsv(TabularWriteCsv),
 }
 
 #[cfg(feature = "python")]
@@ -70,6 +78,35 @@ fn tabular_scan(
             file_info_table,
             PyFileFormatConfig::from(file_format_config.clone()),
             *limit,
+        ))?;
+    Ok(py_iter.into())
+}
+
+#[cfg(feature = "python")]
+fn tabular_write(
+    py: Python<'_>,
+    upstream_iter: PyObject,
+    file_format: &FileFormat,
+    schema: &SchemaRef,
+    root_dir: &String,
+    compression: &Option<String>,
+    partition_cols: &Option<Vec<Expr>>,
+) -> PyResult<PyObject> {
+    let part_cols = partition_cols.as_ref().map(|cols| {
+        cols.iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<PyExpr>>()
+    });
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_file"))?
+        .call1((
+            upstream_iter,
+            file_format.clone(),
+            PySchema::from(schema.clone()),
+            root_dir,
+            compression.clone(),
+            part_cols,
         ))?;
     Ok(py_iter.into())
 }
@@ -275,6 +312,63 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *num_from, *num_to))?;
                 Ok(py_iter.into())
             }
+            PhysicalPlan::TabularWriteParquet(TabularWriteParquet {
+                schema,
+                file_info:
+                    OutputFileInfo {
+                        root_dir,
+                        file_format,
+                        partition_cols,
+                        compression,
+                    },
+                input,
+            }) => tabular_write(
+                py,
+                input.to_partition_tasks(py, psets)?,
+                file_format,
+                schema,
+                root_dir,
+                compression,
+                partition_cols,
+            ),
+            PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
+                schema,
+                file_info:
+                    OutputFileInfo {
+                        root_dir,
+                        file_format,
+                        partition_cols,
+                        compression,
+                    },
+                input,
+            }) => tabular_write(
+                py,
+                input.to_partition_tasks(py, psets)?,
+                file_format,
+                schema,
+                root_dir,
+                compression,
+                partition_cols,
+            ),
+            PhysicalPlan::TabularWriteJson(TabularWriteJson {
+                schema,
+                file_info:
+                    OutputFileInfo {
+                        root_dir,
+                        file_format,
+                        partition_cols,
+                        compression,
+                    },
+                input,
+            }) => tabular_write(
+                py,
+                input.to_partition_tasks(py, psets)?,
+                file_format,
+                schema,
+                root_dir,
+                compression,
+                partition_cols,
+            ),
         }
     }
 }
