@@ -8,6 +8,9 @@ from daft.daft import PySchema as _PySchema
 from daft.daft import read_parquet_schema as _read_parquet_schema
 from daft.datatype import DataType, TimeUnit
 
+if TYPE_CHECKING:
+    import pyarrow as pa
+
 if sys.version_info < (3, 8):
     pass
 else:
@@ -57,6 +60,23 @@ class Schema:
         s = Schema.__new__(Schema)
         s._schema = schema
         return s
+
+    @classmethod
+    def from_pyarrow_schema(cls, pa_schema: pa.Schema) -> Schema:
+        """Creates a Daft Schema from a PyArrow Schema
+
+        Args:
+            pa_schema (pa.Schema): PyArrow schema to convert
+
+        Returns:
+            Schema: Converted Daft schema
+        """
+        if not isinstance(pa_schema, pa.Schema):
+            raise ValueError(f"Expected pa_schema to be a PyArrow schema object, but received instead: {pa_schema}")
+
+        return cls._from_field_name_and_types(
+            [(pa_field.name, DataType.from_arrow_type(pa_field.type)) for pa_field in pa_schema]
+        )
 
     @classmethod
     def _from_field_name_and_types(self, fields: list[tuple[str, DataType]]) -> Schema:
