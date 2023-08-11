@@ -25,10 +25,12 @@ pub enum PhysicalPlan {
     TabularScanParquet(TabularScanParquet),
     TabularScanCsv(TabularScanCsv),
     TabularScanJson(TabularScanJson),
+    Project(Project),
     Filter(Filter),
     Limit(Limit),
     Sort(Sort),
     Split(Split),
+    Flatten(Flatten),
     FanoutRandom(FanoutRandom),
     FanoutByHash(FanoutByHash),
     #[allow(dead_code)]
@@ -167,6 +169,18 @@ impl PhysicalPlan {
                 limit,
                 ..
             }) => tabular_scan(py, schema, file_info, file_format_config, limit),
+            PhysicalPlan::Project(Project { input, projection }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let projection_pyexprs: Vec<PyExpr> = projection
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "project"))?
+                    .call1((upstream_iter, projection_pyexprs))?;
+                Ok(py_iter.into())
+            }
             PhysicalPlan::Filter(Filter { input, predicate }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let expressions_mod =
@@ -240,6 +254,14 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "split"))?
                     .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Flatten(Flatten { input }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "flatten_plan"))?
+                    .call1((upstream_iter,))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::FanoutRandom(FanoutRandom {

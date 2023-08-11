@@ -41,6 +41,17 @@ def tabular_scan(
     )
 
 
+def project(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT], projection: list[PyExpr]
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=execution_step.Project(expr_projection),
+        resource_request=ResourceRequest(),  # TODO(Clark): Use real ResourceRequest.
+    )
+
+
 def sort(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sort_by: list[PyExpr],

@@ -14,21 +14,21 @@ from daft.errors import ExpressionTypeError
 ###
 
 
-def test_disallowed_sort_bool():
+def test_disallowed_sort_bool(use_new_planner):
     df = daft.from_pydict({"A": [True, False]})
 
     with pytest.raises(ExpressionTypeError):
         df.sort("A")
 
 
-def test_disallowed_sort_null():
+def test_disallowed_sort_null(use_new_planner):
     df = daft.from_pydict({"A": [None, None]})
 
     with pytest.raises(ExpressionTypeError):
         df.sort("A")
 
 
-def test_disallowed_sort_bytes():
+def test_disallowed_sort_bytes(use_new_planner):
     df = daft.from_pydict({"A": [b"a", b"b"]})
 
     with pytest.raises(ExpressionTypeError):
@@ -189,7 +189,7 @@ def test_sort_with_nulls_multikey(repartition_nparts, use_new_planner):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_sort_with_all_nulls(repartition_nparts):
+def test_sort_with_all_nulls(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [None, None, None],

@@ -3,7 +3,7 @@ from __future__ import annotations
 import daft
 
 
-def test_show_default(valid_data):
+def test_show_default(valid_data, use_new_planner):
     df = daft.from_pylist(valid_data)
     df_display = df.show()
 
@@ -13,7 +13,7 @@ def test_show_default(valid_data):
     assert df_display.num_rows == 8
 
 
-def test_show_some(valid_data):
+def test_show_some(valid_data, use_new_planner):
     df = daft.from_pylist(valid_data)
     df_display = df.show(1)
 

@@ -95,9 +95,23 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         projection: ExpressionsProjection,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        if custom_resource_request != ResourceRequest():
+            raise NotImplementedError("ResourceRequests not supported for new query planner")
+        schema = projection.resolve_schema(self.schema())
+        exprs = [expr._expr for expr in projection]
+        builder = self._builder.project(exprs, schema._schema)
+        return RustLogicalPlanBuilder(builder)
 
     def filter(self, predicate: Expression) -> RustLogicalPlanBuilder:
+        # TODO(Clark): Move this logic to Rust side after we've ported ExpressionsProjection.
+        predicate_expr_proj = ExpressionsProjection([predicate])
+        predicate_schema = predicate_expr_proj.resolve_schema(self.schema())
+        for resolved_field, predicate_expr in zip(predicate_schema, predicate_expr_proj):
+            resolved_type = resolved_field.dtype
+            if resolved_type != DataType.bool():
+                raise ValueError(
+                    f"Expected expression {predicate_expr} to resolve to type Boolean, but received: {resolved_type}"
+                )
         builder = self._builder.filter(predicate._expr)
         return RustLogicalPlanBuilder(builder)
 
@@ -137,7 +151,12 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return RustLogicalPlanBuilder(builder)
 
     def coalesce(self, num_partitions: int) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        if num_partitions > self.num_partitions():
+            raise ValueError(
+                f"Coalesce can only reduce the number of partitions: {num_partitions} vs {self.num_partitions}"
+            )
+        builder = self._builder.coalesce(num_partitions)
+        return RustLogicalPlanBuilder(builder)
 
     def agg(
         self,
