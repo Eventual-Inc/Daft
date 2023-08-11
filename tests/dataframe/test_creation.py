@@ -433,8 +433,6 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
 
 
 def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]], use_new_planner) -> None:
-    if use_new_planner:
-        pytest.skip("TODO: Column projection not yet supported")
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f)
@@ -589,8 +587,6 @@ def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> 
 
 
 def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_new_planner) -> None:
-    if use_new_planner:
-        pytest.skip("TODO: Column projection not yet supported")
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
             f.write(json.dumps(data))
@@ -730,8 +726,6 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
 def test_create_dataframe_parquet_column_projection(
     valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
 ) -> None:
-    if use_new_planner:
-        pytest.skip("TODO: Column projection not yet supported")
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)

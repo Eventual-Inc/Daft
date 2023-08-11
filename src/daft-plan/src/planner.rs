@@ -5,9 +5,10 @@ use daft_dsl::Expr;
 
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
-    Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
-    Filter as LogicalFilter, Limit as LogicalLimit, Repartition as LogicalRepartition,
-    Sink as LogicalSink, Sort as LogicalSort, Source,
+    Aggregate as LogicalAggregate, Coalesce as LogicalCoalesce, Concat as LogicalConcat,
+    Distinct as LogicalDistinct, Filter as LogicalFilter, Limit as LogicalLimit,
+    Project as LogicalProject, Repartition as LogicalRepartition, Sink as LogicalSink,
+    Sort as LogicalSort, Source,
 };
 use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
@@ -63,6 +64,15 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 InMemoryScan::new(schema.clone(), mem_info.clone(), partition_spec.clone()),
             )),
         },
+        LogicalPlan::Project(LogicalProject {
+            input, projection, ..
+        }) => {
+            let input_physical = plan(input)?;
+            Ok(PhysicalPlan::Project(Project::new(
+                projection.clone(),
+                input_physical.into(),
+            )))
+        }
         LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Filter(Filter::new(
@@ -100,11 +110,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
         }) => {
             let input_physical = Arc::new(plan(input)?);
             match scheme {
-                PartitionScheme::Unknown => Ok(PhysicalPlan::Split(Split::new(
-                    input.partition_spec().num_partitions,
-                    *num_partitions,
-                    input_physical,
-                ))),
+                PartitionScheme::Unknown => {
+                    let split_op = PhysicalPlan::Split(Split::new(
+                        input.partition_spec().num_partitions,
+                        *num_partitions,
+                        input_physical,
+                    ));
+                    Ok(PhysicalPlan::Flatten(Flatten::new(split_op.into())))
+                }
                 PartitionScheme::Random => {
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
                         *num_partitions,
@@ -122,6 +135,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 }
                 PartitionScheme::Range => unreachable!("Repartitioning by range is not supported"),
             }
+        }
+        LogicalPlan::Coalesce(LogicalCoalesce { input, num_to }) => {
+            let input_physical = plan(input)?;
+            Ok(PhysicalPlan::Coalesce(Coalesce::new(
+                input_physical.into(),
+                logical_plan.partition_spec().num_partitions,
+                *num_to,
+            )))
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
             let input_physical = plan(input)?;

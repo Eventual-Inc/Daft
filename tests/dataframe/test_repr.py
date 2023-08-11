@@ -71,7 +71,7 @@ def parse_html_table(
     return result
 
 
-def test_empty_repr():
+def test_empty_repr(use_new_planner):
     df = daft.from_pydict({})
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
@@ -81,7 +81,7 @@ def test_empty_repr():
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
 
 
-def test_empty_df_repr():
+def test_empty_df_repr(use_new_planner):
     df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
     expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
@@ -122,7 +122,7 @@ def test_empty_df_repr():
     )
 
 
-def test_alias_repr():
+def test_alias_repr(use_new_planner):
     df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.select(df["A"].alias("A2"), df["B"])
 
@@ -170,7 +170,7 @@ def test_alias_repr():
     )
 
 
-def test_repr_with_html_string():
+def test_repr_with_html_string(use_new_planner):
     df = daft.from_pydict({"A": [f"<div>body{i}</div>" for i in range(3)]})
     df.collect()
 
@@ -186,7 +186,7 @@ class MyObj:
         return "myobj-custom-repr"
 
 
-def test_repr_html_custom_hooks():
+def test_repr_html_custom_hooks(use_new_planner):
     img = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     arr = np.ones((3, 3))
 

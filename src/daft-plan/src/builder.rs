@@ -79,6 +79,25 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
+    pub fn project(
+        &self,
+        projection: Vec<PyExpr>,
+        projected_schema: &PySchema,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let projection_exprs = projection
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let logical_plan: LogicalPlan = ops::Project::new(
+            projection_exprs,
+            projected_schema.clone().into(),
+            self.plan.clone(),
+        )
+        .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan =
             ops::Filter::new(predicate.expr.clone(), self.plan.clone()).into();
@@ -121,6 +140,13 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
+    pub fn coalesce(&self, num_partitions: usize) -> PyResult<LogicalPlanBuilder> {
+        let logical_plan: LogicalPlan =
+            ops::Coalesce::new(num_partitions, self.plan.clone()).into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }

@@ -28,7 +28,7 @@ def test_distinct_with_nulls(repartition_nparts, use_new_planner):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_all_nulls(repartition_nparts):
+def test_distinct_with_all_nulls(repartition_nparts, use_new_planner):
     daft_df = daft.from_pydict(
         {
             "id": [None, None, None, None],
