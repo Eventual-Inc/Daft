@@ -36,6 +36,7 @@ pub enum PhysicalPlan {
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Coalesce(Coalesce),
+    Concat(Concat),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -310,6 +311,15 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "coalesce"))?
                     .call1((upstream_iter, *num_from, *num_to))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::Concat(Concat { other, input }) => {
+                let upstream_input_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_other_iter = other.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "concat"))?
+                    .call1((upstream_input_iter, upstream_other_iter))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularWriteParquet(TabularWriteParquet {

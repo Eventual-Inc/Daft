@@ -1,4 +1,5 @@
 mod agg;
+mod concat;
 mod distinct;
 mod filter;
 mod limit;
@@ -8,6 +9,7 @@ mod sort;
 mod source;
 
 pub use agg::Aggregate;
+pub use concat::Concat;
 pub use distinct::Distinct;
 pub use filter::Filter;
 pub use limit::Limit;
