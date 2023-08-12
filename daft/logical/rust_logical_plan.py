@@ -18,7 +18,7 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
-    from daft.planner.rust_planner import RustQueryPlanner
+    from daft.planner.rust_planner import RustPhysicalPlanScheduler
 
 
 class RustLogicalPlanBuilder(LogicalPlanBuilder):
@@ -27,10 +27,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
-    def to_planner(self) -> RustQueryPlanner:
-        from daft.planner.rust_planner import RustQueryPlanner
+    def to_physical_plan_scheduler(self) -> RustPhysicalPlanScheduler:
+        from daft.planner.rust_planner import RustPhysicalPlanScheduler
 
-        return RustQueryPlanner(self._builder)
+        return RustPhysicalPlanScheduler(self._builder.to_physical_plan_scheduler())
 
     def schema(self) -> Schema:
         pyschema = self._builder.schema()

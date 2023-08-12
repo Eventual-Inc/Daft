@@ -63,6 +63,16 @@ impl PartitionSpec {
     }
 }
 
+impl Default for PartitionSpec {
+    fn default() -> Self {
+        Self {
+            scheme: PartitionScheme::Unknown,
+            num_partitions: 1,
+            by: None,
+        }
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl PartitionSpec {

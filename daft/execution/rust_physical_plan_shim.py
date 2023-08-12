@@ -34,8 +34,17 @@ def local_aggregate(
 def tabular_scan(
     schema: PySchema, file_info_table: PyTable, file_format_config: FileFormatConfig, limit: int
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    parts = cast(Iterator[PartitionT], [Table._from_pytable(file_info_table)])
-    file_info_iter = physical_plan.partition_read(iter(parts))
+    # TODO(Clark): Fix this Ray runner hack.
+    part = Table._from_pytable(file_info_table)
+    if get_context().is_ray_runner:
+        import ray
+
+        parts = [ray.put(part)]
+    else:
+        parts = [part]
+    parts_t = cast(Iterator[PartitionT], parts)
+
+    file_info_iter = physical_plan.partition_read(iter(parts_t))
     filepaths_column_name = get_context().runner().runner_io().FS_LISTING_PATH_COLUMN_NAME
     return physical_plan.file_read(
         file_info_iter, limit, Schema._from_pyschema(schema), None, None, file_format_config, filepaths_column_name

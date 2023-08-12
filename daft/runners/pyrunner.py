@@ -154,16 +154,16 @@ class PyRunner(Runner[Table]):
     def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
         # Optimize the logical plan.
         builder = builder.optimize()
-        # Finalize the logical plan and get a query planner for translating the
-        # logical plan to executable tasks.
-        planner = builder.to_planner()
+        # Finalize the logical plan and get a physical plan scheduler for translating the
+        # physical plan to executable tasks.
+        plan_scheduler = builder.to_physical_plan_scheduler()
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
             if entry.value is not None
         }
         # Get executable tasks from planner.
-        tasks = planner.plan(psets)
+        tasks = plan_scheduler.to_partition_tasks(psets)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
             partitions_gen = self._physical_plan_to_partitions(tasks)

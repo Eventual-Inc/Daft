@@ -7,8 +7,9 @@ use crate::{
     physical_plan::PhysicalPlan, sink_info::OutputFileInfo,
     source_info::ExternalInfo as ExternalSourceInfo, PartitionSpec,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TabularScanParquet {
     pub schema: SchemaRef,
     pub external_info: ExternalSourceInfo,
@@ -35,7 +36,7 @@ impl TabularScanParquet {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TabularWriteParquet {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,

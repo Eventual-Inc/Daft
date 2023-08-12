@@ -11,14 +11,22 @@ use {
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     daft_table::python::PyTable,
-    pyo3::{pyclass, pymethods, PyObject, PyRef, PyRefMut, PyResult, Python},
+    pyo3::{
+        exceptions::PyValueError,
+        pyclass, pymethods,
+        types::{PyBytes, PyTuple},
+        PyObject, PyRef, PyRefMut, PyResult, Python,
+    },
     std::collections::HashMap,
-    std::sync::Arc,
 };
+
+use daft_core::impl_bincode_py_state_serialization;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::physical_ops::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),
@@ -44,6 +52,46 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+}
+
+#[cfg_attr(feature = "python", pyclass)]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PhysicalPlanScheduler {
+    plan: Arc<PhysicalPlan>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PhysicalPlanScheduler {
+    #[new]
+    #[pyo3(signature = (*args))]
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            // Create dummy inner PhysicalPlan, to be overridden by __setstate__.
+            0 => Ok(Arc::new(PhysicalPlan::InMemoryScan(InMemoryScan::new(
+                Default::default(),
+                InMemoryInfo::new("".to_string(), args.py().None()),
+                Default::default(),
+            )))
+            .into()),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new PhysicalPlanScheduler, got : {}",
+                args.len()
+            ))),
+        }
+    }
+
+    pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
+        Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets))
+    }
+}
+
+impl_bincode_py_state_serialization!(PhysicalPlanScheduler);
+
+impl From<Arc<PhysicalPlan>> for PhysicalPlanScheduler {
+    fn from(plan: Arc<PhysicalPlan>) -> Self {
+        Self { plan }
+    }
 }
 
 #[cfg(feature = "python")]

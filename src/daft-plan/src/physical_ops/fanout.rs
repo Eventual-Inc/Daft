@@ -3,8 +3,9 @@ use std::sync::Arc;
 use daft_dsl::Expr;
 
 use crate::physical_plan::PhysicalPlan;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutRandom {
     pub num_partitions: usize,
     // Upstream node.
@@ -20,7 +21,7 @@ impl FanoutRandom {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutByHash {
     pub num_partitions: usize,
     pub partition_by: Vec<Expr>,
@@ -42,7 +43,7 @@ impl FanoutByHash {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutByRange {
     pub num_partitions: usize,
     pub sort_by: Vec<Expr>,

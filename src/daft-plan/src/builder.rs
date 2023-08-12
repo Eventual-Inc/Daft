@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{logical_plan::LogicalPlan, JoinType};
+use crate::logical_plan::LogicalPlan;
 
 #[cfg(feature = "python")]
 use {
@@ -12,12 +12,11 @@ use {
             ExternalInfo as ExternalSourceInfo, FileInfo as InputFileInfo, InMemoryInfo,
             PyFileFormatConfig, SourceInfo,
         },
-        FileFormat, PartitionScheme, PartitionSpec,
+        FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler,
     },
     daft_core::{datatypes::Field, python::schema::PySchema, schema::Schema, DataType},
     daft_dsl::{python::PyExpr, Expr},
     pyo3::{exceptions::PyValueError, prelude::*},
-    std::collections::HashMap,
 };
 
 #[cfg_attr(feature = "python", pyclass)]
@@ -277,9 +276,9 @@ impl LogicalPlanBuilder {
         Ok(self.plan.partition_spec().as_ref().clone())
     }
 
-    pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
+    pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
         let physical_plan = plan(self.plan.as_ref())?;
-        Python::with_gil(|py| physical_plan.to_partition_tasks(py, &psets))
+        Ok(Arc::new(physical_plan).into())
     }
 
     pub fn repr_ascii(&self) -> PyResult<String> {

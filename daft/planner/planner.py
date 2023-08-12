@@ -6,12 +6,11 @@ from daft.execution import physical_plan
 from daft.runners.partitioning import PartitionT
 
 
-class QueryPlanner(ABC):
+class PhysicalPlanScheduler(ABC):
     """
-    An interface for translating a logical plan to a physical plan, and generating
-    executable tasks for the latter.
+    An interface for generating executable tasks for an underlying physical plan.
     """
 
     @abstractmethod
-    def plan(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
+    def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
         pass

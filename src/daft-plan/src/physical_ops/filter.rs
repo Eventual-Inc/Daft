@@ -3,8 +3,9 @@ use std::sync::Arc;
 use daft_dsl::Expr;
 
 use crate::physical_plan::PhysicalPlan;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Filter {
     // The Boolean expression to filter on.
     pub predicate: Expr,

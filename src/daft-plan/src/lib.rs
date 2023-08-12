@@ -14,6 +14,7 @@ pub use builder::LogicalPlanBuilder;
 pub use join::JoinType;
 pub use logical_plan::LogicalPlan;
 pub use partitioning::{PartitionScheme, PartitionSpec};
+pub use physical_plan::PhysicalPlanScheduler;
 pub use source_info::{
     CsvSourceConfig, FileFormat, JsonSourceConfig, ParquetSourceConfig, PyFileFormatConfig,
 };
@@ -32,6 +33,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PartitionSpec>()?;
     parent.add_class::<PartitionScheme>()?;
     parent.add_class::<JoinType>()?;
+    parent.add_class::<PhysicalPlanScheduler>()?;
 
     Ok(())
 }

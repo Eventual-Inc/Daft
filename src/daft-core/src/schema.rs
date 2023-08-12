@@ -128,6 +128,12 @@ impl Schema {
     }
 }
 
+impl Default for Schema {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl Display for Schema {
     // Produces an ASCII table.
     fn fmt(&self, f: &mut Formatter) -> Result {

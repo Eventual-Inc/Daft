@@ -31,7 +31,7 @@ from daft.runners.partitioning import PartitionCacheEntry
 from daft.table import Table
 
 if TYPE_CHECKING:
-    from daft.planner.py_planner import PyQueryPlanner
+    from daft.planner.py_planner import PyPhysicalPlanScheduler
 
 
 class OpLevel(IntEnum):
@@ -47,10 +47,10 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def __repr__(self) -> str:
         return self._plan.pretty_print()
 
-    def to_planner(self) -> PyQueryPlanner:
-        from daft.planner.py_planner import PyQueryPlanner
+    def to_physical_plan_scheduler(self) -> PyPhysicalPlanScheduler:
+        from daft.planner.py_planner import PyPhysicalPlanScheduler
 
-        return PyQueryPlanner(self._plan)
+        return PyPhysicalPlanScheduler(self._plan)
 
     def schema(self) -> Schema:
         return self._plan.schema()

@@ -13,7 +13,7 @@ import pyarrow as pa
 from loguru import logger
 
 from daft.logical.builder import LogicalPlanBuilder
-from daft.planner.planner import QueryPlanner
+from daft.planner import PhysicalPlanScheduler
 
 try:
     import ray
@@ -417,7 +417,7 @@ class Scheduler:
 
     def run_plan(
         self,
-        planner: QueryPlanner,
+        plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
@@ -425,7 +425,7 @@ class Scheduler:
             target=self._run_plan,
             name=result_uuid,
             kwargs={
-                "planner": planner,
+                "plan_scheduler": plan_scheduler,
                 "psets": psets,
                 "result_uuid": result_uuid,
             },
@@ -435,14 +435,14 @@ class Scheduler:
 
     def _run_plan(
         self,
-        planner: QueryPlanner,
+        plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
         from loguru import logger
 
-        # Get executable tasks from planner.
-        tasks = planner.plan(psets)
+        # Get executable tasks from plan scheduler.
+        tasks = plan_scheduler.to_partition_tasks(psets)
 
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.
@@ -618,9 +618,9 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[ray.ObjectRef]:
         # Optimize the logical plan.
         builder = builder.optimize()
-        # Finalize the logical plan and get a query planner for translating the
-        # logical plan to executable tasks.
-        planner = builder.to_planner()
+        # Finalize the logical plan and get a physical plan scheduler for translating the
+        # physical plan to executable tasks.
+        plan_scheduler = builder.to_physical_plan_scheduler()
 
         psets = {
             key: entry.value.values()
@@ -631,7 +631,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
                 self.scheduler_actor.run_plan.remote(
-                    planner=planner,
+                    plan_scheduler=plan_scheduler,
                     psets=psets,
                     result_uuid=result_uuid,
                 )
@@ -639,7 +639,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         else:
             self.scheduler.run_plan(
-                planner=planner,
+                plan_scheduler=plan_scheduler,
                 psets=psets,
                 result_uuid=result_uuid,
             )

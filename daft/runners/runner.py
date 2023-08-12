@@ -4,7 +4,6 @@ from abc import abstractmethod
 from typing import Generic, Iterator, TypeVar
 
 from daft.logical.builder import LogicalPlanBuilder
-from daft.logical.logical_plan import LogicalPlan
 from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionSet,
@@ -43,6 +42,3 @@ class Runner(Generic[PartitionT]):
     def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
         """Similar to run_iter(), but always dereference and yield Table objects."""
         ...
-
-    def optimize(self, plan: LogicalPlan) -> LogicalPlan:
-        return plan

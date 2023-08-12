@@ -19,7 +19,7 @@ from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
-    from daft.planner import QueryPlanner
+    from daft.planner import PhysicalPlanScheduler
 
 
 class LogicalPlanBuilder(ABC):
@@ -28,12 +28,12 @@ class LogicalPlanBuilder(ABC):
     """
 
     @abstractmethod
-    def to_planner(self) -> QueryPlanner:
+    def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler:
         """
-        Convert this logical plan builder to a query planner, which is used to translate
-        a logical plan to a physical plan and to generate executable tasks for the physical plan.
+        Convert the underlying logical plan to a physical plan scheduler, which is
+        used to generate executable tasks for the physical plan.
 
-        This should be called after trigger optimization with self.optimize().
+        This should be called after triggering optimization with self.optimize().
         """
 
     @abstractmethod
