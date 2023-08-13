@@ -71,9 +71,6 @@ class Schema:
         Returns:
             Schema: Converted Daft schema
         """
-        if not isinstance(pa_schema, pa.Schema):
-            raise ValueError(f"Expected pa_schema to be a PyArrow schema object, but received instead: {pa_schema}")
-
         return cls._from_field_name_and_types(
             [(pa_field.name, DataType.from_arrow_type(pa_field.type)) for pa_field in pa_schema]
         )
