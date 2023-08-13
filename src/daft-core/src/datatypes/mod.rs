@@ -36,7 +36,7 @@ pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
 pub trait DaftArrowBackedType: Send + Sync + DaftPhysicalType + 'static {}
 
 pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
-    type PhysicalType: DaftArrowBackedType;
+    type WrappedType: DaftDataType;
 }
 
 macro_rules! impl_daft_arrow_datatype {
@@ -70,7 +70,7 @@ macro_rules! impl_daft_non_arrow_datatype {
 }
 
 macro_rules! impl_daft_logical_datatype {
-    ($ca:ident, $variant:ident, $physical_type:ident) => {
+    ($ca:ident, $variant:ident, $wrapped_type:ident) => {
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -81,7 +81,7 @@ macro_rules! impl_daft_logical_datatype {
         }
 
         impl DaftLogicalType for $ca {
-            type PhysicalType = $physical_type;
+            type WrappedType = $wrapped_type;
         }
     };
 }

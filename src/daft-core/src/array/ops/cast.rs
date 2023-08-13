@@ -4,7 +4,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, LogicalDataArray, TensorArray, TimestampArray,
         },
         DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedShapeTensorType,
         FixedSizeListArray, ImageMode, StructArray, TensorType, TimeUnit, Utf8Array,
@@ -39,11 +39,12 @@ use {
     std::ops::Deref,
 };
 
-fn arrow_logical_cast<T>(to_cast: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+fn arrow_logical_cast<T>(to_cast: &LogicalDataArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftLogicalType,
+    T::WrappedType: DaftArrowBackedType,
 {
-    // Cast from LogicalArray to the target DataType
+    // Cast from LogicalDataArray to the target DataType
     // using Arrow's casting mechanisms.
 
     // Note that Arrow Logical->Logical direct casts (what this method exposes)
@@ -55,7 +56,7 @@ where
 
     // Get the result of the Arrow Logical->Target cast.
     let result_arrow_array = {
-        // First, get corresponding Arrow LogicalArray of source DataArray
+        // First, get corresponding Arrow LogicalDataArray of source DataArray
         use DataType::*;
         let source_arrow_array = match source_dtype {
             // Wrapped primitives
@@ -83,7 +84,7 @@ where
             )?,
         };
 
-        // Then, cast source Arrow LogicalArray to target Arrow LogicalArray.
+        // Then, cast source Arrow LogicalDataArray to target Arrow LogicalDataArray.
 
         cast(
             source_arrow_array.as_ref(),
@@ -132,7 +133,7 @@ where
 
     if dtype.is_logical() {
         with_match_daft_logical_types!(dtype, |$T| {
-            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
+            return Ok(LogicalDataArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
         })
     }
     with_match_arrow_daft_types!(dtype, |$T| {
@@ -223,7 +224,7 @@ where
 
     if dtype.is_logical() {
         with_match_daft_logical_types!(dtype, |$T| {
-            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
+            return Ok(LogicalDataArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
         })
     }
     with_match_arrow_daft_types!(dtype, |$T| {
@@ -1110,8 +1111,8 @@ impl EmbeddingArray {
                 let fixed_shape_tensor_dtype =
                     DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
                 let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
-                let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array = fixed_shape_tensor_array
+                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1173,8 +1174,8 @@ impl ImageArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array = fixed_shape_tensor_array
+                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             DataType::Tensor(_) => {
@@ -1230,7 +1231,7 @@ impl ImageArray {
             DataType::FixedShapeTensor(inner_dtype, _) => {
                 let tensor_dtype = DataType::Tensor(inner_dtype.clone());
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                let tensor_array = tensor_array.downcast_logical_data_array::<TensorType>()?;
                 tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),
@@ -1298,14 +1299,14 @@ impl FixedShapeImageArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array = fixed_shape_tensor_array
+                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             (DataType::Image(_), DataType::FixedShapeImage(mode, _, _)) => {
                 let tensor_dtype = DataType::Tensor(Box::new(mode.get_dtype()));
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                let tensor_array = tensor_array.downcast_logical_data_array::<TensorType>()?;
                 tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1504,8 +1505,8 @@ impl TensorArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array = fixed_shape_tensor_array
+                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),
@@ -1613,11 +1614,15 @@ impl FixedShapeTensorArray {
 }
 
 #[cfg(feature = "python")]
-fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+fn cast_logical_to_python_array<T>(
+    array: &LogicalDataArray<T>,
+    dtype: &DataType,
+) -> DaftResult<Series>
 where
     T: DaftLogicalType,
-    LogicalArray<T>: AsArrow,
-    <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
+    T::WrappedType: DaftArrowBackedType,
+    LogicalDataArray<T>: AsArrow,
+    <LogicalDataArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     Python::with_gil(|py| {
         let arrow_dtype = array.logical_type().to_arrow()?;

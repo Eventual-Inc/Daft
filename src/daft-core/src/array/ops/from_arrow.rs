@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::DataArray,
-    datatypes::{logical::LogicalArray, DaftLogicalType, DaftPhysicalType, Field},
+    datatypes::{logical::LogicalDataArray, DaftLogicalType, DaftPhysicalType, Field, DaftArrowBackedType},
 };
 
 /// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn arrow2::array::Array>
@@ -19,10 +19,13 @@ impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     }
 }
 
-impl<L: DaftLogicalType> FromArrow for LogicalArray<L> {
+impl<L: DaftLogicalType> FromArrow for LogicalDataArray<L>
+where
+    L::WrappedType: DaftArrowBackedType
+{
     fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         let data_array_field = Field::new(field.name.clone(), field.dtype.to_physical());
         let physical = DataArray::try_from((data_array_field, arrow_arr))?;
-        Ok(LogicalArray::<L>::new(field.clone(), physical))
+        Ok(LogicalDataArray::<L>::new(field.clone(), physical))
     }
 }
