@@ -14,7 +14,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast_logical::<DateType>()?;
+        let downcasted = self.downcast_logical_data_array::<DateType>()?;
         Ok(downcasted.day()?.into_series())
     }
 
@@ -26,7 +26,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast_logical::<DateType>()?;
+        let downcasted = self.downcast_logical_data_array::<DateType>()?;
         Ok(downcasted.month()?.into_series())
     }
 
@@ -38,7 +38,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast_logical::<DateType>()?;
+        let downcasted = self.downcast_logical_data_array::<DateType>()?;
         Ok(downcasted.year()?.into_series())
     }
 
@@ -50,7 +50,7 @@ impl Series {
             )));
         }
 
-        let downcasted = self.downcast_logical::<DateType>()?;
+        let downcasted = self.downcast_logical_data_array::<DateType>()?;
         Ok(downcasted.day_of_week()?.into_series())
     }
 }

@@ -4,22 +4,38 @@ use crate::datatypes::{BooleanArray, DaftLogicalType, DateType, Field};
 use common_error::DaftResult;
 
 use super::{
-    DataArray, DataType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
-    FixedShapeTensorType, ImageType, TensorType, TimestampType,
+    DaftArrowBackedType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    FixedShapeImageType, FixedShapeTensorType, ImageType, TensorType, TimestampType,
 };
-pub struct LogicalArray<L: DaftLogicalType> {
+
+/// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
+/// field.datatype() to the underlying array.
+pub struct LogicalArray<L: DaftLogicalType, PhysicalArray> {
     pub field: Arc<Field>,
-    pub physical: DataArray<L::PhysicalType>,
+    pub physical: PhysicalArray,
     marker_: PhantomData<L>,
 }
 
-impl<L: DaftLogicalType> Clone for LogicalArray<L> {
+/// LogicalArrays implementations that wrap different underlying types
+#[allow(warnings)] // the "where" bounds in a type alias are not enforced on the lhs, but are enforced on the rhs
+pub type LogicalDataArray<L: DaftLogicalType>
+where
+    L::PhysicalType: DaftArrowBackedType,
+= LogicalArray<L, DataArray<<L as DaftLogicalType>::PhysicalType>>;
+
+impl<L: DaftLogicalType> Clone for LogicalDataArray<L>
+where
+    L::PhysicalType: DaftArrowBackedType,
+{
     fn clone(&self) -> Self {
         LogicalArray::new(self.field.clone(), self.physical.clone())
     }
 }
 
-impl<L: DaftLogicalType + 'static> LogicalArray<L> {
+impl<L: DaftLogicalType> LogicalDataArray<L>
+where
+    L::PhysicalType: DaftArrowBackedType,
+{
     pub fn new<F: Into<Arc<Field>>>(field: F, physical: DataArray<L::PhysicalType>) -> Self {
         let field = field.into();
         assert!(
@@ -69,6 +85,8 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
         self.physical.data_type()
     }
 
+    // Linter bug: doesn't pick up `is_empty` which is defined below
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.physical.len()
     }
@@ -107,15 +125,15 @@ impl<L: DaftLogicalType + 'static> LogicalArray<L> {
     }
 }
 
-pub type Decimal128Array = LogicalArray<Decimal128Type>;
-pub type DateArray = LogicalArray<DateType>;
-pub type DurationArray = LogicalArray<DurationType>;
-pub type EmbeddingArray = LogicalArray<EmbeddingType>;
-pub type ImageArray = LogicalArray<ImageType>;
-pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
-pub type TimestampArray = LogicalArray<TimestampType>;
-pub type TensorArray = LogicalArray<TensorType>;
-pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
+pub type Decimal128Array = LogicalDataArray<Decimal128Type>;
+pub type DateArray = LogicalDataArray<DateType>;
+pub type DurationArray = LogicalDataArray<DurationType>;
+pub type EmbeddingArray = LogicalDataArray<EmbeddingType>;
+pub type ImageArray = LogicalDataArray<ImageType>;
+pub type FixedShapeImageArray = LogicalDataArray<FixedShapeImageType>;
+pub type TimestampArray = LogicalDataArray<TimestampType>;
+pub type TensorArray = LogicalDataArray<TensorType>;
+pub type FixedShapeTensorArray = LogicalDataArray<FixedShapeTensorType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 
