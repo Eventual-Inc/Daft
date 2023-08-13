@@ -36,7 +36,7 @@ pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
 pub trait DaftArrowBackedType: Send + Sync + DaftPhysicalType + 'static {}
 
 pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
-    type PhysicalType: DaftArrowBackedType;
+    type PhysicalType: DaftPhysicalType;
 }
 
 macro_rules! impl_daft_arrow_datatype {

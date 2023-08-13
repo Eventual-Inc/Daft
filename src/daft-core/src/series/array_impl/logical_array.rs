@@ -92,7 +92,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
                 Ok(self
                     .0
-                    .if_else(other.downcast_logical()?, predicate.downcast()?)?
+                    .if_else(other.downcast_logical_data_array()?, predicate.downcast()?)?
                     .into_series())
             }
 

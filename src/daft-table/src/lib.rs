@@ -8,7 +8,7 @@ use num_traits::ToPrimitive;
 use daft_core::array::ops::GroupIndices;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::logical::LogicalArray;
+use daft_core::datatypes::logical::LogicalDataArray;
 use daft_core::datatypes::{BooleanType, DataType, Field, UInt64Array};
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
@@ -74,7 +74,7 @@ impl Table {
                 for (field_name, field) in schema.fields.iter() {
                     if field.dtype.is_logical() {
                         with_match_daft_logical_types!(field.dtype, |$T| {
-                            columns.push(LogicalArray::<$T>::empty(field_name, &field.dtype).into_series())
+                            columns.push(LogicalDataArray::<$T>::empty(field_name, &field.dtype).into_series())
                         })
                     } else {
                         with_match_physical_daft_types!(field.dtype, |$T| {

@@ -1,6 +1,6 @@
 use crate::datatypes::*;
 
-use crate::datatypes::logical::{FixedShapeImageArray, ImageArray, LogicalArray};
+use crate::datatypes::logical::{FixedShapeImageArray, ImageArray, LogicalDataArray};
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
@@ -20,7 +20,12 @@ impl Series {
         }
     }
 
-    pub fn downcast_logical<L: DaftLogicalType>(&self) -> DaftResult<&LogicalArray<L>> {
+    pub fn downcast_logical_data_array<L: DaftLogicalType>(
+        &self,
+    ) -> DaftResult<&LogicalDataArray<L>>
+    where
+        L::PhysicalType: DaftPhysicalType,
+    {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
             None => panic!(
@@ -128,11 +133,11 @@ impl Series {
     }
 
     pub fn image(&self) -> DaftResult<&ImageArray> {
-        self.downcast_logical()
+        self.downcast_logical_data_array()
     }
 
     pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
-        self.downcast_logical()
+        self.downcast_logical_data_array()
     }
 
     #[cfg(feature = "python")]
