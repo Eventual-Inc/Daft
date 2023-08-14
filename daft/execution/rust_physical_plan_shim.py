@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterator, TypeVar, cast
 
 from daft.context import get_context
-from daft.daft import FileFormat, FileFormatConfig, PyExpr, PySchema, PyTable
+from daft.daft import FileFormat, FileFormatConfig, JoinType, PyExpr, PySchema, PyTable
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -115,6 +115,27 @@ def reduce_merge(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     reduce_instruction = execution_step.ReduceMerge()
     return physical_plan.reduce(input, reduce_instruction)
+
+
+def join(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    right: physical_plan.InProgressPhysicalPlan[PartitionT],
+    left_on: list[PyExpr],
+    right_on: list[PyExpr],
+    output_projection: list[PyExpr],
+    join_type: JoinType,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
+    right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
+    output_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in output_projection])
+    return physical_plan.join(
+        left_plan=input,
+        right_plan=right,
+        left_on=left_on_expr_proj,
+        right_on=right_on_expr_proj,
+        output_projection=output_expr_proj,
+        how=join_type,
+    )
 
 
 def write_file(

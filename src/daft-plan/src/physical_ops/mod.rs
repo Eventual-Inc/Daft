@@ -8,6 +8,7 @@ mod filter;
 mod flatten;
 #[cfg(feature = "python")]
 mod in_memory;
+mod join;
 mod json;
 mod limit;
 mod parquet;
@@ -26,6 +27,7 @@ pub use filter::Filter;
 pub use flatten::Flatten;
 #[cfg(feature = "python")]
 pub use in_memory::InMemoryScan;
+pub use join::Join;
 pub use json::{TabularScanJson, TabularWriteJson};
 pub use limit::Limit;
 pub use parquet::{TabularScanParquet, TabularWriteParquet};

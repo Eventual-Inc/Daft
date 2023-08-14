@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::logical_plan::LogicalPlan;
+use crate::{logical_plan::LogicalPlan, JoinType};
 
 #[cfg(feature = "python")]
 use {
@@ -189,6 +189,41 @@ impl LogicalPlanBuilder {
             })
             .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
         let logical_plan: LogicalPlan = Aggregate::new(agg_exprs, self.plan.clone()).into();
+        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
+        Ok(logical_plan_builder)
+    }
+
+    pub fn join(
+        &self,
+        other: &Self,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        output_projection: Vec<PyExpr>,
+        output_schema: &PySchema,
+        join_type: JoinType,
+    ) -> PyResult<LogicalPlanBuilder> {
+        let left_on_exprs = left_on
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let right_on_exprs = right_on
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let output_projection_exprs = output_projection
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let logical_plan: LogicalPlan = ops::Join::new(
+            other.plan.clone(),
+            left_on_exprs,
+            right_on_exprs,
+            output_projection_exprs,
+            output_schema.clone().into(),
+            join_type,
+            self.plan.clone(),
+        )
+        .into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }

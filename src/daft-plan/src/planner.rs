@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::sync::Arc;
 
 use common_error::DaftResult;
@@ -7,13 +8,13 @@ use crate::logical_plan::LogicalPlan;
 use crate::ops::{
     Aggregate as LogicalAggregate, Coalesce as LogicalCoalesce, Concat as LogicalConcat,
     Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-    Limit as LogicalLimit, Project as LogicalProject, Repartition as LogicalRepartition,
-    Sink as LogicalSink, Sort as LogicalSort, Source,
+    Join as LogicalJoin, Limit as LogicalLimit, Project as LogicalProject,
+    Repartition as LogicalRepartition, Sink as LogicalSink, Sort as LogicalSort, Source,
 };
-use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::{ExternalInfo as ExternalSourceInfo, FileFormatConfig, SourceInfo};
+use crate::{physical_ops::*, PartitionSpec};
 use crate::{FileFormat, PartitionScheme};
 
 #[cfg(feature = "python")]
@@ -290,6 +291,59 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             Ok(PhysicalPlan::Concat(Concat::new(
                 other_physical.into(),
                 input_physical.into(),
+            )))
+        }
+        LogicalPlan::Join(LogicalJoin {
+            right,
+            input,
+            left_on,
+            right_on,
+            output_projection,
+            join_type,
+            ..
+        }) => {
+            let mut left_physical = plan(input)?;
+            let mut right_physical = plan(right)?;
+            let left_pspec = input.partition_spec();
+            let right_pspec = right.partition_spec();
+            let num_partitions = max(left_pspec.num_partitions, right_pspec.num_partitions);
+            let new_left_pspec = Arc::new(PartitionSpec::new_internal(
+                PartitionScheme::Hash,
+                num_partitions,
+                Some(left_on.clone()),
+            ));
+            let new_right_pspec = Arc::new(PartitionSpec::new_internal(
+                PartitionScheme::Hash,
+                num_partitions,
+                Some(right_on.clone()),
+            ));
+            if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
+                && left_pspec != new_left_pspec
+            {
+                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    num_partitions,
+                    left_on.clone(),
+                    left_physical.into(),
+                ));
+                left_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+            }
+            if (num_partitions > 1 || right_pspec.num_partitions != num_partitions)
+                && right_pspec != new_right_pspec
+            {
+                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    num_partitions,
+                    right_on.clone(),
+                    right_physical.into(),
+                ));
+                right_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+            }
+            Ok(PhysicalPlan::Join(Join::new(
+                right_physical.into(),
+                left_on.clone(),
+                right_on.clone(),
+                output_projection.clone(),
+                *join_type,
+                left_physical.into(),
             )))
         }
         LogicalPlan::Sink(LogicalSink {

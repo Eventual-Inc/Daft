@@ -5,6 +5,7 @@ import itertools
 import pytest
 
 from daft import utils
+from daft.daft import JoinType
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.series import Series
@@ -45,7 +46,7 @@ def test_table_join_single_column(dtype, data) -> None:
         [col("x").cast(dtype), col("x_ind")]
     )
     right_table = Table.from_pydict({"y": r, "y_ind": list(range(len(r)))})
-    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")], how="inner")
+    result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")], how=JoinType.Inner)
 
     assert result_table.column_names() == ["x", "x_ind", "y", "y_ind"]
 
@@ -60,7 +61,7 @@ def test_table_join_single_column(dtype, data) -> None:
     assert result_table.get_column("y").to_pylist() == result_r
 
     # make sure the result is the same with right table on left
-    result_table = right_table.join(left_table, right_on=[col("x")], left_on=[col("y")], how="inner")
+    result_table = right_table.join(left_table, right_on=[col("x")], left_on=[col("y")], how=JoinType.Inner)
 
     assert result_table.column_names() == ["y", "y_ind", "x", "x_ind"]
 
@@ -233,7 +234,6 @@ def test_table_join_single_column_name_conflicts_different_named_join() -> None:
 
 
 def test_table_join_single_column_name_multiple_conflicts() -> None:
-
     left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
     right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [10, 11, 12, 13]})
 

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from daft.daft import FileFormat, FileFormatConfig
+from daft.daft import FileFormat, FileFormatConfig, JoinType
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -34,7 +34,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.builder import JoinType
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartialPartitionMetadata

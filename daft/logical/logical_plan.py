@@ -10,14 +10,20 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 import fsspec
 
 from daft.context import get_context
-from daft.daft import FileFormat, FileFormatConfig, PartitionScheme, PartitionSpec
+from daft.daft import (
+    FileFormat,
+    FileFormatConfig,
+    JoinType,
+    PartitionScheme,
+    PartitionSpec,
+)
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.expressions.testing import expr_structurally_equal
 from daft.internal.treenode import TreeNode
 from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
-from daft.logical.builder import JoinType, LogicalPlanBuilder
+from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -198,7 +204,7 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
         right: PyLogicalPlanBuilder,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        how: JoinType = JoinType.INNER,
+        how: JoinType = JoinType.Inner,
     ) -> PyLogicalPlanBuilder:
         return Join(
             self._plan,
@@ -1146,7 +1152,7 @@ class Join(BinaryNode):
         right: LogicalPlan,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        how: JoinType = JoinType.INNER,
+        how: JoinType = JoinType.Inner,
     ) -> None:
         assert len(left_on) == len(right_on), "left_on and right_on must match size"
 
@@ -1165,13 +1171,13 @@ class Join(BinaryNode):
 
         self._how = how
         output_schema: Schema
-        if how == JoinType.LEFT:
+        if how == JoinType.Left:
             num_partitions = left.num_partitions()
             raise NotImplementedError()
-        elif how == JoinType.RIGHT:
+        elif how == JoinType.Right:
             num_partitions = right.num_partitions()
             raise NotImplementedError()
-        elif how == JoinType.INNER:
+        elif how == JoinType.Inner:
             num_partitions = max(left.num_partitions(), right.num_partitions())
             right_drop_set = {r.name() for l, r in zip(left_on, right_on) if l.name() == r.name()}
             left_columns = ExpressionsProjection.from_schema(left.schema())

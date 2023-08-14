@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import pathlib
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import TYPE_CHECKING
 
 import fsspec
 
-from daft.daft import FileFormat, FileFormatConfig, PartitionScheme, PartitionSpec
+from daft.daft import (
+    FileFormat,
+    FileFormatConfig,
+    JoinType,
+    PartitionScheme,
+    PartitionSpec,
+)
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.resource_request import ResourceRequest
@@ -15,12 +20,6 @@ from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
     from daft.planner import QueryPlanner
-
-
-class JoinType(Enum):
-    INNER = "inner"
-    LEFT = "left"
-    RIGHT = "right"
 
 
 class LogicalPlanBuilder(ABC):
@@ -149,7 +148,7 @@ class LogicalPlanBuilder(ABC):
         right: LogicalPlanBuilder,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        how: JoinType = JoinType.INNER,
+        how: JoinType = JoinType.Inner,
     ) -> LogicalPlanBuilder:
         pass
 

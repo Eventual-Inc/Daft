@@ -7,6 +7,7 @@ import pyarrow as pa
 from loguru import logger
 
 from daft.arrow_utils import ensure_table
+from daft.daft import JoinType
 from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
@@ -284,9 +285,9 @@ class Table:
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
         output_projection: ExpressionsProjection | None = None,
-        how: str = "inner",
+        how: JoinType = JoinType.Inner,
     ) -> Table:
-        if how != "inner":
+        if how != JoinType.Inner:
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
