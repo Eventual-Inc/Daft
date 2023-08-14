@@ -65,7 +65,7 @@ impl PseudoArrowArray<PyObject> {
                 .unzip()
         };
 
-        let new_validity: Option<Bitmap> = Some(Bitmap::from_iter(new_validity.into_iter()));
+        let new_validity: Option<Bitmap> = Some(Bitmap::from_iter(new_validity));
 
         PseudoArrowArray::new(new_values.into(), new_validity)
     }

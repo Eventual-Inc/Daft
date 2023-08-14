@@ -158,14 +158,14 @@ impl TimestampArray {
         let res = self.get(idx).map_or_else(
             || "None".to_string(),
             |val| -> String {
-                use crate::datatypes::DataType::Timestamp;
                 use crate::array::ops::cast::{
-                    timestamp_to_str_naive,
-                    timestamp_to_str_offset,
-                    timestamp_to_str_tz,
+                    timestamp_to_str_naive, timestamp_to_str_offset, timestamp_to_str_tz,
                 };
+                use crate::datatypes::DataType::Timestamp;
 
-                let Timestamp(unit, timezone) = &self.field.dtype else { panic!("Wrong dtype for TimestampArray: {}", self.field.dtype) };
+                let Timestamp(unit, timezone) = &self.field.dtype else {
+                    panic!("Wrong dtype for TimestampArray: {}", self.field.dtype)
+                };
 
                 timezone.as_ref().map_or_else(
                     || timestamp_to_str_naive(val, unit),
@@ -175,14 +175,16 @@ impl TimestampArray {
                         // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
                         if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
                             timestamp_to_str_offset(val, unit, &offset)
-                        } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(timezone) {
+                        } else if let Ok(tz) =
+                            arrow2::temporal_conversions::parse_offset_tz(timezone)
+                        {
                             timestamp_to_str_tz(val, unit, &tz)
                         } else {
                             panic!("Unable to parse timezone string {}", timezone)
                         }
                     },
                 )
-            }
+            },
         );
         Ok(res)
     }
@@ -195,9 +197,11 @@ impl Decimal128Array {
             |val| -> String {
                 use crate::array::ops::cast::decimal128_to_str;
                 use crate::datatypes::DataType::Decimal128;
-                let Decimal128(precision, scale) = &self.field.dtype else { panic!("Wrong dtype for Decimal128Array: {}", self.field.dtype) };
+                let Decimal128(precision, scale) = &self.field.dtype else {
+                    panic!("Wrong dtype for Decimal128Array: {}", self.field.dtype)
+                };
                 decimal128_to_str(val, *precision as u8, *scale as i8)
-            }
+            },
         );
         Ok(res)
     }

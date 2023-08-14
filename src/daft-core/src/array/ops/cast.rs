@@ -362,7 +362,9 @@ impl TimestampArray {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Utf8 => {
-                let DataType::Timestamp(unit, timezone) = self.logical_type() else { panic!("Wrong dtype for TimestampArray: {}", self.logical_type()) };
+                let DataType::Timestamp(unit, timezone) = self.logical_type() else {
+                    panic!("Wrong dtype for TimestampArray: {}", self.logical_type())
+                };
 
                 let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
