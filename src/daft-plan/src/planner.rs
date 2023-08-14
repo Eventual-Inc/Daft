@@ -6,9 +6,9 @@ use daft_dsl::Expr;
 use crate::logical_plan::LogicalPlan;
 use crate::ops::{
     Aggregate as LogicalAggregate, Coalesce as LogicalCoalesce, Concat as LogicalConcat,
-    Distinct as LogicalDistinct, Filter as LogicalFilter, Limit as LogicalLimit,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sink as LogicalSink,
-    Sort as LogicalSort, Source,
+    Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
+    Limit as LogicalLimit, Project as LogicalProject, Repartition as LogicalRepartition,
+    Sink as LogicalSink, Sort as LogicalSort, Source,
 };
 use crate::physical_ops::*;
 use crate::physical_plan::PhysicalPlan;
@@ -86,6 +86,17 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 *limit,
                 logical_plan.partition_spec().num_partitions,
                 Arc::new(input_physical),
+            )))
+        }
+        LogicalPlan::Explode(LogicalExplode {
+            input,
+            explode_exprs,
+            ..
+        }) => {
+            let input_physical = plan(input)?;
+            Ok(PhysicalPlan::Explode(Explode::new(
+                explode_exprs.clone(),
+                input_physical.into(),
             )))
         }
         LogicalPlan::Sort(LogicalSort {
