@@ -2,12 +2,13 @@
 
 mod azure_blob;
 pub mod config;
-mod http;
 mod google_cloud;
+mod http;
 mod local;
 mod object_io;
 mod s3_like;
 use azure_blob::AzureBlobSource;
+use google_cloud::GCSSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
@@ -139,6 +140,8 @@ impl IOClient {
             SourceType::AzureBlob => {
                 AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
             }
+
+            SourceType::GCS => GCSSource::get_client().await? as Arc<dyn ObjectSource>,
         };
 
         if w_handle.get(source_type).is_none() {
@@ -203,6 +206,7 @@ pub enum SourceType {
     Http,
     S3,
     AzureBlob,
+    GCS,
 }
 
 impl std::fmt::Display for SourceType {
@@ -212,6 +216,7 @@ impl std::fmt::Display for SourceType {
             SourceType::Http => write!(f, "http"),
             SourceType::S3 => write!(f, "s3"),
             SourceType::AzureBlob => write!(f, "AzureBlob"),
+            SourceType::GCS => write!(f, "gcs"),
         }
     }
 }
@@ -235,6 +240,7 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "http" | "https" => Ok((SourceType::Http, fixed_input)),
         "s3" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" => Ok((SourceType::AzureBlob, fixed_input)),
+        "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }

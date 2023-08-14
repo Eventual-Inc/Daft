@@ -161,6 +161,10 @@ DAFT_CAN_READ_FILES = [
         "azure/mvp",
         "az://public-anonymous/mvp.parquet",
     ),
+    (
+        "gcs/mvp",
+        "gs://daft-public-data-gs/mvp.parquet",
+    ),
 ]
 
 
