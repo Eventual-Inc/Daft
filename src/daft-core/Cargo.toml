@@ -23,7 +23,7 @@ serde_json = {workspace = true}
 [dependencies.image]
 default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.24.6"
+version = "0.24.7"
 
 [dependencies.indexmap]
 features = ["serde"]
