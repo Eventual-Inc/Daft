@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType
@@ -130,3 +131,23 @@ def test_schema_pickling():
     assert s1 != t_empty.schema()
     t_empty_schema_copy = copy.deepcopy(t_empty.schema())
     assert t_empty.schema() == t_empty_schema_copy
+
+
+def test_schema_from_pyarrow():
+    pa_schema = pa.schema(
+        {
+            "int": pa.int64(),
+            "str": pa.string(),
+            "list": pa.list_(pa.int64()),
+        }
+    )
+
+    expected_daft_schema = Schema._from_field_name_and_types(
+        [
+            ("int", DataType.int64()),
+            ("str", DataType.string()),
+            ("list", DataType.list("item", DataType.int64())),
+        ]
+    )
+
+    assert Schema.from_pyarrow_schema(pa_schema) == expected_daft_schema
