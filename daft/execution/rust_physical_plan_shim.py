@@ -3,12 +3,19 @@ from __future__ import annotations
 from typing import Iterator, TypeVar, cast
 
 from daft.context import get_context
-from daft.daft import FileFormat, FileFormatConfig, JoinType, PyExpr, PySchema, PyTable
+from daft.daft import (
+    FileFormat,
+    FileFormatConfig,
+    JoinType,
+    PyExpr,
+    PySchema,
+    PyTable,
+    ResourceRequest,
+)
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.table import Table
 
 PartitionT = TypeVar("PartitionT")
@@ -27,7 +34,7 @@ def local_aggregate(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=aggregation_step,
-        resource_request=ResourceRequest(),  # TODO use real resource request
+        resource_request=ResourceRequest(),
     )
 
 
@@ -52,13 +59,13 @@ def tabular_scan(
 
 
 def project(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT], projection: list[PyExpr]
+    input: physical_plan.InProgressPhysicalPlan[PartitionT], projection: list[PyExpr], resource_request: ResourceRequest
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.Project(expr_projection),
-        resource_request=ResourceRequest(),  # TODO(Clark): Use real ResourceRequest.
+        resource_request=resource_request,
     )
 
 
@@ -83,7 +90,7 @@ def explode(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.MapPartition(explode_op),
-        resource_request=ResourceRequest(),  # TODO(Clark): Use real ResourceRequest.
+        resource_request=ResourceRequest(),
     )
 
 
@@ -115,7 +122,7 @@ def split_by_hash(
     return physical_plan.pipeline_instruction(
         input,
         fanout_instruction,
-        ResourceRequest(),  # TODO(Clark): Propagate resource request.
+        ResourceRequest(),
     )
 
 

@@ -23,7 +23,7 @@ except ImportError:
     )
     raise
 
-from daft.daft import FileFormatConfig
+from daft.daft import FileFormatConfig, ResourceRequest
 from daft.datatype import DataType
 from daft.execution.execution_step import (
     FanoutInstruction,
@@ -35,7 +35,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
-from daft.resource_request import ResourceRequest
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     PartID,

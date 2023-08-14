@@ -12,10 +12,10 @@ from daft.daft import (
     JoinType,
     PartitionScheme,
     PartitionSpec,
+    ResourceRequest,
 )
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
@@ -53,12 +53,6 @@ class LogicalPlanBuilder(ABC):
         Number of partitions for the current logical plan.
         """
         return self.partition_spec().num_partitions
-
-    @abstractmethod
-    def resource_request(self) -> ResourceRequest:
-        """
-        Returns a custom ResourceRequest if one has been attached to this logical plan.
-        """
 
     @abstractmethod
     def pretty_print(self) -> str:

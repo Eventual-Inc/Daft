@@ -76,7 +76,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat
+from daft.daft import ImageFormat, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, ImageMode, TimeUnit
 from daft.expressions import col, lit
@@ -106,4 +106,5 @@ __all__ = [
     "TimeUnit",
     "register_viz_hook",
     "udf",
+    "ResourceRequest",
 ]

@@ -84,22 +84,25 @@ impl LogicalPlan {
                 right,
                 left_on,
                 ..
-            }) => match max(
-                input.partition_spec().num_partitions,
-                right.partition_spec().num_partitions,
-            ) {
-                // NOTE: This duplicates the repartitioning logic in the planner, where we
-                // conditionally repartition the left and right tables.
-                // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
-                // to be an entirely planner-side concept.
-                1 => input.partition_spec(),
-                num_partitions => PartitionSpec::new_internal(
-                    PartitionScheme::Hash,
-                    num_partitions,
-                    Some(left_on.clone()),
-                )
-                .into(),
-            },
+            }) => {
+                let input_partition_spec = input.partition_spec();
+                match max(
+                    input_partition_spec.num_partitions,
+                    right.partition_spec().num_partitions,
+                ) {
+                    // NOTE: This duplicates the repartitioning logic in the planner, where we
+                    // conditionally repartition the left and right tables.
+                    // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
+                    // to be an entirely planner-side concept.
+                    1 => input_partition_spec,
+                    num_partitions => PartitionSpec::new_internal(
+                        PartitionScheme::Hash,
+                        num_partitions,
+                        Some(left_on.clone()),
+                    )
+                    .into(),
+                }
+            }
             Self::Sink(Sink { input, .. }) => input.partition_spec(),
         }
     }

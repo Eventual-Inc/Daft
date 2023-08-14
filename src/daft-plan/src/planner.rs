@@ -66,11 +66,15 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             )),
         },
         LogicalPlan::Project(LogicalProject {
-            input, projection, ..
+            input,
+            projection,
+            resource_request,
+            ..
         }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Project(Project::new(
                 projection.clone(),
+                resource_request.clone(),
                 input_physical.into(),
             )))
         }

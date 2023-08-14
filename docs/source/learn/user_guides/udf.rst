@@ -186,7 +186,7 @@ Custom resources can be requested when you call :meth:`df.with_column() <daft.Da
 
 .. code:: python
 
-    from daft.resource_request import ResourceRequest
+    from daft import ResourceRequest
 
     # Runs the UDF `func` with the specified resource requests
     df = df.with_column(

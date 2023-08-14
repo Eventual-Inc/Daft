@@ -16,6 +16,7 @@ from daft.daft import (
     JoinType,
     PartitionScheme,
     PartitionSpec,
+    ResourceRequest,
 )
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -26,7 +27,6 @@ from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.table import Table
 
@@ -57,9 +57,6 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
 
     def partition_spec(self) -> PartitionSpec:
         return self._plan.partition_spec()
-
-    def resource_request(self) -> ResourceRequest:
-        return self._plan.resource_request()
 
     def pretty_print(self) -> str:
         return self._plan.pretty_print()

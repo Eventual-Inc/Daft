@@ -219,7 +219,11 @@ impl PhysicalPlan {
                 limit,
                 ..
             }) => tabular_scan(py, schema, file_info, file_format_config, limit),
-            PhysicalPlan::Project(Project { input, projection }) => {
+            PhysicalPlan::Project(Project {
+                input,
+                projection,
+                resource_request,
+            }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let projection_pyexprs: Vec<PyExpr> = projection
                     .iter()
@@ -228,7 +232,7 @@ impl PhysicalPlan {
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "project"))?
-                    .call1((upstream_iter, projection_pyexprs))?;
+                    .call1((upstream_iter, projection_pyexprs, resource_request.clone()))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::Filter(Filter { input, predicate }) => {

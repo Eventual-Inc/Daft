@@ -10,14 +10,13 @@ import psutil
 import pyarrow as pa
 from loguru import logger
 
-from daft.daft import FileFormatConfig
+from daft.daft import FileFormatConfig, ResourceRequest
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     PartID,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::logical_plan::LogicalPlan;
+use crate::{logical_plan::LogicalPlan, ResourceRequest};
 
 #[cfg(feature = "python")]
 use {
@@ -82,6 +82,7 @@ impl LogicalPlanBuilder {
         &self,
         projection: Vec<PyExpr>,
         projected_schema: &PySchema,
+        resource_request: ResourceRequest,
     ) -> PyResult<LogicalPlanBuilder> {
         let projection_exprs = projection
             .iter()
@@ -90,6 +91,7 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan = ops::Project::new(
             projection_exprs,
             projected_schema.clone().into(),
+            resource_request,
             self.plan.clone(),
         )
         .into();
