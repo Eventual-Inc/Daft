@@ -21,11 +21,11 @@ from daft.daft import (
     JoinType,
     JsonSourceConfig,
     ParquetSourceConfig,
+    ResourceRequest,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionMetadata,

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from daft import resource_request
-from daft.daft import PartitionScheme
+from daft.daft import PartitionScheme, ResourceRequest
 from daft.expressions import ExpressionsProjection, col
 from daft.internal.rule import Rule
 from daft.logical.logical_plan import (
@@ -404,7 +403,7 @@ class FoldProjections(Rule[LogicalPlan]):
             return Projection(
                 grandchild,
                 ExpressionsProjection(new_exprs),
-                custom_resource_request=resource_request.ResourceRequest.max_resources(
+                custom_resource_request=ResourceRequest.max_resources(
                     [parent.resource_request(), child.resource_request()]
                 ),
             )

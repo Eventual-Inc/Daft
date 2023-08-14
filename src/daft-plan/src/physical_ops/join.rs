@@ -3,8 +3,9 @@ use std::sync::Arc;
 use daft_dsl::Expr;
 
 use crate::{physical_plan::PhysicalPlan, JoinType};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Join {
     pub right: Arc<PhysicalPlan>,
     pub left_on: Vec<Expr>,

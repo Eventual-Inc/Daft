@@ -47,8 +47,6 @@ def uuid_ext_type() -> UuidType:
 @pytest.fixture(params=[False, True])
 def use_new_planner(request) -> DaftContext:
     old_ctx = get_context()
-    if request.param and old_ctx.is_ray_runner:
-        pytest.skip()
     yield set_new_planner() if request.param else set_old_planner()
     _set_context(old_ctx)
 

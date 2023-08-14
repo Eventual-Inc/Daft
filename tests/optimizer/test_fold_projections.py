@@ -4,10 +4,10 @@ import pytest
 
 import daft
 from daft import col
+from daft.daft import ResourceRequest
 from daft.internal.rule_runner import Once, RuleBatch, RuleRunner
 from daft.logical.logical_plan import LogicalPlan
 from daft.logical.optimizer import FoldProjections
-from daft.resource_request import ResourceRequest
 from tests.optimizer.conftest import assert_plan_eq
 
 

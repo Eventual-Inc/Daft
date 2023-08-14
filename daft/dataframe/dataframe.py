@@ -24,13 +24,18 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, JoinType, PartitionScheme, PartitionSpec
+from daft.daft import (
+    FileFormat,
+    JoinType,
+    PartitionScheme,
+    PartitionSpec,
+    ResourceRequest,
+)
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import Table

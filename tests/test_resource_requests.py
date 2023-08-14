@@ -8,7 +8,7 @@ import pytest
 import ray
 
 import daft
-from daft import resource_request, udf
+from daft import ResourceRequest, udf
 from daft.context import get_context
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
@@ -21,7 +21,7 @@ def no_gpu_available() -> bool:
 DATA = {"id": [i for i in range(100)]}
 
 
-@udf(return_dtype=int, input_columns={"c": list})
+@udf(return_dtype=daft.DataType.int64())
 def my_udf(c):
     return [1] * len(c)
 
@@ -35,13 +35,13 @@ def my_udf(c):
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_cpus():
+def test_requesting_too_many_cpus(use_new_planner):
     df = daft.from_pydict(DATA)
 
     df = df.with_column(
         "foo",
         my_udf(col("id")),
-        resource_request=resource_request.ResourceRequest(num_cpus=multiprocessing.cpu_count() + 1),
+        resource_request=ResourceRequest(num_cpus=multiprocessing.cpu_count() + 1),
     )
 
     with pytest.raises(RuntimeError):
@@ -49,11 +49,9 @@ def test_requesting_too_many_cpus():
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_gpus():
+def test_requesting_too_many_gpus(use_new_planner):
     df = daft.from_pydict(DATA)
-    df = df.with_column(
-        "foo", my_udf(col("id")), resource_request=resource_request.ResourceRequest(num_gpus=cuda_device_count() + 1)
-    )
+    df = df.with_column("foo", my_udf(col("id")), resource_request=ResourceRequest(num_gpus=cuda_device_count() + 1))
 
     with pytest.raises(RuntimeError):
         df.collect()
@@ -66,7 +64,7 @@ def test_requesting_too_much_memory():
     df = df.with_column(
         "foo",
         my_udf(col("id")),
-        resource_request=resource_request.ResourceRequest(memory_bytes=psutil.virtual_memory().total + 1),
+        resource_request=ResourceRequest(memory_bytes=psutil.virtual_memory().total + 1),
     )
 
     with pytest.raises(RuntimeError):
@@ -78,7 +76,7 @@ def test_requesting_too_much_memory():
 ###
 
 
-@udf(return_dtype=int, input_columns={"c": list})
+@udf(return_dtype=daft.DataType.int64())
 def assert_resources(c, num_cpus=None, num_gpus=None, memory=None):
     assigned_resources = ray.get_runtime_context().get_assigned_resources()
 
@@ -99,13 +97,13 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_rayrunner():
+def test_with_column_rayrunner(use_new_planner):
     df = daft.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
         "resources_ok",
         assert_resources(col("id"), num_cpus=1, num_gpus=None, memory=1_000_000),
-        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=1_000_000, num_gpus=None),
+        resource_request=ResourceRequest(num_cpus=1, memory_bytes=1_000_000, num_gpus=None),
     )
 
     df.collect()
@@ -115,7 +113,7 @@ def test_with_column_rayrunner():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_folded_rayrunner():
+def test_with_column_folded_rayrunner(use_new_planner):
     df = daft.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests
@@ -127,12 +125,12 @@ def test_with_column_folded_rayrunner():
     df = df.with_column(
         "more_memory_request",
         assert_resources(col("id"), **expected),
-        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=5_000_000, num_gpus=None),
+        resource_request=ResourceRequest(num_cpus=1, memory_bytes=5_000_000, num_gpus=None),
     )
     df = df.with_column(
         "more_cpu_request",
         assert_resources(col("id"), **expected),
-        resource_request=resource_request.ResourceRequest(num_cpus=1, memory_bytes=None, num_gpus=None),
+        resource_request=ResourceRequest(num_cpus=1, memory_bytes=None, num_gpus=None),
     )
     df.collect()
 
@@ -142,7 +140,7 @@ def test_with_column_folded_rayrunner():
 ###
 
 
-@udf(return_dtype=int, input_columns={"c": list})
+@udf(return_dtype=daft.DataType.int64())
 def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
     cuda_visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
     # Env var not set: program is free to use any number of GPUs
@@ -167,7 +165,7 @@ def test_with_column_pyrunner_gpu():
     df = df.with_column(
         "foo",
         assert_num_cuda_visible_devices(col("id"), num_gpus=cuda_device_count()),
-        resource_request=resource_request.ResourceRequest(num_gpus=1),
+        resource_request=ResourceRequest(num_gpus=1),
     )
 
     df.collect()
@@ -182,7 +180,7 @@ def test_with_column_rayrunner_gpu(num_gpus):
     df = df.with_column(
         "num_cuda_visible_devices",
         assert_num_cuda_visible_devices(col("id"), num_gpus=num_gpus if num_gpus is not None else 0),
-        resource_request=resource_request.ResourceRequest(num_gpus=num_gpus),
+        resource_request=ResourceRequest(num_gpus=num_gpus),
     )
 
     df.collect()
@@ -197,12 +195,12 @@ def test_with_column_max_resources_rayrunner_gpu():
     df = df.with_column(
         "0_gpu_col",
         assert_num_cuda_visible_devices(col("id"), num_gpus=1),
-        resource_request=resource_request.ResourceRequest(num_gpus=0),
+        resource_request=ResourceRequest(num_gpus=0),
     )
     df = df.with_column(
         "1_gpu_col",
         assert_num_cuda_visible_devices(col("id"), num_gpus=1),
-        resource_request=resource_request.ResourceRequest(num_gpus=1),
+        resource_request=ResourceRequest(num_gpus=1),
     )
 
     df.collect()

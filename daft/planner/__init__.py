@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from daft.planner.planner import QueryPlanner
+from daft.planner.planner import PhysicalPlanScheduler
 
-__all__ = ["QueryPlanner"]
+__all__ = ["PhysicalPlanScheduler"]

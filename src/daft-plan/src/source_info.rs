@@ -19,12 +19,13 @@ use {
         pyclass::CompareOp,
         pymethods,
         types::{PyBytes, PyTuple},
-        IntoPy, PyObject, PyResult, Python,
+        IntoPy, PyObject, PyResult, Python, ToPyObject,
     },
 };
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::de::{Error as DeError, Visitor};
+use serde::{ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 #[derive(Debug)]
 pub enum SourceInfo {
@@ -34,9 +35,74 @@ pub enum SourceInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone)]
+fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let bytes = Python::with_gil(|py| {
+        py.import(pyo3::intern!(py, "ray.cloudpickle"))
+            .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+            .and_then(|m| m.getattr(pyo3::intern!(py, "dumps")))
+            .and_then(|f| f.call1((obj,)))
+            .and_then(|b| b.extract::<Vec<u8>>())
+            .map_err(|e| SerError::custom(e.to_string()))
+    })?;
+    s.serialize_bytes(bytes.as_slice())
+}
+
+struct PyObjectVisitor;
+
+#[cfg(feature = "python")]
+impl<'de> Visitor<'de> for PyObjectVisitor {
+    type Value = PyObject;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a byte array containing the pickled partition bytes")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: DeError,
+    {
+        Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "ray.cloudpickle"))
+                .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
+                .and_then(|f| Ok(f.call1((v,))?.to_object(py)))
+                .map_err(|e| DeError::custom(e.to_string()))
+        })
+    }
+
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: DeError,
+    {
+        Python::with_gil(|py| {
+            py.import(pyo3::intern!(py, "ray.cloudpickle"))
+                .or_else(|_| py.import(pyo3::intern!(py, "pickle")))
+                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
+                .and_then(|f| Ok(f.call1((v,))?.to_object(py)))
+                .map_err(|e| DeError::custom(e.to_string()))
+        })
+    }
+}
+
+#[cfg(feature = "python")]
+fn deserialize_py_object<'de, D>(d: D) -> Result<PyObject, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    d.deserialize_bytes(PyObjectVisitor)
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryInfo {
     pub cache_key: String,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
     pub cache_entry: PyObject,
 }
 
@@ -50,7 +116,7 @@ impl InMemoryInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalInfo {
     pub schema: SchemaRef,
     pub file_info: Arc<FileInfo>,
@@ -71,7 +137,7 @@ impl ExternalInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileInfo {
     pub file_paths: Vec<String>,
     pub file_sizes: Option<Vec<i64>>,

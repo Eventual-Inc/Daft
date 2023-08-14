@@ -16,6 +16,7 @@ from daft.daft import (
     JoinType,
     PartitionScheme,
     PartitionSpec,
+    ResourceRequest,
 )
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -26,12 +27,11 @@ from daft.logical.aggregation_plan_builder import AggregationPlanBuilder
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.table import Table
 
 if TYPE_CHECKING:
-    from daft.planner.py_planner import PyQueryPlanner
+    from daft.planner.py_planner import PyPhysicalPlanScheduler
 
 
 class OpLevel(IntEnum):
@@ -47,19 +47,16 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def __repr__(self) -> str:
         return self._plan.pretty_print()
 
-    def to_planner(self) -> PyQueryPlanner:
-        from daft.planner.py_planner import PyQueryPlanner
+    def to_physical_plan_scheduler(self) -> PyPhysicalPlanScheduler:
+        from daft.planner.py_planner import PyPhysicalPlanScheduler
 
-        return PyQueryPlanner(self._plan)
+        return PyPhysicalPlanScheduler(self._plan)
 
     def schema(self) -> Schema:
         return self._plan.schema()
 
     def partition_spec(self) -> PartitionSpec:
         return self._plan.partition_spec()
-
-    def resource_request(self) -> ResourceRequest:
-        return self._plan.resource_request()
 
     def pretty_print(self) -> str:
         return self._plan.pretty_print()

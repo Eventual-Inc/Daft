@@ -9,16 +9,15 @@ from daft import DataType, col
 from daft.context import get_context
 from daft.daft import FileFormat, FileFormatConfig, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.daft import PartitionScheme, PartitionSpec
+from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest
 from daft.errors import ExpressionTypeError
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.resource_request import ResourceRequest
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
-    from daft.planner.rust_planner import RustQueryPlanner
+    from daft.planner.rust_planner import RustPhysicalPlanScheduler
 
 
 class RustLogicalPlanBuilder(LogicalPlanBuilder):
@@ -27,10 +26,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
-    def to_planner(self) -> RustQueryPlanner:
-        from daft.planner.rust_planner import RustQueryPlanner
+    def to_physical_plan_scheduler(self) -> RustPhysicalPlanScheduler:
+        from daft.planner.rust_planner import RustPhysicalPlanScheduler
 
-        return RustQueryPlanner(self._builder)
+        return RustPhysicalPlanScheduler(self._builder.to_physical_plan_scheduler())
 
     def schema(self) -> Schema:
         pyschema = self._builder.schema()
@@ -39,10 +38,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def partition_spec(self) -> PartitionSpec:
         # TODO(Clark): Push PartitionSpec into planner.
         return self._builder.partition_spec()
-
-    def resource_request(self) -> ResourceRequest:
-        # TODO(Clark): Expose resource request via builder, or push it into the planner.
-        return ResourceRequest()
 
     def pretty_print(self) -> str:
         return repr(self)
@@ -95,11 +90,9 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         projection: ExpressionsProjection,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> RustLogicalPlanBuilder:
-        if custom_resource_request != ResourceRequest():
-            raise NotImplementedError("ResourceRequests not supported for new query planner")
         schema = projection.resolve_schema(self.schema())
         exprs = [expr._expr for expr in projection]
-        builder = self._builder.project(exprs, schema._schema)
+        builder = self._builder.project(exprs, schema._schema, custom_resource_request)
         return RustLogicalPlanBuilder(builder)
 
     def filter(self, predicate: Expression) -> RustLogicalPlanBuilder:

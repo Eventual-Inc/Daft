@@ -1,8 +1,9 @@
 use crate::{source_info::InMemoryInfo, PartitionSpec};
 use daft_core::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub schema: SchemaRef,
     pub in_memory_info: InMemoryInfo,

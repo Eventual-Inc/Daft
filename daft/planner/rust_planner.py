@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
+from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.execution import physical_plan
-from daft.planner.planner import PartitionT, QueryPlanner
+from daft.planner.planner import PartitionT, PhysicalPlanScheduler
 
 
-class RustQueryPlanner(QueryPlanner):
-    def __init__(self, builder: _LogicalPlanBuilder):
-        self._builder = builder
+class RustPhysicalPlanScheduler(PhysicalPlanScheduler):
+    def __init__(self, scheduler: _PhysicalPlanScheduler):
+        self._scheduler = scheduler
 
-    def plan(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
-        return physical_plan.materialize(self._builder.to_partition_tasks(psets))
+    def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
+        return physical_plan.materialize(self._scheduler.to_partition_tasks(psets))

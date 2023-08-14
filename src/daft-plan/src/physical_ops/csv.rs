@@ -7,8 +7,9 @@ use crate::{
     physical_plan::PhysicalPlan, sink_info::OutputFileInfo, source_info::ExternalInfo,
     PartitionSpec,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TabularScanCsv {
     pub schema: SchemaRef,
     pub external_info: ExternalInfo,
@@ -35,7 +36,7 @@ impl TabularScanCsv {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TabularWriteCsv {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,
