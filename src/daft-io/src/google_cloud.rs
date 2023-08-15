@@ -148,7 +148,6 @@ impl GCSClientWrapper {
                 Ok(GetResult::Stream(response.boxed(), size))
             }
             GCSClientWrapper::S3Compat(client) => {
-                // TODO Add not a file error here
                 let uri = format!("s3://{}/{}", bucket, key);
                 client.get(&uri, range).await
             }

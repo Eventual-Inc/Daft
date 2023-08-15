@@ -45,7 +45,8 @@ adlfs==2023.8.0; python_version >= '3.8'
 
 
 # GCS
-gcsfs==2023.6.0
+gcsfs==2023.1.0; python_version < '3.8'
+gcsfs==2023.6.0; python_version >= '3.8'
 
 # Documentation
 myst-nb>=0.16.0
