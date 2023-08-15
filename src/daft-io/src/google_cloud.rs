@@ -78,15 +78,12 @@ impl From<Error> for super::Error {
                     },
                     GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
                         store: super::SourceType::GCS,
-                        source: err.into(),
+                        source: err,
                     },
                 }
             }
             NotAFile { path } => super::Error::NotAFile { path },
-            InvalidUrl { path, source } => super::Error::InvalidUrl {
-                path: path,
-                source: source,
-            },
+            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
                 source: source.into(),
