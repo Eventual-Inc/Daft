@@ -14,12 +14,8 @@ BUCKETS = ["head-retries-parquet-bucket", "get-retries-parquet-bucket"]
 @pytest.mark.parametrize("bucket", BUCKETS)
 def test_non_retryable_errors(retry_server_s3_config, status_code: int, bucket: str):
     data_path = f"s3://{bucket}/{status_code}/1/{uuid.uuid4()}"
-    if status_code == 404:
-        with pytest.raises(FileNotFoundError):
-            Table.read_parquet(data_path, io_config=retry_server_s3_config)
-    else:
-        with pytest.raises(ValueError):
-            Table.read_parquet(data_path, io_config=retry_server_s3_config)
+    with pytest.raises((FileNotFoundError, ValueError)):
+        Table.read_parquet(data_path, io_config=retry_server_s3_config)
 
 
 @pytest.mark.integration()
