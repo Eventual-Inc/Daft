@@ -41,7 +41,7 @@ TEST_DATA_SCHEMA = pa.schema(
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2])
-def test_to_arrow(n_partitions: int, use_new_planner) -> None:
+def test_to_arrow(n_partitions: int) -> None:
     df = daft.from_pydict(TEST_DATA).repartition(n_partitions)
     table = df.to_arrow()
     # String column is converted to large_string column in Daft.
@@ -51,7 +51,7 @@ def test_to_arrow(n_partitions: int, use_new_planner) -> None:
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2])
-def test_to_pandas(n_partitions: int, use_new_planner) -> None:
+def test_to_pandas(n_partitions: int) -> None:
     df = daft.from_pydict(TEST_DATA).repartition(n_partitions)
     pd_df = df.to_pandas().sort_values("integers").reset_index(drop=True)
     expected_df = pd.DataFrame(TEST_DATA).sort_values("integers").reset_index(drop=True)

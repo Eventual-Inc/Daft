@@ -35,7 +35,7 @@ def my_udf(c):
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_cpus(use_new_planner):
+def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
 
     df = df.with_column(
@@ -49,7 +49,7 @@ def test_requesting_too_many_cpus(use_new_planner):
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_requesting_too_many_gpus(use_new_planner):
+def test_requesting_too_many_gpus():
     df = daft.from_pydict(DATA)
     df = df.with_column("foo", my_udf(col("id")), resource_request=ResourceRequest(num_gpus=cuda_device_count() + 1))
 
@@ -97,7 +97,7 @@ RAY_VERSION_LT_2 = int(ray.__version__.split(".")[0]) < 2
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_rayrunner(use_new_planner):
+def test_with_column_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
@@ -113,7 +113,7 @@ def test_with_column_rayrunner(use_new_planner):
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_folded_rayrunner(use_new_planner):
+def test_with_column_folded_rayrunner():
     df = daft.from_pydict(DATA).repartition(2)
 
     # Because of Projection Folding optimizations, the expected resource request is the max of the three .with_column requests

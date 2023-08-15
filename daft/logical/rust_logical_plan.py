@@ -132,7 +132,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def count(self) -> RustLogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
         first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col._count(CountMode.All)], [])
+        builder = self._builder.aggregate([first_col._count(CountMode.All)._expr], [])
+        rename_expr = ExpressionsProjection([first_col.alias("count")])
+        schema = rename_expr.resolve_schema(Schema._from_pyschema(builder.schema()))
+        builder = builder.project(rename_expr.to_inner_py_exprs(), schema._schema, ResourceRequest())
         return RustLogicalPlanBuilder(builder)
 
     def distinct(self) -> RustLogicalPlanBuilder:

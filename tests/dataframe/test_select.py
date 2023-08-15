@@ -5,20 +5,20 @@ import pytest
 import daft
 
 
-def test_select_dataframe_missing_col(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_select_dataframe_missing_col(valid_data: list[dict[str, float]]) -> None:
     df = daft.from_pylist(valid_data)
 
     with pytest.raises(ValueError):
         df = df.select("foo", "sepal_length")
 
 
-def test_select_dataframe(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_select_dataframe(valid_data: list[dict[str, float]]) -> None:
     df = daft.from_pylist(valid_data)
     df = df.select("sepal_length", "sepal_width")
     assert df.column_names == ["sepal_length", "sepal_width"]
 
 
-def test_multiple_select_same_col(valid_data: list[dict[str, float]], use_new_planner):
+def test_multiple_select_same_col(valid_data: list[dict[str, float]]):
     df = daft.from_pylist(valid_data)
     df = df.select(df["sepal_length"], df["sepal_length"].alias("sepal_length_2"))
     pdf = df.to_pandas()

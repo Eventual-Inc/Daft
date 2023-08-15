@@ -13,7 +13,7 @@ from tests.conftest import assert_df_equals
         pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
     ],
 )
-def test_distinct_all_columns(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, use_new_planner):
+def test_distinct_all_columns(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
     """Sums across groups"""
     daft_df = daft_df.repartition(repartition_nparts).select(*[col(k) for k in keys]).distinct()
 
