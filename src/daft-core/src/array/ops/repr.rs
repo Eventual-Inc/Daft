@@ -7,8 +7,9 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             ImageArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray,
-        ImageFormat, ListArray, NullArray, StructArray, Utf8Array,
+        nested_arrays::FixedSizeListArray,
+        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
 };
 use common_error::DaftResult;
@@ -32,7 +33,7 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ListArray, "{:?}");
-impl_array_str_value!(FixedSizeListArray, "{:?}");
+impl_array_str_value!(FixedSizeListArray, "{}"); // TODO(FixedSizeList): Implement display
 impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");

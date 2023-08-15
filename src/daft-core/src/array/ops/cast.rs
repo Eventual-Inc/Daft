@@ -11,12 +11,12 @@ use crate::{
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
             TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageMode,
-        StructArray, TimeUnit, Utf8Array,
+        nested_arrays::FixedSizeListArray,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, StructArray, TimeUnit,
+        Utf8Array,
     },
     series::{IntoSeries, Series},
-    with_match_arrow_daft_types, with_match_daft_logical_primitive_types,
-    with_match_daft_logical_types,
+    with_match_daft_logical_primitive_types, with_match_daft_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -27,7 +27,6 @@ use arrow2::{
         cast::{can_cast_types, cast, CastOptions},
     },
 };
-use std::sync::Arc;
 
 #[cfg(feature = "python")]
 use {
@@ -137,15 +136,10 @@ where
         }
     };
 
-    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+    let new_field = Field::new(to_cast.name(), dtype.clone());
 
-    if dtype.is_logical() {
-        with_match_daft_logical_types!(dtype, |$T| {
-            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
-        })
-    }
-    with_match_arrow_daft_types!(dtype, |$T| {
-        Ok(DataArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
+    with_match_daft_types!(dtype, |$T| {
+        return Ok(<$T as DaftDataType>::ArrayType::from_arrow(&new_field, result_arrow_physical_array)?.into_series());
     })
 }
 
@@ -228,15 +222,10 @@ where
         )));
     };
 
-    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+    let new_field = Field::new(to_cast.name(), dtype.clone());
 
-    if dtype.is_logical() {
-        with_match_daft_logical_types!(dtype, |$T| {
-            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
-        })
-    }
-    with_match_arrow_daft_types!(dtype, |$T| {
-        return Ok(DataArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
+    with_match_daft_types!(dtype, |$T| {
+        Ok(<$T as DaftDataType>::ArrayType::from_arrow(&new_field, result_array)?.into_series())
     })
 }
 
@@ -749,9 +738,7 @@ fn extract_python_like_to_fixed_size_list<
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
 
     let inner_field = child_field.to_arrow()?;
-
     let list_dtype = arrow2::datatypes::DataType::FixedSizeList(Box::new(inner_field), list_size);
-
     let daft_type = (&list_dtype).into();
 
     let list_array = arrow2::array::FixedSizeListArray::new(
@@ -760,8 +747,8 @@ fn extract_python_like_to_fixed_size_list<
         python_objects.as_arrow().validity().cloned(),
     );
 
-    FixedSizeListArray::new(
-        Field::new(python_objects.name(), daft_type).into(),
+    FixedSizeListArray::from_arrow(
+        &Field::new(python_objects.name(), daft_type),
         Box::new(list_array),
     )
 }
@@ -1388,11 +1375,8 @@ impl TensorArray {
                     Default::default(),
                 )?;
                 let inner_field = Box::new(Field::new("data", *inner_dtype.clone()));
-                let new_field = Arc::new(Field::new(
-                    "data",
-                    DataType::FixedSizeList(inner_field, size),
-                ));
-                let result = FixedSizeListArray::new(new_field, new_da)?;
+                let new_field = Field::new("data", DataType::FixedSizeList(inner_field, size));
+                let result = FixedSizeListArray::from_arrow(&new_field, new_da)?;
                 let tensor_array =
                     FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), result);
                 Ok(tensor_array.into_series())
@@ -1618,6 +1602,13 @@ impl FixedShapeTensorArray {
             // NOTE(Clark): Casting to FixedShapeImage is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
         }
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn cast(&self, _dtype: &DataType) -> DaftResult<Series> {
+        // TODO(FixedSizeList): Implement casting
+        unimplemented!("FixedSizeList casting not yet implemented.")
     }
 }
 

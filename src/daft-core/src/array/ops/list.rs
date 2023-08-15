@@ -1,4 +1,4 @@
-use crate::datatypes::{FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
+use crate::datatypes::{nested_arrays::FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
 
 use crate::series::Series;
 
@@ -153,7 +153,7 @@ impl FixedSizeListArray {
                 true => growable.extend(0, i * list_size, list_size),
             }
         }
-        Series::try_from((self.field.name.as_ref(), growable.as_box()))
+        Series::try_from((self.name(), growable.as_box()))
     }
 
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {

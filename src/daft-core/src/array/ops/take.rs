@@ -5,8 +5,9 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
-        FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+        nested_arrays::FixedSizeListArray,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
 };
 use common_error::DaftResult;
@@ -62,7 +63,6 @@ impl_dataarray_take!(Utf8Array);
 impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(ListArray);
-impl_dataarray_take!(FixedSizeListArray);
 impl_dataarray_take!(NullArray);
 impl_dataarray_take!(StructArray);
 impl_dataarray_take!(ExtensionArray);
@@ -136,6 +136,17 @@ impl crate::datatypes::PythonArray {
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn take<I>(&self, _idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        // TODO(FixedSizeList)
+        todo!()
     }
 }
 

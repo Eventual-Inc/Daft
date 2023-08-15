@@ -5,9 +5,11 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             ImageArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray, ListArray,
-        NullArray, StructArray, Utf8Array,
+        nested_arrays::FixedSizeListArray,
+        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ListArray, NullArray,
+        StructArray, Utf8Array,
     },
+    Series,
 };
 
 use super::as_arrow::AsArrow;
@@ -60,7 +62,6 @@ impl_array_get!(Utf8Array, &str);
 impl_array_get!(BooleanArray, bool);
 impl_array_get!(BinaryArray, &[u8]);
 impl_array_get!(ListArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(FixedSizeListArray, Box<dyn arrow2::array::Array>);
 impl_array_get!(Decimal128Array, i128);
 impl_array_get!(DateArray, i32);
 impl_array_get!(DurationArray, i64);
@@ -161,5 +162,13 @@ impl ImageArray {
         } else {
             None
         }
+    }
+}
+
+impl FixedSizeListArray {
+    #[inline]
+    pub fn get(&self, _idx: usize) -> Option<Series> {
+        // TODO(FixedSizeList)
+        todo!()
     }
 }
