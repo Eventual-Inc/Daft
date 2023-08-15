@@ -71,7 +71,7 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
 
     let result: Utf8Array<i64> = lhs
         .into_iter()
-        .zip(rhs.into_iter())
+        .zip(rhs)
         .map(|(l, r)| match (l, r) {
             (Some(l), Some(r)) => Some(concat_strings(l, r)),
             _ => None,

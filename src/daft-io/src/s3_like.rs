@@ -286,6 +286,7 @@ impl S3LikeSource {
                     .map_operation::<Error>(|mut o| {
                         {
                             let mut properties = o.properties_mut();
+                            #[allow(unused_mut)]
                             let mut config = properties
                                 .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
                                 .expect("signing config added by make_operation()");
@@ -377,6 +378,7 @@ impl S3LikeSource {
                     .map_operation::<Error>(|mut o| {
                         {
                             let mut properties = o.properties_mut();
+                            #[allow(unused_mut)]
                             let mut config = properties
                                 .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
                                 .expect("signing config added by make_operation()");

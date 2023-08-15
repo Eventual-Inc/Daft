@@ -46,7 +46,7 @@ impl Utf8Array {
             (self_len, other_len) if self_len == other_len => {
                 let arrow_result: arrow2::array::BooleanArray = self_arrow
                     .into_iter()
-                    .zip(other_arrow.into_iter())
+                    .zip(other_arrow)
                     .map(|(val, pat)| Some(operation(val?, pat?)))
                     .collect();
                 Ok(BooleanArray::from((self.name(), arrow_result)))

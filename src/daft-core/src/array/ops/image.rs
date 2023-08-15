@@ -854,7 +854,7 @@ where
                     .transpose()
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            arrow2::array::BinaryArray::<i64>::from_iter(values.into_iter())
+            arrow2::array::BinaryArray::<i64>::from_iter(values)
         }
         _ => {
             let mut offsets = Vec::with_capacity(images.len() + 1);
