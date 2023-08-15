@@ -184,7 +184,6 @@ def parquet_file(request) -> tuple[str, str]:
 
 
 def read_parquet_with_pyarrow(path) -> pa.Table:
-
     kwargs = {}
     if get_protocol_from_path(path) == "s3":
         kwargs["anon"] = True
@@ -198,6 +197,9 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_parquet_read_table(parquet_file, public_storage_io_config):
     _, url = parquet_file
     daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config)
@@ -207,6 +209,9 @@ def test_parquet_read_table(parquet_file, public_storage_io_config):
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_parquet_read_table_bulk(parquet_file, public_storage_io_config):
     _, url = parquet_file
     daft_native_reads = Table.read_parquet_bulk([url] * 2, io_config=public_storage_io_config)
@@ -218,6 +223,9 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config):
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
     # This is a hack until we remove `fsspec.info`, `fsspec.glob` and `fsspec.glob` from  `daft.read_parquet`.

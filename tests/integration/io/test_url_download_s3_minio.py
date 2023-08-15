@@ -7,6 +7,9 @@ import daft
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_url_download_minio_custom_s3fs(minio_io_config, minio_image_data_fixture, image_data):
     urls = minio_image_data_fixture
     fs = s3fs.S3FileSystem(

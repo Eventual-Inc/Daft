@@ -7,6 +7,9 @@ import daft
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
     fs = s3fs.S3FileSystem(anon=True)
     data = {"urls": small_images_s3_paths}
@@ -20,6 +23,9 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
 def test_url_download_aws_s3_public_bucket_custom_s3fs_wrong_region(small_images_s3_paths):
     fs = s3fs.S3FileSystem(anon=True)
     data = {"urls": small_images_s3_paths}
