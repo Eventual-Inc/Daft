@@ -173,6 +173,7 @@ def public_storage_io_config() -> daft.io.IOConfig:
     return daft.io.IOConfig(
         azure=daft.io.AzureConfig(storage_account="dafttestdata", anonymous=True),
         s3=daft.io.S3Config(region_name="us-west-2", anonymous=True),
+        gcs=daft.io.GCSConfig(anonymous=True),
     )
 
 

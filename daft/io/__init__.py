@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from daft.daft import AzureConfig, IOConfig, S3Config
+from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 from daft.io._csv import read_csv
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
@@ -23,4 +23,13 @@ def _set_linux_cert_paths():
 if sys.platform == "linux":
     _set_linux_cert_paths()
 
-__all__ = ["read_csv", "read_json", "from_glob_path", "read_parquet", "IOConfig", "S3Config", "AzureConfig"]
+__all__ = [
+    "read_csv",
+    "read_json",
+    "from_glob_path",
+    "read_parquet",
+    "IOConfig",
+    "S3Config",
+    "AzureConfig",
+    "GCSConfig",
+]

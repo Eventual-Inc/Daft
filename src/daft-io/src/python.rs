@@ -39,14 +39,30 @@ pub struct AzureConfig {
     pub config: config::AzureConfig,
 }
 
+/// Create configurations to be used when accessing Google Cloud Storage
+///
+/// Args:
+///     project_id: Google Project ID, defaults to reading credentials file or Google Cloud metadata service
+///     anonymous: Whether or not to use "anonymous mode", which will access Google Storage without any credentials
+///
+/// Example:
+///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
+///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
+#[derive(Clone, Default)]
+#[pyclass]
+pub struct GCSConfig {
+    pub config: config::GCSConfig,
+}
+
 /// Create configurations to be used when accessing storage
 ///
 /// Args:
-///     s3: Configurations to use when accessing URLs with the `s3://` scheme
-///     azure: Configurations to use when accessing URLs with the `az://` or `abfs://` scheme
+///     s3: Configuration to use when accessing URLs with the `s3://` scheme
+///     azure: Configuration to use when accessing URLs with the `az://` or `abfs://` scheme
+///     gcs: Configuration to use when accessing URLs with the `gs://` or `gcs://` scheme
 /// Example:
-///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True))
-///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path"], io_config=io_config)
+///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
+///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct IOConfig {
@@ -56,11 +72,12 @@ pub struct IOConfig {
 #[pymethods]
 impl IOConfig {
     #[new]
-    pub fn new(s3: Option<S3Config>, azure: Option<AzureConfig>) -> Self {
+    pub fn new(s3: Option<S3Config>, azure: Option<AzureConfig>, gcs: Option<GCSConfig>) -> Self {
         IOConfig {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
                 azure: azure.unwrap_or_default().config,
+                gcs: gcs.unwrap_or_default().config,
             },
         }
     }
@@ -69,7 +86,7 @@ impl IOConfig {
         Ok(format!("{}", self.config))
     }
 
-    /// Configurations to be used when accessing s3 URLs
+    /// Configuration to be used when accessing s3 URLs
     #[getter]
     pub fn s3(&self) -> PyResult<S3Config> {
         Ok(S3Config {
@@ -77,11 +94,19 @@ impl IOConfig {
         })
     }
 
-    /// Configurations to be used when accessing Azure URLs
+    /// Configuration to be used when accessing Azure URLs
     #[getter]
     pub fn azure(&self) -> PyResult<AzureConfig> {
         Ok(AzureConfig {
             config: self.config.azure.clone(),
+        })
+    }
+
+    /// Configuration to be used when accessing Azure URLs
+    #[getter]
+    pub fn gcs(&self) -> PyResult<GCSConfig> {
+        Ok(GCSConfig {
+            config: self.config.gcs.clone(),
         })
     }
 
@@ -216,6 +241,31 @@ impl AzureConfig {
     }
 }
 
+#[pymethods]
+impl GCSConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    pub fn new(project_id: Option<String>, anonymous: Option<bool>) -> Self {
+        let def = config::GCSConfig::default();
+        GCSConfig {
+            config: config::GCSConfig {
+                project_id: project_id.or(def.project_id),
+                anonymous: anonymous.unwrap_or(def.anonymous),
+            },
+        }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    /// Project ID to use when accessing Google Cloud Storage
+    #[getter]
+    pub fn project_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.project_id.clone())
+    }
+}
+
 impl From<config::IOConfig> for IOConfig {
     fn from(config: config::IOConfig) -> Self {
         Self { config }
@@ -224,6 +274,7 @@ impl From<config::IOConfig> for IOConfig {
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
+    parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;
     parent.add_class::<IOConfig>()?;
 
