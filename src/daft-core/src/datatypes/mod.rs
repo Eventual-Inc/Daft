@@ -23,8 +23,14 @@ use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero}
 pub use time_unit::TimeUnit;
 pub mod logical;
 
+/// Trait that is implemented by all Array types
+pub trait DaftArrayType {}
+
 /// Trait to wrap DataType Enum
 pub trait DaftDataType: Sync + Send {
+    // Concrete ArrayType that backs data of this DataType
+    type ArrayType: DaftArrayType;
+
     // returns Daft DataType Enum
     fn get_dtype() -> DataType
     where
@@ -48,6 +54,8 @@ macro_rules! impl_daft_arrow_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = DataArray<$ca>;
         }
 
         impl DaftArrowBackedType for $ca {}
@@ -64,6 +72,8 @@ macro_rules! impl_daft_non_arrow_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = DataArray<$ca>;
         }
         impl DaftPhysicalType for $ca {}
     };
@@ -78,6 +88,11 @@ macro_rules! impl_daft_logical_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = logical::LogicalArray<
+                $ca,
+                <<$ca as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType,
+            >;
         }
 
         impl DaftLogicalType for $ca {

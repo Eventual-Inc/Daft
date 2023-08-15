@@ -4,8 +4,8 @@ use crate::datatypes::{BooleanArray, DaftLogicalType, DateType, Field};
 use common_error::DaftResult;
 
 use super::{
-    DaftArrowBackedType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, ImageType, TensorType, TimestampType,
+    DaftArrayType, DaftArrowBackedType, DataArray, DataType, Decimal128Type, DurationType,
+    EmbeddingType, FixedShapeImageType, FixedShapeTensorType, ImageType, TensorType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -22,6 +22,8 @@ pub type LogicalDataArray<L: DaftLogicalType>
 where
     L::PhysicalType: DaftArrowBackedType,
 = LogicalArray<L, DataArray<<L as DaftLogicalType>::PhysicalType>>;
+
+impl<L: DaftLogicalType, W> DaftArrayType for LogicalArray<L, W> {}
 
 impl<L: DaftLogicalType> Clone for LogicalDataArray<L>
 where

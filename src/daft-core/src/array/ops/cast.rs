@@ -6,8 +6,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, LogicalDataArray, TensorArray, TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedShapeTensorType,
-        FixedSizeListArray, ImageMode, StructArray, TensorType, TimeUnit, Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageMode,
+        StructArray, TimeUnit, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_arrow_daft_types, with_match_daft_logical_primitive_types,
@@ -1111,8 +1111,8 @@ impl EmbeddingArray {
                 let fixed_shape_tensor_dtype =
                     DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
                 let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
-                let fixed_shape_tensor_array = fixed_shape_tensor_array
-                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1174,8 +1174,8 @@ impl ImageArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array = fixed_shape_tensor_array
-                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             DataType::Tensor(_) => {
@@ -1231,7 +1231,7 @@ impl ImageArray {
             DataType::FixedShapeTensor(inner_dtype, _) => {
                 let tensor_dtype = DataType::Tensor(inner_dtype.clone());
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical_data_array::<TensorType>()?;
+                let tensor_array = tensor_array.downcast::<TensorArray>()?;
                 tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),
@@ -1299,14 +1299,14 @@ impl FixedShapeImageArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array = fixed_shape_tensor_array
-                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             (DataType::Image(_), DataType::FixedShapeImage(mode, _, _)) => {
                 let tensor_dtype = DataType::Tensor(Box::new(mode.get_dtype()));
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical_data_array::<TensorType>()?;
+                let tensor_array = tensor_array.downcast::<TensorArray>()?;
                 tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1505,8 +1505,8 @@ impl TensorArray {
                             Err(e)
                         }
                     })?;
-                let fixed_shape_tensor_array = fixed_shape_tensor_array
-                    .downcast_logical_data_array::<FixedShapeTensorType>()?;
+                let fixed_shape_tensor_array =
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),

@@ -9,7 +9,7 @@ use daft_core::array::ops::GroupIndices;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::datatypes::logical::LogicalDataArray;
-use daft_core::datatypes::{BooleanType, DataType, Field, UInt64Array};
+use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
 use daft_core::{with_match_daft_logical_types, with_match_physical_daft_types};
@@ -202,7 +202,7 @@ impl Table {
             )));
         }
 
-        let mask = mask.downcast::<BooleanType>().unwrap();
+        let mask = mask.downcast::<BooleanArray>().unwrap();
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
         Ok(Table {
             schema: self.schema.clone(),

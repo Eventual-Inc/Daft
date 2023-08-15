@@ -1,38 +1,24 @@
+use std::marker::PhantomData;
+
 use crate::datatypes::*;
 
-use crate::datatypes::logical::{FixedShapeImageArray, ImageArray, LogicalDataArray};
+use crate::datatypes::logical::{FixedShapeImageArray, ImageArray};
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
 
 impl Series {
-    pub fn downcast<T>(&self) -> DaftResult<&DataArray<T>>
-    where
-        T: DaftPhysicalType + 'static,
-    {
+    pub fn downcast<Arr: DaftArrayType + 'static>(&self) -> DaftResult<&Arr> {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
-            None => panic!(
-                "Attempting to downcast {:?} to {:?}",
-                self.data_type(),
-                T::get_dtype()
-            ), //Err(DaftError::SchemaMismatch(format!(
-        }
-    }
-
-    pub fn downcast_logical_data_array<L: DaftLogicalType>(
-        &self,
-    ) -> DaftResult<&LogicalDataArray<L>>
-    where
-        L::PhysicalType: DaftPhysicalType,
-    {
-        match self.inner.as_any().downcast_ref() {
-            Some(ArrayWrapper(arr)) => Ok(arr),
-            None => panic!(
-                "Attempting to downcast {:?} to {:?}",
-                self.data_type(),
-                L::get_dtype()
-            ), //Err(DaftError::SchemaMismatch(format!(
+            None => {
+                let phantom: PhantomData<Arr> = PhantomData {};
+                panic!(
+                    "Attempting to downcast {:?} to {:?}",
+                    self.data_type(),
+                    phantom
+                )
+            }
         }
     }
 
@@ -133,11 +119,11 @@ impl Series {
     }
 
     pub fn image(&self) -> DaftResult<&ImageArray> {
-        self.downcast_logical_data_array()
+        self.downcast()
     }
 
     pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
-        self.downcast_logical_data_array()
+        self.downcast()
     }
 
     #[cfg(feature = "python")]

@@ -11,8 +11,8 @@ impl Series {
         let s = self.as_physical()?;
         with_match_physical_daft_types!(s.data_type(), |$T| {
             match groups {
-                Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<$T>()?, groups, mode)?.into_series()),
-                None => Ok(DaftCountAggable::count(&s.downcast::<$T>()?, mode)?.into_series())
+                Some(groups) => Ok(DaftCountAggable::grouped_count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, groups, mode)?.into_series()),
+                None => Ok(DaftCountAggable::count(&s.downcast::<<$T as DaftDataType>::ArrayType>()?, mode)?.into_series())
             }
         })
     }
@@ -45,19 +45,19 @@ impl Series {
             // floatX -> floatX (in line with numpy)
             Float32 => match groups {
                 Some(groups) => Ok(DaftSumAggable::grouped_sum(
-                    &self.downcast::<Float32Type>()?,
+                    &self.downcast::<Float32Array>()?,
                     groups,
                 )?
                 .into_series()),
-                None => Ok(DaftSumAggable::sum(&self.downcast::<Float32Type>()?)?.into_series()),
+                None => Ok(DaftSumAggable::sum(&self.downcast::<Float32Array>()?)?.into_series()),
             },
             Float64 => match groups {
                 Some(groups) => Ok(DaftSumAggable::grouped_sum(
-                    &self.downcast::<Float64Type>()?,
+                    &self.downcast::<Float64Array>()?,
                     groups,
                 )?
                 .into_series()),
-                None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Type>()?)?.into_series()),
+                None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
@@ -104,7 +104,7 @@ impl Series {
         use crate::array::ops::DaftConcatAggable;
         match self.data_type() {
             DataType::List(..) => {
-                let downcasted = self.downcast::<ListType>()?;
+                let downcasted = self.downcast::<ListArray>()?;
                 match groups {
                     Some(groups) => {
                         Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
@@ -114,7 +114,7 @@ impl Series {
             }
             #[cfg(feature = "python")]
             DataType::Python => {
-                let downcasted = self.downcast::<PythonType>()?;
+                let downcasted = self.downcast::<PythonArray>()?;
                 match groups {
                     Some(groups) => {
                         Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
