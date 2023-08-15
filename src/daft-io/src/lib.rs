@@ -141,7 +141,9 @@ impl IOClient {
                 AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
             }
 
-            SourceType::GCS => GCSSource::get_client().await? as Arc<dyn ObjectSource>,
+            SourceType::GCS => {
+                GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+            }
         };
 
         if w_handle.get(source_type).is_none() {

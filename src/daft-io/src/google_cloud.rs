@@ -14,6 +14,7 @@ use snafu::ResultExt;
 use snafu::Snafu;
 
 use crate::config;
+use crate::config::GCSConfig;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
 use crate::GetResult;
@@ -198,29 +199,39 @@ pub(crate) struct GCSSource {
 }
 
 impl GCSSource {
-    pub async fn get_client() -> super::Result<Arc<Self>> {
-        let anon = false;
-        if anon {
-            let s3_config = config::S3Config {
-                anonymous: true,
-                endpoint_url: Some("https://storage.googleapis.com".to_string()),
-                ..Default::default()
-            };
-            let s3_client = s3_like::S3LikeSource::get_client(&s3_config).await?;
-            Ok(GCSSource {
-                client: GCSClientWrapper::S3Compat(s3_client),
-            }
-            .into())
+    async fn build_s3_compat_client() -> super::Result<Arc<Self>> {
+        let s3_config = config::S3Config {
+            anonymous: true,
+            endpoint_url: Some("https://storage.googleapis.com".to_string()),
+            ..Default::default()
+        };
+        let s3_client = s3_like::S3LikeSource::get_client(&s3_config).await?;
+        Ok(GCSSource {
+            client: GCSClientWrapper::S3Compat(s3_client),
+        }
+        .into())
+    }
+    pub async fn get_client(config: &GCSConfig) -> super::Result<Arc<Self>> {
+        if config.anonymous {
+            GCSSource::build_s3_compat_client().await
         } else {
             let config = ClientConfig::default()
                 .with_auth()
                 .await
-                .context(UnableToLoadCredentialsSnafu {})?;
-            let client = Client::new(config);
-            Ok(GCSSource {
-                client: GCSClientWrapper::Native(client),
+                .context(UnableToLoadCredentialsSnafu {});
+            match config {
+                Ok(config) => {
+                    let client = Client::new(config);
+                    Ok(GCSSource {
+                        client: GCSClientWrapper::Native(client),
+                    }
+                    .into())
+                }
+                Err(err) => {
+                    log::warn!("Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}");
+                    GCSSource::build_s3_compat_client().await
+                }
             }
-            .into())
         }
     }
 }
