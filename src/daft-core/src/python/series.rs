@@ -4,6 +4,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyLi
 
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
+    count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType, UInt64Type},
     ffi,
     series::{self, IntoSeries, Series},
@@ -176,8 +177,8 @@ impl PySeries {
         Ok((&self.series).not()?.into())
     }
 
-    pub fn _count(&self) -> PyResult<Self> {
-        Ok((self.series).count(None)?.into())
+    pub fn _count(&self, mode: CountMode) -> PyResult<Self> {
+        Ok((self.series).count(None, mode)?.into())
     }
 
     pub fn _sum(&self) -> PyResult<Self> {

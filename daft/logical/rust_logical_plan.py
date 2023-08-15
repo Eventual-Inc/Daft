@@ -7,7 +7,7 @@ import fsspec
 
 from daft import DataType, col
 from daft.context import get_context
-from daft.daft import FileFormat, FileFormatConfig, JoinType
+from daft.daft import CountMode, FileFormat, FileFormatConfig, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest
 from daft.errors import ExpressionTypeError
@@ -130,7 +130,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return RustLogicalPlanBuilder(builder)
 
     def count(self) -> RustLogicalPlanBuilder:
-        raise NotImplementedError("not implemented")
+        # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
+        first_col = col(self.schema().column_names()[0])
+        builder = self._builder.aggregate([first_col._count(CountMode.All)], [])
+        return RustLogicalPlanBuilder(builder)
 
     def distinct(self) -> RustLogicalPlanBuilder:
         builder = self._builder.distinct()

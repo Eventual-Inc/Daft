@@ -17,6 +17,7 @@ pub mod pylib {
     fn daft(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         pyo3_log::init();
 
+        daft_core::register_modules(_py, m)?;
         daft_core::python::register_modules(_py, m)?;
         daft_dsl::register_modules(_py, m)?;
         daft_table::register_modules(_py, m)?;

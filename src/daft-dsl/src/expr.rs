@@ -1,4 +1,5 @@
 use daft_core::{
+    count_mode::CountMode,
     datatypes::DataType,
     datatypes::{Field, FieldID},
     schema::Schema,
@@ -46,7 +47,7 @@ pub enum Expr {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AggExpr {
-    Count(ExprRef),
+    Count(ExprRef, CountMode),
     Sum(ExprRef),
     Mean(ExprRef),
     Min(ExprRef),
@@ -71,7 +72,12 @@ impl AggExpr {
     pub fn name(&self) -> DaftResult<&str> {
         use AggExpr::*;
         match self {
-            Count(expr) | Sum(expr) | Mean(expr) | Min(expr) | Max(expr) | List(expr)
+            Count(expr, ..)
+            | Sum(expr)
+            | Mean(expr)
+            | Min(expr)
+            | Max(expr)
+            | List(expr)
             | Concat(expr) => expr.name(),
         }
     }
@@ -79,9 +85,9 @@ impl AggExpr {
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         use AggExpr::*;
         match self {
-            Count(expr) => {
+            Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_count()"))
+                FieldID::new(format!("{child_id}.local_count({mode})"))
             }
             Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -113,7 +119,7 @@ impl AggExpr {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use AggExpr::*;
         match self {
-            Count(expr) => {
+            Count(expr, ..) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
@@ -190,7 +196,7 @@ impl AggExpr {
     pub fn from_name_and_child_expr(name: &str, child: &Expr) -> DaftResult<AggExpr> {
         use AggExpr::*;
         match name {
-            "count" => Ok(Count(child.clone().into())),
+            "count" => Ok(Count(child.clone().into(), CountMode::Valid)),
             "sum" => Ok(Sum(child.clone().into())),
             "mean" => Ok(Mean(child.clone().into())),
             "min" => Ok(Min(child.clone().into())),
@@ -227,8 +233,8 @@ impl Expr {
         Expr::Cast(self.clone().into(), dtype.clone())
     }
 
-    pub fn count(&self) -> Self {
-        Expr::Agg(AggExpr::Count(self.clone().into()))
+    pub fn count(&self, mode: CountMode) -> Self {
+        Expr::Agg(AggExpr::Count(self.clone().into(), mode))
     }
 
     pub fn sum(&self) -> Self {
@@ -489,7 +495,7 @@ impl Display for AggExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         use AggExpr::*;
         match self {
-            Count(expr) => write!(f, "count({expr})"),
+            Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),

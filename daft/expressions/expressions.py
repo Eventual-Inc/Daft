@@ -9,7 +9,7 @@ import fsspec
 import pyarrow as pa
 
 from daft import context
-from daft.daft import ImageFormat
+from daft.daft import CountMode, ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import lit as _lit
@@ -275,8 +275,8 @@ class Expression:
         expr = self._expr.cast(dtype._dtype)
         return Expression._from_pyexpr(expr)
 
-    def _count(self) -> Expression:
-        expr = self._expr.count()
+    def _count(self, mode: CountMode = CountMode.Valid) -> Expression:
+        expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
     def _sum(self) -> Expression:

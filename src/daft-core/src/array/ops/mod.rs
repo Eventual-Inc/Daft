@@ -38,6 +38,8 @@ pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
 use common_error::DaftResult;
 
+use crate::count_mode::CountMode;
+
 pub trait DaftCompare<Rhs> {
     type Output;
 
@@ -93,8 +95,8 @@ pub trait IntoGroups {
 
 pub trait DaftCountAggable {
     type Output;
-    fn count(&self) -> Self::Output;
-    fn grouped_count(&self, groups: &GroupIndices) -> Self::Output;
+    fn count(&self, mode: CountMode) -> Self::Output;
+    fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output;
 }
 
 pub trait DaftSumAggable {
