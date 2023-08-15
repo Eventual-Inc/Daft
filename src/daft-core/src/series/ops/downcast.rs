@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::datatypes::*;
-
-use crate::datatypes::logical::{FixedShapeImageArray, ImageArray};
+use crate::datatypes::{logical::FixedShapeImageArray, nested_arrays::FixedSizeListArray};
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
@@ -74,30 +73,6 @@ impl Series {
         self.downcast()
     }
 
-    // pub fn timestamp(&self) -> DaftResult<&TimestampArray> {
-    //     use crate::datatypes::DataType::*;
-    //     match self.data_type() {
-    //         Timestamp(..) => Ok(self.inner.as_any().downcast_ref().unwrap()),
-    //         t => Err(DaftError::SchemaMismatch(format!("{t:?} not timestamp"))),
-    //     }
-    // }
-
-    // pub fn date(&self) -> DaftResult<&DateArray> {
-    //     use crate::datatypes::DataType::*;
-    //     match self.data_type() {
-    //         Date => Ok(self.inner.as_any().downcast_ref().unwrap()),
-    //         t => Err(DaftError::SchemaMismatch(format!("{t:?} not date"))),
-    //     }
-    // }
-
-    // pub fn time(&self) -> DaftResult<&TimeArray> {
-    //     use crate::datatypes::DataType::*;
-    //     match self.data_type() {
-    //         Time(..) => Ok(self.inner.as_any().downcast_ref().unwrap()),
-    //         t => Err(DaftError::SchemaMismatch(format!("{t:?} not time"))),
-    //     }
-    // }
-
     pub fn binary(&self) -> DaftResult<&BinaryArray> {
         self.downcast()
     }
@@ -115,10 +90,6 @@ impl Series {
     }
 
     pub fn struct_(&self) -> DaftResult<&StructArray> {
-        self.downcast()
-    }
-
-    pub fn image(&self) -> DaftResult<&ImageArray> {
         self.downcast()
     }
 

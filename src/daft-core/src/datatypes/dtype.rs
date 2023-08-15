@@ -171,7 +171,11 @@ impl DataType {
                 );
                 logical_extension.to_arrow()
             }
-            _ => Err(DaftError::TypeError(format!(
+            #[cfg(feature = "python")]
+            DataType::Python => Err(DaftError::TypeError(format!(
+                "Can not convert {self:?} into arrow type"
+            ))),
+            DataType::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }

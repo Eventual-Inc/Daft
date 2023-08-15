@@ -7,8 +7,9 @@ use crate::{
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, ImageType, TensorType, TimestampType,
+    nested_arrays::FixedSizeListArray, DaftArrayType, DaftDataType, DataArray, DataType,
+    Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType, FixedShapeTensorType,
+    ImageType, TensorType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -68,6 +69,12 @@ macro_rules! impl_logical_type {
             self.len() == 0
         }
 
+        pub fn empty(field_name: &str, dtype: &DataType) -> Self {
+            let physical = $physical_array_type::empty(field_name, &dtype.to_physical());
+            let field = Field::new(field_name, dtype.clone());
+            Self::new(field, physical)
+        }
+
         pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
             if arrays.is_empty() {
                 return Err(common_error::DaftError::ValueError(
@@ -115,6 +122,18 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
             )
             .unwrap(),
         }
+    }
+}
+
+/// Implementation for a LogicalArray that wraps a FixedSizeListArray
+impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
+    impl_logical_type!(FixedSizeListArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let mut fixed_size_list_arrow_array = self.physical.to_arrow();
+        let arrow_logical_type = self.data_type().to_arrow().unwrap();
+        fixed_size_list_arrow_array.change_type(arrow_logical_type);
+        fixed_size_list_arrow_array
     }
 }
 

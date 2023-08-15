@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use arrow2;
 
-use crate::{array::DataArray, count_mode::CountMode, datatypes::*};
+use crate::{
+    array::DataArray,
+    count_mode::CountMode,
+    datatypes::{nested_arrays::FixedSizeListArray, *},
+};
 use common_error::DaftResult;
 
 use super::{DaftCountAggable, GroupIndices};
@@ -60,5 +64,18 @@ where
             self.field.name.as_ref(),
             counts_per_group,
         )))
+    }
+}
+
+impl DaftCountAggable for &FixedSizeListArray {
+    type Output = DaftResult<DataArray<UInt64Type>>;
+
+    fn count(&self, _mode: CountMode) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+    fn grouped_count(&self, _groups: &GroupIndices, _mode: CountMode) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!()
     }
 }

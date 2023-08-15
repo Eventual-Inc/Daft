@@ -1,4 +1,7 @@
-use crate::{array::DataArray, datatypes::DaftArrowBackedType};
+use crate::{
+    array::DataArray,
+    datatypes::{nested_arrays::FixedSizeListArray, DaftArrowBackedType},
+};
 use common_error::DaftResult;
 
 #[cfg(feature = "python")]
@@ -33,5 +36,12 @@ impl PythonArray {
                 .extract()?;
             Ok(size_bytes)
         })
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        // TODO(FixedSizeListArray)
+        todo!()
     }
 }

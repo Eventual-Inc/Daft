@@ -1,8 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeListArray,
-        ListArray, NullArray, StructArray, Utf8Array,
+        nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftNumericType, DataType,
+        ExtensionArray, ListArray, NullArray, StructArray, Utf8Array,
     },
 };
 
@@ -172,42 +172,15 @@ impl Broadcastable for ListArray {
 }
 
 impl Broadcastable for FixedSizeListArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+    fn broadcast(&self, _num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
                 self.name()
             )));
         }
-        let maybe_val = self.as_arrow().iter().next().unwrap();
-        match maybe_val {
-            Some(val) => {
-                let repeated_values = arrow2::compute::concatenate::concatenate(
-                    std::iter::repeat(val.as_ref())
-                        .take(num)
-                        .collect::<Vec<&dyn arrow2::array::Array>>()
-                        .as_slice(),
-                )?;
-                match self.data_type() {
-                    DataType::FixedSizeList(field, _) => FixedSizeListArray::new(
-                        self.field.clone(),
-                        Box::new(arrow2::array::FixedSizeListArray::new(
-                            arrow2::datatypes::DataType::FixedSizeList(
-                                Box::new(field.to_arrow()?),
-                                val.len(),
-                            ),
-                            repeated_values,
-                            None,
-                        )),
-                    ),
-                    other => unreachable!(
-                        "Data type for ListArray should always be DataType::List, but got: {}",
-                        other
-                    ),
-                }
-            }
-            None => Ok(DataArray::full_null(self.name(), self.data_type(), num)),
-        }
+        // TODO(FixedSizeList)
+        todo!()
     }
 }
 
