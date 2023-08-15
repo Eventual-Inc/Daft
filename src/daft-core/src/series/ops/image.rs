@@ -1,4 +1,5 @@
-use crate::datatypes::{DataType, Field, FixedShapeImageType, ImageFormat, ImageType};
+use crate::datatypes::logical::{FixedShapeImageArray, ImageArray};
+use crate::datatypes::{DataType, Field, ImageFormat};
 
 use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
@@ -16,11 +17,11 @@ impl Series {
     pub fn image_encode(&self, image_format: ImageFormat) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Image(..) => Ok(self
-                .downcast_logical_data_array::<ImageType>()?
+                .downcast::<ImageArray>()?
                 .encode(image_format)?
                 .into_series()),
             DataType::FixedShapeImage(..) => Ok(self
-                .downcast_logical_data_array::<FixedShapeImageType>()?
+                .downcast::<FixedShapeImageArray>()?
                 .encode(image_format)?
                 .into_series()),
             dtype => Err(DaftError::ValueError(format!(
@@ -33,7 +34,7 @@ impl Series {
     pub fn image_resize(&self, w: u32, h: u32) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Image(mode) => {
-                let array = self.downcast_logical_data_array::<ImageType>()?;
+                let array = self.downcast::<ImageArray>()?;
                 match mode {
                     // If the image mode is specified at the type-level (and is therefore guaranteed to be consistent
                     // across all images across all partitions), store the resized image in a fixed shape image array,
@@ -45,7 +46,7 @@ impl Series {
                 }
             }
             DataType::FixedShapeImage(..) => Ok(self
-                .downcast_logical_data_array::<FixedShapeImageType>()?
+                .downcast::<FixedShapeImageArray>()?
                 .resize(w, h)?
                 .into_series()),
             _ => Err(DaftError::ValueError(format!(

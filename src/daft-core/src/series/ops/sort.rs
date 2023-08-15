@@ -9,7 +9,7 @@ impl Series {
     pub fn argsort(&self, descending: bool) -> DaftResult<Series> {
         let series = self.as_physical()?;
         with_match_comparable_daft_types!(series.data_type(), |$T| {
-            let downcasted = series.downcast::<$T>()?;
+            let downcasted = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
             Ok(downcasted.argsort::<UInt64Type>(descending)?.into_series())
         })
     }
@@ -32,7 +32,7 @@ impl Series {
 
         let first = sort_keys.first().unwrap().as_physical()?;
         with_match_comparable_daft_types!(first.data_type(), |$T| {
-            let downcasted = first.downcast::<$T>()?;
+            let downcasted = first.downcast::<<$T as DaftDataType>::ArrayType>()?;
             let result = downcasted.argsort_multikey::<UInt64Type>(&sort_keys[1..], descending)?;
             Ok(result.into_series())
         })
