@@ -4,8 +4,9 @@ use crate::datatypes::logical::{
     FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::{
-    BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, ExtensionArray, Field,
-    FixedSizeListArray, ListArray, NullArray, StructArray, Utf8Array,
+    nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftArrayType,
+    DaftArrowBackedType, DaftNumericType, ExtensionArray, Field, ListArray, NullArray, StructArray,
+    Utf8Array,
 };
 use crate::utils::arrow::arrow_bitmap_and_helper;
 use common_error::{DaftError, DaftResult};
@@ -297,10 +298,11 @@ impl ListArray {
 impl FixedSizeListArray {
     pub fn if_else(
         &self,
-        other: &FixedSizeListArray,
-        predicate: &BooleanArray,
+        _other: &FixedSizeListArray,
+        _predicate: &BooleanArray,
     ) -> DaftResult<FixedSizeListArray> {
-        nested_if_then_else(predicate, self, other)
+        // TODO(FixedSizeList)
+        todo!()
     }
 }
 

@@ -22,7 +22,11 @@ impl<T: DaftPhysicalType> Clone for DataArray<T> {
     }
 }
 
-impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {}
+impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
+    fn len(&self) -> usize {
+        self.data().len()
+    }
+}
 
 impl<T> DataArray<T>
 where
@@ -52,8 +56,8 @@ where
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.data().len()
+    pub fn data_type(&self) -> &DataType {
+        &self.field.dtype
     }
 
     pub fn is_empty(&self) -> bool {
@@ -89,10 +93,6 @@ where
 
     pub fn data(&self) -> &dyn arrow2::array::Array {
         self.data.as_ref()
-    }
-
-    pub fn data_type(&self) -> &DataType {
-        &self.field.dtype
     }
 
     pub fn name(&self) -> &str {

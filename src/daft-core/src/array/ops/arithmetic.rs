@@ -4,7 +4,7 @@ use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
     array::DataArray,
-    datatypes::{DaftNumericType, Float64Array, Utf8Array},
+    datatypes::{DaftArrayType, DaftNumericType, Float64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };
 

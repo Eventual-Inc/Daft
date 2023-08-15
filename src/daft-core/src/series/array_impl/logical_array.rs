@@ -2,15 +2,15 @@ use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
     FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
 };
-use crate::datatypes::BooleanArray;
+use crate::datatypes::{BooleanArray, DaftArrayType, Field};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
-use crate::with_match_daft_logical_primitive_types;
 use crate::with_match_integer_daft_types;
+use crate::{with_match_daft_logical_primitive_types, DataType};
 use std::sync::Arc;
 
 macro_rules! impl_series_like_for_logical_array {
@@ -28,7 +28,7 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.clone().into_series()
             }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-                let daft_type = self.0.logical_type();
+                let daft_type = self.0.data_type();
                 let arrow_logical_type = daft_type.to_arrow().unwrap();
                 let physical_arrow_array = self.0.physical.data();
                 use crate::datatypes::DataType::*;
@@ -69,24 +69,26 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
 
-            fn cast(&self, datatype: &crate::datatypes::DataType) -> DaftResult<Series> {
+            fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
                 self.0.cast(datatype)
             }
 
-            fn data_type(&self) -> &crate::datatypes::DataType {
-                self.0.logical_type()
+            fn data_type(&self) -> &DataType {
+                self.0.data_type()
             }
 
-            fn field(&self) -> &crate::datatypes::Field {
+            fn field(&self) -> &Field {
                 self.0.field()
             }
 
             fn filter(&self, mask: &crate::datatypes::BooleanArray) -> DaftResult<Series> {
-                Ok(self.0.filter(mask)?.into_series())
+                let new_array = self.0.physical.filter(mask)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn head(&self, num: usize) -> DaftResult<Series> {
-                Ok(self.0.head(num)?.into_series())
+                let new_array = self.0.physical.head(num)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
@@ -103,23 +105,25 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn len(&self) -> usize {
-                self.0.len()
+                self.0.physical.len()
             }
 
             fn size_bytes(&self) -> DaftResult<usize> {
-                self.0.size_bytes()
+                self.0.physical.size_bytes()
             }
 
             fn name(&self) -> &str {
-                self.0.name()
+                self.0.field.name.as_str()
             }
 
             fn rename(&self, name: &str) -> Series {
-                self.0.rename(name).into_series()
+                let new_array = self.0.physical.rename(name);
+                $da::new(self.0.field.clone(), new_array).into_series()
             }
 
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
-                Ok(self.0.slice(start, end)?.into_series())
+                let new_array = self.0.physical.slice(start, end)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn sort(&self, descending: bool) -> DaftResult<Series> {
@@ -223,9 +227,160 @@ macro_rules! impl_series_like_for_logical_array {
 impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(DurationArray);
-impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(ImageArray);
-impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(TensorArray);
-impl_series_like_for_logical_array!(FixedShapeTensorArray);
+
+macro_rules! impl_series_like_stub {
+    ($da:ident) => {
+        impl IntoSeries for $da {
+            fn into_series(self) -> Series {
+                Series {
+                    inner: Arc::new(ArrayWrapper(self)),
+                }
+            }
+        }
+
+        impl SeriesLike for ArrayWrapper<$da> {
+            fn into_series(&self) -> Series {
+                todo!()
+            }
+            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+                todo!()
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                todo!()
+            }
+
+            fn broadcast(&self, _num: usize) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn cast(&self, _datatype: &DataType) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn data_type(&self) -> &DataType {
+                todo!()
+            }
+
+            fn field(&self) -> &Field {
+                todo!()
+            }
+
+            fn filter(&self, _mask: &crate::datatypes::BooleanArray) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn head(&self, _num: usize) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn if_else(&self, _other: &Series, _predicate: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn is_null(&self) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn len(&self) -> usize {
+                todo!()
+            }
+
+            fn size_bytes(&self) -> DaftResult<usize> {
+                todo!()
+            }
+
+            fn name(&self) -> &str {
+                todo!()
+            }
+
+            fn rename(&self, _name: &str) -> Series {
+                todo!()
+            }
+
+            fn slice(&self, _start: usize, _end: usize) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn sort(&self, _descending: bool) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn str_value(&self, _idx: usize) -> DaftResult<String> {
+                todo!()
+            }
+
+            fn html_value(&self, _idx: usize) -> String {
+                todo!()
+            }
+
+            fn take(&self, _idx: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn min(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                todo!()
+            }
+            fn max(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                todo!()
+            }
+            fn agg_list(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn add(&self, _rhs: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn sub(&self, _rhs: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn mul(&self, _rhs: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn div(&self, _rhs: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+
+            fn rem(&self, _rhs: &Series) -> DaftResult<Series> {
+                todo!()
+            }
+            fn and(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn or(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn xor(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn equal(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn not_equal(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn lt(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn lte(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn gt(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+            fn gte(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
+                todo!()
+            }
+        }
+    };
+}
+
+impl_series_like_stub!(EmbeddingArray);
+impl_series_like_stub!(FixedShapeImageArray);
+impl_series_like_stub!(FixedShapeTensorArray);

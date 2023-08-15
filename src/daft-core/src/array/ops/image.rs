@@ -4,16 +4,16 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::datatypes::DaftArrowBackedType;
 use crate::datatypes::{
-    logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalDataArray},
-    BinaryArray, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageFormat, ImageMode,
+    logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
+    nested_arrays::FixedSizeListArray,
+    BinaryArray, DaftArrayType, DaftLogicalType, DataType, Field, ImageFormat, ImageMode,
     StructArray,
 };
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 use num_traits::FromPrimitive;
 
 use std::ops::Deref;
@@ -322,18 +322,16 @@ pub trait AsImageObj {
 pub struct ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
 {
     cursor: usize,
-    image_array: &'a LogicalDataArray<T>,
+    image_array: &'a LogicalArray<T>,
 }
 
 impl<'a, T> ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
 {
-    pub fn new(image_array: &'a LogicalDataArray<T>) -> Self {
+    pub fn new(image_array: &'a LogicalArray<T>) -> Self {
         Self {
             cursor: 0usize,
             image_array,
@@ -344,8 +342,7 @@ where
 impl<'a, T> Iterator for ImageBufferIter<'a, T>
 where
     T: DaftLogicalType + DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalDataArray<T>: AsImageObj,
+    LogicalArray<T>: AsImageObj,
 {
     type Item = Option<DaftImageBuffer<'a>>;
 
@@ -362,7 +359,7 @@ where
 
 impl ImageArray {
     pub fn image_mode(&self) -> &Option<ImageMode> {
-        match self.logical_type() {
+        match self.data_type() {
             DataType::Image(mode) => mode,
             _ => panic!("Expected dtype to be Image"),
         }
@@ -689,10 +686,8 @@ impl FixedShapeImageArray {
             Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
             validity,
         ));
-        let physical_array = FixedSizeListArray::new(
-            Field::new(name, (&arrow_dtype).into()).into(),
-            arrow_array.boxed(),
-        )?;
+        let physical_array =
+            FixedSizeListArray::from_arrow(&Field::new(name, (&arrow_dtype).into()), arrow_array)?;
         let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
         Ok(Self::new(Field::new(name, logical_dtype), physical_array))
     }
@@ -703,7 +698,7 @@ impl FixedShapeImageArray {
 
     pub fn resize(&self, w: u32, h: u32) -> DaftResult<Self> {
         let result = resize_images(self, w, h);
-        match self.logical_type() {
+        match self.data_type() {
             DataType::FixedShapeImage(mode, _, _) => Self::from_daft_image_buffers(self.name(), result.as_slice(), mode, h, w),
             dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
         }
@@ -737,7 +732,7 @@ impl AsImageObj for FixedShapeImageArray {
             return None;
         }
 
-        match self.logical_type() {
+        match self.data_type() {
             DataType::FixedShapeImage(mode, height, width) => {
                 let arrow_array = self.as_arrow().values().as_any().downcast_ref::<arrow2::array::UInt8Array>().unwrap();
                 let num_channels = mode.num_channels();
@@ -770,11 +765,10 @@ impl AsImageObj for FixedShapeImageArray {
     }
 }
 
-impl<'a, T> IntoIterator for &'a LogicalDataArray<T>
+impl<'a, T> IntoIterator for &'a LogicalArray<T>
 where
     T: DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalDataArray<T>: AsImageObj,
+    LogicalArray<T>: AsImageObj,
 {
     type Item = Option<DaftImageBuffer<'a>>;
     type IntoIter = ImageBufferIter<'a, T>;
@@ -821,14 +815,13 @@ impl BinaryArray {
 }
 
 fn encode_images<'a, T>(
-    images: &'a LogicalDataArray<T>,
+    images: &'a LogicalArray<T>,
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray>
 where
     T: DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalDataArray<T>: AsImageObj,
-    &'a LogicalDataArray<T>:
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
     let arrow_array = match image_format {
@@ -917,16 +910,11 @@ where
     )
 }
 
-fn resize_images<'a, T>(
-    images: &'a LogicalDataArray<T>,
-    w: u32,
-    h: u32,
-) -> Vec<Option<DaftImageBuffer>>
+fn resize_images<'a, T>(images: &'a LogicalArray<T>, w: u32, h: u32) -> Vec<Option<DaftImageBuffer>>
 where
     T: DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalDataArray<T>: AsImageObj,
-    &'a LogicalDataArray<T>:
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
     images
@@ -936,14 +924,13 @@ where
 }
 
 fn crop_images<'a, T>(
-    images: &'a LogicalDataArray<T>,
+    images: &'a LogicalArray<T>,
     bboxes: &mut dyn Iterator<Item = Option<BBox>>,
 ) -> Vec<Option<DaftImageBuffer<'a>>>
 where
     T: DaftImageryType,
-    T::PhysicalType: DaftArrowBackedType,
-    LogicalDataArray<T>: AsImageObj,
-    &'a LogicalDataArray<T>:
+    LogicalArray<T>: AsImageObj,
+    &'a LogicalArray<T>:
         IntoIterator<Item = Option<DaftImageBuffer<'a>>, IntoIter = ImageBufferIter<'a, T>>,
 {
     images

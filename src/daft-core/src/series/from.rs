@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    datatypes::{logical::LogicalDataArray, DataType, Field},
+    datatypes::{DataType, Field},
     with_match_daft_logical_primitive_types, with_match_daft_logical_types,
     with_match_physical_daft_types,
 };
@@ -53,7 +53,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
             };
 
             let res = with_match_daft_logical_types!(dtype, |$T| {
-                LogicalDataArray::<$T>::from_arrow(field.as_ref(), physical_arrow_array)?.into_series()
+                <$T as DaftDataType>::ArrayType::from_arrow(field.as_ref(), physical_arrow_array)?.into_series()
             });
             return Ok(res);
         }
@@ -70,12 +70,12 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
                 },
             )?;
             return Ok(
-                with_match_physical_daft_types!(physical_type, |$T| DataArray::<$T>::from_arrow(field.as_ref(), casted_array)?.into_series()),
+                with_match_physical_daft_types!(physical_type, |$T| <$T as DaftDataType>::ArrayType::from_arrow(field.as_ref(), casted_array)?.into_series()),
             );
         }
 
         Ok(
-            with_match_physical_daft_types!(dtype, |$T| DataArray::<$T>::from_arrow(field.as_ref(), array.into())?.into_series()),
+            with_match_physical_daft_types!(dtype, |$T| <$T as DaftDataType>::ArrayType::from_arrow(field.as_ref(), array.into())?.into_series()),
         )
     }
 }

@@ -21,13 +21,19 @@ pub use image_format::ImageFormat;
 pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
+
+use self::nested_arrays::FixedSizeListArray;
 pub mod logical;
+pub mod nested_arrays;
 
 /// Trait that is implemented by all Array types
-pub trait DaftArrayType {}
+#[allow(clippy::len_without_is_empty)]
+pub trait DaftArrayType {
+    fn len(&self) -> usize;
+}
 
 /// Trait to wrap DataType Enum
-pub trait DaftDataType: Sync + Send {
+pub trait DaftDataType: Sync + Send + Clone {
     // Concrete ArrayType that backs data of this DataType
     type ArrayType: DaftArrayType;
 
@@ -47,6 +53,7 @@ pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
 
 macro_rules! impl_daft_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -65,6 +72,7 @@ macro_rules! impl_daft_arrow_datatype {
 
 macro_rules! impl_daft_non_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -79,8 +87,9 @@ macro_rules! impl_daft_non_arrow_datatype {
     };
 }
 
-macro_rules! impl_daft_logical_datatype {
+macro_rules! impl_daft_logical_data_array_datatype {
     ($ca:ident, $variant:ident, $physical_type:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -89,14 +98,31 @@ macro_rules! impl_daft_logical_datatype {
                 DataType::$variant
             }
 
-            type ArrayType = logical::LogicalArray<
-                $ca,
-                <<$ca as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType,
-            >;
+            type ArrayType = logical::LogicalArray<$ca>;
         }
 
         impl DaftLogicalType for $ca {
             type PhysicalType = $physical_type;
+        }
+    };
+}
+
+macro_rules! impl_daft_logical_fixed_size_list_datatype {
+    ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
+        pub struct $ca {}
+
+        impl DaftDataType for $ca {
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+
+            type ArrayType = logical::LogicalArray<$ca>;
+        }
+
+        impl DaftLogicalType for $ca {
+            type PhysicalType = FixedSizeListType;
         }
     };
 }
@@ -117,24 +143,36 @@ impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
-impl_daft_arrow_datatype!(FixedSizeListType, Unknown);
 impl_daft_arrow_datatype!(ListType, Unknown);
 impl_daft_arrow_datatype!(StructType, Unknown);
 impl_daft_arrow_datatype!(ExtensionType, Unknown);
 
+#[derive(Clone)]
+pub struct FixedSizeListType {}
+
+impl DaftDataType for FixedSizeListType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::Unknown
+    }
+
+    type ArrayType = FixedSizeListArray;
+}
+impl DaftPhysicalType for FixedSizeListType {}
+
+impl_daft_logical_data_array_datatype!(Decimal128Type, Unknown, Int128Type);
+impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
+// impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
+impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
+impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
+impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
+
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);
-
-impl_daft_logical_datatype!(Decimal128Type, Unknown, Int128Type);
-impl_daft_logical_datatype!(TimestampType, Unknown, Int64Type);
-impl_daft_logical_datatype!(DateType, Date, Int32Type);
-impl_daft_logical_datatype!(TimeType, Unknown, Int64Type);
-impl_daft_logical_datatype!(DurationType, Unknown, Int64Type);
-impl_daft_logical_datatype!(EmbeddingType, Unknown, FixedSizeListType);
-impl_daft_logical_datatype!(ImageType, Unknown, StructType);
-impl_daft_logical_datatype!(FixedShapeImageType, Unknown, FixedSizeListType);
-impl_daft_logical_datatype!(TensorType, Unknown, StructType);
-impl_daft_logical_datatype!(FixedShapeTensorType, Unknown, FixedSizeListType);
 
 pub trait NumericNative:
     PartialOrd
@@ -277,7 +315,6 @@ pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
-pub type FixedSizeListArray = DataArray<FixedSizeListType>;
 pub type ListArray = DataArray<ListType>;
 pub type StructArray = DataArray<StructType>;
 pub type ExtensionArray = DataArray<ExtensionType>;

@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use arrow2;
 
-use crate::{array::DataArray, datatypes::*};
+use crate::{
+    array::DataArray,
+    datatypes::{nested_arrays::FixedSizeListArray, *},
+};
 use common_error::DaftResult;
 
 use super::DaftIsNull;
@@ -42,5 +45,15 @@ where
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
         self.data.is_valid(idx)
+    }
+}
+
+impl FixedSizeListArray {
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        match &self.validity {
+            None => true,
+            Some(validity) => validity.get(idx).unwrap(),
+        }
     }
 }
