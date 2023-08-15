@@ -5,10 +5,10 @@ use futures::StreamExt;
 use futures::TryStreamExt;
 use google_cloud_storage::client::ClientConfig;
 
+use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
-
-use async_trait::async_trait;
+use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
@@ -20,72 +20,76 @@ use crate::GetResult;
 
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(display("Unable to connect to {}: {}", path, source))]
-    UnableToConnect {
-        path: String,
-        source: reqwest::Error,
-    },
-
     #[snafu(display("Unable to open {}: {}", path, source))]
-    UnableToOpenFile {
-        path: String,
-        source: azure_storage::Error,
-    },
-
-    #[snafu(display("Unable to determine size of {}", path))]
-    UnableToDetermineSize { path: String },
+    UnableToOpenFile { path: String, source: GError },
 
     #[snafu(display("Unable to read data from {}: {}", path, source))]
-    UnableToReadBytes {
-        path: String,
-        source: google_cloud_storage::http::Error,
-    },
+    UnableToReadBytes { path: String, source: GError },
 
-    // #[snafu(display("Unable to create Http Client {}", source))]
-    // UnableToCreateClient { source: reqwest::Error },
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
         path: String,
         source: url::ParseError,
     },
-    // #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
-    // StorageAccountNotSet,
+    #[snafu(display("Unable to load Credentials: {}", source))]
+    UnableToLoadCredentials {
+        source: google_cloud_storage::client::google_cloud_auth::error::Error,
+    },
 
-    // #[snafu(display(
-    //     "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
-    // ))]
-    // UnableToParseUtf8 { path: String, source: FromUtf8Error },
-
-    // #[snafu(display(
-    //     "Unable to parse data as Integer while reading header for file: {path}. {source}"
-    // ))]
-    // UnableToParseInteger { path: String, source: ParseIntError },
+    #[snafu(display("Not a File: \"{}\"", path))]
+    NotAFile { path: String },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            // UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
-            //     match source.as_http_error().map(|v| v.status().into()) {
-            //         Some(404) | Some(410) => super::Error::NotFound {
-            //             path,
-            //             source: source.into(),
-            //         },
-            //         Some(401) => super::Error::Unauthorized {
-            //             store: super::SourceType::AzureBlob,
-            //             path,
-            //             source: source.into(),
-            //         },
-            //         None | Some(_) => super::Error::UnableToOpenFile {
-            //             path,
-            //             source: source.into(),
-            //         },
-            //     }
-            // }
-            _ => super::Error::Generic {
+            UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
+                match source {
+                    GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
+                        Some(404) | Some(410) => super::Error::NotFound {
+                            path,
+                            source: err.into(),
+                        },
+                        Some(401) => super::Error::Unauthorized {
+                            store: super::SourceType::GCS,
+                            path,
+                            source: err.into(),
+                        },
+                        _ => super::Error::UnableToOpenFile {
+                            path,
+                            source: err.into(),
+                        },
+                    },
+                    GError::Response(err) => match err.code {
+                        404 | 410 => super::Error::NotFound {
+                            path,
+                            source: err.into(),
+                        },
+                        401 => super::Error::Unauthorized {
+                            store: super::SourceType::GCS,
+                            path,
+                            source: err.into(),
+                        },
+                        _ => super::Error::UnableToOpenFile {
+                            path,
+                            source: err.into(),
+                        },
+                    },
+                    GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                        store: super::SourceType::GCS,
+                        source: err.into(),
+                    },
+                }
+            }
+            NotAFile { path } => super::Error::NotAFile { path },
+            InvalidUrl { path, source } => super::Error::InvalidUrl {
+                path: path,
+                source: source,
+            },
+            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
-                source: error.into(),
+                source: source.into(),
             },
         }
     }
@@ -107,6 +111,11 @@ impl GCSClientWrapper {
             }),
         }?;
         let key = parsed.path();
+        let key = if let Some(key) = key.strip_prefix('/') {
+            key
+        } else {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        };
 
         match self {
             GCSClientWrapper::Native(client) => {
@@ -128,7 +137,9 @@ impl GCSClientWrapper {
                 let response = client
                     .download_streamed_object(&req, &grange)
                     .await
-                    .unwrap();
+                    .context(UnableToOpenFileSnafu {
+                        path: uri.to_string(),
+                    })?;
                 let response = response.map_err(move |e| {
                     UnableToReadBytesSnafu::<String> {
                         path: owned_uri.clone(),
@@ -140,7 +151,7 @@ impl GCSClientWrapper {
             }
             GCSClientWrapper::S3Compat(client) => {
                 // TODO Add not a file error here
-                let uri = format!("s3://{}{}", bucket, key);
+                let uri = format!("s3://{}/{}", bucket, key);
                 client.get(&uri, range).await
             }
         }
@@ -156,7 +167,11 @@ impl GCSClientWrapper {
             }),
         }?;
         let key = parsed.path();
-
+        let key = if let Some(key) = key.strip_prefix('/') {
+            key
+        } else {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        };
         match self {
             GCSClientWrapper::Native(client) => {
                 let req = GetObjectRequest {
@@ -165,11 +180,16 @@ impl GCSClientWrapper {
                     ..Default::default()
                 };
 
-                let response = client.get_object(&req).await.unwrap();
+                let response = client
+                    .get_object(&req)
+                    .await
+                    .context(UnableToOpenFileSnafu {
+                        path: uri.to_string(),
+                    })?;
                 Ok(response.size as usize)
             }
             GCSClientWrapper::S3Compat(client) => {
-                let uri = format!("s3://{}{}", bucket, key);
+                let uri = format!("s3://{}/{}", bucket, key);
                 client.get_size(&uri).await
             }
         }
@@ -182,7 +202,7 @@ pub(crate) struct GCSSource {
 
 impl GCSSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        let anon = true;
+        let anon = false;
         if anon {
             let s3_config = config::S3Config {
                 anonymous: true,
@@ -195,7 +215,10 @@ impl GCSSource {
             }
             .into())
         } else {
-            let config = ClientConfig::default();
+            let config = ClientConfig::default()
+                .with_auth()
+                .await
+                .context(UnableToLoadCredentialsSnafu {})?;
             log::warn!("config: {config:?}");
             let client = Client::new(config);
             Ok(GCSSource {
