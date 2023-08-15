@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::{functions, optimization, Expr};
 use daft_core::{
+    count_mode::CountMode,
     datatypes::ImageFormat,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
@@ -148,8 +149,8 @@ impl PyExpr {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }
 
-    pub fn count(&self) -> PyResult<Self> {
-        Ok(self.expr.count().into())
+    pub fn count(&self, mode: CountMode) -> PyResult<Self> {
+        Ok(self.expr.count(mode).into())
     }
 
     pub fn sum(&self) -> PyResult<Self> {

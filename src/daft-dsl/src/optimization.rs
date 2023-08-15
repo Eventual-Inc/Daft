@@ -5,7 +5,7 @@ pub fn get_required_columns(e: &Expr) -> Vec<String> {
     match e {
         Expr::Alias(child, _) => get_required_columns(child),
         Expr::Agg(agg) => match agg {
-            AggExpr::Count(child)
+            AggExpr::Count(child, ..)
             | AggExpr::Sum(child)
             | AggExpr::Mean(child)
             | AggExpr::Min(child)
@@ -73,8 +73,9 @@ pub fn replace_column_with_expression(expr: &Expr, column_name: &str, new_expr: 
             (*name).clone(),
         ),
         Expr::Agg(agg) => match agg {
-            AggExpr::Count(child) => Expr::Agg(AggExpr::Count(
+            AggExpr::Count(child, mode) => Expr::Agg(AggExpr::Count(
                 replace_column_with_expression(child, column_name, new_expr).into(),
+                *mode,
             )),
             AggExpr::Sum(child) => Expr::Agg(AggExpr::Sum(
                 replace_column_with_expression(child, column_name, new_expr).into(),

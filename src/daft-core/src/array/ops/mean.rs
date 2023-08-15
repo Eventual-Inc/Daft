@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow2;
 
+use crate::count_mode::CountMode;
 use crate::{array::DataArray, datatypes::*};
 
 use common_error::DaftResult;
@@ -16,7 +17,9 @@ impl DaftMeanAggable for &DataArray<Float64Type> {
 
     fn mean(&self) -> Self::Output {
         let sum_value = DaftSumAggable::sum(self)?.as_arrow().value(0);
-        let count_value = DaftCountAggable::count(self)?.as_arrow().value(0);
+        let count_value = DaftCountAggable::count(self, CountMode::Valid)?
+            .as_arrow()
+            .value(0);
 
         let result = match count_value {
             0 => None,
@@ -33,7 +36,7 @@ impl DaftMeanAggable for &DataArray<Float64Type> {
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
         use arrow2::array::PrimitiveArray;
         let sum_values = self.grouped_sum(groups)?;
-        let count_values = self.grouped_count(groups)?;
+        let count_values = self.grouped_count(groups, CountMode::Valid)?;
         assert_eq!(sum_values.len(), count_values.len());
         let mean_per_group = sum_values
             .as_arrow()

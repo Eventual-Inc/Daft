@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::{cmp::max, collections::HashMap};
 
 use common_error::DaftResult;
+use daft_core::count_mode::CountMode;
 use daft_dsl::Expr;
 
 use crate::logical_plan::LogicalPlan;
@@ -221,13 +222,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     for agg_expr in aggregations {
                         let output_name = agg_expr.name().unwrap();
                         match agg_expr {
-                            Count(e) => {
+                            Count(e, mode) => {
                                 let count_id = agg_expr.semantic_id(&schema).id;
                                 let sum_of_count_id =
                                     Sum(Column(count_id.clone()).into()).semantic_id(&schema).id;
-                                first_stage_aggs
-                                    .entry(count_id.clone())
-                                    .or_insert(Count(e.alias(count_id.clone()).clone().into()));
+                                first_stage_aggs.entry(count_id.clone()).or_insert(Count(
+                                    e.alias(count_id.clone()).clone().into(),
+                                    *mode,
+                                ));
                                 second_stage_aggs
                                     .entry(sum_of_count_id.clone())
                                     .or_insert(Sum(Column(count_id.clone())
@@ -252,7 +254,8 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                             }
                             Mean(e) => {
                                 let sum_id = Sum(e.clone()).semantic_id(&schema).id;
-                                let count_id = Count(e.clone()).semantic_id(&schema).id;
+                                let count_id =
+                                    Count(e.clone(), CountMode::Valid).semantic_id(&schema).id;
                                 let sum_of_sum_id =
                                     Sum(Column(sum_id.clone()).into()).semantic_id(&schema).id;
                                 let sum_of_count_id =
@@ -260,9 +263,10 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                                 first_stage_aggs
                                     .entry(sum_id.clone())
                                     .or_insert(Sum(e.alias(sum_id.clone()).clone().into()));
-                                first_stage_aggs
-                                    .entry(count_id.clone())
-                                    .or_insert(Count(e.alias(count_id.clone()).clone().into()));
+                                first_stage_aggs.entry(count_id.clone()).or_insert(Count(
+                                    e.alias(count_id.clone()).clone().into(),
+                                    CountMode::Valid,
+                                ));
                                 second_stage_aggs
                                     .entry(sum_of_sum_id.clone())
                                     .or_insert(Sum(Column(sum_id.clone())

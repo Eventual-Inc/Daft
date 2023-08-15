@@ -274,7 +274,7 @@ impl Table {
     ) -> DaftResult<Series> {
         use daft_dsl::AggExpr::*;
         match agg_expr {
-            Count(expr) => Series::count(&self.eval_expression(expr)?, groups),
+            Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),

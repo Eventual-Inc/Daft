@@ -5,7 +5,7 @@ from typing import TypeVar
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import ImageFormat, PySeries
+from daft.daft import CountMode, ImageFormat, PySeries
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
@@ -434,9 +434,9 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
-    def _count(self) -> Series:
+    def _count(self, mode: CountMode = CountMode.Valid) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._count())
+        return Series._from_pyseries(self._series._count(mode))
 
     def _min(self) -> Series:
         assert self._series is not None
