@@ -192,16 +192,13 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,
-            group_by,
+            groupby,
             input,
+            ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
             use daft_dsl::Expr::Column;
             let input_plan = plan(input)?;
-
-            if !group_by.is_empty() {
-                unimplemented!("{:?}", group_by);
-            }
 
             let num_input_partitions = logical_plan.partition_spec().num_partitions;
 
@@ -209,7 +206,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
                     input_plan.into(),
                     aggregations.clone(),
-                    group_by.clone(),
+                    groupby.clone(),
                 )),
                 _ => {
                     let schema = logical_plan.schema();
@@ -219,7 +216,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     let mut first_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     let mut second_stage_aggs: HashMap<Arc<str>, AggExpr> = HashMap::new();
                     // Project the aggregation results to their final output names
-                    let mut final_exprs: Vec<Expr> = vec![];
+                    let mut final_exprs: Vec<Expr> = groupby.clone();
 
                     for agg_expr in aggregations {
                         let output_name = agg_expr.name().unwrap();
@@ -352,9 +349,9 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     let first_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         input_plan.into(),
                         first_stage_aggs.values().cloned().collect(),
-                        group_by.clone(),
+                        groupby.clone(),
                     ));
-                    let gather_plan = if group_by.is_empty() {
+                    let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
                             first_stage_agg.into(),
                             num_input_partitions,
@@ -363,7 +360,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             num_input_partitions,
-                            group_by.clone(),
+                            groupby.clone(),
                             first_stage_agg.into(),
                         ));
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
@@ -372,10 +369,14 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     let _second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan.into(),
                         second_stage_aggs.values().cloned().collect(),
-                        group_by.clone(),
+                        groupby.clone(),
                     ));
 
-                    todo!("final projection")
+                    PhysicalPlan::Project(Project::new(
+                        final_exprs,
+                        Default::default(),
+                        _second_stage_agg.into(),
+                    ))
                 }
             };
 

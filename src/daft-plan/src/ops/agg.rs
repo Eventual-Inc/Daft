@@ -11,20 +11,25 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub group_by: Vec<Expr>,
+    pub groupby: Vec<Expr>,
+
+    pub output_schema: SchemaRef,
 
     // Upstream node.
     pub input: Arc<LogicalPlan>,
 }
 
 impl Aggregate {
-    pub(crate) fn new(aggregations: Vec<AggExpr>, input: Arc<LogicalPlan>) -> Self {
-        // TEMP: No groupbys supported for now.
-        let group_by: Vec<Expr> = vec![];
-
+    pub(crate) fn new(
+        aggregations: Vec<AggExpr>,
+        groupby: Vec<Expr>,
+        output_schema: SchemaRef,
+        input: Arc<LogicalPlan>,
+    ) -> Self {
         Self {
             aggregations,
-            group_by,
+            groupby,
+            output_schema,
             input,
         }
     }
@@ -33,7 +38,7 @@ impl Aggregate {
         let source_schema = self.input.schema();
 
         let fields = self
-            .group_by
+            .groupby
             .iter()
             .map(|expr| expr.to_field(&source_schema).unwrap())
             .chain(
@@ -48,8 +53,8 @@ impl Aggregate {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Aggregation: {:?}", self.aggregations));
-        if !self.group_by.is_empty() {
-            res.push(format!("  Group by: {:?}", self.group_by));
+        if !self.groupby.is_empty() {
+            res.push(format!("  Group by: {:?}", self.groupby));
         }
         res.push(format!("  Output schema: {}", self.schema().short_string()));
         res

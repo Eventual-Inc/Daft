@@ -21,23 +21,6 @@ from daft.table import Table
 PartitionT = TypeVar("PartitionT")
 
 
-def local_aggregate(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    agg_exprs: list[PyExpr],
-    group_by: list[PyExpr],
-) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    aggregation_step = execution_step.Aggregate(
-        to_agg=[Expression._from_pyexpr(pyexpr) for pyexpr in agg_exprs],
-        group_by=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in group_by]),
-    )
-
-    return physical_plan.pipeline_instruction(
-        child_plan=input,
-        pipeable_instruction=aggregation_step,
-        resource_request=ResourceRequest(),
-    )
-
-
 def tabular_scan(
     schema: PySchema, file_info_table: PyTable, file_format_config: FileFormatConfig, limit: int
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -90,6 +73,23 @@ def explode(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.MapPartition(explode_op),
+        resource_request=ResourceRequest(),
+    )
+
+
+def local_aggregate(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    agg_exprs: list[PyExpr],
+    group_by: list[PyExpr],
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    aggregation_step = execution_step.Aggregate(
+        to_agg=[Expression._from_pyexpr(pyexpr) for pyexpr in agg_exprs],
+        group_by=ExpressionsProjection([Expression._from_pyexpr(pyexpr) for pyexpr in group_by]),
+    )
+
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=aggregation_step,
         resource_request=ResourceRequest(),
     )
 

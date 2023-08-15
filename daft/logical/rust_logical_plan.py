@@ -174,10 +174,24 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         for expr, op in to_agg:
             if op == "sum":
                 exprs.append(expr._sum())
+            elif op == "count":
+                exprs.append(expr._count())
+            elif op == "min":
+                exprs.append(expr._min())
+            elif op == "max":
+                exprs.append(expr._max())
+            elif op == "mean":
+                exprs.append(expr._mean())
+            elif op == "list":
+                exprs.append(expr._agg_list())
+            elif op == "concat":
+                exprs.append(expr._agg_concat())
             else:
-                raise NotImplementedError()
+                raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
-        builder = self._builder.aggregate([expr._expr for expr in exprs])
+        builder = self._builder.aggregate(
+            [expr._expr for expr in exprs], group_by.to_inner_py_exprs() if group_by is not None else []
+        )
         return RustLogicalPlanBuilder(builder)
 
     def join(  # type: ignore[override]
