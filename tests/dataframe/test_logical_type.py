@@ -14,7 +14,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
-def test_embedding_type_df(use_new_planner) -> None:
+def test_embedding_type_df() -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "embeddings": Series.from_pylist(data, pyobj="force")})
 
@@ -28,7 +28,7 @@ def test_embedding_type_df(use_new_planner) -> None:
 
 
 @pytest.mark.parametrize("from_pil_imgs", [True, False])
-def test_image_type_df(from_pil_imgs, use_new_planner) -> None:
+def test_image_type_df(from_pil_imgs) -> None:
     data = [
         np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
         np.arange(12, 39, dtype=np.uint8).reshape((3, 3, 3)),
@@ -50,7 +50,7 @@ def test_image_type_df(from_pil_imgs, use_new_planner) -> None:
     assert isinstance(arrow_table["image"].type, DaftExtension)
 
 
-def test_fixed_shape_image_type_df(use_new_planner) -> None:
+def test_fixed_shape_image_type_df() -> None:
     height = 2
     width = 2
     shape = (height, width, 3)
@@ -66,7 +66,7 @@ def test_fixed_shape_image_type_df(use_new_planner) -> None:
     assert isinstance(arrow_table["image"].type, DaftExtension)
 
 
-def test_tensor_type_df(use_new_planner) -> None:
+def test_tensor_type_df() -> None:
     data = [
         np.arange(12).reshape((3, 2, 2)),
         np.arange(12, 39).reshape((3, 3, 3)),
@@ -82,7 +82,7 @@ def test_tensor_type_df(use_new_planner) -> None:
     assert isinstance(arrow_table["tensor"].type, DaftExtension)
 
 
-def test_fixed_shape_tensor_type_df(use_new_planner) -> None:
+def test_fixed_shape_tensor_type_df() -> None:
     shape = (3, 2, 2)
     data = [
         np.arange(12).reshape(shape),

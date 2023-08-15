@@ -83,17 +83,17 @@ def test_create_dataframe_empty_list() -> None:
 ###
 
 
-def test_create_dataframe_list(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
     df = daft.from_pylist(valid_data)
     assert set(df.column_names) == set(COL_NAMES)
 
 
-def test_create_dataframe_list_empty(use_new_planner) -> None:
+def test_create_dataframe_list_empty() -> None:
     df = daft.from_pylist([])
     assert df.column_names == []
 
 
-def test_create_dataframe_list_ragged_keys(use_new_planner) -> None:
+def test_create_dataframe_list_ragged_keys() -> None:
     df = daft.from_pylist(
         [
             {"foo": 1},
@@ -108,12 +108,12 @@ def test_create_dataframe_list_ragged_keys(use_new_planner) -> None:
     }
 
 
-def test_create_dataframe_list_empty_dicts(use_new_planner) -> None:
+def test_create_dataframe_list_empty_dicts() -> None:
     df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
 
 
-def test_create_dataframe_list_non_dicts(use_new_planner) -> None:
+def test_create_dataframe_list_non_dicts() -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pylist([1, 2, 3])
     assert "Expected list of dictionaries of {column_name: value}" in str(e.value)
@@ -124,24 +124,24 @@ def test_create_dataframe_list_non_dicts(use_new_planner) -> None:
 ###
 
 
-def test_create_dataframe_pydict(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = daft.from_pydict(pydict)
     assert set(df.column_names) == set(COL_NAMES)
 
 
-def test_create_dataframe_empty_pydict(use_new_planner) -> None:
+def test_create_dataframe_empty_pydict() -> None:
     df = daft.from_pydict({})
     assert df.column_names == []
 
 
-def test_create_dataframe_pydict_ragged_col_lens(use_new_planner) -> None:
+def test_create_dataframe_pydict_ragged_col_lens() -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pydict({"foo": [1, 2], "bar": [1, 2, 3]})
     assert "Expected all columns to be of the same length" in str(e.value)
 
 
-def test_create_dataframe_pydict_bad_columns(use_new_planner) -> None:
+def test_create_dataframe_pydict_bad_columns() -> None:
     with pytest.raises(ValueError) as e:
         daft.from_pydict({"foo": "somestring"})
     assert "Creating a Series from data of type" in str(e.value)
@@ -153,7 +153,7 @@ def test_create_dataframe_pydict_bad_columns(use_new_planner) -> None:
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple, use_new_planner) -> None:
+def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) -> None:
     t = pa.Table.from_pydict({k: [valid_data[i][k] for i in range(len(valid_data))] for k in valid_data[0].keys()})
     if multiple:
         t = [t, t, t]
@@ -167,7 +167,7 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple, us
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     arr = np.ones((len(valid_data),) + shape)
@@ -190,7 +190,7 @@ def test_create_dataframe_arrow_tensor_ray(valid_data: list[dict[str, float]], u
     not pyarrow_supports_fixed_shape_tensor(),
     reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
 )
-def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     dtype = pa.fixed_shape_tensor(pa.int64(), shape)
@@ -207,9 +207,7 @@ def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, floa
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_extension_type(
-    valid_data: list[dict[str, float]], uuid_ext_type: UuidType, use_new_planner
-) -> None:
+def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
     pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
@@ -233,7 +231,7 @@ class PyExtType(pa.PyExtensionType):
         return PyExtType, ()
 
 
-def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     uuid_type = PyExtType()
     storage_array = pa.array([f"foo-{i}".encode() for i in range(len(valid_data))], pa.binary())
@@ -244,7 +242,7 @@ def test_create_dataframe_arrow_py_ext_type_raises(valid_data: list[dict[str, fl
         daft.from_arrow(t)
 
 
-def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = [
         decimal.Decimal("12456789012345678901234567890123456789012345678901234567890") for _ in range(len(valid_data))
@@ -266,7 +264,7 @@ def test_create_dataframe_arrow_unsupported_dtype(valid_data: list[dict[str, flo
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple, use_new_planner) -> None:
+def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -> None:
     pd_df = pd.DataFrame(valid_data)
     if multiple:
         pd_df = [pd_df, pd_df, pd_df]
@@ -278,7 +276,7 @@ def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple, u
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
-def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     pydict["obj"] = [MyObjWithValue(i) for i in range(len(valid_data))]
     pd_df = pd.DataFrame(pydict)
@@ -290,7 +288,7 @@ def test_create_dataframe_pandas_py_object(valid_data: list[dict[str, float]], u
     pd.testing.assert_frame_equal(df.to_pandas(), pd_df)
 
 
-def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
     pydict["tensor"] = TensorArray(np.ones((len(valid_data),) + shape))
@@ -337,7 +335,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]], use_
         pytest.param(np.ones((3, 3, 3)), DataType.tensor(DataType.float64()), id="np_nested_nd"),
     ],
 )
-def test_load_pydict_types(data, expected_dtype, use_new_planner):
+def test_load_pydict_types(data, expected_dtype):
     data_dict = {"x": data}
     daft_df = daft.from_pydict(data_dict)
     daft_df.collect()
@@ -352,7 +350,7 @@ def test_load_pydict_types(data, expected_dtype, use_new_planner):
 ###
 
 
-def test_create_dataframe_csv(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f)
@@ -368,7 +366,7 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]], use_new_planne
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
         for f in (f1, f2):
             header = list(valid_data[0].keys())
@@ -385,7 +383,10 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]], use_
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(
+    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
+    reason="requires PyRunner and old query planner to be in use",
+)
 def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
@@ -416,7 +417,7 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f)
@@ -432,7 +433,7 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f)
@@ -451,7 +452,7 @@ def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f, delimiter="\t")
@@ -467,7 +468,7 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f, delimiter="\t")
@@ -493,7 +494,7 @@ def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]],
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         header = list(valid_data[0].keys())
         writer = csv.writer(f, delimiter="\t")
@@ -524,7 +525,7 @@ def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[st
 ###
 
 
-def test_create_dataframe_json(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
             f.write(json.dumps(data))
@@ -539,7 +540,7 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]], use_new_plann
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
         for f in (f1, f2):
             for data in valid_data:
@@ -555,7 +556,10 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]], use
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(
+    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
+    reason="requires PyRunner and old query planner to be in use",
+)
 def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
@@ -586,7 +590,7 @@ def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> 
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
             f.write(json.dumps(data))
@@ -604,14 +608,14 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_json_https(use_new_planner) -> None:
+def test_create_dataframe_json_https() -> None:
     df = daft.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
     df.collect()
     assert set(df.column_names) == {"label", "image"}
     assert len(df) == 10000
 
 
-def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]], use_new_planner) -> None:
+def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         for data in valid_data:
             f.write(json.dumps(data))
@@ -641,7 +645,7 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader, use_new_planner) -> None:
+def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -656,9 +660,7 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_with_filter(
-    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
-) -> None:
+def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -675,9 +677,7 @@ def test_create_dataframe_parquet_with_filter(
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_multiple_parquets(
-    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
-) -> None:
+def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
         for f in (f1, f2):
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -692,7 +692,10 @@ def test_create_dataframe_multiple_parquets(
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(
+    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
+    reason="requires PyRunner and old query planner to be in use",
+)
 def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -723,9 +726,7 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_column_projection(
-    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
-) -> None:
+def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)
@@ -743,9 +744,7 @@ def test_create_dataframe_parquet_column_projection(
 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_specify_schema(
-    valid_data: list[dict[str, float]], use_native_downloader, use_new_planner
-) -> None:
+def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
         table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
         papq.write_table(table, f.name)

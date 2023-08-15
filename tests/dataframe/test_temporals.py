@@ -11,7 +11,7 @@ import daft
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
-def test_temporal_arithmetic(use_new_planner) -> None:
+def test_temporal_arithmetic() -> None:
     now = datetime.now()
     now_tz = datetime.now(timezone.utc)
     df = daft.from_pydict(
@@ -42,7 +42,7 @@ def test_temporal_arithmetic(use_new_planner) -> None:
 
 
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-def test_temporal_file_roundtrip(format, use_new_planner) -> None:
+def test_temporal_file_roundtrip(format) -> None:
     data = {
         "date32": pa.array([1], pa.date32()),
         "date64": pa.array([1], pa.date64()),
@@ -97,7 +97,7 @@ def test_temporal_file_roundtrip(format, use_new_planner) -> None:
     "timezone",
     [None, "UTC", "America/Los_Angeles", "+04:00"],
 )
-def test_arrow_timestamp(timeunit, timezone, use_new_planner) -> None:
+def test_arrow_timestamp(timeunit, timezone) -> None:
     # Test roundtrip of Arrow timestamps.
     pa_table = pa.Table.from_pydict({"timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, tz=timezone))})
 
@@ -108,7 +108,7 @@ def test_arrow_timestamp(timeunit, timezone, use_new_planner) -> None:
 
 @pytest.mark.skipif(not PYARROW_GE_7_0_0, reason="PyArrow conversion of timezoned datetime is broken in 6.0.1")
 @pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
-def test_python_timestamp(timezone, use_new_planner) -> None:
+def test_python_timestamp(timezone) -> None:
     # Test roundtrip of Python timestamps.
     timestamp = datetime.now(timezone)
     df = daft.from_pydict({"timestamp": [timestamp]})
@@ -121,7 +121,7 @@ def test_python_timestamp(timezone, use_new_planner) -> None:
     "timeunit",
     ["s", "ms", "us", "ns"],
 )
-def test_arrow_duration(timeunit, use_new_planner) -> None:
+def test_arrow_duration(timeunit) -> None:
     # Test roundtrip of Arrow timestamps.
     pa_table = pa.Table.from_pydict({"duration": pa.array([1, 0, -1], pa.duration(timeunit))})
 
@@ -130,7 +130,7 @@ def test_arrow_duration(timeunit, use_new_planner) -> None:
     assert df.to_arrow() == pa_table
 
 
-def test_python_duration(use_new_planner) -> None:
+def test_python_duration() -> None:
     # Test roundtrip of Python durations.
     duration = timedelta(weeks=1, days=1, hours=1, minutes=1, seconds=1, milliseconds=1, microseconds=1)
     df = daft.from_pydict({"duration": [duration]})
@@ -147,7 +147,7 @@ def test_python_duration(use_new_planner) -> None:
     "timezone",
     [None, "UTC"],
 )
-def test_temporal_arithmetic(timeunit, timezone, use_new_planner) -> None:
+def test_temporal_arithmetic(timeunit, timezone) -> None:
     pa_table = pa.Table.from_pydict(
         {
             "timestamp": pa.array([1, 0, -1], pa.timestamp(timeunit, timezone)),
@@ -194,7 +194,7 @@ def test_temporal_arithmetic(timeunit, timezone, use_new_planner) -> None:
     "timezone",
     [None, "UTC"],
 )
-def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezone, use_new_planner) -> None:
+def test_temporal_arithmetic_mismatch_granularity(t_timeunit, d_timeunit, timezone) -> None:
     if t_timeunit == d_timeunit:
         return
 

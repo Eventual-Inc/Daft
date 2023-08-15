@@ -10,7 +10,7 @@ from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_multicol_joins(n_partitions: int, use_new_planner):
+def test_multicol_joins(n_partitions: int):
     df = daft.from_pydict(
         {
             "A": [1, 2, 3],
@@ -31,7 +31,7 @@ def test_multicol_joins(n_partitions: int, use_new_planner):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_limit_after_join(n_partitions: int, use_new_planner):
+def test_limit_after_join(n_partitions: int):
     data = {
         "A": [1, 2, 3],
     }
@@ -50,7 +50,7 @@ def test_limit_after_join(n_partitions: int, use_new_planner):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join(repartition_nparts, use_new_planner):
+def test_inner_join(repartition_nparts):
     daft_df = daft.from_pydict(
         {
             "id": [1, None, 3],
@@ -76,7 +76,7 @@ def test_inner_join(repartition_nparts, use_new_planner):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join_multikey(repartition_nparts, use_new_planner):
+def test_inner_join_multikey(repartition_nparts):
     daft_df = daft.from_pydict(
         {
             "id": [1, None, None],
@@ -105,7 +105,7 @@ def test_inner_join_multikey(repartition_nparts, use_new_planner):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join_all_null(repartition_nparts, use_new_planner):
+def test_inner_join_all_null(repartition_nparts):
     daft_df = daft.from_pydict(
         {
             "id": [None, None, None],
@@ -130,7 +130,7 @@ def test_inner_join_all_null(repartition_nparts, use_new_planner):
     )
 
 
-def test_inner_join_null_type_column(use_new_planner):
+def test_inner_join_null_type_column():
     daft_df = daft.from_pydict(
         {
             "id": [None, None, None],

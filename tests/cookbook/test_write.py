@@ -7,7 +7,7 @@ from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
-def test_parquet_write(tmp_path, use_new_planner):
+def test_parquet_write(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path)
@@ -17,7 +17,7 @@ def test_parquet_write(tmp_path, use_new_planner):
     assert len(pd_df.to_pandas()) == 1
 
 
-def test_parquet_write_with_partitioning(tmp_path, use_new_planner):
+def test_parquet_write_with_partitioning(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"])
@@ -28,7 +28,7 @@ def test_parquet_write_with_partitioning(tmp_path, use_new_planner):
     assert len(pd_df.to_pandas()) == 5
 
 
-def test_csv_write(tmp_path, use_new_planner):
+def test_csv_write(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path)
@@ -40,7 +40,7 @@ def test_csv_write(tmp_path, use_new_planner):
 
 
 @pytest.mark.skip()
-def test_csv_write_with_partitioning(tmp_path, use_new_planner):
+def test_csv_write_with_partitioning(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path, partition_cols=["Borough"]).to_pandas()

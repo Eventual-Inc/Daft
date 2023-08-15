@@ -57,7 +57,7 @@ _RUNNER: Runner | None = None
 
 def _get_planner_from_env() -> bool:
     """Returns whether or not to use the new query planner."""
-    return bool(int(os.getenv("DAFT_DEVELOPER_RUST_QUERY_PLANNER", default="0")))
+    return bool(int(os.getenv("DAFT_NEW_QUERY_PLANNER", default="0")))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -193,7 +193,7 @@ def set_new_planner() -> DaftContext:
 
     WARNING: The new query planner is currently experimental and only partially implemented.
 
-    Alternatively, users can set this behavior via an environment variable: DAFT_DEVELOPER_RUST_QUERY_PLANNER=1
+    Alternatively, users can set this behavior via an environment variable: DAFT_NEW_QUERY_PLANNER=1
 
     Returns:
         DaftContext: Daft context after enabling the new query planner.
@@ -210,7 +210,7 @@ def set_new_planner() -> DaftContext:
 def set_old_planner() -> DaftContext:
     """Enable the old query planner.
 
-    Alternatively, users can set this behavior via an environment variable: DAFT_DEVELOPER_RUST_QUERY_PLANNER=0
+    Alternatively, users can set this behavior via an environment variable: DAFT_NEW_QUERY_PLANNER=0
 
     Returns:
         DaftContext: Daft context after enabling the old query planner.

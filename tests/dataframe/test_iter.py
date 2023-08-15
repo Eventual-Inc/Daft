@@ -10,7 +10,7 @@ class MockException(Exception):
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_rows(materialized, use_new_planner):
+def test_iter_rows(materialized):
     # Test that df.__iter__ produces the correct rows in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
@@ -23,7 +23,7 @@ def test_iter_rows(materialized, use_new_planner):
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_partitions(materialized, use_new_planner):
+def test_iter_partitions(materialized):
     # Test that df.iter_partitions() produces partitions in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
@@ -48,7 +48,7 @@ def test_iter_partitions(materialized, use_new_planner):
     ]
 
 
-def test_iter_exception(use_new_planner):
+def test_iter_exception():
     # Test that df.__iter__ actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
@@ -70,7 +70,7 @@ def test_iter_exception(use_new_planner):
         list(it)
 
 
-def test_iter_partitions_exception(use_new_planner):
+def test_iter_partitions_exception():
     # Test that df.iter_partitions actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 

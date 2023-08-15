@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 
+from daft.context import get_context
 from daft.logical.logical_plan import LogicalPlan
+
+collect_ignore_glob = []
+if get_context().use_rust_planner:
+    collect_ignore_glob.append("*.py")
 
 
 @pytest.fixture(scope="function")

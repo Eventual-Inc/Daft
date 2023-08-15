@@ -21,6 +21,7 @@ jobs:
       matrix:
         python-version: ['3.7', '3.10']
         daft-runner: [py, ray]
+        new-query-planner: [1, 0]
         pyarrow-version: [6.0.1, 12.0]
         exclude:
         - daft-runner: ray
@@ -74,6 +75,7 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
@@ -183,6 +185,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -263,6 +266,7 @@ jobs:
         pytest tests/integration/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
