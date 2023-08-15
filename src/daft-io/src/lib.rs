@@ -43,7 +43,7 @@ pub enum Error {
     #[snafu(display("Generic {} error: {}", store, source))]
     Generic { store: SourceType, source: DynError },
 
-    #[snafu(display("Object at location {} not found: {}", path, source))]
+    #[snafu(display("Object at location {} not found\nDetails:\n{}", path, source))]
     NotFound { path: String, source: DynError },
 
     #[snafu(display("Invalid Argument: {:?}", msg))]
@@ -67,10 +67,10 @@ pub enum Error {
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
-    #[snafu(display("Unable to load Credentials for store: {store} {source}"))]
+    #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
-    #[snafu(display("Failed to load Credentials for store: {store} {source}"))]
+    #[snafu(display("Failed to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display("Unauthorized to access store: {store} for file: {path}\nYou may need to set valid Credentials\n{source}"))]

@@ -97,6 +97,16 @@ impl From<Error> for super::Error {
                     source: err.into(),
                 },
             },
+            UnableToHeadFile { path, source } => match source.into_service_error() {
+                HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                    path,
+                    source: no_such_key.into(),
+                },
+                err => super::Error::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
+            },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
                 path,

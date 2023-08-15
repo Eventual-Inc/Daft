@@ -216,7 +216,6 @@ impl GCSSource {
                 .with_auth()
                 .await
                 .context(UnableToLoadCredentialsSnafu {})?;
-            log::warn!("config: {config:?}");
             let client = Client::new(config);
             Ok(GCSSource {
                 client: GCSClientWrapper::Native(client),
