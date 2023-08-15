@@ -151,6 +151,7 @@ jobs:
       matrix:
         python-version: ['3.7']
         daft-runner: [py, ray]
+        new-query-planner: [1, 0]
     steps:
     - uses: actions/checkout@v3
       with:
@@ -218,6 +219,7 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        new-query-planner: [1, 0]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
