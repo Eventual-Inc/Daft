@@ -373,7 +373,7 @@ impl PhysicalPlan {
             }
             PhysicalPlan::Aggregate(Aggregate {
                 aggregations,
-                group_by,
+                groupby,
                 input,
                 ..
             }) => {
@@ -382,7 +382,7 @@ impl PhysicalPlan {
                     .iter()
                     .map(|agg_expr| PyExpr::from(Expr::Agg(agg_expr.clone())))
                     .collect();
-                let groupbys_as_pyexprs: Vec<PyExpr> = group_by
+                let groupbys_as_pyexprs: Vec<PyExpr> = groupby
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
                     .collect();

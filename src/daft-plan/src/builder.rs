@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
+
 use crate::{logical_plan::LogicalPlan, ResourceRequest};
 
 #[cfg(feature = "python")]
@@ -177,7 +179,11 @@ impl LogicalPlanBuilder {
         Ok(logical_plan_builder)
     }
 
-    pub fn aggregate(&self, agg_exprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
+    pub fn aggregate(
+        &self,
+        agg_exprs: Vec<PyExpr>,
+        groupby_exprs: Vec<PyExpr>,
+    ) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
         let agg_exprs = agg_exprs
             .iter()
@@ -189,7 +195,29 @@ impl LogicalPlanBuilder {
                 ))),
             })
             .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
-        let logical_plan: LogicalPlan = Aggregate::new(agg_exprs, self.plan.clone()).into();
+        let groupby_exprs = groupby_exprs
+            .iter()
+            .map(|expr| expr.clone().into())
+            .collect::<Vec<Expr>>();
+
+        let input_schema = self.plan.schema();
+        let fields = groupby_exprs
+            .iter()
+            .map(|expr| expr.to_field(&input_schema))
+            .chain(
+                agg_exprs
+                    .iter()
+                    .map(|agg_expr| agg_expr.to_field(&input_schema)),
+            )
+            .collect::<DaftResult<Vec<Field>>>()?;
+        let output_schema = Schema::new(fields)?;
+        let logical_plan: LogicalPlan = Aggregate::new(
+            agg_exprs,
+            groupby_exprs,
+            output_schema.into(),
+            self.plan.clone(),
+        )
+        .into();
         let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
         Ok(logical_plan_builder)
     }

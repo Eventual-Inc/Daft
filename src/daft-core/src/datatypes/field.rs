@@ -19,17 +19,19 @@ pub struct Field {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct FieldID {
-    pub id: String,
+    pub id: Arc<str>,
 }
 
 impl FieldID {
-    pub fn new<S: Into<String>>(id: S) -> Self {
+    pub fn new<S: Into<Arc<str>>>(id: S) -> Self {
         Self { id: id.into() }
     }
 
     /// Create a Field ID directly from a real column name.
     /// Performs sanitization on the name so it can be composed.
-    pub fn from_name(name: String) -> Self {
+    pub fn from_name<S: Into<String>>(name: S) -> Self {
+        let name: String = name.into();
+
         // Escape parentheses within a string,
         // since we will use parentheses as delimiters in our semantic expression IDs.
         let sanitized = name

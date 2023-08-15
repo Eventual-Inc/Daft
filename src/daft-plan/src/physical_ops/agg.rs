@@ -11,7 +11,7 @@ pub struct Aggregate {
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
-    pub group_by: Vec<Expr>,
+    pub groupby: Vec<Expr>,
 
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -21,11 +21,11 @@ impl Aggregate {
     pub(crate) fn new(
         input: Arc<PhysicalPlan>,
         aggregations: Vec<AggExpr>,
-        group_by: Vec<Expr>,
+        groupby: Vec<Expr>,
     ) -> Self {
         Self {
             aggregations,
-            group_by,
+            groupby,
             input,
         }
     }
