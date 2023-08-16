@@ -1,6 +1,6 @@
 use super::as_arrow::AsArrow;
 use crate::{
-    array::{ops::image::ImageArraySidecarData, DataArray},
+    array::{ops::from_arrow::FromArrow, ops::image::ImageArraySidecarData, DataArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -132,12 +132,11 @@ where
 
     if dtype.is_logical() {
         with_match_daft_logical_types!(dtype, |$T| {
-            let physical = DataArray::try_from((Field::new(to_cast.name(), dtype.to_physical()), result_arrow_physical_array))?;
-            return Ok(LogicalArray::<$T>::new(new_field.clone(), physical).into_series());
+            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
         })
     }
     with_match_arrow_daft_types!(dtype, |$T| {
-        Ok(DataArray::<$T>::try_from((new_field.clone(), result_arrow_physical_array))?.into_series())
+        Ok(DataArray::<$T>::from_arrow(new_field.as_ref(), result_arrow_physical_array)?.into_series())
     })
 }
 
@@ -224,12 +223,11 @@ where
 
     if dtype.is_logical() {
         with_match_daft_logical_types!(dtype, |$T| {
-            let physical = DataArray::try_from((Field::new(to_cast.name(), target_physical_type), result_array))?;
-            return Ok(LogicalArray::<$T>::new(new_field.clone(), physical).into_series());
+            return Ok(LogicalArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
         })
     }
     with_match_arrow_daft_types!(dtype, |$T| {
-        Ok(DataArray::<$T>::try_from((new_field.clone(), result_array))?.into_series())
+        return Ok(DataArray::<$T>::from_arrow(new_field.as_ref(), result_array)?.into_series());
     })
 }
 

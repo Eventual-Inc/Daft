@@ -14,6 +14,7 @@ mod count;
 mod date;
 mod filter;
 mod float;
+pub mod from_arrow;
 mod full;
 mod get;
 pub(crate) mod groups;
