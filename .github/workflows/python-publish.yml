@@ -13,8 +13,6 @@ on:
   push:
     tags:
     - v*
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -34,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu] #[ubuntu, macos]
+        os: [ubuntu, macos]
         compile_arch: [x86_64, aarch64]
     steps:
     - uses: actions/checkout@v3
@@ -112,75 +110,75 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 
-  # publish:
-  #   name: Publish wheels to PYPI and Anaconda
-  #   runs-on: ubuntu-latest
-  #   needs:
-  #   - build-and-test
-  #   steps:
-  #   - uses: actions/setup-python@v4
-  #     with:
-  #       python-version: ${{ env.PYTHON_VERSION }}
-  #       architecture: x64
-  #   - run: pip install -U twine
-  #   - uses: actions/checkout@v3
-  #   - uses: actions/download-artifact@v3
-  #     with:
-  #       name: wheels
-  #       path: dist
-  #   - run: ls -R ./dist
-  #   - name: Publish bdist package to PYPI
-  #     if: ${{ success() && (env.IS_PUSH == 'true') }}
-  #     run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-  #     env:
-  #       TWINE_USERNAME: __token__
-  #       TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+  publish:
+    name: Publish wheels to PYPI and Anaconda
+    runs-on: ubuntu-latest
+    needs:
+    - build-and-test
+    steps:
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+    - run: pip install -U twine
+    - uses: actions/checkout@v3
+    - uses: actions/download-artifact@v3
+      with:
+        name: wheels
+        path: dist
+    - run: ls -R ./dist
+    - name: Publish bdist package to PYPI
+      if: ${{ success() && (env.IS_PUSH == 'true') }}
+      run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
-  #   - uses: conda-incubator/setup-miniconda@v2
-  #     with:
-  #       # Really doesn't matter what version we upload with
-  #       # just the version we test with
-  #       python-version: '3.8'
-  #       channels: conda-forge
-  #       channel-priority: true
+    - uses: conda-incubator/setup-miniconda@v2
+      with:
+        # Really doesn't matter what version we upload with
+        # just the version we test with
+        python-version: '3.8'
+        channels: conda-forge
+        channel-priority: true
 
-  #   - name: Install anaconda client
-  #     shell: bash -el {0}
-  #     run: conda install -q -y anaconda-client "urllib3<2.0"
+    - name: Install anaconda client
+      shell: bash -el {0}
+      run: conda install -q -y anaconda-client "urllib3<2.0"
 
-  #   - name: Upload wheels to anaconda nightly
-  #     if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
-  #     shell: bash -el {0}
-  #     env:
-  #       DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
-  #       DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
-  #     run: |
-  #       source ci/upload_wheels.sh
-  #       set_upload_vars
-  #       # trigger an upload to
-  #       # https://anaconda.org/daft-nightly/getdaft
-  #       # for cron jobs or "Run workflow" (restricted to main branch).
-  #       # Tags will upload to
-  #       # https://anaconda.org/daft/getdaft
-  #       # The tokens were originally generated at anaconda.org
-  #       upload_wheels
+    - name: Upload wheels to anaconda nightly
+      if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
+      shell: bash -el {0}
+      env:
+        DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
+        DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
+      run: |
+        source ci/upload_wheels.sh
+        set_upload_vars
+        # trigger an upload to
+        # https://anaconda.org/daft-nightly/getdaft
+        # for cron jobs or "Run workflow" (restricted to main branch).
+        # Tags will upload to
+        # https://anaconda.org/daft/getdaft
+        # The tokens were originally generated at anaconda.org
+        upload_wheels
 
-  #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v1.24.0
-  #     if: failure()
-  #     with:
-  #       payload: |
-  #         {
-  #           "blocks": [
-  #             {
-  #               "type": "section",
-  #               "text": {
-  #                 "type": "mrkdwn",
-  #                 "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-  #               }
-  #             }
-  #           ]
-  #         }
-  #     env:
-  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-  #       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: failure()
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
