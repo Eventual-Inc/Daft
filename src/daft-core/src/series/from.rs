@@ -9,6 +9,7 @@ use common_error::{DaftError, DaftResult};
 
 use super::Series;
 
+use crate::array::ops::from_arrow::FromArrow;
 use crate::series::array_impl::IntoSeries;
 
 impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
@@ -52,8 +53,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
             };
 
             let res = with_match_daft_logical_types!(dtype, |$T| {
-                let physical = DataArray::try_from((Field::new(name, physical_type), physical_arrow_array))?;
-                LogicalArray::<$T>::new(field, physical).into_series()
+                LogicalArray::<$T>::from_arrow(field.as_ref(), physical_arrow_array)?.into_series()
             });
             return Ok(res);
         }
@@ -70,12 +70,12 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
                 },
             )?;
             return Ok(
-                with_match_physical_daft_types!(physical_type, |$T| DataArray::<$T>::new(field, casted_array)?.into_series()),
+                with_match_physical_daft_types!(physical_type, |$T| DataArray::<$T>::from_arrow(field.as_ref(), casted_array)?.into_series()),
             );
         }
 
         Ok(
-            with_match_physical_daft_types!(dtype, |$T| DataArray::<$T>::new(field, array.into())?.into_series()),
+            with_match_physical_daft_types!(dtype, |$T| DataArray::<$T>::from_arrow(field.as_ref(), array.into())?.into_series()),
         )
     }
 }
