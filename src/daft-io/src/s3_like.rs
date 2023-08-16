@@ -335,7 +335,7 @@ impl S3LikeSource {
                                 })?;
 
                             let new_region = Region::new(region_name);
-                            log::warn!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
+                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
                             self._get_impl(uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
@@ -413,7 +413,7 @@ impl S3LikeSource {
                                 })?;
 
                             let new_region = Region::new(region_name);
-                            log::warn!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
+                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
                             self._head_impl(uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
