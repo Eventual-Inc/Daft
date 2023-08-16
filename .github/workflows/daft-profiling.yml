@@ -49,7 +49,7 @@ jobs:
 
       run: |
         source activate
-        maturin develop --profile dev-bench
+        maturin develop --release
 
     - uses: actions/cache@v3
       env:
