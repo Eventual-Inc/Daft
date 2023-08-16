@@ -56,7 +56,7 @@ jobs:
         manylinux: auto
         args: --profile release-lto --out dist --sdist
       env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma,+aes
 
     - name: Build wheels - Linux aarch64
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
@@ -67,6 +67,7 @@ jobs:
         # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
         container: messense/manylinux_2_24-cross:aarch64
         args: --profile release --out dist --sdist
+        RUSTFLAGS: -C target-feature=+aes,+neon
 
     - name: Build wheels - Mac aarch64
       if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
