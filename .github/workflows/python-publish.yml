@@ -34,8 +34,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
-        compile_arch: [x86_64, aarch64]
+        os: [ubuntu] #[ubuntu, macos]
+        compile_arch: [aarch64] #[x86_64, aarch64]
     steps:
     - uses: actions/checkout@v3
       with:
@@ -66,7 +66,7 @@ jobs:
         manylinux: auto
         # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
         container: messense/manylinux_2_24-cross:aarch64
-        args: --profile release-lto --out dist --sdist
+        args: --profile release --out dist --sdist
 
     - name: Build wheels - Mac aarch64
       if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
