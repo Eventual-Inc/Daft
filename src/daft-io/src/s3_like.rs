@@ -192,7 +192,7 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
             .await {
             Ok(_) => Ok(()),
             Err(err @ CredentialsNotLoaded(..)) => {
-                log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
+                log::debug!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
                 anonymous = true;
                 Ok(())
             },
@@ -335,7 +335,7 @@ impl S3LikeSource {
                                 })?;
 
                             let new_region = Region::new(region_name);
-                            log::warn!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
+                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
                             self._get_impl(uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
