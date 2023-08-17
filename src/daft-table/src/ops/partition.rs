@@ -5,10 +5,7 @@ use daft_dsl::Expr;
 use rand::SeedableRng;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::{DaftArrayType, UInt64Array},
-    series::IntoSeries,
-};
+use daft_core::{datatypes::UInt64Array, series::IntoSeries};
 
 use daft_core::array::ops::as_arrow::AsArrow;
 

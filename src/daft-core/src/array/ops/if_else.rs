@@ -4,9 +4,8 @@ use crate::datatypes::logical::{
     FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::{
-    nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftArrayType,
-    DaftArrowBackedType, DaftNumericType, ExtensionArray, Field, ListArray, NullArray, StructArray,
-    Utf8Array,
+    nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftArrowBackedType,
+    DaftNumericType, ExtensionArray, Field, ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::utils::arrow::arrow_bitmap_and_helper;
 use common_error::{DaftError, DaftResult};

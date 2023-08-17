@@ -3,8 +3,7 @@ use num_traits::{NumCast, ToPrimitive};
 use crate::{
     array::DataArray,
     datatypes::{
-        BooleanArray, DaftArrayType, DaftArrowBackedType, DaftNumericType, DataType, NullArray,
-        Utf8Array,
+        BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, NullArray, Utf8Array,
     },
     utils::arrow::arrow_bitmap_and_helper,
 };

@@ -8,8 +8,8 @@ use crate::{
             ImageArray, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
-        BinaryArray, BooleanArray, DaftArrayType, DaftNumericType, ExtensionArray, ImageFormat,
-        ListArray, NullArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
 };
 use common_error::DaftResult;

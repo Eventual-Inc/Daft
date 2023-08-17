@@ -1,8 +1,8 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftArrayType,
-        DaftNumericType, DataType, ExtensionArray, ListArray, NullArray, StructArray, Utf8Array,
+        nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftNumericType, DataType,
+        ExtensionArray, ListArray, NullArray, StructArray, Utf8Array,
     },
 };
 

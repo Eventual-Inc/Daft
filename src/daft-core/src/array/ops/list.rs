@@ -1,6 +1,4 @@
-use crate::datatypes::{
-    nested_arrays::FixedSizeListArray, DaftArrayType, ListArray, UInt64Array, Utf8Array,
-};
+use crate::datatypes::{nested_arrays::FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
 
 use crate::series::Series;
 

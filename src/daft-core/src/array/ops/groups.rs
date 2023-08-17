@@ -6,8 +6,8 @@ use fnv::FnvHashMap;
 use crate::{
     array::DataArray,
     datatypes::{
-        BooleanArray, DaftArrayType, DaftIntegerType, DaftNumericType, Float32Array, Float64Array,
-        NullArray, Utf8Array,
+        BooleanArray, DaftIntegerType, DaftNumericType, Float32Array, Float64Array, NullArray,
+        Utf8Array,
     },
 };
 use common_error::DaftResult;

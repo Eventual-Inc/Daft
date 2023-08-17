@@ -1,7 +1,4 @@
-use crate::{
-    datatypes::{BooleanArray, DaftArrayType},
-    series::Series,
-};
+use crate::{datatypes::BooleanArray, series::Series};
 use common_error::{DaftError, DaftResult};
 
 impl Series {

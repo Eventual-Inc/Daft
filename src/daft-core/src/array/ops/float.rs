@@ -1,8 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{
-        BooleanArray, BooleanType, DaftArrayType, DaftFloatType, DaftNumericType, NullType,
-    },
+    datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},
 };
 use common_error::DaftResult;
 use num_traits::Float;

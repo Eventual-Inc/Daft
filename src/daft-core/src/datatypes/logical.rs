@@ -21,14 +21,7 @@ pub struct LogicalArrayImpl<L: DaftLogicalType, PhysicalArray: DaftArrayType> {
     marker_: PhantomData<L>,
 }
 
-impl<L: DaftLogicalType, W: DaftArrayType> DaftArrayType for LogicalArrayImpl<L, W> {
-    // This is currently only used on a generic LogicalArray in image.rs
-    // If we can get rid of that usage, then all usages of .len() are on concrete types
-    // and we can remove this from the DaftArrayType trait.
-    fn len(&self) -> usize {
-        self.physical.len()
-    }
-}
+impl<L: DaftLogicalType, W: DaftArrayType> DaftArrayType for LogicalArrayImpl<L, W> {}
 
 impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
     pub fn new<F: Into<Arc<Field>>>(field: F, physical: P) -> Self {
@@ -68,6 +61,14 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
 
 macro_rules! impl_logical_type {
     ($physical_array_type:ident) => {
+        pub fn len(&self) -> usize {
+            self.physical.len()
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+
         pub fn empty(field_name: &str, dtype: &DataType) -> Self {
             let physical = $physical_array_type::empty(field_name, &dtype.to_physical());
             let field = Field::new(field_name, dtype.clone());

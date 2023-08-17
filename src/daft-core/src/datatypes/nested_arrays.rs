@@ -13,14 +13,7 @@ pub struct FixedSizeListArray {
     pub(crate) validity: Option<BooleanArray>,
 }
 
-impl DaftArrayType for FixedSizeListArray {
-    fn len(&self) -> usize {
-        match &self.validity {
-            None => self.flat_child.len() / self.fixed_element_len(),
-            Some(validity) => validity.len(),
-        }
-    }
-}
+impl DaftArrayType for FixedSizeListArray {}
 
 impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
@@ -68,6 +61,17 @@ impl FixedSizeListArray {
 
         // TODO(FixedSizeList)
         todo!();
+    }
+
+    pub fn len(&self) -> usize {
+        match &self.validity {
+            None => self.flat_child.len() / self.fixed_element_len(),
+            Some(validity) => validity.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn name(&self) -> &str {

@@ -22,11 +22,7 @@ impl<T: DaftPhysicalType> Clone for DataArray<T> {
     }
 }
 
-impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
-    fn len(&self) -> usize {
-        self.data().len()
-    }
-}
+impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {}
 
 impl<T> DataArray<T>
 where
@@ -54,6 +50,10 @@ where
             data,
             marker_: PhantomData,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.data().len()
     }
 
     pub fn data_type(&self) -> &DataType {

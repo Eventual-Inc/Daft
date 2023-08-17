@@ -6,8 +6,8 @@ use crate::{
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
-        BinaryArray, BooleanArray, DaftArrayType, DaftIntegerType, DaftNumericType, ExtensionArray,
-        ListArray, NullArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
 };
 use common_error::DaftResult;

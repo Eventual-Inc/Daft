@@ -1,4 +1,4 @@
-use crate::datatypes::{BooleanArray, DaftArrayType, UInt64Array, Utf8Array};
+use crate::datatypes::{BooleanArray, UInt64Array, Utf8Array};
 use arrow2;
 
 use common_error::{DaftError, DaftResult};

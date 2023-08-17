@@ -4,7 +4,7 @@ use daft_core::{
         arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
         IntoGroups,
     },
-    datatypes::{DaftArrayType, UInt64Array},
+    datatypes::UInt64Array,
     series::Series,
 };
 

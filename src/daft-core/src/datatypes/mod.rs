@@ -27,10 +27,7 @@ pub mod logical;
 pub mod nested_arrays;
 
 /// Trait that is implemented by all Array types
-#[allow(clippy::len_without_is_empty)]
-pub trait DaftArrayType {
-    fn len(&self) -> usize;
-}
+pub trait DaftArrayType {}
 
 /// Trait to wrap DataType Enum
 pub trait DaftDataType: Sync + Send + Clone {
