@@ -32,8 +32,11 @@ where
 {
     fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         let data_array_field = Field::new(field.name.clone(), field.dtype.to_physical());
-        let physical =
-            <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(&data_array_field, arrow_arr)?;
+        let physical_arrow_arr = arrow_arr.to_type(data_array_field.dtype.to_arrow()?);
+        let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+            &data_array_field,
+            physical_arrow_arr,
+        )?;
         Ok(LogicalArray::<L>::new(field.clone(), physical))
     }
 }

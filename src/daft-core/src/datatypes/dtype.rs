@@ -89,6 +89,7 @@ pub enum DataType {
     Tensor(Box<DataType>),
     /// A logical type for tensors with the same shape.
     FixedShapeTensor(Box<DataType>, Vec<u64>),
+    #[cfg(feature = "python")]
     Python,
     Unknown,
 }
@@ -170,7 +171,11 @@ impl DataType {
                 );
                 logical_extension.to_arrow()
             }
-            DataType::Python | DataType::Unknown => Err(DaftError::TypeError(format!(
+            #[cfg(feature = "python")]
+            DataType::Python => Err(DaftError::TypeError(format!(
+                "Can not convert {self:?} into arrow type"
+            ))),
+            DataType::Unknown => Err(DaftError::TypeError(format!(
                 "Can not convert {self:?} into arrow type"
             ))),
         }
@@ -327,6 +332,7 @@ impl DataType {
     #[inline]
     pub fn is_python(&self) -> bool {
         match self {
+            #[cfg(feature = "python")]
             DataType::Python => true,
             DataType::Extension(_, inner, _) => inner.is_python(),
             _ => false,
