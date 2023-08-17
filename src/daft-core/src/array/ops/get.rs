@@ -7,9 +7,9 @@ use crate::{
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ListArray, NullArray,
-        StructArray, Utf8Array,
+        StructArray, UInt64Array, Utf8Array,
     },
-    Series,
+    IntoSeries, Series,
 };
 
 use super::as_arrow::AsArrow;
@@ -167,8 +167,118 @@ impl ImageArray {
 
 impl FixedSizeListArray {
     #[inline]
-    pub fn get(&self, _idx: usize) -> Option<Series> {
-        // TODO(FixedSizeList)
-        todo!()
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let valid = self.is_valid(idx);
+        if valid {
+            let fixed_len = self.fixed_element_len();
+            let flat_child_indices: Vec<u64> = match &self.validity {
+                None => ((fixed_len * idx) as u64..(fixed_len * (idx + 1)) as u64).collect(),
+                Some(validity) => {
+                    let start = validity
+                        .slice(0, idx)
+                        .unwrap()
+                        .into_iter()
+                        .fold(0, |sum, v| if v.unwrap() { sum + fixed_len } else { sum });
+                    (start as u64..(start + fixed_len) as u64).collect()
+                }
+            };
+            Some(
+                self.flat_child
+                    .take(&UInt64Array::from(("", flat_child_indices)).into_series())
+                    .unwrap(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::{
+        datatypes::{nested_arrays::FixedSizeListArray, BooleanArray, Field, Int32Array},
+        DataType, IntoSeries,
+    };
+
+    #[test]
+    fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
+        let field = Field::new(
+            "foo",
+            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
+        );
+        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let validity = None;
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        assert_eq!(arr.len(), 3);
+
+        for i in 0..3 {
+            let element = arr.get(i);
+            assert!(element.is_some());
+
+            let element = element.unwrap();
+            assert_eq!(element.len(), 3);
+            assert_eq!(element.data_type(), &DataType::Int32);
+
+            let element = element.i32()?;
+            let data = element
+                .into_iter()
+                .map(|x| x.map(|v| *v))
+                .collect::<Vec<Option<i32>>>();
+            let expected = ((i * 3) as i32..((i + 1) * 3) as i32)
+                .map(|x| Some(x))
+                .collect::<Vec<Option<i32>>>();
+            assert_eq!(data, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
+        let field = Field::new(
+            "foo",
+            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
+        );
+        let flat_child = Int32Array::from(("foo", (0..6).collect::<Vec<i32>>()));
+        let raw_validity = vec![true, false, true];
+        let validity = Some(BooleanArray::from(("foo", raw_validity.as_slice())));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        assert_eq!(arr.len(), 3);
+
+        let element = arr.get(0);
+        assert!(element.is_some());
+        let element = element.unwrap();
+        assert_eq!(element.len(), 3);
+        assert_eq!(element.data_type(), &DataType::Int32);
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.map(|v| *v))
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(0), Some(1), Some(2)];
+        assert_eq!(data, expected);
+
+        let element = arr.get(1);
+        assert!(element.is_none());
+
+        let element = arr.get(2);
+        assert!(element.is_some());
+        let element = element.unwrap();
+        assert_eq!(element.len(), 3);
+        assert_eq!(element.data_type(), &DataType::Int32);
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.map(|v| *v))
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(3), Some(4), Some(5)];
+        assert_eq!(data, expected);
+
+        Ok(())
     }
 }

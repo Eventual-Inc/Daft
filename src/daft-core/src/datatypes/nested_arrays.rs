@@ -9,7 +9,7 @@ use crate::DataType;
 #[derive(Clone)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
-    flat_child: Series,
+    pub flat_child: Series,
     pub(crate) validity: Option<BooleanArray>,
 }
 
@@ -97,7 +97,7 @@ impl FixedSizeListArray {
         todo!()
     }
 
-    fn fixed_element_len(&self) -> usize {
+    pub fn fixed_element_len(&self) -> usize {
         let dtype = &self.field.as_ref().dtype;
         match dtype {
             DataType::FixedSizeList(_, s) => *s,
