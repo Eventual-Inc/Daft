@@ -5,8 +5,8 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::LogicalArray, nested_arrays::FixedSizeListArray, BooleanArray, DaftDataType,
-        DaftLogicalType, DaftPhysicalType, Field,
+        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
+        DaftPhysicalType, Field,
     },
     series::IntoSeries,
     with_match_daft_types, DataType,
@@ -54,13 +54,10 @@ impl FromArrow for FixedSizeListArray {
                 let child_series = with_match_daft_types!(daft_child_field.dtype, |$T| {
                     <$T as DaftDataType>::ArrayType::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?.into_series()
                 });
-                let validity = arrow_arr.validity().map(
-                    |v| BooleanArray::from(("", v.iter().collect::<Vec<bool>>().as_slice()))
-                );
                 Ok(FixedSizeListArray::new(
                     Arc::new(field.clone()),
                     child_series,
-                    validity,
+                    arrow_arr.validity().cloned(),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!("Attempting to create Daft FixedSizeListArray with type {:?} from arrow array with type {}", a, d)))

@@ -69,12 +69,6 @@ macro_rules! impl_logical_type {
             self.len() == 0
         }
 
-        pub fn empty(field_name: &str, dtype: &DataType) -> Self {
-            let physical = $physical_array_type::empty(field_name, &dtype.to_physical());
-            let field = Field::new(field_name, dtype.clone());
-            Self::new(field, physical)
-        }
-
         pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
             if arrays.is_empty() {
                 return Err(common_error::DaftError::ValueError(

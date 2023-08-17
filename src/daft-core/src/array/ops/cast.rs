@@ -1078,6 +1078,7 @@ impl EmbeddingArray {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::Embedding(_, size)) => Python::with_gil(|py| {
+                let physical_arrow = self.physical.flat_child.to_arrow();
                 let shape = (self.len(), *size);
                 let pyarrow = py.import("pyarrow")?;
                 // Only go through FFI layer once instead of for every embedding.
@@ -1085,7 +1086,7 @@ impl EmbeddingArray {
                 // buffer sans the validity mask, and then create a subndarray view
                 // for each embedding ndarray in the PythonArray.
                 let py_array =
-                    ffi::to_py_array(self.as_arrow().values().with_validity(None), py, pyarrow)?
+                    ffi::to_py_array(physical_arrow.with_validity(None), py, pyarrow)?
                         .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
                         .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
                 let ndarrays = py_array
@@ -1094,7 +1095,7 @@ impl EmbeddingArray {
                     .map(|a| a.unwrap().to_object(py))
                     .collect::<Vec<PyObject>>();
                 let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity);
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1239,6 +1240,7 @@ impl FixedShapeImageArray {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
+                let physical_arrow = self.physical.flat_child.to_arrow();
                 pyo3::Python::with_gil(|py| {
                     let shape = (
                         self.len(),
@@ -1252,7 +1254,7 @@ impl FixedShapeImageArray {
                     // buffer sans the validity mask, and then create a subndarray view
                     // for each image ndarray in the PythonArray.
                     let py_array = ffi::to_py_array(
-                        self.as_arrow().values().with_validity(None),
+                        physical_arrow.with_validity(None),
                         py,
                         pyarrow,
                     )?
@@ -1268,7 +1270,7 @@ impl FixedShapeImageArray {
                         .map(|a| a.unwrap().to_object(py))
                         .collect::<Vec<PyObject>>();
                     let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity);
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -1511,6 +1513,7 @@ impl FixedShapeTensorArray {
         match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::FixedShapeTensor(_, shape)) => {
+                let physical_arrow = self.physical.flat_child.to_arrow();
                 pyo3::Python::with_gil(|py| {
                     let pyarrow = py.import("pyarrow")?;
                     let mut np_shape: Vec<u64> = vec![self.len() as u64];
@@ -1520,7 +1523,7 @@ impl FixedShapeTensorArray {
                     // sans the validity mask, and then create a subndarray view for each ndarray
                     // element in the PythonArray.
                     let py_array = ffi::to_py_array(
-                        self.as_arrow().values().with_validity(None),
+                        physical_arrow.with_validity(None),
                         py,
                         pyarrow,
                     )?
@@ -1536,7 +1539,7 @@ impl FixedShapeTensorArray {
                         .map(|a| a.unwrap().to_object(py))
                         .collect::<Vec<PyObject>>();
                     let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity);
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -1545,59 +1548,7 @@ impl FixedShapeTensorArray {
                 })
             }
             (DataType::Tensor(_), DataType::FixedShapeTensor(inner_dtype, tensor_shape)) => {
-                let ndim = tensor_shape.len();
-                let shapes = tensor_shape
-                    .iter()
-                    .cycle()
-                    .copied()
-                    .take(ndim * self.len())
-                    .collect();
-                let shape_offsets = (0..=ndim * self.len())
-                    .step_by(ndim)
-                    .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
-                let physical_arr = self.as_arrow();
-                let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-                    arrow2::datatypes::Field::new("data", inner_dtype.to_arrow()?, true),
-                ));
-                let list_arr = cast(
-                    physical_arr,
-                    &list_dtype,
-                    CastOptions {
-                        wrapped: true,
-                        partial: false,
-                    },
-                )?;
-                let validity = self.as_arrow().validity();
-                let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
-                    arrow2::datatypes::Field::new(
-                        "shape",
-                        arrow2::datatypes::DataType::UInt64,
-                        true,
-                    ),
-                ));
-                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
-                let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
-                    shapes_dtype,
-                    shape_offsets,
-                    Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
-                    validity.cloned(),
-                ));
-
-                let values: Vec<Box<dyn arrow2::array::Array>> = vec![list_arr, shapes_array];
-                let physical_type = dtype.to_physical();
-                let struct_array = Box::new(arrow2::array::StructArray::new(
-                    physical_type.to_arrow()?,
-                    values,
-                    validity.cloned(),
-                ));
-
-                let daft_struct_array =
-                    StructArray::new(Field::new(self.name(), physical_type).into(), struct_array)?;
-                Ok(
-                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
-                        .into_series(),
-                )
+                todo!("TODO(jay): Casting from FixedShapeTensor to Tensor not yet implemented")
             }
             // NOTE(Clark): Casting to FixedShapeImage is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
@@ -1606,9 +1557,61 @@ impl FixedShapeTensorArray {
 }
 
 impl FixedSizeListArray {
-    pub fn cast(&self, _dtype: &DataType) -> DaftResult<Series> {
-        // TODO(FixedSizeList): Implement casting
-        unimplemented!("FixedSizeList casting not yet implemented.")
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::FixedSizeList(child, size) => {
+                if size != &self.fixed_element_len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Cannot cast from FixedSizeListSeries with size {} to size: {}",
+                        self.fixed_element_len(),
+                        size
+                    )));
+                }
+                let casted_child = self.flat_child.cast(&child.dtype)?;
+                Ok(FixedSizeListArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    casted_child,
+                    self.validity,
+                )
+                .into_series())
+            }
+            DataType::FixedShapeTensor(child_datatype, shape) => {
+                if child_datatype.as_ref() != self.child_data_type() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched child type",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                if shape.iter().product::<u64>() != (self.fixed_element_len() as u64) {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatch in element sizes",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                Ok(FixedShapeTensorArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    self.clone(),
+                )
+                .into_series())
+            }
+            DataType::FixedShapeImage(mode, h, w) => {
+                if (h * w * mode.num_channels() as u32) as u64 != self.fixed_element_len() as u64 {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatch in element sizes",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                Ok(FixedShapeImageArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    self.clone(),
+                )
+                .into_series())
+            }
+            _ => unimplemented!("FixedSizeList casting not implemented for dtype: {}", dtype),
+        }
     }
 }
 
