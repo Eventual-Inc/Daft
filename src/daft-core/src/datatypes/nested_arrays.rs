@@ -8,7 +8,7 @@ use crate::DataType;
 
 #[derive(Clone)]
 pub struct FixedSizeListArray {
-    field: Arc<Field>,
+    pub field: Arc<Field>,
     flat_child: Series,
     pub(crate) validity: Option<BooleanArray>,
 }

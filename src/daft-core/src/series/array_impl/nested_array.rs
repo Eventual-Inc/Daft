@@ -1,167 +1,178 @@
-use common_error::DaftResult;
+use std::sync::Arc;
 
-use crate::array::ops::GroupIndices;
+use common_error::{DaftError, DaftResult};
+
+use crate::array::ops::broadcast::Broadcastable;
+use crate::array::ops::{DaftIsNull, GroupIndices};
 use crate::datatypes::Field;
 use crate::datatypes::{nested_arrays::FixedSizeListArray, BooleanArray};
-use crate::series::{IntoSeries, Series, SeriesLike};
-use crate::DataType;
+use crate::series::{array_impl::binary_ops::SeriesBinaryOps, IntoSeries, Series, SeriesLike};
+use crate::{with_match_integer_daft_types, DataType};
 
 use super::ArrayWrapper;
 
 impl IntoSeries for FixedSizeListArray {
     fn into_series(self) -> Series {
-        // TODO(FixedSizeList)
-        todo!()
+        Series {
+            inner: Arc::new(ArrayWrapper(self)),
+        }
     }
 }
 
 impl SeriesLike for ArrayWrapper<FixedSizeListArray> {
-    // TODO(FixedSizeList)
     fn into_series(&self) -> Series {
-        todo!()
+        self.0.clone().into_series()
     }
 
     fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        todo!()
+        self.0.to_arrow()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
-        todo!()
+        self
     }
 
     fn min(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        todo!()
+        Err(DaftError::ValueError(
+            "FixedSizeList does not support min".to_string(),
+        ))
     }
 
     fn max(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        todo!()
+        Err(DaftError::ValueError(
+            "FixedSizeList does not support max".to_string(),
+        ))
     }
 
-    fn agg_list(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        todo!()
+    fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftListAggable;
+
+        match groups {
+            Some(groups) => Ok(self.0.grouped_list(groups)?.into_series()),
+            None => Ok(self.0.list()?.into_series()),
+        }
     }
 
-    fn broadcast(&self, _num: usize) -> DaftResult<Series> {
-        todo!()
+    fn broadcast(&self, num: usize) -> DaftResult<Series> {
+        Ok(self.0.broadcast(num)?.into_series())
     }
 
-    fn cast(&self, _datatype: &DataType) -> DaftResult<Series> {
-        todo!()
+    fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
+        self.0.cast(datatype)
     }
 
-    fn filter(&self, _mask: &BooleanArray) -> DaftResult<Series> {
-        todo!()
+    fn filter(&self, mask: &BooleanArray) -> DaftResult<Series> {
+        Ok(self.0.filter(mask)?.into_series())
     }
 
-    fn if_else(&self, _other: &Series, _predicate: &Series) -> DaftResult<Series> {
-        todo!()
+    fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
+        Ok(self
+            .0
+            .if_else(other.downcast()?, predicate.bool()?)?
+            .into_series())
     }
 
     fn data_type(&self) -> &DataType {
-        todo!()
+        self.0.data_type()
     }
 
     fn field(&self) -> &Field {
-        todo!()
+        &self.0.field
     }
 
     fn len(&self) -> usize {
-        todo!()
+        self.0.len()
     }
 
     fn name(&self) -> &str {
-        todo!()
+        self.0.name()
     }
 
-    fn rename(&self, _name: &str) -> Series {
-        todo!()
+    fn rename(&self, name: &str) -> Series {
+        self.0.rename(name).into_series()
     }
 
     fn size_bytes(&self) -> DaftResult<usize> {
-        todo!()
+        self.0.size_bytes()
     }
 
     fn is_null(&self) -> DaftResult<Series> {
-        todo!()
+        Ok(self.0.is_null()?.into_series())
     }
 
     fn sort(&self, _descending: bool) -> DaftResult<Series> {
-        todo!()
+        Err(DaftError::ValueError(
+            "Cannot sort a FixedSizeListArray".to_string(),
+        ))
     }
 
-    fn head(&self, _num: usize) -> DaftResult<Series> {
-        todo!()
+    fn head(&self, num: usize) -> DaftResult<Series> {
+        self.slice(0, num)
     }
 
-    fn slice(&self, _start: usize, _end: usize) -> DaftResult<Series> {
-        todo!()
+    fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
+        Ok(self.0.slice(start, end)?.into_series())
     }
 
-    fn take(&self, _idx: &Series) -> DaftResult<Series> {
-        todo!()
+    fn take(&self, idx: &Series) -> DaftResult<Series> {
+        with_match_integer_daft_types!(idx.data_type(), |$S| {
+            Ok(self
+                .0
+                .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
+                .into_series())
+        })
     }
 
-    fn str_value(&self, _idx: usize) -> DaftResult<String> {
-        todo!()
+    fn str_value(&self, idx: usize) -> DaftResult<String> {
+        self.0.str_value(idx)
     }
 
-    fn html_value(&self, _idx: usize) -> String {
-        todo!()
+    fn html_value(&self, idx: usize) -> String {
+        self.0.html_value(idx)
     }
 
-    fn add(&self, _rhs: &Series) -> DaftResult<Series> {
-        todo!()
+    fn add(&self, rhs: &Series) -> DaftResult<Series> {
+        SeriesBinaryOps::add(self, rhs)
+    }
+    fn sub(&self, rhs: &Series) -> DaftResult<Series> {
+        SeriesBinaryOps::sub(self, rhs)
+    }
+    fn mul(&self, rhs: &Series) -> DaftResult<Series> {
+        SeriesBinaryOps::mul(self, rhs)
+    }
+    fn div(&self, rhs: &Series) -> DaftResult<Series> {
+        SeriesBinaryOps::div(self, rhs)
+    }
+    fn rem(&self, rhs: &Series) -> DaftResult<Series> {
+        SeriesBinaryOps::rem(self, rhs)
     }
 
-    fn sub(&self, _rhs: &Series) -> DaftResult<Series> {
-        todo!()
+    fn and(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::and(self, rhs)
+    }
+    fn or(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::or(self, rhs)
+    }
+    fn xor(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::xor(self, rhs)
     }
 
-    fn mul(&self, _rhs: &Series) -> DaftResult<Series> {
-        todo!()
+    fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::equal(self, rhs)
     }
-
-    fn div(&self, _rhs: &Series) -> DaftResult<Series> {
-        todo!()
+    fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::not_equal(self, rhs)
     }
-
-    fn rem(&self, _rhs: &Series) -> DaftResult<Series> {
-        todo!()
+    fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::lt(self, rhs)
     }
-
-    fn and(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
+    fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::lte(self, rhs)
     }
-
-    fn or(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
+    fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::gt(self, rhs)
     }
-
-    fn xor(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn equal(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn not_equal(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn lt(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn lte(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn gt(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
-    }
-
-    fn gte(&self, _rhs: &Series) -> DaftResult<BooleanArray> {
-        todo!()
+    fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
+        SeriesBinaryOps::gte(self, rhs)
     }
 }
