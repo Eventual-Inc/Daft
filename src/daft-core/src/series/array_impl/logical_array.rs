@@ -89,7 +89,8 @@ macro_rules! impl_series_like_for_logical_array {
 
             fn rename(&self, name: &str) -> Series {
                 let new_array = self.0.physical.rename(name);
-                $da::new(self.0.field.clone(), new_array).into_series()
+                let new_field = self.0.field.rename(name);
+                $da::new(new_field, new_array).into_series()
             }
 
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
