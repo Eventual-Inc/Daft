@@ -69,3 +69,10 @@ impl crate::datatypes::PythonArray {
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
     }
 }
+
+impl crate::datatypes::nested_arrays::FixedSizeListArray {
+    pub fn filter(&self, _mask: &BooleanArray) -> DaftResult<Self> {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+}

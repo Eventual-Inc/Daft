@@ -78,6 +78,21 @@ impl FixedSizeListArray {
         &self.field.dtype
     }
 
+    pub fn rename(&self, _name: &str) -> Self {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+
+    pub fn slice(&self, _start: usize, _end: usize) -> DaftResult<Self> {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+
     fn fixed_element_len(&self) -> usize {
         let dtype = &self.field.as_ref().dtype;
         match dtype {

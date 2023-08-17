@@ -38,6 +38,15 @@ where
     }
 }
 
+impl DaftIsNull for FixedSizeListArray {
+    type Output = DaftResult<DataArray<BooleanType>>;
+
+    fn is_null(&self) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!()
+    }
+}
+
 impl<T> DataArray<T>
 where
     T: DaftPhysicalType,

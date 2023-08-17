@@ -1,6 +1,9 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::datatypes::{DaftLogicalType, DateType, Field};
+use crate::{
+    datatypes::{DaftLogicalType, DateType, Field},
+    with_match_daft_logical_primitive_types,
+};
 use common_error::DaftResult;
 
 use super::{
@@ -87,11 +90,50 @@ macro_rules! impl_logical_type {
 /// Implementation for a LogicalArray that wraps a DataArray
 impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
     impl_logical_type!(DataArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let daft_type = self.data_type();
+        let arrow_logical_type = daft_type.to_arrow().unwrap();
+        let physical_arrow_array = self.physical.data();
+        use crate::datatypes::DataType::*;
+        match daft_type {
+            // For wrapped primitive types, switch the datatype label on the arrow2 Array.
+            Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                with_match_daft_logical_primitive_types!(daft_type, |$P| {
+                    use arrow2::array::Array;
+                    physical_arrow_array
+                        .as_any()
+                        .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
+                        .unwrap()
+                        .clone()
+                        .to(arrow_logical_type)
+                        .to_boxed()
+                })
+            }
+            // Otherwise, use arrow cast to make sure the result arrow2 array is of the correct type.
+            _ => arrow2::compute::cast::cast(
+                physical_arrow_array,
+                &arrow_logical_type,
+                arrow2::compute::cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )
+            .unwrap(),
+        }
+    }
 }
 
 /// Implementation for a LogicalArray that wraps a FixedSizeListArray
 impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     impl_logical_type!(FixedSizeListArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let mut fixed_size_list_arrow_array = self.physical.to_arrow();
+        let arrow_logical_type = self.data_type().to_arrow().unwrap();
+        fixed_size_list_arrow_array.change_type(arrow_logical_type);
+        fixed_size_list_arrow_array
+    }
 }
 
 pub type LogicalArray<L> =
