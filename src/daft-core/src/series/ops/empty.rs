@@ -1,4 +1,6 @@
-use crate::{series::IntoSeries, with_match_daft_types, DataType, Series};
+use crate::{
+    array::ops::full::FullNull, series::IntoSeries, with_match_daft_types, DataType, Series,
+};
 
 impl Series {
     pub fn empty(name: &str, dtype: &DataType) -> Self {

@@ -1,3 +1,5 @@
+use std::iter::repeat;
+
 use crate::{
     array::DataArray,
     datatypes::{BooleanArray, DaftArrowBackedType},
@@ -71,8 +73,27 @@ impl crate::datatypes::PythonArray {
 }
 
 impl crate::datatypes::nested_arrays::FixedSizeListArray {
-    pub fn filter(&self, _mask: &BooleanArray) -> DaftResult<Self> {
-        // TODO(FixedSizeList)
-        todo!()
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let size = self.fixed_element_len();
+        let expanded_filter: Vec<bool> = mask
+            .into_iter()
+            .flat_map(|pred| repeat(pred.unwrap_or(false)).take(size))
+            .collect();
+        let expanded_filter = BooleanArray::from(("", expanded_filter.as_slice()));
+        let filtered_child = self.flat_child.filter(&expanded_filter)?;
+        let filtered_validity = self.validity.as_ref().map(|validity| {
+            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
+                |(keep, valid)| match keep {
+                    None => None,
+                    Some(false) => None,
+                    Some(true) => Some(valid),
+                },
+            ))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            filtered_child,
+            filtered_validity,
+        ))
     }
 }

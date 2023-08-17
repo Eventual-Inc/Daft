@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{iter::repeat, sync::Arc};
 
 use arrow2;
 
@@ -42,8 +42,19 @@ impl DaftIsNull for FixedSizeListArray {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_null(&self) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!()
+        match &self.validity {
+            None => Ok(BooleanArray::from((
+                self.name(),
+                repeat(false)
+                    .take(self.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            ))),
+            Some(validity) => Ok(BooleanArray::from((
+                self.name(),
+                validity.into_iter().collect::<Vec<_>>().as_slice(),
+            ))),
+        }
     }
 }
 

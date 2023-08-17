@@ -5,12 +5,13 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray,
+            ImageArray, TimestampArray, FixedShapeTensorArray,
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
         NullArray, StructArray, Utf8Array,
     },
+    with_match_daft_types,
 };
 use common_error::DaftResult;
 
@@ -33,13 +34,9 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ListArray, "{:?}");
-impl_array_str_value!(FixedSizeListArray, "{}"); // TODO(FixedSizeList): Implement display
 impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");
-impl_array_str_value!(EmbeddingArray, "{:?}");
-impl_array_str_value!(ImageArray, "{:?}");
-impl_array_str_value!(FixedShapeImageArray, "{:?}");
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
@@ -208,6 +205,65 @@ impl Decimal128Array {
     }
 }
 
+impl FixedSizeListArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => {
+                with_match_daft_types!(self.child_data_type(), |$T| {
+                    let arr = v.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let mut s = String::new();
+                    s += "[";
+                    s += (0..v.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
+                    s += "]";
+                    Ok(s)
+                })
+            }
+        }
+    }
+}
+
+impl EmbeddingArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<Embedding>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl ImageArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<Image>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl FixedShapeImageArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<FixedShapeImage>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl FixedShapeTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<FixedShapeTensor>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 // Default implementation of html_value: html escape the str_value.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
@@ -323,5 +379,14 @@ impl FixedShapeImageArray {
                 )
             }
         }
+    }
+}
+
+impl FixedShapeTensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }

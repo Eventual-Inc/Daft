@@ -103,11 +103,11 @@ impl DaftListAggable for FixedSizeListArray {
 
     fn list(&self) -> Self::Output {
         // TODO(FixedSizeList)
-        todo!()
+        todo!("Requires new ListArrays for implementation")
     }
 
     fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
         // TODO(FixedSizeList)
-        todo!()
+        todo!("Requires new ListArrays for implementation")
     }
 }

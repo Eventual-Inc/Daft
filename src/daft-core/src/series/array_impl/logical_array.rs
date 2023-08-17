@@ -2,7 +2,7 @@ use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
     FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
 };
-use crate::datatypes::{BooleanArray, Field};
+use crate::datatypes::{BooleanArray, Field, DaftLogicalType};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
