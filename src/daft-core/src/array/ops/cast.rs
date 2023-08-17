@@ -1602,9 +1602,32 @@ impl FixedShapeTensorArray {
 }
 
 impl FixedSizeListArray {
-    pub fn cast(&self, _dtype: &DataType) -> DaftResult<Series> {
-        // TODO(FixedSizeList): Implement casting
-        unimplemented!("FixedSizeList casting not yet implemented.")
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::FixedSizeList(..) => Ok(self.clone().into_series()),
+            DataType::FixedShapeTensor(child_datatype, shape) => {
+                if child_datatype.as_ref() != self.child_data_type() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatched child type",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                if shape.iter().product::<u64>() != (self.fixed_element_len() as u64) {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatch in element sizes",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                Ok(FixedShapeTensorArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    self.clone(),
+                )
+                .into_series())
+            }
+            _ => unimplemented!("FixedSizeList casting not implemented for dtype: {}", dtype),
+        }
     }
 }
 

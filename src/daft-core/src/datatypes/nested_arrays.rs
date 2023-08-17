@@ -82,9 +82,19 @@ impl FixedSizeListArray {
         &self.field.dtype
     }
 
-    pub fn rename(&self, _name: &str) -> Self {
-        // TODO(FixedSizeList)
-        todo!()
+    pub fn child_data_type(&self) -> &DataType {
+        match &self.field.dtype {
+            DataType::FixedSizeList(child, _) => &child.dtype,
+            _ => unreachable!("FixedSizeListArray must have DataType::FixedSizeList(..)"),
+        }
+    }
+
+    pub fn rename(&self, name: &str) -> Self {
+        Self::new(
+            Field::new(name, self.data_type().clone()),
+            self.flat_child.rename(name),
+            self.validity.clone(),
+        )
     }
 
     pub fn slice(&self, _start: usize, _end: usize) -> DaftResult<Self> {
@@ -93,8 +103,13 @@ impl FixedSizeListArray {
     }
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        // TODO(FixedSizeList)
-        todo!()
+        Box::new(arrow2::array::FixedSizeListArray::new(
+            self.data_type().to_arrow().unwrap(),
+            self.flat_child.to_arrow(),
+            self.validity.as_ref().map(|validity| {
+                arrow2::bitmap::Bitmap::from_iter(validity.into_iter().map(|v| v.unwrap()))
+            }),
+        ))
     }
 
     pub fn fixed_element_len(&self) -> usize {
@@ -103,5 +118,55 @@ impl FixedSizeListArray {
             DataType::FixedSizeList(_, s) => *s,
             _ => unreachable!("FixedSizeListArray should always have FixedSizeList datatype"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::{
+        datatypes::{BooleanArray, Field, Int32Array},
+        DataType, IntoSeries,
+    };
+
+    use super::FixedSizeListArray;
+
+    /// Helper that returns a FixedSizeListArray, with each list element at len=3
+    fn get_i32_fixed_size_list_array(validity: &[bool]) -> FixedSizeListArray {
+        let field = Field::new(
+            "foo",
+            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
+        );
+        let num_valid_elements = validity.iter().map(|v| if *v { 1 } else { 0 }).sum();
+        let flat_child = Int32Array::from(("foo", (0..num_valid_elements).collect::<Vec<i32>>()));
+        let validity = Some(BooleanArray::from(("foo", validity)));
+        FixedSizeListArray::new(field, flat_child.into_series(), validity)
+    }
+
+    #[test]
+    fn test_rename() -> DaftResult<()> {
+        let arr = get_i32_fixed_size_list_array(vec![true, true, false].as_slice());
+        let renamed_arr = arr.rename("bar");
+
+        assert_eq!(renamed_arr.name(), "bar");
+        assert_eq!(renamed_arr.flat_child.len(), arr.flat_child.len());
+        assert_eq!(
+            renamed_arr
+                .flat_child
+                .i32()?
+                .into_iter()
+                .collect::<Vec<_>>(),
+            arr.flat_child.i32()?.into_iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            renamed_arr
+                .validity
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            arr.validity.unwrap().into_iter().collect::<Vec<_>>()
+        );
+        Ok(())
     }
 }

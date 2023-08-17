@@ -41,7 +41,11 @@ impl PythonArray {
 
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        // TODO(FixedSizeListArray)
-        todo!()
+        Ok(self.flat_child.size_bytes()?
+            + self
+                .validity
+                .as_ref()
+                .map(|v| v.size_bytes())
+                .unwrap_or(Ok(0))?)
     }
 }
