@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter, Result};
 
 use crate::expr::Expr;
-use daft_core::datatypes::DataType;
 use daft_core::series::Series;
+use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]

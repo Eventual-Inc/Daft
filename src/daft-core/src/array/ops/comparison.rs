@@ -12,7 +12,7 @@ use common_error::{DaftError, DaftResult};
 
 use std::ops::Not;
 
-use super::{DaftCompare, DaftLogical};
+use super::{full::FullNull, DaftCompare, DaftLogical};
 
 use super::as_arrow::AsArrow;
 use arrow2::{compute::comparison, scalar::PrimitiveScalar};

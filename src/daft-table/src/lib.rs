@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
+use daft_core::array::ops::full::FullNull;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;

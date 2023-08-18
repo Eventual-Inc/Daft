@@ -22,11 +22,26 @@ impl FixedSizeListArray {
         validity: Option<BooleanArray>,
     ) -> Self {
         let field: Arc<Field> = field.into();
-        if !matches!(&field.as_ref().dtype, &DataType::FixedSizeList(..)) {
-            panic!(
+        match &field.as_ref().dtype {
+            DataType::FixedSizeList(_, size) => {
+                if let Some(validity) = validity.as_ref() && (validity.len() * size) != flat_child.len() {
+                    panic!(
+                        "FixedSizeListArray::new received values with len {} but expected it to match len of validity * size: {}",
+                        flat_child.len(),
+                        (validity.len() * size),
+                    )
+                }
+            }
+            _ => panic!(
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
                 field
             )
+        }
+        // validity must not contain any null values
+        if let Some(validity) = validity.as_ref() && let Some(validity) = validity.data().validity() {
+            validity.iter().for_each(|v| if !v {
+                panic!("FixedSizeListArray validity BooleanArray mask must contain all valid values")
+            })
         }
         FixedSizeListArray {
             field,
@@ -50,10 +65,7 @@ impl FixedSizeListArray {
     }
 
     pub fn len(&self) -> usize {
-        match &self.validity {
-            None => self.flat_child.len() / self.fixed_element_len(),
-            Some(validity) => validity.len(),
-        }
+        self.flat_child.len() / self.fixed_element_len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -102,35 +114,11 @@ impl FixedSizeListArray {
         let arrow_validity = self.validity.as_ref().map(|validity| {
             arrow2::bitmap::Bitmap::from_iter(validity.into_iter().map(|v| v.unwrap()))
         });
-        if self.is_empty() || self.validity.is_none() {
-            Box::new(arrow2::array::FixedSizeListArray::new(
-                arrow_dtype,
-                self.flat_child.to_arrow(),
-                arrow_validity,
-            ))
-        } else {
-            // NOTE: Arrow2 requires that the values array is padded for values when validity is false
-            // such that (values.len() / size) == self.len(). Here we naively use idx 0 as the padding value.
-            let child_arrow_dtype = self.child_data_type().to_arrow().unwrap();
-            let padding_series = Series::try_from((
-                "",
-                arrow2::array::new_null_array(child_arrow_dtype, self.fixed_element_len()),
-            ))
-            .unwrap();
-            let take_series: Vec<Option<Series>> = (0..self.len()).map(|i| self.get(i)).collect();
-            let padded_take_series: Vec<&Series> = take_series
-                .iter()
-                .map(|s| s.as_ref().unwrap_or(&padding_series))
-                .collect();
-            let dense_values = Series::concat(padded_take_series.as_slice())
-                .unwrap()
-                .to_arrow();
-            Box::new(arrow2::array::FixedSizeListArray::new(
-                arrow_dtype,
-                dense_values,
-                arrow_validity,
-            ))
-        }
+        Box::new(arrow2::array::FixedSizeListArray::new(
+            arrow_dtype,
+            self.flat_child.to_arrow(),
+            arrow_validity,
+        ))
     }
 
     pub fn fixed_element_len(&self) -> usize {

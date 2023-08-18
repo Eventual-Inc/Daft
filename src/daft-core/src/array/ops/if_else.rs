@@ -8,13 +8,14 @@ use crate::datatypes::{
     DaftNumericType, ExtensionArray, Field, ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::utils::arrow::arrow_bitmap_and_helper;
-use crate::Series;
+use crate::{with_match_daft_types, IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use std::convert::identity;
 use std::sync::Arc;
 
 use super::as_arrow::AsArrow;
 use super::broadcast::Broadcastable;
+use super::full::FullNull;
 
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
@@ -311,6 +312,14 @@ impl FixedSizeListArray {
                 Some(pred) => Ok(if pred { self.clone() } else { other.clone() }),
             };
         }
+        let child_data_type = self.child_data_type();
+        let size = self.fixed_element_len();
+        let padding_series: Series = with_match_daft_types!(
+            child_data_type,
+            |$T| {
+                <$T as DaftDataType>::ArrayType::full_null("", child_data_type, size).into_series()
+            }
+        );
 
         let result_len = predicate.len();
         let self_iter = (0..result_len).map(|i| {
@@ -331,9 +340,13 @@ impl FixedSizeListArray {
         let results = pred_iter
             .zip(self_iter.zip(other_iter))
             .map(|(pred, (s, o))| match pred {
-                None => None,
-                Some(true) => s,
-                Some(false) => o,
+                None => (padding_series.clone(), false),
+                Some(true) => s
+                    .map(|x| (x, true))
+                    .unwrap_or((padding_series.clone(), false)),
+                Some(false) => o
+                    .map(|x| (x, true))
+                    .unwrap_or((padding_series.clone(), false)),
             });
 
         let results = results.collect::<Vec<_>>();
@@ -341,15 +354,17 @@ impl FixedSizeListArray {
             "",
             results
                 .iter()
-                .map(|v| v.is_some())
+                .map(|(_, v)| *v)
                 .collect::<Vec<_>>()
                 .as_slice(),
         ));
-        let valid_series = results
-            .iter()
-            .filter_map(|v| v.as_ref())
-            .collect::<Vec<_>>();
-        let child_series = Series::concat(valid_series.as_slice())?;
+        let child_series = Series::concat(
+            results
+                .iter()
+                .map(|(s, _)| s)
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )?;
         Ok(FixedSizeListArray::new(
             self.field.clone(),
             child_series,

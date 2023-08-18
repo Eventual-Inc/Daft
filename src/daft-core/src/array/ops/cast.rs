@@ -1,6 +1,10 @@
 use super::as_arrow::AsArrow;
 use crate::{
-    array::{ops::from_arrow::FromArrow, ops::image::ImageArraySidecarData, DataArray},
+    array::{
+        ops::image::ImageArraySidecarData,
+        ops::{from_arrow::FromArrow, full::FullNull},
+        DataArray,
+    },
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,

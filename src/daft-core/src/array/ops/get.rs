@@ -174,17 +174,9 @@ impl FixedSizeListArray {
         let fixed_len = self.fixed_element_len();
         let valid = self.is_valid(idx);
         if valid {
-            let start_idx = match &self.validity {
-                None => fixed_len * idx,
-                Some(validity) => validity
-                    .slice(0, idx)
-                    .unwrap()
-                    .into_iter()
-                    .fold(0, |sum, v| if v.unwrap() { sum + fixed_len } else { sum }),
-            };
             Some(
                 self.flat_child
-                    .slice(start_idx, start_idx + fixed_len)
+                    .slice(idx * fixed_len, (idx + 1) * fixed_len)
                     .unwrap(),
             )
         } else {
