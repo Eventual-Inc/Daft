@@ -80,7 +80,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
             else runner_io.get_schema_from_first_filepath(file_info_partition_set, file_format_config, fs)
         )
         paths_details = file_info_partition_set.to_pydict()
-        print(paths_details)
         filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
         filesizes = paths_details[runner_io.FS_LISTING_SIZE_COLUMN_NAME]
         filerows = paths_details[runner_io.FS_LISTING_ROWS_COLUMN_NAME]
