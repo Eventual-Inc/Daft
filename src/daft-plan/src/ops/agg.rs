@@ -54,9 +54,9 @@ impl Aggregate {
         let mut res = vec![];
         res.push(format!("Aggregation: {:?}", self.aggregations));
         if !self.groupby.is_empty() {
-            res.push(format!("  Group by: {:?}", self.groupby));
+            res.push(format!("Group by = {:?}", self.groupby));
         }
-        res.push(format!("  Output schema: {}", self.schema().short_string()));
+        res.push(format!("Output schema = {}", self.schema().short_string()));
         res
     }
 }

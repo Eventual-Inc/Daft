@@ -23,7 +23,7 @@ use python::PythonUDF;
 
 use super::Expr;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
     Numeric(NumericExpr),
     Float(FloatExpr),

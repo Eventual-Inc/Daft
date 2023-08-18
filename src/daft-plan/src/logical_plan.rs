@@ -107,7 +107,7 @@ impl LogicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&Self> {
+    pub fn children(&self) -> Vec<&Arc<Self>> {
         match self {
             Self::Source(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
@@ -125,10 +125,48 @@ impl LogicalPlan {
         }
     }
 
+    pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> Arc<LogicalPlan> {
+        let new_plan = match children {
+            [input] => match self {
+                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::Project(Project { projection, projected_schema, resource_request, .. }) => Self::Project(Project::new(
+                    projection.clone(), projected_schema.clone(), resource_request.clone(), input.clone(),
+                )),
+                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
+                Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
+                Self::Explode(Explode { explode_exprs, exploded_schema, .. }) => Self::Explode(Explode::new(explode_exprs.clone(), exploded_schema.clone(), input.clone())),
+                Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::new(sort_by.clone(), descending.clone(), input.clone())),
+                Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
+                Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
+                Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
+                Self::Aggregate(Aggregate { aggregations, groupby, output_schema, ..}) => Self::Aggregate(Aggregate::new(aggregations.clone(), groupby.clone(), output_schema.clone(), input.clone())),
+                Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(schema.clone(), sink_info.clone(), input.clone())),
+                _ => panic!("Logical op {} has two inputs, but got one", self),
+            },
+            [input1, input2] => match self {
+                Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::Concat(_) => Self::Concat(Concat::new(input2.clone(), input1.clone())),
+                Self::Join(Join { left_on, right_on, output_projection, output_schema, join_type, .. }) => Self::Join(Join::new(input2.clone(), left_on.clone(), right_on.clone(), output_projection.clone(), output_schema.clone(), *join_type, input1.clone())),
+                _ => panic!("Logical op {} has one input, but got two", self),
+            },
+            _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
+        };
+        new_plan.into()
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
-            Self::Project(Project { projection, .. }) => vec![format!("Project: {projection:?}")],
+            Self::Project(Project { projection, .. }) => {
+                vec![format!(
+                    "Project: {}",
+                    projection
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )]
+            }
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Explode(Explode { explode_exprs, .. }) => {
@@ -136,7 +174,7 @@ impl LogicalPlan {
             }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
-            Self::Coalesce(Coalesce { num_to, .. }) => vec![format!("Coalesce: {num_to}")],
+            Self::Coalesce(Coalesce { num_to, .. }) => vec![format!("Coalesce: To = {num_to}")],
             Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Concat(_) => vec!["Concat".to_string()],

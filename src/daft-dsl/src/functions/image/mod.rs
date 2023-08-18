@@ -15,7 +15,7 @@ use crate::Expr;
 
 use super::FunctionEvaluator;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ImageExpr {
     Decode(),
     Encode { image_format: ImageFormat },

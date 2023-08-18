@@ -51,23 +51,20 @@ impl Source {
             }) => {
                 res.push(format!("Source: {:?}", file_format_config.var_name()));
                 for fp in file_info.file_paths.iter() {
-                    res.push(format!("  {}", fp));
+                    res.push(format!("File paths = {}", fp));
                 }
-                res.push(format!("  File schema: {}", schema.short_string()));
-                res.push(format!(
-                    "  Format-specific config: {:?}",
-                    file_format_config
-                ));
+                res.push(format!("File schema = {}", schema.short_string()));
+                res.push(format!("Format-specific config = {:?}", file_format_config));
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(_) => {}
         }
-        res.push(format!("  Output schema: {}", self.schema.short_string()));
+        res.push(format!("Output schema = {}", self.schema.short_string()));
         if !self.filters.is_empty() {
-            res.push(format!("  Filters: {:?}", self.filters));
+            res.push(format!("Filters = {:?}", self.filters));
         }
         if let Some(limit) = self.limit {
-            res.push(format!("  Limit: {}", limit));
+            res.push(format!("Limit = {}", limit));
         }
         res
     }

@@ -46,8 +46,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return self._builder.repr_ascii()
 
     def optimize(self) -> RustLogicalPlanBuilder:
-        # TODO(Clark): Add optimization framework.
-        return self
+        builder = self._builder.optimize()
+        return RustLogicalPlanBuilder(builder)
 
     @classmethod
     def from_in_memory_scan(
@@ -222,7 +222,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
             left_columns = ExpressionsProjection.from_schema(self.schema())
             right_columns = ExpressionsProjection([col(f.name) for f in right.schema() if f.name not in right_drop_set])
             output_projection = left_columns.union(right_columns, rename_dup="right.")
-            left_columns = left_columns
             right_columns = ExpressionsProjection(list(output_projection)[len(left_columns) :])
             output_schema = left_columns.resolve_schema(self.schema()).union(
                 right_columns.resolve_schema(right.schema())

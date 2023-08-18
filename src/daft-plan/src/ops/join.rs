@@ -40,15 +40,40 @@ impl Join {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Join ({}):", self.join_type));
-        if !self.left_on.is_empty() {
-            res.push(format!("  Left on: {:?}", self.left_on));
-        }
-        if !self.right_on.is_empty() {
-            res.push(format!("  Right on: {:?}", self.left_on));
+        res.push(format!("Join: Type = {}", self.join_type));
+        if !self.left_on.is_empty() && !self.right_on.is_empty() && self.left_on == self.right_on {
+            res.push(format!(
+                "On = {}",
+                self.left_on
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        } else {
+            if !self.left_on.is_empty() {
+                res.push(format!(
+                    "Left on = {}",
+                    self.left_on
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !self.right_on.is_empty() {
+                res.push(format!(
+                    "Right on = {}",
+                    self.right_on
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
         }
         res.push(format!(
-            "  Output schema: {}",
+            "Output schema = {}",
             self.output_schema.short_string()
         ));
         res

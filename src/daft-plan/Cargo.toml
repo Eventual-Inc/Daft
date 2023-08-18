@@ -12,7 +12,7 @@ serde = {workspace = true, features = ["rc"]}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-io/python", "daft-table/python"]
 
 [package]
 edition = {workspace = true}

@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use pyo3::{
     types::{PyBytes, PyModule},
     PyObject, Python, ToPyObject,
@@ -60,5 +62,14 @@ impl<'de> Deserialize<'de> for PartialUDF {
 impl PartialEq for PartialUDF {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| self.0.as_ref(py).eq(other.0.as_ref(py)).unwrap())
+    }
+}
+
+impl Eq for PartialUDF {}
+
+impl Hash for PartialUDF {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let py_obj_hash = Python::with_gil(|py| self.0.as_ref(py).hash().unwrap());
+        py_obj_hash.hash(state)
     }
 }

@@ -11,7 +11,7 @@ use super::FunctionEvaluator;
 
 use daft_io::config::IOConfig;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum UriExpr {
     Download {
         max_connections: usize,

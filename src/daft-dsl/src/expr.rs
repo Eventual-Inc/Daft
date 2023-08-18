@@ -6,7 +6,11 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 
-use crate::{functions::FunctionEvaluator, lit};
+use crate::{
+    functions::FunctionEvaluator,
+    lit,
+    optimization::{get_required_columns, requires_computation},
+};
 
 use common_error::{DaftError, DaftResult};
 
@@ -20,7 +24,7 @@ use super::functions::FunctionExpr;
 
 pub type ExprRef = Arc<Expr>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
     Alias(ExprRef, Arc<str>),
     Agg(AggExpr),
@@ -45,7 +49,7 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
@@ -269,8 +273,36 @@ impl Expr {
         Expr::IsNull(self.clone().into())
     }
 
+    pub fn eq(&self, other: &Self) -> Self {
+        binary_op(Operator::Eq, self, other)
+    }
+
+    pub fn not_eq(&self, other: &Self) -> Self {
+        binary_op(Operator::NotEq, self, other)
+    }
+
     pub fn and(&self, other: &Self) -> Self {
         binary_op(Operator::And, self, other)
+    }
+
+    pub fn or(&self, other: &Self) -> Self {
+        binary_op(Operator::Or, self, other)
+    }
+
+    pub fn lt(&self, other: &Self) -> Self {
+        binary_op(Operator::Lt, self, other)
+    }
+
+    pub fn lt_eq(&self, other: &Self) -> Self {
+        binary_op(Operator::LtEq, self, other)
+    }
+
+    pub fn gt(&self, other: &Self) -> Self {
+        binary_op(Operator::Gt, self, other)
+    }
+
+    pub fn gt_eq(&self, other: &Self) -> Self {
+        binary_op(Operator::GtEq, self, other)
     }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
@@ -443,6 +475,19 @@ impl Expr {
     pub fn get_type(&self, schema: &Schema) -> DaftResult<DataType> {
         Ok(self.to_field(schema)?.dtype)
     }
+
+    pub fn input_mapping(&self) -> Option<String> {
+        let required_columns = get_required_columns(self);
+        let requires_computation = requires_computation(self);
+
+        // Return the required column only if:
+        //   1. There is only one required column
+        //   2. No computation is run on this required column
+        match (&required_columns[..], requires_computation) {
+            ([required_col], false) => Some(required_col.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl Display for Expr {
@@ -507,7 +552,7 @@ impl Display for AggExpr {
 }
 
 /// Based on Polars first class operators: https://github.com/pola-rs/polars/blob/master/polars/polars-lazy/polars-plan/src/dsl/expr.rs
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
     Eq,
     NotEq,

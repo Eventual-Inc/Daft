@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Expr;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PythonUDF {
     func: partial_udf::PartialUDF,
     num_expressions: usize,

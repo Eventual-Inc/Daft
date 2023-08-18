@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use pyo3::prelude::*;
 
 use serde::{
@@ -18,6 +20,15 @@ impl PartialEq for DaftPyObject {
                 .eq(other.pyobject.as_ref(py))
                 .unwrap()
         })
+    }
+}
+
+impl Eq for DaftPyObject {}
+
+impl Hash for DaftPyObject {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let py_obj_hash = Python::with_gil(|py| self.pyobject.as_ref(py).hash().unwrap());
+        py_obj_hash.hash(state)
     }
 }
 
