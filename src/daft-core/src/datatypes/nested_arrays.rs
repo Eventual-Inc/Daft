@@ -1,3 +1,4 @@
+use std::iter::repeat;
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -56,12 +57,33 @@ impl FixedSizeListArray {
                 "Need at least 1 FixedSizeListArray to concat".to_string(),
             ));
         }
-        let _flat_children: Vec<_> = arrays.iter().map(|a| &a.flat_child).collect();
-        let _validities = arrays.iter().map(|a| &a.validity);
-        let _lens = arrays.iter().map(|a| a.len());
+        let flat_children: Vec<&Series> = arrays.iter().map(|a| &a.flat_child).collect();
+        let concatted_flat_children = Series::concat(&flat_children)?;
 
-        // TODO(FixedSizeList)
-        todo!();
+        let validities: Vec<_> = arrays.iter().map(|a| &a.validity).collect();
+        let validity = if validities.iter().filter(|v| v.is_some()).count() == 0 {
+            None
+        } else {
+            let lens = arrays.iter().map(|a| a.len());
+            let concatted_validities: Vec<bool> = validities
+                .iter()
+                .zip(lens)
+                .flat_map(|(v, l)| {
+                    let x: Box<dyn Iterator<Item = bool>> = match v {
+                        None => Box::new(repeat(true).take(l)),
+                        Some(v) => Box::new(v.into_iter().map(|x| x.unwrap())),
+                    };
+                    x
+                })
+                .collect();
+            Some(BooleanArray::from(("", concatted_validities.as_slice())))
+        };
+
+        Ok(Self::new(
+            arrays.first().unwrap().field.clone(),
+            concatted_flat_children,
+            validity,
+        ))
     }
 
     pub fn len(&self) -> usize {
