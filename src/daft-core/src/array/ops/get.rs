@@ -7,9 +7,9 @@ use crate::{
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ListArray, NullArray,
-        StructArray, UInt64Array, Utf8Array,
+        StructArray, Utf8Array,
     },
-    IntoSeries, Series,
+    Series,
 };
 
 use super::as_arrow::AsArrow;
@@ -171,23 +171,20 @@ impl FixedSizeListArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
+        let fixed_len = self.fixed_element_len();
         let valid = self.is_valid(idx);
         if valid {
-            let fixed_len = self.fixed_element_len();
-            let flat_child_indices: Vec<u64> = match &self.validity {
-                None => ((fixed_len * idx) as u64..(fixed_len * (idx + 1)) as u64).collect(),
-                Some(validity) => {
-                    let start = validity
-                        .slice(0, idx)
-                        .unwrap()
-                        .into_iter()
-                        .fold(0, |sum, v| if v.unwrap() { sum + fixed_len } else { sum });
-                    (start as u64..(start + fixed_len) as u64).collect()
-                }
+            let start_idx = match &self.validity {
+                None => fixed_len * idx,
+                Some(validity) => validity
+                    .slice(0, idx)
+                    .unwrap()
+                    .into_iter()
+                    .fold(0, |sum, v| if v.unwrap() { sum + fixed_len } else { sum }),
             };
             Some(
                 self.flat_child
-                    .take(&UInt64Array::from(("", flat_child_indices)).into_series())
+                    .slice(start_idx, start_idx + fixed_len)
                     .unwrap(),
             )
         } else {

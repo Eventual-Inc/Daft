@@ -8,6 +8,7 @@ use crate::datatypes::{
     DaftNumericType, ExtensionArray, Field, ListArray, NullArray, StructArray, Utf8Array,
 };
 use crate::utils::arrow::arrow_bitmap_and_helper;
+use crate::Series;
 use common_error::{DaftError, DaftResult};
 use std::convert::identity;
 use std::sync::Arc;
@@ -297,11 +298,63 @@ impl ListArray {
 impl FixedSizeListArray {
     pub fn if_else(
         &self,
-        _other: &FixedSizeListArray,
-        _predicate: &BooleanArray,
+        other: &FixedSizeListArray,
+        predicate: &BooleanArray,
     ) -> DaftResult<FixedSizeListArray> {
-        // TODO(FixedSizeList)
-        todo!()
+        if predicate.len() == 1 {
+            return match predicate.get(0) {
+                None => Ok(FixedSizeListArray::full_null(
+                    self.name(),
+                    self.data_type(),
+                    1,
+                )),
+                Some(pred) => Ok(if pred { self.clone() } else { other.clone() }),
+            };
+        }
+
+        let result_len = predicate.len();
+        let self_iter = (0..result_len).map(|i| {
+            if self.len() == 1 {
+                self.get(0)
+            } else {
+                self.get(i)
+            }
+        });
+        let other_iter = (0..result_len).map(|i| {
+            if other.len() == 1 {
+                other.get(0)
+            } else {
+                other.get(i)
+            }
+        });
+        let pred_iter = predicate.into_iter();
+        let results = pred_iter
+            .zip(self_iter.zip(other_iter))
+            .map(|(pred, (s, o))| match pred {
+                None => None,
+                Some(true) => s,
+                Some(false) => o,
+            });
+
+        let results = results.collect::<Vec<_>>();
+        let validity = BooleanArray::from((
+            "",
+            results
+                .iter()
+                .map(|v| v.is_some())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        ));
+        let valid_series = results
+            .iter()
+            .filter_map(|v| v.as_ref())
+            .collect::<Vec<_>>();
+        let child_series = Series::concat(valid_series.as_slice())?;
+        Ok(FixedSizeListArray::new(
+            self.field.clone(),
+            child_series,
+            Some(validity),
+        ))
     }
 }
 

@@ -35,20 +35,6 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn empty(field_name: &str, dtype: &DataType) -> Self {
-        match dtype {
-            DataType::FixedSizeList(child, _) => {
-                let field = Field::new(field_name, dtype.clone());
-                let empty_child = Series::empty(field_name, &child.dtype);
-                Self::new(field, empty_child, None)
-            }
-            _ => panic!(
-                "Cannot create empty FixedSizeListArray with dtype: {}",
-                dtype
-            ),
-        }
-    }
-
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
@@ -103,13 +89,39 @@ impl FixedSizeListArray {
     }
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        Box::new(arrow2::array::FixedSizeListArray::new(
-            self.data_type().to_arrow().unwrap(),
-            self.flat_child.to_arrow(),
-            self.validity.as_ref().map(|validity| {
-                arrow2::bitmap::Bitmap::from_iter(validity.into_iter().map(|v| v.unwrap()))
-            }),
-        ))
+        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        let arrow_validity = self.validity.as_ref().map(|validity| {
+            arrow2::bitmap::Bitmap::from_iter(validity.into_iter().map(|v| v.unwrap()))
+        });
+        if self.is_empty() || self.validity.is_none() {
+            Box::new(arrow2::array::FixedSizeListArray::new(
+                arrow_dtype,
+                self.flat_child.to_arrow(),
+                arrow_validity,
+            ))
+        } else {
+            // NOTE: Arrow2 requires that the values array is padded for values when validity is false
+            // such that (values.len() / size) == self.len(). Here we naively use idx 0 as the padding value.
+            let child_arrow_dtype = self.child_data_type().to_arrow().unwrap();
+            let padding_series = Series::try_from((
+                "",
+                arrow2::array::new_null_array(child_arrow_dtype, self.fixed_element_len()),
+            ))
+            .unwrap();
+            let take_series: Vec<Option<Series>> = (0..self.len()).map(|i| self.get(i)).collect();
+            let padded_take_series: Vec<&Series> = take_series
+                .iter()
+                .map(|s| s.as_ref().unwrap_or(&padding_series))
+                .collect();
+            let dense_values = Series::concat(padded_take_series.as_slice())
+                .unwrap()
+                .to_arrow();
+            Box::new(arrow2::array::FixedSizeListArray::new(
+                arrow_dtype,
+                dense_values,
+                arrow_validity,
+            ))
+        }
     }
 
     pub fn fixed_element_len(&self) -> usize {

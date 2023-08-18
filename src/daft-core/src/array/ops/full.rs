@@ -1,11 +1,13 @@
-use std::sync::Arc;
+use std::{iter::repeat, sync::Arc};
 
 #[cfg(feature = "python")]
 use pyo3::Python;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DaftPhysicalType, DataType, Field},
+    datatypes::{
+        nested_arrays::FixedSizeListArray, BooleanArray, DaftPhysicalType, DataType, Field,
+    },
 };
 
 impl<T> DataArray<T>
@@ -56,6 +58,31 @@ where
             )
             .unwrap(),
             Err(e) => panic!("Cannot create DataArray from non-arrow dtype: {e}"),
+        }
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let empty = Self::empty(name, dtype);
+        let validity = Some(BooleanArray::from((
+            "",
+            arrow2::array::BooleanArray::from_iter(repeat(Some(false)).take(length)),
+        )));
+        Self::new(empty.field, empty.flat_child, validity)
+    }
+
+    pub fn empty(name: &str, dtype: &DataType) -> Self {
+        match dtype {
+            DataType::FixedSizeList(child, _) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_child = crate::Series::empty(name, &child.dtype);
+                Self::new(field, empty_child, None)
+            }
+            _ => panic!(
+                "Cannot create empty FixedSizeListArray with dtype: {}",
+                dtype
+            ),
         }
     }
 }
