@@ -9,6 +9,7 @@ impl Series {
 
 #[cfg(test)]
 mod tests {
+    use crate::array::ops::full::FullNull;
     use crate::datatypes::{DataType, Int64Array, Utf8Array};
     use crate::series::array_impl::IntoSeries;
     use common_error::DaftResult;

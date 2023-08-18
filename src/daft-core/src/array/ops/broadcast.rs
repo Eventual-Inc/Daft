@@ -1,9 +1,12 @@
+use std::iter::repeat;
+
 use crate::{
     array::DataArray,
     datatypes::{
         nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, DaftNumericType, DataType,
         ExtensionArray, ListArray, NullArray, StructArray, Utf8Array,
     },
+    Series,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -172,15 +175,24 @@ impl Broadcastable for ListArray {
 }
 
 impl Broadcastable for FixedSizeListArray {
-    fn broadcast(&self, _num: usize) -> DaftResult<Self> {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",
                 self.name()
             )));
         }
-        // TODO(FixedSizeList)
-        todo!()
+        let repeated: Vec<&Series> = repeat(&self.flat_child).take(num).collect();
+        let concatted = Series::concat(repeated.as_slice())?;
+        let validity = if self.is_valid(0) {
+            None
+        } else {
+            Some(BooleanArray::from((
+                "",
+                repeat(false).take(num).collect::<Vec<_>>().as_slice(),
+            )))
+        };
+        Ok(Self::new(self.field.clone(), concatted, validity))
     }
 }
 
