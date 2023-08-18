@@ -140,23 +140,20 @@ impl ExternalInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileInfo {
     pub file_paths: Vec<String>,
-    pub file_sizes: Option<Vec<i64>>,
-    pub num_rows: Option<Vec<i64>>,
-    pub file_formats: Option<Vec<FileFormat>>,
+    pub file_sizes: Vec<Option<i64>>,
+    pub num_rows: Vec<Option<i64>>,
 }
 
 impl FileInfo {
     pub fn new(
         file_paths: Vec<String>,
-        file_sizes: Option<Vec<i64>>,
-        num_rows: Option<Vec<i64>>,
-        file_formats: Option<Vec<FileFormat>>,
+        file_sizes: Vec<Option<i64>>,
+        num_rows: Vec<Option<i64>>,
     ) -> Self {
         Self {
             file_paths,
             file_sizes,
             num_rows,
-            file_formats,
         }
     }
     pub fn to_table(&self) -> DaftResult<Table> {
@@ -170,11 +167,7 @@ impl FileInfo {
             ))?,
             Series::try_from((
                 "size",
-                arrow2::array::PrimitiveArray::<i64>::new_null(
-                    arrow2::datatypes::DataType::Int64,
-                    num_files,
-                )
-                .to_boxed(),
+                arrow2::array::PrimitiveArray::<i64>::from(&self.file_sizes).to_boxed(),
             ))?,
             Series::try_from((
                 "type",
@@ -186,11 +179,7 @@ impl FileInfo {
             ))?,
             Series::try_from((
                 "rows",
-                arrow2::array::PrimitiveArray::<i64>::new_null(
-                    arrow2::datatypes::DataType::Int64,
-                    num_files,
-                )
-                .to_boxed(),
+                arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
             ))?,
         ];
         Table::new(

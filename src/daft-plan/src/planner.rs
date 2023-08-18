@@ -370,7 +370,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                     };
 
-                    let _second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
+                    let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
                         gather_plan.into(),
                         second_stage_aggs.values().cloned().collect(),
                         groupby.clone(),
@@ -379,7 +379,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     PhysicalPlan::Project(Project::new(
                         final_exprs,
                         Default::default(),
-                        _second_stage_agg.into(),
+                        second_stage_agg.into(),
                     ))
                 }
             };
