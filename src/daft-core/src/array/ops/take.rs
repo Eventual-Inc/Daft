@@ -1,3 +1,5 @@
+use std::iter::repeat;
+
 use crate::{
     array::DataArray,
     datatypes::{
@@ -7,8 +9,9 @@ use crate::{
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, StructArray, Utf8Array,
+        NullArray, StructArray, UInt64Array, Utf8Array,
     },
+    DataType, IntoSeries,
 };
 use common_error::DaftResult;
 
@@ -140,13 +143,36 @@ impl crate::datatypes::PythonArray {
 }
 
 impl FixedSizeListArray {
-    pub fn take<I>(&self, _idx: &DataArray<I>) -> DaftResult<Self>
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        // TODO(FixedSizeList)
-        todo!()
+        let size = self.fixed_element_len() as u64;
+        let idx_as_u64 = idx.cast(&DataType::UInt64)?;
+        let expanded_child_idx: Vec<Option<u64>> = idx_as_u64
+            .u64()?
+            .into_iter()
+            .flat_map(|i| {
+                let x: Box<dyn Iterator<Item = Option<u64>>> = match &i {
+                    None => Box::new(repeat(None).take(size as usize)),
+                    Some(i) => Box::new((*i * size..(*i + 1) * size).map(Some)),
+                };
+                x
+            })
+            .collect();
+        let child_idx = UInt64Array::from((
+            "",
+            Box::new(arrow2::array::UInt64Array::from_iter(
+                expanded_child_idx.iter(),
+            )),
+        ))
+        .into_series();
+        Ok(Self::new(
+            self.field.clone(),
+            self.flat_child.take(&child_idx)?,
+            self.validity.as_ref().map(|v| v.take(idx).unwrap()),
+        ))
     }
 }
 

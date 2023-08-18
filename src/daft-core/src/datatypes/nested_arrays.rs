@@ -83,9 +83,18 @@ impl FixedSizeListArray {
         )
     }
 
-    pub fn slice(&self, _start: usize, _end: usize) -> DaftResult<Self> {
-        // TODO(FixedSizeList)
-        todo!()
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
+        if start > end {
+            return Err(DaftError::ValueError(format!(
+                "Trying to slice array with negative length, start: {start} vs end: {end}"
+            )));
+        }
+        let size = self.fixed_element_len();
+        Ok(Self::new(
+            self.field.clone(),
+            self.flat_child.slice(start * size, end * size)?,
+            self.validity.as_ref().map(|v| v.slice(start, end).unwrap()),
+        ))
     }
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
