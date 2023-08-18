@@ -1626,6 +1626,20 @@ impl FixedSizeListArray {
                 )
                 .into_series())
             }
+            DataType::FixedShapeImage(mode, h, w) => {
+                if (h * w * mode.num_channels() as u32) as u64 != self.fixed_element_len() as u64 {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to {}: mismatch in element sizes",
+                        self.data_type(),
+                        dtype
+                    )));
+                }
+                Ok(FixedShapeImageArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    self.clone(),
+                )
+                .into_series())
+            }
             _ => unimplemented!("FixedSizeList casting not implemented for dtype: {}", dtype),
         }
     }

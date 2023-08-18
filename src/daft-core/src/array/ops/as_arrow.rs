@@ -64,8 +64,8 @@ macro_rules! impl_asarrow_logical_fsl_array {
         impl AsArrow for $da {
             type Output = $output;
             fn as_arrow(&self) -> &Self::Output {
-                // TODO(FixedSizeList)
-                todo!()
+                // TODO(FixedSizeList): Fix kernels that rely on this functionality
+                unimplemented!("as_arrow for FixedSizeListArray will not be implemented")
             }
         }
     };
@@ -74,8 +74,8 @@ macro_rules! impl_asarrow_logical_fsl_array {
 impl AsArrow for FixedSizeListArray {
     type Output = array::FixedSizeListArray;
     fn as_arrow(&self) -> &Self::Output {
-        // TODO(FixedSizeList)
-        todo!()
+        // TODO(FixedSizeList): Fix kernels that rely on this functionality
+        unimplemented!("as_arrow for FixedSizeListArray will not be implemented")
     }
 }
 
