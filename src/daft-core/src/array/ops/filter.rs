@@ -81,7 +81,15 @@ impl crate::datatypes::nested_arrays::FixedSizeListArray {
             .collect();
         let expanded_filter = BooleanArray::from(("", expanded_filter.as_slice()));
         let filtered_child = self.flat_child.filter(&expanded_filter)?;
-        let filtered_validity = self.validity.as_ref().map(|v| v.filter(mask).unwrap());
+        let filtered_validity = self.validity.as_ref().map(|validity| {
+            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
+                |(keep, valid)| match keep {
+                    None => None,
+                    Some(false) => None,
+                    Some(true) => Some(valid),
+                },
+            ))
+        });
         Ok(Self::new(
             self.field.clone(),
             filtered_child,

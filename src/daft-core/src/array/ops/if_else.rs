@@ -350,7 +350,7 @@ impl FixedSizeListArray {
             });
 
         let results = results.collect::<Vec<_>>();
-        let validity = BooleanArray::from((
+        let _validity = BooleanArray::from((
             "",
             results
                 .iter()
@@ -368,7 +368,9 @@ impl FixedSizeListArray {
         Ok(FixedSizeListArray::new(
             self.field.clone(),
             child_series,
-            Some(validity),
+            Some(arrow2::bitmap::Bitmap::from_iter(
+                results.iter().map(|(_, v)| *v),
+            )),
         ))
     }
 }

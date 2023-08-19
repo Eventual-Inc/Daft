@@ -98,11 +98,7 @@ impl DaftCountAggable for &FixedSizeListArray {
     type Output = DaftResult<DataArray<UInt64Type>>;
 
     fn count(&self, mode: CountMode) -> Self::Output {
-        let arrow_bitmap = self
-            .validity
-            .as_ref()
-            .map(|v| arrow2::bitmap::Bitmap::from_iter(v.into_iter().map(|v| v.unwrap())));
-        let count = count_arrow_bitmap(&mode, arrow_bitmap.as_ref(), self.len());
+        let count = count_arrow_bitmap(&mode, self.validity.as_ref(), self.len());
         let result_arrow_array = Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
         DataArray::<UInt64Type>::new(
             Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
@@ -111,12 +107,8 @@ impl DaftCountAggable for &FixedSizeListArray {
     }
 
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
-        let arrow_bitmap = self
-            .validity
-            .as_ref()
-            .map(|v| arrow2::bitmap::Bitmap::from_iter(v.into_iter().map(|v| v.unwrap())));
         let counts_per_group: Vec<_> =
-            grouped_count_arrow_bitmap(groups, &mode, arrow_bitmap.as_ref());
+            grouped_count_arrow_bitmap(groups, &mode, self.validity.as_ref());
         Ok(DataArray::<UInt64Type>::from((
             self.field.name.as_ref(),
             counts_per_group,

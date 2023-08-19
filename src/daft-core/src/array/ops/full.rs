@@ -6,8 +6,8 @@ use pyo3::Python;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{
-        logical::LogicalArray, nested_arrays::FixedSizeListArray, BooleanArray, DaftDataType,
-        DaftLogicalType, DaftPhysicalType, DataType, Field,
+        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
+        DaftPhysicalType, DataType, Field,
     },
 };
 
@@ -88,11 +88,8 @@ where
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
         let empty = Self::empty(name, dtype);
-        let validity = Some(BooleanArray::from((
-            "",
-            arrow2::array::BooleanArray::from_iter(repeat(Some(false)).take(length)),
-        )));
-        Self::new(empty.field, empty.flat_child, validity)
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        Self::new(empty.field, empty.flat_child, Some(validity))
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {

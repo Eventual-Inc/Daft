@@ -14,6 +14,7 @@ use crate::{
     DataType, IntoSeries,
 };
 use common_error::DaftResult;
+use num_traits::ToPrimitive;
 
 use super::as_arrow::AsArrow;
 
@@ -88,7 +89,6 @@ impl crate::datatypes::PythonArray {
         use crate::datatypes::PythonType;
 
         use arrow2::array::Array;
-        use arrow2::types::Index;
         use pyo3::prelude::*;
 
         let indices = idx.as_arrow();
@@ -102,7 +102,7 @@ impl crate::datatypes::PythonArray {
             indices
                 .iter()
                 .map(|maybe_idx| match maybe_idx {
-                    Some(idx) => old_values[idx.to_usize()].clone(),
+                    Some(idx) => old_values[arrow2::types::Index::to_usize(idx)].clone(),
                     None => py_none.clone(),
                 })
                 .collect()
@@ -168,10 +168,16 @@ impl FixedSizeListArray {
             )),
         ))
         .into_series();
+        let taken_validity = self.validity.as_ref().map(|v| {
+            arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+                None => false,
+                Some(i) => v.get_bit(i.to_usize().unwrap()),
+            }))
+        });
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.take(&child_idx)?,
-            self.validity.as_ref().map(|v| v.take(idx).unwrap()),
+            taken_validity,
         ))
     }
 }

@@ -187,10 +187,7 @@ impl Broadcastable for FixedSizeListArray {
         let validity = if self.is_valid(0) {
             None
         } else {
-            Some(BooleanArray::from((
-                "",
-                repeat(false).take(num).collect::<Vec<_>>().as_slice(),
-            )))
+            Some(arrow2::bitmap::Bitmap::from_iter(repeat(false).take(num)))
         };
         Ok(Self::new(self.field.clone(), concatted, validity))
     }

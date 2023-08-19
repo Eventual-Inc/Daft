@@ -44,13 +44,16 @@ impl DaftIsNull for FixedSizeListArray {
     fn is_null(&self) -> Self::Output {
         match &self.validity {
             None => Ok(BooleanArray::from((
-                "",
+                self.name(),
                 repeat(false)
                     .take(self.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
             ))),
-            Some(validity) => Ok(validity.clone()),
+            Some(validity) => Ok(BooleanArray::from((
+                self.name(),
+                validity.into_iter().collect::<Vec<_>>().as_slice(),
+            ))),
         }
     }
 }

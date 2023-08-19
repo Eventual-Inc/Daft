@@ -39,13 +39,13 @@ impl PythonArray {
     }
 }
 
+/// From arrow2 private method (arrow2::compute::aggregate::validity_size)
+fn validity_size(validity: Option<&arrow2::bitmap::Bitmap>) -> usize {
+    validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
+}
+
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        Ok(self.flat_child.size_bytes()?
-            + self
-                .validity
-                .as_ref()
-                .map(|v| v.size_bytes())
-                .unwrap_or(Ok(0))?)
+        Ok(self.flat_child.size_bytes()? + validity_size(self.validity.as_ref()))
     }
 }

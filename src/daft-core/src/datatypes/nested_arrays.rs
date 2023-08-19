@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::datatypes::{BooleanArray, DaftArrayType, Field};
+use crate::datatypes::{DaftArrayType, Field};
 use crate::series::Series;
 use crate::DataType;
 
@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
-    pub(crate) validity: Option<BooleanArray>,
+    pub validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for FixedSizeListArray {}
@@ -20,7 +20,7 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        validity: Option<BooleanArray>,
+        validity: Option<arrow2::bitmap::Bitmap>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -37,12 +37,6 @@ impl FixedSizeListArray {
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
                 field
             )
-        }
-        // validity must not contain any null values
-        if let Some(validity) = validity.as_ref() && let Some(validity) = validity.data().validity() {
-            validity.iter().for_each(|v| if !v {
-                panic!("FixedSizeListArray validity BooleanArray mask must contain all valid values")
-            })
         }
         FixedSizeListArray {
             field,
@@ -65,18 +59,14 @@ impl FixedSizeListArray {
             None
         } else {
             let lens = arrays.iter().map(|a| a.len());
-            let concatted_validities: Vec<bool> = validities
-                .iter()
-                .zip(lens)
-                .flat_map(|(v, l)| {
-                    let x: Box<dyn Iterator<Item = bool>> = match v {
-                        None => Box::new(repeat(true).take(l)),
-                        Some(v) => Box::new(v.into_iter().map(|x| x.unwrap())),
-                    };
-                    x
-                })
-                .collect();
-            Some(BooleanArray::from(("", concatted_validities.as_slice())))
+            let concatted_validities = validities.iter().zip(lens).flat_map(|(v, l)| {
+                let x: Box<dyn Iterator<Item = bool>> = match v {
+                    None => Box::new(repeat(true).take(l)),
+                    Some(v) => Box::new(v.into_iter()),
+                };
+                x
+            });
+            Some(arrow2::bitmap::Bitmap::from_iter(concatted_validities))
         };
 
         Ok(Self::new(
@@ -127,19 +117,16 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.slice(start * size, end * size)?,
-            self.validity.as_ref().map(|v| v.slice(start, end).unwrap()),
+            self.validity.as_ref().map(|v| v.clone().sliced(start, end)),
         ))
     }
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        let arrow_validity = self.validity.as_ref().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(validity.into_iter().map(|v| v.unwrap()))
-        });
         Box::new(arrow2::array::FixedSizeListArray::new(
             arrow_dtype,
             self.flat_child.to_arrow(),
-            arrow_validity,
+            self.validity.clone(),
         ))
     }
 
@@ -157,7 +144,7 @@ mod tests {
     use common_error::DaftResult;
 
     use crate::{
-        datatypes::{BooleanArray, Field, Int32Array},
+        datatypes::{Field, Int32Array},
         DataType, IntoSeries,
     };
 
@@ -171,8 +158,11 @@ mod tests {
         );
         let num_valid_elements = validity.iter().map(|v| if *v { 1 } else { 0 }).sum();
         let flat_child = Int32Array::from(("foo", (0..num_valid_elements).collect::<Vec<i32>>()));
-        let validity = Some(BooleanArray::from(("foo", validity)));
-        FixedSizeListArray::new(field, flat_child.into_series(), validity)
+        FixedSizeListArray::new(
+            field,
+            flat_child.into_series(),
+            Some(arrow2::bitmap::Bitmap::from(validity)),
+        )
     }
 
     #[test]
