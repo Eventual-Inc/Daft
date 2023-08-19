@@ -11,6 +11,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
         NullArray, StructArray, Utf8Array,
     },
+    with_match_daft_types,
 };
 use common_error::DaftResult;
 
@@ -33,7 +34,6 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ListArray, "{:?}");
-impl_array_str_value!(FixedSizeListArray, "{}"); // TODO(FixedSizeList): Implement display
 impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");
@@ -205,6 +205,25 @@ impl Decimal128Array {
             },
         );
         Ok(res)
+    }
+}
+
+impl FixedSizeListArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => {
+                with_match_daft_types!(self.child_data_type(), |$T| {
+                    let arr = v.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    let mut s = String::new();
+                    s += "[";
+                    s += (0..v.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
+                    s += "]";
+                    Ok(s)
+                })
+            }
+        }
     }
 }
 
