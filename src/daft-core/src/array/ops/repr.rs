@@ -5,7 +5,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray,
+            ImageArray, TimestampArray, FixedShapeTensorArray,
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
@@ -37,9 +37,6 @@ impl_array_str_value!(ListArray, "{:?}");
 impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");
-impl_array_str_value!(EmbeddingArray, "{:?}");
-impl_array_str_value!(ImageArray, "{:?}");
-impl_array_str_value!(FixedShapeImageArray, "{:?}");
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
@@ -227,6 +224,46 @@ impl FixedSizeListArray {
     }
 }
 
+impl EmbeddingArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<Embedding>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl ImageArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<Image>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl FixedShapeImageArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<FixedShapeImage>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl FixedShapeTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok(format!("<FixedShapeTensor>").to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 // Default implementation of html_value: html escape the str_value.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
@@ -342,5 +379,14 @@ impl FixedShapeImageArray {
                 )
             }
         }
+    }
+}
+
+impl FixedShapeTensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
     }
 }

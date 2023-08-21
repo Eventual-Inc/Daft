@@ -228,22 +228,6 @@ impl TensorArray {
 }
 
 impl FixedShapeTensorArray {
-    #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
-        let arrow_array = self.as_arrow();
-        let is_valid = arrow_array
-            .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
-        if is_valid {
-            Some(unsafe { arrow_array.value_unchecked(idx) })
-        } else {
-            None
-        }
-    }
-
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
@@ -251,20 +235,5 @@ impl FixedShapeTensorArray {
     {
         let new_array = self.physical.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
-    }
-
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
-    }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
     }
 }

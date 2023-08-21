@@ -3,11 +3,11 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray,
+            ImageArray, TimestampArray, LogicalArrayImpl,
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ListArray, NullArray,
-        StructArray, Utf8Array,
+        StructArray, Utf8Array, DaftLogicalType,
     },
     Series,
 };
@@ -36,7 +36,7 @@ where
 }
 
 // Default implementations of get ops for DataArray and LogicalArray.
-macro_rules! impl_array_get {
+macro_rules! impl_array_arrow_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
             #[inline]
@@ -58,16 +58,21 @@ macro_rules! impl_array_get {
     };
 }
 
-impl_array_get!(Utf8Array, &str);
-impl_array_get!(BooleanArray, bool);
-impl_array_get!(BinaryArray, &[u8]);
-impl_array_get!(ListArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(Decimal128Array, i128);
-impl_array_get!(DateArray, i32);
-impl_array_get!(DurationArray, i64);
-impl_array_get!(TimestampArray, i64);
-impl_array_get!(EmbeddingArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(FixedShapeImageArray, Box<dyn arrow2::array::Array>);
+impl <L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        self.physical.get(idx)
+    }
+}
+
+impl_array_arrow_get!(Utf8Array, &str);
+impl_array_arrow_get!(BooleanArray, bool);
+impl_array_arrow_get!(BinaryArray, &[u8]);
+impl_array_arrow_get!(ListArray, Box<dyn arrow2::array::Array>);
+impl_array_arrow_get!(Decimal128Array, i128);
+impl_array_arrow_get!(DateArray, i32);
+impl_array_arrow_get!(DurationArray, i64);
+impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
