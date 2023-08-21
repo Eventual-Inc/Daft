@@ -81,8 +81,11 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         )
         paths_details = file_info_partition_set.to_pydict()
         filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
+        filesizes = paths_details[runner_io.FS_LISTING_SIZE_COLUMN_NAME]
+        filerows = paths_details[runner_io.FS_LISTING_ROWS_COLUMN_NAME]
+
         rs_schema = inferred_or_provided_schema._schema
-        builder = _LogicalPlanBuilder.table_scan(filepaths, rs_schema, file_format_config)
+        builder = _LogicalPlanBuilder.table_scan(filepaths, filesizes, filerows, rs_schema, file_format_config)
         return cls(builder)
 
     def project(

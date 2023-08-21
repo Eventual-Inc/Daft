@@ -60,13 +60,15 @@ impl LogicalPlanBuilder {
     #[staticmethod]
     pub fn table_scan(
         file_paths: Vec<String>,
+        file_sizes: Vec<Option<i64>>,
+        file_rows: Vec<Option<i64>>,
         schema: &PySchema,
         file_format_config: PyFileFormatConfig,
     ) -> PyResult<LogicalPlanBuilder> {
         let num_partitions = file_paths.len();
         let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
             schema.schema.clone(),
-            InputFileInfo::new(file_paths, None, None, None).into(),
+            InputFileInfo::new(file_paths, file_sizes, file_rows).into(),
             file_format_config.into(),
         ));
         let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);
