@@ -240,7 +240,7 @@ mod tests {
             schema.clone(),
             SourceInfo::ExternalInfo(ExternalInfo::new(
                 schema.clone(),
-                FileInfo::new(vec!["/foo".to_string()], None, None).into(),
+                FileInfo::new(vec!["/foo".to_string()], vec![None], vec![None]).into(),
                 FileFormatConfig::Json(JsonSourceConfig {}).into(),
             ))
             .into(),
