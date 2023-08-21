@@ -109,9 +109,9 @@ impl OptimizerRule for PushDownFilter {
                     return Ok(None);
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
-                let push_down_predicate = conjuct(can_push).unwrap();
+                let predicates_to_push = conjuct(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
-                    Filter::new(push_down_predicate, child_project.input.clone()).into();
+                    Filter::new(predicates_to_push, child_project.input.clone()).into();
                 // Create new Projection.
                 let new_projection: LogicalPlan = Project::new(
                     child_project.projection.clone(),
@@ -240,7 +240,7 @@ mod tests {
             schema.clone(),
             SourceInfo::ExternalInfo(ExternalInfo::new(
                 schema.clone(),
-                FileInfo::new(vec!["/foo".to_string()], None, None, None).into(),
+                FileInfo::new(vec!["/foo".to_string()], None, None).into(),
                 FileFormatConfig::Json(JsonSourceConfig {}).into(),
             ))
             .into(),
