@@ -3,6 +3,7 @@ mod display;
 mod join;
 mod logical_plan;
 mod ops;
+mod optimization;
 mod partitioning;
 mod physical_ops;
 mod physical_plan;

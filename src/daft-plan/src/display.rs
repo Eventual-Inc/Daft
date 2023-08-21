@@ -1,15 +1,47 @@
-use std::fmt::{self, Display, Write};
+use std::{
+    fmt::{self, Display, Write},
+    sync::Arc,
+};
 
 pub(crate) trait TreeDisplay {
     // Required method: Get a list of lines representing this node. No trailing newlines.
     fn get_multiline_representation(&self) -> Vec<String>;
 
     // Required method: Get the children of the self node.
-    fn get_children(&self) -> Vec<&Self>;
+    fn get_children(&self) -> Vec<&Arc<Self>>;
 
     // Print the whole tree represented by this node.
     fn fmt_tree(&self, s: &mut String) -> fmt::Result {
         self.fmt_tree_gitstyle(0, s)
+    }
+
+    // Print the tree recursively, and illustrate the tree structure with a single line per node + indentation.
+    fn fmt_tree_indent_style(&self, indent: usize, s: &mut String) -> fmt::Result {
+        // Print the current node.
+        if indent > 0 {
+            writeln!(s)?;
+            write!(s, "{:indent$}", "", indent = 2 * indent)?;
+        }
+        let node_str = self.get_multiline_representation().join(", ");
+        write!(s, "{node_str}")?;
+
+        // Recursively handle children.
+        let children = self.get_children();
+        match children[..] {
+            // No children - stop printing.
+            [] => Ok(()),
+            // One child.
+            [child] => {
+                // Child tree.
+                child.fmt_tree_indent_style(indent + 1, s)
+            }
+            // Two children.
+            [left, right] => {
+                left.fmt_tree_indent_style(indent + 1, s)?;
+                right.fmt_tree_indent_style(indent + 1, s)
+            }
+            _ => unreachable!("Max two child nodes expected, got {}", children.len()),
+        }
     }
 
     // Print the tree recursively, and illustrate the tree structure in the same style as `git log --graph`.
@@ -22,7 +54,7 @@ pub(crate) trait TreeDisplay {
             self.fmt_depth(depth, s)?;
             match i {
                 0 => write!(s, "* ")?,
-                _ => write!(s, "| ")?,
+                _ => write!(s, "|   ")?,
             }
             writeln!(s, "{val}")?;
         }
@@ -76,7 +108,7 @@ impl TreeDisplay for crate::LogicalPlan {
         self.multiline_display()
     }
 
-    fn get_children(&self) -> Vec<&Self> {
+    fn get_children(&self) -> Vec<&Arc<Self>> {
         self.children()
     }
 }
@@ -84,9 +116,7 @@ impl TreeDisplay for crate::LogicalPlan {
 // Single node display.
 impl Display for crate::LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for line in self.multiline_display() {
-            writeln!(f, "{line}")?;
-        }
+        write!(f, "{}", self.get_multiline_representation().join(", "))?;
         Ok(())
     }
 }

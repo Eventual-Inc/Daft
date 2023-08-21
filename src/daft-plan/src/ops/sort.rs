@@ -23,22 +23,16 @@ impl Sort {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("Sort:".to_string());
-        if !self.sort_by.is_empty() {
-            let pairs: Vec<String> = self
-                .sort_by
-                .iter()
-                .zip(self.descending.iter())
-                .map(|(sb, d)| {
-                    format!(
-                        "({:?}, {})",
-                        sb,
-                        if *d { "descending" } else { "ascending" },
-                    )
-                })
-                .collect();
-            res.push(format!("  Sort by: {:?}", pairs));
-        }
+        // Must have at least one expression to sort by.
+        assert!(!self.sort_by.is_empty());
+        let pairs = self
+            .sort_by
+            .iter()
+            .zip(self.descending.iter())
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .collect::<Vec<_>>()
+            .join(", ");
+        res.push(format!("Sort: Sort by = {}", pairs));
         res
     }
 }

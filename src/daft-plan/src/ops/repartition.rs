@@ -30,12 +30,17 @@ impl Repartition {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!(
-            "Repartition ({:?}): n={}",
-            self.scheme, self.num_partitions
-        ));
+        res.push(format!("Repartition: Scheme = {:?}", self.scheme));
+        res.push(format!("Number of partitions = {}", self.num_partitions));
         if !self.partition_by.is_empty() {
-            res.push(format!("  Partition by: {:?}", self.partition_by));
+            res.push(format!(
+                "Partition by = {}",
+                self.partition_by
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         res
     }

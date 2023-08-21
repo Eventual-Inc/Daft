@@ -7,7 +7,7 @@ use crate::Expr;
 
 use super::FunctionEvaluator;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FloatExpr {
     IsNan,
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use crate::{logical_plan::LogicalPlan, ResourceRequest};
+use crate::{logical_plan::LogicalPlan, optimization::Optimizer, ResourceRequest};
 
 #[cfg(feature = "python")]
 use {
@@ -24,6 +24,7 @@ use {
 #[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug)]
 pub struct LogicalPlanBuilder {
+    // The current root of the logical plan in this builder.
     plan: Arc<LogicalPlan>,
 }
 
@@ -53,8 +54,7 @@ impl LogicalPlanBuilder {
             partition_spec.clone().into(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     #[staticmethod]
@@ -78,8 +78,7 @@ impl LogicalPlanBuilder {
             partition_spec.into(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn project(
@@ -99,21 +98,18 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan =
             ops::Filter::new(predicate.expr.clone(), self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn limit(&self, limit: i64) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan = ops::Limit::new(limit, self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn explode(
@@ -131,8 +127,7 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn sort(
@@ -140,11 +135,15 @@ impl LogicalPlanBuilder {
         sort_by: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<LogicalPlanBuilder> {
+        if sort_by.is_empty() {
+            return Err(PyValueError::new_err(
+                "df.sort() must be given at least one column/expression to sort by",
+            ));
+        }
         let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
         let logical_plan: LogicalPlan =
             ops::Sort::new(sort_by_exprs, descending, self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn repartition(
@@ -164,21 +163,18 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn coalesce(&self, num_partitions: usize) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan =
             ops::Coalesce::new(num_partitions, self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn distinct(&self) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn aggregate(
@@ -187,6 +183,7 @@ impl LogicalPlanBuilder {
         groupby_exprs: Vec<PyExpr>,
     ) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
+        // TODO(Clark): Move validation into Aggregate::new() (changing it to a ::try_new()).
         let agg_exprs = agg_exprs
             .iter()
             .map(|expr| match &expr.expr {
@@ -220,8 +217,7 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn join(
@@ -255,13 +251,13 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn concat(&self, other: &Self) -> PyResult<LogicalPlanBuilder> {
         let self_schema = self.plan.schema();
         let other_schema = other.plan.schema();
+        // TODO(Clark): Move validation into Concat::new() (changing it to a ::try_new()).
         if self_schema != other_schema {
             return Err(PyValueError::new_err(format!(
                 "Both DataFrames must have the same schema to concatenate them, but got: {}, {}",
@@ -270,8 +266,7 @@ impl LogicalPlanBuilder {
         }
         let logical_plan: LogicalPlan =
             ops::Concat::new(other.plan.clone(), self.plan.clone()).into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
     }
 
     pub fn table_write(
@@ -296,8 +291,13 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
         )
         .into();
-        let logical_plan_builder = LogicalPlanBuilder::new(logical_plan.into());
-        Ok(logical_plan_builder)
+        Ok(logical_plan.into())
+    }
+
+    pub fn optimize(&self) -> PyResult<LogicalPlanBuilder> {
+        let optimizer = Optimizer::new();
+        let new_plan = optimizer.optimize(self.plan.clone(), &Default::default())?;
+        Ok(Self::new(new_plan))
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {
@@ -315,5 +315,11 @@ impl LogicalPlanBuilder {
 
     pub fn repr_ascii(&self) -> PyResult<String> {
         Ok(self.plan.repr_ascii())
+    }
+}
+
+impl From<LogicalPlan> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlan) -> Self {
+        Self::new(plan.into())
     }
 }

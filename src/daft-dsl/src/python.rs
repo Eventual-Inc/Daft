@@ -107,16 +107,7 @@ impl PyExpr {
     }
 
     pub fn _input_mapping(&self) -> PyResult<Option<String>> {
-        let required_columns = optimization::get_required_columns(&self.expr);
-        let requires_computation = optimization::requires_computation(&self.expr);
-
-        // Return the required column only if:
-        //   1. There is only one required column
-        //   2. No computation is run on this required column
-        match (&required_columns[..], requires_computation) {
-            ([required_col], false) => Ok(Some(required_col.clone())),
-            _ => Ok(None),
-        }
+        Ok(self.expr.input_mapping())
     }
 
     pub fn _required_columns(&self) -> PyResult<HashSet<String>> {

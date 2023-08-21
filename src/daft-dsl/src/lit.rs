@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    fmt::{Display, Formatter, Result},
+    hash::{Hash, Hasher},
+};
 
 use crate::expr::Expr;
 use daft_core::datatypes::DataType;
@@ -32,6 +35,38 @@ pub enum LiteralValue {
     /// Python object.
     #[cfg(feature = "python")]
     Python(DaftPyObject),
+}
+
+struct FloatWrapper(f64);
+
+impl Eq for LiteralValue {}
+
+impl Hash for FloatWrapper {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write(&u64::from_ne_bytes(self.0.to_ne_bytes()).to_ne_bytes())
+    }
+}
+
+impl Hash for LiteralValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        use LiteralValue::*;
+
+        match self {
+            // Stable hash for Null variant.
+            Null => 1.hash(state),
+            Boolean(bool) => bool.hash(state),
+            Utf8(s) => s.hash(state),
+            Binary(arr) => arr.hash(state),
+            Int32(n) => n.hash(state),
+            UInt32(n) => n.hash(state),
+            Int64(n) => n.hash(state),
+            UInt64(n) => n.hash(state),
+            // Wrap float64 in hashable newtype.
+            Float64(n) => FloatWrapper(*n).hash(state),
+            #[cfg(feature = "python")]
+            Python(py_obj) => py_obj.hash(state),
+        }
+    }
 }
 
 impl Display for LiteralValue {
