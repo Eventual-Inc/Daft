@@ -1608,7 +1608,22 @@ impl FixedShapeTensorArray {
 impl FixedSizeListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::FixedSizeList(..) => Ok(self.clone().into_series()),
+            DataType::FixedSizeList(child, size) => {
+                if size != &self.fixed_element_len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Cannot cast from FixedSizeListSeries with size {} to size: {}",
+                        self.fixed_element_len(),
+                        size
+                    )));
+                }
+                let casted_child = self.flat_child.cast(&child.dtype)?;
+                Ok(FixedSizeListArray::new(
+                    Field::new(self.name().to_string(), dtype.clone()),
+                    casted_child,
+                    self.validity,
+                )
+                .into_series())
+            }
             DataType::FixedShapeTensor(child_datatype, shape) => {
                 if child_datatype.as_ref() != self.child_data_type() {
                     return Err(DaftError::TypeError(format!(
