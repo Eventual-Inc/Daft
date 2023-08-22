@@ -8,8 +8,8 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, StructArray,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, FixedSizeListArray, ListArray, NullArray,
+        StructArray, Utf8Array,
     },
 };
 
@@ -59,6 +59,7 @@ macro_rules! impl_asarrow_logicalarray {
     };
 }
 
+impl_asarrow_dataarray!(NullArray, array::NullArray);
 impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
