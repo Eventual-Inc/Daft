@@ -98,7 +98,6 @@ impl<'a> Growable for ArrowExtensionGrowable<'a> {
                     s2.clone(),
                 );
                 with_match_arrow_backed_physical_types!(child_dtype.as_ref(), |$T| {
-                    // TODO: Can we downcast and move here?
                     let child_arrow_array = child_series.downcast::<<$T as DaftDataType>::ArrayType>()?.as_arrow().clone();
                     let child_arrow_array = child_arrow_array.to(arrow_extension_type);
                     Ok(DataArray::<ExtensionType>::new(

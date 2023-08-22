@@ -49,9 +49,6 @@ where
         let physical_series = self.physical_growable.build()?;
         let arr = LogicalArray::<L>::new(
             Field::new(self.name.clone(), self.dtype.clone()),
-            // TODO: is it possible to avoid the clone here with a .downcast_move() -> DataArray?
-            // I don't think so because going from Series (multiple owners) to DataArray (single owner)
-            // isn't safe to move.
             physical_series.downcast::<<L::PhysicalType as DaftDataType>::ArrayType>()?.clone(),
         );
         Ok(arr.into_series())
