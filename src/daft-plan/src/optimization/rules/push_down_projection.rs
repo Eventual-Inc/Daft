@@ -1,27 +1,12 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    thread::LocalKey,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{
-    col,
-    optimization::{get_required_columns, replace_columns_with_expressions},
-    Expr,
-};
+use daft_dsl::Expr;
 
-use crate::{
-    ops::{Concat, Filter, Project, Sort},
-    optimization::rules::push_down_filter,
-    LogicalPlan,
-};
+use crate::{ops::Project, LogicalPlan};
 
-use super::{
-    utils::{conjuct, split_conjuction},
-    ApplyOrder, OptimizerRule,
-};
+use super::{ApplyOrder, OptimizerRule};
 
 #[derive(Default)]
 pub struct PushDownProjection {}
@@ -60,15 +45,7 @@ impl OptimizerRule for PushDownProjection {
                 // TODO
                 None
             }
-            LogicalPlan::Project(child_project) => {
-                // TODO
-                None
-            }
-            LogicalPlan::Filter(_) => {
-                // TODO
-                None
-            }
-            LogicalPlan::Limit(_) => {
+            LogicalPlan::Project(_child_project) => {
                 // TODO
                 None
             }
@@ -76,52 +53,52 @@ impl OptimizerRule for PushDownProjection {
                 // TODO
                 None
             }
-            LogicalPlan::Sort(sort) => {
+            LogicalPlan::Sort(..)
+            | LogicalPlan::Repartition(..)
+            | LogicalPlan::Coalesce(..)
+            | LogicalPlan::Limit(..)
+            | LogicalPlan::Filter(..) => {
                 // Get required columns from projection and upstream.
-                let combined_dependencies = sort
-                    .sort_by
+                let combined_dependencies = upstream_plan
+                    .required_columns()
                     .iter()
-                    .map(|e| get_required_columns(e))
-                    .chain(
-                        projection
-                            .projection
-                            .iter()
-                            .map(|e| get_required_columns(e)),
-                    )
                     .flatten()
+                    .chain(plan.required_columns().iter().flatten())
+                    .cloned()
                     .collect::<HashSet<_>>();
 
-                let pushdown_column_exprs = combined_dependencies
-                    .into_iter()
-                    .map(|s| Expr::Column(s.into()))
-                    .collect::<Vec<_>>();
+                // Skip projection if no columns would be pruned.
+                let grand_upstream_plan = upstream_plan.children()[0];
+                let grand_upstream_columns = grand_upstream_plan.schema().names();
+                if grand_upstream_columns.len() == combined_dependencies.len() {
+                    return Ok(None);
+                }
 
-                let pushdown_schema: SchemaRef = {
-                    let fields = pushdown_column_exprs
-                        .iter()
-                        .map(|e| e.to_field(&upstream_schema).unwrap())
+                let new_subprojection: LogicalPlan = {
+                    let pushdown_column_exprs = combined_dependencies
+                        .into_iter()
+                        .map(|s| Expr::Column(s.into()))
                         .collect::<Vec<_>>();
-                    Schema::new(fields).unwrap().into()
-                };
 
-                let new_subprojection: LogicalPlan = Project::new(
-                    pushdown_column_exprs,
-                    pushdown_schema,
-                    Default::default(),
-                    sort.input.clone(),
-                )
-                .into();
+                    let pushdown_schema: SchemaRef = {
+                        let fields = pushdown_column_exprs
+                            .iter()
+                            .map(|e| e.to_field(&upstream_schema).unwrap())
+                            .collect::<Vec<_>>();
+                        Schema::new(fields).unwrap().into()
+                    };
+
+                    Project::new(
+                        pushdown_column_exprs,
+                        pushdown_schema,
+                        Default::default(),
+                        grand_upstream_plan.clone(),
+                    )
+                    .into()
+                };
 
                 let new_sort = upstream_plan.with_new_children(&[new_subprojection.into()]);
                 Some(plan.with_new_children(&[new_sort]))
-            }
-            LogicalPlan::Repartition(_) => {
-                // TODO
-                None
-            }
-            LogicalPlan::Coalesce(_) => {
-                // TODO
-                None
             }
             LogicalPlan::Distinct(_) => {
                 // TODO

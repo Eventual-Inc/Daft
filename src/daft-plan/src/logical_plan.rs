@@ -1,6 +1,7 @@
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use daft_core::schema::SchemaRef;
+use daft_dsl::{optimization::get_required_columns, Expr};
 
 use crate::{ops::*, PartitionScheme, PartitionSpec};
 
@@ -41,6 +42,62 @@ impl LogicalPlan {
             Self::Concat(Concat { input, .. }) => input.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
+        }
+    }
+
+    pub fn required_columns(&self) -> Vec<HashSet<String>> {
+        match self {
+            Self::Limit(..) | Self::Coalesce(..) => vec![HashSet::new()],
+            Self::Concat(..) => vec![HashSet::new(), HashSet::new()],
+            Self::Project(projection) => {
+                let res = projection
+                    .projection
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Filter(filter) => {
+                vec![get_required_columns(&filter.predicate)
+                    .iter()
+                    .cloned()
+                    .collect()]
+            }
+            Self::Sort(sort) => {
+                let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
+                vec![res]
+            }
+            Self::Repartition(repartition) => {
+                let res = repartition
+                    .partition_by
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Source(_) => todo!(),
+            Self::Explode(_) => todo!(),
+            Self::Sink(_) => todo!(),
+            Self::Distinct(_) => todo!(),
+            Self::Aggregate(aggregate) => {
+                let res = aggregate
+                    .aggregations
+                    .iter()
+                    .map(|agg| get_required_columns(&Expr::Agg(agg.clone())))
+                    .chain(aggregate.groupby.iter().map(get_required_columns))
+                    .flatten()
+                    .collect();
+                vec![res]
+            }
+            Self::Join(join) => {
+                let left = join.left_on.iter().flat_map(get_required_columns).collect();
+                let right = join
+                    .right_on
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![left, right]
+            }
         }
     }
 
