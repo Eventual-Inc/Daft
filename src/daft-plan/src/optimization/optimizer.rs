@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::LogicalPlan;
 
-use super::rules::{ApplyOrder, OptimizerRule, PushDownFilter};
+use super::rules::{ApplyOrder, OptimizerRule, PushDownFilter, PushDownProjection};
 
 pub struct OptimizerConfig {
     // Maximum number of optimization passes the optimizer will make over the logical plan.
@@ -32,7 +32,10 @@ pub struct Optimizer {
 
 impl Optimizer {
     pub fn new() -> Self {
-        let rules: Vec<Arc<dyn OptimizerRule>> = vec![Arc::new(PushDownFilter::new())];
+        let rules: Vec<Arc<dyn OptimizerRule>> = vec![
+            Arc::new(PushDownFilter::new()),
+            Arc::new(PushDownProjection::new()),
+        ];
         Self::with_rules(rules)
     }
     pub fn with_rules(rules: Vec<Arc<dyn OptimizerRule>>) -> Self {
