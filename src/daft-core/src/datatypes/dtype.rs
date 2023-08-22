@@ -36,7 +36,7 @@ pub enum DataType {
     /// An [`u64`]
     UInt64,
     /// An 16-bit float
-    Float16,
+    // Float16,
     /// A [`f32`]
     Float32,
     /// A [`f64`]
@@ -130,7 +130,7 @@ impl DataType {
             DataType::UInt16 => Ok(ArrowType::UInt16),
             DataType::UInt32 => Ok(ArrowType::UInt32),
             DataType::UInt64 => Ok(ArrowType::UInt64),
-            DataType::Float16 => Ok(ArrowType::Float16),
+            // DataType::Float16 => Ok(ArrowType::Float16),
             DataType::Float32 => Ok(ArrowType::Float32),
             DataType::Float64 => Ok(ArrowType::Float64),
             DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
@@ -282,7 +282,8 @@ impl DataType {
     pub fn is_floating(&self) -> bool {
         matches!(
             self,
-            DataType::Float16 | DataType::Float32 | DataType::Float64
+            // DataType::Float16 |
+            DataType::Float32 | DataType::Float64
         )
     }
 
@@ -405,7 +406,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::UInt16 => DataType::UInt16,
             ArrowType::UInt32 => DataType::UInt32,
             ArrowType::UInt64 => DataType::UInt64,
-            ArrowType::Float16 => DataType::Float16,
+            // ArrowType::Float16 => DataType::Float16,
             ArrowType::Float32 => DataType::Float32,
             ArrowType::Float64 => DataType::Float64,
             ArrowType::Timestamp(unit, timezone) => {

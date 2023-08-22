@@ -1085,17 +1085,15 @@ impl EmbeddingArray {
                 // We create an ndarray view on the entire embeddings array
                 // buffer sans the validity mask, and then create a subndarray view
                 // for each embedding ndarray in the PythonArray.
-                let py_array =
-                    ffi::to_py_array(physical_arrow.with_validity(None), py, pyarrow)?
-                        .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
-                        .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
+                let py_array = ffi::to_py_array(physical_arrow.with_validity(None), py, pyarrow)?
+                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                    .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
                 let ndarrays = py_array
                     .as_ref(py)
                     .iter()?
                     .map(|a| a.unwrap().to_object(py))
                     .collect::<Vec<PyObject>>();
-                let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity);
+                let values_array = PseudoArrowArray::new(ndarrays.into(), self.physical.validity);
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1253,17 +1251,10 @@ impl FixedShapeImageArray {
                     // We create an (N, H, W, C) ndarray view on the entire image array
                     // buffer sans the validity mask, and then create a subndarray view
                     // for each image ndarray in the PythonArray.
-                    let py_array = ffi::to_py_array(
-                        physical_arrow.with_validity(None),
-                        py,
-                        pyarrow,
-                    )?
-                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(
-                        py,
-                        pyo3::intern!(py, "reshape"),
-                        (shape,),
-                    )?;
+                    let py_array =
+                        ffi::to_py_array(physical_arrow.with_validity(None), py, pyarrow)?
+                            .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                            .call_method1(py, pyo3::intern!(py, "reshape"), (shape,))?;
                     let ndarrays = py_array
                         .as_ref(py)
                         .iter()?
@@ -1522,17 +1513,10 @@ impl FixedShapeTensorArray {
                     // We create an (N, [shape..]) ndarray view on the entire tensor array buffer
                     // sans the validity mask, and then create a subndarray view for each ndarray
                     // element in the PythonArray.
-                    let py_array = ffi::to_py_array(
-                        physical_arrow.with_validity(None),
-                        py,
-                        pyarrow,
-                    )?
-                    .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(
-                        py,
-                        pyo3::intern!(py, "reshape"),
-                        (np_shape,),
-                    )?;
+                    let py_array =
+                        ffi::to_py_array(physical_arrow.with_validity(None), py, pyarrow)?
+                            .call_method1(py, pyo3::intern!(py, "to_numpy"), (false,))?
+                            .call_method1(py, pyo3::intern!(py, "reshape"), (np_shape,))?;
                     let ndarrays = py_array
                         .as_ref(py)
                         .iter()?

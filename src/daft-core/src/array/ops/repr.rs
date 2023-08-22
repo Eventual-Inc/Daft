@@ -5,7 +5,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray, FixedShapeTensorArray,
+            FixedShapeTensorArray, ImageArray, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,

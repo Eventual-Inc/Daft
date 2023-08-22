@@ -61,9 +61,9 @@ impl Series {
         self.downcast()
     }
 
-    pub fn f16(&self) -> DaftResult<&Float16Array> {
-        self.downcast()
-    }
+    // pub fn f16(&self) -> DaftResult<&Float16Array> {
+    //     self.downcast()
+    // }
 
     pub fn f32(&self) -> DaftResult<&Float32Array> {
         self.downcast()

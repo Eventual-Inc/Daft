@@ -1,8 +1,8 @@
 use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+    FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
 };
-use crate::datatypes::{BooleanArray, Field};
+use crate::datatypes::{BooleanArray, DaftLogicalType, Field};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
@@ -13,16 +13,20 @@ use crate::with_match_integer_daft_types;
 use crate::DataType;
 use std::sync::Arc;
 
+impl<L> IntoSeries for LogicalArray<L>
+where
+    L: DaftLogicalType,
+    ArrayWrapper<LogicalArray<L>>: SeriesLike,
+{
+    fn into_series(self) -> Series {
+        Series {
+            inner: Arc::new(ArrayWrapper(self)),
+        }
+    }
+}
+
 macro_rules! impl_series_like_for_logical_array {
     ($da:ident) => {
-        impl IntoSeries for $da {
-            fn into_series(self) -> Series {
-                Series {
-                    inner: Arc::new(ArrayWrapper(self)),
-                }
-            }
-        }
-
         impl SeriesLike for ArrayWrapper<$da> {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
