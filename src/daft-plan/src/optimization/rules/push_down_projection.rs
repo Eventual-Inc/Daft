@@ -1,10 +1,13 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, convert::identity, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
 
-use crate::{ops::Project, LogicalPlan};
+use crate::{
+    ops::{Aggregate, Project},
+    LogicalPlan,
+};
 
 use super::{ApplyOrder, OptimizerRule};
 
@@ -15,32 +18,45 @@ impl PushDownProjection {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-// get upstream output schema
-// get projection contents
-//  - if exact columns, can drop
-
-// get upstream unchanged columns
-//  - fold projection
-
-// get upstream required columns
-//  -
-
-impl OptimizerRule for PushDownProjection {
-    fn apply_order(&self) -> Option<ApplyOrder> {
-        Some(ApplyOrder::TopDown)
-    }
-
-    fn try_optimize(&self, plan: &LogicalPlan) -> DaftResult<Option<Arc<LogicalPlan>>> {
-        let projection = match plan {
-            LogicalPlan::Project(project) => project,
-            _ => return Ok(None),
-        };
-        let upstream_plan = projection.input.as_ref();
+    fn try_optimize_project(
+        &self,
+        projection: &Project,
+        plan: &LogicalPlan,
+    ) -> DaftResult<Option<Arc<LogicalPlan>>> {
+        let upstream_plan = projection.input.clone();
         let upstream_schema = upstream_plan.schema();
 
-        let new_plan = match upstream_plan {
+        // First, drop this projection if it is a no-op.
+        let projection_is_noop = {
+            let maybe_column_names = projection
+                .projection
+                .iter()
+                .map(|e| match e {
+                    Expr::Column(colname) => Some(colname.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>();
+
+            let all_columns_equal = maybe_column_names.map_or(false, |column_names| {
+                column_names
+                    .iter()
+                    .zip(upstream_schema.names().iter())
+                    .map(|(scol, pcol)| scol.as_ref() == pcol)
+                    .all(identity)
+            });
+
+            let no_unused_columns = upstream_schema.names().len() == projection.projection.len();
+
+            all_columns_equal && no_unused_columns
+        };
+        if projection_is_noop {
+            // Projection discarded but new root node has not been looked at;
+            // look at the new root node.
+            return self.try_optimize(&upstream_plan);
+        }
+
+        let new_plan = match upstream_plan.as_ref() {
             LogicalPlan::Source(_) => {
                 // TODO
                 None
@@ -116,8 +132,75 @@ impl OptimizerRule for PushDownProjection {
                 // TODO
                 None
             }
-            LogicalPlan::Sink(_) => unreachable!(),
+            LogicalPlan::Sink(_) => panic!(),
         };
         Ok(new_plan)
+    }
+
+    fn try_optimize_aggregation(
+        &self,
+        aggregation: &Aggregate,
+        plan: &LogicalPlan,
+    ) -> DaftResult<Option<Arc<LogicalPlan>>> {
+        // If this aggregation prunes columns from its upstream,
+        // then explicitly create a projection to do so.
+        let upstream_plan = &aggregation.input;
+        let upstream_schema = upstream_plan.schema();
+
+        let aggregation_required_cols = &plan.required_columns()[0];
+        if aggregation_required_cols.len() < upstream_schema.names().len() {
+            let new_subprojection: LogicalPlan = {
+                let pushdown_column_exprs = aggregation_required_cols
+                    .iter()
+                    .map(|s| Expr::Column(s.clone().into()))
+                    .collect::<Vec<_>>();
+
+                let pushdown_schema: SchemaRef = {
+                    let fields = pushdown_column_exprs
+                        .iter()
+                        .map(|e| e.to_field(&upstream_schema).unwrap())
+                        .collect::<Vec<_>>();
+                    Schema::new(fields).unwrap().into()
+                };
+
+                Project::new(
+                    pushdown_column_exprs,
+                    pushdown_schema,
+                    Default::default(),
+                    upstream_plan.clone(),
+                )
+                .into()
+            };
+
+            let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
+            Ok(Some(new_aggregation))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+// get upstream output schema
+// get projection contents
+//  - if exact columns, can drop
+
+// get upstream unchanged columns
+//  - fold projection
+
+// get upstream required columns
+//  -
+
+impl OptimizerRule for PushDownProjection {
+    fn apply_order(&self) -> Option<ApplyOrder> {
+        Some(ApplyOrder::TopDown)
+    }
+
+    fn try_optimize(&self, plan: &LogicalPlan) -> DaftResult<Option<Arc<LogicalPlan>>> {
+        match plan {
+            LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan),
+            // Aggregations also do column projection
+            LogicalPlan::Aggregate(aggregation) => self.try_optimize_aggregation(aggregation, plan),
+            _ => Ok(None),
+        }
     }
 }
