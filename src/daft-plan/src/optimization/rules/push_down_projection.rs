@@ -53,21 +53,55 @@ impl PushDownProjection {
         if projection_is_noop {
             // Projection discarded but new root node has not been looked at;
             // look at the new root node.
-            return self.try_optimize(&upstream_plan);
+            let new_plan = self.try_optimize(&upstream_plan)?.unwrap_or(upstream_plan);
+            return Ok(Some(new_plan));
         }
 
-        let new_plan = match upstream_plan.as_ref() {
-            LogicalPlan::Source(_) => {
+        match upstream_plan.as_ref() {
+            LogicalPlan::Source(_source) => {
                 // TODO
-                None
+                Ok(None)
             }
-            LogicalPlan::Project(_child_project) => {
-                // TODO
-                None
+            LogicalPlan::Project(upstream_projection) => {
+                // Prune unnecessary columns from the child projection.
+                let required_columns = &plan.required_columns()[0];
+                if required_columns.len() < upstream_schema.names().len() {
+                    let pruned_upstream_projections = upstream_projection
+                        .projection
+                        .iter()
+                        .filter_map(|e| {
+                            required_columns
+                                .contains(e.name().unwrap())
+                                .then(|| e.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    let pruned_upstream_schema: SchemaRef = {
+                        let fields = pruned_upstream_projections
+                            .iter()
+                            .map(|e| e.to_field(&upstream_projection.input.schema()).unwrap())
+                            .collect::<Vec<_>>();
+                        Schema::new(fields).unwrap().into()
+                    };
+
+                    let new_upstream: LogicalPlan = Project::new(
+                        pruned_upstream_projections,
+                        pruned_upstream_schema,
+                        upstream_projection.resource_request.clone(),
+                        upstream_projection.input.clone(),
+                    )
+                    .into();
+
+                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    // Retry optimization now that the upstream node is different.
+                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
+                    Ok(Some(new_plan))
+                } else {
+                    Ok(None)
+                }
             }
             LogicalPlan::Explode(_) => {
                 // TODO
-                None
+                Ok(None)
             }
             LogicalPlan::Sort(..)
             | LogicalPlan::Repartition(..)
@@ -99,7 +133,7 @@ impl PushDownProjection {
                     let pushdown_schema: SchemaRef = {
                         let fields = pushdown_column_exprs
                             .iter()
-                            .map(|e| e.to_field(&upstream_schema).unwrap())
+                            .map(|e| e.to_field(&grand_upstream_plan.schema()).unwrap())
                             .collect::<Vec<_>>();
                         Schema::new(fields).unwrap().into()
                     };
@@ -113,28 +147,30 @@ impl PushDownProjection {
                     .into()
                 };
 
-                let new_sort = upstream_plan.with_new_children(&[new_subprojection.into()]);
-                Some(plan.with_new_children(&[new_sort]))
+                let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
+                let new_plan = plan.with_new_children(&[new_upstream]);
+                // Retry optimization now that the upstream node is different.
+                let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
+                Ok(Some(new_plan))
             }
             LogicalPlan::Distinct(_) => {
                 // TODO
-                None
+                Ok(None)
             }
             LogicalPlan::Aggregate(_) => {
                 // TODO
-                None
+                Ok(None)
             }
             LogicalPlan::Concat(_) => {
                 // TODO
-                None
+                Ok(None)
             }
             LogicalPlan::Join(_) => {
                 // TODO
-                None
+                Ok(None)
             }
             LogicalPlan::Sink(_) => panic!(),
-        };
-        Ok(new_plan)
+        }
     }
 
     fn try_optimize_aggregation(
