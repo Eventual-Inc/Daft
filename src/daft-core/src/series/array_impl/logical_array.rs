@@ -1,62 +1,38 @@
 use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+    FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
 };
-use crate::datatypes::BooleanArray;
+use crate::datatypes::{BooleanArray, DaftLogicalType, Field};
 
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::array::ops::GroupIndices;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::DaftResult;
 use crate::series::SeriesLike;
-use crate::with_match_daft_logical_primitive_types;
 use crate::with_match_integer_daft_types;
+use crate::DataType;
 use std::sync::Arc;
+
+impl<L> IntoSeries for LogicalArray<L>
+where
+    L: DaftLogicalType,
+    ArrayWrapper<LogicalArray<L>>: SeriesLike,
+{
+    fn into_series(self) -> Series {
+        Series {
+            inner: Arc::new(ArrayWrapper(self)),
+        }
+    }
+}
 
 macro_rules! impl_series_like_for_logical_array {
     ($da:ident) => {
-        impl IntoSeries for $da {
-            fn into_series(self) -> Series {
-                Series {
-                    inner: Arc::new(ArrayWrapper(self)),
-                }
-            }
-        }
-
         impl SeriesLike for ArrayWrapper<$da> {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-                let daft_type = self.0.logical_type();
-                let arrow_logical_type = daft_type.to_arrow().unwrap();
-                let physical_arrow_array = self.0.physical.data();
-                use crate::datatypes::DataType::*;
-                match daft_type {
-                    // For wrapped primitive types, switch the datatype label on the arrow2 Array.
-                    Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
-                        with_match_daft_logical_primitive_types!(daft_type, |$P| {
-                            use arrow2::array::Array;
-                            physical_arrow_array
-                                .as_any()
-                                .downcast_ref::<arrow2::array::PrimitiveArray<$P>>()
-                                .unwrap()
-                                .clone()
-                                .to(arrow_logical_type)
-                                .to_boxed()
-                        })
-                    }
-                    // Otherwise, use arrow cast to make sure the result arrow2 array is of the correct type.
-                    _ => arrow2::compute::cast::cast(
-                        physical_arrow_array,
-                        &arrow_logical_type,
-                        arrow2::compute::cast::CastOptions {
-                            wrapped: true,
-                            partial: false,
-                        },
-                    )
-                    .unwrap(),
-                }
+                self.0.to_arrow()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -69,30 +45,31 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
 
-            fn cast(&self, datatype: &crate::datatypes::DataType) -> DaftResult<Series> {
+            fn cast(&self, datatype: &DataType) -> DaftResult<Series> {
                 self.0.cast(datatype)
             }
 
-            fn data_type(&self) -> &crate::datatypes::DataType {
-                self.0.logical_type()
+            fn data_type(&self) -> &DataType {
+                self.0.data_type()
             }
 
-            fn field(&self) -> &crate::datatypes::Field {
+            fn field(&self) -> &Field {
                 self.0.field()
             }
 
             fn filter(&self, mask: &crate::datatypes::BooleanArray) -> DaftResult<Series> {
-                Ok(self.0.filter(mask)?.into_series())
+                let new_array = self.0.physical.filter(mask)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn head(&self, num: usize) -> DaftResult<Series> {
-                Ok(self.0.head(num)?.into_series())
+                self.slice(0, num)
             }
 
             fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
                 Ok(self
                     .0
-                    .if_else(other.downcast_logical()?, predicate.downcast()?)?
+                    .if_else(other.downcast()?, predicate.downcast()?)?
                     .into_series())
             }
 
@@ -103,23 +80,26 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn len(&self) -> usize {
-                self.0.len()
+                self.0.physical.len()
             }
 
             fn size_bytes(&self) -> DaftResult<usize> {
-                self.0.size_bytes()
+                self.0.physical.size_bytes()
             }
 
             fn name(&self) -> &str {
-                self.0.name()
+                self.0.field.name.as_str()
             }
 
             fn rename(&self, name: &str) -> Series {
-                self.0.rename(name).into_series()
+                let new_array = self.0.physical.rename(name);
+                let new_field = self.0.field.rename(name);
+                $da::new(new_field, new_array).into_series()
             }
 
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
-                Ok(self.0.slice(start, end)?.into_series())
+                let new_array = self.0.physical.slice(start, end)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn sort(&self, descending: bool) -> DaftResult<Series> {
@@ -136,7 +116,10 @@ macro_rules! impl_series_like_for_logical_array {
 
             fn take(&self, idx: &Series) -> DaftResult<Series> {
                 with_match_integer_daft_types!(idx.data_type(), |$S| {
-                    Ok(self.0.take(idx.downcast::<$S>()?)?.into_series())
+                    Ok(self
+                        .0
+                        .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
+                        .into_series())
                 })
             }
 
@@ -220,9 +203,9 @@ macro_rules! impl_series_like_for_logical_array {
 impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(DurationArray);
-impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(ImageArray);
-impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(TensorArray);
+impl_series_like_for_logical_array!(EmbeddingArray);
+impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);

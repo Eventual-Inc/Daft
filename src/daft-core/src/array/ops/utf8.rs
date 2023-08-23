@@ -3,7 +3,7 @@ use arrow2;
 
 use common_error::{DaftError, DaftResult};
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, full::FullNull};
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {

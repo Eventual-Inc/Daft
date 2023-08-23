@@ -4,7 +4,7 @@ use daft_core::{
         arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow, GroupIndicesPair,
         IntoGroups,
     },
-    datatypes::{UInt64Array, UInt64Type},
+    datatypes::UInt64Array,
     series::Series,
 };
 
@@ -56,7 +56,7 @@ impl Table {
         // Begin by doing the argsort.
         let argsort_series =
             Series::argsort_multikey(self.columns.as_slice(), &vec![false; self.columns.len()])?;
-        let argsort_array = argsort_series.downcast::<UInt64Type>()?;
+        let argsort_array = argsort_series.downcast::<UInt64Array>()?;
 
         // The result indices.
         let mut key_indices: Vec<u64> = vec![];

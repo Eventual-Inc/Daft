@@ -30,6 +30,7 @@ impl_arithmetic_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use crate::array::ops::full::FullNull;
     use crate::datatypes::{DataType, Float64Array, Int64Array, Utf8Array};
     use crate::series::IntoSeries;
     use common_error::DaftResult;

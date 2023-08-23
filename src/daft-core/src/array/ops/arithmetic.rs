@@ -10,7 +10,7 @@ use crate::{
 
 use common_error::{DaftError, DaftResult};
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, full::FullNull};
 /// Helper function to perform arithmetic operations on a DataArray
 /// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
 /// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting

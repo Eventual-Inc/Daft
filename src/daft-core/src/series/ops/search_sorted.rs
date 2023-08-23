@@ -12,8 +12,8 @@ impl Series {
         let rhs = rhs.as_physical()?;
 
         with_match_comparable_daft_types!(lhs.data_type(), |$T| {
-            let lhs = lhs.downcast::<$T>().unwrap();
-            let rhs = rhs.downcast::<$T>().unwrap();
+            let lhs = lhs.downcast::<<$T as DaftDataType>::ArrayType>().unwrap();
+            let rhs = rhs.downcast::<<$T as DaftDataType>::ArrayType>().unwrap();
             lhs.search_sorted(rhs, descending)
         })
     }

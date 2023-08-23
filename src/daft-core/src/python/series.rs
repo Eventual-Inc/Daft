@@ -5,7 +5,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyLi
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
     count_mode::CountMode,
-    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType, UInt64Type},
+    datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
     ffi,
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -155,7 +155,7 @@ impl PySeries {
                 )));
             }
             seed_series = s.series;
-            seed_array = Some(seed_series.downcast::<UInt64Type>()?);
+            seed_array = Some(seed_series.u64()?);
         }
         Ok(self.series.hash(seed_array)?.into_series().into())
     }

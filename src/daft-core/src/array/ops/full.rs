@@ -5,15 +5,22 @@ use pyo3::Python;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{DaftPhysicalType, DataType, Field},
+    datatypes::{
+        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
+    },
 };
 
-impl<T> DataArray<T>
+pub trait FullNull {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self;
+    fn empty(name: &str, dtype: &DataType) -> Self;
+}
+
+impl<T> FullNull for DataArray<T>
 where
     T: DaftPhysicalType,
 {
     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
-    pub fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
@@ -37,7 +44,7 @@ where
         }
     }
 
-    pub fn empty(name: &str, dtype: &DataType) -> Self {
+    fn empty(name: &str, dtype: &DataType) -> Self {
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
@@ -57,5 +64,22 @@ where
             .unwrap(),
             Err(e) => panic!("Cannot create DataArray from non-arrow dtype: {e}"),
         }
+    }
+}
+
+impl<L: DaftLogicalType> FullNull for LogicalArray<L>
+where
+    <L::PhysicalType as DaftDataType>::ArrayType: FullNull,
+{
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let physical = <L::PhysicalType as DaftDataType>::ArrayType::full_null(name, dtype, length);
+        Self::new(Field::new(name, dtype.clone()), physical)
+    }
+
+    fn empty(field_name: &str, dtype: &DataType) -> Self {
+        let physical =
+            <L::PhysicalType as DaftDataType>::ArrayType::empty(field_name, &dtype.to_physical());
+        let field = Field::new(field_name, dtype.clone());
+        Self::new(field, physical)
     }
 }
