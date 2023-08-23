@@ -7,7 +7,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
     pub schema: SchemaRef,
     /// Information about the sink data location.

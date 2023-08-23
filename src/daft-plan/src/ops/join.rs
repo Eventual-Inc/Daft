@@ -9,7 +9,7 @@ use crate::{
     JoinType, LogicalPlan,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Join {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,

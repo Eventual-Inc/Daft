@@ -3,12 +3,12 @@ use daft_dsl::Expr;
 use crate::FileFormat;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OutputFileInfo {
     pub root_dir: String,
     pub file_format: FileFormat,

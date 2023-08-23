@@ -11,6 +11,8 @@ mod planner;
 mod resource_request;
 mod sink_info;
 mod source_info;
+#[cfg(test)]
+mod test;
 
 pub use builder::LogicalPlanBuilder;
 pub use join::JoinType;

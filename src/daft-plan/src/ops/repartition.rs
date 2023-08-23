@@ -4,7 +4,7 @@ use daft_dsl::Expr;
 
 use crate::{LogicalPlan, PartitionScheme};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
     pub num_partitions: usize,
     pub partition_by: Vec<Expr>,

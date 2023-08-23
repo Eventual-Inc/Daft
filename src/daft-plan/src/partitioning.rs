@@ -12,7 +12,7 @@ use {
     },
 };
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum PartitionScheme {
     Range,
@@ -40,7 +40,7 @@ impl PartitionScheme {
 
 impl_bincode_py_state_serialization!(PartitionScheme);
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct PartitionSpec {
     pub scheme: PartitionScheme,

@@ -9,7 +9,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Explode {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
