@@ -1,14 +1,11 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 use common_error::DaftResult;
 
 use crate::{
-    array::{
-        ops::{as_arrow::AsArrow, from_arrow::FromArrow},
-        DataArray,
-    },
-    datatypes::{DaftArrowBackedType, DaftDataType, Field},
-    with_match_arrow_backed_physical_types, DataType, IntoSeries, Series,
+    array::{ops::from_arrow::FromArrow, DataArray},
+    datatypes::{DaftArrowBackedType, DaftDataType, ExtensionArray, Field},
+    DataType, IntoSeries, Series,
 };
 
 use super::Growable;
@@ -63,11 +60,15 @@ where
 pub struct ArrowExtensionGrowable<'a> {
     name: String,
     dtype: DataType,
-    child_growable: Box<dyn Growable + 'a>,
+    child_growable: Box<dyn arrow2::array::growable::Growable<'a> + 'a>,
 }
 
 impl<'a> ArrowExtensionGrowable<'a> {
-    pub fn new(name: String, dtype: &DataType, child_growable: Box<dyn Growable + 'a>) -> Self {
+    pub fn new(
+        name: String,
+        dtype: &DataType,
+        child_growable: Box<dyn arrow2::array::growable::Growable<'a> + 'a>,
+    ) -> Self {
         assert!(matches!(dtype, DataType::Extension(..)));
         Self {
             name,
@@ -83,30 +84,12 @@ impl<'a> Growable for ArrowExtensionGrowable<'a> {
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        self.child_growable.add_nulls(additional)
+        self.child_growable.extend_validity(additional)
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        let child_series = self.child_growable.build()?;
-
-        // Wrap the child series with the appropriate extension type
-        match &self.dtype {
-            DataType::Extension(s1, child_dtype, s2) => {
-                let arrow_extension_type = arrow2::datatypes::DataType::Extension(
-                    s1.clone(),
-                    Box::new(child_series.data_type().to_arrow()?),
-                    s2.clone(),
-                );
-                with_match_arrow_backed_physical_types!(child_dtype.as_ref(), |$T| {
-                    let child_arrow_array = child_series.downcast::<<$T as DaftDataType>::ArrayType>()?.as_arrow().clone();
-                    let child_arrow_array = child_arrow_array.to(arrow_extension_type);
-                    Ok(DataArray::<ExtensionType>::new(
-                        Arc::new(Field::new(self.name.clone(), self.dtype.clone())),
-                        Box::new(child_arrow_array),
-                    )?.into_series())
-                })
-            }
-            _ => unreachable!("ArrowExtensionGrowable must have Extension dtype"),
-        }
+        let arr = self.child_growable.as_box();
+        let field = Field::new(self.name.clone(), self.dtype.clone());
+        Ok(ExtensionArray::from_arrow(&field, arr)?.into_series())
     }
 }

@@ -4,7 +4,7 @@ use pyo3;
 
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{Field, PythonType, PythonArray},
+    datatypes::{Field, PythonArray, PythonType},
     DataType, IntoSeries, Series,
 };
 
@@ -21,18 +21,9 @@ impl<'a> PythonGrowable<'a> {
     pub fn new(
         name: String,
         dtype: &DataType,
-        series_refs: &'a [&'a Series],
+        arr_refs: Vec<&'a PythonArray>,
         capacity: usize,
     ) -> Self {
-        for s in series_refs.iter() {
-            if s.data_type() != &DataType::Python {
-                panic!("PythonGrowable expected all Series to be of DataType::Python, but received: {}", s.data_type());
-            }
-        }
-        let arr_refs = series_refs
-            .iter()
-            .map(|s| s.downcast::<PythonArray>().unwrap())
-            .collect::<Vec<_>>();
         Self {
             name,
             dtype: dtype.clone(),
