@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use aws_config::retry::RetryMode;
+use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
@@ -160,13 +162,29 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     );
     let retry_config = s3::config::retry::RetryConfig::standard()
         .with_max_attempts(config.num_tries)
-        .with_initial_backoff(Duration::from_millis(
-            config.retry_initial_backoff_ms as u64,
-        ));
+        .with_initial_backoff(Duration::from_millis(config.retry_initial_backoff_ms));
+
+    let retry_config = if let Some(retry_mode) = &config.retry_mode {
+        if retry_mode.trim().eq_ignore_ascii_case("adaptive") {
+            retry_config.with_retry_mode(RetryMode::Adaptive)
+        } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
+            retry_config
+        } else {
+            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", retry_mode) });
+        }
+    } else {
+        retry_config
+    };
+
     let builder = builder.retry_config(retry_config);
 
     let sleep_impl = Arc::new(TokioSleep::new());
     let builder = builder.sleep_impl(sleep_impl);
+    let timeout_config = TimeoutConfig::builder()
+        .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+        .read_timeout(Duration::from_millis(config.read_timeout_ms))
+        .build();
+    let builder = builder.timeout_config(timeout_config);
 
     let builder = if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(

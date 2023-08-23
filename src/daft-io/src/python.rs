@@ -138,8 +138,11 @@ impl S3Config {
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        retry_initial_backoff_ms: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
         num_tries: Option<u32>,
+        retry_mode: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
         let def = config::S3Config::default();
@@ -152,7 +155,10 @@ impl S3Config {
                 access_key: access_key.or(def.access_key),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
                     .unwrap_or(def.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
                 num_tries: num_tries.unwrap_or(def.num_tries),
+                retry_mode: retry_mode.or(def.retry_mode),
                 anonymous: anonymous.unwrap_or(def.anonymous),
             },
         }
@@ -194,14 +200,32 @@ impl S3Config {
 
     /// AWS Retry Initial Backoff Time in Milliseconds
     #[getter]
-    pub fn retry_initial_backoff_ms(&self) -> PyResult<u32> {
+    pub fn retry_initial_backoff_ms(&self) -> PyResult<u64> {
         Ok(self.config.retry_initial_backoff_ms)
+    }
+
+    /// AWS Connection Timeout in Milliseconds
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.connect_timeout_ms)
+    }
+
+    /// AWS Read Timeout in Milliseconds
+    #[getter]
+    pub fn read_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.read_timeout_ms)
     }
 
     /// AWS Number Retries
     #[getter]
     pub fn num_tries(&self) -> PyResult<u32> {
         Ok(self.config.num_tries)
+    }
+
+    /// AWS Retry Mode
+    #[getter]
+    pub fn retry_mode(&self) -> PyResult<Option<String>> {
+        Ok(self.config.retry_mode.clone())
     }
 }
 
