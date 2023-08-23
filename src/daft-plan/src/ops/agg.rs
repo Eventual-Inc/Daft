@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use snafu::ResultExt;
+
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{AggExpr, Expr};
 
+use crate::logical_plan::{CreationSnafu, Result};
 use crate::LogicalPlan;
 
 #[derive(Clone, Debug)]
@@ -23,15 +26,25 @@ impl Aggregate {
     pub(crate) fn new(
         aggregations: Vec<AggExpr>,
         groupby: Vec<Expr>,
-        output_schema: SchemaRef,
         input: Arc<LogicalPlan>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let output_schema = {
+            let upstream_schema = input.schema();
+            let fields = groupby
+                .iter()
+                .map(|e| e.to_field(&upstream_schema))
+                .chain(aggregations.iter().map(|ae| ae.to_field(&upstream_schema)))
+                .collect::<common_error::DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
+            Schema::new(fields).context(CreationSnafu)?.into()
+        };
+
+        Ok(Self {
             aggregations,
             groupby,
             output_schema,
             input,
-        }
+        })
     }
 
     pub(crate) fn schema(&self) -> SchemaRef {

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
 use snafu::ResultExt;
@@ -28,9 +27,9 @@ impl Project {
             let fields = projection
                 .iter()
                 .map(|e| e.to_field(&upstream_schema))
-                .collect::<DaftResult<Vec<_>>>()
+                .collect::<common_error::DaftResult<Vec<_>>>()
                 .context(CreationSnafu)?;
-            Schema::new(fields).unwrap().into()
+            Schema::new(fields).context(CreationSnafu)?.into()
         };
         Ok(Self {
             projection,

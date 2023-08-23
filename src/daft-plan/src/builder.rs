@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-
 use crate::{logical_plan::LogicalPlan, optimization::Optimizer, ResourceRequest};
 
 #[cfg(feature = "python")]
@@ -193,24 +191,8 @@ impl LogicalPlanBuilder {
             .map(|expr| expr.clone().into())
             .collect::<Vec<Expr>>();
 
-        let input_schema = self.plan.schema();
-        let fields = groupby_exprs
-            .iter()
-            .map(|expr| expr.to_field(&input_schema))
-            .chain(
-                agg_exprs
-                    .iter()
-                    .map(|agg_expr| agg_expr.to_field(&input_schema)),
-            )
-            .collect::<DaftResult<Vec<Field>>>()?;
-        let output_schema = Schema::new(fields)?;
-        let logical_plan: LogicalPlan = Aggregate::new(
-            agg_exprs,
-            groupby_exprs,
-            output_schema.into(),
-            self.plan.clone(),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            Aggregate::new(agg_exprs, groupby_exprs, self.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 

@@ -141,7 +141,7 @@ impl LogicalPlan {
                 Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
                 Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
-                Self::Aggregate(Aggregate { aggregations, groupby, output_schema, ..}) => Self::Aggregate(Aggregate::new(aggregations.clone(), groupby.clone(), output_schema.clone(), input.clone())),
+                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(aggregations.clone(), groupby.clone(), input.clone()).unwrap()),
                 Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(schema.clone(), sink_info.clone(), input.clone())),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
