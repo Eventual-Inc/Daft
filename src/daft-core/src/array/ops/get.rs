@@ -2,12 +2,11 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray, LogicalArrayImpl,
+            DateArray, Decimal128Array, DurationArray, ImageArray, LogicalArrayImpl, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ListArray, NullArray,
-        StructArray, Utf8Array, DaftLogicalType,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, ListArray,
+        NullArray, StructArray, Utf8Array,
     },
     Series,
 };
@@ -58,7 +57,7 @@ macro_rules! impl_array_arrow_get {
     };
 }
 
-impl <L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
+impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
         self.physical.get(idx)

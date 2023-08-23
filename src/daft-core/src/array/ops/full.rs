@@ -6,7 +6,8 @@ use pyo3::Python;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{
-        nested_arrays::FixedSizeListArray, DaftPhysicalType, DataType, Field, DaftLogicalType, logical::LogicalArray, DaftDataType,
+        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
+        DaftPhysicalType, DataType, Field,
     },
 };
 

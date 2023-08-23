@@ -5,7 +5,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray, FixedShapeTensorArray,
+            FixedShapeTensorArray, ImageArray, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
@@ -227,7 +227,7 @@ impl FixedSizeListArray {
 impl EmbeddingArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok(format!("<Embedding>").to_string())
+            Ok("<Embedding>".to_string())
         } else {
             Ok("None".to_string())
         }
@@ -237,7 +237,7 @@ impl EmbeddingArray {
 impl ImageArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok(format!("<Image>").to_string())
+            Ok("<Image>".to_string())
         } else {
             Ok("None".to_string())
         }
@@ -247,7 +247,7 @@ impl ImageArray {
 impl FixedShapeImageArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok(format!("<FixedShapeImage>").to_string())
+            Ok("<FixedShapeImage>".to_string())
         } else {
             Ok("None".to_string())
         }
@@ -257,7 +257,7 @@ impl FixedShapeImageArray {
 impl FixedShapeTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
-            Ok(format!("<FixedShapeTensor>").to_string())
+            Ok("<FixedShapeTensor>".to_string())
         } else {
             Ok("None".to_string())
         }

@@ -4,6 +4,7 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
+use crate::datatypes::UInt8Array;
 use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
     nested_arrays::FixedSizeListArray,
@@ -21,7 +22,7 @@ use std::ops::Deref;
 pub struct BBox(u32, u32, u32, u32);
 
 impl BBox {
-    pub fn from_u32_arrow_array(arr: Box<dyn arrow2::array::Array>) -> Self {
+    pub fn from_u32_arrow_array(arr: &dyn arrow2::array::Array) -> Self {
         assert!(arr.len() == 4);
         let mut iter = arr
             .as_any()
@@ -495,19 +496,15 @@ impl ImageArray {
 
     pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
-            Box::new(std::iter::repeat(
-                bboxes
-                    .as_arrow()
-                    .get(0)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
-            ))
+            Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
+                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
+            })))
         } else {
-            Box::new(
+            Box::new((0..bboxes.len()).map(|i| {
                 bboxes
-                    .as_arrow()
-                    .iter()
-                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
-            )
+                    .get(i)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+            }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
         Self::from_daft_image_buffers(self.name(), result.as_slice(), self.image_mode())
@@ -714,19 +711,15 @@ impl FixedShapeImageArray {
 
     pub fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
-            Box::new(std::iter::repeat(
-                bboxes
-                    .as_arrow()
-                    .get(0)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox)),
-            ))
+            Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
+                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
+            })))
         } else {
-            Box::new(
+            Box::new((0..bboxes.len()).map(|i| {
                 bboxes
-                    .as_arrow()
-                    .iter()
-                    .map(|bbox| bbox.map(|bbox| BBox::from_u32_arrow_array(bbox))),
-            )
+                    .get(i)
+                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+            }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
         ImageArray::from_daft_image_buffers(self.name(), result.as_slice(), &Some(self.mode()))
@@ -750,7 +743,7 @@ impl AsImageObj for FixedShapeImageArray {
 
         match self.data_type() {
             DataType::FixedShapeImage(mode, height, width) => {
-                let arrow_array = self.as_arrow().values().as_any().downcast_ref::<arrow2::array::UInt8Array>().unwrap();
+                let arrow_array = self.physical.flat_child.downcast::<UInt8Array>().unwrap().as_arrow();
                 let num_channels = mode.num_channels();
                 let size = height * width * num_channels as u32;
                 let start = idx * size as usize;
