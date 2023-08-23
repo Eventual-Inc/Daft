@@ -5,10 +5,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, ImageArray, TensorArray, TimestampArray,
         },
-        nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ListArray, StructArray, Utf8Array,
     },
 };

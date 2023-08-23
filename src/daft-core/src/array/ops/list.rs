@@ -1,8 +1,8 @@
 use std::iter::repeat;
 
-use crate::DataType;
-use crate::datatypes::{Utf8Type, DaftDataType};
 use crate::datatypes::{nested_arrays::FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
+use crate::datatypes::{DaftDataType, Utf8Type};
+use crate::DataType;
 
 use crate::series::Series;
 
@@ -97,9 +97,9 @@ impl ListArray {
 
         if delimiter.len() == 1 {
             let delimiter_str = delimiter.get(0).unwrap();
-            let result = list_array
-                .iter()
-                .map(|list_element| join_arrow_list_of_utf8s(list_element.map(|b| b.as_ref()), delimiter_str));
+            let result = list_array.iter().map(|list_element| {
+                join_arrow_list_of_utf8s(list_element.as_ref().map(|b| b.as_ref()), delimiter_str)
+            });
             Ok(Utf8Array::from((
                 self.name(),
                 Box::new(arrow2::array::Utf8Array::from_iter(result)),
@@ -109,7 +109,10 @@ impl ListArray {
             let result = list_array.iter().zip(delimiter.as_arrow().iter()).map(
                 |(list_element, delimiter_element)| {
                     let delimiter_str = delimiter_element.unwrap_or("");
-                    join_arrow_list_of_utf8s(list_element.map(|b| b.as_ref()), delimiter_str)
+                    join_arrow_list_of_utf8s(
+                        list_element.as_ref().map(|b| b.as_ref()),
+                        delimiter_str,
+                    )
                 },
             );
             Ok(Utf8Array::from((
@@ -123,12 +126,24 @@ impl ListArray {
 impl FixedSizeListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        match self.validity {
-            None => Ok(UInt64Array::from((self.name(), repeat(size as u64).take(self.len()).collect::<Vec<_>>().as_slice()))),
+        match &self.validity {
+            None => Ok(UInt64Array::from((
+                self.name(),
+                repeat(size as u64)
+                    .take(self.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            ))),
             Some(validity) => {
-                let arrow_arr = arrow2::array::UInt64Array::from_iter(validity.iter().map(|v| if v {Some(size as u64)} else {None}));
+                let arrow_arr = arrow2::array::UInt64Array::from_iter(validity.iter().map(|v| {
+                    if v {
+                        Some(size as u64)
+                    } else {
+                        None
+                    }
+                }));
                 Ok(UInt64Array::from((self.name(), Box::new(arrow_arr))))
-            },
+            }
         }
     }
 
@@ -138,10 +153,7 @@ impl FixedSizeListArray {
     }
 
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
-        assert_eq!(
-            self.child_data_type(),
-            &DataType::Utf8,
-        );
+        assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
         let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
             Box::new(repeat(delimiter.get(0)).take(self.len()))
@@ -151,12 +163,18 @@ impl FixedSizeListArray {
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
-        let result = self_iter.zip(delimiter_iter).map(|(list_element, delimiter)| {
-            join_arrow_list_of_utf8s(
-                list_element.map(|l| l.downcast::<<Utf8Type as DaftDataType>::ArrayType>().unwrap().as_arrow() as &dyn arrow2::array::Array),
-                delimiter.unwrap_or(""),
-            )
-        });
+        let result = self_iter
+            .zip(delimiter_iter)
+            .map(|(list_element, delimiter)| {
+                join_arrow_list_of_utf8s(
+                    list_element.as_ref().map(|l| {
+                        l.downcast::<<Utf8Type as DaftDataType>::ArrayType>()
+                            .unwrap()
+                            .as_arrow() as &dyn arrow2::array::Array
+                    }),
+                    delimiter.unwrap_or(""),
+                )
+            });
 
         Ok(Utf8Array::from((
             self.name(),

@@ -28,7 +28,6 @@ def test_series_slice_list_array(fixed) -> None:
     data = pa.array([[10, 20], [33, None], [43, 45], None, [50, 52], None], type=dtype)
 
     s = Series.from_arrow(data)
-
     result = s.slice(2, 4)
     assert result.datatype() == s.datatype()
     assert len(result) == 2
