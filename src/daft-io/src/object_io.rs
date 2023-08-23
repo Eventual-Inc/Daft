@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::ops::Range;
 
 use async_trait::async_trait;
@@ -45,6 +46,23 @@ impl GetResult {
     }
 }
 
+
+pub enum FileType {
+    File,
+    Directory
+}
+
+pub struct FileMetadata {
+    filepath: String,
+    size: Option<u64>,
+    filetype: FileType,
+}
+
+pub struct LSResult {
+    files: Vec<FileMetadata>,
+    continuation_token: Option<String> 
+}
+
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
@@ -52,4 +70,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         self.get(uri, Some(range)).await
     }
     async fn get_size(&self, uri: &str) -> super::Result<usize>;
+    async fn ls(&self, path: &str, delimiter:Option<&str>, continuation_token: Option<&str>) -> super::Result<LSResult>;
+
+    // async fn iter_dir(&self, path: &str, limit: Option<usize>) -> super::Result<Box<dyn Stream<Item = super::Result<LSResult>>>>;
 }

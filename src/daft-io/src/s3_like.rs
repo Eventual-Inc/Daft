@@ -4,8 +4,10 @@ use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
+use s3::operation::list_objects_v2::ListObjectsV2Error;
 
 use crate::config::S3Config;
+use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::{InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
@@ -48,6 +50,12 @@ enum Error {
     UnableToHeadFile {
         path: String,
         source: SdkError<HeadObjectError, Response>,
+    },
+
+    #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
+    UnableToListObjects {
+        path: String,
+        source: SdkError<ListObjectsV2Error, Response>,
     },
 
     #[snafu(display("Unable to query the region for {}: {}", path, source))]
@@ -453,6 +461,123 @@ impl S3LikeSource {
             Err(Error::NotAFile { path: uri.into() }.into())
         }
     }
+
+    #[async_recursion]
+    async fn _list_impl(&self, uri: &str, delimiter: Option<&str>, region: &Region) -> super::Result<LSResult> {
+        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let delimiter = delimiter.unwrap_or("/");
+        let bucket = match parsed.host_str() {
+            Some(s) => Ok(s),
+            None => Err(Error::InvalidUrl {
+                path: uri.into(),
+                source: ParseError::EmptyHost,
+            }),
+        }?;
+        let key = parsed.path();
+        if let Some(key) = key.strip_prefix('/') {
+            let request = self
+                .get_s3_client(region)
+                .await?
+                .list_objects_v2()
+                .bucket(bucket)
+                .delimiter(delimiter);
+
+            let response = if self.anonymous {
+                request
+                    .customize_middleware()
+                    .await
+                    .unwrap()
+                    .map_operation::<Error>(|mut o| {
+                        {
+                            let mut properties = o.properties_mut();
+                            #[allow(unused_mut)]
+                            let mut config = properties
+                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
+                                .expect("signing config added by make_operation()");
+
+                            config.signing_requirements = SigningRequirements::Disabled;
+                        }
+                        Ok(o)
+                    })
+                    .unwrap()
+                    .send()
+                    .await
+            } else {
+                request.send().await
+            };
+
+            match response {
+                Ok(v) => {
+                    let dirs = v.common_prefixes();
+                    let files = v.contents();
+                    let continuation_token = v.continuation_token().and_then(|s| Some(s.to_string()));
+                    let mut total_len = 0;
+                    if let Some(dirs) = dirs {
+                        total_len += dirs.len()
+                    }
+                    if let Some(files) = files {
+                        total_len += files.len()
+                    }
+                    let mut all_files = Vec::with_capacity(total_len);
+                    if let Some(dirs) = dirs {
+                        for d in dirs {
+                            let fmeta = FileMetadata {
+                                filepath: d.prefix().unwrap_or("/").into(),
+                                size: None,
+                                filetype: FileType::Directory
+                            };
+                            all_files.push(fmeta);
+                        }
+                    }
+                    if let Some(files) = files {
+                        for f in files {
+                            let fmeta = FileMetadata {
+                                filepath: f.key().unwrap_or_default().into(),
+                                size: Some(f.size() as u64),
+                                filetype: FileType::File
+                            };
+                            all_files.push(fmeta);
+                        }
+                    }
+                    Ok(LSResult {
+                        files: all_files,
+                        continuation_token
+                    })
+                }
+                Err(SdkError::ServiceError(err)) => {
+                    let bad_response = err.raw().http();
+                    match bad_response.status() {
+                        StatusCode::MOVED_PERMANENTLY => {
+                            let headers = bad_response.headers();
+                            let new_region =
+                                headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
+                                    path: uri.into(),
+                                    header: REGION_HEADER.into(),
+                                })?;
+
+                            let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                                .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                    path: uri.into(),
+                                })?;
+
+                            let new_region = Region::new(region_name);
+                            log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
+                            self._list_impl(uri, Some(delimiter), &new_region).await
+                        }
+                        _ => Err(UnableToListObjectsSnafu { path: uri }
+                            .into_error(SdkError::ServiceError(err))
+                            .into()),
+                    }
+                }
+                Err(err) => Err(UnableToListObjectsSnafu { path: uri }.into_error(err).into()),
+            }
+        } else {
+            Err(Error::NotAFile { path: uri.into() }.into())
+        }
+    }
+
+
+
 }
 
 #[async_trait]

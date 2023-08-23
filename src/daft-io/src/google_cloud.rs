@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
 use google_cloud_storage::http::Error as GError;
+use google_cloud_storage::http::objects::list::ListObjectsRequest;
 use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
@@ -132,6 +133,9 @@ impl GCSClientWrapper {
                     (GRange::default(), None)
                 };
                 let owned_uri = uri.to_string();
+                client.list_objects(ListObjectsRequest{
+
+                }).await.
                 let response = client
                     .download_streamed_object(&req, &grange)
                     .await
