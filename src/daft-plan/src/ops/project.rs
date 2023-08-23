@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
+use snafu::ResultExt;
 
+use crate::logical_plan::{CreationSnafu, Result};
 use crate::{LogicalPlan, ResourceRequest};
 
 #[derive(Clone, Debug)]
@@ -19,20 +22,21 @@ impl Project {
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
         input: Arc<LogicalPlan>,
-    ) -> Self {
+    ) -> Result<Self> {
         let upstream_schema = input.schema();
         let projected_schema = {
             let fields = projection
                 .iter()
-                .map(|e| e.to_field(&upstream_schema).unwrap())
-                .collect::<Vec<_>>();
+                .map(|e| e.to_field(&upstream_schema))
+                .collect::<DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
             Schema::new(fields).unwrap().into()
         };
-        Self {
+        Ok(Self {
             projection,
             projected_schema,
             resource_request,
             input,
-        }
+        })
     }
 }

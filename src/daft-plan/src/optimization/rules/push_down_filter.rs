@@ -117,7 +117,7 @@ impl OptimizerRule for PushDownFilter {
                     child_project.projection.clone(),
                     child_project.resource_request.clone(),
                     push_down_filter.into(),
-                )
+                )?
                 .into();
                 if can_not_push.is_empty() {
                     // If all Filter predicate expressions were pushable past Projection, return new
@@ -272,7 +272,7 @@ mod tests {
         ])
         .into();
         let projection: LogicalPlan =
-            Project::new(vec![col("a")], Default::default(), source.into()).into();
+            Project::new(vec![col("a")], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         let expected = "\
         Project: col(a)\
@@ -290,7 +290,7 @@ mod tests {
         ])
         .into();
         let projection: LogicalPlan =
-            Project::new(vec![col("a"), col("b")], Default::default(), source.into()).into();
+            Project::new(vec![col("a"), col("b")], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(
             col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))),
             projection.into(),
@@ -313,7 +313,7 @@ mod tests {
         .into();
         // Projection involves compute on filtered column "a".
         let projection: LogicalPlan =
-            Project::new(vec![col("a") + lit(1)], Default::default(), source.into()).into();
+            Project::new(vec![col("a") + lit(1)], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = "\
@@ -334,7 +334,7 @@ mod tests {
         ])
         .into();
         let projection: LogicalPlan =
-            Project::new(vec![col("a") + lit(1)], Default::default(), source.into()).into();
+            Project::new(vec![col("a") + lit(1)], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         let expected = "\
         Project: col(a) + lit(1)\

@@ -133,7 +133,7 @@ impl LogicalPlan {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::new(
                     projection.clone(), resource_request.clone(), input.clone(),
-                )),
+                ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
                 Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
                 Self::Explode(Explode { explode_exprs, exploded_schema, .. }) => Self::Explode(Explode::new(explode_exprs.clone(), exploded_schema.clone(), input.clone())),
@@ -193,9 +193,27 @@ impl LogicalPlan {
 }
 
 #[derive(Debug, Snafu)]
-enum Error {
+#[snafu(visibility(pub(crate)))]
+pub(crate) enum Error {
     #[snafu(display("Unable to create logical plan node due to: {}", source))]
     CreationError { source: DaftError },
+}
+pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl From<Error> for DaftError {
+    fn from(err: Error) -> DaftError {
+        match err {
+            Error::CreationError { source } => source,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl std::convert::From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
+    }
 }
 
 macro_rules! impl_from_data_struct_for_logical_plan {
