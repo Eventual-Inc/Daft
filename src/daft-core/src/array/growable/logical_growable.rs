@@ -41,14 +41,15 @@ impl<'a, L: DaftLogicalType> Growable<LogicalArray<L>> for LogicalGrowable<'a, L
 where
     LogicalArray<L>: IntoSeries,
 {
+    #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.physical_growable.extend(index, start, len);
     }
-
+    #[inline]
     fn add_nulls(&mut self, additional: usize) {
         self.physical_growable.add_nulls(additional)
     }
-
+    #[inline]
     fn build(&mut self) -> DaftResult<LogicalArray<L>> {
         let physical_arr = self.physical_growable.build()?;
         let arr = LogicalArray::<L>::new(

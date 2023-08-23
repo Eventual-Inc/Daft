@@ -6,6 +6,7 @@ use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
 use crate::DataType;
 use common_error::DaftResult;
 use std::convert::identity;
+use arrow2::array::Array;
 
 use super::as_arrow::AsArrow;
 
@@ -48,8 +49,9 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     // Build the result using a Growable
     let mut growable = T::make_growable(name.to_string(), dtype, vec![lhs, rhs], predicate.len());
 
-    let bitmap = predicate.as_arrow().values();
-    if bitmap.unset_bits() > 0 {
+    let predicate = predicate.as_arrow();
+
+    if predicate.null_count() > 0 {
         for (i, pred) in predicate.into_iter().enumerate() {
             match pred {
                 None => {
@@ -66,7 +68,7 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     } else {
         let mut start_falsy = 0;
         let mut total_len = 0;
-        for (start, len) in arrow2::bitmap::utils::SlicesIterator::new(bitmap) {
+        for (start, len) in arrow2::bitmap::utils::SlicesIterator::new(predicate.values()) {
             if start != start_falsy {
                 growable.extend(1, start_falsy, start - start_falsy);
                 total_len += start - start_falsy;

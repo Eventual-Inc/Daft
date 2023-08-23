@@ -34,6 +34,8 @@ impl<'a> PythonGrowable<'a> {
 }
 
 impl<'a> Growable<DataArray<PythonType>> for PythonGrowable<'a> {
+
+    #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let arr = self.arr_refs.get(index).unwrap();
         let arr = arr.slice(start, start + len).unwrap();
@@ -50,14 +52,14 @@ impl<'a> Growable<DataArray<PythonType>> for PythonGrowable<'a> {
             }
         }
     }
-
+    #[inline]
     fn add_nulls(&mut self, additional: usize) {
         let pynone = pyo3::Python::with_gil(|py| py.None());
         for _ in 0..additional {
             self.buffer.push(pynone.clone());
         }
     }
-
+    #[inline]
     fn build(&mut self) -> common_error::DaftResult<DataArray<PythonType>> {
         let mut buf: Vec<pyo3::PyObject> = vec![];
         swap(&mut self.buffer, &mut buf);
