@@ -1,3 +1,4 @@
+use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
 use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,

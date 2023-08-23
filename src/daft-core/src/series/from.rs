@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    datatypes::{logical::LogicalDataArray, DataType, Field},
+    datatypes::{logical::LogicalArray, DataType, Field},
     with_match_daft_logical_primitive_types, with_match_daft_logical_types,
     with_match_physical_daft_types,
 };
@@ -53,7 +53,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
             };
 
             let res = with_match_daft_logical_types!(dtype, |$T| {
-                LogicalDataArray::<$T>::from_arrow(field.as_ref(), physical_arrow_array)?.into_series()
+                LogicalArray::<$T>::from_arrow(field.as_ref(), physical_arrow_array)?.into_series()
             });
             return Ok(res);
         }

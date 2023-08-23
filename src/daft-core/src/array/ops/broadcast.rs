@@ -8,7 +8,7 @@ use crate::{
 
 use common_error::{DaftError, DaftResult};
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, full::FullNull};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;

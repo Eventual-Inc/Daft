@@ -27,7 +27,7 @@ pub mod logical;
 pub trait DaftArrayType {}
 
 /// Trait to wrap DataType Enum
-pub trait DaftDataType: Sync + Send {
+pub trait DaftDataType: Sync + Send + Clone {
     // Concrete ArrayType that backs data of this DataType
     type ArrayType: DaftArrayType;
 
@@ -47,6 +47,7 @@ pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
 
 macro_rules! impl_daft_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -65,6 +66,7 @@ macro_rules! impl_daft_arrow_datatype {
 
 macro_rules! impl_daft_non_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -81,6 +83,7 @@ macro_rules! impl_daft_non_arrow_datatype {
 
 macro_rules! impl_daft_logical_datatype {
     ($ca:ident, $variant:ident, $physical_type:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -89,10 +92,7 @@ macro_rules! impl_daft_logical_datatype {
                 DataType::$variant
             }
 
-            type ArrayType = logical::LogicalArray<
-                $ca,
-                <<$ca as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType,
-            >;
+            type ArrayType = logical::LogicalArray<$ca>;
         }
 
         impl DaftLogicalType for $ca {
