@@ -112,17 +112,26 @@ type ArrowStructGrowable<'a> =
     arrow_growable::ArrowGrowable<'a, StructType, arrow2::array::growable::GrowableStruct<'a>>;
 
 /// Trait that an Array type can implement to provide a Growable factory method
-pub trait GrowableArray<'a, G: Growable> {
-    fn make_growable(name: String, dtype: &DataType, arrays: Vec<&'a Self>, capacity: usize) -> G;
+pub trait GrowableArray<'a> {
+    type GrowableType: Growable;
+
+    fn make_growable(
+        name: String,
+        dtype: &DataType,
+        arrays: Vec<&'a Self>,
+        capacity: usize,
+    ) -> Self::GrowableType;
 }
 
-impl<'a> GrowableArray<'a, ArrowNullGrowable<'a>> for NullArray {
+impl<'a> GrowableArray<'a> for NullArray {
+    type GrowableType = ArrowNullGrowable<'a>;
+
     fn make_growable(
         name: String,
         dtype: &DataType,
         _arrays: Vec<&Self>,
         _capacity: usize,
-    ) -> ArrowNullGrowable<'a> {
+    ) -> Self::GrowableType {
         ArrowNullGrowable::new(
             name,
             dtype,
@@ -132,27 +141,31 @@ impl<'a> GrowableArray<'a, ArrowNullGrowable<'a>> for NullArray {
 }
 
 #[cfg(feature = "python")]
-impl<'a> GrowableArray<'a, python_growable::PythonGrowable<'a>> for PythonArray {
+impl<'a> GrowableArray<'a> for PythonArray {
+    type GrowableType = python_growable::PythonGrowable<'a>;
+
     fn make_growable(
         name: String,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         capacity: usize,
-    ) -> python_growable::PythonGrowable<'a> {
+    ) -> Self::GrowableType {
         python_growable::PythonGrowable::new(name, dtype, arrays, capacity)
     }
 }
 
-impl<'a> GrowableArray<'a, arrow_growable::ArrowExtensionGrowable<'a>> for ExtensionArray {
+impl<'a> GrowableArray<'a> for ExtensionArray {
+    type GrowableType = arrow_growable::ArrowExtensionGrowable<'a>;
+
     fn make_growable(
         name: String,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         capacity: usize,
-    ) -> arrow_growable::ArrowExtensionGrowable<'a> {
+    ) -> Self::GrowableType {
         let downcasted_arrays = arrays.iter().map(|arr| arr.data()).collect::<Vec<_>>();
         let arrow2_growable =
-            arrow2::array::growable::make_growable(downcasted_arrays.as_slice(), false, capacity);
+            arrow2::array::growable::make_growable(downcasted_arrays.as_slice(), true, capacity);
         arrow_growable::ArrowExtensionGrowable::new(name, dtype, arrow2_growable)
     }
 }
@@ -163,19 +176,21 @@ macro_rules! impl_primitive_growable_array {
         $growable:ident,
         $arrow_growable:ty
     ) => {
-        impl<'a> GrowableArray<'a, $growable<'a>> for $daft_array {
+        impl<'a> GrowableArray<'a> for $daft_array {
+            type GrowableType = $growable<'a>;
+
             fn make_growable(
                 name: String,
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 capacity: usize,
-            ) -> $growable<'a> {
+            ) -> Self::GrowableType {
                 $growable::new(
                     name,
                     dtype,
                     <$arrow_growable>::new(
                         arrays.iter().map(|a| a.as_arrow()).collect::<Vec<_>>(),
-                        false,
+                        true,
                         capacity,
                     ),
                 )
@@ -188,15 +203,15 @@ macro_rules! impl_logical_growable_array {
     (
         $daft_logical_type:ident
     ) => {
-        impl<'a> GrowableArray<'a, logical_growable::LogicalGrowable<'a, $daft_logical_type>>
-            for LogicalArray<$daft_logical_type>
-        {
+        impl<'a> GrowableArray<'a> for LogicalArray<$daft_logical_type> {
+            type GrowableType = logical_growable::LogicalGrowable<'a, $daft_logical_type>;
+
             fn make_growable(
                 name: String,
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 capacity: usize,
-            ) -> logical_growable::LogicalGrowable<'a, $daft_logical_type> {
+            ) -> Self::GrowableType {
                 logical_growable::LogicalGrowable::<$daft_logical_type>::new(
                     name.clone(),
                     dtype,
