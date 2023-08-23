@@ -1,6 +1,8 @@
 use std::{cmp::max, sync::Arc};
 
+use common_error::DaftError;
 use daft_core::schema::SchemaRef;
+use snafu::Snafu;
 
 use crate::{ops::*, PartitionScheme, PartitionSpec};
 
@@ -188,6 +190,12 @@ impl LogicalPlan {
         crate::display::TreeDisplay::fmt_tree(self, &mut s).unwrap();
         s
     }
+}
+
+#[derive(Debug, Snafu)]
+enum Error {
+    #[snafu(display("Unable to create logical plan node due to: {}", source))]
+    CreationError { source: DaftError },
 }
 
 macro_rules! impl_from_data_struct_for_logical_plan {

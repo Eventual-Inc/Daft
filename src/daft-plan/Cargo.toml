@@ -9,6 +9,7 @@ daft-table = {path = "../daft-table", default-features = false}
 indexmap = "2.0.0"
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
+snafu = {workspace = true}
 
 [features]
 default = ["python"]
