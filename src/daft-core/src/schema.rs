@@ -16,7 +16,7 @@ pub type SchemaRef = Arc<Schema>;
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Schema {
-    #[serde(with = "indexmap::serde_seq")]
+    #[serde(with = "indexmap::map::serde_seq")]
     pub fields: indexmap::IndexMap<String, Field>,
 }
 
