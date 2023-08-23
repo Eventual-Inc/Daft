@@ -50,10 +50,10 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
             None => {
                 growable.add_nulls(1);
             }
-            Some(pred) if pred => {
+            Some(true) => {
                 growable.extend(0, get_lhs(i), 1);
             }
-            Some(_) => {
+            Some(false) => {
                 growable.extend(1, get_rhs(i), 1);
             }
         }
