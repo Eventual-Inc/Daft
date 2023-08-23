@@ -1,11 +1,10 @@
-use crate::array::ops::full::FullNull;
 use crate::array::growable::{Growable, GrowableArray};
+use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
 use crate::datatypes::logical::LogicalArrayImpl;
 use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
 use common_error::DaftResult;
 use std::convert::identity;
-
 
 impl<'a, T> DataArray<T>
 where
