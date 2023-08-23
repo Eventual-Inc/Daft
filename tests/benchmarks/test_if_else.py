@@ -61,10 +61,10 @@ def generate_list_params() -> tuple[dict, daft.Expression, list]:
 def test_if_else(test_data_generator, benchmark) -> None:
     """If_else between NUM_ROWS values"""
     data, expr, expected = test_data_generator()
-    df = daft.from_pydict(data)
+    table = daft.table.Table.from_pydict(data)
 
     def bench_if_else() -> DataFrame:
-        return df.select(expr.alias("result")).collect()
+        return table.eval_expression_list([expr.alias("result")])
 
     result = benchmark(bench_if_else)
     assert result.to_pydict()["result"] == expected
