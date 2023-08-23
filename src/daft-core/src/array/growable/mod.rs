@@ -121,7 +121,7 @@ macro_rules! impl_primitive_growable_array {
                     dtype,
                     <$arrow_growable>::new(
                         arrays.iter().map(|a| a.as_arrow()).collect::<Vec<_>>(),
-                        true,
+                        false,
                         capacity,
                     ),
                 )

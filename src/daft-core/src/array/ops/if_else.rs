@@ -7,6 +7,8 @@ use crate::DataType;
 use common_error::DaftResult;
 use std::convert::identity;
 
+use super::as_arrow::AsArrow;
+
 fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     predicate: &BooleanArray,
     name: &str,
@@ -45,17 +47,36 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
 
     // Build the result using a Growable
     let mut growable = T::make_growable(name.to_string(), dtype, vec![lhs, rhs], predicate.len());
-    for (i, pred) in predicate.into_iter().enumerate() {
-        match pred {
-            None => {
-                growable.add_nulls(1);
+
+    let bitmap = predicate.as_arrow().values();
+    if bitmap.unset_bits() > 0 {
+        for (i, pred) in predicate.into_iter().enumerate() {
+            match pred {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(true) => {
+                    growable.extend(0, get_lhs(i), 1);
+                }
+                Some(false) => {
+                    growable.extend(1, get_rhs(i), 1);
+                }
             }
-            Some(true) => {
-                growable.extend(0, get_lhs(i), 1);
-            }
-            Some(false) => {
-                growable.extend(1, get_rhs(i), 1);
-            }
+        }
+    } else {
+        let mut start_falsy = 0;
+        let mut total_len = 0;
+        for (start, len) in arrow2::bitmap::utils::SlicesIterator::new(bitmap) {
+            if start != start_falsy {
+                growable.extend(1, start_falsy, start - start_falsy);
+                total_len += start - start_falsy;
+            };
+            growable.extend(0, start, len);
+            total_len += len;
+            start_falsy = start + len;
+        }
+        if total_len != predicate.len() {
+            growable.extend(1, total_len, predicate.len() - total_len);
         }
     }
 
