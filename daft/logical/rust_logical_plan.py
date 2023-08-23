@@ -93,9 +93,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         projection: ExpressionsProjection,
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> RustLogicalPlanBuilder:
-        schema = projection.resolve_schema(self.schema())
         exprs = [expr._expr for expr in projection]
-        builder = self._builder.project(exprs, schema._schema, custom_resource_request)
+        builder = self._builder.project(exprs, custom_resource_request)
         return RustLogicalPlanBuilder(builder)
 
     def filter(self, predicate: Expression) -> RustLogicalPlanBuilder:

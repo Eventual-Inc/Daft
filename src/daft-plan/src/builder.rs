@@ -84,20 +84,14 @@ impl LogicalPlanBuilder {
     pub fn project(
         &self,
         projection: Vec<PyExpr>,
-        projected_schema: &PySchema,
         resource_request: ResourceRequest,
     ) -> PyResult<LogicalPlanBuilder> {
         let projection_exprs = projection
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let logical_plan: LogicalPlan = ops::Project::new(
-            projection_exprs,
-            projected_schema.clone().into(),
-            resource_request,
-            self.plan.clone(),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            ops::Project::new(projection_exprs, resource_request, self.plan.clone()).into();
         Ok(logical_plan.into())
     }
 

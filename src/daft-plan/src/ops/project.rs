@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::schema::SchemaRef;
+use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
 
 use crate::{LogicalPlan, ResourceRequest};
@@ -17,10 +17,17 @@ pub struct Project {
 impl Project {
     pub(crate) fn new(
         projection: Vec<Expr>,
-        projected_schema: SchemaRef,
         resource_request: ResourceRequest,
         input: Arc<LogicalPlan>,
     ) -> Self {
+        let upstream_schema = input.schema();
+        let projected_schema = {
+            let fields = projection
+                .iter()
+                .map(|e| e.to_field(&upstream_schema).unwrap())
+                .collect::<Vec<_>>();
+            Schema::new(fields).unwrap().into()
+        };
         Self {
             projection,
             projected_schema,

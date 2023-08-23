@@ -129,8 +129,8 @@ impl LogicalPlan {
         let new_plan = match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Project(Project { projection, projected_schema, resource_request, .. }) => Self::Project(Project::new(
-                    projection.clone(), projected_schema.clone(), resource_request.clone(), input.clone(),
+                Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::new(
+                    projection.clone(), resource_request.clone(), input.clone(),
                 )),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
                 Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
