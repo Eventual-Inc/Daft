@@ -2,16 +2,14 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BinaryType, BooleanArray, BooleanType, DaftLogicalType,
-        DateType, Decimal128Type, DurationType, EmbeddingType, ExtensionArray, FixedShapeImageType,
-        FixedShapeTensorType, FixedSizeListArray, FixedSizeListType, Float32Array, Float32Type,
-        Float64Array, Float64Type, ImageType, Int128Array, Int128Type, Int16Array, Int16Type,
-        Int32Array, Int32Type, Int64Array, Int64Type, Int8Array, Int8Type, ListArray, ListType,
-        NullArray, NullType, StructArray, StructType, TensorType, TimestampType, UInt16Array,
-        UInt16Type, UInt32Array, UInt32Type, UInt64Array, UInt64Type, UInt8Array, UInt8Type,
-        Utf8Array, Utf8Type,
+        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DateType,
+        Decimal128Type, DurationType, EmbeddingType, ExtensionArray, FixedShapeImageType,
+        FixedShapeTensorType, FixedSizeListArray, Float32Array, Float64Array, ImageType,
+        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
+        StructArray, TensorType, TimestampType, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        Utf8Array,
     },
-    DataType, Series,
+    DataType,
 };
 
 use super::{ops::as_arrow::AsArrow, DataArray};
@@ -27,7 +25,7 @@ use crate::datatypes::PythonArray;
 /// Describes a struct that can be extended from slices of other pre-existing Series.
 /// This is very useful for abstracting many "physical" operations such as takes, broadcasts,
 /// filters and more.
-pub trait Growable {
+pub trait Growable<Arr> {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
     /// # Panic
@@ -38,82 +36,15 @@ pub trait Growable {
     fn add_nulls(&mut self, additional: usize);
 
     /// Builds an array from the [`Growable`]
-    fn build(&mut self) -> DaftResult<Series>;
+    fn build(&mut self) -> DaftResult<Arr>;
 }
 
-type ArrowNullGrowable<'a> =
-    arrow_growable::ArrowGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
-type ArrowBooleanGrowable<'a> =
-    arrow_growable::ArrowGrowable<'a, BooleanType, arrow2::array::growable::GrowableBoolean<'a>>;
-type ArrowInt8Growable<'a> =
-    arrow_growable::ArrowGrowable<'a, Int8Type, arrow2::array::growable::GrowablePrimitive<'a, i8>>;
-type ArrowInt16Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Int16Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i16>,
->;
-type ArrowInt32Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Int32Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i32>,
->;
-type ArrowInt64Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Int64Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i64>,
->;
-type ArrowInt128Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Int128Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i128>,
->;
-type ArrowUInt8Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    UInt8Type,
-    arrow2::array::growable::GrowablePrimitive<'a, u8>,
->;
-type ArrowUInt16Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    UInt16Type,
-    arrow2::array::growable::GrowablePrimitive<'a, u16>,
->;
-type ArrowUInt32Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    UInt32Type,
-    arrow2::array::growable::GrowablePrimitive<'a, u32>,
->;
-type ArrowUInt64Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    UInt64Type,
-    arrow2::array::growable::GrowablePrimitive<'a, u64>,
->;
-type ArrowFloat32Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Float32Type,
-    arrow2::array::growable::GrowablePrimitive<'a, f32>,
->;
-type ArrowFloat64Growable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    Float64Type,
-    arrow2::array::growable::GrowablePrimitive<'a, f64>,
->;
-type ArrowBinaryGrowable<'a> =
-    arrow_growable::ArrowGrowable<'a, BinaryType, arrow2::array::growable::GrowableBinary<'a, i64>>;
-type ArrowUtf8Growable<'a> =
-    arrow_growable::ArrowGrowable<'a, Utf8Type, arrow2::array::growable::GrowableUtf8<'a, i64>>;
-type ArrowListGrowable<'a> =
-    arrow_growable::ArrowGrowable<'a, ListType, arrow2::array::growable::GrowableList<'a, i64>>;
-type ArrowFixedSizeListGrowable<'a> = arrow_growable::ArrowGrowable<
-    'a,
-    FixedSizeListType,
-    arrow2::array::growable::GrowableFixedSizeList<'a>,
->;
-type ArrowStructGrowable<'a> =
-    arrow_growable::ArrowGrowable<'a, StructType, arrow2::array::growable::GrowableStruct<'a>>;
-
 /// Trait that an Array type can implement to provide a Growable factory method
-pub trait GrowableArray<'a> {
-    type GrowableType: Growable;
+pub trait GrowableArray<'a>
+where
+    Self: Sized,
+{
+    type GrowableType: Growable<Self>;
 
     fn make_growable(
         name: String,
@@ -124,7 +55,7 @@ pub trait GrowableArray<'a> {
 }
 
 impl<'a> GrowableArray<'a> for NullArray {
-    type GrowableType = ArrowNullGrowable<'a>;
+    type GrowableType = arrow_growable::ArrowNullGrowable<'a>;
 
     fn make_growable(
         name: String,
@@ -132,7 +63,7 @@ impl<'a> GrowableArray<'a> for NullArray {
         _arrays: Vec<&Self>,
         _capacity: usize,
     ) -> Self::GrowableType {
-        ArrowNullGrowable::new(
+        arrow_growable::ArrowNullGrowable::new(
             name,
             dtype,
             arrow2::array::growable::GrowableNull::new(dtype.to_arrow().unwrap()),
@@ -163,9 +94,9 @@ impl<'a> GrowableArray<'a> for ExtensionArray {
         arrays: Vec<&'a Self>,
         capacity: usize,
     ) -> Self::GrowableType {
-        let downcasted_arrays = arrays.iter().map(|arr| arr.data()).collect::<Vec<_>>();
+        let arrow_arrays = arrays.iter().map(|arr| arr.data()).collect::<Vec<_>>();
         let arrow2_growable =
-            arrow2::array::growable::make_growable(downcasted_arrays.as_slice(), true, capacity);
+            arrow2::array::growable::make_growable(arrow_arrays.as_slice(), true, capacity);
         arrow_growable::ArrowExtensionGrowable::new(name, dtype, arrow2_growable)
     }
 }
@@ -173,11 +104,11 @@ impl<'a> GrowableArray<'a> for ExtensionArray {
 macro_rules! impl_primitive_growable_array {
     (
         $daft_array:ident,
-        $growable:ident,
+        $growable:ty,
         $arrow_growable:ty
     ) => {
         impl<'a> GrowableArray<'a> for $daft_array {
-            type GrowableType = $growable<'a>;
+            type GrowableType = $growable;
 
             fn make_growable(
                 name: String,
@@ -185,7 +116,7 @@ macro_rules! impl_primitive_growable_array {
                 arrays: Vec<&'a Self>,
                 capacity: usize,
             ) -> Self::GrowableType {
-                $growable::new(
+                <$growable>::new(
                     name,
                     dtype,
                     <$arrow_growable>::new(
@@ -231,87 +162,87 @@ macro_rules! impl_logical_growable_array {
 
 impl_primitive_growable_array!(
     BooleanArray,
-    ArrowBooleanGrowable,
+    arrow_growable::ArrowBooleanGrowable<'a>,
     arrow2::array::growable::GrowableBoolean
 );
 impl_primitive_growable_array!(
     Int8Array,
-    ArrowInt8Growable,
+    arrow_growable::ArrowInt8Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<i8>
 );
 impl_primitive_growable_array!(
     Int16Array,
-    ArrowInt16Growable,
+    arrow_growable::ArrowInt16Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<i16>
 );
 impl_primitive_growable_array!(
     Int32Array,
-    ArrowInt32Growable,
+    arrow_growable::ArrowInt32Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<i32>
 );
 impl_primitive_growable_array!(
     Int64Array,
-    ArrowInt64Growable,
+    arrow_growable::ArrowInt64Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<i64>
 );
 impl_primitive_growable_array!(
     Int128Array,
-    ArrowInt128Growable,
+    arrow_growable::ArrowInt128Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<i128>
 );
 impl_primitive_growable_array!(
     UInt8Array,
-    ArrowUInt8Growable,
+    arrow_growable::ArrowUInt8Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<u8>
 );
 impl_primitive_growable_array!(
     UInt16Array,
-    ArrowUInt16Growable,
+    arrow_growable::ArrowUInt16Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<u16>
 );
 impl_primitive_growable_array!(
     UInt32Array,
-    ArrowUInt32Growable,
+    arrow_growable::ArrowUInt32Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<u32>
 );
 impl_primitive_growable_array!(
     UInt64Array,
-    ArrowUInt64Growable,
+    arrow_growable::ArrowUInt64Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<u64>
 );
 impl_primitive_growable_array!(
     Float32Array,
-    ArrowFloat32Growable,
+    arrow_growable::ArrowFloat32Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<f32>
 );
 impl_primitive_growable_array!(
     Float64Array,
-    ArrowFloat64Growable,
+    arrow_growable::ArrowFloat64Growable<'a>,
     arrow2::array::growable::GrowablePrimitive<f64>
 );
 impl_primitive_growable_array!(
     BinaryArray,
-    ArrowBinaryGrowable,
+    arrow_growable::ArrowBinaryGrowable<'a>,
     arrow2::array::growable::GrowableBinary<i64>
 );
 impl_primitive_growable_array!(
     Utf8Array,
-    ArrowUtf8Growable,
+    arrow_growable::ArrowUtf8Growable<'a>,
     arrow2::array::growable::GrowableUtf8<i64>
 );
 impl_primitive_growable_array!(
     ListArray,
-    ArrowListGrowable,
+    arrow_growable::ArrowListGrowable<'a>,
     arrow2::array::growable::GrowableList<i64>
 );
 impl_primitive_growable_array!(
     FixedSizeListArray,
-    ArrowFixedSizeListGrowable,
+    arrow_growable::ArrowFixedSizeListGrowable<'a>,
     arrow2::array::growable::GrowableFixedSizeList
 );
 impl_primitive_growable_array!(
     StructArray,
-    ArrowStructGrowable,
+    arrow_growable::ArrowStructGrowable<'a>,
     arrow2::array::growable::GrowableStruct
 );
 

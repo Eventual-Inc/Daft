@@ -4,8 +4,13 @@ use common_error::DaftResult;
 
 use crate::{
     array::{ops::from_arrow::FromArrow, DataArray},
-    datatypes::{DaftArrowBackedType, DaftDataType, ExtensionArray, Field},
-    DataType, IntoSeries, Series,
+    datatypes::{
+        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, ExtensionType,
+        Field, FixedSizeListType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type,
+        Int64Type, Int8Type, ListType, NullType, StructType, UInt16Type, UInt32Type, UInt64Type,
+        UInt8Type, Utf8Type,
+    },
+    DataType, IntoSeries,
 };
 
 use super::Growable;
@@ -36,7 +41,7 @@ where
     }
 }
 
-impl<'a, T: DaftDataType, G: arrow2::array::growable::Growable<'a>> Growable
+impl<'a, T: DaftDataType, G: arrow2::array::growable::Growable<'a>> Growable<DataArray<T>>
     for ArrowGrowable<'a, T, G>
 where
     T: DaftArrowBackedType,
@@ -50,10 +55,10 @@ where
         self.arrow2_growable.extend_validity(additional)
     }
 
-    fn build(&mut self) -> DaftResult<Series> {
+    fn build(&mut self) -> DaftResult<DataArray<T>> {
         let arrow_array = self.arrow2_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());
-        Ok(DataArray::<T>::from_arrow(&field, arrow_array)?.into_series())
+        DataArray::<T>::from_arrow(&field, arrow_array)
     }
 }
 
@@ -78,7 +83,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ArrowExtensionGrowable<'a> {
+impl<'a> Growable<DataArray<ExtensionType>> for ArrowExtensionGrowable<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(index, start, len)
     }
@@ -87,9 +92,45 @@ impl<'a> Growable for ArrowExtensionGrowable<'a> {
         self.child_growable.extend_validity(additional)
     }
 
-    fn build(&mut self) -> DaftResult<Series> {
+    fn build(&mut self) -> DaftResult<DataArray<ExtensionType>> {
         let arr = self.child_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());
-        Ok(ExtensionArray::from_arrow(&field, arr)?.into_series())
+        ExtensionArray::from_arrow(&field, arr)
     }
 }
+
+pub type ArrowNullGrowable<'a> = ArrowGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
+pub type ArrowBooleanGrowable<'a> =
+    ArrowGrowable<'a, BooleanType, arrow2::array::growable::GrowableBoolean<'a>>;
+pub type ArrowInt8Growable<'a> =
+    ArrowGrowable<'a, Int8Type, arrow2::array::growable::GrowablePrimitive<'a, i8>>;
+pub type ArrowInt16Growable<'a> =
+    ArrowGrowable<'a, Int16Type, arrow2::array::growable::GrowablePrimitive<'a, i16>>;
+pub type ArrowInt32Growable<'a> =
+    ArrowGrowable<'a, Int32Type, arrow2::array::growable::GrowablePrimitive<'a, i32>>;
+pub type ArrowInt64Growable<'a> =
+    ArrowGrowable<'a, Int64Type, arrow2::array::growable::GrowablePrimitive<'a, i64>>;
+pub type ArrowInt128Growable<'a> =
+    ArrowGrowable<'a, Int128Type, arrow2::array::growable::GrowablePrimitive<'a, i128>>;
+pub type ArrowUInt8Growable<'a> =
+    ArrowGrowable<'a, UInt8Type, arrow2::array::growable::GrowablePrimitive<'a, u8>>;
+pub type ArrowUInt16Growable<'a> =
+    ArrowGrowable<'a, UInt16Type, arrow2::array::growable::GrowablePrimitive<'a, u16>>;
+pub type ArrowUInt32Growable<'a> =
+    ArrowGrowable<'a, UInt32Type, arrow2::array::growable::GrowablePrimitive<'a, u32>>;
+pub type ArrowUInt64Growable<'a> =
+    ArrowGrowable<'a, UInt64Type, arrow2::array::growable::GrowablePrimitive<'a, u64>>;
+pub type ArrowFloat32Growable<'a> =
+    ArrowGrowable<'a, Float32Type, arrow2::array::growable::GrowablePrimitive<'a, f32>>;
+pub type ArrowFloat64Growable<'a> =
+    ArrowGrowable<'a, Float64Type, arrow2::array::growable::GrowablePrimitive<'a, f64>>;
+pub type ArrowBinaryGrowable<'a> =
+    ArrowGrowable<'a, BinaryType, arrow2::array::growable::GrowableBinary<'a, i64>>;
+pub type ArrowUtf8Growable<'a> =
+    ArrowGrowable<'a, Utf8Type, arrow2::array::growable::GrowableUtf8<'a, i64>>;
+pub type ArrowListGrowable<'a> =
+    ArrowGrowable<'a, ListType, arrow2::array::growable::GrowableList<'a, i64>>;
+pub type ArrowFixedSizeListGrowable<'a> =
+    ArrowGrowable<'a, FixedSizeListType, arrow2::array::growable::GrowableFixedSizeList<'a>>;
+pub type ArrowStructGrowable<'a> =
+    ArrowGrowable<'a, StructType, arrow2::array::growable::GrowableStruct<'a>>;
