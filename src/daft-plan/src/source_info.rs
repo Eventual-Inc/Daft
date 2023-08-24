@@ -249,7 +249,7 @@ impl FileFormatConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub use_native_downloader: bool,
-    pub io_config: Option<IOConfig>,
+    pub io_config: Box<Option<IOConfig>>,
 }
 
 #[cfg(feature = "python")]
@@ -259,7 +259,7 @@ impl ParquetSourceConfig {
     fn new(use_native_downloader: bool, io_config: Option<PyIOConfig>) -> Self {
         Self {
             use_native_downloader,
-            io_config: io_config.map(|c| c.config),
+            io_config: io_config.map(|c| c.config).into(),
         }
     }
 
@@ -270,7 +270,7 @@ impl ParquetSourceConfig {
 
     #[getter]
     fn get_io_config(&self) -> PyResult<Option<PyIOConfig>> {
-        Ok(self.io_config.as_ref().map(|c| c.clone().into()))
+        Ok(self.io_config.clone().map(|c| c.into()))
     }
 }
 
