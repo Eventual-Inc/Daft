@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 
 use crate::{functions, optimization, Expr};
 use daft_core::{
@@ -246,6 +248,26 @@ impl PyExpr {
         Ok(format!("{}", self.expr))
     }
 
+    pub fn __hash__(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.expr.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                self.expr = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(py, &bincode::serialize(&self.expr).unwrap()).to_object(py))
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         use functions::float::is_nan;
         Ok(is_nan(&self.expr).into())
@@ -269,20 +291,6 @@ impl PyExpr {
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
         use functions::temporal::day_of_week;
         Ok(day_of_week(&self.expr).into())
-    }
-
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                self.expr = bincode::deserialize(s.as_bytes()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self.expr).unwrap()).to_object(py))
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {

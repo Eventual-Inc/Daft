@@ -1043,6 +1043,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

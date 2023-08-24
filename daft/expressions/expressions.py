@@ -379,6 +379,9 @@ class Expression:
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 
+    def __hash__(self) -> int:
+        return self._expr.__hash__()
+
     def __getstate__(self) -> bytes:
         return self._expr.__getstate__()
 

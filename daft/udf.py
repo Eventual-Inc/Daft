@@ -83,6 +83,10 @@ class PartialUDF:
         else:
             raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
+    def __hash__(self) -> int:
+        args = frozenset(self.bound_args.arguments.items())
+        return hash((self.udf, args))
+
 
 @dataclasses.dataclass
 class UDF:
@@ -131,6 +135,9 @@ class UDF:
             # NOTE: This potentially runs expensive initializations on the class
             return self.func()
         raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
+
+    def __hash__(self) -> int:
+        return hash((self.func, self.return_dtype))
 
 
 def udf(
