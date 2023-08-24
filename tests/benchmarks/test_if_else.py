@@ -32,6 +32,29 @@ def generate_int64_with_nulls_params() -> tuple[dict, daft.Expression, list]:
     )
 
 
+# Perform if/else against two int64 columns, where the first column is broadcasted
+def generate_int64_broadcast_lhs_params() -> tuple[dict, daft.Expression, list]:
+    return (
+        {"rhs": [1 for _ in range(NUM_ROWS)], "pred": list(range(NUM_ROWS))},
+        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.lit(0), daft.col("rhs")),
+        [0 for _ in range(NUM_ROWS // 2)] + [1 for _ in range(NUM_ROWS // 2)],
+    )
+
+
+# Perform if/else against two int64 columns, where the first column is broadcasted and predicate has nulls
+def generate_int64_broadcast_lhs_with_nulls_params() -> tuple[dict, daft.Expression, list]:
+    pred = [i if i % 2 == 0 else None for i in range(NUM_ROWS)]
+    expected = [
+        x if p is not None else None
+        for x, p in zip([0 for _ in range(NUM_ROWS // 2)] + [1 for _ in range(NUM_ROWS // 2)], pred)
+    ]
+    return (
+        {"rhs": [1 for _ in range(NUM_ROWS)], "pred": pred},
+        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.lit(0), daft.col("rhs")),
+        expected,
+    )
+
+
 # Perform if/else against two string columns, selecting exactly half of the first and half of the second
 def generate_string_params() -> tuple[dict, daft.Expression, list]:
     lhs = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
@@ -64,7 +87,15 @@ def generate_list_params() -> tuple[dict, daft.Expression, list]:
         ),
         pytest.param(
             generate_int64_with_nulls_params,
-            id="int64",
+            id="int64-with-nulls",
+        ),
+        pytest.param(
+            generate_int64_broadcast_lhs_params,
+            id="int64-broadcast-lhs",
+        ),
+        pytest.param(
+            generate_int64_broadcast_lhs_with_nulls_params,
+            id="int64-broadcast-lhs-with-nulls",
         ),
         pytest.param(
             generate_string_params,
