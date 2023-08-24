@@ -64,15 +64,15 @@ jobs:
     - name: Build library and Test with pytest
       run: |
         source activate
-        # source <(cargo llvm-cov show-env --export-prefix)
-        # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
-        # export CARGO_INCREMENTAL=1
-        # cargo llvm-cov clean --workspace
+        source <(cargo llvm-cov show-env --export-prefix)
+        export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
+        export CARGO_INCREMENTAL=1
+        cargo llvm-cov clean --workspace
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
         coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
+        cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
