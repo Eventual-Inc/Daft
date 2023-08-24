@@ -89,7 +89,7 @@ impl LogicalPlanBuilder {
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
         let logical_plan: LogicalPlan =
-            ops::Project::new(projection_exprs, resource_request, self.plan.clone())?.into();
+            ops::Project::try_new(self.plan.clone(), projection_exprs, resource_request)?.into();
         Ok(logical_plan.into())
     }
 
