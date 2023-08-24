@@ -276,12 +276,9 @@ impl PhysicalPlan {
                     .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
-            PhysicalPlan::Explode(Explode {
-                input,
-                explode_exprs,
-            }) => {
+            PhysicalPlan::Explode(Explode { input, to_explode }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
-                let explode_pyexprs: Vec<PyExpr> = explode_exprs
+                let explode_pyexprs: Vec<PyExpr> = to_explode
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
                     .collect();
@@ -417,9 +414,9 @@ impl PhysicalPlan {
                 right,
                 left_on,
                 right_on,
-                output_projection,
                 join_type,
                 input,
+                ..
             }) => {
                 let upstream_input_iter = input.to_partition_tasks(py, psets)?;
                 let upstream_right_iter = right.to_partition_tasks(py, psets)?;
@@ -431,10 +428,6 @@ impl PhysicalPlan {
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
                     .collect();
-                let output_projection_pyexprs: Vec<PyExpr> = output_projection
-                    .iter()
-                    .map(|expr| PyExpr::from(expr.clone()))
-                    .collect();
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "join"))?
@@ -443,7 +436,6 @@ impl PhysicalPlan {
                         upstream_right_iter,
                         left_on_pyexprs,
                         right_on_pyexprs,
-                        output_projection_pyexprs,
                         *join_type,
                     ))?;
                 Ok(py_iter.into())

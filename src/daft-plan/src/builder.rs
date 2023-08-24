@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
-
 use crate::{logical_plan::LogicalPlan, optimization::Optimizer, ResourceRequest};
 
 #[cfg(feature = "python")]
@@ -84,20 +82,14 @@ impl LogicalPlanBuilder {
     pub fn project(
         &self,
         projection: Vec<PyExpr>,
-        projected_schema: &PySchema,
         resource_request: ResourceRequest,
     ) -> PyResult<LogicalPlanBuilder> {
         let projection_exprs = projection
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let logical_plan: LogicalPlan = ops::Project::new(
-            projection_exprs,
-            projected_schema.clone().into(),
-            resource_request,
-            self.plan.clone(),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            ops::Project::new(projection_exprs, resource_request, self.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 
@@ -112,21 +104,13 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn explode(
-        &self,
-        explode_pyexprs: Vec<PyExpr>,
-        exploded_schema: &PySchema,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let explode_exprs = explode_pyexprs
+    pub fn explode(&self, to_explode_pyexprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
+        let to_explode = to_explode_pyexprs
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let logical_plan: LogicalPlan = ops::Explode::new(
-            explode_exprs,
-            exploded_schema.clone().into(),
-            self.plan.clone(),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
     }
 
@@ -199,24 +183,8 @@ impl LogicalPlanBuilder {
             .map(|expr| expr.clone().into())
             .collect::<Vec<Expr>>();
 
-        let input_schema = self.plan.schema();
-        let fields = groupby_exprs
-            .iter()
-            .map(|expr| expr.to_field(&input_schema))
-            .chain(
-                agg_exprs
-                    .iter()
-                    .map(|agg_expr| agg_expr.to_field(&input_schema)),
-            )
-            .collect::<DaftResult<Vec<Field>>>()?;
-        let output_schema = Schema::new(fields)?;
-        let logical_plan: LogicalPlan = Aggregate::new(
-            agg_exprs,
-            groupby_exprs,
-            output_schema.into(),
-            self.plan.clone(),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -225,8 +193,6 @@ impl LogicalPlanBuilder {
         other: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
-        output_projection: Vec<PyExpr>,
-        output_schema: &PySchema,
         join_type: JoinType,
     ) -> PyResult<LogicalPlanBuilder> {
         let left_on_exprs = left_on
@@ -237,19 +203,13 @@ impl LogicalPlanBuilder {
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let output_projection_exprs = output_projection
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
-        let logical_plan: LogicalPlan = ops::Join::new(
+        let logical_plan: LogicalPlan = ops::Join::try_new(
+            self.plan.clone(),
             other.plan.clone(),
             left_on_exprs,
             right_on_exprs,
-            output_projection_exprs,
-            output_schema.clone().into(),
             join_type,
-            self.plan.clone(),
-        )
+        )?
         .into();
         Ok(logical_plan.into())
     }

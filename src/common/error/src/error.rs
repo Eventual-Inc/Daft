@@ -23,6 +23,23 @@ pub enum DaftError {
     External(GenericError),
 }
 
+impl std::error::Error for DaftError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DaftError::FieldNotFound(_)
+            | DaftError::SchemaMismatch(_)
+            | DaftError::TypeError(_)
+            | DaftError::ComputeError(_)
+            | DaftError::ArrowError(_)
+            | DaftError::ValueError(_) => None,
+            DaftError::IoError(io_error) => Some(io_error),
+            DaftError::FileNotFound { source, .. } | DaftError::External(source) => Some(&**source),
+            #[cfg(feature = "python")]
+            DaftError::PyO3Error(pyerr) => Some(pyerr),
+        }
+    }
+}
+
 impl From<arrow2::error::Error> for DaftError {
     fn from(error: arrow2::error::Error) -> Self {
         DaftError::ArrowError(error.to_string())

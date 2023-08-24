@@ -293,7 +293,6 @@ class Table:
         right: Table,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
-        output_projection: ExpressionsProjection | None = None,
         how: JoinType = JoinType.Inner,
     ) -> Table:
         if how != JoinType.Inner:

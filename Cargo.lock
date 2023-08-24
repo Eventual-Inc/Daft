@@ -1116,6 +1116,7 @@ dependencies = [
  "indexmap 2.0.0",
  "pyo3",
  "serde",
+ "snafu",
 ]
 
 [[package]]

@@ -175,7 +175,6 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 right_plan=_get_physical_plan(right_child, psets),
                 left_on=node._left_on,
                 right_on=node._right_on,
-                output_projection=node._output_projection,
                 how=node._how,
             )
 
