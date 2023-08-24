@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::ops::{DaftCompare, DaftLogical},
-    datatypes::{logical::Decimal128Array, BooleanType, Float64Type, Int128Array, Utf8Type},
+    datatypes::{logical::Decimal128Array, Int128Array},
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
 };
@@ -77,7 +77,13 @@ macro_rules! py_numeric_binary_op {
             Python => Ok(py_binary_op!(lhs, $rhs, $pyop)),
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
-                    cast_downcast_op_into_series!(lhs, $rhs, output_type, $T, $op)
+                    cast_downcast_op_into_series!(
+                        lhs,
+                        $rhs,
+                        output_type,
+                        <$T as DaftDataType>::ArrayType,
+                        $op
+                    )
                 })
             }
             _ => binary_op_unimplemented!(lhs, $pyop, $rhs, output_type),
@@ -94,9 +100,9 @@ macro_rules! physical_logic_op {
             match (&lhs.data_type(), &$rhs.data_type()) {
                 #[cfg(feature = "python")]
                 (Python, _) | (_, Python) => py_binary_op_bool!(lhs, $rhs, $pyop)
-                    .downcast::<BooleanType>()
+                    .downcast::<BooleanArray>()
                     .cloned(),
-                _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanType, $op),
+                _ => cast_downcast_op!(lhs, $rhs, &Boolean, BooleanArray, $op),
             }
         } else {
             unreachable!()
@@ -113,10 +119,10 @@ macro_rules! physical_compare_op {
             match comp_type {
                 #[cfg(feature = "python")]
                 Python => py_binary_op_bool!(lhs, $rhs, $pyop)
-                    .downcast::<BooleanType>()
+                    .downcast::<BooleanArray>()
                     .cloned(),
                 _ => with_match_comparable_daft_types!(comp_type, |$T| {
-                    cast_downcast_op!(lhs, $rhs, &comp_type, $T, $op)
+                    cast_downcast_op!(lhs, $rhs, &comp_type, <$T as DaftDataType>::ArrayType, $op)
                 }),
             }
         } else {
@@ -133,10 +139,10 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         match &output_type {
             #[cfg(feature = "python")]
             Python => Ok(py_binary_op!(lhs, rhs, "add")),
-            Utf8 => cast_downcast_op_into_series!(lhs, rhs, &Utf8, Utf8Type, add),
+            Utf8 => cast_downcast_op_into_series!(lhs, rhs, &Utf8, Utf8Array, add),
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
-                    cast_downcast_op_into_series!(lhs, rhs, output_type, $T, add)
+                    cast_downcast_op_into_series!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)
                 })
             }
             _ => binary_op_unimplemented!(lhs, "+", rhs, output_type),
@@ -155,7 +161,7 @@ pub(crate) trait SeriesBinaryOps: SeriesLike {
         match &output_type {
             #[cfg(feature = "python")]
             Python => Ok(py_binary_op!(lhs, rhs, "truediv")),
-            Float64 => cast_downcast_op_into_series!(lhs, rhs, &Float64, Float64Type, div),
+            Float64 => cast_downcast_op_into_series!(lhs, rhs, &Float64, Float64Array, div),
             _ => binary_op_unimplemented!(lhs, "/", rhs, output_type),
         }
     }

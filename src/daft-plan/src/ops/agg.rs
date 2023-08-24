@@ -1,12 +1,18 @@
 use std::sync::Arc;
 
+use snafu::ResultExt;
+
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{AggExpr, Expr};
 
+use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
 
 #[derive(Clone, Debug)]
 pub struct Aggregate {
+    // Upstream node.
+    pub input: Arc<LogicalPlan>,
+
     /// Aggregations to apply.
     pub aggregations: Vec<AggExpr>,
 
@@ -14,24 +20,31 @@ pub struct Aggregate {
     pub groupby: Vec<Expr>,
 
     pub output_schema: SchemaRef,
-
-    // Upstream node.
-    pub input: Arc<LogicalPlan>,
 }
 
 impl Aggregate {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
         aggregations: Vec<AggExpr>,
         groupby: Vec<Expr>,
-        output_schema: SchemaRef,
-        input: Arc<LogicalPlan>,
-    ) -> Self {
-        Self {
+    ) -> logical_plan::Result<Self> {
+        let output_schema = {
+            let upstream_schema = input.schema();
+            let fields = groupby
+                .iter()
+                .map(|e| e.to_field(&upstream_schema))
+                .chain(aggregations.iter().map(|ae| ae.to_field(&upstream_schema)))
+                .collect::<common_error::DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
+            Schema::new(fields).context(CreationSnafu)?.into()
+        };
+
+        Ok(Self {
             aggregations,
             groupby,
             output_schema,
             input,
-        }
+        })
     }
 
     pub(crate) fn schema(&self) -> SchemaRef {

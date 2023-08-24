@@ -172,7 +172,6 @@ def join(
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
-    output_projection: ExpressionsProjection,
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
@@ -202,7 +201,6 @@ def join(
                 instruction=execution_step.Join(
                     left_on=left_on,
                     right_on=right_on,
-                    output_projection=output_projection,
                     how=how,
                 )
             )

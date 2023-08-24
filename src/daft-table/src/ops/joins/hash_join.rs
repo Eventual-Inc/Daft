@@ -1,5 +1,5 @@
 use daft_core::{
-    array::ops::arrow2::comparison::build_multi_array_is_equal,
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, full::FullNull},
     datatypes::{DataType, UInt64Array},
     series::{IntoSeries, Series},
 };

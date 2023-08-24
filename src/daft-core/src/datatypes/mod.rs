@@ -23,8 +23,14 @@ use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero}
 pub use time_unit::TimeUnit;
 pub mod logical;
 
+/// Trait that is implemented by all Array types
+pub trait DaftArrayType: Clone {}
+
 /// Trait to wrap DataType Enum
-pub trait DaftDataType: Sync + Send {
+pub trait DaftDataType: Sync + Send + Clone {
+    // Concrete ArrayType that backs data of this DataType
+    type ArrayType: DaftArrayType;
+
     // returns Daft DataType Enum
     fn get_dtype() -> DataType
     where
@@ -36,11 +42,12 @@ pub trait DaftPhysicalType: Send + Sync + DaftDataType {}
 pub trait DaftArrowBackedType: Send + Sync + DaftPhysicalType + 'static {}
 
 pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
-    type PhysicalType: DaftArrowBackedType;
+    type PhysicalType: DaftPhysicalType;
 }
 
 macro_rules! impl_daft_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -48,6 +55,8 @@ macro_rules! impl_daft_arrow_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = DataArray<$ca>;
         }
 
         impl DaftArrowBackedType for $ca {}
@@ -57,6 +66,7 @@ macro_rules! impl_daft_arrow_datatype {
 
 macro_rules! impl_daft_non_arrow_datatype {
     ($ca:ident, $variant:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -64,6 +74,8 @@ macro_rules! impl_daft_non_arrow_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = DataArray<$ca>;
         }
         impl DaftPhysicalType for $ca {}
     };
@@ -71,6 +83,7 @@ macro_rules! impl_daft_non_arrow_datatype {
 
 macro_rules! impl_daft_logical_datatype {
     ($ca:ident, $variant:ident, $physical_type:ident) => {
+        #[derive(Clone)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -78,6 +91,8 @@ macro_rules! impl_daft_logical_datatype {
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
+
+            type ArrayType = logical::LogicalArray<$ca>;
         }
 
         impl DaftLogicalType for $ca {
@@ -97,7 +112,7 @@ impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
 impl_daft_arrow_datatype!(UInt64Type, UInt64);
-impl_daft_arrow_datatype!(Float16Type, Float16);
+// impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
@@ -257,7 +272,7 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
-pub type Float16Array = DataArray<Float16Type>;
+// pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;

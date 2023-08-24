@@ -15,7 +15,7 @@ mod date;
 mod filter;
 mod float;
 pub mod from_arrow;
-mod full;
+pub mod full;
 mod get;
 pub(crate) mod groups;
 mod hash;

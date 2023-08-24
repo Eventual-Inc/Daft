@@ -1,7 +1,9 @@
 use std::{cmp::max, collections::HashSet, sync::Arc};
 
+use common_error::DaftError;
 use daft_core::schema::SchemaRef;
 use daft_dsl::{optimization::get_required_columns, Expr};
+use snafu::Snafu;
 
 use crate::{ops::*, PartitionScheme, PartitionSpec};
 
@@ -186,24 +188,24 @@ impl LogicalPlan {
         let new_plan = match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Project(Project { projection, projected_schema, resource_request, .. }) => Self::Project(Project::new(
-                    projection.clone(), projected_schema.clone(), resource_request.clone(), input.clone(),
-                )),
+                Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::new(
+                    projection.clone(), resource_request.clone(), input.clone(),
+                ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
                 Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
-                Self::Explode(Explode { explode_exprs, exploded_schema, .. }) => Self::Explode(Explode::new(explode_exprs.clone(), exploded_schema.clone(), input.clone())),
+                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::new(sort_by.clone(), descending.clone(), input.clone())),
                 Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
                 Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
-                Self::Aggregate(Aggregate { aggregations, groupby, output_schema, ..}) => Self::Aggregate(Aggregate::new(aggregations.clone(), groupby.clone(), output_schema.clone(), input.clone())),
+                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(schema.clone(), sink_info.clone(), input.clone())),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Concat(_) => Self::Concat(Concat::new(input2.clone(), input1.clone())),
-                Self::Join(Join { left_on, right_on, output_projection, output_schema, join_type, .. }) => Self::Join(Join::new(input2.clone(), left_on.clone(), right_on.clone(), output_projection.clone(), output_schema.clone(), *join_type, input1.clone())),
+                Self::Join(Join { left_on, right_on, join_type, .. }) => Self::Join(Join::try_new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
@@ -226,8 +228,8 @@ impl LogicalPlan {
             }
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
-            Self::Explode(Explode { explode_exprs, .. }) => {
-                vec![format!("Explode: {explode_exprs:?}")]
+            Self::Explode(Explode { to_explode, .. }) => {
+                vec![format!("Explode: {to_explode:?}")]
             }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
@@ -244,6 +246,30 @@ impl LogicalPlan {
         let mut s = String::new();
         crate::display::TreeDisplay::fmt_tree(self, &mut s).unwrap();
         s
+    }
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub(crate)))]
+pub(crate) enum Error {
+    #[snafu(display("Unable to create logical plan node due to: {}", source))]
+    CreationError { source: DaftError },
+}
+pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl From<Error> for DaftError {
+    fn from(err: Error) -> DaftError {
+        match err {
+            Error::CreationError { source } => source,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+impl std::convert::From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
     }
 }
 

@@ -1,13 +1,18 @@
 use super::as_arrow::AsArrow;
 use crate::{
-    array::{ops::from_arrow::FromArrow, ops::image::ImageArraySidecarData, DataArray},
+    array::{
+        ops::image::ImageArraySidecarData,
+        ops::{from_arrow::FromArrow, full::FullNull},
+        DataArray,
+    },
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, LogicalArray, TensorArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
+            TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedShapeTensorType,
-        FixedSizeListArray, ImageMode, StructArray, TensorType, TimeUnit, Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, FixedSizeListArray, ImageMode,
+        StructArray, TimeUnit, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_arrow_daft_types, with_match_daft_logical_primitive_types,
@@ -39,9 +44,13 @@ use {
     std::ops::Deref,
 };
 
-fn arrow_logical_cast<T>(to_cast: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
+fn arrow_logical_cast<T>(
+    to_cast: &LogicalArrayImpl<T, DataArray<T::PhysicalType>>,
+    dtype: &DataType,
+) -> DaftResult<Series>
 where
     T: DaftLogicalType,
+    T::PhysicalType: DaftArrowBackedType,
 {
     // Cast from LogicalArray to the target DataType
     // using Arrow's casting mechanisms.
@@ -49,7 +58,7 @@ where
     // Note that Arrow Logical->Logical direct casts (what this method exposes)
     // have different behaviour than Arrow Logical->Physical->Logical casts.
 
-    let source_dtype = to_cast.logical_type();
+    let source_dtype = to_cast.data_type();
     let source_arrow_type = source_dtype.to_arrow()?;
     let target_arrow_type = dtype.to_arrow()?;
 
@@ -360,8 +369,8 @@ impl TimestampArray {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Utf8 => {
-                let DataType::Timestamp(unit, timezone) = self.logical_type() else {
-                    panic!("Wrong dtype for TimestampArray: {}", self.logical_type())
+                let DataType::Timestamp(unit, timezone) = self.data_type() else {
+                    panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
 
                 let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
@@ -1079,7 +1088,7 @@ impl PythonArray {
 
 impl EmbeddingArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match (dtype, self.logical_type()) {
+        match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::Embedding(_, size)) => Python::with_gil(|py| {
                 let shape = (self.len(), *size);
@@ -1111,7 +1120,7 @@ impl EmbeddingArray {
                     DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
                 let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
                 let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1174,7 +1183,7 @@ impl ImageArray {
                         }
                     })?;
                 let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             DataType::Tensor(_) => {
@@ -1230,7 +1239,7 @@ impl ImageArray {
             DataType::FixedShapeTensor(inner_dtype, _) => {
                 let tensor_dtype = DataType::Tensor(inner_dtype.clone());
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                let tensor_array = tensor_array.downcast::<TensorArray>()?;
                 tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),
@@ -1240,7 +1249,7 @@ impl ImageArray {
 
 impl FixedShapeImageArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match (dtype, self.logical_type()) {
+        match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::FixedShapeImage(mode, height, width)) => {
                 pyo3::Python::with_gil(|py| {
@@ -1299,13 +1308,13 @@ impl FixedShapeImageArray {
                         }
                     })?;
                 let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             (DataType::Image(_), DataType::FixedShapeImage(mode, _, _)) => {
                 let tensor_dtype = DataType::Tensor(Box::new(mode.get_dtype()));
                 let tensor_array = self.cast(&tensor_dtype)?;
-                let tensor_array = tensor_array.downcast_logical::<TensorType>()?;
+                let tensor_array = tensor_array.downcast::<TensorArray>()?;
                 tensor_array.cast(dtype)
             }
             // NOTE(Clark): Casting to FixedShapeTensor is supported by the physical array cast.
@@ -1505,7 +1514,7 @@ impl TensorArray {
                         }
                     })?;
                 let fixed_shape_tensor_array =
-                    fixed_shape_tensor_array.downcast_logical::<FixedShapeTensorType>()?;
+                    fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
             _ => self.physical.cast(dtype),
@@ -1515,7 +1524,7 @@ impl TensorArray {
 
 impl FixedShapeTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match (dtype, self.logical_type()) {
+        match (dtype, self.data_type()) {
             #[cfg(feature = "python")]
             (DataType::Python, DataType::FixedShapeTensor(_, shape)) => {
                 pyo3::Python::with_gil(|py| {
@@ -1616,11 +1625,12 @@ impl FixedShapeTensorArray {
 fn cast_logical_to_python_array<T>(array: &LogicalArray<T>, dtype: &DataType) -> DaftResult<Series>
 where
     T: DaftLogicalType,
+    T::PhysicalType: DaftArrowBackedType,
     LogicalArray<T>: AsArrow,
     <LogicalArray<T> as AsArrow>::Output: arrow2::array::Array,
 {
     Python::with_gil(|py| {
-        let arrow_dtype = array.logical_type().to_arrow()?;
+        let arrow_dtype = array.data_type().to_arrow()?;
         let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
         let pyarrow = py.import("pyarrow")?;
         let py_array: Vec<PyObject> = ffi::to_py_array(arrow_array.to_boxed(), py, pyarrow)?

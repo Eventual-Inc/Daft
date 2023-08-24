@@ -1,11 +1,12 @@
 pub mod from;
+pub mod growable;
 pub mod iterator;
 pub mod ops;
 pub mod pseudo_arrow;
 
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::datatypes::{DaftPhysicalType, DataType, Field};
+use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
 use common_error::{DaftError, DaftResult};
 
@@ -21,6 +22,8 @@ impl<T: DaftPhysicalType> Clone for DataArray<T> {
         DataArray::new(self.field.clone(), self.data.clone()).unwrap()
     }
 }
+
+impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {}
 
 impl<T> DataArray<T>
 where

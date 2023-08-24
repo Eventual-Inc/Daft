@@ -1,7 +1,7 @@
 use std::{collections::HashSet, convert::identity, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::schema::{Schema, SchemaRef};
+
 use daft_dsl::Expr;
 
 use crate::{
@@ -75,20 +75,12 @@ impl PushDownProjection {
                                 .then(|| e.clone())
                         })
                         .collect::<Vec<_>>();
-                    let pruned_upstream_schema: SchemaRef = {
-                        let fields = pruned_upstream_projections
-                            .iter()
-                            .map(|e| e.to_field(&upstream_projection.input.schema()).unwrap())
-                            .collect::<Vec<_>>();
-                        Schema::new(fields).unwrap().into()
-                    };
 
                     let new_upstream: LogicalPlan = Project::new(
                         pruned_upstream_projections,
-                        pruned_upstream_schema,
                         upstream_projection.resource_request.clone(),
                         upstream_projection.input.clone(),
-                    )
+                    )?
                     .into();
 
                     let new_plan = plan.with_new_children(&[new_upstream.into()]);
@@ -130,20 +122,11 @@ impl PushDownProjection {
                         .map(|s| Expr::Column(s.into()))
                         .collect::<Vec<_>>();
 
-                    let pushdown_schema: SchemaRef = {
-                        let fields = pushdown_column_exprs
-                            .iter()
-                            .map(|e| e.to_field(&grand_upstream_plan.schema()).unwrap())
-                            .collect::<Vec<_>>();
-                        Schema::new(fields).unwrap().into()
-                    };
-
                     Project::new(
                         pushdown_column_exprs,
-                        pushdown_schema,
                         Default::default(),
                         grand_upstream_plan.clone(),
-                    )
+                    )?
                     .into()
                 };
 
@@ -191,20 +174,11 @@ impl PushDownProjection {
                     .map(|s| Expr::Column(s.clone().into()))
                     .collect::<Vec<_>>();
 
-                let pushdown_schema: SchemaRef = {
-                    let fields = pushdown_column_exprs
-                        .iter()
-                        .map(|e| e.to_field(&upstream_schema).unwrap())
-                        .collect::<Vec<_>>();
-                    Schema::new(fields).unwrap().into()
-                };
-
                 Project::new(
                     pushdown_column_exprs,
-                    pushdown_schema,
                     Default::default(),
                     upstream_plan.clone(),
-                )
+                )?
                 .into()
             };
 

@@ -8,6 +8,7 @@ common-error = {path = "../common/error", default-features = false}
 dyn-clone = "1.0.12"
 fnv = "1.0.7"
 html-escape = {workspace = true}
+indexmap = {workspace = true, features = ["serde"]}
 lazy_static = {workspace = true}
 log = {workspace = true}
 ndarray = "0.15.6"
@@ -24,10 +25,6 @@ serde_json = {workspace = true}
 default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
 version = "0.24.7"
-
-[dependencies.indexmap]
-features = ["serde"]
-version = "1.9.2"
 
 [dependencies.numpy]
 optional = true

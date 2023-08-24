@@ -115,10 +115,9 @@ impl OptimizerRule for PushDownFilter {
                 // Create new Projection.
                 let new_projection: LogicalPlan = Project::new(
                     child_project.projection.clone(),
-                    child_project.projected_schema.clone(),
                     child_project.resource_request.clone(),
                     push_down_filter.into(),
-                )
+                )?
                 .into();
                 if can_not_push.is_empty() {
                     // If all Filter predicate expressions were pushable past Projection, return new
@@ -272,13 +271,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let projection: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![source.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            source.into(),
-        )
-        .into();
+        let projection: LogicalPlan =
+            Project::new(vec![col("a")], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         let expected = "\
         Project: col(a)\
@@ -295,13 +289,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let projection: LogicalPlan = Project::new(
-            vec![col("a"), col("b")],
-            source.schema().clone(),
-            Default::default(),
-            source.into(),
-        )
-        .into();
+        let projection: LogicalPlan =
+            Project::new(vec![col("a"), col("b")], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(
             col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))),
             projection.into(),
@@ -323,13 +312,8 @@ mod tests {
         ])
         .into();
         // Projection involves compute on filtered column "a".
-        let projection: LogicalPlan = Project::new(
-            vec![col("a") + lit(1)],
-            Schema::new(vec![source.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            source.into(),
-        )
-        .into();
+        let projection: LogicalPlan =
+            Project::new(vec![col("a") + lit(1)], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = "\
@@ -349,13 +333,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let projection: LogicalPlan = Project::new(
-            vec![col("a") + lit(1)],
-            Schema::new(vec![source.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            source.into(),
-        )
-        .into();
+        let projection: LogicalPlan =
+            Project::new(vec![col("a") + lit(1)], Default::default(), source.into())?.into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
         let expected = "\
         Project: col(a) + lit(1)\
@@ -451,16 +430,13 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
-        let join: LogicalPlan = Join::new(
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
-            source1.into(),
-        )
+        )?
         .into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), join.into()).into();
         let expected = "\
@@ -484,16 +460,13 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
-        let join: LogicalPlan = Join::new(
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
-            source1.into(),
-        )
+        )?
         .into();
         let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
         let expected = "\
@@ -509,33 +482,26 @@ mod tests {
     fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
+            Field::new("b", DataType::Int64),
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let source2: LogicalPlan = dummy_scan_node(vec![
-            Field::new("b", DataType::Utf8),
-            Field::new("c", DataType::Float64),
-        ])
-        .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
-        let join: LogicalPlan = Join::new(
+        let source2: LogicalPlan = dummy_scan_node(vec![Field::new("b", DataType::Int64)]).into();
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
-            source1.into(),
-        )
+        )?
         .into();
-        let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
+        let filter: LogicalPlan = Filter::new(col("b").lt(&lit(2.0)), join.into()).into();
         let expected = "\
-        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Filter: col(c) < lit(2.0)\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Filter: col(c) < lit(2.0)\
-        \n    Source: \"Json\", File paths = /foo, File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Utf8), c (Float64)";
+        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
+        \n  Filter: col(b) < lit(2.0)\
+        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Int64), c (Float64)\
+        \n  Filter: col(b) < lit(2.0)\
+        \n    Source: \"Json\", File paths = /foo, File schema = b (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Int64)";
         assert_optimized_plan_eq(filter.into(), expected)?;
         Ok(())
     }

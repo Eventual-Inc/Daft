@@ -32,7 +32,18 @@ macro_rules! with_match_daft_types {(
         Extension(_, _, _) => __with_ty__! { ExtensionType },
         #[cfg(feature = "python")]
         Python => __with_ty__! { PythonType },
-        _ => panic!("{:?} not implemented for with_match_daft_types", $key_type)
+        Embedding(..) => __with_ty__! { EmbeddingType },
+        Image(..) => __with_ty__! { ImageType },
+        FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
+        Tensor(..) => __with_ty__! { TensorType },
+        FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
+        Time(_) => unimplemented!("Array for Time not implemented"),
+        Float16 => unimplemented!("Array for Float16 not implemented"),
+        Unknown => unimplemented!("Array for Unknown DataType not implemented"),
+
+        // NOTE: We should not implement a default for match here, because this is meant to be
+        // an exhaustive match across **all** Daft types.
+        // _ => panic!("{:?} not implemented for with_match_daft_types", $key_type)
     }
 })}
 

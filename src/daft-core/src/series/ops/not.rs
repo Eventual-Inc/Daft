@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use crate::datatypes::BooleanType;
+use crate::datatypes::BooleanArray;
 use crate::series::array_impl::IntoSeries;
 use crate::series::Series;
 use common_error::DaftResult;
@@ -8,7 +8,7 @@ use common_error::DaftResult;
 impl Not for &Series {
     type Output = DaftResult<Series>;
     fn not(self) -> Self::Output {
-        let array = self.downcast::<BooleanType>()?;
+        let array = self.downcast::<BooleanArray>()?;
         Ok((!array)?.into_series())
     }
 }
