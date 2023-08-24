@@ -208,21 +208,10 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         elif how == JoinType.Right:
             raise NotImplementedError("Right join not implemented.")
         elif how == JoinType.Inner:
-            # TODO(Clark): Port this logic to Rust-side once ExpressionsProjection has been ported.
-            right_drop_set = {r.name() for l, r in zip(left_on, right_on) if l.name() == r.name()}
-            left_columns = ExpressionsProjection.from_schema(self.schema())
-            right_columns = ExpressionsProjection([col(f.name) for f in right.schema() if f.name not in right_drop_set])
-            output_projection = left_columns.union(right_columns, rename_dup="right.")
-            right_columns = ExpressionsProjection(list(output_projection)[len(left_columns) :])
-            output_schema = left_columns.resolve_schema(self.schema()).union(
-                right_columns.resolve_schema(right.schema())
-            )
             builder = self._builder.join(
                 right._builder,
                 left_on.to_inner_py_exprs(),
                 right_on.to_inner_py_exprs(),
-                output_projection.to_inner_py_exprs(),
-                output_schema._schema,
                 how,
             )
             return RustLogicalPlanBuilder(builder)

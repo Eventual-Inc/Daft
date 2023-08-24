@@ -148,7 +148,7 @@ impl LogicalPlan {
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Concat(_) => Self::Concat(Concat::new(input2.clone(), input1.clone())),
-                Self::Join(Join { left_on, right_on, output_projection, output_schema, join_type, .. }) => Self::Join(Join::new(input2.clone(), left_on.clone(), right_on.clone(), output_projection.clone(), output_schema.clone(), *join_type, input1.clone())),
+                Self::Join(Join { left_on, right_on, join_type, .. }) => Self::Join(Join::new(input2.clone(), left_on.clone(), right_on.clone(), *join_type, input1.clone()).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())

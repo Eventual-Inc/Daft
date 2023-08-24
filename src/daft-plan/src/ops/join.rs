@@ -1,16 +1,19 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use daft_core::schema::SchemaRef;
+use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
+use snafu::ResultExt;
 
-use crate::{JoinType, LogicalPlan};
+use crate::{
+    logical_plan::{self, CreationSnafu},
+    JoinType, LogicalPlan,
+};
 
 #[derive(Clone, Debug)]
 pub struct Join {
     pub right: Arc<LogicalPlan>,
     pub left_on: Vec<Expr>,
     pub right_on: Vec<Expr>,
-    pub output_projection: Vec<Expr>,
     pub output_schema: SchemaRef,
     pub join_type: JoinType,
     // Upstream node.
@@ -22,20 +25,43 @@ impl Join {
         right: Arc<LogicalPlan>,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
-        output_projection: Vec<Expr>,
-        output_schema: SchemaRef,
         join_type: JoinType,
         input: Arc<LogicalPlan>,
-    ) -> Self {
-        Self {
+    ) -> logical_plan::Result<Self> {
+        // Schema inference ported from existing behaviour for parity,
+        // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
+        let output_schema = {
+            let left_join_keys = left_on
+                .iter()
+                .map(|e| e.name())
+                .collect::<common_error::DaftResult<HashSet<_>>>()
+                .context(CreationSnafu)?;
+            let left_schema = &input.schema().fields;
+            let fields = left_schema
+                .iter()
+                .map(|(_, field)| field)
+                .cloned()
+                .chain(right.schema().fields.iter().filter_map(|(rname, rfield)| {
+                    if left_join_keys.contains(rname.as_str()) {
+                        None
+                    } else if left_schema.contains_key(rname) {
+                        let new_name = format!("right.{}", rname);
+                        Some(rfield.rename(new_name))
+                    } else {
+                        Some(rfield.clone())
+                    }
+                }))
+                .collect::<Vec<_>>();
+            Schema::new(fields).context(CreationSnafu)?.into()
+        };
+        Ok(Self {
             right,
             left_on,
             right_on,
-            output_projection,
             output_schema,
             join_type,
             input,
-        }
+        })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

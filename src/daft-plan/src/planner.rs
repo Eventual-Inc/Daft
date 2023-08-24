@@ -399,7 +399,6 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             input,
             left_on,
             right_on,
-            output_projection,
             join_type,
             ..
         }) => {
@@ -442,7 +441,6 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 right_physical.into(),
                 left_on.clone(),
                 right_on.clone(),
-                output_projection.clone(),
                 *join_type,
                 left_physical.into(),
             )))

@@ -435,11 +435,9 @@ mod tests {
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
             source1.into(),
-        )
+        )?
         .into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), join.into()).into();
         let expected = "\
@@ -468,11 +466,9 @@ mod tests {
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
             source1.into(),
-        )
+        )?
         .into();
         let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
         let expected = "\
@@ -502,11 +498,9 @@ mod tests {
             source2.into(),
             vec![col("b")],
             vec![col("b")],
-            vec![],
-            output_schema.into(),
             JoinType::Inner,
             source1.into(),
-        )
+        )?
         .into();
         let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
         let expected = "\

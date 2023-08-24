@@ -192,8 +192,6 @@ impl LogicalPlanBuilder {
         other: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
-        output_projection: Vec<PyExpr>,
-        output_schema: &PySchema,
         join_type: JoinType,
     ) -> PyResult<LogicalPlanBuilder> {
         let left_on_exprs = left_on
@@ -204,19 +202,13 @@ impl LogicalPlanBuilder {
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let output_projection_exprs = output_projection
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
         let logical_plan: LogicalPlan = ops::Join::new(
             other.plan.clone(),
             left_on_exprs,
             right_on_exprs,
-            output_projection_exprs,
-            output_schema.clone().into(),
             join_type,
             self.plan.clone(),
-        )
+        )?
         .into();
         Ok(logical_plan.into())
     }

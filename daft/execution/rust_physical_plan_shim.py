@@ -138,18 +138,15 @@ def join(
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
-    output_projection: list[PyExpr],
     join_type: JoinType,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
-    output_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in output_projection])
     return physical_plan.join(
         left_plan=input,
         right_plan=right,
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
-        output_projection=output_expr_proj,
         how=join_type,
     )
 
