@@ -430,7 +430,6 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
         let join: LogicalPlan = Join::new(
             source2.into(),
             vec![col("b")],
@@ -461,7 +460,6 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
         let join: LogicalPlan = Join::new(
             source2.into(),
             vec![col("b")],
@@ -484,16 +482,11 @@ mod tests {
     fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
+            Field::new("b", DataType::Int64),
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let source2: LogicalPlan = dummy_scan_node(vec![
-            Field::new("b", DataType::Utf8),
-            Field::new("c", DataType::Float64),
-        ])
-        .into();
-        let output_schema = source1.schema().union(source2.schema().as_ref())?;
+        let source2: LogicalPlan = dummy_scan_node(vec![Field::new("b", DataType::Int64)]).into();
         let join: LogicalPlan = Join::new(
             source2.into(),
             vec![col("b")],
@@ -502,13 +495,13 @@ mod tests {
             source1.into(),
         )?
         .into();
-        let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
+        let filter: LogicalPlan = Filter::new(col("b").lt(&lit(2.0)), join.into()).into();
         let expected = "\
-        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Filter: col(c) < lit(2.0)\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Filter: col(c) < lit(2.0)\
-        \n    Source: \"Json\", File paths = /foo, File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Utf8), c (Float64)";
+        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
+        \n  Filter: col(b) < lit(2.0)\
+        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Int64), c (Float64)\
+        \n  Filter: col(b) < lit(2.0)\
+        \n    Source: \"Json\", File paths = /foo, File schema = b (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Int64)";
         assert_optimized_plan_eq(filter.into(), expected)?;
         Ok(())
     }
