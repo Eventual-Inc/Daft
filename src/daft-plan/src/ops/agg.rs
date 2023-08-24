@@ -5,11 +5,14 @@ use snafu::ResultExt;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{AggExpr, Expr};
 
-use crate::logical_plan::{CreationSnafu, Result};
+use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
 
 #[derive(Clone, Debug)]
 pub struct Aggregate {
+    // Upstream node.
+    pub input: Arc<LogicalPlan>,
+
     /// Aggregations to apply.
     pub aggregations: Vec<AggExpr>,
 
@@ -17,17 +20,14 @@ pub struct Aggregate {
     pub groupby: Vec<Expr>,
 
     pub output_schema: SchemaRef,
-
-    // Upstream node.
-    pub input: Arc<LogicalPlan>,
 }
 
 impl Aggregate {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
         aggregations: Vec<AggExpr>,
         groupby: Vec<Expr>,
-        input: Arc<LogicalPlan>,
-    ) -> Result<Self> {
+    ) -> logical_plan::Result<Self> {
         let output_schema = {
             let upstream_schema = input.schema();
             let fields = groupby

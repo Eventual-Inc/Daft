@@ -184,7 +184,7 @@ impl LogicalPlanBuilder {
             .collect::<Vec<Expr>>();
 
         let logical_plan: LogicalPlan =
-            Aggregate::new(agg_exprs, groupby_exprs, self.plan.clone())?.into();
+            Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
     }
 
