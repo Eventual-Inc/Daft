@@ -4,8 +4,11 @@ use crate::array::DataArray;
 use crate::datatypes::logical::LogicalArrayImpl;
 use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
 use crate::DataType;
+use arrow2::array::Array;
 use common_error::DaftResult;
 use std::convert::identity;
+
+use super::as_arrow::AsArrow;
 
 fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     predicate: &BooleanArray,
@@ -44,22 +47,72 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     };
 
     // Build the result using a Growable
-    let mut growable = T::make_growable(name.to_string(), dtype, vec![lhs, rhs], predicate.len());
-    for (i, pred) in predicate.into_iter().enumerate() {
-        match pred {
-            None => {
-                growable.add_nulls(1);
-            }
-            Some(true) => {
-                growable.extend(0, get_lhs(i), 1);
-            }
-            Some(false) => {
-                growable.extend(1, get_rhs(i), 1);
+    let predicate = predicate.as_arrow();
+    if predicate.null_count() > 0 {
+        let mut growable = T::make_growable(
+            name.to_string(),
+            dtype,
+            vec![lhs, rhs],
+            predicate.len(),
+            true,
+        );
+        for (i, pred) in predicate.into_iter().enumerate() {
+            match pred {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(true) => {
+                    growable.extend(0, get_lhs(i), 1);
+                }
+                Some(false) => {
+                    growable.extend(1, get_rhs(i), 1);
+                }
             }
         }
-    }
+        growable.build()
+    } else {
+        let mut growable = T::make_growable(
+            name.to_string(),
+            dtype,
+            vec![lhs, rhs],
+            predicate.len(),
+            false,
+        );
+        let mut start_falsy = 0;
+        let mut total_len = 0;
 
-    growable.build()
+        let mut extend = |arr_idx: usize, start: usize, len: usize| {
+            if arr_idx == 0 {
+                if lhs_len == 1 {
+                    for _ in 0..len {
+                        growable.extend(0, 0, 1);
+                    }
+                } else {
+                    growable.extend(0, start, len);
+                }
+            } else if rhs_len == 1 {
+                for _ in 0..len {
+                    growable.extend(1, 0, 1);
+                }
+            } else {
+                growable.extend(1, start, len);
+            }
+        };
+
+        for (start, len) in arrow2::bitmap::utils::SlicesIterator::new(predicate.values()) {
+            if start != start_falsy {
+                extend(1, start_falsy, start - start_falsy);
+                total_len += start - start_falsy;
+            };
+            extend(0, start, len);
+            total_len += len;
+            start_falsy = start + len;
+        }
+        if total_len != predicate.len() {
+            extend(1, total_len, predicate.len() - total_len);
+        }
+        growable.build()
+    }
 }
 
 impl<'a, T> DataArray<T>

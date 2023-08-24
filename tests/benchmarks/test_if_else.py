@@ -18,25 +18,39 @@ def generate_int64_params() -> tuple[dict, daft.Expression, list]:
     )
 
 
+# Perform if/else against two int64 columns, selecting exactly half of the first and half of the second
+# This differs from `generate_int64_params` in that the columns and predicate can contain nulls
+def generate_int64_with_nulls_params() -> tuple[dict, daft.Expression, list]:
+    lhs = [0 if i % 2 == 0 else None for i in range(NUM_ROWS)]
+    rhs = [1 if i % 2 == 0 else None for i in range(NUM_ROWS)]
+    pred = [i if i % 3 == 0 else None for i in range(NUM_ROWS)]
+    expected = [x if p is not None else None for x, p in zip(lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :], pred)]
+    return (
+        {"lhs": lhs, "rhs": rhs, "pred": pred},
+        (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
+        expected,
+    )
+
+
 # Perform if/else against two string columns, selecting exactly half of the first and half of the second
 def generate_string_params() -> tuple[dict, daft.Expression, list]:
-    STRING_TEST_LHS = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
-    STRING_TEST_RHS = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
+    lhs = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
+    rhs = [str(uuid.uuid4()) for _ in range(NUM_ROWS)]
     return (
-        {"lhs": STRING_TEST_LHS, "rhs": STRING_TEST_RHS, "pred": list(range(NUM_ROWS))},
+        {"lhs": lhs, "rhs": rhs, "pred": list(range(NUM_ROWS))},
         (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
-        STRING_TEST_LHS[: NUM_ROWS // 2] + STRING_TEST_RHS[NUM_ROWS // 2 :],
+        lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :],
     )
 
 
 # Perform if/else against two list columns, selecting exactly half of the first and half of the second
 def generate_list_params() -> tuple[dict, daft.Expression, list]:
-    LIST_TEST_LHS = [[0 for _ in range(5)] for _ in range(NUM_ROWS)]
-    LIST_TEST_RHS = [[1 for _ in range(5)] for _ in range(NUM_ROWS)]
+    lhs = [[0 for _ in range(5)] for _ in range(NUM_ROWS)]
+    rhs = [[1 for _ in range(5)] for _ in range(NUM_ROWS)]
     return (
-        {"lhs": LIST_TEST_LHS, "rhs": LIST_TEST_RHS, "pred": list(range(NUM_ROWS))},
+        {"lhs": lhs, "rhs": rhs, "pred": list(range(NUM_ROWS))},
         (daft.col("pred") < NUM_ROWS // 2).if_else(daft.col("lhs"), daft.col("rhs")),
-        LIST_TEST_LHS[: NUM_ROWS // 2] + LIST_TEST_RHS[NUM_ROWS // 2 :],
+        lhs[: NUM_ROWS // 2] + rhs[NUM_ROWS // 2 :],
     )
 
 
@@ -46,6 +60,10 @@ def generate_list_params() -> tuple[dict, daft.Expression, list]:
     [
         pytest.param(
             generate_int64_params,
+            id="int64",
+        ),
+        pytest.param(
+            generate_int64_with_nulls_params,
             id="int64",
         ),
         pytest.param(

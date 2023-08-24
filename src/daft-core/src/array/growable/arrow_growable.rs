@@ -47,14 +47,17 @@ where
     T: DaftArrowBackedType,
     DataArray<T>: IntoSeries,
 {
+    #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.arrow2_growable.extend(index, start, len);
     }
 
+    #[inline]
     fn add_nulls(&mut self, additional: usize) {
         self.arrow2_growable.extend_validity(additional)
     }
 
+    #[inline]
     fn build(&mut self) -> DaftResult<DataArray<T>> {
         let arrow_array = self.arrow2_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());
@@ -84,14 +87,15 @@ impl<'a> ArrowExtensionGrowable<'a> {
 }
 
 impl<'a> Growable<DataArray<ExtensionType>> for ArrowExtensionGrowable<'a> {
+    #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(index, start, len)
     }
-
+    #[inline]
     fn add_nulls(&mut self, additional: usize) {
         self.child_growable.extend_validity(additional)
     }
-
+    #[inline]
     fn build(&mut self) -> DaftResult<DataArray<ExtensionType>> {
         let arr = self.child_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());

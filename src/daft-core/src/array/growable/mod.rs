@@ -51,6 +51,7 @@ where
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         capacity: usize,
+        use_validity: bool,
     ) -> Self::GrowableType;
 }
 
@@ -62,6 +63,7 @@ impl<'a> GrowableArray<'a> for NullArray {
         dtype: &DataType,
         _arrays: Vec<&Self>,
         _capacity: usize,
+        _use_validity: bool,
     ) -> Self::GrowableType {
         arrow_growable::ArrowNullGrowable::new(
             name,
@@ -80,6 +82,7 @@ impl<'a> GrowableArray<'a> for PythonArray {
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         capacity: usize,
+        _use_validity: bool,
     ) -> Self::GrowableType {
         python_growable::PythonGrowable::new(name, dtype, arrays, capacity)
     }
@@ -93,10 +96,11 @@ impl<'a> GrowableArray<'a> for ExtensionArray {
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         capacity: usize,
+        use_validity: bool,
     ) -> Self::GrowableType {
         let arrow_arrays = arrays.iter().map(|arr| arr.data()).collect::<Vec<_>>();
         let arrow2_growable =
-            arrow2::array::growable::make_growable(arrow_arrays.as_slice(), true, capacity);
+            arrow2::array::growable::make_growable(arrow_arrays.as_slice(), use_validity, capacity);
         arrow_growable::ArrowExtensionGrowable::new(name, dtype, arrow2_growable)
     }
 }
@@ -115,13 +119,14 @@ macro_rules! impl_primitive_growable_array {
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 capacity: usize,
+                use_validity: bool,
             ) -> Self::GrowableType {
                 <$growable>::new(
                     name,
                     dtype,
                     <$arrow_growable>::new(
                         arrays.iter().map(|a| a.as_arrow()).collect::<Vec<_>>(),
-                        true,
+                        use_validity,
                         capacity,
                     ),
                 )
@@ -142,6 +147,7 @@ macro_rules! impl_logical_growable_array {
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 capacity: usize,
+                use_validity: bool,
             ) -> Self::GrowableType {
                 logical_growable::LogicalGrowable::<$daft_logical_type>::new(
                     name.clone(),
@@ -153,6 +159,7 @@ macro_rules! impl_logical_growable_array {
                         &dtype.to_physical(),
                         arrays.iter().map(|a| &a.physical).collect::<Vec<_>>(),
                         capacity,
+                        use_validity,
                     )),
                 )
             }
