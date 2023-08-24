@@ -249,6 +249,7 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
+type CacheKey = (bool, Arc<IOConfig>);
 
 lazy_static! {
     static ref THREADED_RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
@@ -257,23 +258,24 @@ lazy_static! {
             .build()
             .unwrap()
     );
-    static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<IOConfig, Arc<IOClient>>> =
+    static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
 }
 
-pub fn get_io_client(config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.blocking_read();
-    if let Some(client) = read_handle.get(&config) {
+    let key = (multi_thread, config.clone());
+    if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
         drop(read_handle);
 
         let mut w_handle = CLIENT_CACHE.blocking_write();
-        if let Some(client) = w_handle.get(&config) {
+        if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
             let client = Arc::new(IOClient::new(config.clone())?);
-            w_handle.insert(config.as_ref().clone(), client.clone());
+            w_handle.insert(key, client.clone());
             Ok(client)
         }
     }
@@ -312,7 +314,7 @@ pub fn _url_download(
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
-    let io_client = get_io_client(config)?;
+    let io_client = get_io_client(multi_thread, config)?;
 
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());

@@ -368,6 +368,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Table:
         return Table._from_pytable(
@@ -377,6 +378,7 @@ class Table:
                 start_offset=start_offset,
                 num_rows=num_rows,
                 io_config=io_config,
+                multithreaded_io=multithreaded_io,
                 coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
             )
         )
@@ -389,6 +391,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> list[Table]:
         pytables = _read_parquet_bulk(
@@ -397,6 +400,7 @@ class Table:
             start_offset=start_offset,
             num_rows=num_rows,
             io_config=io_config,
+            multithreaded_io=multithreaded_io,
             coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
         return [Table._from_pytable(t) for t in pytables]
@@ -406,11 +410,18 @@ class Table:
         cls,
         paths: Series | list[str],
         io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
     ) -> Table:
         if not isinstance(paths, Series):
             paths = Series.from_pylist(paths, name="uris")
         assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
-        return Table._from_pytable(_read_parquet_statistics(uris=paths._series, io_config=io_config))
+        return Table._from_pytable(
+            _read_parquet_statistics(
+                uris=paths._series,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )
 
 
 def _trim_pyarrow_large_arrays(arr: pa.ChunkedArray) -> pa.ChunkedArray:
