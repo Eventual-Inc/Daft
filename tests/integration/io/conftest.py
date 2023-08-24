@@ -64,11 +64,12 @@ def nginx_config() -> tuple[str, pathlib.Path]:
     )
 
 
-@pytest.fixture(scope="session")
-def retry_server_s3_config() -> daft.io.IOConfig:
+@pytest.fixture(scope="session", params=["standard", "adaptive"], ids=["standard", "adaptive"])
+def retry_server_s3_config(request) -> daft.io.IOConfig:
     """Returns the URL to the local retry_server fixture"""
+    retry_mode = request.param
     return daft.io.IOConfig(
-        s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001", anonymous=True, num_tries=10),
+        s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001", anonymous=True, num_tries=10, retry_mode=retry_mode)
     )
 
 
