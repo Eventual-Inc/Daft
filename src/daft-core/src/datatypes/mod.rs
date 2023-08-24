@@ -24,7 +24,7 @@ pub use time_unit::TimeUnit;
 pub mod logical;
 
 /// Trait that is implemented by all Array types
-pub trait DaftArrayType {}
+pub trait DaftArrayType: Clone {}
 
 /// Trait to wrap DataType Enum
 pub trait DaftDataType: Sync + Send + Clone {
@@ -112,7 +112,7 @@ impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
 impl_daft_arrow_datatype!(UInt64Type, UInt64);
-impl_daft_arrow_datatype!(Float16Type, Float16);
+// impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
@@ -272,7 +272,7 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
-pub type Float16Array = DataArray<Float16Type>;
+// pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;

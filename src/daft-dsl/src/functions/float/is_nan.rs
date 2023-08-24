@@ -21,7 +21,8 @@ impl FunctionEvaluator for IsNanEvaluator {
         match inputs {
             [data] => match data.to_field(schema) {
                 Ok(data_field) => match &data_field.dtype {
-                    DataType::Float16 | DataType::Float32 | DataType::Float64 => {
+                    // DataType::Float16 |
+                    DataType::Float32 | DataType::Float64 => {
                         Ok(Field::new(data_field.name, DataType::Boolean))
                     }
                     _ => Err(DaftError::TypeError(format!(

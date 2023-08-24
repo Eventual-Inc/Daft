@@ -36,7 +36,7 @@ pub enum DataType {
     /// An [`u64`]
     UInt64,
     /// An 16-bit float
-    Float16,
+    // Float16,
     /// A [`f32`]
     Float32,
     /// A [`f64`]
@@ -89,6 +89,7 @@ pub enum DataType {
     Tensor(Box<DataType>),
     /// A logical type for tensors with the same shape.
     FixedShapeTensor(Box<DataType>, Vec<u64>),
+    #[cfg(feature = "python")]
     Python,
     Unknown,
 }
@@ -129,7 +130,7 @@ impl DataType {
             DataType::UInt16 => Ok(ArrowType::UInt16),
             DataType::UInt32 => Ok(ArrowType::UInt32),
             DataType::UInt64 => Ok(ArrowType::UInt64),
-            DataType::Float16 => Ok(ArrowType::Float16),
+            // DataType::Float16 => Ok(ArrowType::Float16),
             DataType::Float32 => Ok(ArrowType::Float32),
             DataType::Float64 => Ok(ArrowType::Float64),
             DataType::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
@@ -277,7 +278,8 @@ impl DataType {
     pub fn is_floating(&self) -> bool {
         matches!(
             self,
-            DataType::Float16 | DataType::Float32 | DataType::Float64
+            // DataType::Float16 |
+            DataType::Float32 | DataType::Float64
         )
     }
 
@@ -327,6 +329,7 @@ impl DataType {
     #[inline]
     pub fn is_python(&self) -> bool {
         match self {
+            #[cfg(feature = "python")]
             DataType::Python => true,
             DataType::Extension(_, inner, _) => inner.is_python(),
             _ => false,
@@ -399,7 +402,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::UInt16 => DataType::UInt16,
             ArrowType::UInt32 => DataType::UInt32,
             ArrowType::UInt64 => DataType::UInt64,
-            ArrowType::Float16 => DataType::Float16,
+            // ArrowType::Float16 => DataType::Float16,
             ArrowType::Float32 => DataType::Float32,
             ArrowType::Float64 => DataType::Float64,
             ArrowType::Timestamp(unit, timezone) => {
