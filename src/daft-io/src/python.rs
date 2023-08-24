@@ -12,7 +12,10 @@ use pyo3::prelude::*;
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
+///     connect_timeout_ms: Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 60 seconds
+///     read_timeout_ms: Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 60 seconds
 ///     num_tries: Number of attempts to make a connection, defaults to 5
+///     retry_mode: Retry Mode when a request fails, current supported values are `standard` and `adaptive`
 ///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
 ///
 /// Example:
