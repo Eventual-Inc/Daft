@@ -19,10 +19,14 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            let io_client = get_io_client(
+                multithreaded_io.unwrap_or(true),
+                io_config.unwrap_or_default().config.into(),
+            )?;
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
@@ -38,6 +42,7 @@ pub mod pylib {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet_bulk(
         py: Python,
@@ -46,10 +51,14 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
-            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            let io_client = get_io_client(
+                multithreaded_io.unwrap_or(true),
+                io_config.unwrap_or_default().config.into(),
+            )?;
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
@@ -72,13 +81,17 @@ pub mod pylib {
         py: Python,
         uri: &str,
         io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
-            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            let io_client = get_io_client(
+                multithreaded_io.unwrap_or(true),
+                io_config.unwrap_or_default().config.into(),
+            )?;
             Ok(Arc::new(crate::read::read_parquet_schema(
                 uri,
                 io_client,
@@ -93,9 +106,13 @@ pub mod pylib {
         py: Python,
         uris: PySeries,
         io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            let io_client = get_io_client(io_config.unwrap_or_default().config.into())?;
+            let io_client = get_io_client(
+                multithreaded_io.unwrap_or(true),
+                io_config.unwrap_or_default().config.into(),
+            )?;
             Ok(crate::read::read_parquet_statistics(&uris.series, io_client)?.into())
         })
     }
