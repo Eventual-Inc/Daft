@@ -136,7 +136,7 @@ impl LogicalPlan {
                 ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
                 Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
-                Self::Explode(Explode { explode_exprs, .. }) => Self::Explode(Explode::new(explode_exprs.clone(), input.clone()).unwrap()),
+                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::new(sort_by.clone(), descending.clone(), input.clone())),
                 Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
                 Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
@@ -171,8 +171,8 @@ impl LogicalPlan {
             }
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
-            Self::Explode(Explode { explode_exprs, .. }) => {
-                vec![format!("Explode: {explode_exprs:?}")]
+            Self::Explode(Explode { to_explode, .. }) => {
+                vec![format!("Explode: {to_explode:?}")]
             }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),

@@ -68,7 +68,9 @@ class ShimExplodeOp(MapPartitionOp):
 def explode(
     input: physical_plan.InProgressPhysicalPlan[PartitionT], explode_exprs: list[PyExpr]
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    explode_expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in explode_exprs])
+    explode_expr_projection = ExpressionsProjection(
+        [Expression._from_pyexpr(expr)._explode() for expr in explode_exprs]
+    )
     explode_op = ShimExplodeOp(explode_expr_projection)
     return physical_plan.pipeline_instruction(
         child_plan=input,

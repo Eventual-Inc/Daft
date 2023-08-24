@@ -95,14 +95,12 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             )))
         }
         LogicalPlan::Explode(LogicalExplode {
-            input,
-            explode_exprs,
-            ..
+            input, to_explode, ..
         }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Explode(Explode::new(
-                explode_exprs.clone(),
                 input_physical.into(),
+                to_explode.clone(),
             )))
         }
         LogicalPlan::Sort(LogicalSort {

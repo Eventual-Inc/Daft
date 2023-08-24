@@ -276,12 +276,9 @@ impl PhysicalPlan {
                     .call1((local_limit_iter, *limit, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
-            PhysicalPlan::Explode(Explode {
-                input,
-                explode_exprs,
-            }) => {
+            PhysicalPlan::Explode(Explode { input, to_explode }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
-                let explode_pyexprs: Vec<PyExpr> = explode_exprs
+                let explode_pyexprs: Vec<PyExpr> = to_explode
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
                     .collect();

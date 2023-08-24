@@ -115,8 +115,6 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         return RustLogicalPlanBuilder(builder)
 
     def explode(self, explode_expressions: ExpressionsProjection) -> RustLogicalPlanBuilder:
-        # TODO(Clark): Move this logic to Rust side after we've ported ExpressionsProjection.
-        explode_expressions = ExpressionsProjection([expr._explode() for expr in explode_expressions])
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)
         return RustLogicalPlanBuilder(builder)

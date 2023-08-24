@@ -7,16 +7,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Explode {
-    pub explode_exprs: Vec<Expr>,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub to_explode: Vec<Expr>,
 }
 
 impl Explode {
-    pub(crate) fn new(explode_exprs: Vec<Expr>, input: Arc<PhysicalPlan>) -> Self {
-        Self {
-            explode_exprs,
-            input,
-        }
+    pub(crate) fn new(input: Arc<PhysicalPlan>, to_explode: Vec<Expr>) -> Self {
+        Self { input, to_explode }
     }
 }

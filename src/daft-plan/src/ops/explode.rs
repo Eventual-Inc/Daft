@@ -11,17 +11,22 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct Explode {
-    pub explode_exprs: Vec<Expr>,
-    pub exploded_schema: SchemaRef,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
+    // Expressions to explode. e.g. col("a")
+    pub to_explode: Vec<Expr>,
+    pub exploded_schema: SchemaRef,
 }
 
 impl Explode {
-    pub(crate) fn new(
-        explode_exprs: Vec<Expr>,
+    pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
+        to_explode: Vec<Expr>,
     ) -> logical_plan::Result<Self> {
+        let explode_exprs = to_explode
+            .iter()
+            .map(daft_dsl::functions::list::explode)
+            .collect::<Vec<_>>();
         let exploded_schema = {
             let upstream_schema = input.schema();
             let explode_schema = {
@@ -44,9 +49,9 @@ impl Explode {
             Schema::new(fields).context(CreationSnafu)?.into()
         };
         Ok(Self {
-            explode_exprs,
-            exploded_schema,
             input,
+            to_explode,
+            exploded_schema,
         })
     }
 }
