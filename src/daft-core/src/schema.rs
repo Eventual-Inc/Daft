@@ -141,7 +141,8 @@ impl Hash for Schema {
         // Moreover, the hashing of each individual element must be independent of the hashing of other elements, so we hash
         // each element with a fresh state (hasher).
         //
-        // NOTE: This is a relatively weak hash function, but should be fine for our purposes.
+        // NOTE: This is a relatively weak hash function, but should be fine for our current hashing use case, which is detecting
+        // logical optimization cycles in the optimizer.
         state.write_u64(
             self.fields
                 .iter()

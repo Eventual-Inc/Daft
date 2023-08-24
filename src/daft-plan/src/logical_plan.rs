@@ -128,15 +128,6 @@ impl LogicalPlan {
     }
 
     pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> Arc<LogicalPlan> {
-        println!(
-            "Updating with new children: {}, {}",
-            self,
-            children
-                .iter()
-                .map(|child| child.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
         let new_plan = match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -165,6 +156,7 @@ impl LogicalPlan {
         new_plan.into()
     }
 
+    /// Get the number of nodes in the logical plan tree.
     pub fn node_count(&self) -> NonZeroUsize {
         match self.children().as_slice() {
             [] => 1usize.try_into().unwrap(),

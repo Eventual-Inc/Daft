@@ -8,6 +8,7 @@ use crate::{
     JsonSourceConfig, PartitionSpec,
 };
 
+/// Create a dummy scan node containing the provided fields in its schema.
 pub fn dummy_scan_node(fields: Vec<Field>) -> Source {
     let schema = Arc::new(Schema::new(fields).unwrap());
     Source::new(

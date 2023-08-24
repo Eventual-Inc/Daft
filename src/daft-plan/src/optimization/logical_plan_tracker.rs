@@ -6,8 +6,23 @@ use std::{
 
 use crate::LogicalPlan;
 
+/// A logical plan tracker that uses logical plan digests to detect optimization cycles.
+///
+/// The digests are cheaply hashable + comparable, and have the following guarantees:
+///
+///   p1 == p2 -> digest(p1) == digest(p2)
+///   hash(digest(p1)) == hash(digest(p2)) -> hash(p1) == hash(p2)
+///
+/// These guarantees allow us to use a HashSet of such digests as a cheap cycle detector in
+/// our optimizer, with the negligible possibility of plan hash + node count collisions leading
+/// to "already seen" false positives and too-early optimization termination. Cycle detection,
+/// however, is guaranteed.
 pub struct LogicalPlanTracker {
+    // A set of the initial unoptimized plan and plans from all optimization passes.
     past_plans: HashSet<LogicalPlanDigest>,
+    // A Hasher builder that's used to generate new Hashers for hashing logical plans.
+    // We need to use a new hasher when hashing each logical plan in order to see the same hash
+    // for the same logical plan.
     hasher_builder: BuildHasherDefault<DefaultHasher>,
 }
 
@@ -27,6 +42,11 @@ impl LogicalPlanTracker {
     }
 }
 
+/// A simple logical plan summary that's cheaply hashable + comparable, and that has the
+/// following guarantees:
+///
+///   p1 == p2 -> digest(p1) == digest(p2)
+///   hash(digest(p1)) == hash(digest(p2)) -> hash(p1) == hash(p2)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct LogicalPlanDigest {
     plan_hash: u64,
@@ -51,7 +71,7 @@ mod tests {
     };
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
     use crate::{
@@ -74,13 +94,8 @@ mod tests {
             LogicalPlanDigest::new(&plan1, &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let plan1: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan1.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan1.into(),
-        )
-        .into();
+        let plan1: LogicalPlan =
+            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
         assert_eq!(
             LogicalPlanDigest::new(&plan1, &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -94,13 +109,8 @@ mod tests {
             LogicalPlanDigest::new(&plan2, &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let plan2: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan2.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan2.into(),
-        )
-        .into();
+        let plan2: LogicalPlan =
+            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
         assert_eq!(
             LogicalPlanDigest::new(&plan2, &mut Default::default()).node_count,
             2usize.try_into().unwrap()
@@ -126,26 +136,16 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let plan1: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan1.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan1.into(),
-        )
-        .into();
+        let plan1: LogicalPlan =
+            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
         let plan1: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan1.into()).into();
         let plan2: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let plan2: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan2.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan2.into(),
-        )
-        .into();
+        let plan2: LogicalPlan =
+            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
         let plan2: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan2.into()).into();
         // Double-check that logical plans are equal.
         assert_eq!(plan1, plan2);
@@ -171,25 +171,15 @@ mod tests {
         ])
         .into();
         let plan1: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan1.into()).into();
-        let plan1: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan1.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan1.into(),
-        )
-        .into();
+        let plan1: LogicalPlan =
+            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
         let plan2: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let plan2: LogicalPlan = Project::new(
-            vec![col("a")],
-            Schema::new(vec![plan2.schema().get_field("a")?.clone()])?.into(),
-            Default::default(),
-            plan2.into(),
-        )
-        .into();
+        let plan2: LogicalPlan =
+            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
         let plan2: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan2.into()).into();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);

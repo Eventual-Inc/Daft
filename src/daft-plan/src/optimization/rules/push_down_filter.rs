@@ -21,7 +21,6 @@ use super::{
 };
 
 /// Optimization rules for pushing Filters further into the logical plan.
-
 #[derive(Default)]
 pub struct PushDownFilter {}
 
@@ -213,7 +212,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
     use crate::{
@@ -227,6 +226,9 @@ mod tests {
         JoinType, LogicalPlan, PartitionScheme,
     };
 
+    /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
+    /// the provided plan with said optimizer, and compares the optimized plan's repr with
+    /// the provided expected repr.
     fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
         let optimizer = Optimizer::with_rule_batches(
             vec![RuleBatch::new(
@@ -248,6 +250,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests combining of two Filters by merging their predicates.
     #[test]
     fn filter_combine_with_filter() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -265,6 +268,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Projections.
     #[test]
     fn filter_commutes_with_projection() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -283,6 +287,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that a Filter with multiple columns in its predicate commutes with a Projection on both of those columns.
     #[test]
     fn filter_commutes_with_projection_multi() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -305,6 +310,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter does not commute with a Projection if the projection expression involves compute.
     #[test]
     fn filter_does_not_commute_with_projection_if_compute() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -325,6 +331,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Projection if projection expression involves deterministic compute.
     // REASON - No expression attribute indicating whether deterministic && (pure || idempotent).
     #[ignore]
     #[test]
@@ -345,6 +352,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Sort.
     #[test]
     fn filter_commutes_with_sort() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -364,6 +372,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Repartition.
     #[test]
     fn filter_commutes_with_repartition() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -382,6 +391,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Coalesce.
     #[test]
     fn filter_commutes_with_coalesce() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -399,6 +409,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Concat.
     #[test]
     fn filter_commutes_with_concat() -> DaftResult<()> {
         let fields = vec![
@@ -419,6 +430,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into the left side of a Join.
     #[test]
     fn filter_commutes_with_join_left_side() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
@@ -449,6 +461,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into the right side of a Join.
     #[test]
     fn filter_commutes_with_join_right_side() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
@@ -479,6 +492,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into both sides of a Join.
     #[test]
     fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![

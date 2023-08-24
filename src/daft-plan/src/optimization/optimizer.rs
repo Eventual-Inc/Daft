@@ -9,7 +9,7 @@ use super::{
     rules::{ApplyOrder, OptimizerRule, PushDownFilter, Transformed},
 };
 
-// Config for optimizer.
+/// Config for optimizer.
 pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
@@ -30,14 +30,24 @@ impl Default for OptimizerConfig {
     }
 }
 
+/// A batch of logical optimization rules.
 pub struct RuleBatch {
+    // Optimization rules in this batch.
     pub rules: Vec<Box<dyn OptimizerRule>>,
+    // The rule execution strategy (once, fixed-point).
     pub strategy: RuleExecutionStrategy,
+    // The application order for the entire rule batch, derived from the application
+    // order of the contained rules.
+    // If all rules in the batch have the same application order (e.g. top-down), the
+    // optimizer will apply the rules on a single tree traversal, where a given node
+    // in the plan tree will be transformed sequentially by each rule in the batch before
+    // moving on to the next node.
     pub order: Option<ApplyOrder>,
 }
 
 impl RuleBatch {
     pub fn new(rules: Vec<Box<dyn OptimizerRule>>, strategy: RuleExecutionStrategy) -> Self {
+        // Get all unique application orders for the rules.
         let unique_application_orders: Vec<ApplyOrder> = rules
             .iter()
             .map(|rule| rule.apply_order())
@@ -45,6 +55,8 @@ impl RuleBatch {
             .into_iter()
             .collect();
         let order = match unique_application_orders.as_slice() {
+            // All rules have the same application order, so use that as the application order for
+            // the entire batch.
             [order] => Some(order.clone()),
             // If rules have different application orders, run each rule as a separate tree pass with its own application order.
             _ => None,
@@ -56,6 +68,7 @@ impl RuleBatch {
         }
     }
 
+    /// Get the maximum number of passes the optimizer should make over this rule batch.
     fn max_passes(&self, config: &OptimizerConfig) -> usize {
         use RuleExecutionStrategy::*;
 
@@ -66,15 +79,24 @@ impl RuleBatch {
     }
 }
 
+/// The execution strategy for a batch of rules.
 pub enum RuleExecutionStrategy {
+    // Apply the batch of rules only once.
     Once,
+    // Apply the batch of rules multiple times, to a fixed-point or until the max
+    // passes is hit.
+    // If parametrized by Some(n), the batch of rules will be run a maximum
+    // of n passes; if None, the number of passes is capped by the default max
+    // passes given in the OptimizerConfig.
     #[allow(dead_code)]
     FixedPoint(Option<usize>),
 }
 
 /// Logical rule-based optimizer.
 pub struct Optimizer {
+    // Batches of rules for the optimizer to apply.
     pub rule_batches: Vec<RuleBatch>,
+    // Config for optimizer.
     config: OptimizerConfig,
 }
 
@@ -87,6 +109,7 @@ impl Optimizer {
         )];
         Self::with_rule_batches(rule_batches, config)
     }
+
     pub fn with_rule_batches(rule_batches: Vec<RuleBatch>, config: OptimizerConfig) -> Self {
         Self {
             rule_batches,
@@ -94,6 +117,7 @@ impl Optimizer {
         }
     }
 
+    /// Optimize the provided plan with this optimizer's set of rule batches.
     pub fn optimize<F>(
         &self,
         plan: Arc<LogicalPlan>,
@@ -104,11 +128,13 @@ impl Optimizer {
     {
         let mut plan_tracker = LogicalPlanTracker::new(self.config.default_max_optimizer_passes);
         plan_tracker.add_plan(plan.as_ref());
+        // Fold over rule batches, applying each rule batch to the tree sequentially.
         self.rule_batches.iter().try_fold(plan, |plan, batch| {
             self.optimize_with_rule_batch(batch, plan, &mut observer, &mut plan_tracker)
         })
     }
 
+    // Optimize the provied plan with the provied rule batch.
     pub fn optimize_with_rule_batch<F>(
         &self,
         batch: &RuleBatch,
@@ -124,18 +150,26 @@ impl Optimizer {
             |plan, pass| -> ControlFlow<DaftResult<Arc<LogicalPlan>>, Arc<LogicalPlan>> {
                 match self.optimize_with_rules(batch.rules.as_slice(), plan, &batch.order) {
                     Ok(Transformed::Yes(new_plan)) => {
+                        // Plan was transformed by the rule batch.
                         if plan_tracker.add_plan(new_plan.as_ref()) {
+                            // Transformed plan has not yet been seen by this optimizer, which means we have
+                            // not reached a fixed-point or a cycle. We therefore continue applying this rule batch.
                             observer(new_plan.as_ref(), batch, pass, true, true);
                             ControlFlow::Continue(new_plan)
                         } else {
+                            // We've already seen this transformed plan, which means we have hit a cycle while repeatedly
+                            // applying this rule batch. We therefore stop applying this rule batch.
                             observer(new_plan.as_ref(), batch, pass, true, false);
                             ControlFlow::Break(Ok(new_plan))
                         }
                     }
                     Ok(Transformed::No(plan)) => {
+                        // Plan was not transformed by the rule batch, suggesting that we have reached a fixed-point.
+                        // We therefore stop applying this rule batch.
                         observer(plan.as_ref(), batch, pass, false, false);
                         ControlFlow::Break(Ok(plan))
                     }
+                    // We've encountered an error, stop applying this rule batch.
                     Err(e) => ControlFlow::Break(Err(e)),
                 }
             },
@@ -146,6 +180,9 @@ impl Optimizer {
         }
     }
 
+    /// Optimize the provided plan with the provided rules using the provided application order.
+    ///
+    /// If order.is_some(), all rules are expected to have that application order.
     pub fn optimize_with_rules(
         &self,
         rules: &[Box<dyn OptimizerRule>],
@@ -153,6 +190,7 @@ impl Optimizer {
         order: &Option<ApplyOrder>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match order {
+            // Perform a single top-down traversal and apply all rules on each node.
             Some(ApplyOrder::TopDown) => {
                 // First optimize the current node, and then it's children.
                 let curr_opt = self.optimize_node(rules, plan)?;
@@ -160,6 +198,7 @@ impl Optimizer {
                     self.optimize_children(rules, curr_opt.unwrap().clone(), ApplyOrder::TopDown)?;
                 Ok(children_opt.or(curr_opt))
             }
+            // Perform a single bottom-up traversal and apply all rules on each node.
             Some(ApplyOrder::BottomUp) => {
                 // First optimize the current node's children, and then the current node.
                 let children_opt = self.optimize_children(rules, plan, ApplyOrder::BottomUp)?;
@@ -181,16 +220,23 @@ impl Optimizer {
         }
     }
 
+    /// Optimize a single plan node with the provided rules.
+    ///
+    /// This method does not drive traversal of the tree unless the tree is traversed by the rule itself,
+    /// in rule.try_optimize().
     fn optimize_node(
         &self,
         rules: &[Box<dyn OptimizerRule>],
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // Fold over the rules, applying each rule to this plan node sequentially.
         rules.iter().try_fold(Transformed::No(plan), |plan, rule| {
             rule.try_optimize(plan.unwrap().clone())
         })
     }
 
+    /// Optimize the children of the provided plan, updating the provided plan's pointed-to children
+    /// if the children are transformed.
     fn optimize_children(
         &self,
         rules: &[Box<dyn OptimizerRule>],
@@ -215,6 +261,7 @@ impl Optimizer {
             .map(|maybe_opt_child| maybe_opt_child.unwrap().clone())
             .collect::<Vec<_>>();
 
+        // Return new plan with optimized children.
         Ok(Transformed::Yes(plan.with_new_children(&new_children)))
     }
 }
@@ -224,7 +271,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
     use crate::{
@@ -236,6 +283,8 @@ mod tests {
 
     use super::{Optimizer, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
 
+    /// Test that the optimizer terminates early when the plan is not transformed
+    /// by a rule (i.e. a fixed-point is reached).
     #[test]
     fn early_termination_no_transform() -> DaftResult<()> {
         let optimizer = Optimizer::with_rule_batches(
@@ -280,13 +329,14 @@ mod tests {
         }
     }
 
+    /// Tests that the optimizer terminates early when a cycle is detected.
+    ///
+    /// This test creates a Projection -> Source plan where the projection has [1, 2, 3] projections;
+    /// the optimizer will rotate the projection expressions to the left on each pass.
+    ///   [1, 2, 3] -> [2, 3, 1] -> [3, 1, 2] -> [1, 2, 3]
+    /// The optimization loop should therefore terminate on the 3rd pass.
     #[test]
     fn early_termination_equal_plan_cycle() -> DaftResult<()> {
-        // Tests that the optimizer terminates early when a cycle is detected.
-        // This test creates a Projection -> Source plan where the projection has [1, 2, 3] projections;
-        // the optimizer will rotate the projection expressions to the left on each pass.
-        //   [1, 2, 3] -> [2, 3, 1] -> [3, 1, 2] -> [1, 2, 3]
-        // The optimization loop should therefore terminate on the 4th pass.
         let optimizer = Optimizer::with_rule_batches(
             vec![RuleBatch::new(
                 vec![Box::new(RotateProjection::new(false))],
@@ -295,25 +345,13 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
-        let proj_exprs = vec![col("a") + lit(1), col("a") + lit(2), col("a") + lit(3)];
-        let plan: LogicalPlan = Project::new(
-            proj_exprs.clone(),
-            Schema::new(
-                proj_exprs
-                    .iter()
-                    .map(|e| {
-                        Field::new(
-                            e.semantic_id(plan.schema().as_ref()).to_string(),
-                            DataType::Int64,
-                        )
-                    })
-                    .collect(),
-            )?
-            .into(),
-            Default::default(),
-            plan.into(),
-        )
-        .into();
+        let proj_exprs = vec![
+            col("a") + lit(1),
+            (col("a") + lit(2)).alias("b"),
+            (col("a") + lit(3)).alias("c"),
+        ];
+        let plan: LogicalPlan =
+            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
         let initial_plan: Arc<LogicalPlan> = plan.into();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -326,14 +364,15 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that the optimizer terminates early when a cycle is detected.
+    ///
+    /// This test creates a Projection -> Source plan where the projection has [1, 2, 3] projections;
+    /// the optimizer will reverse the projection expressions on the first pass and rotate them to the
+    /// left on each pass thereafter.
+    ///   [1, 2, 3] -> [3, 2, 1] -> [2, 1, 3] -> [1, 3, 2] -> [3, 2, 1]
+    /// The optimization loop should therefore terminate on the 4th pass.
     #[test]
     fn early_termination_equal_plan_cycle_after_first() -> DaftResult<()> {
-        // Tests that the optimizer terminates early when a cycle is detected.
-        // This test creates a Projection -> Source plan where the projection has [1, 2, 3] projections;
-        // the optimizer will reverse the projection expressions on the first pass and rotate them to the
-        // left on each pass thereafter.
-        //   [1, 2, 3] -> [3, 2, 1] -> [2, 1, 3] -> [1, 3, 2] -> [3, 2, 1]
-        // The optimization loop should therefore terminate on the 5th pass.
         let optimizer = Optimizer::with_rule_batches(
             vec![RuleBatch::new(
                 vec![Box::new(RotateProjection::new(true))],
@@ -342,25 +381,13 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
-        let proj_exprs = vec![col("a") + lit(1), col("a") + lit(2), col("a") + lit(3)];
-        let plan: LogicalPlan = Project::new(
-            proj_exprs.clone(),
-            Schema::new(
-                proj_exprs
-                    .iter()
-                    .map(|e| {
-                        Field::new(
-                            e.semantic_id(plan.schema().as_ref()).to_string(),
-                            DataType::Int64,
-                        )
-                    })
-                    .collect(),
-            )?
-            .into(),
-            Default::default(),
-            plan.into(),
-        )
-        .into();
+        let proj_exprs = vec![
+            col("a") + lit(1),
+            (col("a") + lit(2)).alias("b"),
+            (col("a") + lit(3)).alias("c"),
+        ];
+        let plan: LogicalPlan =
+            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
         let initial_plan: Arc<LogicalPlan> = plan.into();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -407,25 +434,25 @@ mod tests {
                 exprs.rotate_left(1);
             }
             Ok(Transformed::Yes(
-                LogicalPlan::from(Project::new(
-                    exprs,
-                    project.projected_schema.clone(),
-                    project.resource_request.clone(),
+                LogicalPlan::from(Project::try_new(
                     project.input.clone(),
-                ))
+                    exprs,
+                    project.resource_request.clone(),
+                )?)
                 .into(),
             ))
         }
     }
 
+    /// Tests that the optimizer applies multiple rule batches.
+    ///
+    /// This test creates a Filter -> Projection -> Source plan and has 3 rule batches:
+    /// (1) ([NoOp, RotateProjection], FixedPoint(20)), which should terminate due to a plan cycle.
+    /// (2) ([FilterOrFalse, RotateProjection], FixedPoint(2)), which should run twice.
+    /// (3) ([FilterAndTrue], Once), which should run once.
+    /// The Projection has exprs [1, 2, 3], meaning that (1) should run 3 times before the cycle is hit.
     #[test]
     fn multiple_rule_batches() -> DaftResult<()> {
-        // Tests that the optimizer applies multiple rule batches.
-        // This test creates a Filter -> Projection -> Source plan and has 3 rule batches:
-        // (1) ([NoOp, RotateProjection], FixedPoint(20)), which should terminate due to a plan cycle.
-        // (2) ([FilterOrFalse, RotateProjection], FixedPoint(2)), which should run twice.
-        // (3) ([FilterAndTrue], Once), which should run once.
-        // The Projection has exprs [1, 2, 3], meaning that (1) should run 4 times before the cycle is hit.
         let optimizer = Optimizer::with_rule_batches(
             vec![
                 RuleBatch::new(
@@ -450,25 +477,13 @@ mod tests {
             OptimizerConfig::new(20),
         );
         let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
-        let proj_exprs = vec![col("a") + lit(1), col("a") + lit(2), col("a") + lit(3)];
-        let plan: LogicalPlan = Project::new(
-            proj_exprs.clone(),
-            Schema::new(
-                proj_exprs
-                    .iter()
-                    .map(|e| {
-                        Field::new(
-                            e.semantic_id(plan.schema().as_ref()).to_string(),
-                            DataType::Int64,
-                        )
-                    })
-                    .collect(),
-            )?
-            .into(),
-            Default::default(),
-            plan.into(),
-        )
-        .into();
+        let proj_exprs = vec![
+            col("a") + lit(1),
+            (col("a") + lit(2)).alias("b"),
+            (col("a") + lit(3)).alias("c"),
+        ];
+        let plan: LogicalPlan =
+            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
         let plan: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan.into()).into();
         let initial_plan: Arc<LogicalPlan> = plan.into();
         let mut pass_count = 0;
@@ -478,11 +493,11 @@ mod tests {
             did_transform |= transformed;
         })?;
         assert!(did_transform);
-        // 4 + 2 + 1
+        // 3 + 2 + 1 = 6
         assert_eq!(pass_count, 6);
         let expected = "\
         Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
-        \n  Project: col(a) + lit(3), col(a) + lit(1), col(a) + lit(2)\
+        \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64)";
         assert_eq!(opt_plan.repr_indent(), expected);
         Ok(())
