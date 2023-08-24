@@ -18,7 +18,6 @@ pub enum ApplyOrder {
 }
 
 /// A logical plan optimization rule.
-// TODO(Clark): Add fixed-point policy if needed.
 pub trait OptimizerRule {
     /// Try to optimize the logical plan with this rule.
     ///
@@ -52,7 +51,7 @@ impl<T> Transformed<T> {
     }
 
     /// Unwraps the enum and returns a reference to the inner value.
-    // TODO(Clark): Take ownership of self and return a plain T?
+    // TODO(Clark): Take ownership of self and return an owned T?
     pub fn unwrap(&self) -> &T {
         match self {
             Self::Yes(inner) => inner,

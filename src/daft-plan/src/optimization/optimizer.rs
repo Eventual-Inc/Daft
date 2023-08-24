@@ -189,6 +189,10 @@ impl Optimizer {
         plan: Arc<LogicalPlan>,
         order: &Option<ApplyOrder>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // Double-check that all rules have the same application order as `order`, if `order` is not None.
+        debug_assert!(order.clone().map_or(true, |order| rules
+            .iter()
+            .all(|rule| rule.apply_order() == order)));
         match order {
             // Perform a single top-down traversal and apply all rules on each node.
             Some(ApplyOrder::TopDown) => {
