@@ -641,7 +641,6 @@ class Aggregate(SingleOutputInstruction):
 class Join(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
-    output_projection: ExpressionsProjection
     how: JoinType
 
     def run(self, inputs: list[Table]) -> list[Table]:
@@ -653,7 +652,6 @@ class Join(SingleOutputInstruction):
             right,
             left_on=self.left_on,
             right_on=self.right_on,
-            output_projection=self.output_projection,
             how=self.how,
         )
         return [result]
