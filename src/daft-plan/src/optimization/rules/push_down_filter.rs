@@ -430,12 +430,12 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let join: LogicalPlan = Join::new(
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
-            source1.into(),
         )?
         .into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), join.into()).into();
@@ -460,12 +460,12 @@ mod tests {
             Field::new("c", DataType::Float64),
         ])
         .into();
-        let join: LogicalPlan = Join::new(
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
-            source1.into(),
         )?
         .into();
         let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
@@ -487,12 +487,12 @@ mod tests {
         ])
         .into();
         let source2: LogicalPlan = dummy_scan_node(vec![Field::new("b", DataType::Int64)]).into();
-        let join: LogicalPlan = Join::new(
+        let join: LogicalPlan = Join::try_new(
+            source1.into(),
             source2.into(),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
-            source1.into(),
         )?
         .into();
         let filter: LogicalPlan = Filter::new(col("b").lt(&lit(2.0)), join.into()).into();

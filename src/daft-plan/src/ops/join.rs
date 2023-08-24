@@ -11,22 +11,23 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct Join {
+    // Upstream nodes.
+    pub input: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
+
     pub left_on: Vec<Expr>,
     pub right_on: Vec<Expr>,
     pub output_schema: SchemaRef,
     pub join_type: JoinType,
-    // Upstream node.
-    pub input: Arc<LogicalPlan>,
 }
 
 impl Join {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         join_type: JoinType,
-        input: Arc<LogicalPlan>,
     ) -> logical_plan::Result<Self> {
         // Schema inference ported from existing behaviour for parity,
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
@@ -55,12 +56,12 @@ impl Join {
             Schema::new(fields).context(CreationSnafu)?.into()
         };
         Ok(Self {
+            input,
             right,
             left_on,
             right_on,
             output_schema,
             join_type,
-            input,
         })
     }
 

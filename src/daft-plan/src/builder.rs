@@ -203,12 +203,12 @@ impl LogicalPlanBuilder {
             .iter()
             .map(|e| e.clone().into())
             .collect::<Vec<Expr>>();
-        let logical_plan: LogicalPlan = ops::Join::new(
+        let logical_plan: LogicalPlan = ops::Join::try_new(
+            self.plan.clone(),
             other.plan.clone(),
             left_on_exprs,
             right_on_exprs,
             join_type,
-            self.plan.clone(),
         )?
         .into();
         Ok(logical_plan.into())
