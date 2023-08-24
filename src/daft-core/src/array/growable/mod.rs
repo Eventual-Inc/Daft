@@ -9,7 +9,7 @@ use crate::{
         StructArray, TensorType, TimestampType, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
         Utf8Array,
     },
-    DataType,
+    DataType, Series,
 };
 
 use super::{ops::as_arrow::AsArrow, DataArray};
@@ -25,7 +25,7 @@ use crate::datatypes::PythonArray;
 /// Describes a struct that can be extended from slices of other pre-existing Series.
 /// This is very useful for abstracting many "physical" operations such as takes, broadcasts,
 /// filters and more.
-pub trait Growable<Arr> {
+pub trait Growable {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
     /// # Panic
@@ -36,7 +36,7 @@ pub trait Growable<Arr> {
     fn add_nulls(&mut self, additional: usize);
 
     /// Builds an array from the [`Growable`]
-    fn build(&mut self) -> DaftResult<Arr>;
+    fn build(&mut self) -> DaftResult<Series>;
 }
 
 /// Trait that an Array type can implement to provide a Growable factory method
@@ -44,7 +44,7 @@ pub trait GrowableArray<'a>
 where
     Self: Sized,
 {
-    type GrowableType: Growable<Self>;
+    type GrowableType: Growable;
 
     fn make_growable(
         name: String,

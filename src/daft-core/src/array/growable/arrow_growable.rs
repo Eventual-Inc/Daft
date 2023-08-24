@@ -5,12 +5,12 @@ use common_error::DaftResult;
 use crate::{
     array::{ops::from_arrow::FromArrow, DataArray},
     datatypes::{
-        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, ExtensionType,
-        Field, FixedSizeListType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type,
-        Int64Type, Int8Type, ListType, NullType, StructType, UInt16Type, UInt32Type, UInt64Type,
-        UInt8Type, Utf8Type,
+        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
+        FixedSizeListType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type,
+        Int8Type, ListType, NullType, StructType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
+        Utf8Type,
     },
-    DataType, IntoSeries,
+    DataType, IntoSeries, Series,
 };
 
 use super::Growable;
@@ -41,7 +41,7 @@ where
     }
 }
 
-impl<'a, T: DaftDataType, G: arrow2::array::growable::Growable<'a>> Growable<DataArray<T>>
+impl<'a, T: DaftDataType, G: arrow2::array::growable::Growable<'a>> Growable
     for ArrowGrowable<'a, T, G>
 where
     T: DaftArrowBackedType,
@@ -58,10 +58,10 @@ where
     }
 
     #[inline]
-    fn build(&mut self) -> DaftResult<DataArray<T>> {
+    fn build(&mut self) -> DaftResult<Series> {
         let arrow_array = self.arrow2_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());
-        DataArray::<T>::from_arrow(&field, arrow_array)
+        Ok(DataArray::<T>::from_arrow(&field, arrow_array)?.into_series())
     }
 }
 
@@ -86,7 +86,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
     }
 }
 
-impl<'a> Growable<DataArray<ExtensionType>> for ArrowExtensionGrowable<'a> {
+impl<'a> Growable for ArrowExtensionGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(index, start, len)
@@ -96,10 +96,10 @@ impl<'a> Growable<DataArray<ExtensionType>> for ArrowExtensionGrowable<'a> {
         self.child_growable.extend_validity(additional)
     }
     #[inline]
-    fn build(&mut self) -> DaftResult<DataArray<ExtensionType>> {
+    fn build(&mut self) -> DaftResult<Series> {
         let arr = self.child_growable.as_box();
         let field = Field::new(self.name.clone(), self.dtype.clone());
-        ExtensionArray::from_arrow(&field, arr)
+        Ok(ExtensionArray::from_arrow(&field, arr)?.into_series())
     }
 }
 

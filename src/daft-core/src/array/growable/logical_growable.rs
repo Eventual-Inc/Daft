@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::{logical::LogicalArray, DaftDataType, DaftLogicalType, Field},
-    DataType, IntoSeries,
+    DataType, IntoSeries, Series,
 };
 
 use super::Growable;
@@ -15,7 +15,7 @@ where
 {
     name: String,
     dtype: DataType,
-    physical_growable: Box<dyn Growable<<L::PhysicalType as DaftDataType>::ArrayType> + 'a>,
+    physical_growable: Box<dyn Growable + 'a>,
     _phantom: PhantomData<L>,
 }
 
@@ -23,11 +23,7 @@ impl<'a, L: DaftLogicalType> LogicalGrowable<'a, L>
 where
     LogicalArray<L>: IntoSeries,
 {
-    pub fn new(
-        name: String,
-        dtype: &DataType,
-        physical_growable: Box<dyn Growable<<L::PhysicalType as DaftDataType>::ArrayType> + 'a>,
-    ) -> Self {
+    pub fn new(name: String, dtype: &DataType, physical_growable: Box<dyn Growable + 'a>) -> Self {
         Self {
             name,
             dtype: dtype.clone(),
@@ -37,7 +33,7 @@ where
     }
 }
 
-impl<'a, L: DaftLogicalType> Growable<LogicalArray<L>> for LogicalGrowable<'a, L>
+impl<'a, L: DaftLogicalType> Growable for LogicalGrowable<'a, L>
 where
     LogicalArray<L>: IntoSeries,
 {
@@ -50,12 +46,15 @@ where
         self.physical_growable.add_nulls(additional)
     }
     #[inline]
-    fn build(&mut self) -> DaftResult<LogicalArray<L>> {
+    fn build(&mut self) -> DaftResult<Series> {
         let physical_arr = self.physical_growable.build()?;
         let arr = LogicalArray::<L>::new(
             Field::new(self.name.clone(), self.dtype.clone()),
-            physical_arr,
+            physical_arr
+                .downcast::<<<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>()
+                .unwrap()
+                .clone(),
         );
-        Ok(arr)
+        Ok(arr.into_series())
     }
 }

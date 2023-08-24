@@ -3,13 +3,13 @@ use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
 use crate::datatypes::logical::LogicalArrayImpl;
 use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
-use crate::DataType;
+use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
 
-fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
+fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone + IntoSeries>(
     predicate: &BooleanArray,
     name: &str,
     lhs: &'a T,
@@ -17,16 +17,16 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
     dtype: &DataType,
     lhs_len: usize,
     rhs_len: usize,
-) -> DaftResult<T> {
+) -> DaftResult<Series> {
     // CASE 1: Broadcast predicate
     if predicate.len() == 1 {
         return match predicate.get(0) {
-            None => Ok(T::full_null(name, dtype, lhs_len)),
+            None => Ok(T::full_null(name, dtype, lhs_len).into_series()),
             Some(predicate_scalar_value) => {
                 if predicate_scalar_value {
-                    Ok(lhs.clone())
+                    Ok(lhs.clone().into_series())
                 } else {
-                    Ok(rhs.clone())
+                    Ok(rhs.clone().into_series())
                 }
             }
         };
@@ -112,7 +112,7 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone>(
 impl<'a, T> DataArray<T>
 where
     T: DaftPhysicalType + 'static,
-    DataArray<T>: GrowableArray<'a>,
+    DataArray<T>: GrowableArray<'a> + IntoSeries,
 {
     pub fn if_else(
         &'a self,
@@ -127,15 +127,16 @@ where
             self.data_type(),
             self.len(),
             other.len(),
-        )
+        )?
+        .downcast::<DataArray<T>>()
+        .map(|arr| arr.clone())
     }
 }
 
 impl<'a, L> LogicalArrayImpl<L, DataArray<L::PhysicalType>>
 where
     L: DaftLogicalType,
-    LogicalArrayImpl<L, DataArray<L::PhysicalType>>: GrowableArray<'a>,
-    LogicalArrayImpl<L, DataArray<L::PhysicalType>>: FullNull,
+    LogicalArrayImpl<L, DataArray<L::PhysicalType>>: GrowableArray<'a> + FullNull + IntoSeries,
 {
     pub fn if_else(
         &'a self,
@@ -150,6 +151,8 @@ where
             self.data_type(),
             self.len(),
             other.len(),
-        )
+        )?
+        .downcast::<LogicalArrayImpl<L, DataArray<L::PhysicalType>>>()
+        .map(|arr| arr.clone())
     }
 }
