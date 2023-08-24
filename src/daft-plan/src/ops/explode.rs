@@ -40,10 +40,7 @@ impl Explode {
             let fields = upstream_schema
                 .fields
                 .iter()
-                .map(|(name, field)| match explode_schema.fields.get(name) {
-                    None => field,
-                    Some(explode_field) => explode_field,
-                })
+                .map(|(name, field)| explode_schema.fields.get(name).unwrap_or(field))
                 .cloned()
                 .collect::<Vec<_>>();
             Schema::new(fields).context(CreationSnafu)?.into()
