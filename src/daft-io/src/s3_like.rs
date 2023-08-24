@@ -14,7 +14,7 @@ use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
-use s3::error::SdkError;
+use s3::error::{DisplayErrorContext, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{ensure, IntoError, ResultExt, Snafu};
 use url::ParseError;
@@ -94,6 +94,10 @@ impl From<Error> for super::Error {
                     path,
                     source: no_such_key.into(),
                 },
+                GetObjectError::Unhandled(v) => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(v).to_string(),
+                },
                 err => super::Error::UnableToOpenFile {
                     path,
                     source: err.into(),
@@ -103,6 +107,10 @@ impl From<Error> for super::Error {
                 HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
                     path,
                     source: no_such_key.into(),
+                },
+                HeadObjectError::Unhandled(v) => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(v).to_string(),
                 },
                 err => super::Error::UnableToOpenFile {
                     path,

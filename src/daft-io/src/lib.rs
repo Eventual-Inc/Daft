@@ -49,7 +49,7 @@ pub enum Error {
     #[snafu(display("Invalid Argument: {:?}", msg))]
     InvalidArgument { msg: String },
 
-    #[snafu(display("Unable to open file {}: {}", path, source))]
+    #[snafu(display("Unable to open file {}: {:?}", path, source))]
     UnableToOpenFile { path: String, source: DynError },
 
     #[snafu(display("Unable to read data from file {}: {}", path, source))]
@@ -82,6 +82,9 @@ pub enum Error {
 
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
+
+    #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
+    Unhandled { path: String, msg: String },
 
     #[snafu(display("Error joining spawned task: {}", source), context(false))]
     JoinError { source: tokio::task::JoinError },
