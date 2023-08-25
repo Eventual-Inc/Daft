@@ -2,11 +2,13 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DateType, Decimal128Type, DurationType,
-        EmbeddingType, ExtensionArray, FixedShapeImageType, FixedShapeTensorType,
-        FixedSizeListArray, Float32Array, Float64Array, ImageType, Int128Array, Int16Array,
-        Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray, TensorType,
-        TimestampType, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        logical::{
+            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+        },
+        BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
+        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
+        StructArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     DataType, Series,
 };
@@ -81,21 +83,7 @@ impl<'a> GrowableArray<'a> for PythonArray {
     }
 }
 
-impl<'a> GrowableArray<'a> for ExtensionArray {
-    type GrowableType = arrow_growable::ArrowExtensionGrowable<'a>;
-
-    fn make_growable(
-        name: String,
-        dtype: &DataType,
-        arrays: Vec<&'a Self>,
-        use_validity: bool,
-        capacity: usize,
-    ) -> Self::GrowableType {
-        arrow_growable::ArrowExtensionGrowable::new(name, dtype, arrays, use_validity, capacity)
-    }
-}
-
-macro_rules! impl_arrow_growable_array {
+macro_rules! impl_growable_array {
     (
         $daft_array:ident,
         $growable:ty
@@ -110,74 +98,54 @@ macro_rules! impl_arrow_growable_array {
                 use_validity: bool,
                 capacity: usize,
             ) -> Self::GrowableType {
-                <$growable>::new(name, dtype, arrays, use_validity, capacity)
+                Self::GrowableType::new(name, dtype, arrays, use_validity, capacity)
             }
         }
     };
 }
 
-macro_rules! impl_logical_growable_array {
-    (
-        $daft_logical_type:ident, $growable_type:ty
-    ) => {
-        impl<'a> GrowableArray<'a> for LogicalArray<$daft_logical_type> {
-            type GrowableType = $growable_type;
-
-            fn make_growable(
-                name: String,
-                dtype: &DataType,
-                arrays: Vec<&'a Self>,
-                use_validity: bool,
-                capacity: usize,
-            ) -> Self::GrowableType {
-                Self::GrowableType::new(name.clone(), dtype, arrays, use_validity, capacity)
-            }
-        }
-    };
-}
-
-impl_arrow_growable_array!(BooleanArray, arrow_growable::ArrowBooleanGrowable<'a>);
-impl_arrow_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
-impl_arrow_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
-impl_arrow_growable_array!(Int32Array, arrow_growable::ArrowInt32Growable<'a>);
-impl_arrow_growable_array!(Int64Array, arrow_growable::ArrowInt64Growable<'a>);
-impl_arrow_growable_array!(Int128Array, arrow_growable::ArrowInt128Growable<'a>);
-impl_arrow_growable_array!(UInt8Array, arrow_growable::ArrowUInt8Growable<'a>);
-impl_arrow_growable_array!(UInt16Array, arrow_growable::ArrowUInt16Growable<'a>);
-impl_arrow_growable_array!(UInt32Array, arrow_growable::ArrowUInt32Growable<'a>);
-impl_arrow_growable_array!(UInt64Array, arrow_growable::ArrowUInt64Growable<'a>);
-impl_arrow_growable_array!(Float32Array, arrow_growable::ArrowFloat32Growable<'a>);
-impl_arrow_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
-impl_arrow_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
-impl_arrow_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
-impl_arrow_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
-impl_arrow_growable_array!(
+impl_growable_array!(BooleanArray, arrow_growable::ArrowBooleanGrowable<'a>);
+impl_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
+impl_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
+impl_growable_array!(Int32Array, arrow_growable::ArrowInt32Growable<'a>);
+impl_growable_array!(Int64Array, arrow_growable::ArrowInt64Growable<'a>);
+impl_growable_array!(Int128Array, arrow_growable::ArrowInt128Growable<'a>);
+impl_growable_array!(UInt8Array, arrow_growable::ArrowUInt8Growable<'a>);
+impl_growable_array!(UInt16Array, arrow_growable::ArrowUInt16Growable<'a>);
+impl_growable_array!(UInt32Array, arrow_growable::ArrowUInt32Growable<'a>);
+impl_growable_array!(UInt64Array, arrow_growable::ArrowUInt64Growable<'a>);
+impl_growable_array!(Float32Array, arrow_growable::ArrowFloat32Growable<'a>);
+impl_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
+impl_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
+impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
+impl_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
+impl_growable_array!(
     FixedSizeListArray,
     arrow_growable::ArrowFixedSizeListGrowable<'a>
 );
-impl_arrow_growable_array!(StructArray, arrow_growable::ArrowStructGrowable<'a>);
-
-impl_logical_growable_array!(
-    TimestampType,
+impl_growable_array!(StructArray, arrow_growable::ArrowStructGrowable<'a>);
+impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
+impl_growable_array!(
+    TimestampArray,
     logical_growable::LogicalTimestampGrowable<'a>
 );
-impl_logical_growable_array!(DurationType, logical_growable::LogicalDurationGrowable<'a>);
-impl_logical_growable_array!(DateType, logical_growable::LogicalDateGrowable<'a>);
-impl_logical_growable_array!(
-    EmbeddingType,
+impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a>);
+impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
+impl_growable_array!(
+    EmbeddingArray,
     logical_growable::LogicalEmbeddingGrowable<'a>
 );
-impl_logical_growable_array!(
-    FixedShapeImageType,
+impl_growable_array!(
+    FixedShapeImageArray,
     logical_growable::LogicalFixedShapeImageGrowable<'a>
 );
-impl_logical_growable_array!(
-    FixedShapeTensorType,
+impl_growable_array!(
+    FixedShapeTensorArray,
     logical_growable::LogicalFixedShapeTensorGrowable<'a>
 );
-impl_logical_growable_array!(ImageType, logical_growable::LogicalImageGrowable<'a>);
-impl_logical_growable_array!(TensorType, logical_growable::LogicalTensorGrowable<'a>);
-impl_logical_growable_array!(
-    Decimal128Type,
+impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
+impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
+impl_growable_array!(
+    Decimal128Array,
     logical_growable::LogicalDecimal128Growable<'a>
 );
