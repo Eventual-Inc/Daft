@@ -1,8 +1,9 @@
 use std::iter::repeat;
 
+use crate::array::growable::{Growable, GrowableArray};
 use crate::datatypes::{nested_arrays::FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
 use crate::datatypes::{DaftDataType, Utf8Type};
-use crate::DataType;
+use crate::{with_match_daft_types, DataType};
 
 use crate::series::Series;
 
@@ -148,8 +149,32 @@ impl FixedSizeListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        // NOTE: Requires our own Growable Series factory utilities
-        todo!("Explode for FixedSizeListArray not implemented yet.")
+        let list_size = self.fixed_element_len();
+        let total_capacity = if list_size == 0 {
+            self.len()
+        } else {
+            let null_count = self.validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
+            list_size * (self.len() - null_count)
+        };
+
+        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
+            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
+                self.name().to_string(),
+                self.child_data_type(),
+                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
+                true,
+                total_capacity,
+            ))
+        });
+
+        for i in 0..self.len() {
+            let is_valid = self.is_valid(i) && (list_size > 0);
+            match is_valid {
+                false => child_growable.add_nulls(1),
+                true => child_growable.extend(0, i * list_size, list_size),
+            }
+        }
+        child_growable.build()
     }
 
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
