@@ -67,11 +67,11 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
-                Ok(self
+                let physical_if_else = self
                     .0
                     .physical
-                    .if_else(&other.downcast::<$da>()?.physical, predicate.downcast()?)?
-                    .into_series())
+                    .if_else(&other.downcast::<$da>()?.physical, predicate.downcast()?)?;
+                Ok($da::new(self.0.field.clone(), physical_if_else).into_series())
             }
 
             fn is_null(&self) -> DaftResult<Series> {
