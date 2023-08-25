@@ -162,9 +162,52 @@ impl PushDownProjection {
                 let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
                 Ok(Some(new_plan))
             }
-            LogicalPlan::Concat(_) => {
-                // TODO
-                Ok(None)
+            LogicalPlan::Concat(concat) => {
+                // Get required columns from projection and upstream.
+                let combined_dependencies = upstream_plan
+                    .required_columns()
+                    .iter()
+                    .flatten()
+                    .chain(plan.required_columns().iter().flatten())
+                    .cloned()
+                    .collect::<HashSet<_>>();
+
+                // Skip optimization if no columns would be pruned.
+                let grand_upstream_plan = upstream_plan.children()[0];
+                let grand_upstream_columns = grand_upstream_plan.schema().names();
+                if grand_upstream_columns.len() == combined_dependencies.len() {
+                    return Ok(None);
+                }
+
+                let pushdown_column_exprs = combined_dependencies
+                    .into_iter()
+                    .map(|s| Expr::Column(s.into()))
+                    .collect::<Vec<_>>();
+                let new_left_subprojection: LogicalPlan = {
+                    Project::try_new(
+                        concat.input.clone(),
+                        pushdown_column_exprs.clone(),
+                        Default::default(),
+                    )?
+                    .into()
+                };
+                let new_right_subprojection: LogicalPlan = {
+                    Project::try_new(
+                        concat.other.clone(),
+                        pushdown_column_exprs.clone(),
+                        Default::default(),
+                    )?
+                    .into()
+                };
+
+                let new_upstream = upstream_plan.with_new_children(&[
+                    new_left_subprojection.into(),
+                    new_right_subprojection.into(),
+                ]);
+                let new_plan = plan.with_new_children(&[new_upstream]);
+                // Retry optimization now that the upstream node is different.
+                let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
+                Ok(Some(new_plan))
             }
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.

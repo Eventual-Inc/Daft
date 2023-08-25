@@ -225,7 +225,7 @@ impl LogicalPlanBuilder {
             )));
         }
         let logical_plan: LogicalPlan =
-            ops::Concat::new(other.plan.clone(), self.plan.clone()).into();
+            ops::Concat::new(self.plan.clone(), other.plan.clone()).into();
         Ok(logical_plan.into())
     }
 
