@@ -134,7 +134,7 @@ impl Optimizer {
         })
     }
 
-    // Optimize the provied plan with the provied rule batch.
+    // Optimize the provided plan with the provided rule batch.
     pub fn optimize_with_rule_batch<F>(
         &self,
         batch: &RuleBatch,

@@ -10,8 +10,8 @@ use crate::LogicalPlan;
 ///
 /// The digests are cheaply hashable + comparable, and have the following guarantees:
 ///
-///   p1 == p2 -> digest(p1) == digest(p2)
-///   hash(digest(p1)) == hash(digest(p2)) -> hash(p1) == hash(p2)
+///   hash(digest(p1)) != hash(digest(p2)) -> digest(p1) != digest(p2) -> p1 != p2
+///   hash(p1) != hash(p2) -> hash(digest(p1)) != hash(digest(p2))
 ///
 /// These guarantees allow us to use a HashSet of such digests as a cheap cycle detector in
 /// our optimizer, with the negligible possibility of plan hash + node count collisions leading
@@ -45,8 +45,11 @@ impl LogicalPlanTracker {
 /// A simple logical plan summary that's cheaply hashable + comparable, and that has the
 /// following guarantees:
 ///
-///   p1 == p2 -> digest(p1) == digest(p2)
-///   hash(digest(p1)) == hash(digest(p2)) -> hash(p1) == hash(p2)
+///   hash(digest(p1)) != hash(digest(p2)) -> digest(p1) != digest(p2) -> p1 != p2
+///   hash(p1) != hash(p2) -> hash(digest(p1)) != hash(digest(p2))
+///
+/// The incorporation of the node count with the plan hash makes hash collisions less likely across
+/// distinctly different plans.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct LogicalPlanDigest {
     plan_hash: u64,
