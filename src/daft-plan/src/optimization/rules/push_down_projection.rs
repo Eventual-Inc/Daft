@@ -140,9 +140,34 @@ impl PushDownProjection {
                 // TODO
                 Ok(None)
             }
-            LogicalPlan::Aggregate(_) => {
-                // TODO
-                Ok(None)
+            LogicalPlan::Aggregate(aggregate) => {
+                // Prune unnecessary columns from the child aggregate.
+                let required_columns = &plan.required_columns()[0];
+                let pruned_aggregate_exprs = aggregate
+                    .aggregations
+                    .iter()
+                    .filter_map(|e| {
+                        required_columns
+                            .contains(e.name().unwrap())
+                            .then(|| e.clone())
+                    })
+                    .collect::<Vec<_>>();
+
+                if pruned_aggregate_exprs.len() < aggregate.aggregations.len() {
+                    let new_upstream: LogicalPlan = Aggregate::try_new(
+                        aggregate.input.clone(),
+                        pruned_aggregate_exprs,
+                        aggregate.groupby.clone(),
+                    )?
+                    .into();
+
+                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    // Retry optimization now that the upstream node is different.
+                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
+                    Ok(Some(new_plan))
+                } else {
+                    Ok(None)
+                }
             }
             LogicalPlan::Concat(_) => {
                 // TODO
@@ -152,7 +177,9 @@ impl PushDownProjection {
                 // TODO
                 Ok(None)
             }
-            LogicalPlan::Sink(_) => panic!(),
+            LogicalPlan::Sink(_) => {
+                panic!("Bad projection due to upstream sink node: {:?}", projection)
+            }
         }
     }
 
