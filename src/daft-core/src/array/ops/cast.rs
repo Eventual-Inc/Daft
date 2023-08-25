@@ -1,3 +1,5 @@
+use std::{iter::repeat, sync::Arc};
+
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
@@ -12,11 +14,12 @@ use crate::{
             TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, StructArray, TimeUnit,
-        Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, ListArray, StructArray,
+        TimeUnit, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_daft_logical_primitive_types, with_match_daft_types,
+    with_match_dataarray_daft_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -26,12 +29,13 @@ use arrow2::{
         self,
         cast::{can_cast_types, cast, CastOptions},
     },
+    offset::Offsets,
 };
 
 #[cfg(feature = "python")]
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
-    crate::datatypes::{ListArray, PythonArray},
+    crate::datatypes::PythonArray,
     crate::ffi,
     crate::with_match_numeric_daft_types,
     log,
@@ -1532,8 +1536,58 @@ impl FixedShapeTensorArray {
                     .into_series())
                 })
             }
-            (DataType::Tensor(_), DataType::FixedShapeTensor(_inner_dtype, _tensor_shape)) => {
-                todo!("TODO(jay): Casting from FixedShapeTensor to Tensor not yet implemented")
+            (DataType::Tensor(_), DataType::FixedShapeTensor(inner_dtype, tensor_shape)) => {
+                let ndim = tensor_shape.len();
+                let shapes = tensor_shape
+                    .iter()
+                    .cycle()
+                    .copied()
+                    .take(ndim * self.len())
+                    .collect();
+                let shape_offsets = (0..=ndim * self.len())
+                    .step_by(ndim)
+                    .map(|v| v as i64)
+                    .collect::<Vec<i64>>();
+
+                let physical_arr = &self.physical;
+                let validity = self.physical.validity.as_ref();
+
+                // FixedSizeList -> List
+                let list_arr = physical_arr.cast(&DataType::List(Box::new(Field::new(
+                    "data",
+                    inner_dtype.as_ref().clone(),
+                ))))?;
+                let list_arr = list_arr.downcast::<ListArray>()?.data();
+
+                // List -> Struct
+                let shapes_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+                    arrow2::datatypes::Field::new(
+                        "shape",
+                        arrow2::datatypes::DataType::UInt64,
+                        true,
+                    ),
+                ));
+                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shapes_array = Box::new(arrow2::array::ListArray::<i64>::new(
+                    shapes_dtype,
+                    shape_offsets,
+                    Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
+                    validity.cloned(),
+                ));
+                let values: Vec<Box<dyn arrow2::array::Array>> =
+                    vec![list_arr.to_boxed(), shapes_array];
+                let physical_type = dtype.to_physical();
+                let struct_array = Box::new(arrow2::array::StructArray::new(
+                    physical_type.to_arrow()?,
+                    values,
+                    validity.cloned(),
+                ));
+                let daft_struct_array =
+                    StructArray::new(Field::new(self.name(), physical_type).into(), struct_array)?;
+                Ok(
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
+                        .into_series(),
+                )
             }
             // NOTE(Clark): Casting to FixedShapeImage is supported by the physical array cast.
             (_, _) => self.physical.cast(dtype),
@@ -1558,6 +1612,36 @@ impl FixedSizeListArray {
                     casted_child,
                     self.validity.clone(),
                 )
+                .into_series())
+            }
+            DataType::List(child) => {
+                let element_size = self.fixed_element_len();
+                // TODO: This will be refactored when List is no longer arrow backed
+                let casted_child: Box<dyn arrow2::array::Array> = with_match_dataarray_daft_types!(child.dtype, |$T| {
+                    let casted_child_series = self.flat_child.cast(&child.dtype)?;
+                    let downcasted = casted_child_series.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    downcasted.data().to_boxed()
+                });
+                let offsets: Offsets<i64> = match &self.validity {
+                    None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
+                    Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
+                        if v {
+                            element_size
+                        } else {
+                            0
+                        }
+                    }))?,
+                };
+                let list_arrow_array = arrow2::array::ListArray::new(
+                    dtype.to_arrow()?,
+                    offsets.into(),
+                    casted_child,
+                    self.validity.clone(),
+                );
+                Ok(ListArray::new(
+                    Arc::new(Field::new(self.name().to_string(), dtype.clone())),
+                    Box::new(list_arrow_array),
+                )?
                 .into_series())
             }
             DataType::FixedShapeTensor(child_datatype, shape) => {
