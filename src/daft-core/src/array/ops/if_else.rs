@@ -1,6 +1,7 @@
 use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
+use crate::datatypes::nested_arrays::FixedSizeListArray;
 use crate::datatypes::{BooleanArray, DaftPhysicalType};
 use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;
@@ -128,6 +129,26 @@ where
             other.len(),
         )?
         .downcast::<DataArray<T>>()
+        .map(|arr| arr.clone())
+    }
+}
+
+impl<'a> FixedSizeListArray {
+    pub fn if_else(
+        &'a self,
+        other: &'a FixedSizeListArray,
+        predicate: &BooleanArray,
+    ) -> DaftResult<FixedSizeListArray> {
+        generic_if_else(
+            predicate,
+            self.name(),
+            self,
+            other,
+            self.data_type(),
+            self.len(),
+            other.len(),
+        )?
+        .downcast::<FixedSizeListArray>()
         .map(|arr| arr.clone())
     }
 }

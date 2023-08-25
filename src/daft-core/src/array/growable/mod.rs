@@ -16,6 +16,7 @@ use crate::{
 
 mod arrow_growable;
 mod logical_growable;
+mod nested_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
@@ -121,7 +122,7 @@ impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,
-    arrow_growable::ArrowFixedSizeListGrowable<'a>
+    nested_growable::FixedSizeListGrowable<'a>
 );
 impl_growable_array!(StructArray, arrow_growable::ArrowStructGrowable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
