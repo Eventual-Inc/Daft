@@ -12,7 +12,7 @@ use crate::{
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.
-    pub schema: SchemaRef,
+    pub output_schema: SchemaRef,
 
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
@@ -27,12 +27,12 @@ pub struct Source {
 
 impl Source {
     pub(crate) fn new(
-        schema: SchemaRef,
+        output_schema: SchemaRef,
         source_info: Arc<SourceInfo>,
         partition_spec: Arc<PartitionSpec>,
     ) -> Self {
         Self {
-            schema,
+            output_schema,
             source_info,
             partition_spec,
             filters: vec![], // Will be populated by plan optimizer.
@@ -45,7 +45,7 @@ impl Source {
 
         match self.source_info.as_ref() {
             SourceInfo::ExternalInfo(ExternalInfo {
-                schema,
+                source_schema,
                 file_info,
                 file_format_config,
             }) => {
@@ -53,13 +53,16 @@ impl Source {
                 for fp in file_info.file_paths.iter() {
                     res.push(format!("File paths = {}", fp));
                 }
-                res.push(format!("File schema = {}", schema.short_string()));
+                res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(_) => {}
         }
-        res.push(format!("Output schema = {}", self.schema.short_string()));
+        res.push(format!(
+            "Output schema = {}",
+            self.output_schema.short_string()
+        ));
         if !self.filters.is_empty() {
             res.push(format!("Filters = {:?}", self.filters));
         }

@@ -2,10 +2,11 @@ use std::{collections::HashSet, convert::identity, sync::Arc};
 
 use common_error::DaftResult;
 
+use daft_core::schema::Schema;
 use daft_dsl::Expr;
 
 use crate::{
-    ops::{Aggregate, Project},
+    ops::{Aggregate, Project, Source},
     LogicalPlan,
 };
 
@@ -58,9 +59,34 @@ impl PushDownProjection {
         }
 
         match upstream_plan.as_ref() {
-            LogicalPlan::Source(_source) => {
-                // TODO
-                Ok(None)
+            LogicalPlan::Source(source) => {
+                // Prune unnecessary columns directly from the source.
+                let [required_columns] = &plan.required_columns()[..] else {
+                    panic!()
+                };
+                if required_columns.len() < upstream_schema.names().len() {
+                    let pruned_upstream_schema = upstream_schema
+                        .fields
+                        .iter()
+                        .filter_map(|(name, field)| {
+                            required_columns.contains(name).then(|| field.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    let schema = Schema::new(pruned_upstream_schema)?;
+                    let new_source: LogicalPlan = Source::new(
+                        schema.into(),
+                        source.source_info.clone(),
+                        source.partition_spec.clone(),
+                    )
+                    .into();
+
+                    let new_plan = plan.with_new_children(&[new_source.into()]);
+                    // Retry optimization now that the upstream node is different.
+                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
+                    Ok(Some(new_plan))
+                } else {
+                    Ok(None)
+                }
             }
             LogicalPlan::Project(upstream_projection) => {
                 // Prune unnecessary columns from the child projection.

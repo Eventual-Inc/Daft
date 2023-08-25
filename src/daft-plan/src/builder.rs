@@ -43,6 +43,7 @@ impl LogicalPlanBuilder {
         partition_spec: &PartitionSpec,
     ) -> PyResult<LogicalPlanBuilder> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
+            schema.schema.clone(),
             partition_key.into(),
             cache_entry.to_object(cache_entry.py()),
         ));

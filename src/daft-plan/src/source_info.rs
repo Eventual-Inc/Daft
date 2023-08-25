@@ -98,6 +98,7 @@ where
 #[cfg(feature = "python")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryInfo {
+    pub source_schema: SchemaRef,
     pub cache_key: String,
     #[serde(
         serialize_with = "serialize_py_object",
@@ -108,8 +109,9 @@ pub struct InMemoryInfo {
 
 #[cfg(feature = "python")]
 impl InMemoryInfo {
-    pub fn new(cache_key: String, cache_entry: PyObject) -> Self {
+    pub fn new(source_schema: SchemaRef, cache_key: String, cache_entry: PyObject) -> Self {
         Self {
+            source_schema,
             cache_key,
             cache_entry,
         }
@@ -118,19 +120,19 @@ impl InMemoryInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalInfo {
-    pub schema: SchemaRef,
+    pub source_schema: SchemaRef,
     pub file_info: Arc<FileInfo>,
     pub file_format_config: Arc<FileFormatConfig>,
 }
 
 impl ExternalInfo {
     pub fn new(
-        schema: SchemaRef,
+        source_schema: SchemaRef,
         file_info: Arc<FileInfo>,
         file_format_config: Arc<FileFormatConfig>,
     ) -> Self {
         Self {
-            schema,
+            source_schema,
             file_info,
             file_format_config,
         }

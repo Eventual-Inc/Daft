@@ -24,7 +24,7 @@ use crate::physical_ops::InMemoryScan;
 pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
     match logical_plan {
         LogicalPlan::Source(Source {
-            schema,
+            output_schema,
             source_info,
             partition_spec,
             limit,
@@ -37,7 +37,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             ) => match file_format_config.as_ref() {
                 FileFormatConfig::Parquet(_) => {
                     Ok(PhysicalPlan::TabularScanParquet(TabularScanParquet::new(
-                        schema.clone(),
+                        output_schema.clone(),
                         ext_info.clone(),
                         partition_spec.clone(),
                         *limit,
@@ -45,7 +45,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     )))
                 }
                 FileFormatConfig::Csv(_) => Ok(PhysicalPlan::TabularScanCsv(TabularScanCsv::new(
-                    schema.clone(),
+                    output_schema.clone(),
                     ext_info.clone(),
                     partition_spec.clone(),
                     *limit,
@@ -53,7 +53,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 ))),
                 FileFormatConfig::Json(_) => {
                     Ok(PhysicalPlan::TabularScanJson(TabularScanJson::new(
-                        schema.clone(),
+                        output_schema.clone(),
                         ext_info.clone(),
                         partition_spec.clone(),
                         *limit,
@@ -62,9 +62,24 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 }
             },
             #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(mem_info) => Ok(PhysicalPlan::InMemoryScan(
-                InMemoryScan::new(schema.clone(), mem_info.clone(), partition_spec.clone()),
-            )),
+            SourceInfo::InMemoryInfo(mem_info) => {
+                let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
+                    mem_info.source_schema.clone(),
+                    mem_info.clone(),
+                    partition_spec.clone(),
+                ));
+                let plan = if output_schema.fields.len() < mem_info.source_schema.fields.len() {
+                    let projection = output_schema
+                        .fields
+                        .iter()
+                        .map(|(name, _)| Expr::Column(name.clone().into()))
+                        .collect::<Vec<_>>();
+                    PhysicalPlan::Project(Project::new(projection, Default::default(), scan.into()))
+                } else {
+                    scan
+                };
+                Ok(plan)
+            }
         },
         LogicalPlan::Project(LogicalProject {
             input,

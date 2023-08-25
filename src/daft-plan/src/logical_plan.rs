@@ -27,7 +27,7 @@ pub enum LogicalPlan {
 impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            Self::Source(Source { schema, .. }) => schema.clone(),
+            Self::Source(Source { output_schema, .. }) => output_schema.clone(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
