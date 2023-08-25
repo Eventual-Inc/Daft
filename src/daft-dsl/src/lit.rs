@@ -5,6 +5,7 @@ use std::{
 
 use crate::expr::Expr;
 use daft_core::series::Series;
+use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use serde::{Deserialize, Serialize};
 
@@ -37,15 +38,7 @@ pub enum LiteralValue {
     Python(DaftPyObject),
 }
 
-struct FloatWrapper(f64);
-
 impl Eq for LiteralValue {}
-
-impl Hash for FloatWrapper {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write(&u64::from_ne_bytes(self.0.to_ne_bytes()).to_ne_bytes())
-    }
-}
 
 impl Hash for LiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {

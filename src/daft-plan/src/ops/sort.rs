@@ -4,7 +4,7 @@ use daft_dsl::Expr;
 
 use crate::LogicalPlan;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
     pub sort_by: Vec<Expr>,
     pub descending: Vec<bool>,

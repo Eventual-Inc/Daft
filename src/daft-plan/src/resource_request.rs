@@ -1,4 +1,5 @@
-use daft_core::impl_bincode_py_state_serialization;
+use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "python")]
 use {
     pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python},
@@ -26,6 +27,16 @@ impl ResourceRequest {
             num_gpus,
             memory_bytes,
         }
+    }
+}
+
+impl Eq for ResourceRequest {}
+
+impl Hash for ResourceRequest {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.num_cpus.map(FloatWrapper).hash(state);
+        self.num_gpus.map(FloatWrapper).hash(state);
+        self.memory_bytes.hash(state)
     }
 }
 

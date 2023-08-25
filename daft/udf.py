@@ -83,6 +83,14 @@ class PartialUDF:
         else:
             raise NotImplementedError(f"Return type not supported for UDF: {type(result)}")
 
+    def __hash__(self) -> int:
+        # Make the bound arguments hashable in the basic case when every argument is itself hashable.
+        # NOTE: This will fail if any of the arguments are not hashable (e.g. dicts, Python classes that
+        # don't implement __hash__). In that case, Daft's Rust-side hasher will fall back to hashing the
+        # pickled UDF. See daft-dsl/src/python/partial_udf.rs
+        args = frozenset(self.bound_args.arguments.items())
+        return hash((self.udf, args))
+
 
 @dataclasses.dataclass
 class UDF:
@@ -131,6 +139,9 @@ class UDF:
             # NOTE: This potentially runs expensive initializations on the class
             return self.func()
         raise NotImplementedError(f"UDF type not supported: {type(self.func)}")
+
+    def __hash__(self) -> int:
+        return hash((self.func, self.return_dtype))
 
 
 def udf(

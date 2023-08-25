@@ -153,6 +153,9 @@ class PartitionCacheEntry:
     def __eq__(self, other: object) -> bool:
         return isinstance(other, PartitionCacheEntry) and self.key == other.key
 
+    def __hash__(self) -> int:
+        return hash(self.key)
+
     def __repr__(self) -> str:
         return f"PartitionCacheEntry: {self.key}"
 

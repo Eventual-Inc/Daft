@@ -1,4 +1,5 @@
 pub mod arrow;
+pub mod hashable_float_wrapper;
 pub mod supertype;
 
 #[macro_export]

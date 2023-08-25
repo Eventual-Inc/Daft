@@ -1,12 +1,12 @@
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
 use snafu::Snafu;
 
-use crate::{ops::*, PartitionScheme, PartitionSpec};
+use crate::{display::TreeDisplay, ops::*, PartitionScheme, PartitionSpec};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),
@@ -156,6 +156,22 @@ impl LogicalPlan {
         new_plan.into()
     }
 
+    /// Get the number of nodes in the logical plan tree.
+    pub fn node_count(&self) -> NonZeroUsize {
+        match self.children().as_slice() {
+            [] => 1usize.try_into().unwrap(),
+            [input] => input.node_count().checked_add(1usize).unwrap(),
+            [input1, input2] => input1
+                .node_count()
+                .checked_add(input2.node_count().checked_add(1usize).unwrap().into())
+                .unwrap(),
+            children => panic!(
+                "Logical ops should never have more than 2 inputs, but got: {}",
+                children.len()
+            ),
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
@@ -187,7 +203,13 @@ impl LogicalPlan {
 
     pub fn repr_ascii(&self) -> String {
         let mut s = String::new();
-        crate::display::TreeDisplay::fmt_tree(self, &mut s).unwrap();
+        self.fmt_tree(&mut s).unwrap();
+        s
+    }
+
+    pub fn repr_indent(&self) -> String {
+        let mut s = String::new();
+        self.fmt_tree_indent_style(0, &mut s).unwrap();
         s
     }
 }

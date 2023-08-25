@@ -255,8 +255,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> PyResult<LogicalPlanBuilder> {
-        let optimizer = Optimizer::new();
-        let new_plan = optimizer.optimize(self.plan.clone(), &Default::default())?;
+        let optimizer = Optimizer::new(Default::default());
+        let new_plan = optimizer.optimize(self.plan.clone(), |_, _, _, _, _| {})?;
         Ok(Self::new(new_plan))
     }
 
