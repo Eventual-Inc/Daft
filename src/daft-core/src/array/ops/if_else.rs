@@ -108,14 +108,14 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     }
 }
 
-impl<'a, T> DataArray<T>
+impl<T> DataArray<T>
 where
-    T: DaftPhysicalType + 'static,
+    T: DaftPhysicalType,
     DataArray<T>: GrowableArray + IntoSeries,
 {
     pub fn if_else(
-        &'a self,
-        other: &'a DataArray<T>,
+        &self,
+        other: &DataArray<T>,
         predicate: &BooleanArray,
     ) -> DaftResult<DataArray<T>> {
         generic_if_else(
