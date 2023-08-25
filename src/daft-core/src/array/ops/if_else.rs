@@ -1,8 +1,7 @@
 use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
-use crate::datatypes::logical::LogicalArrayImpl;
-use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
+use crate::datatypes::{BooleanArray, DaftPhysicalType};
 use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;
 use common_error::DaftResult;
@@ -129,30 +128,6 @@ where
             other.len(),
         )?
         .downcast::<DataArray<T>>()
-        .map(|arr| arr.clone())
-    }
-}
-
-impl<'a, L> LogicalArrayImpl<L, DataArray<L::PhysicalType>>
-where
-    L: DaftLogicalType,
-    LogicalArrayImpl<L, DataArray<L::PhysicalType>>: GrowableArray<'a> + FullNull + IntoSeries,
-{
-    pub fn if_else(
-        &'a self,
-        other: &'a LogicalArrayImpl<L, DataArray<L::PhysicalType>>,
-        predicate: &BooleanArray,
-    ) -> DaftResult<LogicalArrayImpl<L, DataArray<L::PhysicalType>>> {
-        generic_if_else(
-            predicate,
-            self.name(),
-            self,
-            other,
-            self.data_type(),
-            self.len(),
-            other.len(),
-        )?
-        .downcast::<LogicalArrayImpl<L, DataArray<L::PhysicalType>>>()
         .map(|arr| arr.clone())
     }
 }
