@@ -8,7 +8,7 @@ use crate::series::Series;
 use common_error::DaftResult;
 
 impl Series {
-    pub fn downcast<Arr: DaftArrayType + 'static>(&self) -> DaftResult<&Arr> {
+    pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
             None => {

@@ -8,11 +8,11 @@ use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
 
-fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone + IntoSeries>(
+fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     predicate: &BooleanArray,
     name: &str,
-    lhs: &'a T,
-    rhs: &'a T,
+    lhs: &T,
+    rhs: &T,
     dtype: &DataType,
     lhs_len: usize,
     rhs_len: usize,
@@ -108,14 +108,14 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone + IntoSeries>(
     }
 }
 
-impl<'a, T> DataArray<T>
+impl<T> DataArray<T>
 where
-    T: DaftPhysicalType + 'static,
-    DataArray<T>: GrowableArray<'a> + IntoSeries,
+    T: DaftPhysicalType,
+    DataArray<T>: GrowableArray + IntoSeries,
 {
     pub fn if_else(
-        &'a self,
-        other: &'a DataArray<T>,
+        &self,
+        other: &DataArray<T>,
         predicate: &BooleanArray,
     ) -> DaftResult<DataArray<T>> {
         generic_if_else(

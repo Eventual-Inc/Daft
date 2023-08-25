@@ -51,7 +51,7 @@ where
 
 macro_rules! impl_logical_growable {
     ($growable_name:ident, $daft_type:ty) => {
-        pub type $growable_name<'a> = LogicalGrowable<$daft_type, <<<$daft_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray<'a>>::GrowableType>;
+        pub type $growable_name<'a> = LogicalGrowable<$daft_type, <<<$daft_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray>::GrowableType<'a>>;
 
         impl<'a> $growable_name<'a>
         {

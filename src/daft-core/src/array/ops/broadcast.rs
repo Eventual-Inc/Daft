@@ -10,8 +10,8 @@ use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
 
-pub trait Broadcastable<'a> {
-    fn broadcast(&'a self, num: usize) -> DaftResult<Self>
+pub trait Broadcastable {
+    fn broadcast(&self, num: usize) -> DaftResult<Self>
     where
         Self: Sized;
 }
@@ -23,7 +23,7 @@ fn generic_growable_broadcast<'a, Arr>(
     dtype: &'a DataType,
 ) -> DaftResult<Arr>
 where
-    Arr: DaftArrayType + GrowableArray<'a> + 'static,
+    Arr: DaftArrayType + GrowableArray + 'static,
 {
     let mut growable = Arr::make_growable(name.to_string(), dtype, vec![arr], false, num);
     for _ in 0..num {
@@ -33,12 +33,12 @@ where
     Ok(series.downcast::<Arr>()?.clone())
 }
 
-impl<'a, T> Broadcastable<'a> for DataArray<T>
+impl<T> Broadcastable for DataArray<T>
 where
     T: DaftPhysicalType + 'static,
-    DataArray<T>: GrowableArray<'a>,
+    DataArray<T>: GrowableArray,
 {
-    fn broadcast(&'a self, num: usize) -> DaftResult<Self> {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(
                 "Attempting to broadcast non-unit length Array named: {}",

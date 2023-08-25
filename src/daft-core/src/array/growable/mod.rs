@@ -39,46 +39,45 @@ pub trait Growable {
 }
 
 /// Trait that an Array type can implement to provide a Growable factory method
-pub trait GrowableArray<'a>
-where
-    Self: Sized,
-{
-    type GrowableType: Growable;
+pub trait GrowableArray {
+    type GrowableType<'a>: Growable
+    where
+        Self: 'a;
 
-    fn make_growable(
+    fn make_growable<'a>(
         name: String,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         use_validity: bool,
         capacity: usize,
-    ) -> Self::GrowableType;
+    ) -> Self::GrowableType<'a>;
 }
 
-impl<'a> GrowableArray<'a> for NullArray {
-    type GrowableType = arrow_growable::ArrowNullGrowable<'a>;
+impl GrowableArray for NullArray {
+    type GrowableType<'a> = arrow_growable::ArrowNullGrowable<'a>;
 
-    fn make_growable(
+    fn make_growable<'a>(
         name: String,
         dtype: &DataType,
-        _arrays: Vec<&Self>,
+        _arrays: Vec<&'a Self>,
         _use_validity: bool,
         _capacity: usize,
-    ) -> Self::GrowableType {
+    ) -> Self::GrowableType<'a> {
         Self::GrowableType::new(name, dtype)
     }
 }
 
 #[cfg(feature = "python")]
-impl<'a> GrowableArray<'a> for PythonArray {
-    type GrowableType = python_growable::PythonGrowable<'a>;
+impl GrowableArray for PythonArray {
+    type GrowableType<'a> = python_growable::PythonGrowable<'a>;
 
-    fn make_growable(
+    fn make_growable<'a>(
         name: String,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         _use_validity: bool,
         capacity: usize,
-    ) -> Self::GrowableType {
+    ) -> Self::GrowableType<'a> {
         python_growable::PythonGrowable::new(name, dtype, arrays, capacity)
     }
 }
@@ -88,16 +87,16 @@ macro_rules! impl_growable_array {
         $daft_array:ident,
         $growable:ty
     ) => {
-        impl<'a> GrowableArray<'a> for $daft_array {
-            type GrowableType = $growable;
+        impl GrowableArray for $daft_array {
+            type GrowableType<'a> = $growable;
 
-            fn make_growable(
+            fn make_growable<'a>(
                 name: String,
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 use_validity: bool,
                 capacity: usize,
-            ) -> Self::GrowableType {
+            ) -> Self::GrowableType<'a> {
                 Self::GrowableType::new(name, dtype, arrays, use_validity, capacity)
             }
         }
