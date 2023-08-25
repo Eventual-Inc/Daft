@@ -117,7 +117,9 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.slice(start * size, end * size)?,
-            self.validity.as_ref().map(|v| v.clone().sliced(start, end)),
+            self.validity
+                .as_ref()
+                .map(|v| v.clone().sliced(start, end - start)),
         ))
     }
 
