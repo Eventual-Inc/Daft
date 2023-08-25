@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
-    array::DataArray,
+    array::{growable::GrowableArray, DataArray},
     datatypes::{DaftNumericType, Float64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };
@@ -43,6 +43,7 @@ fn arithmetic_helper<T, Kernel, F>(
 ) -> DaftResult<DataArray<T>>
 where
     T: DaftNumericType,
+    DataArray<T>: GrowableArray,
     Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
@@ -78,6 +79,7 @@ impl<T> Add for &DataArray<T>
 where
     T: DaftNumericType,
     T::Native: basic::NativeArithmetics,
+    DataArray<T>: GrowableArray,
 {
     type Output = DaftResult<DataArray<T>>;
     fn add(self, rhs: Self) -> Self::Output {
@@ -96,6 +98,7 @@ impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
     T::Native: basic::NativeArithmetics,
+    DataArray<T>: GrowableArray,
 {
     type Output = DaftResult<DataArray<T>>;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -107,6 +110,7 @@ impl<T> Mul for &DataArray<T>
 where
     T: DaftNumericType,
     T::Native: basic::NativeArithmetics,
+    DataArray<T>: GrowableArray,
 {
     type Output = DaftResult<DataArray<T>>;
     fn mul(self, rhs: Self) -> Self::Output {
@@ -152,6 +156,7 @@ impl<T> Rem for &DataArray<T>
 where
     T: DaftNumericType,
     T::Native: basic::NativeArithmetics,
+    DataArray<T>: GrowableArray,
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {

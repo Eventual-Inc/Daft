@@ -24,10 +24,18 @@ pub use time_unit::TimeUnit;
 pub mod logical;
 
 /// Trait that is implemented by all Array types
-pub trait DaftArrayType: Clone {}
+///
+/// NOTE: Arrays are 'static because they fully own all their internal components
+/// This implicitly allows them to implement the std::any::Any trait, which we rely on
+/// for downcasting Series to concrete DaftArrayType types.
+pub trait DaftArrayType: Clone + 'static {}
 
 /// Trait to wrap DataType Enum
-pub trait DaftDataType: Sync + Send + Clone {
+///
+/// NOTE: DaftDataType is 'static because they are used in various Array implementations
+/// as PhantomData<T>. These Array implementations need to be 'static (see: [`DaftArrayType`]).
+/// This should not be a problem as [`DaftDataType`] are all defined as empty structs that own nothing.
+pub trait DaftDataType: Sync + Send + Clone + 'static {
     // Concrete ArrayType that backs data of this DataType
     type ArrayType: DaftArrayType;
 
