@@ -76,10 +76,10 @@ impl PushDownProjection {
                         })
                         .collect::<Vec<_>>();
 
-                    let new_upstream: LogicalPlan = Project::new(
+                    let new_upstream: LogicalPlan = Project::try_new(
+                        upstream_projection.input.clone(),
                         pruned_upstream_projections,
                         upstream_projection.resource_request.clone(),
-                        upstream_projection.input.clone(),
                     )?
                     .into();
 
@@ -122,10 +122,10 @@ impl PushDownProjection {
                         .map(|s| Expr::Column(s.into()))
                         .collect::<Vec<_>>();
 
-                    Project::new(
+                    Project::try_new(
+                        grand_upstream_plan.clone(),
                         pushdown_column_exprs,
                         Default::default(),
-                        grand_upstream_plan.clone(),
                     )?
                     .into()
                 };
@@ -201,10 +201,10 @@ impl PushDownProjection {
                     .map(|s| Expr::Column(s.clone().into()))
                     .collect::<Vec<_>>();
 
-                Project::new(
+                Project::try_new(
+                    upstream_plan.clone(),
                     pushdown_column_exprs,
                     Default::default(),
-                    upstream_plan.clone(),
                 )?
                 .into()
             };
