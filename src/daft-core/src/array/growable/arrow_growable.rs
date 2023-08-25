@@ -9,9 +9,8 @@ use crate::{
     },
     datatypes::{
         BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        FixedSizeListType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type,
-        Int8Type, ListType, NullType, StructType, UInt16Type, UInt32Type, UInt64Type, UInt8Type,
-        Utf8Type,
+        Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, ListType,
+        NullType, StructType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
     },
     DataType, IntoSeries, Series,
 };
@@ -29,7 +28,7 @@ pub struct ArrowBackedDataArrayGrowable<
     _phantom: PhantomData<&'a T>,
 }
 
-impl<'a, T: DaftArrowBackedType, G: arrow2::array::growable::Growable<'a>> Growable
+impl<'a, T: DaftArrowBackedType, G: arrow2::array::growable::Growable<'a>> Growable<'a>
     for ArrowBackedDataArrayGrowable<'a, T, G>
 where
     DataArray<T>: IntoSeries,
@@ -171,11 +170,6 @@ impl_arrow_backed_data_array_growable!(
     arrow2::array::growable::GrowableList<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
-    ArrowFixedSizeListGrowable,
-    FixedSizeListType,
-    arrow2::array::growable::GrowableFixedSizeList<'a>
-);
-impl_arrow_backed_data_array_growable!(
     ArrowStructGrowable,
     StructType,
     arrow2::array::growable::GrowableStruct<'a>
@@ -211,7 +205,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
     }
 }
 
-impl<'a> Growable for ArrowExtensionGrowable<'a> {
+impl<'a> Growable<'a> for ArrowExtensionGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         self.child_growable.extend(index, start, len)

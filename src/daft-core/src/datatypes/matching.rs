@@ -37,7 +37,7 @@ macro_rules! with_match_daft_types {(
         FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
         Tensor(..) => __with_ty__! { TensorType },
         FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
-        Float16 => unimplemented!("Array for Float16 not implemented"),
+        // Float16 => unimplemented!("Array for Float16 not implemented"),
         Time(_) => unimplemented!("Array for Time not implemented"),
         Unknown => unimplemented!("Array for Unknown DataType not implemented"),
 

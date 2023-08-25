@@ -33,7 +33,7 @@ impl<'a> PythonGrowable<'a> {
     }
 }
 
-impl<'a> Growable for PythonGrowable<'a> {
+impl<'a> Growable<'a> for PythonGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let arr = self.arr_refs.get(index).unwrap();

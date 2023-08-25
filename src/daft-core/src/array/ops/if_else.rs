@@ -2,6 +2,7 @@ use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
 use crate::array::DataArray;
 use crate::datatypes::logical::LogicalArrayImpl;
+use crate::datatypes::nested_arrays::FixedSizeListArray;
 use crate::datatypes::{BooleanArray, DaftLogicalType, DaftPhysicalType};
 use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;
@@ -153,6 +154,50 @@ where
             other.len(),
         )?
         .downcast::<LogicalArrayImpl<L, DataArray<L::PhysicalType>>>()
+        .map(|arr| arr.clone())
+    }
+}
+
+impl<'a, L> LogicalArrayImpl<L, FixedSizeListArray>
+where
+    L: DaftLogicalType,
+    LogicalArrayImpl<L, FixedSizeListArray>: GrowableArray<'a> + FullNull + IntoSeries,
+{
+    pub fn if_else(
+        &'a self,
+        other: &'a LogicalArrayImpl<L, FixedSizeListArray>,
+        predicate: &BooleanArray,
+    ) -> DaftResult<LogicalArrayImpl<L, FixedSizeListArray>> {
+        generic_if_else(
+            predicate,
+            self.name(),
+            self,
+            other,
+            self.data_type(),
+            self.len(),
+            other.len(),
+        )?
+        .downcast::<LogicalArrayImpl<L, FixedSizeListArray>>()
+        .map(|arr| arr.clone())
+    }
+}
+
+impl<'a> FixedSizeListArray {
+    pub fn if_else(
+        &'a self,
+        other: &'a FixedSizeListArray,
+        predicate: &BooleanArray,
+    ) -> DaftResult<FixedSizeListArray> {
+        generic_if_else(
+            predicate,
+            self.name(),
+            self,
+            other,
+            self.data_type(),
+            self.len(),
+            other.len(),
+        )?
+        .downcast::<FixedSizeListArray>()
         .map(|arr| arr.clone())
     }
 }

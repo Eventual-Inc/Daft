@@ -13,17 +13,17 @@ use crate::{
 
 use super::{Growable, GrowableArray};
 
-pub struct LogicalGrowable<L: DaftLogicalType, G: Growable>
+pub struct LogicalGrowable<'a, L: DaftLogicalType, G: Growable<'a>>
 where
     LogicalArray<L>: IntoSeries,
 {
     name: String,
     dtype: DataType,
     physical_growable: G,
-    _phantom: PhantomData<L>,
+    _phantom: PhantomData<&'a L>,
 }
 
-impl<L: DaftLogicalType, G: Growable> Growable for LogicalGrowable<L, G>
+impl<'a, L: DaftLogicalType, G: Growable<'a>> Growable<'a> for LogicalGrowable<'a, L, G>
 where
     LogicalArray<L>: IntoSeries,
 {
@@ -51,7 +51,7 @@ where
 
 macro_rules! impl_logical_growable {
     ($growable_name:ident, $daft_type:ty) => {
-        pub type $growable_name<'a> = LogicalGrowable<$daft_type, <<<$daft_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray<'a>>::GrowableType>;
+        pub type $growable_name<'a> = LogicalGrowable<'a, $daft_type, <<<$daft_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray<'a>>::GrowableType>;
 
         impl<'a> $growable_name<'a>
         {
