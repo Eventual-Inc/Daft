@@ -38,8 +38,8 @@ fn generic_if_else<'a, T: GrowableArray<'a> + FullNull + Clone + IntoSeries>(
         name.to_string(),
         dtype,
         vec![lhs, rhs],
-        predicate.len(),
         predicate.null_count() > 0, // If predicate has nulls, we will need to append nulls to growable
+        predicate.len(),
     );
     // CASE 2: predicate is not broadcastable, and contains nulls
     //
