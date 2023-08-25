@@ -111,6 +111,10 @@ impl PartitionSpec {
             _ => unimplemented!("not implemented"),
         }
     }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self))
+    }
 }
 
 impl_bincode_py_state_serialization!(PartitionSpec);
