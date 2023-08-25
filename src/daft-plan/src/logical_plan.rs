@@ -77,10 +77,25 @@ impl LogicalPlan {
                     .collect();
                 vec![res]
             }
-            Self::Source(_) => todo!(),
-            Self::Explode(_) => todo!(),
-            Self::Sink(_) => todo!(),
-            Self::Distinct(_) => todo!(),
+            Self::Explode(explode) => {
+                let res = explode
+                    .to_explode
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Distinct(distinct) => {
+                let res = distinct
+                    .input
+                    .schema()
+                    .fields
+                    .iter()
+                    .map(|(name, _)| name)
+                    .cloned()
+                    .collect();
+                vec![res]
+            }
             Self::Aggregate(aggregate) => {
                 let res = aggregate
                     .aggregations
@@ -100,6 +115,8 @@ impl LogicalPlan {
                     .collect();
                 vec![left, right]
             }
+            Self::Source(_) => todo!(),
+            Self::Sink(_) => todo!(),
         }
     }
 
