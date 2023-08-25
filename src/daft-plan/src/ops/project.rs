@@ -9,18 +9,18 @@ use crate::{LogicalPlan, ResourceRequest};
 
 #[derive(Clone, Debug)]
 pub struct Project {
-    pub projection: Vec<Expr>,
-    pub projected_schema: SchemaRef,
-    pub resource_request: ResourceRequest,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
+    pub projection: Vec<Expr>,
+    pub resource_request: ResourceRequest,
+    pub projected_schema: SchemaRef,
 }
 
 impl Project {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
-        input: Arc<LogicalPlan>,
     ) -> Result<Self> {
         let upstream_schema = input.schema();
         let projected_schema = {
@@ -32,10 +32,10 @@ impl Project {
             Schema::new(fields).context(CreationSnafu)?.into()
         };
         Ok(Self {
-            projection,
-            projected_schema,
-            resource_request,
             input,
+            projection,
+            resource_request,
+            projected_schema,
         })
     }
 }
