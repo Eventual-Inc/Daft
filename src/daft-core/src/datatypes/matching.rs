@@ -13,11 +13,11 @@ macro_rules! with_match_daft_types {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+        Int128(..) => __with_ty__! { Int128Type },
         UInt8 => __with_ty__! { UInt8Type },
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
-        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Timestamp(_, _) => __with_ty__! { TimestampType },
@@ -37,8 +37,8 @@ macro_rules! with_match_daft_types {(
         FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
         Tensor(..) => __with_ty__! { TensorType },
         FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
-        Time(_) => unimplemented!("Array for Time not implemented"),
-        Float16 => unimplemented!("Array for Float16 not implemented"),
+        Decimal128(..) => __with_ty__! { Decimal128Type },
+        Float16 => unimplemented!("Array for Float16 DataType not implemented"),
         Unknown => unimplemented!("Array for Unknown DataType not implemented"),
 
         // NOTE: We should not implement a default for match here, because this is meant to be
