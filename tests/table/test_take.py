@@ -154,3 +154,43 @@ def test_table_take_pyobject() -> None:
     assert taken.column_names() == ["objs"]
 
     assert taken.to_pydict()["objs"] == [objects[3], objects[2], objects[2], objects[2], objects[3]]
+
+
+@pytest.mark.parametrize("idx_dtype", daft_int_types)
+def test_table_take_fixed_size_list(idx_dtype) -> None:
+    pa_table = pa.Table.from_pydict(
+        {
+            "a": pa.array([[1, 2], [3, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
+            "b": pa.array([[4, 5], [6, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
+        }
+    )
+    daft_table = Table.from_arrow(pa_table)
+    assert len(daft_table) == 4
+    assert daft_table.column_names() == ["a", "b"]
+
+    indices = Series.from_pylist([0, 1]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [[1, 2], [3, None]], "b": [[4, 5], [6, None]]}
+
+    indices = Series.from_pylist([3, 2]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {"a": [[None, None], None], "b": [[None, None], None]}
+
+    indices = Series.from_pylist([3, 2, 2, 2, 3]).cast(idx_dtype)
+
+    taken = daft_table.take(indices)
+    assert len(taken) == 5
+    assert taken.column_names() == ["a", "b"]
+
+    assert taken.to_pydict() == {
+        "a": [[None, None], None, None, None, [None, None]],
+        "b": [[None, None], None, None, None, [None, None]],
+    }
