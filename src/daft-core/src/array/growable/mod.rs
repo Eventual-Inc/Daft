@@ -7,9 +7,9 @@ use crate::{
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         nested_arrays::FixedSizeListArray,
-        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array,
-        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
-        StructArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     DataType, Series,
 };

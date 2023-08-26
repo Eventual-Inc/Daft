@@ -1,11 +1,9 @@
-use std::iter::repeat;
-
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         DataArray,
     },
-    datatypes::{DaftArrayType, DaftPhysicalType, DataType, nested_arrays::FixedSizeListArray},
+    datatypes::{nested_arrays::FixedSizeListArray, DaftArrayType, DaftPhysicalType, DataType},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -68,7 +66,11 @@ impl Broadcastable for FixedSizeListArray {
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(FixedSizeListArray::full_null(self.name(), self.data_type(), num))
+            Ok(FixedSizeListArray::full_null(
+                self.name(),
+                self.data_type(),
+                num,
+            ))
         }
     }
 }
