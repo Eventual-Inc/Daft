@@ -158,8 +158,7 @@ mod tests {
             "foo",
             DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
         );
-        let num_valid_elements = validity.iter().map(|v| if *v { 1 } else { 0 }).sum();
-        let flat_child = Int32Array::from(("foo", (0..num_valid_elements).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from(("foo", (0..validity.len() * 3).collect::<Vec<i32>>()));
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),

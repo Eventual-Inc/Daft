@@ -237,7 +237,7 @@ mod tests {
             "foo",
             DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
         );
-        let flat_child = Int32Array::from(("foo", (0..6).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
         let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
