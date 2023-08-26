@@ -23,7 +23,8 @@ pub use partitioning::{PartitionScheme, PartitionSpec};
 pub use physical_plan::PhysicalPlanScheduler;
 pub use resource_request::ResourceRequest;
 pub use source_info::{
-    CsvSourceConfig, FileFormat, JsonSourceConfig, ParquetSourceConfig, PyFileFormatConfig,
+    CsvSourceConfig, FileFormat, FileInfo, FileInfos, JsonSourceConfig, ParquetSourceConfig,
+    PyFileFormatConfig,
 };
 
 #[cfg(feature = "python")]
@@ -42,6 +43,8 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<JoinType>()?;
     parent.add_class::<PhysicalPlanScheduler>()?;
     parent.add_class::<ResourceRequest>()?;
+    parent.add_class::<FileInfos>()?;
+    parent.add_class::<FileInfo>()?;
 
     Ok(())
 }

@@ -29,7 +29,6 @@ def test_push_projection_scan_all_cols(valid_data_json_path: str, optimizer):
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
             fs=df_unoptimized_scan._get_current_builder()._plan._fs,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
-            filepaths_column_name=df_unoptimized_scan._get_current_builder()._plan._filepaths_column_name,
         ).to_builder()
     )
 
@@ -50,7 +49,6 @@ def test_push_projection_scan_all_cols_alias(valid_data_json_path: str, optimize
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
             fs=df_unoptimized_scan._get_current_builder()._plan._fs,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
-            filepaths_column_name=df_unoptimized_scan._get_current_builder()._plan._filepaths_column_name,
         ).to_builder()
     )
     df_optimized = df_optimized.select(col("sepal_length").alias("foo"))
@@ -72,7 +70,6 @@ def test_push_projection_scan_some_cols_aliases(valid_data_json_path: str, optim
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
             fs=df_unoptimized_scan._get_current_builder()._plan._fs,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
-            filepaths_column_name=df_unoptimized_scan._get_current_builder()._plan._filepaths_column_name,
         ).to_builder()
     )
     df_optimized = df_optimized.select(col("sepal_length").alias("foo"), col("sepal_width") + 1)

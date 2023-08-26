@@ -16,8 +16,9 @@ use daft_table::Table;
 #[cfg(feature = "python")]
 use {
     daft_io::python::IOConfig as PyIOConfig,
+    daft_table::python::PyTable,
     pyo3::{
-        exceptions::PyValueError,
+        exceptions::{PyKeyError, PyValueError},
         pyclass,
         pyclass::CompareOp,
         pymethods,
@@ -154,33 +155,119 @@ impl Hash for InMemoryInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ExternalInfo {
     pub source_schema: SchemaRef,
-    pub file_info: Arc<FileInfo>,
+    pub file_infos: Arc<FileInfos>,
     pub file_format_config: Arc<FileFormatConfig>,
 }
 
 impl ExternalInfo {
     pub fn new(
         source_schema: SchemaRef,
-        file_info: Arc<FileInfo>,
+        file_infos: Arc<FileInfos>,
         file_format_config: Arc<FileFormatConfig>,
     ) -> Self {
         Self {
             source_schema,
-            file_info,
+            file_infos,
             file_format_config,
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct FileInfo {
+    pub file_path: String,
+    pub file_size: Option<i64>,
+    pub num_rows: Option<i64>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl FileInfo {
+    #[new]
+    pub fn new(file_path: String, file_size: Option<i64>, num_rows: Option<i64>) -> Self {
+        Self::new_internal(file_path, file_size, num_rows)
+    }
+}
+
+impl FileInfo {
+    pub fn new_internal(file_path: String, file_size: Option<i64>, num_rows: Option<i64>) -> Self {
+        Self {
+            file_path,
+            file_size,
+            num_rows,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct FileInfos {
     pub file_paths: Vec<String>,
     pub file_sizes: Vec<Option<i64>>,
     pub num_rows: Vec<Option<i64>>,
 }
 
-impl FileInfo {
-    pub fn new(
+#[cfg(feature = "python")]
+#[pymethods]
+impl FileInfos {
+    #[new]
+    #[pyo3(signature = (*args))]
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            // Create an empty FileInfos, to be overridden by __setstate__ and/or extended with self.extend().
+            0 => Ok(Self::new_internal(vec![], vec![], vec![])),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new FileInfos, got : {}",
+                args.len()
+            ))),
+        }
+    }
+
+    #[staticmethod]
+    pub fn from_infos(
+        file_paths: Vec<String>,
+        file_sizes: Vec<Option<i64>>,
+        num_rows: Vec<Option<i64>>,
+    ) -> Self {
+        Self::new_internal(file_paths, file_sizes, num_rows)
+    }
+
+    #[staticmethod]
+    pub fn from_table(table: PyTable) -> PyResult<Self> {
+        Ok(Self::from_table_internal(table.table)?)
+    }
+
+    pub fn extend(&mut self, new_infos: Self) {
+        self.file_paths.extend(new_infos.file_paths);
+        self.file_sizes.extend(new_infos.file_sizes);
+        self.num_rows.extend(new_infos.num_rows);
+    }
+
+    pub fn __getitem__(&self, idx: isize) -> PyResult<FileInfo> {
+        if idx as usize >= self.len() {
+            return Err(PyKeyError::new_err(idx));
+        }
+        Ok(FileInfo::new_internal(
+            self.file_paths[0].clone(),
+            self.file_sizes[0],
+            self.num_rows[0],
+        ))
+    }
+
+    pub fn to_table(&self) -> PyResult<PyTable> {
+        Ok(self.to_table_internal()?.into())
+    }
+
+    pub fn __len__(&self) -> PyResult<usize> {
+        Ok(self.len())
+    }
+}
+
+impl_bincode_py_state_serialization!(FileInfos);
+
+impl FileInfos {
+    pub fn new_internal(
         file_paths: Vec<String>,
         file_sizes: Vec<Option<i64>>,
         num_rows: Vec<Option<i64>>,
@@ -191,29 +278,62 @@ impl FileInfo {
             num_rows,
         }
     }
-    pub fn to_table(&self) -> DaftResult<Table> {
-        let file_paths: Vec<Option<&str>> =
-            self.file_paths.iter().map(|s| Some(s.as_str())).collect();
-        let num_files = file_paths.len();
+
+    pub fn from_table_internal(table: Table) -> DaftResult<Self> {
+        let file_paths = table
+            .get_column("file_paths")?
+            .utf8()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .unwrap()
+            .iter()
+            .map(|s| s.unwrap().to_string())
+            .collect::<Vec<_>>();
+        let file_sizes = table
+            .get_column("file_sizes")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.cloned())
+            .collect::<Vec<_>>();
+        let num_rows = table
+            .get_column("num_rows")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.cloned())
+            .collect::<Vec<_>>();
+        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
+    }
+
+    pub fn len(&self) -> usize {
+        self.file_paths.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.file_paths.is_empty()
+    }
+
+    pub fn to_table_internal(&self) -> DaftResult<Table> {
         let columns = vec![
             Series::try_from((
-                "path",
-                arrow2::array::Utf8Array::<i64>::from(file_paths).to_boxed(),
+                "file_paths",
+                arrow2::array::Utf8Array::<i64>::from_iter_values(self.file_paths.iter())
+                    .to_boxed(),
             ))?,
             Series::try_from((
-                "size",
+                "file_sizes",
                 arrow2::array::PrimitiveArray::<i64>::from(&self.file_sizes).to_boxed(),
             ))?,
             Series::try_from((
-                "type",
-                arrow2::array::Utf8Array::<i64>::new_null(
-                    arrow2::datatypes::DataType::LargeUtf8,
-                    num_files,
-                )
-                .to_boxed(),
-            ))?,
-            Series::try_from((
-                "rows",
+                "num_rows",
                 arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
             ))?,
         ];

@@ -68,7 +68,7 @@ def test_image_decode() -> None:
     df = (
         daft.from_glob_path(f"{ASSET_FOLDER}/images/**")
         .into_partitions(2)
-        .with_column("image", col("path").url.download().image.decode().image.resize(10, 10))
+        .with_column("image", col("file_paths").url.download().image.decode().image.resize(10, 10))
     )
     target_dtype = DataType.image()
     assert df.schema()["image"].dtype == target_dtype

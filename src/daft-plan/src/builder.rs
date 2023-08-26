@@ -9,7 +9,7 @@ use {
         planner::plan,
         sink_info::{OutputFileInfo, SinkInfo},
         source_info::{
-            ExternalInfo as ExternalSourceInfo, FileInfo as InputFileInfo, InMemoryInfo,
+            ExternalInfo as ExternalSourceInfo, FileInfos as InputFileInfos, InMemoryInfo,
             PyFileFormatConfig, SourceInfo,
         },
         FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler,
@@ -58,16 +58,14 @@ impl LogicalPlanBuilder {
 
     #[staticmethod]
     pub fn table_scan(
-        file_paths: Vec<String>,
-        file_sizes: Vec<Option<i64>>,
-        file_rows: Vec<Option<i64>>,
+        file_infos: InputFileInfos,
         schema: &PySchema,
         file_format_config: PyFileFormatConfig,
     ) -> PyResult<LogicalPlanBuilder> {
-        let num_partitions = file_paths.len();
+        let num_partitions = file_infos.len();
         let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
             schema.schema.clone(),
-            InputFileInfo::new(file_paths, file_sizes, file_rows).into(),
+            file_infos.into(),
             file_format_config.into(),
         ));
         let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);

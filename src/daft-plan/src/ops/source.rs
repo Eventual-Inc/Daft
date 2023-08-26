@@ -66,11 +66,11 @@ impl Source {
         match self.source_info.as_ref() {
             SourceInfo::ExternalInfo(ExternalInfo {
                 source_schema,
-                file_info,
+                file_infos,
                 file_format_config,
             }) => {
                 res.push(format!("Source: {:?}", file_format_config.var_name()));
-                for fp in file_info.file_paths.iter() {
+                for fp in file_infos.file_paths.iter() {
                     res.push(format!("File paths = {}", fp));
                 }
                 res.push(format!("File schema = {}", source_schema.short_string()));

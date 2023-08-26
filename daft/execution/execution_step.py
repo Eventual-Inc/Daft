@@ -319,7 +319,6 @@ class ReadFile(SingleOutputInstruction):
     fs: fsspec.AbstractFileSystem | None
     columns_to_read: list[str] | None
     file_format_config: FileFormatConfig
-    filepaths_column_name: str
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._read_file(inputs)
@@ -352,10 +351,7 @@ class ReadFile(SingleOutputInstruction):
         filepaths_partition: Table,
     ) -> Table:
         data = filepaths_partition.to_pydict()
-        assert (
-            self.filepaths_column_name in data
-        ), f"TabularFilesScan should be ran on vPartitions with '{self.filepaths_column_name}' column"
-        filepaths = data[self.filepaths_column_name]
+        filepaths = data["file_paths"]
 
         if self.index is not None:
             filepaths = [filepaths[self.index]]

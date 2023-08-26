@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import fsspec
 
 from daft import DataType, col
-from daft.context import get_context
-from daft.daft import CountMode, FileFormat, FileFormatConfig, JoinType
+from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest
 from daft.errors import ExpressionTypeError
@@ -62,30 +61,14 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def from_tabular_scan(
         cls,
         *,
-        paths: list[str],
+        file_infos: FileInfos,
+        schema: Schema,
         file_format_config: FileFormatConfig,
-        schema_hint: Schema | None,
         fs: fsspec.AbstractFileSystem | None,
     ) -> RustLogicalPlanBuilder:
         if fs is not None:
             raise ValueError("fsspec filesystems not supported for Rust query planner.")
-        # Glob the path using the Runner
-        runner_io = get_context().runner().runner_io()
-        file_info_partition_set = runner_io.glob_paths_details(paths, file_format_config, fs)
-
-        # Infer schema if no hints provided
-        inferred_or_provided_schema = (
-            schema_hint
-            if schema_hint is not None
-            else runner_io.get_schema_from_first_filepath(file_info_partition_set, file_format_config, fs)
-        )
-        paths_details = file_info_partition_set.to_pydict()
-        filepaths = paths_details[runner_io.FS_LISTING_PATH_COLUMN_NAME]
-        filesizes = paths_details[runner_io.FS_LISTING_SIZE_COLUMN_NAME]
-        filerows = paths_details[runner_io.FS_LISTING_ROWS_COLUMN_NAME]
-
-        rs_schema = inferred_or_provided_schema._schema
-        builder = _LogicalPlanBuilder.table_scan(filepaths, filesizes, filerows, rs_schema, file_format_config)
+        builder = _LogicalPlanBuilder.table_scan(file_infos, schema._schema, file_format_config)
         return cls(builder)
 
     def project(

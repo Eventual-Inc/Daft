@@ -84,12 +84,12 @@ def test_glob_files(tmpdir):
     daft_df = daft.from_glob_path(f"{tmpdir}/*.foo")
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_records(
-        {"path": str(path), "size": size, "type": "file", "rows": None}
+        {"file_paths": str(path), "file_sizes": size, "num_rows": None}
         for path, size in zip(filepaths, list(range(10)))
     )
-    pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
-    pd_df = pd_df.astype({"rows": float})
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+    pd_df = pd_df[~pd_df["file_paths"].str.endswith(".bar")]
+    pd_df = pd_df.astype({"num_rows": float})
+    assert_df_equals(daft_pd_df, pd_df, sort_key="file_paths")
 
 
 def test_glob_files_single_file(tmpdir):
@@ -97,9 +97,9 @@ def test_glob_files_single_file(tmpdir):
     filepath.write_text("b" * 10)
     daft_df = daft.from_glob_path(f"{tmpdir}/file.foo")
     daft_pd_df = daft_df.to_pandas()
-    pd_df = pd.DataFrame.from_records([{"path": str(filepath), "size": 10, "type": "file", "rows": None}])
-    pd_df = pd_df.astype({"rows": float})
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+    pd_df = pd.DataFrame.from_records([{"file_paths": str(filepath), "file_sizes": 10, "num_rows": None}])
+    pd_df = pd_df.astype({"num_rows": float})
+    assert_df_equals(daft_pd_df, pd_df, sort_key="file_paths")
 
 
 def test_glob_files_directory(tmpdir):
@@ -116,16 +116,16 @@ def test_glob_files_directory(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
-        {"path": str(path), "size": size, "type": "file", "rows": None}
+        {"file_paths": str(path), "file_sizes": size, "num_rows": None}
         for path, size in zip(filepaths, [i for i in range(10) for _ in range(2)])
     ]
     listing_records = listing_records + [
-        {"path": str(extra_empty_dir), "size": extra_empty_dir.stat().st_size, "type": "directory", "rows": None}
+        {"file_paths": str(extra_empty_dir), "file_sizes": extra_empty_dir.stat().st_size, "num_rows": None}
     ]
     pd_df = pd.DataFrame.from_records(listing_records)
-    pd_df = pd_df.astype({"rows": float})
+    pd_df = pd_df.astype({"num_rows": float})
 
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+    assert_df_equals(daft_pd_df, pd_df, sort_key="file_paths")
 
 
 def test_glob_files_recursive(tmpdir):
@@ -142,16 +142,16 @@ def test_glob_files_recursive(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
-        {"path": str(path), "size": size, "type": "file", "rows": None}
+        {"file_paths": str(path), "file_sizes": size, "num_rows": None}
         for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
     ]
     listing_records = listing_records + [
-        {"path": str(nested_dir_path), "size": nested_dir_path.stat().st_size, "type": "directory", "rows": None}
+        {"file_paths": str(nested_dir_path), "file_sizes": nested_dir_path.stat().st_size, "num_rows": None}
     ]
     pd_df = pd.DataFrame.from_records(listing_records)
-    pd_df = pd_df.astype({"rows": float})
+    pd_df = pd_df.astype({"num_rows": float})
 
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+    assert_df_equals(daft_pd_df, pd_df, sort_key="file_paths")
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
@@ -176,9 +176,9 @@ def test_glob_files_custom_fs(tmpdir):
 
     daft_pd_df = daft_df.to_pandas()
     pd_df = pd.DataFrame.from_records(
-        {"path": str(path), "size": size, "type": "file", "rows": None}
+        {"file_paths": str(path), "file_sizes": size, "num_rows": None}
         for path, size in zip(filepaths, list(range(10)))
     )
-    pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
-    pd_df = pd_df.astype({"rows": float})
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
+    pd_df = pd_df[~pd_df["file_paths"].str.endswith(".bar")]
+    pd_df = pd_df.astype({"num_rows": float})
+    assert_df_equals(daft_pd_df, pd_df, sort_key="file_paths")

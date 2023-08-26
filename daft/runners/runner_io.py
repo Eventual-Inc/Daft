@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 import fsspec
 
@@ -9,39 +9,23 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormat,
     FileFormatConfig,
+    FileInfos,
     JsonSourceConfig,
     ParquetSourceConfig,
 )
-from daft.datatype import DataType
 from daft.filesystem import get_filesystem_from_path
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartitionSet, TableParseCSVOptions
+from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import schema_inference
 
 PartitionT = TypeVar("PartitionT")
 
 
-class RunnerIO(Generic[PartitionT]):
+class RunnerIO:
     """Reading and writing data from the Runner.
 
     This is an abstract class and each runner must write their own implementation.
-
-    This is a generic class and each runner needs to parametrize their implementation with the appropriate
-    PartitionT that it uses for in-memory data representation.
     """
-
-    FS_LISTING_PATH_COLUMN_NAME = "path"
-    FS_LISTING_SIZE_COLUMN_NAME = "size"
-    FS_LISTING_TYPE_COLUMN_NAME = "type"
-    FS_LISTING_ROWS_COLUMN_NAME = "rows"
-    FS_LISTING_SCHEMA = Schema._from_field_name_and_types(
-        [
-            (FS_LISTING_SIZE_COLUMN_NAME, DataType.int64()),
-            (FS_LISTING_PATH_COLUMN_NAME, DataType.string()),
-            (FS_LISTING_TYPE_COLUMN_NAME, DataType.string()),
-            (FS_LISTING_ROWS_COLUMN_NAME, DataType.int64()),
-        ]
-    )
 
     @abstractmethod
     def glob_paths_details(
@@ -49,21 +33,21 @@ class RunnerIO(Generic[PartitionT]):
         source_path: list[str],
         file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> PartitionSet[PartitionT]:
-        """Globs the specified filepath to construct Partitions containing file and dir metadata
+    ) -> FileInfos:
+        """Globs the specified filepath to construct a FileInfos object containing file and dir metadata.
 
         Args:
             source_path (str): path to glob
 
         Returns:
-            PartitionSet[PartitionT]: Partitions containing the listings' metadata
+            FileInfo: The file infos for the globbed paths.
         """
         raise NotImplementedError()
 
     @abstractmethod
     def get_schema_from_first_filepath(
         self,
-        listing_details_partitions: PartitionSet[PartitionT],
+        file_info: FileInfos,
         file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:

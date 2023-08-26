@@ -23,7 +23,7 @@ except ImportError:
     )
     raise
 
-from daft.daft import FileFormatConfig, ResourceRequest
+from daft.daft import FileFormatConfig, FileInfos, ResourceRequest
 from daft.datatype import DataType
 from daft.execution.execution_step import (
     FanoutInstruction,
@@ -65,37 +65,22 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 
 
 @ray.remote
-def _glob_path_into_details_vpartitions(
+def _glob_path_into_file_infos(
     paths: list[str],
-    schema: Schema,
     file_format_config: FileFormatConfig | None,
     fs: fsspec.AbstractFileSystem | None,
-) -> list[tuple[PartID, Table]]:
-    all_listing_infos = []
+) -> Table:
+    file_infos = FileInfos()
     for path in paths:
         if fs is None:
             fs = get_filesystem_from_path(path)
 
-        listing_infos = glob_path_with_stats(path, file_format_config, fs)
-        if len(listing_infos) == 0:
+        path_file_infos = glob_path_with_stats(path, file_format_config, fs)
+        if len(path_file_infos) == 0:
             raise FileNotFoundError(f"No files found at {path}")
-        all_listing_infos.extend(listing_infos)
+        file_infos.extend(path_file_infos)
 
-    # Hardcoded to 1 partition
-    partition = Table.from_pydict(
-        {
-            "path": pa.array([file_info.path for file_info in all_listing_infos], type=pa.string()),
-            "size": pa.array([file_info.size for file_info in all_listing_infos], type=pa.int64()),
-            "type": pa.array([file_info.type for file_info in all_listing_infos], type=pa.string()),
-            "rows": pa.array([file_info.rows for file_info in all_listing_infos], type=pa.int64()),
-        },
-    )
-    assert partition.schema() == schema, f"Schema should be expected: {schema}, but received: {partition.schema()}"
-
-    partition_ref = ray.put(partition)
-    partition_refs = [(0, partition_ref)]
-
-    return partition_refs
+    return file_infos
 
 
 @ray.remote
@@ -135,18 +120,14 @@ def remote_len_partition(p: Table) -> int:
 
 
 @ray.remote
-def sample_schema_from_filepath_vpartition(
-    p: Table,
-    filepath_column: str,
+def sample_schema_from_filepath(
+    first_file_path: str,
     file_format_config: FileFormatConfig,
     fs: fsspec.AbstractFileSystem | None,
 ) -> Schema:
-    """Ray remote function to run schema sampling on top of a Table containing filepaths"""
-    assert len(p) > 0
-
+    """Ray remote function to run schema sampling on top of a Table containing a single filepath"""
     # Currently just samples the Schema from the first file
-    first_filepath = p.to_pydict()[filepath_column][0]
-    return runner_io.sample_schema(first_filepath, file_format_config, fs)
+    return runner_io.sample_schema(first_file_path, file_format_config, fs)
 
 
 @dataclass
@@ -221,38 +202,29 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait([o for o in self._partitions.values()])
 
 
-class RayRunnerIO(runner_io.RunnerIO[ray.ObjectRef]):
+class RayRunnerIO(runner_io.RunnerIO):
     def glob_paths_details(
         self,
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> RayPartitionSet:
-        partition_refs = ray.get(
-            _glob_path_into_details_vpartitions.remote(
-                source_paths, RayRunnerIO.FS_LISTING_SCHEMA, file_format_config, fs=fs
-            )
-        )
-        return RayPartitionSet({part_id: part for part_id, part in partition_refs})
+    ) -> FileInfos:
+        # Synchronously fetch the file infos, for now.
+        return ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, fs=fs))
 
     def get_schema_from_first_filepath(
         self,
-        listing_details_partitions: PartitionSet[ray.ObjectRef],
+        file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
-        nonempty_partitions: list[ray.ObjectRef] = [
-            p
-            for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
-            if p_len > 0
-        ]
-        if len(nonempty_partitions) == 0:
+        if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
-        partition: ray.ObjectRef = nonempty_partitions[0]
+        # Naively retrieve the first filepath in the file info table.
+        first_path = file_infos[0].file_path
         return ray.get(
-            sample_schema_from_filepath_vpartition.remote(
-                partition,
-                RayRunnerIO.FS_LISTING_PATH_COLUMN_NAME,
+            sample_schema_from_filepath.remote(
+                first_path,
                 file_format_config,
                 fs,
             )

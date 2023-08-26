@@ -26,7 +26,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.daft import FileFormat, FileFormatConfig, ParquetSourceConfig
+from daft.daft import FileFormat, FileFormatConfig, FileInfos, ParquetSourceConfig
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -295,7 +295,7 @@ def glob_path_with_stats(
     path: str,
     file_format_config: FileFormatConfig | None,
     fs: fsspec.AbstractFileSystem,
-) -> list[ListingInfo]:
+) -> FileInfos:
     """Glob a path, returning a list ListingInfo."""
     protocol = get_protocol_from_path(path)
 
@@ -307,13 +307,11 @@ def glob_path_with_stats(
         for path, details in globbed_data.items():
             path = _ensure_path_protocol(protocol, path)
             filepaths_to_infos[path]["size"] = details["size"]
-            filepaths_to_infos[path]["type"] = details["type"]
 
     elif fs.isfile(path):
         file_info = fs.info(path)
 
         filepaths_to_infos[path]["size"] = file_info["size"]
-        filepaths_to_infos[path]["type"] = file_info["type"]
 
     elif fs.isdir(path):
         files_info = fs.ls(path, detail=True)
@@ -322,7 +320,6 @@ def glob_path_with_stats(
             path = file_info["name"]
             path = _ensure_path_protocol(protocol, path)
             filepaths_to_infos[path]["size"] = file_info["size"]
-            filepaths_to_infos[path]["type"] = file_info["type"]
 
     else:
         raise FileNotFoundError(f"File or directory not found: {path}")
@@ -342,9 +339,15 @@ def glob_path_with_stats(
             for path, parquet_metadata in zip(filepaths_to_infos.keys(), parquet_metadatas):
                 filepaths_to_infos[path]["rows"] = parquet_metadata.num_rows
 
-    return [
-        ListingInfo(path=_ensure_path_protocol(protocol, path), **infos) for path, infos in filepaths_to_infos.items()
-    ]
+    file_paths = []
+    file_sizes = []
+    num_rows = []
+    for path, infos in filepaths_to_infos.items():
+        file_paths.append(_ensure_path_protocol(protocol, path))
+        file_sizes.append(infos.get("size"))
+        num_rows.append(infos.get("rows"))
+
+    return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
 
 
 def _get_parquet_metadata_single(path: str) -> pa.parquet.FileMetadata:

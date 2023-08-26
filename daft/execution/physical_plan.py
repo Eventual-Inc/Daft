@@ -70,7 +70,6 @@ def file_read(
     fs: fsspec.AbstractFileSystem | None,
     columns_to_read: list[str] | None,
     file_format_config: FileFormatConfig,
-    filepaths_column_name: str,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
 
@@ -85,8 +84,9 @@ def file_read(
             done_task = materializations.popleft()
 
             vpartition = done_task.vpartition()
-            file_sizes_bytes = vpartition.to_pydict()["size"]
-            file_rows = vpartition.to_pydict()["rows"]
+            file_infos = vpartition.to_pydict()
+            file_sizes_bytes = file_infos["file_sizes"]
+            file_rows = file_infos["num_rows"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(len(vpartition)):
@@ -102,7 +102,6 @@ def file_read(
                         fs=fs,
                         columns_to_read=columns_to_read,
                         file_format_config=file_format_config,
-                        filepaths_column_name=filepaths_column_name,
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)

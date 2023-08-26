@@ -7,10 +7,9 @@ from typing import Iterable, Iterator
 
 import fsspec
 import psutil
-import pyarrow as pa
 from loguru import logger
 
-from daft.daft import FileFormatConfig, ResourceRequest
+from daft.daft import FileFormatConfig, FileInfos, ResourceRequest
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
@@ -68,64 +67,37 @@ class LocalPartitionSet(PartitionSet[Table]):
         pass
 
 
-class PyRunnerIO(runner_io.RunnerIO[Table]):
+class PyRunnerIO(runner_io.RunnerIO):
     def glob_paths_details(
         self,
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
-    ) -> LocalPartitionSet:
-        all_files_infos = []
+    ) -> FileInfos:
+        file_infos = FileInfos()
         for source_path in source_paths:
             if fs is None:
                 fs = get_filesystem_from_path(source_path)
 
-            files_info = glob_path_with_stats(source_path, file_format_config, fs)
+            path_file_infos = glob_path_with_stats(source_path, file_format_config, fs)
 
-            if len(files_info) == 0:
+            if len(path_file_infos) == 0:
                 raise FileNotFoundError(f"No files found at {source_path}")
 
-            all_files_infos.extend(files_info)
+            file_infos.extend(path_file_infos)
 
-        partition = Table.from_pydict(
-            {
-                "path": pa.array([file_info.path for file_info in all_files_infos], type=pa.string()),
-                "size": pa.array([file_info.size for file_info in all_files_infos], type=pa.int64()),
-                "type": pa.array([file_info.type for file_info in all_files_infos], type=pa.string()),
-                "rows": pa.array([file_info.rows for file_info in all_files_infos], type=pa.int64()),
-            },
-        )
-
-        # Make sure that the schema is consistent with what we expect
-        assert (
-            partition.schema() == PyRunnerIO.FS_LISTING_SCHEMA
-        ), f"Schema should be expected: {PyRunnerIO.FS_LISTING_SCHEMA}, but received: {partition.schema()}"
-
-        pset = LocalPartitionSet(
-            {
-                # Hardcoded to 1 partition
-                0: partition,
-            }
-        )
-        return pset
+        return file_infos
 
     def get_schema_from_first_filepath(
         self,
-        listing_details_partitions: PartitionSet[Table],
+        file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         fs: fsspec.AbstractFileSystem | None,
     ) -> Schema:
-        # Naively retrieve the first filepath in the PartitionSet
-        nonempty_partitions = [
-            p
-            for p, p_len in zip(listing_details_partitions.values(), listing_details_partitions.len_of_partitions())
-            if p_len > 0
-        ]
-        if len(nonempty_partitions) == 0:
+        if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
-        first_filepath = nonempty_partitions[0].to_pydict()[PyRunnerIO.FS_LISTING_PATH_COLUMN_NAME][0]
-
-        return runner_io.sample_schema(first_filepath, file_format_config, fs)
+        # Naively retrieve the first filepath in the PartitionSet
+        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, fs)
 
 
 class PyRunner(Runner[Table]):
