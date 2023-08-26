@@ -18,8 +18,7 @@ use crate::{
         TimeUnit, Utf8Array,
     },
     series::{IntoSeries, Series},
-    with_match_daft_logical_primitive_types, with_match_daft_types,
-    with_match_dataarray_daft_types,
+    with_match_arrow_daft_types, with_match_daft_logical_primitive_types, with_match_daft_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -1617,7 +1616,7 @@ impl FixedSizeListArray {
             DataType::List(child) => {
                 let element_size = self.fixed_element_len();
                 // TODO: This will be refactored when List is no longer arrow backed
-                let casted_child: Box<dyn arrow2::array::Array> = with_match_dataarray_daft_types!(child.dtype, |$T| {
+                let casted_child: Box<dyn arrow2::array::Array> = with_match_arrow_daft_types!(child.dtype, |$T| {
                     let casted_child_series = self.flat_child.cast(&child.dtype)?;
                     let downcasted = casted_child_series.downcast::<<$T as DaftDataType>::ArrayType>()?;
                     downcasted.data().to_boxed()
