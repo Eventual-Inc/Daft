@@ -12,7 +12,6 @@ pub mod comparison;
 pub mod concat;
 pub mod date;
 pub mod downcast;
-pub mod empty;
 pub mod filter;
 pub mod float;
 pub mod groups;

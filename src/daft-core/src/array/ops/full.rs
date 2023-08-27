@@ -9,6 +9,7 @@ use crate::{
         logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
         DaftPhysicalType, DataType, Field,
     },
+    with_match_daft_types, IntoSeries,
 };
 
 pub trait FullNull {
@@ -96,7 +97,9 @@ impl FullNull for FixedSizeListArray {
         match dtype {
             DataType::FixedSizeList(child, _) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = crate::Series::empty(name, &child.dtype);
+                let empty_child = with_match_daft_types!(&child.dtype, |$T| {
+                    <$T as DaftDataType>::ArrayType::empty(name, &child.dtype).into_series()
+                });
                 Self::new(field, empty_child, None)
             }
             _ => panic!(
