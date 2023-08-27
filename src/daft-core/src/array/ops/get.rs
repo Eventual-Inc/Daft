@@ -269,7 +269,7 @@ mod tests {
             .into_iter()
             .map(|x| x.map(|v| *v))
             .collect::<Vec<Option<i32>>>();
-        let expected = vec![Some(3), Some(4), Some(5)];
+        let expected = vec![Some(6), Some(7), Some(8)];
         assert_eq!(data, expected);
 
         Ok(())
