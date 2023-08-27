@@ -1,8 +1,8 @@
-use std::iter::repeat;
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 
+use crate::array::growable::{Growable, GrowableArray};
 use crate::datatypes::{DaftArrayType, Field};
 use crate::series::Series;
 use crate::DataType;
@@ -51,29 +51,27 @@ impl FixedSizeListArray {
                 "Need at least 1 FixedSizeListArray to concat".to_string(),
             ));
         }
-        let flat_children: Vec<&Series> = arrays.iter().map(|a| &a.flat_child).collect();
-        let concatted_flat_children = Series::concat(&flat_children)?;
 
-        let validities: Vec<_> = arrays.iter().map(|a| &a.validity).collect();
-        let validity = if validities.iter().filter(|v| v.is_some()).count() == 0 {
-            None
-        } else {
-            let lens = arrays.iter().map(|a| a.len());
-            let concatted_validities = validities.iter().zip(lens).flat_map(|(v, l)| {
-                let x: Box<dyn Iterator<Item = bool>> = match v {
-                    None => Box::new(repeat(true).take(l)),
-                    Some(v) => Box::new(v.into_iter()),
-                };
-                x
-            });
-            Some(arrow2::bitmap::Bitmap::from_iter(concatted_validities))
-        };
+        let first_array = arrays.get(0).unwrap();
+        let mut growable = <Self as GrowableArray>::make_growable(
+            first_array.field.name.clone(),
+            &first_array.field.dtype,
+            arrays.to_vec(),
+            arrays
+                .iter()
+                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.unset_bits()))
+                .sum::<usize>()
+                > 0,
+            arrays.iter().map(|a| a.len()).sum(),
+        );
 
-        Ok(Self::new(
-            arrays.first().unwrap().field.clone(),
-            concatted_flat_children,
-            validity,
-        ))
+        for (i, arr) in arrays.iter().enumerate() {
+            growable.extend(i, 0, arr.len());
+        }
+
+        growable
+            .build()
+            .map(|s| s.downcast::<FixedSizeListArray>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {
@@ -158,7 +156,10 @@ mod tests {
             "foo",
             DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
         );
-        let flat_child = Int32Array::from(("foo", (0..validity.len() * 3).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from((
+            "foo",
+            (0i32..(validity.len() * 3) as i32).collect::<Vec<i32>>(),
+        ));
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
