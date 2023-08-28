@@ -25,7 +25,7 @@ impl PushDownProjection {
         projection: &Project,
         plan: &LogicalPlan,
     ) -> DaftResult<Option<Arc<LogicalPlan>>> {
-        let upstream_plan = projection.input.clone();
+        let upstream_plan = &projection.input;
         let upstream_schema = upstream_plan.schema();
 
         // First, drop this projection if it is a no-op.
@@ -53,7 +53,9 @@ impl PushDownProjection {
         if projection_is_noop {
             // Projection discarded but new root node has not been looked at;
             // look at the new root node.
-            let new_plan = self.try_optimize(&upstream_plan)?.unwrap_or(upstream_plan);
+            let new_plan = self
+                .try_optimize(upstream_plan)?
+                .unwrap_or(upstream_plan.clone());
             return Ok(Some(new_plan));
         }
 
