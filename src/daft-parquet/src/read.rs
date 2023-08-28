@@ -57,7 +57,7 @@ async fn read_parquet_single(
     };
 
     if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
-        return Err(common_error::DaftError::ValueError(format!("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.")));
+        return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
     }
     let builder = builder.limit(start_offset, num_rows)?;
 
