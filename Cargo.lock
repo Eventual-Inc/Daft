@@ -996,7 +996,6 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-parquet",
- "daft-plan",
  "daft-table",
  "pyo3",
  "pyo3-log",
@@ -1101,24 +1100,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
-]
-
-[[package]]
-name = "daft-plan"
-version = "0.1.10"
-dependencies = [
- "arrow2",
- "bincode",
- "common-error",
- "daft-core",
- "daft-dsl",
- "daft-io",
- "daft-table",
- "indexmap 2.0.0",
- "pyo3",
- "serde",
- "serde_json",
- "snafu",
 ]
 
 [[package]]
