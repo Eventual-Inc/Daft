@@ -1,4 +1,4 @@
-use std::{collections::HashSet, convert::identity, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 
