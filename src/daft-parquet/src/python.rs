@@ -18,6 +18,7 @@ pub mod pylib {
         columns: Option<Vec<&str>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
+        row_groups: Option<Vec<i64>>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -35,6 +36,7 @@ pub mod pylib {
                 columns.as_deref(),
                 start_offset,
                 num_rows,
+                row_groups.as_deref(),
                 io_client,
                 &schema_infer_options,
             )?
@@ -50,6 +52,7 @@ pub mod pylib {
         columns: Option<Vec<&str>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
+        row_groups: Option<Vec<Vec<i64>>>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -62,11 +65,13 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+
             Ok(crate::read::read_parquet_bulk(
                 uris.as_ref(),
                 columns.as_deref(),
                 start_offset,
                 num_rows,
+                row_groups,
                 io_client,
                 &schema_infer_options,
             )?

@@ -28,6 +28,7 @@ pub(crate) struct ParquetReaderBuilder {
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
+    row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
 }
 use parquet2::read::decompress;
@@ -98,6 +99,7 @@ impl ParquetReaderBuilder {
             selected_columns: None,
             row_start_offset: 0,
             num_rows,
+            row_groups: None,
             schema_inference_options: Default::default(),
         })
     }
@@ -145,6 +147,11 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
+    pub fn set_row_groups(mut self, row_groups: &[i64]) -> super::Result<Self> {
+        self.row_groups = Some(row_groups.to_vec());
+        Ok(self)
+    }
+
     pub fn set_infer_schema_options(mut self, opts: &ParquetSchemaInferenceOptions) -> Self {
         self.schema_inference_options = opts.clone();
         self
@@ -155,25 +162,43 @@ impl ParquetReaderBuilder {
 
         let mut curr_row_index = 0;
         let mut rows_to_add = self.num_rows;
-
-        for (i, rg) in self.metadata.row_groups.iter().enumerate() {
-            if (curr_row_index + rg.num_rows()) < self.row_start_offset {
-                curr_row_index += rg.num_rows();
-                continue;
-            } else if rows_to_add > 0 {
+        if let Some(row_groups) = self.row_groups {
+            for i in row_groups {
+                let i = i as usize;
+                if !(0..self.metadata.row_groups.len()).contains(&i) {
+                    return Err(super::Error::ParquetRowGroupOutOfIndex {
+                        path: self.uri,
+                        row_group: i as i64,
+                        total_row_groups: self.metadata.row_groups.len() as i64,
+                    });
+                }
+                let rg = self.metadata.row_groups.get(i).unwrap();
                 let range_to_add = RowGroupRange {
                     row_group_index: i,
-                    start: self.row_start_offset.saturating_sub(curr_row_index),
-                    num_rows: rg.num_rows().min(rows_to_add),
+                    start: 0,
+                    num_rows: rg.num_rows(),
                 };
-                rows_to_add = rows_to_add.saturating_sub(rg.num_rows().min(rows_to_add));
                 row_ranges.push(range_to_add);
-            } else {
-                break;
             }
-            curr_row_index += rg.num_rows();
+        } else {
+            for (i, rg) in self.metadata.row_groups.iter().enumerate() {
+                if (curr_row_index + rg.num_rows()) < self.row_start_offset {
+                    curr_row_index += rg.num_rows();
+                    continue;
+                } else if rows_to_add > 0 {
+                    let range_to_add = RowGroupRange {
+                        row_group_index: i,
+                        start: self.row_start_offset.saturating_sub(curr_row_index),
+                        num_rows: rg.num_rows().min(rows_to_add),
+                    };
+                    rows_to_add = rows_to_add.saturating_sub(rg.num_rows().min(rows_to_add));
+                    row_ranges.push(range_to_add);
+                } else {
+                    break;
+                }
+                curr_row_index += rg.num_rows();
+            }
         }
-
         let mut arrow_schema = infer_schema_with_options(
             &self.metadata,
             &Some(arrow2::io::parquet::read::schema::SchemaInferenceOptions {
