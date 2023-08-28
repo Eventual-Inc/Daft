@@ -4,16 +4,16 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
+use daft_core::with_match_daft_types;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::logical::LogicalArray;
 use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::series::{IntoSeries, Series};
-use daft_core::{with_match_daft_logical_types, with_match_physical_daft_types};
+
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{col, null_lit, AggExpr, Expr};
 #[cfg(feature = "python")]
@@ -73,15 +73,10 @@ impl Table {
             Some(schema) => {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
-                    if field.dtype.is_logical() {
-                        with_match_daft_logical_types!(field.dtype, |$T| {
-                            columns.push(LogicalArray::<$T>::empty(field_name, &field.dtype).into_series())
-                        })
-                    } else {
-                        with_match_physical_daft_types!(field.dtype, |$T| {
-                            columns.push(DataArray::<$T>::empty(field_name, &field.dtype).into_series())
-                        })
-                    }
+                    let series = with_match_daft_types!(&field.dtype, |$T| {
+                        <$T as DaftDataType>::ArrayType::empty(field_name, &field.dtype).into_series()
+                    });
+                    columns.push(series)
                 }
                 Ok(Table { schema, columns })
             }

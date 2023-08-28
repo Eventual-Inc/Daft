@@ -2,12 +2,13 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            ImageArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, ImageArray, LogicalArrayImpl, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, FixedSizeListArray, ListArray,
+        nested_arrays::FixedSizeListArray,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, ListArray,
         NullArray, StructArray, Utf8Array,
     },
+    Series,
 };
 
 use super::as_arrow::AsArrow;
@@ -34,7 +35,7 @@ where
 }
 
 // Default implementations of get ops for DataArray and LogicalArray.
-macro_rules! impl_array_get {
+macro_rules! impl_array_arrow_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
             #[inline]
@@ -56,17 +57,21 @@ macro_rules! impl_array_get {
     };
 }
 
-impl_array_get!(Utf8Array, &str);
-impl_array_get!(BooleanArray, bool);
-impl_array_get!(BinaryArray, &[u8]);
-impl_array_get!(ListArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(FixedSizeListArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(Decimal128Array, i128);
-impl_array_get!(DateArray, i32);
-impl_array_get!(DurationArray, i64);
-impl_array_get!(TimestampArray, i64);
-impl_array_get!(EmbeddingArray, Box<dyn arrow2::array::Array>);
-impl_array_get!(FixedShapeImageArray, Box<dyn arrow2::array::Array>);
+impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        self.physical.get(idx)
+    }
+}
+
+impl_array_arrow_get!(Utf8Array, &str);
+impl_array_arrow_get!(BooleanArray, bool);
+impl_array_arrow_get!(BinaryArray, &[u8]);
+impl_array_arrow_get!(ListArray, Box<dyn arrow2::array::Array>);
+impl_array_arrow_get!(Decimal128Array, i128);
+impl_array_arrow_get!(DateArray, i32);
+impl_array_arrow_get!(DurationArray, i64);
+impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
@@ -161,5 +166,112 @@ impl ImageArray {
         } else {
             None
         }
+    }
+}
+
+impl FixedSizeListArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let fixed_len = self.fixed_element_len();
+        let valid = self.is_valid(idx);
+        if valid {
+            Some(
+                self.flat_child
+                    .slice(idx * fixed_len, (idx + 1) * fixed_len)
+                    .unwrap(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::{
+        datatypes::{nested_arrays::FixedSizeListArray, BooleanArray, Field, Int32Array},
+        DataType, IntoSeries,
+    };
+
+    #[test]
+    fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
+        let field = Field::new(
+            "foo",
+            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
+        );
+        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let validity = None;
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        assert_eq!(arr.len(), 3);
+
+        for i in 0..3 {
+            let element = arr.get(i);
+            assert!(element.is_some());
+
+            let element = element.unwrap();
+            assert_eq!(element.len(), 3);
+            assert_eq!(element.data_type(), &DataType::Int32);
+
+            let element = element.i32()?;
+            let data = element
+                .into_iter()
+                .map(|x| x.map(|v| *v))
+                .collect::<Vec<Option<i32>>>();
+            let expected = ((i * 3) as i32..((i + 1) * 3) as i32)
+                .map(|x| Some(x))
+                .collect::<Vec<Option<i32>>>();
+            assert_eq!(data, expected);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
+        let field = Field::new(
+            "foo",
+            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
+        );
+        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let raw_validity = vec![true, false, true];
+        let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        assert_eq!(arr.len(), 3);
+
+        let element = arr.get(0);
+        assert!(element.is_some());
+        let element = element.unwrap();
+        assert_eq!(element.len(), 3);
+        assert_eq!(element.data_type(), &DataType::Int32);
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.map(|v| *v))
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(0), Some(1), Some(2)];
+        assert_eq!(data, expected);
+
+        let element = arr.get(1);
+        assert!(element.is_none());
+
+        let element = arr.get(2);
+        assert!(element.is_some());
+        let element = element.unwrap();
+        assert_eq!(element.len(), 3);
+        assert_eq!(element.data_type(), &DataType::Int32);
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.map(|v| *v))
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(6), Some(7), Some(8)];
+        assert_eq!(data, expected);
+
+        Ok(())
     }
 }

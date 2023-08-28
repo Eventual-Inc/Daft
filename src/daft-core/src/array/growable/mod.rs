@@ -6,15 +6,17 @@ use crate::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
-        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
-        StructArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        nested_arrays::FixedSizeListArray,
+        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     DataType, Series,
 };
 
 mod arrow_growable;
 mod logical_growable;
+mod nested_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
@@ -120,7 +122,7 @@ impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,
-    arrow_growable::ArrowFixedSizeListGrowable<'a>
+    nested_growable::FixedSizeListGrowable<'a>
 );
 impl_growable_array!(StructArray, arrow_growable::ArrowStructGrowable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);

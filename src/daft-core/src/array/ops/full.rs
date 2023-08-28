@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{iter::repeat, sync::Arc};
 
 #[cfg(feature = "python")]
 use pyo3::Python;
@@ -6,8 +6,10 @@ use pyo3::Python;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{
-        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
+        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
+        DaftPhysicalType, DataType, Field,
     },
+    with_match_daft_types, IntoSeries,
 };
 
 pub trait FullNull {
@@ -81,5 +83,29 @@ where
             <L::PhysicalType as DaftDataType>::ArrayType::empty(field_name, &dtype.to_physical());
         let field = Field::new(field_name, dtype.clone());
         Self::new(field, physical)
+    }
+}
+
+impl FullNull for FixedSizeListArray {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let empty = Self::empty(name, dtype);
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        Self::new(empty.field, empty.flat_child, Some(validity))
+    }
+
+    fn empty(name: &str, dtype: &DataType) -> Self {
+        match dtype {
+            DataType::FixedSizeList(child, _) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_child = with_match_daft_types!(&child.dtype, |$T| {
+                    <$T as DaftDataType>::ArrayType::empty(name, &child.dtype).into_series()
+                });
+                Self::new(field, empty_child, None)
+            }
+            _ => panic!(
+                "Cannot create empty FixedSizeListArray with dtype: {}",
+                dtype
+            ),
+        }
     }
 }
