@@ -5,7 +5,7 @@ use pyo3;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
     datatypes::{Field, PythonArray, PythonType},
-    DataType,
+    DataType, IntoSeries, Series,
 };
 
 use super::Growable;
@@ -33,7 +33,7 @@ impl<'a> PythonGrowable<'a> {
     }
 }
 
-impl<'a> Growable<DataArray<PythonType>> for PythonGrowable<'a> {
+impl<'a> Growable for PythonGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let arr = self.arr_refs.get(index).unwrap();
@@ -59,12 +59,12 @@ impl<'a> Growable<DataArray<PythonType>> for PythonGrowable<'a> {
         }
     }
     #[inline]
-    fn build(&mut self) -> common_error::DaftResult<DataArray<PythonType>> {
+    fn build(&mut self) -> common_error::DaftResult<Series> {
         let mut buf: Vec<pyo3::PyObject> = vec![];
         swap(&mut self.buffer, &mut buf);
 
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
         let arr = PseudoArrowArray::<pyo3::PyObject>::from_pyobj_vec(buf);
-        DataArray::<PythonType>::new(field, Box::new(arr))
+        Ok(DataArray::<PythonType>::new(field, Box::new(arr))?.into_series())
     }
 }

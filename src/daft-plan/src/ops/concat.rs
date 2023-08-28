@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::LogicalPlan;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concat {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,

@@ -43,6 +43,7 @@ async fn read_parquet_single(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
@@ -54,37 +55,70 @@ async fn read_parquet_single(
     } else {
         builder
     };
+
+    if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
+        return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
+    }
     let builder = builder.limit(start_offset, num_rows)?;
 
+    let rows_per_row_groups = builder
+        .metadata()
+        .row_groups
+        .clone()
+        .iter()
+        .map(|m| m.num_rows())
+        .collect::<Vec<_>>();
+    let builder = if let Some(row_groups) = row_groups {
+        builder.set_row_groups(row_groups)?
+    } else {
+        builder
+    };
+
     let metadata_num_rows = builder.metadata().num_rows;
+
     let metadata_num_columns = builder.parquet_schema().fields().len();
 
     let parquet_reader = builder.build()?;
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
     let table = parquet_reader.read_from_ranges(ranges).await?;
 
-    match (start_offset, num_rows) {
-        (None, None) if metadata_num_rows != table.len() => {
-            Err(super::Error::ParquetNumRowMismatch {
+    if let Some(row_groups) = row_groups {
+        let expected_rows: usize = row_groups
+            .iter()
+            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+            .sum();
+        if expected_rows != table.len() {
+            return Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows,
+                metadata_num_rows: expected_rows,
                 read_rows: table.len(),
-            })
+            }
+            .into());
         }
-        (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
-            Err(super::Error::ParquetNumRowMismatch {
+    } else {
+        match (start_offset, num_rows) {
+            (None, None) if metadata_num_rows != table.len() => {
+                Err(super::Error::ParquetNumRowMismatch {
+                    path: uri.into(),
+                    metadata_num_rows,
+                    read_rows: table.len(),
+                })
+            }
+            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+                Err(super::Error::ParquetNumRowMismatch {
+                    path: uri.into(),
+                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                    read_rows: table.len(),
+                })
+            }
+            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                metadata_num_rows: n.min(metadata_num_rows),
                 read_rows: table.len(),
-            })
-        }
-        (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-            path: uri.into(),
-            metadata_num_rows: n.min(metadata_num_rows),
-            read_rows: table.len(),
-        }),
-        _ => Ok(()),
-    }?;
+            }),
+            _ => Ok(()),
+        }?;
+    };
 
     let expected_num_columns = if let Some(columns) = columns {
         columns.len()
@@ -109,6 +143,7 @@ pub fn read_parquet(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
@@ -120,6 +155,7 @@ pub fn read_parquet(
             columns,
             start_offset,
             num_rows,
+            row_groups,
             io_client,
             schema_infer_options,
         )
@@ -132,18 +168,32 @@ pub fn read_parquet_bulk(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
+    row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
-
+    if let Some(ref row_groups) = row_groups {
+        if row_groups.len() != uris.len() {
+            return Err(common_error::DaftError::ValueError(format!(
+                "Mismatch of length of `uris` and `row_groups`. {} vs {}",
+                uris.len(),
+                row_groups.len()
+            )));
+        }
+    }
     let tables = runtime_handle
         .block_on(async move {
-            try_join_all(uris.iter().map(|uri| {
+            try_join_all(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
+                let owned_row_group = match &row_groups {
+                    None => None,
+                    Some(v) => v.get(i).cloned(),
+                };
+
                 let io_client = io_client.clone();
                 let schema_infer_options = schema_infer_options.clone();
                 tokio::task::spawn(async move {
@@ -155,6 +205,7 @@ pub fn read_parquet_bulk(
                         columns.as_deref(),
                         start_offset,
                         num_rows,
+                        owned_row_group.as_deref(),
                         io_client,
                         &schema_infer_options,
                     )
@@ -269,7 +320,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, io_client, &Default::default())?;
+        let table = read_parquet(file, None, None, None, None, io_client, &Default::default())?;
         assert_eq!(table.len(), 100);
 
         Ok(())

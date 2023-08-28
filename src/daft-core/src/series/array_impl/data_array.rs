@@ -13,9 +13,9 @@ use crate::series::array_impl::binary_ops::SeriesBinaryOps;
 use crate::series::Field;
 use crate::{
     datatypes::{
-        BinaryArray, BooleanArray, ExtensionArray, FixedSizeListArray, Float32Array, Float64Array,
-        Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray,
-        StructArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
@@ -56,35 +56,6 @@ fn logical_to_arrow<'a>(
                             arr.validity().cloned(),
                         )
                         .unwrap()
-                        .boxed(),
-                    )
-                }
-            }
-        }
-        DataType::FixedSizeList(child_field, _size) => {
-            let downcasted = arr
-                .as_ref()
-                .as_any()
-                .downcast_ref::<arrow2::array::FixedSizeListArray>()
-                .unwrap();
-            let values = Cow::Borrowed(downcasted.values());
-            let new_values = logical_to_arrow(values, child_field.as_ref());
-            match new_values {
-                Cow::Borrowed(..) => arr,
-                Cow::Owned(new_arr) => {
-                    let new_child_field = arrow2::datatypes::Field::new(
-                        field.name.clone(),
-                        new_arr.data_type().clone(),
-                        true,
-                    );
-                    let new_datatype =
-                        arrow2::datatypes::DataType::LargeList(Box::new(new_child_field));
-                    Cow::Owned(
-                        arrow2::array::FixedSizeListArray::new(
-                            new_datatype,
-                            new_arr,
-                            arr.validity().cloned(),
-                        )
                         .boxed(),
                     )
                 }
@@ -340,7 +311,6 @@ impl_series_like_for_data_array!(UInt64Array);
 impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
-impl_series_like_for_data_array!(FixedSizeListArray);
 impl_series_like_for_data_array!(ListArray);
 impl_series_like_for_data_array!(StructArray);
 impl_series_like_for_data_array!(ExtensionArray);

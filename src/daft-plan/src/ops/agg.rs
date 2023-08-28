@@ -8,7 +8,7 @@ use daft_dsl::{AggExpr, Expr};
 use crate::logical_plan::{self, CreationSnafu};
 use crate::LogicalPlan;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Aggregate {
     // Upstream node.
     pub input: Arc<LogicalPlan>,

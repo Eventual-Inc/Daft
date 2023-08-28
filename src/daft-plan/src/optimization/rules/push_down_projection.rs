@@ -10,7 +10,7 @@ use crate::{
     LogicalPlan,
 };
 
-use super::{ApplyOrder, OptimizerRule};
+use super::{ApplyOrder, OptimizerRule, Transformed};
 
 #[derive(Default)]
 pub struct PushDownProjection {}
@@ -23,8 +23,8 @@ impl PushDownProjection {
     fn try_optimize_project(
         &self,
         projection: &Project,
-        plan: &LogicalPlan,
-    ) -> DaftResult<Option<Arc<LogicalPlan>>> {
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         let upstream_plan = &projection.input;
         let upstream_schema = upstream_plan.schema();
 
@@ -54,9 +54,11 @@ impl PushDownProjection {
             // Projection discarded but new root node has not been looked at;
             // look at the new root node.
             let new_plan = self
-                .try_optimize(upstream_plan)?
-                .unwrap_or(upstream_plan.clone());
-            return Ok(Some(new_plan));
+                .try_optimize(upstream_plan.clone())?
+                .or(Transformed::Yes(upstream_plan.clone()))
+                .unwrap()
+                .clone();
+            return Ok(Transformed::Yes(new_plan));
         }
 
         match upstream_plan.as_ref() {
@@ -83,10 +85,14 @@ impl PushDownProjection {
 
                     let new_plan = plan.with_new_children(&[new_source.into()]);
                     // Retry optimization now that the upstream node is different.
-                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                    Ok(Some(new_plan))
+                    let new_plan = self
+                        .try_optimize(new_plan.clone())?
+                        .or(Transformed::Yes(new_plan))
+                        .unwrap()
+                        .clone();
+                    Ok(Transformed::Yes(new_plan))
                 } else {
-                    Ok(None)
+                    Ok(Transformed::No(plan))
                 }
             }
             LogicalPlan::Project(upstream_projection) => {
@@ -112,10 +118,14 @@ impl PushDownProjection {
 
                     let new_plan = plan.with_new_children(&[new_upstream.into()]);
                     // Retry optimization now that the upstream node is different.
-                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                    Ok(Some(new_plan))
+                    let new_plan = self
+                        .try_optimize(new_plan.clone())?
+                        .or(Transformed::Yes(new_plan))
+                        .unwrap()
+                        .clone();
+                    Ok(Transformed::Yes(new_plan))
                 } else {
-                    Ok(None)
+                    Ok(Transformed::No(plan))
                 }
             }
             LogicalPlan::Aggregate(aggregate) => {
@@ -141,10 +151,14 @@ impl PushDownProjection {
 
                     let new_plan = plan.with_new_children(&[new_upstream.into()]);
                     // Retry optimization now that the upstream node is different.
-                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                    Ok(Some(new_plan))
+                    let new_plan = self
+                        .try_optimize(new_plan.clone())?
+                        .or(Transformed::Yes(new_plan))
+                        .unwrap()
+                        .clone();
+                    Ok(Transformed::Yes(new_plan))
                 } else {
-                    Ok(None)
+                    Ok(Transformed::No(plan))
                 }
             }
             LogicalPlan::Sort(..)
@@ -166,7 +180,7 @@ impl PushDownProjection {
                 let grand_upstream_plan = upstream_plan.children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
                 if grand_upstream_columns.len() == combined_dependencies.len() {
-                    return Ok(None);
+                    return Ok(Transformed::No(plan));
                 }
 
                 let new_subprojection: LogicalPlan = {
@@ -186,8 +200,12 @@ impl PushDownProjection {
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
                 let new_plan = plan.with_new_children(&[new_upstream]);
                 // Retry optimization now that the upstream node is different.
-                let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                Ok(Some(new_plan))
+                let new_plan = self
+                    .try_optimize(new_plan.clone())?
+                    .or(Transformed::Yes(new_plan))
+                    .unwrap()
+                    .clone();
+                Ok(Transformed::Yes(new_plan))
             }
             LogicalPlan::Concat(concat) => {
                 // Get required columns from projection and upstream.
@@ -203,7 +221,7 @@ impl PushDownProjection {
                 let grand_upstream_plan = upstream_plan.children()[0];
                 let grand_upstream_columns = grand_upstream_plan.schema().names();
                 if grand_upstream_columns.len() == combined_dependencies.len() {
-                    return Ok(None);
+                    return Ok(Transformed::No(plan));
                 }
 
                 let pushdown_column_exprs = combined_dependencies
@@ -233,8 +251,12 @@ impl PushDownProjection {
                 ]);
                 let new_plan = plan.with_new_children(&[new_upstream]);
                 // Retry optimization now that the upstream node is different.
-                let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                Ok(Some(new_plan))
+                let new_plan = self
+                    .try_optimize(new_plan.clone())?
+                    .or(Transformed::Yes(new_plan))
+                    .unwrap()
+                    .clone();
+                Ok(Transformed::Yes(new_plan))
             }
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.
@@ -332,16 +354,20 @@ impl PushDownProjection {
                         upstream_plan.with_new_children(&[new_left_upstream, new_right_upstream]);
                     let new_plan = plan.with_new_children(&[new_join]);
                     // Retry optimization now that the upstream node is different.
-                    let new_plan = self.try_optimize(&new_plan)?.unwrap_or(new_plan);
-                    Ok(Some(new_plan))
+                    let new_plan = self
+                        .try_optimize(new_plan.clone())?
+                        .or(Transformed::Yes(new_plan))
+                        .unwrap()
+                        .clone();
+                    Ok(Transformed::Yes(new_plan))
                 } else {
-                    Ok(None)
+                    Ok(Transformed::No(plan))
                 }
             }
             LogicalPlan::Distinct(_) => {
                 // Cannot push down past a Distinct,
                 // since Distinct implicitly requires all parent columns.
-                Ok(None)
+                Ok(Transformed::No(plan))
             }
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
@@ -352,8 +378,8 @@ impl PushDownProjection {
     fn try_optimize_aggregation(
         &self,
         aggregation: &Aggregate,
-        plan: &LogicalPlan,
-    ) -> DaftResult<Option<Arc<LogicalPlan>>> {
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // If this aggregation prunes columns from its upstream,
         // then explicitly create a projection to do so.
         let upstream_plan = &aggregation.input;
@@ -376,24 +402,24 @@ impl PushDownProjection {
             };
 
             let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
-            Ok(Some(new_aggregation))
+            Ok(Transformed::Yes(new_aggregation))
         } else {
-            Ok(None)
+            Ok(Transformed::No(plan))
         }
     }
 }
 
 impl OptimizerRule for PushDownProjection {
-    fn apply_order(&self) -> Option<ApplyOrder> {
-        Some(ApplyOrder::TopDown)
+    fn apply_order(&self) -> ApplyOrder {
+        ApplyOrder::TopDown
     }
 
-    fn try_optimize(&self, plan: &LogicalPlan) -> DaftResult<Option<Arc<LogicalPlan>>> {
-        match plan {
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        match plan.clone().as_ref() {
             LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan),
             // Aggregations also do column projection
             LogicalPlan::Aggregate(aggregation) => self.try_optimize_aggregation(aggregation, plan),
-            _ => Ok(None),
+            _ => Ok(Transformed::No(plan)),
         }
     }
 }

@@ -6,6 +6,7 @@ daft-io = {path = "../daft-io", default-features = false}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 
 [features]
 default = ["python"]

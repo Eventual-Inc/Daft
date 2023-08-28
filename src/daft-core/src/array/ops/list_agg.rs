@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     array::DataArray,
-    datatypes::{DaftArrowBackedType, ListArray},
+    datatypes::{nested_arrays::FixedSizeListArray, DaftArrowBackedType, ListArray},
 };
 use common_error::DaftResult;
 
@@ -95,5 +95,19 @@ impl DaftListAggable for crate::datatypes::PythonArray {
 
         let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(result_pylists);
         Self::new(self.field().clone().into(), Box::new(arrow_array))
+    }
+}
+
+impl DaftListAggable for FixedSizeListArray {
+    type Output = DaftResult<ListArray>;
+
+    fn list(&self) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!("Requires new ListArrays for implementation")
+    }
+
+    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!("Requires new ListArrays for implementation")
     }
 }

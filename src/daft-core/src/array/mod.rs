@@ -57,6 +57,10 @@ where
         self.data().len()
     }
 
+    pub fn data_type(&self) -> &DataType {
+        &self.field.dtype
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -90,10 +94,6 @@ where
 
     pub fn data(&self) -> &dyn arrow2::array::Array {
         self.data.as_ref()
-    }
-
-    pub fn data_type(&self) -> &DataType {
-        &self.field.dtype
     }
 
     pub fn name(&self) -> &str {

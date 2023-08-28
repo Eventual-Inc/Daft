@@ -7,8 +7,9 @@ use crate::{
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, ImageType, TensorType, TimestampType,
+    nested_arrays::FixedSizeListArray, DaftArrayType, DaftDataType, DataArray, DataType,
+    Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType, FixedShapeTensorType,
+    ImageType, TensorType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -115,6 +116,18 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
             )
             .unwrap(),
         }
+    }
+}
+
+/// Implementation for a LogicalArray that wraps a FixedSizeListArray
+impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
+    impl_logical_type!(FixedSizeListArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let mut fixed_size_list_arrow_array = self.physical.to_arrow();
+        let arrow_logical_type = self.data_type().to_arrow().unwrap();
+        fixed_size_list_arrow_array.change_type(arrow_logical_type);
+        fixed_size_list_arrow_array
     }
 }
 

@@ -63,7 +63,10 @@ impl Series {
         let bbox = bbox.fixed_size_list()?;
 
         match &self.data_type() {
-            DataType::Image(_) => self.image()?.crop(bbox).map(|arr| arr.into_series()),
+            DataType::Image(_) => self
+                .downcast::<ImageArray>()?
+                .crop(bbox)
+                .map(|arr| arr.into_series()),
             DataType::FixedShapeImage(..) => self
                 .fixed_size_image()?
                 .crop(bbox)

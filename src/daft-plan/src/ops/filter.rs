@@ -4,7 +4,7 @@ use daft_dsl::Expr;
 
 use crate::LogicalPlan;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Filter {
     // The Boolean expression to filter on.
     pub predicate: Expr,

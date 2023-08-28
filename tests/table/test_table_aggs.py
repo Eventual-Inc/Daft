@@ -536,7 +536,6 @@ def test_grouped_concat_aggs(dtype) -> None:
 
     input = [[x] for x in input] + [None]
     groups = [1, 2, 3, 4, 5, 6, 7]
-
     daft_table = Table.from_pydict({"groups": groups, "input": input}).eval_expression_list(
         [col("groups"), col("input").cast(DataType.list("item", dtype))]
     )

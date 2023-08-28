@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use arrow2::array::Array;
 use common_error::DaftResult;
@@ -27,7 +30,7 @@ use serde::de::{Error as DeError, Visitor};
 use serde::{ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
     #[cfg(feature = "python")]
     InMemoryInfo(InMemoryInfo),
@@ -118,7 +121,37 @@ impl InMemoryInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg(feature = "python")]
+impl PartialEq for InMemoryInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.cache_key == other.cache_key
+            && Python::with_gil(|py| {
+                self.cache_entry
+                    .as_ref(py)
+                    .eq(other.cache_entry.as_ref(py))
+                    .unwrap()
+            })
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for InMemoryInfo {}
+
+#[cfg(feature = "python")]
+impl Hash for InMemoryInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.cache_key.hash(state);
+        let py_obj_hash = Python::with_gil(|py| self.cache_entry.as_ref(py).hash());
+        match py_obj_hash {
+            // If Python object is hashable, hash the Python-side hash.
+            Ok(py_obj_hash) => py_obj_hash.hash(state),
+            // Fall back to hashing the pickled Python object.
+            Err(_) => serde_json::to_vec(self).unwrap().hash(state),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ExternalInfo {
     pub source_schema: SchemaRef,
     pub file_info: Arc<FileInfo>,
@@ -139,7 +172,7 @@ impl ExternalInfo {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FileInfo {
     pub file_paths: Vec<String>,
     pub file_sizes: Vec<Option<i64>>,
@@ -191,7 +224,7 @@ impl FileInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum FileFormat {
     Parquet,
@@ -228,7 +261,7 @@ impl From<&FileFormatConfig> for FileFormat {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
@@ -247,7 +280,7 @@ impl FileFormatConfig {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub use_native_downloader: bool,
@@ -278,7 +311,7 @@ impl ParquetSourceConfig {
 
 impl_bincode_py_state_serialization!(ParquetSourceConfig);
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
     pub delimiter: String,
@@ -299,7 +332,7 @@ impl CsvSourceConfig {
 
 impl_bincode_py_state_serialization!(CsvSourceConfig);
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct JsonSourceConfig {}
 

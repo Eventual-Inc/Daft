@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
@@ -12,7 +9,7 @@ use crate::{
     JoinType, LogicalPlan,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Join {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,
@@ -25,7 +22,19 @@ pub struct Join {
 
     // Joins may rename columns from the right input; this struct tracks those renames.
     // Output name -> Original name
-    pub right_input_mapping: HashMap<String, String>,
+    pub right_input_mapping: indexmap::IndexMap<String, String>,
+}
+
+impl std::hash::Hash for Join {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.input, state);
+        std::hash::Hash::hash(&self.right, state);
+        std::hash::Hash::hash(&self.left_on, state);
+        std::hash::Hash::hash(&self.right_on, state);
+        std::hash::Hash::hash(&self.join_type, state);
+        std::hash::Hash::hash(&self.output_schema, state);
+        state.write_u64(daft_core::schema::hash_index_map(&self.right_input_mapping))
+    }
 }
 
 impl Join {
@@ -36,7 +45,7 @@ impl Join {
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> logical_plan::Result<Self> {
-        let mut right_input_mapping = HashMap::new();
+        let mut right_input_mapping = indexmap::IndexMap::new();
         // Schema inference ported from existing behaviour for parity,
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
         let output_schema = {

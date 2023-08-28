@@ -1043,6 +1043,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1116,6 +1117,7 @@ dependencies = [
  "indexmap 2.0.0",
  "pyo3",
  "serde",
+ "serde_json",
  "snafu",
 ]
 

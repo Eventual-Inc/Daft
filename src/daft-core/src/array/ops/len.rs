@@ -1,4 +1,7 @@
-use crate::{array::DataArray, datatypes::DaftArrowBackedType};
+use crate::{
+    array::DataArray,
+    datatypes::{nested_arrays::FixedSizeListArray, DaftArrowBackedType},
+};
 use common_error::DaftResult;
 
 #[cfg(feature = "python")]
@@ -33,5 +36,16 @@ impl PythonArray {
                 .extract()?;
             Ok(size_bytes)
         })
+    }
+}
+
+/// From arrow2 private method (arrow2::compute::aggregate::validity_size)
+fn validity_size(validity: Option<&arrow2::bitmap::Bitmap>) -> usize {
+    validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
+}
+
+impl FixedSizeListArray {
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        Ok(self.flat_child.size_bytes()? + validity_size(self.validity.as_ref()))
     }
 }

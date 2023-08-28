@@ -16,6 +16,7 @@ from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import Table, schema_inference, table_io
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
+PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 
 
 def test_read_input(tmpdir):
@@ -59,6 +60,12 @@ def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write
 )
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
+
+    # HACK: Pyarrow 13 changed their schema parsing behavior so we receive DataType.list("element", ..) instead of DataType.list("item", ..)
+    # However, our native downloader still parses DataType.list("item", ..) regardless of PyArrow version
+    if PYARROW_GE_13_0_0 and not use_native_downloader and expected_dtype == DataType.list("item", DataType.int64()):
+        expected_dtype = DataType.list("element", DataType.int64())
+
     with _parquet_write_helper(
         pa.Table.from_pydict(
             {

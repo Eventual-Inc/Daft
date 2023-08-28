@@ -71,8 +71,8 @@ jobs:
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}.lcov
+        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}-${{ matrix.new-query-planner }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}-${{ matrix.new-query-planner }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
         DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}

@@ -17,11 +17,10 @@ use crate::{
 
 use super::{
     utils::{conjuct, split_conjuction},
-    ApplyOrder, OptimizerRule,
+    ApplyOrder, OptimizerRule, Transformed,
 };
 
 /// Optimization rules for pushing Filters further into the logical plan.
-
 #[derive(Default)]
 pub struct PushDownFilter {}
 
@@ -32,14 +31,14 @@ impl PushDownFilter {
 }
 
 impl OptimizerRule for PushDownFilter {
-    fn apply_order(&self) -> Option<ApplyOrder> {
-        Some(ApplyOrder::TopDown)
+    fn apply_order(&self) -> ApplyOrder {
+        ApplyOrder::TopDown
     }
 
-    fn try_optimize(&self, plan: &LogicalPlan) -> DaftResult<Option<Arc<LogicalPlan>>> {
-        let filter = match plan {
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        let filter = match plan.as_ref() {
             LogicalPlan::Filter(filter) => filter,
-            _ => return Ok(None),
+            _ => return Ok(Transformed::No(plan)),
         };
         let child_plan = filter.input.as_ref();
         let new_plan = match child_plan {
@@ -63,9 +62,13 @@ impl OptimizerRule for PushDownFilter {
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
-                let new_filter: LogicalPlan =
-                    Filter::new(new_predicate, child_filter.input.clone()).into();
-                self.try_optimize(&new_filter)?.unwrap_or(new_filter.into())
+                let new_filter: Arc<LogicalPlan> =
+                    LogicalPlan::from(Filter::new(new_predicate, child_filter.input.clone()))
+                        .into();
+                self.try_optimize(new_filter.clone())?
+                    .or(Transformed::Yes(new_filter))
+                    .unwrap()
+                    .clone()
             }
             LogicalPlan::Project(child_project) => {
                 // Commute filter with projection if predicate only depends on projection columns that
@@ -106,7 +109,7 @@ impl OptimizerRule for PushDownFilter {
                 }
                 if can_push.is_empty() {
                     // No predicate expressions can be pushed through projection.
-                    return Ok(None);
+                    return Ok(Transformed::No(plan));
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
@@ -176,7 +179,7 @@ impl OptimizerRule for PushDownFilter {
                     .len()
                     == predicate_cols.len();
                 if !can_push_left && !can_push_right {
-                    return Ok(None);
+                    return Ok(Transformed::No(plan));
                 }
                 let new_left: Arc<LogicalPlan> = if can_push_left {
                     LogicalPlan::from(Filter::new(
@@ -198,9 +201,9 @@ impl OptimizerRule for PushDownFilter {
                 };
                 child_plan.with_new_children(&[new_left, new_right])
             }
-            _ => return Ok(None),
+            _ => return Ok(Transformed::No(plan)),
         };
-        Ok(Some(new_plan))
+        Ok(Transformed::Yes(new_plan))
     }
 }
 
@@ -209,44 +212,45 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
     use crate::{
-        display::TreeDisplay,
-        ops::{Coalesce, Concat, Filter, Join, Project, Repartition, Sort, Source},
-        optimization::{rules::PushDownFilter, Optimizer},
-        source_info::{ExternalInfo, FileFormatConfig, FileInfo, SourceInfo},
-        JoinType, JsonSourceConfig, LogicalPlan, PartitionScheme, PartitionSpec,
+        ops::{Coalesce, Concat, Filter, Join, Project, Repartition, Sort},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownFilter,
+            Optimizer,
+        },
+        test::dummy_scan_node,
+        JoinType, LogicalPlan, PartitionScheme,
     };
 
+    /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
+    /// the provided plan with said optimizer, and compares the optimized plan's repr with
+    /// the provided expected repr.
     fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
-        let optimizer = Optimizer::with_rules(vec![Arc::new(PushDownFilter::new())]);
+        let optimizer = Optimizer::with_rule_batches(
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownFilter::new())],
+                RuleExecutionStrategy::Once,
+            )],
+            Default::default(),
+        );
         let optimized_plan = optimizer
-            .optimize_with_rule(optimizer.rules.get(0).unwrap(), &plan)?
-            .unwrap_or_else(|| plan.clone());
-        let mut formatted_plan = String::new();
-        optimized_plan.fmt_tree_indent_style(0, &mut formatted_plan)?;
-        println!("{}", formatted_plan);
-        assert_eq!(formatted_plan, expected);
+            .optimize_with_rules(
+                optimizer.rule_batches[0].rules.as_slice(),
+                plan.clone(),
+                &optimizer.rule_batches[0].order,
+            )?
+            .unwrap()
+            .clone();
+        assert_eq!(optimized_plan.repr_indent(), expected);
 
         Ok(())
     }
 
-    fn dummy_scan_node(fields: Vec<Field>) -> Source {
-        let schema = Arc::new(Schema::new(fields).unwrap());
-        Source::new(
-            schema.clone(),
-            SourceInfo::ExternalInfo(ExternalInfo::new(
-                schema.clone(),
-                FileInfo::new(vec!["/foo".to_string()], vec![None], vec![None]).into(),
-                FileFormatConfig::Json(JsonSourceConfig {}).into(),
-            ))
-            .into(),
-            PartitionSpec::default().into(),
-        )
-    }
-
+    /// Tests combining of two Filters by merging their predicates.
     #[test]
     fn filter_combine_with_filter() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -264,6 +268,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Projections.
     #[test]
     fn filter_commutes_with_projection() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -282,6 +287,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that a Filter with multiple columns in its predicate commutes with a Projection on both of those columns.
     #[test]
     fn filter_commutes_with_projection_multi() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -304,6 +310,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter does not commute with a Projection if the projection expression involves compute.
     #[test]
     fn filter_does_not_commute_with_projection_if_compute() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -324,6 +331,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Projection if projection expression involves deterministic compute.
     // REASON - No expression attribute indicating whether deterministic && (pure || idempotent).
     #[ignore]
     #[test]
@@ -344,6 +352,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Sort.
     #[test]
     fn filter_commutes_with_sort() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -363,6 +372,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Repartition.
     #[test]
     fn filter_commutes_with_repartition() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -381,6 +391,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Coalesce.
     #[test]
     fn filter_commutes_with_coalesce() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
@@ -398,6 +409,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter commutes with Concat.
     #[test]
     fn filter_commutes_with_concat() -> DaftResult<()> {
         let fields = vec![
@@ -418,6 +430,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into the left side of a Join.
     #[test]
     fn filter_commutes_with_join_left_side() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
@@ -448,6 +461,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into the right side of a Join.
     #[test]
     fn filter_commutes_with_join_right_side() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![
@@ -478,6 +492,7 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that Filter can be pushed into both sides of a Join.
     #[test]
     fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
         let source1: LogicalPlan = dummy_scan_node(vec![

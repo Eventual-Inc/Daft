@@ -69,7 +69,12 @@ impl Eq for PartialUDF {}
 
 impl Hash for PartialUDF {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let py_obj_hash = Python::with_gil(|py| self.0.as_ref(py).hash().unwrap());
-        py_obj_hash.hash(state)
+        let py_obj_hash = Python::with_gil(|py| self.0.as_ref(py).hash());
+        match py_obj_hash {
+            // If Python object is hashable, hash the Python-side hash.
+            Ok(py_obj_hash) => py_obj_hash.hash(state),
+            // Fall back to hashing the pickled Python object.
+            Err(_) => serde_json::to_vec(self).unwrap().hash(state),
+        }
     }
 }

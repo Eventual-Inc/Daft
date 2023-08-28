@@ -8,7 +8,7 @@ common-error = {path = "../common/error", default-features = false}
 dyn-clone = "1.0.12"
 fnv = "1.0.7"
 html-escape = {workspace = true}
-indexmap = {workspace = true, features = ["serde"]}
+indexmap = {workspace = true, features = ["serde"], version = "2.0.0"}
 lazy_static = {workspace = true}
 log = {workspace = true}
 ndarray = "0.15.6"
