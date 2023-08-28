@@ -48,6 +48,7 @@ impl LogicalPlan {
     }
 
     pub fn required_columns(&self) -> Vec<HashSet<String>> {
+        // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
             Self::Limit(..) | Self::Coalesce(..) => vec![HashSet::new()],
             Self::Concat(..) => vec![HashSet::new(), HashSet::new()],
