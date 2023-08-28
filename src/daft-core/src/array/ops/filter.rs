@@ -1,7 +1,7 @@
 use std::iter::repeat;
 
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray},
     datatypes::{BooleanArray, DaftArrowBackedType},
 };
 use common_error::DaftResult;
@@ -72,7 +72,7 @@ impl crate::datatypes::PythonArray {
     }
 }
 
-impl crate::datatypes::nested_arrays::FixedSizeListArray {
+impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let size = self.fixed_element_len();
         let expanded_filter: Vec<bool> = mask

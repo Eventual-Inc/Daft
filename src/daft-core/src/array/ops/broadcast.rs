@@ -1,9 +1,9 @@
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
-        DataArray,
+        DataArray, FixedSizeListArray,
     },
-    datatypes::{nested_arrays::FixedSizeListArray, DaftArrayType, DaftPhysicalType, DataType},
+    datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };
 
 use common_error::{DaftError, DaftResult};

@@ -4,10 +4,9 @@ use std::{iter::repeat, sync::Arc};
 use pyo3::Python;
 
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray},
     datatypes::{
-        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
-        DaftPhysicalType, DataType, Field,
+        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
     with_match_daft_types, IntoSeries,
 };

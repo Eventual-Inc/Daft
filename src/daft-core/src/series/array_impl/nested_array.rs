@@ -4,8 +4,9 @@ use common_error::{DaftError, DaftResult};
 
 use crate::array::ops::broadcast::Broadcastable;
 use crate::array::ops::{DaftIsNull, GroupIndices};
+use crate::array::FixedSizeListArray;
+use crate::datatypes::BooleanArray;
 use crate::datatypes::Field;
-use crate::datatypes::{nested_arrays::FixedSizeListArray, BooleanArray};
 use crate::series::{array_impl::binary_ops::SeriesBinaryOps, IntoSeries, Series, SeriesLike};
 use crate::{with_match_integer_daft_types, DataType};
 

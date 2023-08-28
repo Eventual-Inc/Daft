@@ -1,13 +1,12 @@
 use base64::Engine;
 
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TimestampArray,
         },
-        nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
         NullArray, StructArray, Utf8Array,
     },

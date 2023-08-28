@@ -1,6 +1,9 @@
 use super::full::FullNull;
 use super::{DaftCompareAggable, GroupIndices};
-use crate::{array::DataArray, datatypes::nested_arrays::FixedSizeListArray, datatypes::*};
+use crate::{
+    array::{DataArray, FixedSizeListArray},
+    datatypes::*,
+};
 use arrow2::array::PrimitiveArray;
 use arrow2::{self, array::Array};
 

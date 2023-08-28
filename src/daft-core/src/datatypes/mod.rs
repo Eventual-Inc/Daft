@@ -8,7 +8,7 @@ mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-pub use crate::array::DataArray;
+pub use crate::array::{DataArray, FixedSizeListArray};
 use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
@@ -22,9 +22,7 @@ pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 pub use time_unit::TimeUnit;
 
-use self::nested_arrays::FixedSizeListArray;
 pub mod logical;
-pub mod nested_arrays;
 
 /// Trait that is implemented by all Array types
 ///
