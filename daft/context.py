@@ -107,9 +107,8 @@ class DaftContext:
 
     def logical_plan_builder_class(self) -> type[LogicalPlanBuilder]:
         from daft.logical.logical_plan import PyLogicalPlanBuilder
-        from daft.logical.rust_logical_plan import RustLogicalPlanBuilder
 
-        return RustLogicalPlanBuilder if self.use_rust_planner else PyLogicalPlanBuilder
+        return PyLogicalPlanBuilder
 
 
 _DaftContext = DaftContext()
