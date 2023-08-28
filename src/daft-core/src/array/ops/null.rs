@@ -3,8 +3,8 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::DataArray,
-    datatypes::{nested_arrays::FixedSizeListArray, *},
+    array::{DataArray, FixedSizeListArray},
+    datatypes::*,
 };
 use common_error::DaftResult;
 

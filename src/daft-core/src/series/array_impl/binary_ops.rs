@@ -3,7 +3,10 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use common_error::DaftResult;
 
 use crate::{
-    array::ops::{DaftCompare, DaftLogical},
+    array::{
+        ops::{DaftCompare, DaftLogical},
+        FixedSizeListArray,
+    },
     datatypes::{logical::Decimal128Array, Int128Array},
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
@@ -14,9 +17,9 @@ use crate::datatypes::logical::{
     ImageArray, TensorArray, TimestampArray,
 };
 use crate::datatypes::{
-    nested_arrays::FixedSizeListArray, BinaryArray, BooleanArray, ExtensionArray, Float32Array,
-    Float64Array, Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
-    UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+    BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
+    Int64Array, Int8Array, ListArray, NullArray, StructArray, UInt16Array, UInt32Array,
+    UInt64Array, UInt8Array, Utf8Array,
 };
 
 use super::{ArrayWrapper, IntoSeries, Series};

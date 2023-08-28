@@ -4,6 +4,9 @@ pub mod iterator;
 pub mod ops;
 pub mod pseudo_arrow;
 
+mod fixed_size_list_array;
+pub use fixed_size_list_array::FixedSizeListArray;
+
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};

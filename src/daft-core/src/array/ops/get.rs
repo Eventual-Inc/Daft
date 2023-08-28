@@ -1,10 +1,9 @@
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, ImageArray, LogicalArrayImpl, TimestampArray,
         },
-        nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, ListArray,
         NullArray, StructArray, Utf8Array,
     },
@@ -194,7 +193,8 @@ mod tests {
     use common_error::DaftResult;
 
     use crate::{
-        datatypes::{nested_arrays::FixedSizeListArray, BooleanArray, Field, Int32Array},
+        array::FixedSizeListArray,
+        datatypes::{BooleanArray, Field, Int32Array},
         DataType, IntoSeries,
     };
 

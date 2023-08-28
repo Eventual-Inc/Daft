@@ -1,6 +1,6 @@
 use crate::{
-    array::DataArray,
-    datatypes::{nested_arrays::FixedSizeListArray, DaftArrowBackedType},
+    array::{DataArray, FixedSizeListArray},
+    datatypes::DaftArrowBackedType,
 };
 use common_error::DaftResult;
 

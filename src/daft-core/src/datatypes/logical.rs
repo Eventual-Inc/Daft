@@ -7,9 +7,9 @@ use crate::{
 use common_error::DaftResult;
 
 use super::{
-    nested_arrays::FixedSizeListArray, DaftArrayType, DaftDataType, DataArray, DataType,
-    Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType, FixedShapeTensorType,
-    ImageType, TensorType, TimestampType,
+    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, TensorType,
+    TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its

@@ -1,11 +1,10 @@
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        nested_arrays::FixedSizeListArray,
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, Float32Array,
         Float64Array, ListArray, NullArray, StructArray, Utf8Array,
     },

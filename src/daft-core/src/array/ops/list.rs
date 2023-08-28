@@ -1,8 +1,11 @@
 use std::iter::repeat;
 
-use crate::array::growable::{Growable, GrowableArray};
-use crate::datatypes::{nested_arrays::FixedSizeListArray, ListArray, UInt64Array, Utf8Array};
+use crate::array::{
+    growable::{Growable, GrowableArray},
+    FixedSizeListArray,
+};
 use crate::datatypes::{DaftDataType, Utf8Type};
+use crate::datatypes::{ListArray, UInt64Array, Utf8Array};
 use crate::{with_match_daft_types, DataType};
 
 use crate::series::Series;
