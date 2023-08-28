@@ -250,3 +250,59 @@ def test_parquet_read_df(parquet_file, public_storage_io_config):
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_row_groups_selection(public_storage_io_config, multithreaded_io):
+    url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
+    all_rows = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
+    assert len(all_rows) == 100
+    first = Table.read_parquet(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[0]
+    )
+    assert len(first) == 10
+    assert all_rows.to_arrow()[:10] == first.to_arrow()
+
+    fifth = Table.read_parquet(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[5]
+    )
+    assert len(fifth) == 10
+    assert all_rows.to_arrow()[50:60] == fifth.to_arrow()
+
+    repeated = Table.read_parquet(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 1, 1]
+    )
+    assert len(repeated) == 30
+    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[:10]
+    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[10:20]
+    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[20:]
+
+    out_of_order = Table.read_parquet(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 0]
+    )
+    assert len(out_of_order) == 20
+    assert all_rows.to_arrow()[10:20] == out_of_order.to_arrow()[:10]
+    assert all_rows.to_arrow()[0:10] == out_of_order.to_arrow()[10:20]
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
+    url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
+    row_groups = [list(range(10))] + [[i] for i in range(10)]
+    first, *rest = Table.read_parquet_bulk(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
+    )
+    assert len(first) == 100
+    assert len(rest) == 10
+
+    for i, t in enumerate(rest):
+        assert len(t) == 10
+        assert first.to_arrow()[i * 10 : (i + 1) * 10] == t.to_arrow()

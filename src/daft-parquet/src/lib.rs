@@ -78,7 +78,7 @@ pub enum Error {
     },
 
     #[snafu(display(
-        "File: {} had a total of: {} row groups but requested {}",
+        "File: {} had a total of: {} row groups but requested index {}",
         path,
         total_row_groups,
         row_group
