@@ -43,8 +43,7 @@ impl PushDownProjection {
                 column_names
                     .iter()
                     .zip(upstream_schema.names().iter())
-                    .map(|(scol, pcol)| scol.as_ref() == pcol)
-                    .all(identity)
+                    .all(|(scol, pcol)| scol.as_ref() == pcol)
             });
 
             let no_unused_columns = upstream_schema.names().len() == projection.projection.len();
