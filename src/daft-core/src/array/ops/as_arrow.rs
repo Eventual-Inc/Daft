@@ -7,7 +7,7 @@ use crate::{
         logical::{
             DateArray, Decimal128Array, DurationArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ListArray, NullArray, StructArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, ListArray, NullArray, Utf8Array,
     },
 };
 
@@ -62,7 +62,6 @@ impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
 impl_asarrow_dataarray!(ListArray, array::ListArray<i64>);
-impl_asarrow_dataarray!(StructArray, array::StructArray);
 
 #[cfg(feature = "python")]
 impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
@@ -71,5 +70,3 @@ impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);
-impl_asarrow_logicalarray!(ImageArray, array::StructArray);
-impl_asarrow_logicalarray!(TensorArray, array::StructArray);

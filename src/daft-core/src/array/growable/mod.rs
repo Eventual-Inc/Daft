@@ -1,15 +1,15 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::FixedSizeListArray,
+    array::{FixedSizeListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, UInt16Array,
+        UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     DataType, Series,
 };
@@ -120,12 +120,12 @@ impl_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
 impl_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
 impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
+impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,
     nested_growable::FixedSizeListGrowable<'a>
 );
-impl_growable_array!(StructArray, arrow_growable::ArrowStructGrowable<'a>);
-impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
+impl_growable_array!(StructArray, nested_growable::StructGrowable<'a>);
 impl_growable_array!(
     TimestampArray,
     logical_growable::LogicalTimestampGrowable<'a>

@@ -1,7 +1,7 @@
 use super::full::FullNull;
 use super::{DaftCompareAggable, GroupIndices};
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::*,
 };
 use arrow2::array::PrimitiveArray;

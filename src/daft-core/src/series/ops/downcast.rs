@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::array::FixedSizeListArray;
+use crate::array::{FixedSizeListArray, StructArray};
 use crate::datatypes::logical::FixedShapeImageArray;
 use crate::datatypes::*;
 use crate::series::array_impl::ArrayWrapper;

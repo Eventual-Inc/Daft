@@ -8,6 +8,7 @@ mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
+use crate::array::StructArray;
 pub use crate::array::{DataArray, FixedSizeListArray};
 use arrow2::{
     compute::comparison::Simd8,
@@ -130,6 +131,23 @@ macro_rules! impl_daft_logical_fixed_size_list_datatype {
     };
 }
 
+macro_rules! impl_nested_datatype {
+    ($ca:ident, $array_type:ident) => {
+        #[derive(Clone)]
+        pub struct $ca {}
+
+        impl DaftDataType for $ca {
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::Unknown
+            }
+
+            type ArrayType = $array_type;
+        }
+        impl DaftPhysicalType for $ca {}
+    };
+}
+
 impl_daft_arrow_datatype!(NullType, Null);
 impl_daft_arrow_datatype!(BooleanType, Boolean);
 impl_daft_arrow_datatype!(Int8Type, Int8);
@@ -147,21 +165,10 @@ impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
 impl_daft_arrow_datatype!(ListType, Unknown);
-impl_daft_arrow_datatype!(StructType, Unknown);
 impl_daft_arrow_datatype!(ExtensionType, Unknown);
 
-#[derive(Clone)]
-pub struct FixedSizeListType {}
-
-impl DaftDataType for FixedSizeListType {
-    #[inline]
-    fn get_dtype() -> DataType {
-        DataType::Unknown
-    }
-
-    type ArrayType = FixedSizeListArray;
-}
-impl DaftPhysicalType for FixedSizeListType {}
+impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
+impl_nested_datatype!(StructType, StructArray);
 
 impl_daft_logical_data_array_datatype!(Decimal128Type, Unknown, Int128Type);
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
@@ -319,7 +326,6 @@ pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type ListArray = DataArray<ListType>;
-pub type StructArray = DataArray<StructType>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 
 #[cfg(feature = "python")]

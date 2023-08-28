@@ -169,11 +169,6 @@ impl_arrow_backed_data_array_growable!(
     ListType,
     arrow2::array::growable::GrowableList<'a, i64>
 );
-impl_arrow_backed_data_array_growable!(
-    ArrowStructGrowable,
-    StructType,
-    arrow2::array::growable::GrowableStruct<'a>
-);
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
