@@ -140,10 +140,8 @@ impl PushDownProjection {
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
-                        .or(Transformed::Yes(new_plan))
-                        .unwrap()
-                        .clone();
-                    Ok(Transformed::Yes(new_plan))
+                        .or(Transformed::Yes(new_plan));
+                    Ok(new_plan)
                 } else {
                     Ok(Transformed::No(plan))
                 }
