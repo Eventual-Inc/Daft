@@ -1,9 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 
 use daft_core::schema::Schema;
 use daft_dsl::Expr;
+use indexmap::IndexSet;
 
 use crate::{
     ops::{Aggregate, Project, Source},
@@ -160,13 +161,13 @@ impl PushDownProjection {
             | LogicalPlan::Filter(..)
             | LogicalPlan::Explode(..) => {
                 // Get required columns from projection and upstream.
-                let combined_dependencies = upstream_plan
+                let combined_dependencies = plan
                     .required_columns()
                     .iter()
                     .flatten()
-                    .chain(plan.required_columns().iter().flatten())
+                    .chain(upstream_plan.required_columns().iter().flatten())
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
 
                 // Skip optimization if no columns would be pruned.
                 let grand_upstream_plan = upstream_plan.children()[0];
@@ -201,13 +202,13 @@ impl PushDownProjection {
             }
             LogicalPlan::Concat(concat) => {
                 // Get required columns from projection and upstream.
-                let combined_dependencies = upstream_plan
+                let combined_dependencies = plan
                     .required_columns()
                     .iter()
                     .flatten()
-                    .chain(plan.required_columns().iter().flatten())
+                    .chain(upstream_plan.required_columns().iter().flatten())
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
 
                 // Skip optimization if no columns would be pruned.
                 let grand_upstream_plan = upstream_plan.children()[0];
@@ -266,21 +267,21 @@ impl PushDownProjection {
                     .names()
                     .iter()
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
                 let right_upstream_names = join
                     .right
                     .schema()
                     .names()
                     .iter()
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
 
                 let right_combined_dependencies = projection_required_columns
                     .iter()
                     .filter_map(|colname| join.right_input_mapping.get(colname))
                     .chain(right_dependencies.iter())
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
 
                 let left_combined_dependencies = projection_required_columns
                     .iter()
@@ -295,7 +296,7 @@ impl PushDownProjection {
                             .filter_map(|rname| left_upstream_names.get(rname)),
                     )
                     .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<IndexSet<_>>();
 
                 // For each upstream, see if a non-vacuous pushdown is possible.
                 let maybe_new_left_upstream: Option<Arc<LogicalPlan>> = {

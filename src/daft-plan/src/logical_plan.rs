@@ -1,8 +1,9 @@
-use std::{cmp::max, collections::HashSet, num::NonZeroUsize, sync::Arc};
+use std::{cmp::max, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
 use daft_dsl::{optimization::get_required_columns, Expr};
+use indexmap::IndexSet;
 use snafu::Snafu;
 
 use crate::{display::TreeDisplay, ops::*, PartitionScheme, PartitionSpec};
@@ -47,11 +48,11 @@ impl LogicalPlan {
         }
     }
 
-    pub fn required_columns(&self) -> Vec<HashSet<String>> {
+    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
-            Self::Limit(..) | Self::Coalesce(..) => vec![HashSet::new()],
-            Self::Concat(..) => vec![HashSet::new(), HashSet::new()],
+            Self::Limit(..) | Self::Coalesce(..) => vec![IndexSet::new()],
+            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
             Self::Project(projection) => {
                 let res = projection
                     .projection

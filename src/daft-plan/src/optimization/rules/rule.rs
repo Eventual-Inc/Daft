@@ -29,6 +29,7 @@ pub trait OptimizerRule {
 }
 
 /// An enum indicating whether or not the wrapped data has been transformed.
+#[derive(Debug)]
 pub enum Transformed<T> {
     // Yes, the data has been transformed.
     Yes(T),
