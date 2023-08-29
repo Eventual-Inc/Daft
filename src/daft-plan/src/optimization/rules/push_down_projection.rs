@@ -48,10 +48,8 @@ impl PushDownProjection {
             // look at the new root node.
             let new_plan = self
                 .try_optimize(upstream_plan.clone())?
-                .or(Transformed::Yes(upstream_plan.clone()))
-                .unwrap()
-                .clone();
-            return Ok(Transformed::Yes(new_plan));
+                .or(Transformed::Yes(upstream_plan.clone()));
+            return Ok(new_plan);
         }
 
         match upstream_plan.as_ref() {
