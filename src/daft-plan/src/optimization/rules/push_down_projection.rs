@@ -397,10 +397,10 @@ impl OptimizerRule for PushDownProjection {
     }
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan.clone().as_ref() {
-            LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan),
+        match plan.as_ref() {
+            LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan.clone()),
             // Aggregations also do column projection
-            LogicalPlan::Aggregate(aggregation) => self.try_optimize_aggregation(aggregation, plan),
+            LogicalPlan::Aggregate(aggregation) => self.try_optimize_aggregation(aggregation, plan.clone()),
             _ => Ok(Transformed::No(plan)),
         }
     }
