@@ -140,7 +140,7 @@ impl<'a> StructGrowable<'a> {
                 let children_growables : Vec<Box<dyn Growable>>= fields.iter().enumerate().map(|(i, f)| {
                     with_match_daft_types!(&f.dtype, |$T| {
                         Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                            name.clone(),
+                            f.name.clone(),
                             &f.dtype,
                             arrays.iter().map(|a| a.children.get(i).unwrap().downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                             use_validity,
