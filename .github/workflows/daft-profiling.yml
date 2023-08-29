@@ -44,9 +44,6 @@ jobs:
         pip install -r requirements-dev.txt
 
     - name: Build Rust Library
-      env:
-        RUSTFLAGS: -Ctarget-cpu=native
-
       run: |
         source activate
         maturin develop --release
