@@ -1,0 +1,15 @@
+name: hello-world
+
+on:
+  push:
+
+jobs:
+  my-job:
+    runs-on: [self-hosted, linux, arm64, default]
+    steps:
+    - name: my-step
+      run: echo "hello, world!"
+    - name: show-workdir
+      run: ls -lah /opt/actions-runner/_work/
+    - name: show-disks
+      run: df -h
