@@ -27,10 +27,10 @@ impl Series {
             Embedding(..) | FixedShapeImage(..) => self.as_physical()?.list_lengths(),
             Image(..) => {
                 let struct_array = self.as_physical()?;
-                let data_array = struct_array.struct_()?.as_arrow().values()[0]
-                    .as_any()
-                    .downcast_ref::<arrow2::array::ListArray<i64>>()
-                    .unwrap();
+                let data_array = struct_array.struct_()?.children[0]
+                    .list()
+                    .unwrap()
+                    .as_arrow();
                 let offsets = data_array.offsets();
 
                 let mut lens = Vec::with_capacity(self.len());

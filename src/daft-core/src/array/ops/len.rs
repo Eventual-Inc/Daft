@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::DaftArrowBackedType,
 };
 use common_error::DaftResult;
@@ -47,5 +47,18 @@ fn validity_size(validity: Option<&arrow2::bitmap::Bitmap>) -> usize {
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
         Ok(self.flat_child.size_bytes()? + validity_size(self.validity.as_ref()))
+    }
+}
+
+impl StructArray {
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        let children_size_bytes: usize = self
+            .children
+            .iter()
+            .map(|s| s.size_bytes())
+            .collect::<DaftResult<Vec<usize>>>()?
+            .iter()
+            .sum();
+        Ok(children_size_bytes + validity_size(self.validity.as_ref()))
     }
 }

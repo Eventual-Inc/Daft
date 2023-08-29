@@ -210,14 +210,16 @@ impl TensorArray {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.as_arrow();
-        let is_valid = arrow_array
-            .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
+        let is_valid = self.physical.is_valid(idx);
         if is_valid {
-            let data_array = arrow_array.values()[0]
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i64>>()?;
+            let data_array = self
+                .physical
+                .children
+                .get(0)
+                .unwrap()
+                .downcast::<ListArray>()
+                .unwrap()
+                .as_arrow();
             Some(unsafe { data_array.value_unchecked(idx) })
         } else {
             None
