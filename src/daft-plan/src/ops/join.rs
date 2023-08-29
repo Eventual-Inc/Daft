@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use daft_core::schema::{Schema, SchemaRef};
+use daft_core::schema::{hash_index_map, Schema, SchemaRef};
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
@@ -33,7 +33,7 @@ impl std::hash::Hash for Join {
         std::hash::Hash::hash(&self.right_on, state);
         std::hash::Hash::hash(&self.join_type, state);
         std::hash::Hash::hash(&self.output_schema, state);
-        state.write_u64(daft_core::schema::hash_index_map(&self.right_input_mapping))
+        state.write_u64(hash_index_map(&self.right_input_mapping))
     }
 }
 
