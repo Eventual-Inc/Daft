@@ -241,7 +241,7 @@ impl Optimizer {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Fold over the rules, applying each rule to this plan node sequentially.
         rules.iter().try_fold(Transformed::No(plan), |plan, rule| {
-            rule.try_optimize(plan.unwrap().clone())
+            Ok(rule.try_optimize(plan.unwrap().clone())?.or(plan))
         })
     }
 
