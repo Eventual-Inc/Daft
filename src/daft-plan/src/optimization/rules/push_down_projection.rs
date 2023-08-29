@@ -28,27 +28,19 @@ impl PushDownProjection {
         let upstream_plan = &projection.input;
         let upstream_schema = upstream_plan.schema();
 
-        // First, drop this projection if it is a no-op.
+        // First, drop this projection if it is a no-op
+        // (selecting exactly all parent columns in the same order and nothing else).
         let projection_is_noop = {
-            let maybe_column_names = projection
-                .projection
-                .iter()
-                .map(|e| match e {
-                    Expr::Column(colname) => Some(colname.clone()),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>();
-
-            let all_columns_equal = maybe_column_names.map_or(false, |column_names| {
-                column_names
+            // Short circuit early if the projection length is different (obviously not a no-op).
+            upstream_schema.names().len() == projection.projection.len()
+                && projection
+                    .projection
                     .iter()
                     .zip(upstream_schema.names().iter())
-                    .all(|(scol, pcol)| scol.as_ref() == pcol)
-            });
-
-            let no_unused_columns = upstream_schema.names().len() == projection.projection.len();
-
-            all_columns_equal && no_unused_columns
+                    .all(|(expr, upstream_col)| match expr {
+                        Expr::Column(colname) => colname.as_ref() == upstream_col,
+                        _ => false,
+                    })
         };
         if projection_is_noop {
             // Projection discarded but new root node has not been looked at;
