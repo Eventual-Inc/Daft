@@ -103,16 +103,13 @@ pub struct Optimizer {
 impl Optimizer {
     pub fn new(config: OptimizerConfig) -> Self {
         // Default rule batches.
-        let rule_batches: Vec<RuleBatch> = vec![
-            RuleBatch::new(
-                vec![Box::new(PushDownFilter::new())],
-                RuleExecutionStrategy::Once,
-            ),
-            RuleBatch::new(
-                vec![Box::new(PushDownProjection::new())],
-                RuleExecutionStrategy::Once,
-            ),
-        ];
+        let rule_batches: Vec<RuleBatch> = vec![RuleBatch::new(
+            vec![
+                Box::new(PushDownFilter::new()),
+                Box::new(PushDownProjection::new()),
+            ],
+            RuleExecutionStrategy::Once,
+        )];
         Self::with_rule_batches(rule_batches, config)
     }
 
