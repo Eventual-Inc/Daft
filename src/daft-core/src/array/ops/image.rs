@@ -5,12 +5,12 @@ use std::vec;
 use arrow2::array::Array;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::{FixedSizeListArray, StructArray};
+use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
     BinaryArray, DataType, Field, ImageFormat, ImageMode,
 };
-use crate::datatypes::{ListArray, UInt16Array, UInt32Array, UInt8Array};
+use crate::datatypes::{UInt16Array, UInt32Array, UInt8Array};
 use crate::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
@@ -369,10 +369,10 @@ impl ImageArray {
         }
     }
 
-    pub fn data_array(&self) -> &arrow2::array::ListArray<i64> {
+    pub fn data_array(&self) -> &ListArray {
         const IMAGE_DATA_IDX: usize = 0;
         let array = self.physical.children.get(IMAGE_DATA_IDX).unwrap();
-        array.list().unwrap().as_arrow()
+        array.list().unwrap()
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
@@ -606,8 +606,10 @@ impl AsImageObj for ImageArray {
         let end = *offsets.get(idx + 1).unwrap() as usize;
 
         let values = da
-            .values()
-            .as_ref()
+            .flat_child
+            .u8()
+            .unwrap()
+            .data()
             .as_any()
             .downcast_ref::<arrow2::array::UInt8Array>()
             .unwrap();

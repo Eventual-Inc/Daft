@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
-    datatypes::{DaftArrowBackedType, ListArray},
+    array::{
+        growable::{Growable, GrowableArray},
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+    },
+    datatypes::DaftArrowBackedType,
+    with_match_daft_types, IntoSeries,
 };
 use common_error::DaftResult;
 
@@ -13,19 +17,15 @@ use dyn_clone::clone_box;
 impl<T> DaftListAggable for DataArray<T>
 where
     T: DaftArrowBackedType,
+    DataArray<T>: IntoSeries,
+    DataArray<T>: GrowableArray,
 {
     type Output = DaftResult<ListArray>;
     fn list(&self) -> Self::Output {
-        let child_array = clone_box(self.data.as_ref() as &dyn arrow2::array::Array);
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_array.len() as i64])?;
+        let child_series = self.into_series();
+        let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
         let list_field = self.field.to_list_field()?;
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            list_field.dtype.to_arrow()?,
-            offsets,
-            child_array,
-            None,
-        )?);
-        ListArray::new(Arc::new(list_field), nested_array)
+        Ok(ListArray::new(list_field, child_series, offsets, None))
     }
 
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
@@ -33,15 +33,20 @@ where
         let mut offsets = Vec::with_capacity(groups.len() + 1);
 
         offsets.push(0);
-
         for g in groups {
             offsets.push(offsets.last().unwrap() + g.len() as i64);
         }
 
         let total_capacity = *offsets.last().unwrap();
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let mut growable =
-            arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
+
+        let mut growable: Box<dyn Growable> = Box::new(Self::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            self.data.null_count() > 0,
+            total_capacity as usize,
+        ));
+
         for g in groups {
             for idx in g {
                 growable.extend(0, *idx as usize, 1);
@@ -49,14 +54,12 @@ where
         }
         let list_field = self.field.to_list_field()?;
 
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            list_field.dtype.to_arrow()?,
-            offsets,
-            growable.as_box(),
+        Ok(ListArray::new(
+            list_field,
+            growable.build()?,
+            arrow2::offset::OffsetsBuffer::try_from(offsets)?,
             None,
-        )?);
-
-        ListArray::new(Arc::new(list_field), nested_array)
+        ))
     }
 }
 

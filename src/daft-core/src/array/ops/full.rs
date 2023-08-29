@@ -1,10 +1,13 @@
 use std::{iter::repeat, sync::Arc};
 
+use arrow2::offset::OffsetsBuffer;
 #[cfg(feature = "python")]
 use pyo3::Python;
 
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray, StructArray},
+    array::{
+        pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray, ListArray, StructArray,
+    },
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
@@ -116,6 +119,43 @@ impl FullNull for FixedSizeListArray {
                 "Cannot create empty FixedSizeListArray with dtype: {}",
                 dtype
             ),
+        }
+    }
+}
+
+impl FullNull for ListArray {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+
+        match dtype {
+            DataType::List(child) => {
+                let empty_flat_child = with_match_daft_types!(&child.dtype, |$T| {
+                    <<$T as DaftDataType>::ArrayType as FullNull>::empty(name, &child.dtype).into_series()
+                });
+                Self::new(
+                    Field::new(name, dtype.clone()),
+                    empty_flat_child,
+                    OffsetsBuffer::try_from(repeat(0).take(length).collect::<Vec<_>>()).unwrap(),
+                    Some(validity),
+                )
+            }
+            _ => panic!(
+                "Cannot create ListArray::full_null from datatype: {}",
+                dtype
+            ),
+        }
+    }
+
+    fn empty(name: &str, dtype: &DataType) -> Self {
+        match dtype {
+            DataType::List(child) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_child = with_match_daft_types!(&child.dtype, |$T| {
+                    <$T as DaftDataType>::ArrayType::empty(name, &child.dtype).into_series()
+                });
+                Self::new(field, empty_child, OffsetsBuffer::default(), None)
+            }
+            _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
         }
     }
 }

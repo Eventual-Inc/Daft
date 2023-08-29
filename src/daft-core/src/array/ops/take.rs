@@ -1,16 +1,16 @@
 use std::iter::repeat;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, UInt64Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, NullArray,
+        UInt64Array, Utf8Array,
     },
-    DataType, IntoSeries,
+    DataType, IntoSeries, Series,
 };
 use common_error::DaftResult;
 use num_traits::ToPrimitive;
@@ -65,7 +65,6 @@ macro_rules! impl_logicalarray_take {
 impl_dataarray_take!(Utf8Array);
 impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
-impl_dataarray_take!(ListArray);
 impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
 impl_logicalarray_take!(Decimal128Array);
@@ -205,27 +204,6 @@ impl StructArray {
 }
 
 impl TensorArray {
-    #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
-        let is_valid = self.physical.is_valid(idx);
-        if is_valid {
-            let data_array = self
-                .physical
-                .children
-                .get(0)
-                .unwrap()
-                .downcast::<ListArray>()
-                .unwrap()
-                .as_arrow();
-            Some(unsafe { data_array.value_unchecked(idx) })
-        } else {
-            None
-        }
-    }
-
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
@@ -233,14 +211,6 @@ impl TensorArray {
     {
         let new_array = self.physical.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
-    }
-
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let val = self.get(idx);
-        match val {
-            None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v:?}")),
-        }
     }
 
     pub fn html_value(&self, idx: usize) -> String {

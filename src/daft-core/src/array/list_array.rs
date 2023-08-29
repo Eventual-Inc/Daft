@@ -1,0 +1,178 @@
+use std::sync::Arc;
+
+use common_error::{DaftError, DaftResult};
+
+use crate::array::growable::{Growable, GrowableArray};
+use crate::datatypes::{DaftArrayType, Field};
+use crate::series::Series;
+use crate::DataType;
+
+#[derive(Clone)]
+pub struct ListArray {
+    pub field: Arc<Field>,
+    pub flat_child: Series,
+    pub offsets: arrow2::offset::OffsetsBuffer<i64>,
+    pub validity: Option<arrow2::bitmap::Bitmap>,
+}
+
+impl DaftArrayType for ListArray {}
+
+impl ListArray {
+    pub fn new<F: Into<Arc<Field>>>(
+        field: F,
+        flat_child: Series,
+        offsets: arrow2::offset::OffsetsBuffer<i64>,
+        validity: Option<arrow2::bitmap::Bitmap>,
+    ) -> Self {
+        let field: Arc<Field> = field.into();
+        match &field.as_ref().dtype {
+            DataType::List(child_field) => {
+                if validity
+                    .as_ref()
+                    .map_or(false, |validity| validity.len() != offsets.len_proxy())
+                {
+                    panic!("ListArray::new validity length does not match computed length from offsets")
+                }
+                if child_field.as_ref() != flat_child.field() {
+                    panic!(
+                        "ListArray::new expects the child series to have field {}, but received: {}",
+                        child_field,
+                        flat_child.field(),
+                    )
+                }
+                if *offsets.last() != flat_child.len() as i64 {
+                    panic!("ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len())
+                }
+            }
+            _ => panic!(
+                "ListArray::new expected List datatype, but received field: {}",
+                field
+            ),
+        }
+        ListArray {
+            field,
+            flat_child,
+            offsets,
+            validity,
+        }
+    }
+
+    pub fn offsets(&self) -> &arrow2::offset::OffsetsBuffer<i64> {
+        &self.offsets
+    }
+
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
+    }
+
+    pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
+        if arrays.is_empty() {
+            return Err(DaftError::ValueError(
+                "Need at least 1 ListArray to concat".to_string(),
+            ));
+        }
+
+        let first_array = arrays.get(0).unwrap();
+        let mut growable = <Self as GrowableArray>::make_growable(
+            first_array.field.name.clone(),
+            &first_array.field.dtype,
+            arrays.to_vec(),
+            arrays
+                .iter()
+                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.unset_bits()))
+                .sum::<usize>()
+                > 0,
+            arrays.iter().map(|a| a.len()).sum(),
+        );
+
+        for (i, arr) in arrays.iter().enumerate() {
+            growable.extend(i, 0, arr.len());
+        }
+
+        growable
+            .build()
+            .map(|s| s.downcast::<ListArray>().unwrap().clone())
+    }
+
+    pub fn len(&self) -> usize {
+        self.offsets.len_proxy()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn name(&self) -> &str {
+        &self.field.name
+    }
+
+    pub fn data_type(&self) -> &DataType {
+        &self.field.dtype
+    }
+
+    pub fn child_data_type(&self) -> &DataType {
+        match &self.field.dtype {
+            DataType::List(child) => &child.dtype,
+            _ => unreachable!("ListArray must have DataType::List(..)"),
+        }
+    }
+
+    pub fn rename(&self, name: &str) -> Self {
+        Self::new(
+            Field::new(name, self.data_type().clone()),
+            self.flat_child.rename(name),
+            self.offsets.clone(),
+            self.validity.clone(),
+        )
+    }
+
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
+        if start > end {
+            return Err(DaftError::ValueError(format!(
+                "Trying to slice array with negative length, start: {start} vs end: {end}"
+            )));
+        }
+        let offsets = &self.offsets.as_slice()[start..end];
+        if offsets.len() == 0 {
+            let sliced_child = self.flat_child.slice(0, 0)?;
+            let new_offsets = arrow2::offset::OffsetsBuffer::default();
+            Ok(Self::new(
+                self.field.clone(),
+                sliced_child,
+                new_offsets,
+                None,
+            ))
+        } else {
+            let sliced_child = self.flat_child.slice(
+                *offsets.first().unwrap() as usize,
+                *offsets.last().unwrap() as usize,
+            )?;
+            let new_offsets = arrow2::offset::OffsetsBuffer::try_from(
+                offsets
+                    .iter()
+                    .map(|o| o - offsets.first().unwrap())
+                    .collect::<Vec<i64>>(),
+            )?;
+            let new_validity = self
+                .validity
+                .as_ref()
+                .map(|v| v.clone().sliced(start, end - start));
+            Ok(Self::new(
+                self.field.clone(),
+                sliced_child,
+                new_offsets,
+                new_validity,
+            ))
+        }
+    }
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        Box::new(arrow2::array::ListArray::new(
+            arrow_dtype,
+            self.offsets.into(),
+            self.flat_child.to_arrow(),
+            self.validity.clone(),
+        ))
+    }
+}

@@ -27,21 +27,13 @@ impl Series {
             Embedding(..) | FixedShapeImage(..) => self.as_physical()?.list_lengths(),
             Image(..) => {
                 let struct_array = self.as_physical()?;
-                let data_array = struct_array.struct_()?.children[0]
-                    .list()
-                    .unwrap()
-                    .as_arrow();
-                let offsets = data_array.offsets();
-
-                let mut lens = Vec::with_capacity(self.len());
-                for i in 0..self.len() {
-                    lens.push(
-                        (unsafe { offsets.get_unchecked(i + 1) - offsets.get_unchecked(i) }) as u64,
-                    )
-                }
+                let data_array = struct_array.struct_()?.children[0].list().unwrap();
+                let offsets = &data_array.offsets;
                 let array = Box::new(
-                    arrow2::array::PrimitiveArray::from_vec(lens)
-                        .with_validity(data_array.validity().cloned()),
+                    arrow2::array::PrimitiveArray::from_vec(
+                        offsets.lengths().map(|l| l as u64).collect(),
+                    )
+                    .with_validity(data_array.validity.as_ref().cloned()),
                 );
                 Ok(UInt64Array::from((self.name(), array)))
             }

@@ -5,7 +5,7 @@ use crate::{
     array::{
         ops::image::ImageArraySidecarData,
         ops::{from_arrow::FromArrow, full::FullNull},
-        DataArray, FixedSizeListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{
         logical::{
@@ -13,8 +13,7 @@ use crate::{
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
             TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, ListArray, TimeUnit,
-        Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, TimeUnit, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_arrow_daft_types, with_match_daft_logical_primitive_types, with_match_daft_types,

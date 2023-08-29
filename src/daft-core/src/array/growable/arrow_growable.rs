@@ -9,8 +9,8 @@ use crate::{
     },
     datatypes::{
         BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, ListType,
-        NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
+        Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, NullType,
+        UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
     },
     DataType, IntoSeries, Series,
 };
@@ -163,11 +163,6 @@ impl_arrow_backed_data_array_growable!(
     ArrowUtf8Growable,
     Utf8Type,
     arrow2::array::growable::GrowableUtf8<'a, i64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowListGrowable,
-    ListType,
-    arrow2::array::growable::GrowableList<'a, i64>
 );
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
