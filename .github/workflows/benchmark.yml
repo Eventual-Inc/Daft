@@ -12,68 +12,69 @@ env:
 
 jobs:
   profile-daft:
-    runs-on: [self-hosted, linux, arm64, default]
+    runs-on: [self-hosted, linux, x64, bench]
     timeout-minutes: 30
     strategy:
       fail-fast: false
     steps:
-    - uses: actions/checkout@v3
-    - uses: moonrepo/setup-rust@v0
-      with:
-        cache: false
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ runner.os }}-profile
-        cache-all-crates: 'true'
+    - run: df -h
+    # - uses: actions/checkout@v3
+    # - uses: moonrepo/setup-rust@v0
+    #   with:
+    #     cache: false
+    # - uses: Swatinem/rust-cache@v2
+    #   with:
+    #     key: ${{ runner.os }}-profile
+    #     cache-all-crates: 'true'
 
-    - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: deadsnakes/action@v2.1.1
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+    # - name: Set up Python ${{ env.PYTHON_VERSION }}
+    #   uses: deadsnakes/action@v2.1.1
+    #   with:
+    #     python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    # - name: Setup Virtual Env
+    #   run: |
+    #     python -m venv venv
+    #     echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt
+    # - name: Install dependencies
+    #   run: |
+    #     pip install --upgrade pip
+    #     pip install -r requirements-dev.txt
 
-    - name: Build Rust Library
-      env:
-        RUSTFLAGS: -Ctarget-cpu=native
+    # - name: Build Rust Library
+    #   env:
+    #     RUSTFLAGS: -Ctarget-cpu=native
 
-      run: |
-        source activate
-        maturin develop --release
+    #   run: |
+    #     source activate
+    #     maturin develop --release
 
-    - uses: actions/cache@v3
-      env:
-        cache-name: profiling-cache-tpch-data
-      with:
-        path: data/tpch-dbgen
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ env.TPCH_SCALE_FACTOR }}-${{ env.TPCH_NUM_PARTS }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+    # - uses: actions/cache@v3
+    #   env:
+    #     cache-name: profiling-cache-tpch-data
+    #   with:
+    #     path: data/tpch-dbgen
+    #     key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ env.TPCH_SCALE_FACTOR }}-${{ env.TPCH_NUM_PARTS }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
 
-    - name: Generate TPCH Data
-      run: python benchmarking/tpch/data_generation.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --generate_parquet
+    # - name: Generate TPCH Data
+    #   run: python benchmarking/tpch/data_generation.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --generate_parquet
 
-    - name: Run Profiling on TPCH Benchmark
-      env:
-        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
-      run: |
-        py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+    # - name: Run Profiling on TPCH Benchmark
+    #   env:
+    #     DAFT_DEVELOPER_USE_THREAD_POOL: '0'
+    #   run: |
+    #     py-spy record --native --function -o tpch-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
 
-    - name: Run GIL Profiling on TPCH Benchmark
-      env:
-        DAFT_DEVELOPER_USE_THREAD_POOL: '0'
-      run: |
-        py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
+    # - name: Run GIL Profiling on TPCH Benchmark
+    #   env:
+    #     DAFT_DEVELOPER_USE_THREAD_POOL: '0'
+    #   run: |
+    #     py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup || true
 
 
-    - name: Upload Profile
-      uses: actions/upload-artifact@v3
-      with:
-        name: speedscope-profile
-        path: tpch-*.txt
+    # - name: Upload Profile
+    #   uses: actions/upload-artifact@v3
+    #   with:
+    #     name: speedscope-profile
+    #     path: tpch-*.txt
