@@ -496,7 +496,7 @@ mod tests {
         ];
         let plan: LogicalPlan =
             Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
-        let plan: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan.into()).into();
+        let plan: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan.into())?.into();
         let initial_plan: Arc<LogicalPlan> = plan.into();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -538,7 +538,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.or(&lit(false));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::new(new_predicate, filter.input.clone())).into(),
+                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
             ))
         }
     }
@@ -566,7 +566,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.and(&lit(true));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::new(new_predicate, filter.input.clone())).into(),
+                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
             ))
         }
     }

@@ -141,10 +141,12 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
 
     def project(
         self,
-        projection: ExpressionsProjection,
+        projection: list[Expression],
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> PyLogicalPlanBuilder:
-        return Projection(self._plan, projection, custom_resource_request=custom_resource_request).to_builder()
+        return Projection(
+            self._plan, ExpressionsProjection(projection), custom_resource_request=custom_resource_request
+        ).to_builder()
 
     def filter(self, predicate: Expression):
         return Filter(self._plan, ExpressionsProjection([predicate])).to_builder()
@@ -154,8 +156,8 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
         plan = GlobalLimit(local_limit, num=num_rows)
         return plan.to_builder()
 
-    def explode(self, explode_expressions: ExpressionsProjection) -> PyLogicalPlanBuilder:
-        return Explode(self._plan, explode_expressions).to_builder()
+    def explode(self, explode_expressions: list[Expression]) -> PyLogicalPlanBuilder:
+        return Explode(self._plan, ExpressionsProjection(explode_expressions)).to_builder()
 
     def count(self) -> LogicalPlanBuilder:
         local_count_op = LocalCount(self._plan)
@@ -176,14 +178,14 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
             plan = LocalDistinct(plan, all_exprs)
         return plan.to_builder()
 
-    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> PyLogicalPlanBuilder:
-        return Sort(self._plan, sort_by=sort_by, descending=descending).to_builder()
+    def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> PyLogicalPlanBuilder:
+        return Sort(self._plan, sort_by=ExpressionsProjection(sort_by), descending=descending).to_builder()
 
     def repartition(
-        self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
+        self, num_partitions: int, partition_by: list[Expression], scheme: PartitionScheme
     ) -> PyLogicalPlanBuilder:
         return Repartition(
-            self._plan, num_partitions=num_partitions, partition_by=partition_by, scheme=scheme
+            self._plan, num_partitions=num_partitions, partition_by=ExpressionsProjection(partition_by), scheme=scheme
         ).to_builder()
 
     def coalesce(self, num_partitions: int) -> PyLogicalPlanBuilder:
@@ -192,15 +194,15 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def join(  # type: ignore[override]
         self,
         right: PyLogicalPlanBuilder,
-        left_on: ExpressionsProjection,
-        right_on: ExpressionsProjection,
+        left_on: list[Expression],
+        right_on: list[Expression],
         how: JoinType = JoinType.Inner,
     ) -> PyLogicalPlanBuilder:
         return Join(
             self._plan,
             right._plan,
-            left_on=left_on,
-            right_on=right_on,
+            left_on=ExpressionsProjection(left_on),
+            right_on=ExpressionsProjection(right_on),
             how=how,
         ).to_builder()
 
@@ -210,9 +212,11 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def agg(
         self,
         to_agg: list[tuple[Expression, str]],
-        group_by: ExpressionsProjection | None,
+        group_by: list[Expression] | None,
     ) -> PyLogicalPlanBuilder:
-        agg_builder = AggregationPlanBuilder(self._plan, group_by=group_by)
+        agg_builder = AggregationPlanBuilder(
+            self._plan, group_by=ExpressionsProjection(group_by) if group_by is not None else None
+        )
         for expr, op in to_agg:
             if op == "sum":
                 agg_builder.add_sum(expr.name(), expr)
@@ -237,13 +241,13 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
         self,
         root_dir: str | pathlib.Path,
         file_format: FileFormat,
-        partition_cols: ExpressionsProjection | None = None,
+        partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> PyLogicalPlanBuilder:
         return FileWrite(
             self._plan,
             root_dir=root_dir,
-            partition_cols=partition_cols,
+            partition_cols=ExpressionsProjection(partition_cols) if partition_cols is not None else None,
             file_format=file_format,
             compression=compression,
         ).to_builder()

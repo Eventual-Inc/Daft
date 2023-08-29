@@ -63,7 +63,7 @@ impl OptimizerRule for PushDownFilter {
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
                 let new_filter: Arc<LogicalPlan> =
-                    LogicalPlan::from(Filter::new(new_predicate, child_filter.input.clone()))
+                    LogicalPlan::from(Filter::try_new(new_predicate, child_filter.input.clone())?)
                         .into();
                 self.try_optimize(new_filter.clone())?
                     .or(Transformed::Yes(new_filter))
@@ -114,7 +114,7 @@ impl OptimizerRule for PushDownFilter {
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
-                    Filter::new(predicates_to_push, child_project.input.clone()).into();
+                    Filter::try_new(predicates_to_push, child_project.input.clone())?.into();
                 // Create new Projection.
                 let new_projection: LogicalPlan = Project::try_new(
                     push_down_filter.into(),
@@ -131,7 +131,7 @@ impl OptimizerRule for PushDownFilter {
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
                     let post_projection_predicate = conjuct(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
-                        Filter::new(post_projection_predicate, new_projection.into()).into();
+                        Filter::try_new(post_projection_predicate, new_projection.into())?.into();
                     post_projection_filter.into()
                 }
             }
@@ -143,11 +143,11 @@ impl OptimizerRule for PushDownFilter {
             LogicalPlan::Concat(Concat { input, other }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
-                    Filter::new(filter.predicate.clone(), input.clone()).into();
+                    Filter::try_new(filter.predicate.clone(), input.clone())?.into();
                 let new_other: LogicalPlan =
-                    Filter::new(filter.predicate.clone(), other.clone()).into();
+                    Filter::try_new(filter.predicate.clone(), other.clone())?.into();
                 let new_concat: LogicalPlan =
-                    Concat::new(new_input.into(), new_other.into()).into();
+                    Concat::try_new(new_input.into(), new_other.into())?.into();
                 new_concat.into()
             }
             LogicalPlan::Join(child_join) => {
@@ -182,19 +182,19 @@ impl OptimizerRule for PushDownFilter {
                     return Ok(Transformed::No(plan));
                 }
                 let new_left: Arc<LogicalPlan> = if can_push_left {
-                    LogicalPlan::from(Filter::new(
+                    LogicalPlan::from(Filter::try_new(
                         filter.predicate.clone(),
                         child_join.input.clone(),
-                    ))
+                    )?)
                     .into()
                 } else {
                     child_join.input.clone()
                 };
                 let new_right: Arc<LogicalPlan> = if can_push_right {
-                    LogicalPlan::from(Filter::new(
+                    LogicalPlan::from(Filter::try_new(
                         filter.predicate.clone(),
                         child_join.right.clone(),
-                    ))
+                    )?)
                     .into()
                 } else {
                     child_join.right.clone()
@@ -258,9 +258,10 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let first_filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), source.into()).into();
+        let first_filter: LogicalPlan =
+            Filter::try_new(col("a").lt(&lit(2)), source.into())?.into();
         let second_filter: LogicalPlan =
-            Filter::new(col("b").eq(&lit("foo")), first_filter.into()).into();
+            Filter::try_new(col("b").eq(&lit("foo")), first_filter.into())?.into();
         let expected = "\
         Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
@@ -278,7 +279,7 @@ mod tests {
         .into();
         let projection: LogicalPlan =
             Project::try_new(source.into(), vec![col("a")], Default::default())?.into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
         let expected = "\
         Project: col(a)\
         \n  Filter: col(a) < lit(2)\
@@ -297,10 +298,10 @@ mod tests {
         .into();
         let projection: LogicalPlan =
             Project::try_new(source.into(), vec![col("a"), col("b")], Default::default())?.into();
-        let filter: LogicalPlan = Filter::new(
+        let filter: LogicalPlan = Filter::try_new(
             col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))),
             projection.into(),
-        )
+        )?
         .into();
         let expected = "\
         Project: col(a), col(b)\
@@ -321,7 +322,7 @@ mod tests {
         // Projection involves compute on filtered column "a".
         let projection: LogicalPlan =
             Project::try_new(source.into(), vec![col("a") + lit(1)], Default::default())?.into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = "\
         Filter: col(a) < lit(2)\
@@ -343,7 +344,7 @@ mod tests {
         .into();
         let projection: LogicalPlan =
             Project::try_new(source.into(), vec![col("a") + lit(1)], Default::default())?.into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), projection.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
         let expected = "\
         Project: col(a) + lit(1)\
         \n  Filter: [col(a) + lit(1)] < lit(2)\
@@ -360,8 +361,8 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let sort: LogicalPlan = Sort::new(vec![col("a")], vec![true], source.into()).into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), sort.into()).into();
+        let sort: LogicalPlan = Sort::try_new(vec![col("a")], vec![true], source.into())?.into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), sort.into())?.into();
         let expected = "\
         Sort: Sort by = (col(a), descending)\
         \n  Filter: col(a) < lit(2)\
@@ -382,7 +383,7 @@ mod tests {
         .into();
         let repartition: LogicalPlan =
             Repartition::new(1, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), repartition.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), repartition.into())?.into();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Filter: col(a) < lit(2)\
@@ -400,7 +401,7 @@ mod tests {
         ])
         .into();
         let coalesce: LogicalPlan = Coalesce::new(1, source.into()).into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), coalesce.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), coalesce.into())?.into();
         let expected = "\
         Coalesce: To = 1\
         \n  Filter: col(a) < lit(2)\
@@ -418,8 +419,8 @@ mod tests {
         ];
         let source1: LogicalPlan = dummy_scan_node(fields.clone()).into();
         let source2: LogicalPlan = dummy_scan_node(fields).into();
-        let concat: LogicalPlan = Concat::new(source1.into(), source2.into()).into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), concat.into()).into();
+        let concat: LogicalPlan = Concat::try_new(source1.into(), source2.into())?.into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), concat.into())?.into();
         let expected = "\
         Concat\
         \n  Filter: col(a) < lit(2)\
@@ -451,7 +452,7 @@ mod tests {
             JoinType::Inner,
         )?
         .into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), join.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), join.into())?.into();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Filter: col(a) < lit(2)\
@@ -482,7 +483,7 @@ mod tests {
             JoinType::Inner,
         )?
         .into();
-        let filter: LogicalPlan = Filter::new(col("c").lt(&lit(2.0)), join.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("c").lt(&lit(2.0)), join.into())?.into();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)\
@@ -510,7 +511,7 @@ mod tests {
             JoinType::Inner,
         )?
         .into();
-        let filter: LogicalPlan = Filter::new(col("b").lt(&lit(2.0)), join.into()).into();
+        let filter: LogicalPlan = Filter::try_new(col("b").lt(&lit(2.0)), join.into())?.into();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
         \n  Filter: col(b) < lit(2.0)\

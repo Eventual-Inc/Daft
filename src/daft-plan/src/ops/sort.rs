@@ -1,7 +1,13 @@
 use std::sync::Arc;
 
+use common_error::DaftError;
+use daft_core::schema::Schema;
+use daft_core::DataType;
 use daft_dsl::Expr;
+use snafu::ResultExt;
 
+use crate::logical_plan;
+use crate::logical_plan::CreationSnafu;
 use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -13,12 +19,39 @@ pub struct Sort {
 }
 
 impl Sort {
-    pub(crate) fn new(sort_by: Vec<Expr>, descending: Vec<bool>, input: Arc<LogicalPlan>) -> Self {
-        Self {
+    pub(crate) fn try_new(
+        sort_by: Vec<Expr>,
+        descending: Vec<bool>,
+        input: Arc<LogicalPlan>,
+    ) -> logical_plan::Result<Self> {
+        if sort_by.is_empty() {
+            return Err(DaftError::ValueError(
+                "df.sort() must be given at least one column/expression to sort by".to_string(),
+            ))
+            .context(CreationSnafu);
+        }
+        let upstream_schema = input.schema();
+        let sort_by_resolved_schema = {
+            let sort_by_fields = sort_by
+                .iter()
+                .map(|e| e.to_field(&upstream_schema))
+                .collect::<common_error::DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
+            Schema::new(sort_by_fields).context(CreationSnafu)?
+        };
+        for (field, expr) in sort_by_resolved_schema.fields.values().zip(sort_by.iter()) {
+            if let dt @ (DataType::Null | DataType::Binary | DataType::Boolean) = &field.dtype {
+                return Err(DaftError::ValueError(format!(
+                    "Cannot sort on expression {expr} with type: {dt}",
+                )))
+                .context(CreationSnafu);
+            }
+        }
+        Ok(Self {
             sort_by,
             descending,
             input,
-        }
+        })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

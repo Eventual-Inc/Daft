@@ -224,10 +224,10 @@ impl LogicalPlan {
                 Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(), resource_request.clone(),
                 ).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(predicate.clone(), input.clone())),
+                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(predicate.clone(), input.clone()).unwrap()),
                 Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
-                Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::new(sort_by.clone(), descending.clone(), input.clone())),
+                Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::try_new(sort_by.clone(), descending.clone(), input.clone()).unwrap()),
                 Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
                 Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
@@ -237,7 +237,7 @@ impl LogicalPlan {
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
+                Self::Concat(_) => Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap()),
                 Self::Join(Join { left_on, right_on, join_type, .. }) => Self::Join(Join::try_new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },

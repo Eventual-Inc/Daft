@@ -333,7 +333,7 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
-        cols: Optional[ExpressionsProjection] = None
+        cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -374,7 +374,7 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
-        cols: Optional[ExpressionsProjection] = None
+        cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
@@ -398,9 +398,8 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> ExpressionsProjection:
-        expressions = [col(c) if isinstance(c, str) else c for c in columns]
-        return ExpressionsProjection(expressions)
+    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> List[Expression]:
+        return [col(c) if isinstance(c, str) else c for c in columns]
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
@@ -499,7 +498,7 @@ class DataFrame:
             DataFrame: DataFrame with some columns excluded.
         """
         names_to_skip = set(names)
-        el = ExpressionsProjection([col(e.name) for e in self._builder.schema() if e.name not in names_to_skip])
+        el = [col(e.name) for e in self._builder.schema() if e.name not in names_to_skip]
         builder = self._builder.project(el)
         return DataFrame(builder)
 
@@ -544,7 +543,7 @@ class DataFrame:
             [col(field.name) for field in self._builder.schema() if field.name != column_name]
         )
         new_schema = prev_schema_as_cols.union(ExpressionsProjection([expr.alias(column_name)]))
-        builder = self._builder.project(new_schema, resource_request)
+        builder = self._builder.project(list(new_schema), resource_request)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -625,7 +624,7 @@ class DataFrame:
         """
         if len(partition_by) == 0:
             scheme = PartitionScheme.Random
-            exprs: ExpressionsProjection = ExpressionsProjection([])
+            exprs = []
         else:
             scheme = PartitionScheme.Hash
             exprs = self.__column_input_to_expression(partition_by)
@@ -655,7 +654,7 @@ class DataFrame:
             # Do a split (increase the number of partitions).
             builder = self._builder.repartition(
                 num_partitions=num,
-                partition_by=ExpressionsProjection([]),
+                partition_by=[],
                 scheme=PartitionScheme.Unknown,
             )
             return DataFrame(builder)
@@ -845,7 +844,7 @@ class DataFrame:
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
 
-        builder = self._builder.agg(exprs_to_agg, group_by)
+        builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -964,7 +963,7 @@ class DataFrame:
         Returns:
             GroupedDataFrame: DataFrame to Aggregate
         """
-        return GroupedDataFrame(self, self.__column_input_to_expression(group_by))
+        return GroupedDataFrame(self, ExpressionsProjection(self.__column_input_to_expression(group_by)))
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""

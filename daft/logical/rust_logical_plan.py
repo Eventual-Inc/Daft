@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 
 import fsspec
 
-from daft import DataType, col
+from daft import col
 from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest
-from daft.errors import ExpressionTypeError
-from daft.expressions.expressions import Expression, ExpressionsProjection
+from daft.expressions.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -73,23 +72,14 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
 
     def project(
         self,
-        projection: ExpressionsProjection,
+        projection: list[Expression],
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> RustLogicalPlanBuilder:
-        exprs = [expr._expr for expr in projection]
-        builder = self._builder.project(exprs, custom_resource_request)
+        projection_pyexprs = [expr._expr for expr in projection]
+        builder = self._builder.project(projection_pyexprs, custom_resource_request)
         return RustLogicalPlanBuilder(builder)
 
     def filter(self, predicate: Expression) -> RustLogicalPlanBuilder:
-        # TODO(Clark): Move this logic to Rust side after we've ported ExpressionsProjection.
-        predicate_expr_proj = ExpressionsProjection([predicate])
-        predicate_schema = predicate_expr_proj.resolve_schema(self.schema())
-        for resolved_field, predicate_expr in zip(predicate_schema, predicate_expr_proj):
-            resolved_type = resolved_field.dtype
-            if resolved_type != DataType.bool():
-                raise ValueError(
-                    f"Expected expression {predicate_expr} to resolve to type Boolean, but received: {resolved_type}"
-                )
         builder = self._builder.filter(predicate._expr)
         return RustLogicalPlanBuilder(builder)
 
@@ -97,7 +87,7 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         builder = self._builder.limit(num_rows)
         return RustLogicalPlanBuilder(builder)
 
-    def explode(self, explode_expressions: ExpressionsProjection) -> RustLogicalPlanBuilder:
+    def explode(self, explode_expressions: list[Expression]) -> RustLogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
         builder = self._builder.explode(explode_pyexprs)
         return RustLogicalPlanBuilder(builder)
@@ -113,25 +103,18 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         builder = self._builder.distinct()
         return RustLogicalPlanBuilder(builder)
 
-    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
-        # Disallow sorting by null, binary, and boolean columns.
-        # TODO(Clark): This is a port of an existing constraint, we should look at relaxing this.
-        resolved_sort_by_schema = sort_by.resolve_schema(self.schema())
-        for f, sort_by_expr in zip(resolved_sort_by_schema, sort_by):
-            if f.dtype == DataType.null() or f.dtype == DataType.binary() or f.dtype == DataType.bool():
-                raise ExpressionTypeError(f"Cannot sort on expression {sort_by_expr} with type: {f.dtype}")
-
-        sort_by_exprs = [expr._expr for expr in sort_by]
+    def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> RustLogicalPlanBuilder:
+        sort_by_pyexprs = [expr._expr for expr in sort_by]
         if not isinstance(descending, list):
-            descending = [descending] * len(sort_by_exprs)
-        builder = self._builder.sort(sort_by_exprs, descending)
+            descending = [descending] * len(sort_by_pyexprs)
+        builder = self._builder.sort(sort_by_pyexprs, descending)
         return RustLogicalPlanBuilder(builder)
 
     def repartition(
-        self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
+        self, num_partitions: int, partition_by: list[Expression], scheme: PartitionScheme
     ) -> RustLogicalPlanBuilder:
-        partition_by_exprs = [expr._expr for expr in partition_by]
-        builder = self._builder.repartition(num_partitions, partition_by_exprs, scheme)
+        partition_by_pyexprs = [expr._expr for expr in partition_by]
+        builder = self._builder.repartition(num_partitions, partition_by_pyexprs, scheme)
         return RustLogicalPlanBuilder(builder)
 
     def coalesce(self, num_partitions: int) -> RustLogicalPlanBuilder:
@@ -145,7 +128,7 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
     def agg(
         self,
         to_agg: list[tuple[Expression, str]],
-        group_by: ExpressionsProjection | None,
+        group_by: list[Expression] | None,
     ) -> RustLogicalPlanBuilder:
         exprs = []
         for expr, op in to_agg:
@@ -166,23 +149,17 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
             else:
                 raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
-        builder = self._builder.aggregate(
-            [expr._expr for expr in exprs], group_by.to_inner_py_exprs() if group_by is not None else []
-        )
+        group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
+        builder = self._builder.aggregate([expr._expr for expr in exprs], group_by_pyexprs)
         return RustLogicalPlanBuilder(builder)
 
     def join(  # type: ignore[override]
         self,
         right: RustLogicalPlanBuilder,
-        left_on: ExpressionsProjection,
-        right_on: ExpressionsProjection,
+        left_on: list[Expression],
+        right_on: list[Expression],
         how: JoinType = JoinType.Inner,
     ) -> RustLogicalPlanBuilder:
-        for schema, exprs in ((self.schema(), left_on), (right.schema(), right_on)):
-            resolved_schema = exprs.resolve_schema(schema)
-            for f, expr in zip(resolved_schema, exprs):
-                if f.dtype == DataType.null():
-                    raise ExpressionTypeError(f"Cannot join on null type expression: {expr}")
         if how == JoinType.Left:
             raise NotImplementedError("Left join not implemented.")
         elif how == JoinType.Right:
@@ -190,8 +167,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         elif how == JoinType.Inner:
             builder = self._builder.join(
                 right._builder,
-                left_on.to_inner_py_exprs(),
-                right_on.to_inner_py_exprs(),
+                [expr._expr for expr in left_on],
+                [expr._expr for expr in right_on],
                 how,
             )
             return RustLogicalPlanBuilder(builder)
@@ -206,7 +183,7 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         self,
         root_dir: str | pathlib.Path,
         file_format: FileFormat,
-        partition_cols: ExpressionsProjection | None = None,
+        partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> RustLogicalPlanBuilder:
         if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
