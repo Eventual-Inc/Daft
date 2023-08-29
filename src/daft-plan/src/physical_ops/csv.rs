@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TabularScanCsv {
-    pub schema: SchemaRef,
+    pub projection_schema: SchemaRef,
     pub external_info: ExternalInfo,
     pub partition_spec: Arc<PartitionSpec>,
     pub limit: Option<usize>,
@@ -20,14 +20,14 @@ pub struct TabularScanCsv {
 
 impl TabularScanCsv {
     pub(crate) fn new(
-        schema: SchemaRef,
+        projection_schema: SchemaRef,
         external_info: ExternalInfo,
         partition_spec: Arc<PartitionSpec>,
         limit: Option<usize>,
         filters: Vec<ExprRef>,
     ) -> Self {
         Self {
-            schema,
+            projection_schema,
             external_info,
             partition_spec,
             limit,

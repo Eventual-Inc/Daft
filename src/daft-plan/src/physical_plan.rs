@@ -70,7 +70,11 @@ impl PhysicalPlanScheduler {
             // Create dummy inner PhysicalPlan, to be overridden by __setstate__.
             0 => Ok(Arc::new(PhysicalPlan::InMemoryScan(InMemoryScan::new(
                 Default::default(),
-                InMemoryInfo::new("".to_string(), args.py().None()),
+                InMemoryInfo::new(
+                    daft_core::schema::Schema::new(vec![])?.into(),
+                    "".to_string(),
+                    args.py().None(),
+                ),
                 Default::default(),
             )))
             .into()),
@@ -117,17 +121,25 @@ impl PartitionIterator {
 #[cfg(feature = "python")]
 fn tabular_scan(
     py: Python<'_>,
-    schema: &SchemaRef,
+    source_schema: &SchemaRef,
+    projection_schema: &SchemaRef,
     file_info: &Arc<FileInfo>,
     file_format_config: &Arc<FileFormatConfig>,
     limit: &Option<usize>,
 ) -> PyResult<PyObject> {
     let file_info_table: PyTable = file_info.to_table()?.into();
+    let columns_to_read = projection_schema
+        .fields
+        .iter()
+        .map(|(name, _)| name)
+        .cloned()
+        .collect::<Vec<_>>();
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "tabular_scan"))?
         .call1((
-            PySchema::from(schema.clone()),
+            PySchema::from(source_schema.clone()),
+            columns_to_read,
             file_info_table,
             PyFileFormatConfig::from(file_format_config.clone()),
             *limit,
@@ -187,38 +199,62 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularScanParquet(TabularScanParquet {
-                schema,
+                projection_schema,
                 external_info:
                     ExternalInfo {
+                        source_schema,
                         file_info,
                         file_format_config,
                         ..
                     },
                 limit,
                 ..
-            }) => tabular_scan(py, schema, file_info, file_format_config, limit),
+            }) => tabular_scan(
+                py,
+                source_schema,
+                projection_schema,
+                file_info,
+                file_format_config,
+                limit,
+            ),
             PhysicalPlan::TabularScanCsv(TabularScanCsv {
-                schema,
+                projection_schema,
                 external_info:
                     ExternalInfo {
+                        source_schema,
                         file_info,
                         file_format_config,
                         ..
                     },
                 limit,
                 ..
-            }) => tabular_scan(py, schema, file_info, file_format_config, limit),
+            }) => tabular_scan(
+                py,
+                source_schema,
+                projection_schema,
+                file_info,
+                file_format_config,
+                limit,
+            ),
             PhysicalPlan::TabularScanJson(TabularScanJson {
-                schema,
+                projection_schema,
                 external_info:
                     ExternalInfo {
+                        source_schema,
                         file_info,
                         file_format_config,
                         ..
                     },
                 limit,
                 ..
-            }) => tabular_scan(py, schema, file_info, file_format_config, limit),
+            }) => tabular_scan(
+                py,
+                source_schema,
+                projection_schema,
+                file_info,
+                file_format_config,
+                limit,
+            ),
             PhysicalPlan::Project(Project {
                 input,
                 projection,

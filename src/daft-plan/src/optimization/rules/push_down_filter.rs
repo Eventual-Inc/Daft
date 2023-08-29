@@ -147,7 +147,7 @@ impl OptimizerRule for PushDownFilter {
                 let new_other: LogicalPlan =
                     Filter::new(filter.predicate.clone(), other.clone()).into();
                 let new_concat: LogicalPlan =
-                    Concat::new(new_other.into(), new_input.into()).into();
+                    Concat::new(new_input.into(), new_other.into()).into();
                 new_concat.into()
             }
             LogicalPlan::Join(child_join) => {
@@ -418,7 +418,7 @@ mod tests {
         ];
         let source1: LogicalPlan = dummy_scan_node(fields.clone()).into();
         let source2: LogicalPlan = dummy_scan_node(fields).into();
-        let concat: LogicalPlan = Concat::new(source2.into(), source1.into()).into();
+        let concat: LogicalPlan = Concat::new(source1.into(), source2.into()).into();
         let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), concat.into()).into();
         let expected = "\
         Concat\

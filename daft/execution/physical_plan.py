@@ -76,7 +76,6 @@ def file_read(
 
     Yield a plan to read those filenames.
     """
-
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     output_partition_index = 0
 

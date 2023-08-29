@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use daft_core::schema::{Schema, SchemaRef};
+use daft_core::schema::{hash_index_map, Schema, SchemaRef};
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
@@ -9,7 +9,7 @@ use crate::{
     JoinType, LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Join {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,
@@ -17,8 +17,24 @@ pub struct Join {
 
     pub left_on: Vec<Expr>,
     pub right_on: Vec<Expr>,
-    pub output_schema: SchemaRef,
     pub join_type: JoinType,
+    pub output_schema: SchemaRef,
+
+    // Joins may rename columns from the right input; this struct tracks those renames.
+    // Output name -> Original name
+    pub right_input_mapping: indexmap::IndexMap<String, String>,
+}
+
+impl std::hash::Hash for Join {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.input, state);
+        std::hash::Hash::hash(&self.right, state);
+        std::hash::Hash::hash(&self.left_on, state);
+        std::hash::Hash::hash(&self.right_on, state);
+        std::hash::Hash::hash(&self.join_type, state);
+        std::hash::Hash::hash(&self.output_schema, state);
+        state.write_u64(hash_index_map(&self.right_input_mapping))
+    }
 }
 
 impl Join {
@@ -29,6 +45,7 @@ impl Join {
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> logical_plan::Result<Self> {
+        let mut right_input_mapping = indexmap::IndexMap::new();
         // Schema inference ported from existing behaviour for parity,
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294
         let output_schema = {
@@ -44,11 +61,14 @@ impl Join {
                 .cloned()
                 .chain(right.schema().fields.iter().filter_map(|(rname, rfield)| {
                     if left_join_keys.contains(rname.as_str()) {
+                        right_input_mapping.insert(rname.clone(), rname.clone());
                         None
                     } else if left_schema.contains_key(rname) {
                         let new_name = format!("right.{}", rname);
+                        right_input_mapping.insert(new_name.clone(), rname.clone());
                         Some(rfield.rename(new_name))
                     } else {
+                        right_input_mapping.insert(rname.clone(), rname.clone());
                         Some(rfield.clone())
                     }
                 }))
@@ -60,8 +80,9 @@ impl Join {
             right,
             left_on,
             right_on,
-            output_schema,
             join_type,
+            output_schema,
+            right_input_mapping,
         })
     }
 

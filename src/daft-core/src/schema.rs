@@ -133,27 +133,29 @@ impl Eq for Schema {}
 
 impl Hash for Schema {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // Must preserve x == y --> hash(x) == hash(y).
-        // Since IndexMap implements order-independent equality, we must implement an order-independent hashing scheme.
-        // We achieve this by combining the hashes of key-value pairs with an associative + commutative operation so
-        // order does not matter, i.e. (u64, *, 0) must form a commutative monoid. This is satisfied by * = u64::wrapping_add.
-        //
-        // Moreover, the hashing of each individual element must be independent of the hashing of other elements, so we hash
-        // each element with a fresh state (hasher).
-        //
-        // NOTE: This is a relatively weak hash function, but should be fine for our current hashing use case, which is detecting
-        // logical optimization cycles in the optimizer.
-        state.write_u64(
-            self.fields
-                .iter()
-                .map(|kv| {
-                    let mut h = DefaultHasher::new();
-                    kv.hash(&mut h);
-                    h.finish()
-                })
-                .fold(0, u64::wrapping_add),
-        )
+        state.write_u64(hash_index_map(&self.fields))
     }
+}
+
+pub fn hash_index_map<K: Hash, V: Hash>(indexmap: &indexmap::IndexMap<K, V>) -> u64 {
+    // Must preserve x == y --> hash(x) == hash(y).
+    // Since IndexMap implements order-independent equality, we must implement an order-independent hashing scheme.
+    // We achieve this by combining the hashes of key-value pairs with an associative + commutative operation so
+    // order does not matter, i.e. (u64, *, 0) must form a commutative monoid. This is satisfied by * = u64::wrapping_add.
+    //
+    // Moreover, the hashing of each individual element must be independent of the hashing of other elements, so we hash
+    // each element with a fresh state (hasher).
+    //
+    // NOTE: This is a relatively weak hash function, but should be fine for our current hashing use case, which is detecting
+    // logical optimization cycles in the optimizer.
+    indexmap
+        .iter()
+        .map(|kv| {
+            let mut h = DefaultHasher::new();
+            kv.hash(&mut h);
+            h.finish()
+        })
+        .fold(0, u64::wrapping_add)
 }
 
 impl Default for Schema {

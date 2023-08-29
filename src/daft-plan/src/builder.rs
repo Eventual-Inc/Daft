@@ -43,6 +43,7 @@ impl LogicalPlanBuilder {
         partition_spec: &PartitionSpec,
     ) -> PyResult<LogicalPlanBuilder> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
+            schema.schema.clone(),
             partition_key.into(),
             cache_entry.to_object(cache_entry.py()),
         ));
@@ -225,7 +226,7 @@ impl LogicalPlanBuilder {
             )));
         }
         let logical_plan: LogicalPlan =
-            ops::Concat::new(other.plan.clone(), self.plan.clone()).into();
+            ops::Concat::new(self.plan.clone(), other.plan.clone()).into();
         Ok(logical_plan.into())
     }
 

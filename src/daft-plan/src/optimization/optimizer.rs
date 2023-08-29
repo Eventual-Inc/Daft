@@ -6,7 +6,9 @@ use crate::LogicalPlan;
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
-    rules::{ApplyOrder, OptimizerRule, PushDownFilter, PushDownLimit, Transformed},
+    rules::{
+        ApplyOrder, OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, Transformed,
+    },
 };
 
 /// Config for optimizer.
@@ -106,6 +108,7 @@ impl Optimizer {
         let rule_batches: Vec<RuleBatch> = vec![RuleBatch::new(
             vec![
                 Box::new(PushDownFilter::new()),
+                Box::new(PushDownProjection::new()),
                 Box::new(PushDownLimit::new()),
             ],
             RuleExecutionStrategy::Once,
@@ -238,7 +241,7 @@ impl Optimizer {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Fold over the rules, applying each rule to this plan node sequentially.
         rules.iter().try_fold(Transformed::No(plan), |plan, rule| {
-            rule.try_optimize(plan.unwrap().clone())
+            Ok(rule.try_optimize(plan.unwrap().clone())?.or(plan))
         })
     }
 

@@ -4,13 +4,13 @@ use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concat {
-    pub other: Arc<LogicalPlan>,
-    // Upstream node.
+    // Upstream nodes.
     pub input: Arc<LogicalPlan>,
+    pub other: Arc<LogicalPlan>,
 }
 
 impl Concat {
-    pub(crate) fn new(other: Arc<LogicalPlan>, input: Arc<LogicalPlan>) -> Self {
-        Self { other, input }
+    pub(crate) fn new(input: Arc<LogicalPlan>, other: Arc<LogicalPlan>) -> Self {
+        Self { input, other }
     }
 }

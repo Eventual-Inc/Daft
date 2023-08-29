@@ -151,9 +151,11 @@ mod tests {
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
         let py_obj = Python::with_gil(|py| py.None());
+        let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let source: LogicalPlan = Source::new(
-            Schema::new(vec![Field::new("a", DataType::Int64)])?.into(),
-            SourceInfo::InMemoryInfo(InMemoryInfo::new("foo".to_string(), py_obj)).into(),
+            schema.clone(),
+            SourceInfo::InMemoryInfo(InMemoryInfo::new(schema.clone(), "foo".to_string(), py_obj))
+                .into(),
             Default::default(),
         )
         .into();

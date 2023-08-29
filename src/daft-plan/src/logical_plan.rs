@@ -2,6 +2,8 @@ use std::{cmp::max, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
+use daft_dsl::{optimization::get_required_columns, Expr};
+use indexmap::IndexSet;
 use snafu::Snafu;
 
 use crate::{display::TreeDisplay, ops::*, PartitionScheme, PartitionSpec};
@@ -26,7 +28,7 @@ pub enum LogicalPlan {
 impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            Self::Source(Source { schema, .. }) => schema.clone(),
+            Self::Source(Source { output_schema, .. }) => output_schema.clone(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -43,6 +45,80 @@ impl LogicalPlan {
             Self::Concat(Concat { input, .. }) => input.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
+        }
+    }
+
+    pub fn required_columns(&self) -> Vec<IndexSet<String>> {
+        // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
+        match self {
+            Self::Limit(..) | Self::Coalesce(..) => vec![IndexSet::new()],
+            Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Project(projection) => {
+                let res = projection
+                    .projection
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Filter(filter) => {
+                vec![get_required_columns(&filter.predicate)
+                    .iter()
+                    .cloned()
+                    .collect()]
+            }
+            Self::Sort(sort) => {
+                let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
+                vec![res]
+            }
+            Self::Repartition(repartition) => {
+                let res = repartition
+                    .partition_by
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Explode(explode) => {
+                let res = explode
+                    .to_explode
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![res]
+            }
+            Self::Distinct(distinct) => {
+                let res = distinct
+                    .input
+                    .schema()
+                    .fields
+                    .iter()
+                    .map(|(name, _)| name)
+                    .cloned()
+                    .collect();
+                vec![res]
+            }
+            Self::Aggregate(aggregate) => {
+                let res = aggregate
+                    .aggregations
+                    .iter()
+                    .map(|agg| get_required_columns(&Expr::Agg(agg.clone())))
+                    .chain(aggregate.groupby.iter().map(get_required_columns))
+                    .flatten()
+                    .collect();
+                vec![res]
+            }
+            Self::Join(join) => {
+                let left = join.left_on.iter().flat_map(get_required_columns).collect();
+                let right = join
+                    .right_on
+                    .iter()
+                    .flat_map(get_required_columns)
+                    .collect();
+                vec![left, right]
+            }
+            Self::Source(_) => todo!(),
+            Self::Sink(_) => todo!(),
         }
     }
 
@@ -147,7 +223,7 @@ impl LogicalPlan {
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::Concat(_) => Self::Concat(Concat::new(input2.clone(), input1.clone())),
+                Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
                 Self::Join(Join { left_on, right_on, join_type, .. }) => Self::Join(Join::try_new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },

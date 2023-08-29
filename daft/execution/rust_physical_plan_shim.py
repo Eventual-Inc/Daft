@@ -22,7 +22,11 @@ PartitionT = TypeVar("PartitionT")
 
 
 def tabular_scan(
-    schema: PySchema, file_info_table: PyTable, file_format_config: FileFormatConfig, limit: int
+    schema: PySchema,
+    columns_to_read: list[str],
+    file_info_table: PyTable,
+    file_format_config: FileFormatConfig,
+    limit: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     # TODO(Clark): Fix this Ray runner hack.
     part = Table._from_pytable(file_info_table)
@@ -36,8 +40,15 @@ def tabular_scan(
 
     file_info_iter = physical_plan.partition_read(iter(parts_t))
     filepaths_column_name = get_context().runner().runner_io().FS_LISTING_PATH_COLUMN_NAME
+    pyschema = Schema._from_pyschema(schema)
     return physical_plan.file_read(
-        file_info_iter, limit, Schema._from_pyschema(schema), None, None, file_format_config, filepaths_column_name
+        child_plan=file_info_iter,
+        limit_rows=limit,
+        schema=pyschema,
+        fs=None,
+        columns_to_read=columns_to_read,
+        file_format_config=file_format_config,
+        filepaths_column_name=filepaths_column_name,
     )
 
 
