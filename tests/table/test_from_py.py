@@ -293,7 +293,7 @@ def test_from_pydict_arrow_deeply_nested() -> None:
     # the string array is cast to a large string array.
     expected = pa.array(
         data,
-        type=pa.struct([("a", pa.large_list(pa.field("a", pa.struct([("b", pa.large_list(pa.large_string()))]))))]),
+        type=pa.struct([("a", pa.large_list(pa.field("item", pa.struct([("b", pa.large_list(pa.large_string()))]))))]),
     )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
@@ -471,7 +471,7 @@ def test_from_arrow_deeply_nested() -> None:
                 (
                     "a",
                     pa.large_list(
-                        pa.field("a", pa.struct([("b", pa.large_list(pa.field("item", pa.large_string())))]))
+                        pa.field("item", pa.struct([("b", pa.large_list(pa.field("item", pa.large_string())))]))
                     ),
                 )
             ]
