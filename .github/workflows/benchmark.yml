@@ -12,12 +12,13 @@ env:
 
 jobs:
   profile-daft:
-    runs-on: [self-hosted, linux, x64, default]
+    runs-on: [self-hosted, linux, x64, bench]
     timeout-minutes: 30
     strategy:
       fail-fast: false
     steps:
     - run: df -h
+    - run: ls -lah /dev/disk/by-id
     # - uses: actions/checkout@v3
     # - uses: moonrepo/setup-rust@v0
     #   with:
