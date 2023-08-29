@@ -1733,6 +1733,22 @@ impl StructArray {
                 )
                 .into_series())
             }
+            (DataType::Struct(..), DataType::Tensor(..)) => {
+                let casted_struct_array =
+                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                Ok(
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), casted_struct_array)
+                        .into_series(),
+                )
+            }
+            (DataType::Struct(..), DataType::Image(..)) => {
+                let casted_struct_array =
+                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                Ok(
+                    ImageArray::new(Field::new(self.name(), dtype.clone()), casted_struct_array)
+                        .into_series(),
+                )
+            }
             _ => unimplemented!(
                 "Daft casting from {} to {} not implemented",
                 self.data_type(),
