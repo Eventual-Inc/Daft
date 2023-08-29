@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
     steps:
     - name: Install rustup
-      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -- -y
     - uses: actions/checkout@v3
     - uses: moonrepo/setup-rust@v0
       with:
