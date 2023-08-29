@@ -727,3 +727,36 @@ def test_series_cast_logical_numeric(dtype, result_n1, result_0, result_p1) -> N
     series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
     casted = series.cast(DataType.int64())
     assert casted.to_pylist() == [-1, 0, 1]
+
+
+def test_series_cast_struct_col_reordering() -> None:
+    data = pa.array([{"foo": i, "bar": i} for i in range(10)], type=pa.struct({"foo": pa.int64(), "bar": pa.int64()}))
+    series = Series.from_arrow(data)
+    assert series.datatype() == DataType.struct({"foo": DataType.int64(), "bar": DataType.int64()})
+
+    cast_to = DataType.struct({"bar": DataType.int32(), "foo": DataType.int32()})
+    casted = series.cast(cast_to)
+    assert casted.datatype() == cast_to
+    assert casted.to_pylist() == data.to_pylist()
+
+
+def test_series_cast_struct_prune_col() -> None:
+    data = pa.array([{"foo": i, "bar": i} for i in range(10)], type=pa.struct({"foo": pa.int64(), "bar": pa.int64()}))
+    series = Series.from_arrow(data)
+    assert series.datatype() == DataType.struct({"foo": DataType.int64(), "bar": DataType.int64()})
+
+    cast_to = DataType.struct({"bar": DataType.int32()})
+    casted = series.cast(cast_to)
+    assert casted.datatype() == cast_to
+    assert casted.to_pylist() == [{"bar": x["bar"]} for x in data.to_pylist()]
+
+
+def test_series_cast_struct_add_col() -> None:
+    data = pa.array([{"foo": i, "bar": i} for i in range(10)], type=pa.struct({"foo": pa.int64(), "bar": pa.int64()}))
+    series = Series.from_arrow(data)
+    assert series.datatype() == DataType.struct({"foo": DataType.int64(), "bar": DataType.int64()})
+
+    cast_to = DataType.struct({"bar": DataType.int32(), "foo": DataType.int32(), "baz": DataType.string()})
+    casted = series.cast(cast_to)
+    assert casted.datatype() == cast_to
+    assert casted.to_pylist() == [{**x, "baz": None} for x in data.to_pylist()]

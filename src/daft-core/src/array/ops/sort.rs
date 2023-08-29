@@ -1,12 +1,12 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, Float32Array,
-        Float64Array, ListArray, NullArray, StructArray, Utf8Array,
+        Float64Array, ListArray, NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,

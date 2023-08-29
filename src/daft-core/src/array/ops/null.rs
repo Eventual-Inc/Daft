@@ -3,7 +3,7 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::*,
 };
 use common_error::DaftResult;
@@ -58,6 +58,26 @@ impl DaftIsNull for FixedSizeListArray {
     }
 }
 
+impl DaftIsNull for StructArray {
+    type Output = DaftResult<DataArray<BooleanType>>;
+
+    fn is_null(&self) -> Self::Output {
+        match &self.validity {
+            None => Ok(BooleanArray::from((
+                self.name(),
+                repeat(false)
+                    .take(self.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            ))),
+            Some(validity) => Ok(BooleanArray::from((
+                self.name(),
+                validity.into_iter().collect::<Vec<_>>().as_slice(),
+            ))),
+        }
+    }
+}
+
 impl<T> DataArray<T>
 where
     T: DaftPhysicalType,
@@ -69,6 +89,16 @@ where
 }
 
 impl FixedSizeListArray {
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        match &self.validity {
+            None => true,
+            Some(validity) => validity.get(idx).unwrap(),
+        }
+    }
+}
+
+impl StructArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
         match &self.validity {

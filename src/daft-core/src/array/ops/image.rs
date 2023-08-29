@@ -2,17 +2,20 @@ use std::borrow::Cow;
 use std::io::{Seek, SeekFrom, Write};
 use std::vec;
 
+use arrow2::array::Array;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::FixedSizeListArray;
-use crate::datatypes::UInt8Array;
+use crate::array::{FixedSizeListArray, StructArray};
 use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
-    BinaryArray, DataType, Field, ImageFormat, ImageMode, StructArray,
+    BinaryArray, DataType, Field, ImageFormat, ImageMode,
 };
+use crate::datatypes::{ListArray, UInt16Array, UInt32Array, UInt8Array};
+use crate::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
 
+use super::full::FullNull;
 use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 use num_traits::FromPrimitive;
 
@@ -367,38 +370,33 @@ impl ImageArray {
     }
 
     pub fn data_array(&self) -> &arrow2::array::ListArray<i64> {
-        let p = self.physical.as_arrow();
         const IMAGE_DATA_IDX: usize = 0;
-        let array = p.values().get(IMAGE_DATA_IDX).unwrap();
-        array.as_ref().as_any().downcast_ref().unwrap()
+        let array = self.physical.children.get(IMAGE_DATA_IDX).unwrap();
+        array.list().unwrap().as_arrow()
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
-        let p = self.physical.as_arrow();
         const IMAGE_CHANNEL_IDX: usize = 1;
-        let array = p.values().get(IMAGE_CHANNEL_IDX).unwrap();
-        array.as_ref().as_any().downcast_ref().unwrap()
+        let array = self.physical.children.get(IMAGE_CHANNEL_IDX).unwrap();
+        array.u16().unwrap().as_arrow()
     }
 
     pub fn height_array(&self) -> &arrow2::array::UInt32Array {
-        let p = self.physical.as_arrow();
         const IMAGE_HEIGHT_IDX: usize = 2;
-        let array = p.values().get(IMAGE_HEIGHT_IDX).unwrap();
-        array.as_ref().as_any().downcast_ref().unwrap()
+        let array = self.physical.children.get(IMAGE_HEIGHT_IDX).unwrap();
+        array.u32().unwrap().as_arrow()
     }
 
     pub fn width_array(&self) -> &arrow2::array::UInt32Array {
-        let p = self.physical.as_arrow();
         const IMAGE_WIDTH_IDX: usize = 3;
-        let array = p.values().get(IMAGE_WIDTH_IDX).unwrap();
-        array.as_ref().as_any().downcast_ref().unwrap()
+        let array = self.physical.children.get(IMAGE_WIDTH_IDX).unwrap();
+        array.u32().unwrap().as_arrow()
     }
 
     pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
-        let p = self.physical.as_arrow();
         const IMAGE_MODE_IDX: usize = 4;
-        let array = p.values().get(IMAGE_MODE_IDX).unwrap();
-        array.as_ref().as_any().downcast_ref().unwrap()
+        let array = self.physical.children.get(IMAGE_MODE_IDX).unwrap();
+        array.u8().unwrap().as_arrow()
     }
 
     pub fn from_vecs<T: arrow2::types::NativeType>(
@@ -410,16 +408,9 @@ impl ImageArray {
     ) -> DaftResult<Self> {
         if data.is_empty() {
             // Create an all-null array if the data array is empty.
-            let physical_type = data_type.to_physical();
-            let null_struct_array = arrow2::array::new_null_array(
-                physical_type.to_arrow()?,
-                sidecar_data.channels.len(),
-            );
-            let daft_struct_array =
-                StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
             return Ok(ImageArray::new(
-                Field::new(name, data_type),
-                daft_struct_array,
+                Field::new(name, data_type.clone()),
+                StructArray::empty(name, &data_type.to_physical()),
             ));
         }
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
@@ -449,40 +440,52 @@ impl ImageArray {
         data_array: Box<arrow2::array::ListArray<i64>>,
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
-        let values: Vec<Box<dyn arrow2::array::Array>> = vec![
-            data_array,
-            Box::new(
-                arrow2::array::UInt16Array::from_vec(sidecar_data.channels)
-                    .with_validity(sidecar_data.validity.clone()),
-            ),
-            Box::new(
-                arrow2::array::UInt32Array::from_vec(sidecar_data.heights)
-                    .with_validity(sidecar_data.validity.clone()),
-            ),
-            Box::new(
-                arrow2::array::UInt32Array::from_vec(sidecar_data.widths)
-                    .with_validity(sidecar_data.validity.clone()),
-            ),
-            Box::new(
-                arrow2::array::UInt8Array::from_vec(sidecar_data.modes)
-                    .with_validity(sidecar_data.validity.clone()),
-            ),
+        let values: Vec<Series> = vec![
+            ListArray::from_arrow(
+                &Field::new("data", data_array.data_type().into()),
+                data_array,
+            )?
+            .into_series(),
+            UInt16Array::from((
+                "channel",
+                Box::new(
+                    arrow2::array::UInt16Array::from_vec(sidecar_data.channels)
+                        .with_validity(sidecar_data.validity.clone()),
+                ),
+            ))
+            .into_series(),
+            UInt32Array::from((
+                "height",
+                Box::new(
+                    arrow2::array::UInt32Array::from_vec(sidecar_data.heights)
+                        .with_validity(sidecar_data.validity.clone()),
+                ),
+            ))
+            .into_series(),
+            UInt32Array::from((
+                "width",
+                Box::new(
+                    arrow2::array::UInt32Array::from_vec(sidecar_data.widths)
+                        .with_validity(sidecar_data.validity.clone()),
+                ),
+            ))
+            .into_series(),
+            UInt8Array::from((
+                "mode",
+                Box::new(
+                    arrow2::array::UInt8Array::from_vec(sidecar_data.modes)
+                        .with_validity(sidecar_data.validity.clone()),
+                ),
+            ))
+            .into_series(),
         ];
         let physical_type = data_type.to_physical();
-        let struct_array = Box::new(arrow2::array::StructArray::new(
-            physical_type.to_arrow()?,
+        let struct_array = StructArray::new(
+            Field::new(name, physical_type),
             values,
             sidecar_data.validity,
-        ));
-
-        let daft_struct_array = crate::datatypes::StructArray::new(
-            Field::new(name, physical_type).into(),
-            struct_array,
-        )?;
-        Ok(ImageArray::new(
-            Field::new(name, data_type),
-            daft_struct_array,
-        ))
+        );
+        Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
     pub fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {

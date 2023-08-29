@@ -1,14 +1,14 @@
 use std::iter::repeat;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, StructArray, UInt64Array, Utf8Array,
+        NullArray, UInt64Array, Utf8Array,
     },
     DataType, IntoSeries,
 };
@@ -67,7 +67,6 @@ impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(ListArray);
 impl_dataarray_take!(NullArray);
-impl_dataarray_take!(StructArray);
 impl_dataarray_take!(ExtensionArray);
 impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
@@ -181,20 +180,46 @@ impl FixedSizeListArray {
     }
 }
 
+impl StructArray {
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let idx_as_u64 = idx.cast(&DataType::UInt64)?;
+        let taken_validity = self.validity.as_ref().map(|v| {
+            arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+                None => false,
+                Some(i) => v.get_bit(i.to_usize().unwrap()),
+            }))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            self.children
+                .iter()
+                .map(|c| c.take(&idx_as_u64))
+                .collect::<DaftResult<Vec<_>>>()?,
+            taken_validity,
+        ))
+    }
+}
+
 impl TensorArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
         if idx >= self.len() {
             panic!("Out of bounds: {} vs len: {}", idx, self.len())
         }
-        let arrow_array = self.as_arrow();
-        let is_valid = arrow_array
-            .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
+        let is_valid = self.physical.is_valid(idx);
         if is_valid {
-            let data_array = arrow_array.values()[0]
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i64>>()?;
+            let data_array = self
+                .physical
+                .children
+                .get(0)
+                .unwrap()
+                .downcast::<ListArray>()
+                .unwrap()
+                .as_arrow();
             Some(unsafe { data_array.value_unchecked(idx) })
         } else {
             None

@@ -1,16 +1,16 @@
 use base64::Engine;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
-        NullArray, StructArray, Utf8Array,
+        NullArray, Utf8Array,
     },
-    with_match_daft_types,
+    with_match_daft_types, DataType,
 };
 use common_error::DaftResult;
 
@@ -33,7 +33,6 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ListArray, "{:?}");
-impl_array_str_value!(StructArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");
 
@@ -257,6 +256,31 @@ impl FixedShapeTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
             Ok("<FixedShapeTensor>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl StructArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.is_valid(idx) {
+            match &self.field.dtype {
+                DataType::Struct(fields) => {
+                    let fields_to_strs = fields
+                        .iter()
+                        .zip(self.children.iter())
+                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx)?)))
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    let mut result = "{".to_string();
+                    for line in fields_to_strs {
+                        result += &line;
+                    }
+                    result += "}";
+                    Ok(result)
+                }
+                dt => unreachable!("StructArray must have Struct dtype, but found: {}", dt),
+            }
         } else {
             Ok("None".to_string())
         }

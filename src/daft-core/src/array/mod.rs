@@ -5,7 +5,9 @@ pub mod ops;
 pub mod pseudo_arrow;
 
 mod fixed_size_list_array;
+mod struct_array;
 pub use fixed_size_list_array::FixedSizeListArray;
+pub use struct_array::StructArray;
 
 use std::{marker::PhantomData, sync::Arc};
 

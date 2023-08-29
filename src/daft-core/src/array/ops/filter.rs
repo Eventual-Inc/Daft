@@ -1,7 +1,7 @@
 use std::iter::repeat;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::{BooleanArray, DaftArrowBackedType},
 };
 use common_error::DaftResult;
@@ -93,6 +93,30 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             filtered_child,
+            filtered_validity,
+        ))
+    }
+}
+
+impl StructArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let filtered_children = self
+            .children
+            .iter()
+            .map(|s| s.filter(mask))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let filtered_validity = self.validity.as_ref().map(|validity| {
+            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
+                |(keep, valid)| match keep {
+                    None => None,
+                    Some(false) => None,
+                    Some(true) => Some(valid),
+                },
+            ))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            filtered_children,
             filtered_validity,
         ))
     }

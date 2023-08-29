@@ -10,7 +10,7 @@ use crate::{
     datatypes::{
         BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
         Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, ListType,
-        NullType, StructType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
+        NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
     },
     DataType, IntoSeries, Series,
 };
@@ -168,11 +168,6 @@ impl_arrow_backed_data_array_growable!(
     ArrowListGrowable,
     ListType,
     arrow2::array::growable::GrowableList<'a, i64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowStructGrowable,
-    StructType,
-    arrow2::array::growable::GrowableStruct<'a>
 );
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type

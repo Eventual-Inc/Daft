@@ -14,8 +14,8 @@ use crate::series::Field;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, StructArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, UInt16Array,
+        UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
@@ -42,7 +42,7 @@ fn logical_to_arrow<'a>(
                 Cow::Borrowed(..) => arr,
                 Cow::Owned(new_arr) => {
                     let new_child_field = arrow2::datatypes::Field::new(
-                        field.name.clone(),
+                        child_field.name.clone(),
                         new_arr.data_type().clone(),
                         true,
                     );
@@ -312,7 +312,6 @@ impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ListArray);
-impl_series_like_for_data_array!(StructArray);
 impl_series_like_for_data_array!(ExtensionArray);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

@@ -3,7 +3,7 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     count_mode::CountMode,
     datatypes::*,
 };
@@ -95,6 +95,28 @@ where
 }
 
 impl DaftCountAggable for &FixedSizeListArray {
+    type Output = DaftResult<DataArray<UInt64Type>>;
+
+    fn count(&self, mode: CountMode) -> Self::Output {
+        let count = count_arrow_bitmap(&mode, self.validity.as_ref(), self.len());
+        let result_arrow_array = Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
+        DataArray::<UInt64Type>::new(
+            Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
+            result_arrow_array,
+        )
+    }
+
+    fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
+        let counts_per_group: Vec<_> =
+            grouped_count_arrow_bitmap(groups, &mode, self.validity.as_ref());
+        Ok(DataArray::<UInt64Type>::from((
+            self.field.name.as_ref(),
+            counts_per_group,
+        )))
+    }
+}
+
+impl DaftCountAggable for &StructArray {
     type Output = DaftResult<DataArray<UInt64Type>>;
 
     fn count(&self, mode: CountMode) -> Self::Output {

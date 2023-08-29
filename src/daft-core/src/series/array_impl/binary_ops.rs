@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use crate::{
     array::{
         ops::{DaftCompare, DaftLogical},
-        FixedSizeListArray,
+        FixedSizeListArray, StructArray,
     },
     datatypes::{logical::Decimal128Array, Int128Array},
     series::series_like::SeriesLike,
@@ -18,8 +18,8 @@ use crate::datatypes::logical::{
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, Int8Array, ListArray, NullArray, StructArray, UInt16Array, UInt32Array,
-    UInt64Array, UInt8Array, Utf8Array,
+    Int64Array, Int8Array, ListArray, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    Utf8Array,
 };
 
 use super::{ArrayWrapper, IntoSeries, Series};

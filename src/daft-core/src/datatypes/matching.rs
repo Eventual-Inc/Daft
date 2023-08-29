@@ -4,6 +4,7 @@ macro_rules! with_match_daft_types {(
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
+    #[allow(unused_imports)]
     use $crate::datatypes::*;
 
     match $key_type {
@@ -108,7 +109,6 @@ macro_rules! with_match_arrow_daft_types {(
         // Date => __with_ty__! { DateType },
         // Timestamp(_, _) => __with_ty__! { TimestampType },
         List(_) => __with_ty__! { ListType },
-        Struct(_) => __with_ty__! { StructType },
         Extension(_, _, _) => __with_ty__! { ExtensionType },
         Utf8 => __with_ty__! { Utf8Type },
         _ => panic!("{:?} not implemented", $key_type)
