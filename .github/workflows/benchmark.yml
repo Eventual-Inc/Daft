@@ -12,7 +12,7 @@ env:
 
 jobs:
   profile-daft:
-    runs-on: [self-hosted, linux, x64, bench]
+    runs-on: [self-hosted, linux, x64, default]
     timeout-minutes: 30
     strategy:
       fail-fast: false
