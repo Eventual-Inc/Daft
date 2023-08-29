@@ -166,14 +166,14 @@ impl<'a> StructGrowable<'a> {
 
 impl<'a> Growable for StructGrowable<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        for mut child_growable in self.children_growables {
+        for child_growable in &mut self.children_growables {
             child_growable.extend(index, start, len)
         }
         self.growable_validity.extend(index, start, len);
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        for mut child_growable in self.children_growables {
+        for child_growable in &mut self.children_growables {
             child_growable.add_nulls(additional);
         }
         self.growable_validity.add_nulls(additional);
@@ -186,7 +186,7 @@ impl<'a> Growable for StructGrowable<'a> {
 
         let built_children = self
             .children_growables
-            .iter()
+            .iter_mut()
             .map(|cg| cg.build())
             .collect::<DaftResult<Vec<_>>>()?;
         let built_validity = grown_validity.build();

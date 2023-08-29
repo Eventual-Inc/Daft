@@ -103,7 +103,7 @@ impl StructArray {
         let filtered_children = self
             .children
             .iter()
-            .map(|s| s.filter(&mask))
+            .map(|s| s.filter(mask))
             .collect::<DaftResult<Vec<_>>>()?;
         let filtered_validity = self.validity.as_ref().map(|validity| {
             arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(

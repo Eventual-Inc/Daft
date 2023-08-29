@@ -274,9 +274,9 @@ impl StructArray {
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {
-                        result = result + &line;
+                        result += &line;
                     }
-                    result = result + "}";
+                    result += "}";
                     Ok(result)
                 }
                 dt => unreachable!("StructArray must have Struct dtype, but found: {}", dt),

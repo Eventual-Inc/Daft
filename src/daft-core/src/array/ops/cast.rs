@@ -5,7 +5,7 @@ use crate::{
     array::{
         ops::image::ImageArraySidecarData,
         ops::{from_arrow::FromArrow, full::FullNull},
-        DataArray, FixedSizeListArray,
+        DataArray, FixedSizeListArray, StructArray,
     },
     datatypes::{
         logical::{
@@ -13,8 +13,8 @@ use crate::{
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
             TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, ListArray, StructArray,
-        TimeUnit, Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, ListArray, TimeUnit,
+        Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_arrow_daft_types, with_match_daft_logical_primitive_types, with_match_daft_types,
@@ -910,17 +910,14 @@ fn extract_python_like_to_tensor_array<
 
     let validity = python_objects.as_arrow().validity();
 
-    let num_rows = shapes.len();
     let name = python_objects.name();
     if data.is_empty() {
         // Create an all-null array if the data array is empty.
         let physical_type = dtype.to_physical();
-        let null_struct_array = arrow2::array::new_null_array(physical_type.to_arrow()?, num_rows);
-        let daft_struct_array =
-            StructArray::new(Field::new(name, physical_type).into(), null_struct_array)?;
+        let struct_array = StructArray::empty(name, &physical_type);
         return Ok(TensorArray::new(
             Field::new(name, dtype.clone()),
-            daft_struct_array,
+            struct_array,
         ));
     }
     let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
@@ -945,20 +942,24 @@ fn extract_python_like_to_tensor_array<
         Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
         validity.cloned(),
     ));
-
-    let values: Vec<Box<dyn arrow2::array::Array>> = vec![data_array, shapes_array];
     let physical_type = dtype.to_physical();
-    let struct_array = Box::new(arrow2::array::StructArray::new(
-        physical_type.to_arrow()?,
-        values,
-        validity.cloned(),
-    ));
 
-    let daft_struct_array =
-        crate::datatypes::StructArray::new(Field::new(name, physical_type).into(), struct_array)?;
+    let struct_array = StructArray::new(
+        Field::new(name, physical_type),
+        vec![
+            ListArray::from_arrow(&Field::new("", data_array.data_type().into()), data_array)?
+                .into_series(),
+            ListArray::from_arrow(
+                &Field::new("", shapes_array.data_type().into()),
+                shapes_array,
+            )?
+            .into_series(),
+        ],
+        validity.cloned(),
+    );
     Ok(TensorArray::new(
         Field::new(name, dtype.clone()),
-        daft_struct_array,
+        struct_array,
     ))
 }
 
@@ -1146,7 +1147,7 @@ impl ImageArray {
                     ndarrays.push(py_array);
                 }
                 let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity.clone());
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1182,7 +1183,7 @@ impl ImageArray {
                     .step_by(ndim)
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
-                let validity = self.as_arrow().validity();
+                let validity = self.physical.validity.as_ref();
                 let data_array = self.data_array();
                 let ca = self.channel_array();
                 let ha = self.height_array();
@@ -1207,19 +1208,24 @@ impl ImageArray {
                     validity.cloned(),
                 ));
 
-                let values: Vec<Box<dyn arrow2::array::Array>> =
-                    vec![data_array.to_boxed(), shapes_array];
                 let physical_type = dtype.to_physical();
-                let struct_array = Box::new(arrow2::array::StructArray::new(
-                    physical_type.to_arrow()?,
-                    values,
-                    validity.cloned(),
-                ));
 
-                let daft_struct_array = crate::datatypes::StructArray::new(
-                    Field::new(self.name(), physical_type).into(),
-                    struct_array,
-                )?;
+                let daft_struct_array = StructArray::new(
+                    Field::new(self.name(), physical_type),
+                    vec![
+                        ListArray::from_arrow(
+                            &Field::new("", data_array.data_type().into()),
+                            data_array.to_boxed(),
+                        )?
+                        .into_series(),
+                        ListArray::from_arrow(
+                            &Field::new("", shapes_array.data_type().into()),
+                            shapes_array,
+                        )?
+                        .into_series(),
+                    ],
+                    validity.cloned(),
+                );
                 Ok(
                     TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
                         .into_series(),
@@ -1330,8 +1336,10 @@ impl TensorArray {
                         ndarrays.push(py.None())
                     }
                 }
-                let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.as_arrow().validity().cloned());
+                let values_array = PseudoArrowArray::new(
+                    ndarrays.into(),
+                    self.physical.validity.as_ref().cloned(),
+                );
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1525,8 +1533,10 @@ impl FixedShapeTensorArray {
                         .iter()?
                         .map(|a| a.unwrap().to_object(py))
                         .collect::<Vec<PyObject>>();
-                    let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity.clone());
+                    let values_array = PseudoArrowArray::new(
+                        ndarrays.into(),
+                        self.physical.validity.as_ref().cloned(),
+                    );
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -1572,18 +1582,25 @@ impl FixedShapeTensorArray {
                     Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
                     validity.cloned(),
                 ));
-                let values: Vec<Box<dyn arrow2::array::Array>> =
-                    vec![list_arr.to_boxed(), shapes_array];
                 let physical_type = dtype.to_physical();
-                let struct_array = Box::new(arrow2::array::StructArray::new(
-                    physical_type.to_arrow()?,
-                    values,
+                let struct_array = StructArray::new(
+                    Field::new(self.name(), physical_type),
+                    vec![
+                        ListArray::from_arrow(
+                            &Field::new("", list_arr.data_type().into()),
+                            list_arr.to_boxed(),
+                        )?
+                        .into_series(),
+                        ListArray::from_arrow(
+                            &Field::new("", shapes_array.data_type().into()),
+                            shapes_array,
+                        )?
+                        .into_series(),
+                    ],
                     validity.cloned(),
-                ));
-                let daft_struct_array =
-                    StructArray::new(Field::new(self.name(), physical_type).into(), struct_array)?;
+                );
                 Ok(
-                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
                         .into_series(),
                 )
             }
@@ -1678,6 +1695,14 @@ impl FixedSizeListArray {
                 .into_series())
             }
             _ => unimplemented!("FixedSizeList casting not implemented for dtype: {}", dtype),
+        }
+    }
+}
+
+impl StructArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            _ => todo!("Casting for StructArrays not yet implemented"),
         }
     }
 }

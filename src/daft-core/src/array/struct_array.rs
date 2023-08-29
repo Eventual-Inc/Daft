@@ -35,7 +35,7 @@ impl StructArray {
                     }
                 }
 
-                let len = if children.len() > 0 {
+                let len = if !children.is_empty() {
                     children[0].len()
                 } else {
                     0
@@ -46,7 +46,7 @@ impl StructArray {
                         panic!("StructArray::new expects all children to have the same length, but received: {} vs {}", s.len(), len)
                     }
                 }
-                if let Some(some_validity) = validity && some_validity.len() != len {
+                if let Some(some_validity) = &validity && some_validity.len() != len {
                     panic!("StructArray::new expects validity to have length {} but received: {}", len, some_validity.len())
                 }
 
@@ -112,7 +112,7 @@ impl StructArray {
     pub fn rename(&self, name: &str) -> Self {
         Self {
             field: Arc::new(Field::new(name, self.data_type().clone())),
-            children: self.children,
+            children: self.children.clone(),
             validity: self.validity.clone(),
             len: self.len,
         }

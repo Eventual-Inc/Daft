@@ -409,7 +409,7 @@ impl ImageArray {
         if data.is_empty() {
             // Create an all-null array if the data array is empty.
             return Ok(ImageArray::new(
-                Field::new(name, data_type),
+                Field::new(name, data_type.clone()),
                 StructArray::empty(name, &data_type.to_physical()),
             ));
         }

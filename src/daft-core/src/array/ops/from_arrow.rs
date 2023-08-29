@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -73,9 +71,9 @@ impl FromArrow for StructArray {
                 let arrow_arr = arrow_arr.as_ref().as_any().downcast_ref::<arrow2::array::StructArray>().unwrap();
                 let arrow_child_arrays = arrow_arr.values();
 
-                let child_series = fields.iter().zip(arrow_child_arrays.iter()).enumerate().map(|(i, (daft_field, arrow_arr))| {
+                let child_series = fields.iter().zip(arrow_child_arrays.iter()).map(|(daft_field, arrow_arr)| {
                     with_match_daft_types!(&daft_field.dtype, |$T| {
-                        Ok(<$T as DaftDataType>::ArrayType::from_arrow(daft_field, *arrow_arr)?.into_series())
+                        Ok(<$T as DaftDataType>::ArrayType::from_arrow(daft_field, arrow_arr.to_boxed())?.into_series())
                     })
                 }).collect::<DaftResult<Vec<Series>>>()?;
 
