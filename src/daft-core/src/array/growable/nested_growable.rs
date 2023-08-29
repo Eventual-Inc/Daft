@@ -3,8 +3,8 @@ use std::mem::swap;
 use common_error::DaftResult;
 
 use crate::{
-    datatypes::{nested_arrays::FixedSizeListArray, Field},
-    with_match_daft_types, DataType, IntoSeries, Series,
+    array::fixed_size_list_array::FixedSizeListArray, datatypes::Field, with_match_daft_types,
+    DataType, IntoSeries, Series,
 };
 
 use super::{Growable, GrowableArray};

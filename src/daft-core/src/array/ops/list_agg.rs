@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    array::DataArray,
-    datatypes::{nested_arrays::FixedSizeListArray, DaftArrowBackedType, ListArray},
+    array::{DataArray, FixedSizeListArray},
+    datatypes::{DaftArrowBackedType, ListArray},
 };
 use common_error::DaftResult;
 

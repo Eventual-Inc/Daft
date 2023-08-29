@@ -3,11 +3,8 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::DataArray,
-    datatypes::{
-        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
-        DaftPhysicalType, Field,
-    },
+    array::{DataArray, FixedSizeListArray},
+    datatypes::{logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field},
     series::IntoSeries,
     with_match_daft_types, DataType,
 };

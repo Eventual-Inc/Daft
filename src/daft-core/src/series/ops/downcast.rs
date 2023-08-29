@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
+use crate::array::FixedSizeListArray;
+use crate::datatypes::logical::FixedShapeImageArray;
 use crate::datatypes::*;
-use crate::datatypes::{logical::FixedShapeImageArray, nested_arrays::FixedSizeListArray};
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;

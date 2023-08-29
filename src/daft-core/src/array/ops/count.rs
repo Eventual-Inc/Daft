@@ -3,9 +3,9 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::DataArray,
+    array::{DataArray, FixedSizeListArray},
     count_mode::CountMode,
-    datatypes::{nested_arrays::FixedSizeListArray, *},
+    datatypes::*,
 };
 use common_error::DaftResult;
 

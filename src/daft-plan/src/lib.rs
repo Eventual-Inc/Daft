@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 mod builder;
 mod display;
 mod join;

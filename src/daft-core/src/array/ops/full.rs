@@ -4,10 +4,9 @@ use std::{iter::repeat, sync::Arc};
 use pyo3::Python;
 
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray},
     datatypes::{
-        logical::LogicalArray, nested_arrays::FixedSizeListArray, DaftDataType, DaftLogicalType,
-        DaftPhysicalType, DataType, Field,
+        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
     with_match_daft_types, IntoSeries,
 };
@@ -88,9 +87,20 @@ where
 
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let empty = Self::empty(name, dtype);
         let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
-        Self::new(empty.field, empty.flat_child, Some(validity))
+
+        match dtype {
+            DataType::FixedSizeList(child, size) => {
+                let flat_child = with_match_daft_types!(&child.dtype, |$T| {
+                    <<$T as DaftDataType>::ArrayType as FullNull>::full_null(name, &child.dtype, length * size).into_series()
+                });
+                Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
+            }
+            _ => panic!(
+                "Cannot create FixedSizeListArray::full_null from datatype: {}",
+                dtype
+            ),
+        }
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {
@@ -107,5 +117,51 @@ impl FullNull for FixedSizeListArray {
                 dtype
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::{
+        array::{ops::full::FullNull, FixedSizeListArray},
+        datatypes::Field,
+        DataType,
+    };
+
+    #[test]
+    fn create_fixed_size_list_full_null() -> DaftResult<()> {
+        let arr = FixedSizeListArray::full_null(
+            "foo",
+            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            3,
+        );
+        assert_eq!(arr.len(), 3);
+        assert!(!arr.is_valid(0));
+        assert!(!arr.is_valid(1));
+        assert!(!arr.is_valid(2));
+        Ok(())
+    }
+
+    #[test]
+    fn create_fixed_size_list_full_null_empty() -> DaftResult<()> {
+        let arr = FixedSizeListArray::full_null(
+            "foo",
+            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            0,
+        );
+        assert_eq!(arr.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn create_fixed_size_list_empty() -> DaftResult<()> {
+        let arr = FixedSizeListArray::empty(
+            "foo",
+            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+        );
+        assert_eq!(arr.len(), 0);
+        Ok(())
     }
 }

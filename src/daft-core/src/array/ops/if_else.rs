@@ -1,7 +1,6 @@
 use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
-use crate::array::DataArray;
-use crate::datatypes::nested_arrays::FixedSizeListArray;
+use crate::array::{DataArray, FixedSizeListArray};
 use crate::datatypes::{BooleanArray, DaftPhysicalType};
 use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;

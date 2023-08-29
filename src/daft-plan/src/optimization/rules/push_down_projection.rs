@@ -330,8 +330,7 @@ impl PushDownProjection {
                 };
 
                 // If either pushdown is possible, create a new Join node.
-                if maybe_new_left_upstream.is_some() || maybe_new_right_upstream.is_some()
-                {
+                if maybe_new_left_upstream.is_some() || maybe_new_right_upstream.is_some() {
                     let new_left_upstream = maybe_new_left_upstream.unwrap_or(join.input.clone());
                     let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
                     let new_join =
@@ -400,7 +399,9 @@ impl OptimizerRule for PushDownProjection {
         match plan.as_ref() {
             LogicalPlan::Project(projection) => self.try_optimize_project(projection, plan.clone()),
             // Aggregations also do column projection
-            LogicalPlan::Aggregate(aggregation) => self.try_optimize_aggregation(aggregation, plan.clone()),
+            LogicalPlan::Aggregate(aggregation) => {
+                self.try_optimize_aggregation(aggregation, plan.clone())
+            }
             _ => Ok(Transformed::No(plan)),
         }
     }

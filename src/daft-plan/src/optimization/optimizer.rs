@@ -6,7 +6,9 @@ use crate::LogicalPlan;
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
-    rules::{ApplyOrder, OptimizerRule, PushDownFilter, PushDownProjection, Transformed},
+    rules::{
+        ApplyOrder, OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, Transformed,
+    },
 };
 
 /// Config for optimizer.
@@ -107,6 +109,7 @@ impl Optimizer {
             vec![
                 Box::new(PushDownFilter::new()),
                 Box::new(PushDownProjection::new()),
+                Box::new(PushDownLimit::new()),
             ],
             RuleExecutionStrategy::Once,
         )];

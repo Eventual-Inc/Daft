@@ -40,6 +40,26 @@ impl Source {
         }
     }
 
+    pub fn with_limit(&self, limit: Option<usize>) -> Self {
+        Self {
+            output_schema: self.output_schema.clone(),
+            source_info: self.source_info.clone(),
+            partition_spec: self.partition_spec.clone(),
+            filters: self.filters.clone(),
+            limit,
+        }
+    }
+
+    pub fn with_filters(&self, filters: Vec<ExprRef>) -> Self {
+        Self {
+            output_schema: self.output_schema.clone(),
+            source_info: self.source_info.clone(),
+            partition_spec: self.partition_spec.clone(),
+            filters,
+            limit: self.limit,
+        }
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
 
