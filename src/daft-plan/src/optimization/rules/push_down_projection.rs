@@ -330,10 +330,7 @@ impl PushDownProjection {
                 };
 
                 // If either pushdown is possible, create a new Join node.
-                if maybe_new_left_upstream
-                    .as_ref()
-                    .or(maybe_new_right_upstream.as_ref())
-                    .is_some()
+                if maybe_new_left_upstream.is_some() || maybe_new_right_upstream.is_some()
                 {
                     let new_left_upstream = maybe_new_left_upstream.unwrap_or(join.input.clone());
                     let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
