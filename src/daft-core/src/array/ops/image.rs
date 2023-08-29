@@ -441,10 +441,13 @@ impl ImageArray {
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
-            ListArray::from_arrow(&Field::new("", data_array.data_type().into()), data_array)?
-                .into_series(),
+            ListArray::from_arrow(
+                &Field::new("data", data_array.data_type().into()),
+                data_array,
+            )?
+            .into_series(),
             UInt16Array::from((
-                "",
+                "channel",
                 Box::new(
                     arrow2::array::UInt16Array::from_vec(sidecar_data.channels)
                         .with_validity(sidecar_data.validity.clone()),
@@ -452,7 +455,7 @@ impl ImageArray {
             ))
             .into_series(),
             UInt32Array::from((
-                "",
+                "height",
                 Box::new(
                     arrow2::array::UInt32Array::from_vec(sidecar_data.heights)
                         .with_validity(sidecar_data.validity.clone()),
@@ -460,7 +463,7 @@ impl ImageArray {
             ))
             .into_series(),
             UInt32Array::from((
-                "",
+                "width",
                 Box::new(
                     arrow2::array::UInt32Array::from_vec(sidecar_data.widths)
                         .with_validity(sidecar_data.validity.clone()),
@@ -468,7 +471,7 @@ impl ImageArray {
             ))
             .into_series(),
             UInt8Array::from((
-                "",
+                "mode",
                 Box::new(
                     arrow2::array::UInt8Array::from_vec(sidecar_data.modes)
                         .with_validity(sidecar_data.validity.clone()),

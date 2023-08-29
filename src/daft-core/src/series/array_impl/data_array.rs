@@ -42,7 +42,7 @@ fn logical_to_arrow<'a>(
                 Cow::Borrowed(..) => arr,
                 Cow::Owned(new_arr) => {
                     let new_child_field = arrow2::datatypes::Field::new(
-                        field.name.clone(),
+                        child_field.name.clone(),
                         new_arr.data_type().clone(),
                         true,
                     );

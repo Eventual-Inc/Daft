@@ -33,6 +33,10 @@ impl StructArray {
                     if &dtype_field.dtype != series.data_type() {
                         panic!("StructArray::new received an array with dtype: {} but expected child field: {}", series.data_type(), dtype_field)
                     }
+                    // TODO(jaychia): Do we need to enforce this?
+                    // if &dtype_field.name != series.name() {
+                    //     panic!("StructArray::new received a series with name: {} but expected name: {}", series.name(), &dtype_field.name)
+                    // }
                 }
 
                 let len = if !children.is_empty() {

@@ -29,6 +29,7 @@ use arrow2::{
     },
     offset::Offsets,
 };
+use indexmap::IndexMap;
 
 #[cfg(feature = "python")]
 use {
@@ -947,10 +948,13 @@ fn extract_python_like_to_tensor_array<
     let struct_array = StructArray::new(
         Field::new(name, physical_type),
         vec![
-            ListArray::from_arrow(&Field::new("", data_array.data_type().into()), data_array)?
-                .into_series(),
             ListArray::from_arrow(
-                &Field::new("", shapes_array.data_type().into()),
+                &Field::new("data", data_array.data_type().into()),
+                data_array,
+            )?
+            .into_series(),
+            ListArray::from_arrow(
+                &Field::new("shape", shapes_array.data_type().into()),
                 shapes_array,
             )?
             .into_series(),
@@ -1210,16 +1214,16 @@ impl ImageArray {
 
                 let physical_type = dtype.to_physical();
 
-                let daft_struct_array = StructArray::new(
+                let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![
                         ListArray::from_arrow(
-                            &Field::new("", data_array.data_type().into()),
+                            &Field::new("data", data_array.data_type().into()),
                             data_array.to_boxed(),
                         )?
                         .into_series(),
                         ListArray::from_arrow(
-                            &Field::new("", shapes_array.data_type().into()),
+                            &Field::new("shape", shapes_array.data_type().into()),
                             shapes_array,
                         )?
                         .into_series(),
@@ -1227,7 +1231,7 @@ impl ImageArray {
                     validity.cloned(),
                 );
                 Ok(
-                    TensorArray::new(Field::new(self.name(), dtype.clone()), daft_struct_array)
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
                         .into_series(),
                 )
             }
@@ -1587,12 +1591,12 @@ impl FixedShapeTensorArray {
                     Field::new(self.name(), physical_type),
                     vec![
                         ListArray::from_arrow(
-                            &Field::new("", list_arr.data_type().into()),
+                            &Field::new("data", list_arr.data_type().into()),
                             list_arr.to_boxed(),
                         )?
                         .into_series(),
                         ListArray::from_arrow(
-                            &Field::new("", shapes_array.data_type().into()),
+                            &Field::new("shape", shapes_array.data_type().into()),
                             shapes_array,
                         )?
                         .into_series(),
@@ -1701,8 +1705,39 @@ impl FixedSizeListArray {
 
 impl StructArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            _ => todo!("Casting for StructArrays not yet implemented"),
+        match (self.data_type(), dtype) {
+            (DataType::Struct(self_fields), DataType::Struct(other_fields)) => {
+                let self_field_names_to_idx: IndexMap<&str, usize> = IndexMap::from_iter(
+                    self_fields
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| (f.name.as_str(), i)),
+                );
+                let casted_series = other_fields.iter().map(|field| {
+                    match self_field_names_to_idx.get(field.name.as_str()) {
+                        None => {
+                            with_match_daft_types!(
+                                &field.dtype,
+                                |$T| {
+                                    Ok(<$T as DaftDataType>::ArrayType::full_null(field.name.as_str(), &field.dtype, self.len()).into_series())
+                                }
+                            )
+                        },
+                        Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
+                    }
+                }).collect::<DaftResult<Vec<Series>>>();
+                Ok(StructArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    casted_series?,
+                    self.validity.clone(),
+                )
+                .into_series())
+            }
+            _ => unimplemented!(
+                "Daft casting from {} to {} not implemented",
+                self.data_type(),
+                dtype
+            ),
         }
     }
 }
