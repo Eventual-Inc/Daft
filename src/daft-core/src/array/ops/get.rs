@@ -1,11 +1,9 @@
 use crate::{
     array::{DataArray, FixedSizeListArray},
     datatypes::{
-        logical::{
-            DateArray, Decimal128Array, DurationArray, ImageArray, LogicalArrayImpl, TimestampArray,
-        },
+        logical::{DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, TimestampArray},
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, StructArray, Utf8Array,
+        NullArray, Utf8Array,
     },
     Series,
 };
@@ -82,30 +80,6 @@ impl NullArray {
     }
 }
 
-impl StructArray {
-    #[inline]
-    pub fn get(&self, idx: usize) -> Option<Vec<Box<dyn arrow2::array::Array>>> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
-        let arrow_array = self.as_arrow();
-        let is_valid = arrow_array
-            .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
-        if is_valid {
-            Some(
-                arrow_array
-                    .values()
-                    .iter()
-                    .map(|v| unsafe { v.sliced_unchecked(idx, 1) })
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-}
-
 impl ExtensionArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::scalar::Scalar>> {
@@ -147,26 +121,26 @@ impl crate::datatypes::PythonArray {
     }
 }
 
-impl ImageArray {
-    #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
-        let arrow_array = self.as_arrow();
-        let is_valid = arrow_array
-            .validity()
-            .map_or(true, |validity| validity.get_bit(idx));
-        if is_valid {
-            let data_array = arrow_array.values()[0]
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i64>>()?;
-            Some(unsafe { data_array.value_unchecked(idx) })
-        } else {
-            None
-        }
-    }
-}
+// impl ImageArray {
+//     #[inline]
+//     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
+//         if idx >= self.len() {
+//             panic!("Out of bounds: {} vs len: {}", idx, self.len())
+//         }
+//         let arrow_array = self.as_arrow();
+//         let is_valid = arrow_array
+//             .validity()
+//             .map_or(true, |validity| validity.get_bit(idx));
+//         if is_valid {
+//             let data_array = arrow_array.values()[0]
+//                 .as_any()
+//                 .downcast_ref::<arrow2::array::ListArray<i64>>()?;
+//             Some(unsafe { data_array.value_unchecked(idx) })
+//         } else {
+//             None
+//         }
+//     }
+// }
 
 impl FixedSizeListArray {
     #[inline]
@@ -194,7 +168,7 @@ mod tests {
 
     use crate::{
         array::FixedSizeListArray,
-        datatypes::{BooleanArray, Field, Int32Array},
+        datatypes::{Field, Int32Array},
         DataType, IntoSeries,
     };
 

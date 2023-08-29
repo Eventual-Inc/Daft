@@ -3,7 +3,7 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::*,
 };
 use common_error::DaftResult;
@@ -69,6 +69,16 @@ where
 }
 
 impl FixedSizeListArray {
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        match &self.validity {
+            None => true,
+            Some(validity) => validity.get(idx).unwrap(),
+        }
+    }
+}
+
+impl StructArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
         match &self.validity {

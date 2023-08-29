@@ -1,14 +1,14 @@
 use std::iter::repeat;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, StructArray, UInt64Array, Utf8Array,
+        NullArray, UInt64Array, Utf8Array,
     },
     DataType, IntoSeries,
 };
@@ -67,7 +67,6 @@ impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(ListArray);
 impl_dataarray_take!(NullArray);
-impl_dataarray_take!(StructArray);
 impl_dataarray_take!(ExtensionArray);
 impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
@@ -176,6 +175,30 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.take(&child_idx)?,
+            taken_validity,
+        ))
+    }
+}
+
+impl StructArray {
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let idx_as_u64 = idx.cast(&DataType::UInt64)?;
+        let taken_validity = self.validity.as_ref().map(|v| {
+            arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+                None => false,
+                Some(i) => v.get_bit(i.to_usize().unwrap()),
+            }))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            self.children
+                .iter()
+                .map(|c| c.take(&idx_as_u64))
+                .collect::<DaftResult<Vec<_>>>()?,
             taken_validity,
         ))
     }

@@ -75,7 +75,7 @@ impl FromArrow for StructArray {
 
                 let child_series = fields.iter().zip(arrow_child_arrays.iter()).enumerate().map(|(i, (daft_field, arrow_arr))| {
                     with_match_daft_types!(&daft_field.dtype, |$T| {
-                        <$T as DaftDataType>::ArrayType::from_arrow(daft_field, *arrow_arr)?.into_series()
+                        Ok(<$T as DaftDataType>::ArrayType::from_arrow(daft_field, *arrow_arr)?.into_series())
                     })
                 }).collect::<DaftResult<Vec<Series>>>()?;
 

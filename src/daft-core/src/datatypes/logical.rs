@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
+    array::StructArray,
     datatypes::{DaftLogicalType, DateType, Field},
     with_match_daft_logical_primitive_types,
 };
@@ -128,6 +129,18 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         fixed_size_list_arrow_array.change_type(arrow_logical_type);
         fixed_size_list_arrow_array
+    }
+}
+
+/// Implementation for a LogicalArray that wraps a StructArray
+impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
+    impl_logical_type!(StructArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let mut struct_arrow_array = self.physical.to_arrow();
+        let arrow_logical_type = self.data_type().to_arrow().unwrap();
+        struct_arrow_array.change_type(arrow_logical_type);
+        struct_arrow_array
     }
 }
 

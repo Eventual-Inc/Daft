@@ -4,11 +4,11 @@ use std::vec;
 
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::FixedSizeListArray;
+use crate::array::{FixedSizeListArray, StructArray};
 use crate::datatypes::UInt8Array;
 use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
-    BinaryArray, DataType, Field, ImageFormat, ImageMode, StructArray,
+    BinaryArray, DataType, Field, ImageFormat, ImageMode,
 };
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};

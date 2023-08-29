@@ -4,7 +4,7 @@ use std::{iter::repeat, sync::Arc};
 use pyo3::Python;
 
 use crate::{
-    array::{pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray},
+    array::{pseudo_arrow::PseudoArrowArray, DataArray, FixedSizeListArray, StructArray},
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
@@ -120,12 +120,48 @@ impl FullNull for FixedSizeListArray {
     }
 }
 
+impl FullNull for StructArray {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
+        match dtype {
+            DataType::Struct(children) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_children = children.iter().map(|f| {
+                    with_match_daft_types!(&f.dtype, |$T| {
+                        <$T as DaftDataType>::ArrayType::full_null(name, &f.dtype, length).into_series()
+                    })
+                }).collect::<Vec<_>>();
+                Self::new(field, empty_children, Some(validity))
+            }
+            _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
+        }
+    }
+
+    fn empty(name: &str, dtype: &DataType) -> Self {
+        match dtype {
+            DataType::Struct(children) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_children = children
+                    .iter()
+                    .map(|f| {
+                        with_match_daft_types!(&f.dtype, |$T| {
+                            <$T as DaftDataType>::ArrayType::empty(name, &f.dtype).into_series()
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                Self::new(field, empty_children, None)
+            }
+            _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
 
     use crate::{
-        array::{ops::full::FullNull, FixedSizeListArray},
+        array::{ops::full::FullNull, FixedSizeListArray, StructArray},
         datatypes::Field,
         DataType,
     };
@@ -135,6 +171,19 @@ mod tests {
         let arr = FixedSizeListArray::full_null(
             "foo",
             &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            3,
+        );
+        assert_eq!(arr.len(), 3);
+        assert!(!arr.is_valid(0));
+        assert!(!arr.is_valid(1));
+        assert!(!arr.is_valid(2));
+        Ok(())
+    }
+
+    fn create_struct_full_null() -> DaftResult<()> {
+        let arr = StructArray::full_null(
+            "foo",
+            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
             3,
         );
         assert_eq!(arr.len(), 3);
@@ -155,11 +204,30 @@ mod tests {
         Ok(())
     }
 
+    fn create_struct_full_null_empty() -> DaftResult<()> {
+        let arr = StructArray::full_null(
+            "foo",
+            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
+            0,
+        );
+        assert_eq!(arr.len(), 0);
+        Ok(())
+    }
+
     #[test]
     fn create_fixed_size_list_empty() -> DaftResult<()> {
         let arr = FixedSizeListArray::empty(
             "foo",
             &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+        );
+        assert_eq!(arr.len(), 0);
+        Ok(())
+    }
+
+    fn create_struct_empty() -> DaftResult<()> {
+        let arr = StructArray::empty(
+            "foo",
+            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
         );
         assert_eq!(arr.len(), 0);
         Ok(())

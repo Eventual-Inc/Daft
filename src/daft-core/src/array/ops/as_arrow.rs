@@ -4,9 +4,7 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{
-            DateArray, Decimal128Array, DurationArray, ImageArray, TensorArray, TimestampArray,
-        },
+        logical::{DateArray, Decimal128Array, DurationArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, ListArray, NullArray, Utf8Array,
     },
 };
