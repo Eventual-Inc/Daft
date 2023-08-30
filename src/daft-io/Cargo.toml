@@ -1,19 +1,21 @@
 [dependencies]
 async-recursion = "1.0.4"
 async-trait = "0.1.71"
-aws-config = {version = "0.55.3"}
-aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = "0.28.0"
-aws-sig-auth = "0.55.3"
-aws-sigv4 = "0.55.3"
-aws-smithy-async = "0.55.3"
-azure_storage = {version = "0.13.0", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage_blobs = {version = "0.13.1", features = ["enable_reqwest_rustls"], default-features = false}
+aws-config = {version = "0.56.1"}
+aws-credential-types = {version = "0.56.1", features = ["hardcoded-credentials"]}
+aws-sdk-s3 = "0.30.0"
+aws-sig-auth = "0.56.1"
+aws-sigv4 = "0.56.1"
+aws-smithy-async = "0.56.1"
+aws-smithy-http = "0.56.1"
+azure_storage = {version = "0.14.0", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage_blobs = {version = "0.14.0", features = ["enable_reqwest_rustls"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
 google-cloud-storage = {version = "0.13.0", default-features = false, features = ["rustls-tls", "auth"]}
+http = "0.2.9"
 lazy_static = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}

@@ -12,10 +12,8 @@ use crate::{InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
-use aws_sig_auth::signer::SigningRequirements;
 use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::Response;
-use s3::config::{Credentials, Region};
+use s3::config::{Credentials, Region, SharedAsyncSleep};
 use s3::error::{DisplayErrorContext, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{ensure, IntoError, ResultExt, Snafu};
@@ -26,6 +24,7 @@ use async_recursion::async_recursion;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 
+use aws_smithy_http::body::SdkBody;
 use std::collections::HashMap;
 
 use std::ops::Range;
@@ -36,7 +35,7 @@ pub(crate) struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     default_region: Region,
     s3_config: S3Config,
-    anonymous: bool,
+    _anonymous: bool,
 }
 
 #[derive(Debug, Snafu)]
@@ -44,19 +43,19 @@ enum Error {
     #[snafu(display("Unable to open {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToOpenFile {
         path: String,
-        source: SdkError<GetObjectError, Response>,
+        source: SdkError<GetObjectError, ::http::Response<SdkBody>>,
     },
 
     #[snafu(display("Unable to head {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToHeadFile {
         path: String,
-        source: SdkError<HeadObjectError, Response>,
+        source: SdkError<HeadObjectError, ::http::Response<SdkBody>>,
     },
 
     #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
     UnableToListObjects {
         path: String,
-        source: SdkError<ListObjectsV2Error, Response>,
+        source: SdkError<ListObjectsV2Error, ::http::Response<SdkBody>>,
     },
 
     #[snafu(display("Unable to query the region for {}: {}", path, source))]
@@ -155,13 +154,14 @@ impl From<Error> for super::Error {
     }
 }
 
+#[async_recursion]
 async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
 
     let conf: SdkConfig = if anonymous {
-        aws_config::SdkConfig::builder().build()
+        aws_config::from_env().no_credentials().load().await
     } else {
         aws_config::load_from_env().await
     };
@@ -202,22 +202,21 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
 
     let builder = builder.retry_config(retry_config);
 
-    let sleep_impl = Arc::new(TokioSleep::new());
-    let builder = builder.sleep_impl(sleep_impl);
+    let builder = builder.sleep_impl(SharedAsyncSleep::new(TokioSleep::new()));
     let timeout_config = TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
         .read_timeout(Duration::from_millis(config.read_timeout_ms))
         .build();
     let builder = builder.timeout_config(timeout_config);
 
-    let builder = if config.access_key.is_some() && config.key_id.is_some() {
+    let builder = if !config.anonymous && config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
             config.access_key.clone().unwrap(),
             config.session_token.clone(),
         );
         builder.credentials_provider(creds)
-    } else if config.access_key.is_some() || config.key_id.is_some() {
+    } else if !config.anonymous && (config.access_key.is_some() || config.key_id.is_some()) {
         return Err(super::Error::InvalidArgument {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
@@ -230,13 +229,15 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
         use CredentialsError::*;
         match s3_conf
             .credentials_cache()
+            .expect("Credentials Provider should be configured")
             .provide_cached_credentials()
             .await {
             Ok(_) => Ok(()),
             Err(err @ CredentialsNotLoaded(..)) => {
                 log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                anonymous = true;
-                Ok(())
+                let mut new_s3_config = config.clone();
+                new_s3_config.anonymous = true;
+                return build_s3_client(config).await;
             },
             Err(err) => Err(err),
         }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
@@ -254,7 +255,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
         s3_config: config.clone(),
         default_region,
-        anonymous,
+        _anonymous: anonymous,
     })
 }
 const REGION_HEADER: &str = "x-amz-bucket-region";
@@ -320,29 +321,7 @@ impl S3LikeSource {
                 )),
             };
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
                 Ok(v) => {
@@ -361,7 +340,7 @@ impl S3LikeSource {
                 }
 
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
+                    let bad_response = err.raw();
                     match bad_response.status() {
                         StatusCode::MOVED_PERMANENTLY => {
                             let headers = bad_response.headers();
@@ -412,34 +391,12 @@ impl S3LikeSource {
                 .bucket(bucket)
                 .key(key);
 
-            let response = if self.anonymous {
-                request
-                    .customize_middleware()
-                    .await
-                    .unwrap()
-                    .map_operation::<Error>(|mut o| {
-                        {
-                            let mut properties = o.properties_mut();
-                            #[allow(unused_mut)]
-                            let mut config = properties
-                                .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                                .expect("signing config added by make_operation()");
-
-                            config.signing_requirements = SigningRequirements::Disabled;
-                        }
-                        Ok(o)
-                    })
-                    .unwrap()
-                    .send()
-                    .await
-            } else {
-                request.send().await
-            };
+            let response = request.send().await;
 
             match response {
                 Ok(v) => Ok(v.content_length() as usize),
                 Err(SdkError::ServiceError(err)) => {
-                    let bad_response = err.raw().http();
+                    let bad_response = err.raw();
                     match bad_response.status() {
                         StatusCode::MOVED_PERMANENTLY => {
                             let headers = bad_response.headers();
@@ -491,29 +448,8 @@ impl S3LikeSource {
         } else {
             request
         };
-        let response = if self.anonymous {
-            request
-                .customize_middleware()
-                .await
-                .unwrap()
-                .map_operation::<Error>(|mut o| {
-                    {
-                        let mut properties = o.properties_mut();
-                        #[allow(unused_mut)]
-                        let mut config = properties
-                            .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
-                            .expect("signing config added by make_operation()");
+        let response = request.send().await;
 
-                        config.signing_requirements = SigningRequirements::Disabled;
-                    }
-                    Ok(o)
-                })
-                .unwrap()
-                .send()
-                .await
-        } else {
-            request.send().await
-        };
         let uri = &format!("s3://{bucket}/{key}");
         match response {
             Ok(v) => {
@@ -554,7 +490,7 @@ impl S3LikeSource {
                 })
             }
             Err(SdkError::ServiceError(err)) => {
-                let bad_response = err.raw().http();
+                let bad_response = err.raw();
                 match bad_response.status() {
                     StatusCode::MOVED_PERMANENTLY => {
                         let headers = bad_response.headers();
