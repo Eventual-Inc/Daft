@@ -118,12 +118,12 @@ mod tests {
             LogicalPlanDigest::new(&plan2, &mut Default::default()).node_count,
             2usize.try_into().unwrap()
         );
-        let plan: LogicalPlan = Concat::new(plan1.into(), plan2.into()).into();
+        let plan: LogicalPlan = Concat::try_new(plan1.into(), plan2.into())?.into();
         assert_eq!(
             LogicalPlanDigest::new(&plan, &mut Default::default()).node_count,
             5usize.try_into().unwrap()
         );
-        let plan: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan.into()).into();
+        let plan: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan.into())?.into();
         assert_eq!(
             LogicalPlanDigest::new(&plan, &mut Default::default()).node_count,
             6usize.try_into().unwrap()
@@ -141,7 +141,7 @@ mod tests {
         .into();
         let plan1: LogicalPlan =
             Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
-        let plan1: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan1.into()).into();
+        let plan1: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan1.into())?.into();
         let plan2: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -149,7 +149,7 @@ mod tests {
         .into();
         let plan2: LogicalPlan =
             Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
-        let plan2: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan2.into()).into();
+        let plan2: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan2.into())?.into();
         // Double-check that logical plans are equal.
         assert_eq!(plan1, plan2);
 
@@ -173,7 +173,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .into();
-        let plan1: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan1.into()).into();
+        let plan1: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan1.into())?.into();
         let plan1: LogicalPlan =
             Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
         let plan2: LogicalPlan = dummy_scan_node(vec![
@@ -183,7 +183,7 @@ mod tests {
         .into();
         let plan2: LogicalPlan =
             Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
-        let plan2: LogicalPlan = Filter::new(col("a").lt(&lit(2)), plan2.into()).into();
+        let plan2: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan2.into())?.into();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
 

@@ -155,7 +155,8 @@ mod tests {
         .into();
         let repartition1: LogicalPlan =
             Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let filter: LogicalPlan = Filter::new(col("a").lt(&lit(2)), repartition1.into()).into();
+        let filter: LogicalPlan =
+            Filter::try_new(col("a").lt(&lit(2)), repartition1.into())?.into();
         let repartition2: LogicalPlan =
             Repartition::new(10, vec![col("a")], PartitionScheme::Hash, filter.into()).into();
         let expected = "\
@@ -204,7 +205,8 @@ mod tests {
         .into();
         let repartition1: LogicalPlan =
             Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let sort: LogicalPlan = Sort::new(vec![col("a")], vec![true], repartition1.into()).into();
+        let sort: LogicalPlan =
+            Sort::try_new(vec![col("a")], vec![true], repartition1.into())?.into();
         let repartition2: LogicalPlan =
             Repartition::new(10, vec![col("a")], PartitionScheme::Range, sort.into()).into();
         let expected = "\

@@ -1,6 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
-use daft_core::schema::{hash_index_map, Schema, SchemaRef};
+use common_error::{DaftError, DaftResult};
+use daft_core::{
+    schema::{hash_index_map, Schema, SchemaRef},
+    DataType,
+};
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
@@ -45,6 +49,22 @@ impl Join {
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> logical_plan::Result<Self> {
+        for (on_exprs, schema) in [(&left_on, input.schema()), (&right_on, right.schema())] {
+            let on_fields = on_exprs
+                .iter()
+                .map(|e| e.to_field(schema.as_ref()))
+                .collect::<DaftResult<Vec<_>>>()
+                .context(CreationSnafu)?;
+            let on_schema = Schema::new(on_fields).context(CreationSnafu)?;
+            for (field, expr) in on_schema.fields.values().zip(on_exprs.iter()) {
+                if matches!(field.dtype, DataType::Null) {
+                    return Err(DaftError::ValueError(format!(
+                        "Can't join on null type expressions: {expr}"
+                    )))
+                    .context(CreationSnafu);
+                }
+            }
+        }
         let mut right_input_mapping = indexmap::IndexMap::new();
         // Schema inference ported from existing behaviour for parity,
         // but contains bug https://github.com/Eventual-Inc/Daft/issues/1294

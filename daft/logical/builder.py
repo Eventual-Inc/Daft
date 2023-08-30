@@ -15,7 +15,7 @@ from daft.daft import (
     PartitionSpec,
     ResourceRequest,
 )
-from daft.expressions.expressions import Expression, ExpressionsProjection
+from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
 
@@ -91,7 +91,7 @@ class LogicalPlanBuilder(ABC):
     @abstractmethod
     def project(
         self,
-        projection: ExpressionsProjection,
+        projection: list[Expression],
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> LogicalPlanBuilder:
         pass
@@ -105,7 +105,7 @@ class LogicalPlanBuilder(ABC):
         pass
 
     @abstractmethod
-    def explode(self, explode_expressions: ExpressionsProjection) -> LogicalPlanBuilder:
+    def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
         pass
 
     @abstractmethod
@@ -117,12 +117,12 @@ class LogicalPlanBuilder(ABC):
         pass
 
     @abstractmethod
-    def sort(self, sort_by: ExpressionsProjection, descending: list[bool] | bool = False) -> LogicalPlanBuilder:
+    def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> LogicalPlanBuilder:
         pass
 
     @abstractmethod
     def repartition(
-        self, num_partitions: int, partition_by: ExpressionsProjection, scheme: PartitionScheme
+        self, num_partitions: int, partition_by: list[Expression], scheme: PartitionScheme
     ) -> LogicalPlanBuilder:
         pass
 
@@ -131,7 +131,7 @@ class LogicalPlanBuilder(ABC):
         pass
 
     @abstractmethod
-    def agg(self, to_agg: list[tuple[Expression, str]], group_by: ExpressionsProjection | None) -> LogicalPlanBuilder:
+    def agg(self, to_agg: list[tuple[Expression, str]], group_by: list[Expression] | None) -> LogicalPlanBuilder:
         """
         to_agg: (<expression identifying column>, <string identifying agg operation>)
         TODO - clean this up after old logical plan is removed
@@ -141,8 +141,8 @@ class LogicalPlanBuilder(ABC):
     def join(
         self,
         right: LogicalPlanBuilder,
-        left_on: ExpressionsProjection,
-        right_on: ExpressionsProjection,
+        left_on: list[Expression],
+        right_on: list[Expression],
         how: JoinType = JoinType.Inner,
     ) -> LogicalPlanBuilder:
         pass
@@ -156,7 +156,7 @@ class LogicalPlanBuilder(ABC):
         self,
         root_dir: str | pathlib.Path,
         file_format: FileFormat,
-        partition_cols: ExpressionsProjection | None = None,
+        partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
         pass

@@ -17,21 +17,21 @@ from daft.errors import ExpressionTypeError
 def test_disallowed_sort_bool():
     df = daft.from_pydict({"A": [True, False]})
 
-    with pytest.raises(ExpressionTypeError):
+    with pytest.raises((ExpressionTypeError, ValueError)):
         df.sort("A")
 
 
 def test_disallowed_sort_null():
     df = daft.from_pydict({"A": [None, None]})
 
-    with pytest.raises(ExpressionTypeError):
+    with pytest.raises((ExpressionTypeError, ValueError)):
         df.sort("A")
 
 
 def test_disallowed_sort_bytes():
     df = daft.from_pydict({"A": [b"a", b"b"]})
 
-    with pytest.raises(ExpressionTypeError):
+    with pytest.raises((ExpressionTypeError, ValueError)):
         df.sort("A")
 
 
@@ -228,5 +228,5 @@ def test_sort_with_all_null_type_column():
         }
     )
 
-    with pytest.raises(ExpressionTypeError):
+    with pytest.raises((ExpressionTypeError, ValueError)):
         daft_df = daft_df.sort(daft_df["id"])

@@ -144,5 +144,5 @@ def test_inner_join_null_type_column():
         }
     )
 
-    with pytest.raises(ExpressionTypeError):
+    with pytest.raises((ExpressionTypeError, ValueError)):
         daft_df.join(daft_df2, on="id", how="inner")

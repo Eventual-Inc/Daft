@@ -94,7 +94,7 @@ impl LogicalPlanBuilder {
 
     pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
         let logical_plan: LogicalPlan =
-            ops::Filter::new(predicate.expr.clone(), self.plan.clone()).into();
+            ops::Filter::try_new(predicate.expr.clone(), self.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 
@@ -118,14 +118,9 @@ impl LogicalPlanBuilder {
         sort_by: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<LogicalPlanBuilder> {
-        if sort_by.is_empty() {
-            return Err(PyValueError::new_err(
-                "df.sort() must be given at least one column/expression to sort by",
-            ));
-        }
         let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
         let logical_plan: LogicalPlan =
-            ops::Sort::new(sort_by_exprs, descending, self.plan.clone()).into();
+            ops::Sort::try_new(sort_by_exprs, descending, self.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 
@@ -166,7 +161,6 @@ impl LogicalPlanBuilder {
         groupby_exprs: Vec<PyExpr>,
     ) -> PyResult<LogicalPlanBuilder> {
         use crate::ops::Aggregate;
-        // TODO(Clark): Move validation into Aggregate::new() (changing it to a ::try_new()).
         let agg_exprs = agg_exprs
             .iter()
             .map(|expr| match &expr.expr {
@@ -214,17 +208,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn concat(&self, other: &Self) -> PyResult<LogicalPlanBuilder> {
-        let self_schema = self.plan.schema();
-        let other_schema = other.plan.schema();
-        // TODO(Clark): Move validation into Concat::new() (changing it to a ::try_new()).
-        if self_schema != other_schema {
-            return Err(PyValueError::new_err(format!(
-                "Both DataFrames must have the same schema to concatenate them, but got: {}, {}",
-                self_schema, other_schema
-            )));
-        }
         let logical_plan: LogicalPlan =
-            ops::Concat::new(self.plan.clone(), other.plan.clone()).into();
+            ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 
