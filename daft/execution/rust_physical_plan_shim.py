@@ -39,16 +39,13 @@ def tabular_scan(
     parts_t = cast(Iterator[PartitionT], parts)
 
     file_info_iter = physical_plan.partition_read(iter(parts_t))
-    filepaths_column_name = get_context().runner().runner_io().FS_LISTING_PATH_COLUMN_NAME
-    pyschema = Schema._from_pyschema(schema)
     return physical_plan.file_read(
         child_plan=file_info_iter,
         limit_rows=limit,
-        schema=pyschema,
+        schema=Schema._from_pyschema(schema),
         fs=None,
         columns_to_read=columns_to_read,
         file_format_config=file_format_config,
-        filepaths_column_name=filepaths_column_name,
     )
 
 

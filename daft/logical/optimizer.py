@@ -335,7 +335,6 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             file_format_config=child._file_format_config,
             fs=child._fs,
             filepaths_child=child._filepaths_child,
-            filepaths_column_name=child._filepaths_column_name,
             limit_rows=new_limit_rows,
         )
         return new_scan
@@ -359,7 +358,6 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             file_format_config=child._file_format_config,
             fs=child._fs,
             filepaths_child=child._filepaths_child,
-            filepaths_column_name=child._filepaths_column_name,
         )
         if any(not e._is_column() for e in parent._projection):
             return parent.copy_with_new_children([new_scan])

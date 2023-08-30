@@ -13,6 +13,7 @@ from daft.context import get_context
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    FileInfos,
     JoinType,
     PartitionScheme,
     PartitionSpec,
@@ -28,6 +29,7 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.map_partition_ops import ExplodeOp, MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
+from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import Table
 
 if TYPE_CHECKING:
@@ -111,39 +113,30 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def from_tabular_scan(
         cls,
         *,
-        paths: list[str],
+        file_infos: FileInfos,
+        schema: Schema,
         file_format_config: FileFormatConfig,
-        schema_hint: Schema | None,
         fs: fsspec.AbstractFileSystem | None,
     ) -> PyLogicalPlanBuilder:
-        # Glob the path using the Runner
-        runner_io = get_context().runner().runner_io()
-        file_info_partition_set = runner_io.glob_paths_details(paths, file_format_config, fs)
-
-        # Infer schema if no hints provided
-        inferred_or_provided_schema = (
-            schema_hint
-            if schema_hint is not None
-            else runner_io.get_schema_from_first_filepath(file_info_partition_set, file_format_config, fs)
-        )
-        cache_entry = get_context().runner().put_partition_set_into_cache(file_info_partition_set)
+        file_infos_table = Table._from_pytable(file_infos.to_table())
+        partition = LocalPartitionSet({0: file_infos_table})
+        cache_entry = get_context().runner().put_partition_set_into_cache(partition)
         filepath_plan = InMemoryScan(
             cache_entry=cache_entry,
-            schema=runner_io.FS_LISTING_SCHEMA,
-            partition_spec=PartitionSpec(PartitionScheme.Unknown, file_info_partition_set.num_partitions()),
+            schema=file_infos_table.schema(),
+            partition_spec=PartitionSpec(PartitionScheme.Unknown, len(file_infos)),
         )
 
         return TabularFilesScan(
-            schema=inferred_or_provided_schema,
+            schema=schema,
             predicate=None,
             columns=None,
             file_format_config=file_format_config,
             fs=fs,
             filepaths_child=filepath_plan,
-            filepaths_column_name=runner_io.FS_LISTING_PATH_COLUMN_NAME,
             # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
             # one partition per filepath. This will change in the future and our logic here should change accordingly.
-            num_partitions=len(file_info_partition_set),
+            num_partitions=len(file_infos),
         ).to_builder()
 
     def project(
@@ -445,7 +438,6 @@ class TabularFilesScan(UnaryNode):
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,
-        filepaths_column_name: str,
         num_partitions: int | None = None,
         limit_rows: int | None = None,
     ) -> None:
@@ -472,12 +464,7 @@ class TabularFilesScan(UnaryNode):
         self._fs = fs
         self._limit_rows = limit_rows
 
-        # TabularFilesScan has a single child node that provides the filepaths to read from.
-        assert (
-            filepaths_child.schema()[filepaths_column_name] is not None
-        ), f"TabularFileScan requires a child with '{filepaths_column_name}' column"
         self._register_child(filepaths_child)
-        self._filepaths_column_name = filepaths_column_name
 
     @property
     def _filepaths_child(self) -> LogicalPlan:
@@ -493,7 +480,7 @@ class TabularFilesScan(UnaryNode):
         )
 
     def required_columns(self) -> list[set[str]]:
-        return [{self._filepaths_column_name} | self._predicate.required_columns()]
+        return [{"file_paths"} | self._predicate.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
@@ -505,7 +492,6 @@ class TabularFilesScan(UnaryNode):
             and self._predicate == other._predicate
             and self._columns == other._columns
             and self._file_format_config == other._file_format_config
-            and self._filepaths_column_name == other._filepaths_column_name
         )
 
     def rebuild(self) -> LogicalPlan:
@@ -517,7 +503,6 @@ class TabularFilesScan(UnaryNode):
             predicate=self._predicate if self._predicate is not None else None,
             columns=self._column_names,
             filepaths_child=child,
-            filepaths_column_name=self._filepaths_column_name,
         )
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
@@ -529,7 +514,6 @@ class TabularFilesScan(UnaryNode):
             predicate=self._predicate,
             columns=self._column_names,
             filepaths_child=new_children[0],
-            filepaths_column_name=self._filepaths_column_name,
         )
 
 

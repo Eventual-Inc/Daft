@@ -3,14 +3,13 @@ use {
     crate::{
         sink_info::OutputFileInfo,
         source_info::{
-            ExternalInfo, FileFormat, FileFormatConfig, FileInfo, InMemoryInfo, PyFileFormatConfig,
+            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo, PyFileFormatConfig,
         },
     },
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_table::python::PyTable,
     pyo3::{
         exceptions::PyValueError,
         pyclass, pymethods,
@@ -123,11 +122,10 @@ fn tabular_scan(
     py: Python<'_>,
     source_schema: &SchemaRef,
     projection_schema: &SchemaRef,
-    file_info: &Arc<FileInfo>,
+    file_infos: &Arc<FileInfos>,
     file_format_config: &Arc<FileFormatConfig>,
     limit: &Option<usize>,
 ) -> PyResult<PyObject> {
-    let file_info_table: PyTable = file_info.to_table()?.into();
     let columns_to_read = projection_schema
         .fields
         .iter()
@@ -140,7 +138,7 @@ fn tabular_scan(
         .call1((
             PySchema::from(source_schema.clone()),
             columns_to_read,
-            file_info_table,
+            file_infos.to_table()?,
             PyFileFormatConfig::from(file_format_config.clone()),
             *limit,
         ))?;
@@ -203,7 +201,7 @@ impl PhysicalPlan {
                 external_info:
                     ExternalInfo {
                         source_schema,
-                        file_info,
+                        file_infos,
                         file_format_config,
                         ..
                     },
@@ -213,7 +211,7 @@ impl PhysicalPlan {
                 py,
                 source_schema,
                 projection_schema,
-                file_info,
+                file_infos,
                 file_format_config,
                 limit,
             ),
@@ -222,7 +220,7 @@ impl PhysicalPlan {
                 external_info:
                     ExternalInfo {
                         source_schema,
-                        file_info,
+                        file_infos,
                         file_format_config,
                         ..
                     },
@@ -232,7 +230,7 @@ impl PhysicalPlan {
                 py,
                 source_schema,
                 projection_schema,
-                file_info,
+                file_infos,
                 file_format_config,
                 limit,
             ),
@@ -241,7 +239,7 @@ impl PhysicalPlan {
                 external_info:
                     ExternalInfo {
                         source_schema,
-                        file_info,
+                        file_infos,
                         file_format_config,
                         ..
                     },
@@ -251,7 +249,7 @@ impl PhysicalPlan {
                 py,
                 source_schema,
                 projection_schema,
-                file_info,
+                file_infos,
                 file_format_config,
                 limit,
             ),

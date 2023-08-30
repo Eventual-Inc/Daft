@@ -9,6 +9,7 @@ import fsspec
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    FileInfos,
     JoinType,
     PartitionScheme,
     PartitionSpec,
@@ -80,9 +81,9 @@ class LogicalPlanBuilder(ABC):
     def from_tabular_scan(
         cls,
         *,
-        paths: list[str],
+        file_infos: FileInfos,
+        schema: Schema,
         file_format_config: FileFormatConfig,
-        schema_hint: Schema | None,
         fs: fsspec.AbstractFileSystem | None,
     ) -> LogicalPlanBuilder:
         pass

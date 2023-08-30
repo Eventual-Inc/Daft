@@ -42,7 +42,6 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
                 fs=node._fs,
                 columns_to_read=node._column_names,
                 file_format_config=node._file_format_config,
-                filepaths_column_name=node._filepaths_column_name,
             )
 
         elif isinstance(node, logical_plan.Filter):
