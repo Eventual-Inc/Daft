@@ -1583,7 +1583,10 @@ impl FixedSizeListArray {
                         size
                     )));
                 }
-                let casted_child = self.flat_child.cast(&child.dtype)?;
+                let casted_child = self
+                    .flat_child
+                    .cast(&child.dtype)?
+                    .rename(child.name.as_str());
                 Ok(FixedSizeListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,

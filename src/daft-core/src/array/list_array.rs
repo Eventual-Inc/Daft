@@ -40,7 +40,7 @@ impl ListArray {
                         flat_child.field(),
                     )
                 }
-                if *offsets.last() != flat_child.len() as i64 {
+                if *offsets.last() > flat_child.len() as i64 {
                     panic!("ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len())
                 }
             }
@@ -120,7 +120,7 @@ impl ListArray {
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),
-            self.flat_child.rename(name),
+            self.flat_child.clone(),
             self.offsets.clone(),
             self.validity.clone(),
         )
@@ -132,38 +132,19 @@ impl ListArray {
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let offsets = &self.offsets.as_slice()[start..end];
-        if offsets.is_empty() {
-            let sliced_child = self.flat_child.slice(0, 0)?;
-            let new_offsets = arrow2::offset::OffsetsBuffer::default();
-            Ok(Self::new(
-                self.field.clone(),
-                sliced_child,
-                new_offsets,
-                None,
-            ))
-        } else {
-            let sliced_child = self.flat_child.slice(
-                *offsets.first().unwrap() as usize,
-                *offsets.last().unwrap() as usize,
-            )?;
-            let new_offsets = arrow2::offset::OffsetsBuffer::try_from(
-                offsets
-                    .iter()
-                    .map(|o| o - offsets.first().unwrap())
-                    .collect::<Vec<i64>>(),
-            )?;
-            let new_validity = self
-                .validity
-                .as_ref()
-                .map(|v| v.clone().sliced(start, end - start));
-            Ok(Self::new(
-                self.field.clone(),
-                sliced_child,
-                new_offsets,
-                new_validity,
-            ))
-        }
+        let new_offsets = arrow2::offset::OffsetsBuffer::try_from(
+            self.offsets.as_slice()[start..end + 1].to_vec(),
+        )?;
+        let new_validity = self
+            .validity
+            .as_ref()
+            .map(|v| v.clone().sliced(start, end - start));
+        Ok(Self::new(
+            self.field.clone(),
+            self.flat_child.clone(),
+            new_offsets,
+            new_validity,
+        ))
     }
 
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {

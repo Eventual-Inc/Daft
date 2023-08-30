@@ -64,7 +64,7 @@ impl<'a> FixedSizeListGrowable<'a> {
             DataType::FixedSizeList(child_field, element_fixed_len) => {
                 with_match_daft_types!(&child_field.dtype, |$T| {
                     let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        name.clone(),
+                        child_field.name.clone(),
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
@@ -220,7 +220,7 @@ impl<'a> ListGrowable<'a> {
             DataType::List(child_field) => {
                 with_match_daft_types!(&child_field.dtype, |$T| {
                     let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        name.clone(),
+                        child_field.name.clone(),
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
@@ -250,7 +250,7 @@ impl<'a> ListGrowable<'a> {
 impl<'a> Growable for ListGrowable<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
-        let offset_slice = &offsets.as_slice()[start..(start + len)];
+        let offset_slice = &offsets.as_slice()[start..(start + len + 1)];
         self.child_growable.extend(
             index,
             *offset_slice.first().unwrap() as usize,

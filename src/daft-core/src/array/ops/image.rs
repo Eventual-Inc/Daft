@@ -443,7 +443,7 @@ impl ImageArray {
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
-            data_array.into_series(),
+            data_array.into_series().rename("data"),
             UInt16Array::from((
                 "channel",
                 Box::new(
