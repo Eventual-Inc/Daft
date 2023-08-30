@@ -8,14 +8,15 @@ use google_cloud_storage::client::ClientConfig;
 use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
-use google_cloud_storage::http::Error as GError;
 use google_cloud_storage::http::objects::list::ListObjectsRequest;
+use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
 
 use crate::config;
 use crate::config::GCSConfig;
+use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
 use crate::GetResult;
@@ -133,9 +134,6 @@ impl GCSClientWrapper {
                     (GRange::default(), None)
                 };
                 let owned_uri = uri.to_string();
-                client.list_objects(ListObjectsRequest{
-
-                }).await.
                 let response = client
                     .download_streamed_object(&req, &grange)
                     .await
@@ -247,5 +245,14 @@ impl ObjectSource for GCSSource {
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
         self.client.get_size(uri).await
+    }
+
+    async fn ls(
+        &self,
+        path: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        unimplemented!("gcs ls");
     }
 }
