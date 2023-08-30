@@ -726,7 +726,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        let o = client.ls(file_path, None, None).await?;
+        client.ls(file_path, None, None).await?;
 
         Ok(())
     }
