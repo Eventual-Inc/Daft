@@ -1,7 +1,7 @@
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
-        DataArray, FixedSizeListArray, StructArray, ListArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };
@@ -87,11 +87,7 @@ impl Broadcastable for ListArray {
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(ListArray::full_null(
-                self.name(),
-                self.data_type(),
-                num,
-            ))
+            Ok(ListArray::full_null(self.name(), self.data_type(), num))
         }
     }
 }

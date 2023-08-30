@@ -1,5 +1,8 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray, growable::{GrowableArray, Growable}},
+    array::{
+        growable::{Growable, GrowableArray},
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+    },
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,

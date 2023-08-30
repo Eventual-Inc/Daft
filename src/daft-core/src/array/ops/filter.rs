@@ -1,9 +1,11 @@
-use std::iter::repeat;
-
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray, ListArray},
+    array::{
+        growable::{Growable, GrowableArray},
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+    },
     datatypes::{BooleanArray, DaftArrowBackedType},
 };
+use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
@@ -74,82 +76,54 @@ impl crate::datatypes::PythonArray {
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let expanded_filter = self.offsets.lengths().zip(mask.into_iter()).flat_map(|(length, pred)| repeat(pred.unwrap_or(false)).take(length));
-        let expanded_filter = BooleanArray::from(("", expanded_filter.collect::<Vec<_>>().as_slice()));
-        let filtered_child = self.flat_child.filter(&expanded_filter)?;
+        let mut growable = ListArray::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            self.validity().is_some(),
+            mask.len(),
+        );
 
-        let filtered_validity = self.validity().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
-                |(keep, valid)| match keep {
-                    None => None,
-                    Some(false) => None,
-                    Some(true) => Some(valid),
-                },
-            ))
-        });
+        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+            growable.extend(0, start_keep, len_keep);
+        }
 
-        let filtered_offsets = self.offsets.lengths().zip(mask.into_iter()).filter_map(|(length, pred)| {match pred {
-            None => None,
-            Some(false) => None,
-            Some(true) => Some(length),
-        }});
-        let filtered_offsets = arrow2::offset::Offsets::<i64>::try_from_lengths(filtered_offsets)?;
-
-        Ok(Self::new(
-            self.field.clone(),
-            filtered_child,
-            filtered_offsets.into(),
-            filtered_validity,
-        ))
+        Ok(growable.build()?.downcast::<ListArray>()?.clone())
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let size = self.fixed_element_len();
-        let expanded_filter: Vec<bool> = mask
-            .into_iter()
-            .flat_map(|pred| repeat(pred.unwrap_or(false)).take(size))
-            .collect();
-        let expanded_filter = BooleanArray::from(("", expanded_filter.as_slice()));
-        let filtered_child = self.flat_child.filter(&expanded_filter)?;
-        let filtered_validity = self.validity.as_ref().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
-                |(keep, valid)| match keep {
-                    None => None,
-                    Some(false) => None,
-                    Some(true) => Some(valid),
-                },
-            ))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            filtered_child,
-            filtered_validity,
-        ))
+        let mut growable = FixedSizeListArray::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            self.validity().is_some(),
+            mask.len(),
+        );
+
+        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+            growable.extend(0, start_keep, len_keep);
+        }
+
+        Ok(growable.build()?.downcast::<FixedSizeListArray>()?.clone())
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let filtered_children = self
-            .children
-            .iter()
-            .map(|s| s.filter(mask))
-            .collect::<DaftResult<Vec<_>>>()?;
-        let filtered_validity = self.validity.as_ref().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
-                |(keep, valid)| match keep {
-                    None => None,
-                    Some(false) => None,
-                    Some(true) => Some(valid),
-                },
-            ))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            filtered_children,
-            filtered_validity,
-        ))
+        let mut growable = StructArray::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            self.validity().is_some(),
+            mask.len(),
+        );
+
+        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+            growable.extend(0, start_keep, len_keep);
+        }
+
+        Ok(growable.build()?.downcast::<StructArray>()?.clone())
     }
 }

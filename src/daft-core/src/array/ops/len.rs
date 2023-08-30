@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray, ListArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::DaftArrowBackedType,
 };
 use common_error::DaftResult;
@@ -56,7 +56,9 @@ impl FixedSizeListArray {
 
 impl ListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        Ok(self.flat_child.size_bytes()? + validity_size(self.validity()) + offset_size(self.offsets()))
+        Ok(self.flat_child.size_bytes()?
+            + validity_size(self.validity())
+            + offset_size(self.offsets()))
     }
 }
 

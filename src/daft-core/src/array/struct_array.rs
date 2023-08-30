@@ -67,6 +67,10 @@ impl StructArray {
         }
     }
 
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
+    }
+
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
         if arrays.is_empty() {
             return Err(DaftError::ValueError(

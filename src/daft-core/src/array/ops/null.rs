@@ -42,7 +42,7 @@ macro_rules! impl_is_null_nested_array {
     ($arr:ident) => {
         impl DaftIsNull for $arr {
             type Output = DaftResult<DataArray<BooleanType>>;
-        
+
             fn is_null(&self) -> Self::Output {
                 match &self.validity {
                     None => Ok(BooleanArray::from((
