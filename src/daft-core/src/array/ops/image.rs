@@ -421,7 +421,7 @@ impl ImageArray {
         }
         let data_array = ListArray::new(
             Field::new(
-                name,
+                "data",
                 DataType::List(Box::new(Field::new("data", (&arrow_dtype).into()))),
             ),
             Series::try_from((

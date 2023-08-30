@@ -3,6 +3,7 @@ use std::iter::repeat;
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
+        growable::{Growable, GrowableArray},
         ops::image::ImageArraySidecarData,
         ops::{from_arrow::FromArrow, full::FullNull},
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -23,6 +24,7 @@ use common_error::{DaftError, DaftResult};
 
 use arrow2::{
     array::Array,
+    bitmap::utils::SlicesIterator,
     compute::{
         self,
         cast::{can_cast_types, cast, CastOptions},
@@ -1656,8 +1658,71 @@ impl FixedSizeListArray {
 }
 
 impl ListArray {
-    pub fn cast(&self, _dtype: &DataType) -> DaftResult<Series> {
-        todo!()
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::List(child_field) => Ok(ListArray::new(
+                Field::new(self.name(), dtype.clone()),
+                self.flat_child
+                    .cast(&child_field.dtype)?
+                    .rename(child_field.name.as_str()),
+                self.offsets().clone(),
+                self.validity.clone(),
+            )
+            .into_series()),
+            DataType::FixedSizeList(child_field, size) => {
+                // Validate lengths of elements are equal to `size`
+                let lengths_ok = match self.validity() {
+                    None => self.offsets().lengths().all(|l| l == *size),
+                    Some(validity) => self
+                        .offsets()
+                        .lengths()
+                        .zip(validity)
+                        .all(|(l, valid)| (l == 0 && !valid) || l == *size),
+                };
+                if !lengths_ok {
+                    return Err(DaftError::ComputeError(format!(
+                        "Cannot cast List to FixedSizeList because not all elements have sizes: {}",
+                        size
+                    )));
+                }
+
+                match self.validity() {
+                    // All valid, easy conversion -- everything is correctly sized and valid
+                    None => Ok(FixedSizeListArray::new(
+                        Field::new(self.name(), dtype.clone()),
+                        self.flat_child.clone(),
+                        None,
+                    )
+                    .into_series()),
+                    // Some invalids, we need to insert nulls into the child
+                    Some(validity) => {
+                        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(child_field.dtype, |$T| {
+                            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
+                                child_field.name.clone(),
+                                &child_field.dtype,
+                                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
+                                true,
+                                self.validity().map_or(self.len() * size, |v| v.len() * size),
+                            ))
+                        });
+
+                        let mut invalid_ptr = 0;
+                        for (start, len) in SlicesIterator::new(validity) {
+                            child_growable.add_nulls((start - invalid_ptr) * size);
+                            invalid_ptr = start + len;
+                        }
+
+                        Ok(FixedSizeListArray::new(
+                            Field::new(self.name(), dtype.clone()),
+                            child_growable.build()?,
+                            self.validity().cloned(),
+                        )
+                        .into_series())
+                    }
+                }
+            }
+            _ => unimplemented!("List casting not implemented for dtype: {}", dtype),
+        }
     }
 }
 
