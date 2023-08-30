@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, StructArray, ListArray},
     datatypes::DaftArrowBackedType,
 };
 use common_error::DaftResult;
@@ -44,9 +44,19 @@ fn validity_size(validity: Option<&arrow2::bitmap::Bitmap>) -> usize {
     validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
 }
 
+fn offset_size(offsets: &arrow2::offset::OffsetsBuffer<i64>) -> usize {
+    offsets.len_proxy() * std::mem::size_of::<i64>()
+}
+
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
         Ok(self.flat_child.size_bytes()? + validity_size(self.validity.as_ref()))
+    }
+}
+
+impl ListArray {
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        Ok(self.flat_child.size_bytes()? + validity_size(self.validity()) + offset_size(self.offsets()))
     }
 }
 

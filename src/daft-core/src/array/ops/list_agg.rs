@@ -101,6 +101,20 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     }
 }
 
+impl DaftListAggable for ListArray {
+    type Output = DaftResult<ListArray>;
+
+    fn list(&self) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!("Requires new ListArrays for implementation")
+    }
+
+    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
+        // TODO(FixedSizeList)
+        todo!("Requires new ListArrays for implementation")
+    }
+}
+
 impl DaftListAggable for FixedSizeListArray {
     type Output = DaftResult<ListArray>;
 

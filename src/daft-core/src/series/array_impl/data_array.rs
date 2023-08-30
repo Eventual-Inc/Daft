@@ -14,7 +14,7 @@ use crate::series::Field;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, UInt16Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array,
         UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     series::series_like::SeriesLike,
@@ -24,101 +24,6 @@ use common_error::DaftResult;
 
 use crate::datatypes::DataType;
 use std::borrow::Cow;
-
-fn logical_to_arrow<'a>(
-    arr: Cow<'a, Box<dyn arrow2::array::Array>>,
-    field: &Field,
-) -> Cow<'a, Box<dyn arrow2::array::Array>> {
-    match &field.dtype {
-        DataType::List(child_field) => {
-            let downcasted = arr
-                .as_ref()
-                .as_any()
-                .downcast_ref::<arrow2::array::ListArray<i64>>()
-                .unwrap();
-            let values = Cow::Borrowed(downcasted.values());
-            let new_values = logical_to_arrow(values, child_field.as_ref());
-            match new_values {
-                Cow::Borrowed(..) => arr,
-                Cow::Owned(new_arr) => {
-                    let new_child_field = arrow2::datatypes::Field::new(
-                        child_field.name.clone(),
-                        new_arr.data_type().clone(),
-                        true,
-                    );
-                    let new_datatype =
-                        arrow2::datatypes::DataType::LargeList(Box::new(new_child_field));
-                    Cow::Owned(
-                        arrow2::array::ListArray::<i64>::try_new(
-                            new_datatype,
-                            downcasted.offsets().clone(),
-                            new_arr,
-                            arr.validity().cloned(),
-                        )
-                        .unwrap()
-                        .boxed(),
-                    )
-                }
-            }
-        }
-        DataType::Struct(fields) => {
-            let downcasted = arr
-                .as_ref()
-                .as_any()
-                .downcast_ref::<arrow2::array::StructArray>()
-                .unwrap();
-            let mut new_values_vec = Vec::with_capacity(fields.len());
-
-            let mut new_fields_vec = Vec::with_capacity(fields.len());
-
-            for (values, child_field) in downcasted.values().iter().zip(fields) {
-                let values = Cow::Borrowed(values);
-                let new_values = logical_to_arrow(values, child_field);
-                new_fields_vec.push(arrow2::datatypes::Field::new(
-                    child_field.name.clone(),
-                    new_values.data_type().clone(),
-                    true,
-                ));
-                new_values_vec.push(new_values.into_owned());
-            }
-            Cow::Owned(
-                arrow2::array::StructArray::new(
-                    arrow2::datatypes::DataType::Struct(new_fields_vec),
-                    new_values_vec,
-                    arr.validity().cloned(),
-                )
-                .boxed(),
-            )
-        }
-
-        DataType::Date => {
-            let downcasted = arr
-                .as_ref()
-                .as_any()
-                .downcast_ref::<arrow2::array::PrimitiveArray<i32>>()
-                .unwrap();
-            let casted: Box<dyn arrow2::array::Array> =
-                Box::new(downcasted.clone().to(arrow2::datatypes::DataType::Date32));
-            Cow::Owned(casted)
-        }
-
-        DataType::Duration(unit) => {
-            let downcasted = arr
-                .as_ref()
-                .as_any()
-                .downcast_ref::<arrow2::array::PrimitiveArray<i64>>()
-                .unwrap();
-            let casted: Box<dyn arrow2::array::Array> = Box::new(
-                downcasted
-                    .clone()
-                    .to(arrow2::datatypes::DataType::Duration(unit.to_arrow())),
-            );
-            Cow::Owned(casted)
-        }
-
-        _ => arr,
-    }
-}
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where
@@ -147,7 +52,7 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.clone().into_series()
             }
             fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-                logical_to_arrow(Cow::Borrowed(&self.0.data), self.field()).into_owned()
+                self.0.data().to_boxed()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -311,7 +216,6 @@ impl_series_like_for_data_array!(UInt64Array);
 impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
-impl_series_like_for_data_array!(ListArray);
 impl_series_like_for_data_array!(ExtensionArray);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

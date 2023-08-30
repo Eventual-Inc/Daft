@@ -435,3 +435,12 @@ impl FixedShapeTensorArray {
             .replace('\n', "<br />")
     }
 }
+
+impl TensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}

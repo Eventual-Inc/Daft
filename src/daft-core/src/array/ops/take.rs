@@ -1,19 +1,17 @@
-use std::iter::repeat;
-
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, growable::{GrowableArray, Growable}},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, NullArray,
-        UInt64Array, Utf8Array,
+        Utf8Array,
     },
-    DataType, IntoSeries, Series,
+    DataType,
 };
+use arrow2::types::Index;
 use common_error::DaftResult;
-use num_traits::ToPrimitive;
 
 use super::as_arrow::AsArrow;
 
@@ -74,6 +72,8 @@ impl_logicalarray_take!(TimestampArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
+impl_logicalarray_take!(TensorArray);
+impl_logicalarray_take!(FixedShapeTensorArray);
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {
@@ -145,37 +145,55 @@ impl FixedSizeListArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let size = self.fixed_element_len() as u64;
-        let idx_as_u64 = idx.cast(&DataType::UInt64)?;
-        let expanded_child_idx: Vec<Option<u64>> = idx_as_u64
-            .u64()?
-            .into_iter()
-            .flat_map(|i| {
-                let x: Box<dyn Iterator<Item = Option<u64>>> = match &i {
-                    None => Box::new(repeat(None).take(size as usize)),
-                    Some(i) => Box::new((*i * size..(*i + 1) * size).map(Some)),
-                };
-                x
-            })
-            .collect();
-        let child_idx = UInt64Array::from((
-            "",
-            Box::new(arrow2::array::UInt64Array::from_iter(
-                expanded_child_idx.iter(),
-            )),
-        ))
-        .into_series();
-        let taken_validity = self.validity.as_ref().map(|v| {
-            arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
-                None => false,
-                Some(i) => v.get_bit(i.to_usize().unwrap()),
-            }))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            self.flat_child.take(&child_idx)?,
-            taken_validity,
-        ))
+        let mut growable = FixedSizeListArray::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            idx.data().null_count() > 0,
+            idx.len(),
+        );
+
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize(), 1);
+                }
+            }
+        }
+
+        Ok(growable.build()?.downcast::<FixedSizeListArray>()?.clone())
+    }
+}
+
+impl ListArray {
+    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        let mut growable = ListArray::make_growable(
+            self.name().to_string(),
+            self.data_type(),
+            vec![self],
+            idx.data().null_count() > 0,
+            idx.len(),
+        );
+
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize(), 1);
+                }
+            }
+        }
+
+        Ok(growable.build()?.downcast::<ListArray>()?.clone())
     }
 }
 
@@ -189,7 +207,7 @@ impl StructArray {
         let taken_validity = self.validity.as_ref().map(|v| {
             arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
-                Some(i) => v.get_bit(i.to_usize().unwrap()),
+                Some(i) => v.get_bit(i.to_usize()),
             }))
         });
         Ok(Self::new(
@@ -200,34 +218,5 @@ impl StructArray {
                 .collect::<DaftResult<Vec<_>>>()?,
             taken_validity,
         ))
-    }
-}
-
-impl TensorArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
-    {
-        let new_array = self.physical.take(idx)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        let str_value = self.str_value(idx).unwrap();
-        html_escape::encode_text(&str_value)
-            .into_owned()
-            .replace('\n', "<br />")
-    }
-}
-
-impl FixedShapeTensorArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: arrow2::types::Index,
-    {
-        let new_array = self.physical.take(idx)?;
-        Ok(Self::new(self.field.clone(), new_array))
     }
 }

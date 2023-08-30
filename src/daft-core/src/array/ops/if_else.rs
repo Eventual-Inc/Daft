@@ -1,6 +1,6 @@
 use crate::array::growable::{Growable, GrowableArray};
 use crate::array::ops::full::FullNull;
-use crate::array::{DataArray, FixedSizeListArray, StructArray};
+use crate::array::{DataArray, FixedSizeListArray, StructArray, ListArray};
 use crate::datatypes::{BooleanArray, DaftPhysicalType};
 use crate::{DataType, IntoSeries, Series};
 use arrow2::array::Array;
@@ -132,42 +132,30 @@ where
     }
 }
 
-impl<'a> FixedSizeListArray {
-    pub fn if_else(
-        &'a self,
-        other: &'a FixedSizeListArray,
-        predicate: &BooleanArray,
-    ) -> DaftResult<FixedSizeListArray> {
-        generic_if_else(
-            predicate,
-            self.name(),
-            self,
-            other,
-            self.data_type(),
-            self.len(),
-            other.len(),
-        )?
-        .downcast::<FixedSizeListArray>()
-        .map(|arr| arr.clone())
-    }
+macro_rules! impl_if_else_nested_array {
+    ($arr:ident) => {
+        impl<'a> $arr {
+            pub fn if_else(
+                &'a self,
+                other: &'a $arr,
+                predicate: &BooleanArray,
+            ) -> DaftResult<$arr> {
+                generic_if_else(
+                    predicate,
+                    self.name(),
+                    self,
+                    other,
+                    self.data_type(),
+                    self.len(),
+                    other.len(),
+                )?
+                .downcast::<$arr>()
+                .map(|arr| arr.clone())
+            }
+        }
+    };
 }
 
-impl<'a> StructArray {
-    pub fn if_else(
-        &'a self,
-        other: &'a StructArray,
-        predicate: &BooleanArray,
-    ) -> DaftResult<StructArray> {
-        generic_if_else(
-            predicate,
-            self.name(),
-            self,
-            other,
-            self.data_type(),
-            self.len(),
-            other.len(),
-        )?
-        .downcast::<StructArray>()
-        .map(|arr| arr.clone())
-    }
-}
+impl_if_else_nested_array!(ListArray);
+impl_if_else_nested_array!(FixedSizeListArray);
+impl_if_else_nested_array!(StructArray);

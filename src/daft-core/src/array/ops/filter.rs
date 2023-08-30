@@ -1,7 +1,7 @@
 use std::iter::repeat;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, StructArray, ListArray},
     datatypes::{BooleanArray, DaftArrowBackedType},
 };
 use common_error::DaftResult;
@@ -69,6 +69,38 @@ impl crate::datatypes::PythonArray {
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
         DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+    }
+}
+
+impl ListArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let expanded_filter = self.offsets.lengths().zip(mask.into_iter()).flat_map(|(length, pred)| repeat(pred.unwrap_or(false)).take(length));
+        let expanded_filter = BooleanArray::from(("", expanded_filter.collect::<Vec<_>>().as_slice()));
+        let filtered_child = self.flat_child.filter(&expanded_filter)?;
+
+        let filtered_validity = self.validity().map(|validity| {
+            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
+                |(keep, valid)| match keep {
+                    None => None,
+                    Some(false) => None,
+                    Some(true) => Some(valid),
+                },
+            ))
+        });
+
+        let filtered_offsets = self.offsets.lengths().zip(mask.into_iter()).filter_map(|(length, pred)| {match pred {
+            None => None,
+            Some(false) => None,
+            Some(true) => Some(length),
+        }});
+        let filtered_offsets = arrow2::offset::Offsets::<i64>::try_from_lengths(filtered_offsets)?;
+
+        Ok(Self::new(
+            self.field.clone(),
+            filtered_child,
+            filtered_offsets.into(),
+            filtered_validity,
+        ))
     }
 }
 

@@ -38,45 +38,33 @@ where
     }
 }
 
-impl DaftIsNull for FixedSizeListArray {
-    type Output = DaftResult<DataArray<BooleanType>>;
-
-    fn is_null(&self) -> Self::Output {
-        match &self.validity {
-            None => Ok(BooleanArray::from((
-                self.name(),
-                repeat(false)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => Ok(BooleanArray::from((
-                self.name(),
-                validity.into_iter().collect::<Vec<_>>().as_slice(),
-            ))),
+macro_rules! impl_is_null_nested_array {
+    ($arr:ident) => {
+        impl DaftIsNull for $arr {
+            type Output = DaftResult<DataArray<BooleanType>>;
+        
+            fn is_null(&self) -> Self::Output {
+                match &self.validity {
+                    None => Ok(BooleanArray::from((
+                        self.name(),
+                        repeat(false)
+                            .take(self.len())
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    ))),
+                    Some(validity) => Ok(BooleanArray::from((
+                        self.name(),
+                        validity.into_iter().collect::<Vec<_>>().as_slice(),
+                    ))),
+                }
+            }
         }
-    }
+    };
 }
 
-impl DaftIsNull for StructArray {
-    type Output = DaftResult<DataArray<BooleanType>>;
-
-    fn is_null(&self) -> Self::Output {
-        match &self.validity {
-            None => Ok(BooleanArray::from((
-                self.name(),
-                repeat(false)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => Ok(BooleanArray::from((
-                self.name(),
-                validity.into_iter().collect::<Vec<_>>().as_slice(),
-            ))),
-        }
-    }
-}
+impl_is_null_nested_array!(ListArray);
+impl_is_null_nested_array!(FixedSizeListArray);
+impl_is_null_nested_array!(StructArray);
 
 impl<T> DataArray<T>
 where
