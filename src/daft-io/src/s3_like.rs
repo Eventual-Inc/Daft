@@ -158,7 +158,7 @@ impl From<Error> for super::Error {
 async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
-    let mut anonymous = config.anonymous;
+    let anonymous = config.anonymous;
 
     let conf: SdkConfig = if anonymous {
         aws_config::from_env().no_credentials().load().await
