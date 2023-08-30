@@ -8,7 +8,7 @@ use google_cloud_storage::client::ClientConfig;
 use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
-use google_cloud_storage::http::objects::list::ListObjectsRequest;
+
 use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
@@ -249,9 +249,9 @@ impl ObjectSource for GCSSource {
 
     async fn ls(
         &self,
-        path: &str,
-        delimiter: Option<&str>,
-        continuation_token: Option<&str>,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         unimplemented!("gcs ls");
     }

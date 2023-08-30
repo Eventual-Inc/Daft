@@ -4,7 +4,6 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
-use url::form_urlencoded::parse;
 
 /// Create configurations to be used when accessing an S3-compatible system
 ///

@@ -18,7 +18,7 @@ use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
 use s3::error::{DisplayErrorContext, SdkError};
 use s3::operation::get_object::GetObjectError;
-use snafu::{ensure, whatever, IntoError, ResultExt, Snafu};
+use snafu::{ensure, IntoError, ResultExt, Snafu};
 use url::ParseError;
 
 use super::object_io::{GetResult, ObjectSource};
@@ -26,9 +26,8 @@ use async_recursion::async_recursion;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 
-use std::arch::is_aarch64_feature_detected;
 use std::collections::HashMap;
-use std::fmt::format;
+
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
@@ -520,7 +519,7 @@ impl S3LikeSource {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
-                let continuation_token = v.continuation_token().and_then(|s| Some(s.to_string()));
+                let continuation_token = v.continuation_token().map(|s| s.to_string());
                 let mut total_len = 0;
                 if let Some(dirs) = dirs {
                     total_len += dirs.len()
@@ -608,7 +607,7 @@ impl ObjectSource for S3LikeSource {
         delimiter: Option<&str>,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path: path })?;
+        let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -619,9 +618,9 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
 
-        if let Some(key) = key.strip_prefix("/") {
+        if let Some(key) = key.strip_prefix('/') {
             // assume its a directory first
-            let key = format!("{}/", key.strip_suffix("/").unwrap_or(key));
+            let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
             let lsr = self
                 ._list_impl(
                     bucket,
@@ -631,9 +630,9 @@ impl ObjectSource for S3LikeSource {
                     &self.default_region,
                 )
                 .await?;
-            if lsr.files.is_empty() && key.contains("/") {
+            if lsr.files.is_empty() && key.contains('/') {
                 // Might be a File
-                let split = key.rsplit_once("/");
+                let split = key.rsplit_once('/');
                 let (new_key, _) = split.unwrap();
                 let mut lsr = self
                     ._list_impl(

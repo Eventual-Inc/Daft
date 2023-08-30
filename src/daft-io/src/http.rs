@@ -148,9 +148,9 @@ impl ObjectSource for HttpSource {
 
     async fn ls(
         &self,
-        path: &str,
-        delimiter: Option<&str>,
-        continuation_token: Option<&str>,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         unimplemented!("http ls");
     }
