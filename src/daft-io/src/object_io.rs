@@ -45,6 +45,23 @@ impl GetResult {
     }
 }
 
+#[derive(Debug)]
+pub enum FileType {
+    File,
+    Directory,
+}
+#[derive(Debug)]
+pub struct FileMetadata {
+    pub filepath: String,
+    pub size: Option<u64>,
+    pub filetype: FileType,
+}
+#[derive(Debug)]
+pub struct LSResult {
+    pub files: Vec<FileMetadata>,
+    pub continuation_token: Option<String>,
+}
+
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
@@ -52,4 +69,12 @@ pub(crate) trait ObjectSource: Sync + Send {
         self.get(uri, Some(range)).await
     }
     async fn get_size(&self, uri: &str) -> super::Result<usize>;
+    async fn ls(
+        &self,
+        path: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult>;
+
+    // async fn iter_dir(&self, path: &str, limit: Option<usize>) -> super::Result<Box<dyn Stream<Item = super::Result<LSResult>>>>;
 }

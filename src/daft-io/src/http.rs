@@ -6,6 +6,8 @@ use futures::{StreamExt, TryStreamExt};
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 
+use crate::object_io::LSResult;
+
 use super::object_io::{GetResult, ObjectSource};
 
 #[derive(Debug, Snafu)]
@@ -142,6 +144,15 @@ impl ObjectSource for HttpSource {
             }
             None => Err(Error::UnableToDetermineSize { path: uri.into() }.into()),
         }
+    }
+
+    async fn ls(
+        &self,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        unimplemented!("http ls");
     }
 }
 

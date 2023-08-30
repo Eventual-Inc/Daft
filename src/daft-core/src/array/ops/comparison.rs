@@ -1167,10 +1167,7 @@ impl DaftCompare<&str> for Utf8Array {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        array::ops::DaftCompare,
-        datatypes::{DaftArrayType, Int64Array},
-    };
+    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
     use common_error::DaftResult;
 
     #[test]

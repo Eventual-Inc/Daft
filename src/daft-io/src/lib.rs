@@ -42,7 +42,6 @@ use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 pub enum Error {
     #[snafu(display("Generic {} error: {}", store, source))]
     Generic { store: SourceType, source: DynError },
-
     #[snafu(display("Object at location {} not found\nDetails:\n{}", path, source))]
     NotFound { path: String, source: DynError },
 

@@ -4,8 +4,10 @@ use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
+use s3::operation::list_objects_v2::ListObjectsV2Error;
 
 use crate::config::S3Config;
+use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::{InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
@@ -25,6 +27,7 @@ use aws_sdk_s3 as s3;
 use aws_sdk_s3::primitives::ByteStreamError;
 
 use std::collections::HashMap;
+
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
@@ -50,6 +53,12 @@ enum Error {
         source: SdkError<HeadObjectError, Response>,
     },
 
+    #[snafu(display("Unable to list {}: {}", path, s3::error::DisplayErrorContext(source)))]
+    UnableToListObjects {
+        path: String,
+        source: SdkError<ListObjectsV2Error, Response>,
+    },
+
     #[snafu(display("Unable to query the region for {}: {}", path, source))]
     UnableToQueryRegion {
         path: String,
@@ -72,6 +81,9 @@ enum Error {
     },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+
+    #[snafu(display("Not Found: \"{}\"", path))]
+    NotFound { path: String },
 
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials { source: CredentialsError },
@@ -130,6 +142,10 @@ impl From<Error> for super::Error {
             UnableToCreateClient { source } => super::Error::UnableToCreateClient {
                 store: SourceType::S3,
                 source: source.into(),
+            },
+            NotFound { ref path } => super::Error::NotFound {
+                path: path.into(),
+                source: error.into(),
             },
             err => super::Error::Generic {
                 store: SourceType::S3,
@@ -453,6 +469,127 @@ impl S3LikeSource {
             Err(Error::NotAFile { path: uri.into() }.into())
         }
     }
+
+    #[async_recursion]
+    async fn _list_impl(
+        &self,
+        bucket: &str,
+        key: &str,
+        delimiter: String,
+        continuation_token: Option<String>,
+        region: &Region,
+    ) -> super::Result<LSResult> {
+        let request = self
+            .get_s3_client(region)
+            .await?
+            .list_objects_v2()
+            .bucket(bucket)
+            .delimiter(&delimiter)
+            .prefix(key);
+        let request = if let Some(ref continuation_token) = continuation_token {
+            request.continuation_token(continuation_token)
+        } else {
+            request
+        };
+        let response = if self.anonymous {
+            request
+                .customize_middleware()
+                .await
+                .unwrap()
+                .map_operation::<Error>(|mut o| {
+                    {
+                        let mut properties = o.properties_mut();
+                        #[allow(unused_mut)]
+                        let mut config = properties
+                            .get_mut::<::aws_sig_auth::signer::OperationSigningConfig>()
+                            .expect("signing config added by make_operation()");
+
+                        config.signing_requirements = SigningRequirements::Disabled;
+                    }
+                    Ok(o)
+                })
+                .unwrap()
+                .send()
+                .await
+        } else {
+            request.send().await
+        };
+        let uri = &format!("s3://{bucket}/{key}");
+        match response {
+            Ok(v) => {
+                let dirs = v.common_prefixes();
+                let files = v.contents();
+                let continuation_token = v.continuation_token().map(|s| s.to_string());
+                let mut total_len = 0;
+                if let Some(dirs) = dirs {
+                    total_len += dirs.len()
+                }
+                if let Some(files) = files {
+                    total_len += files.len()
+                }
+                let mut all_files = Vec::with_capacity(total_len);
+                if let Some(dirs) = dirs {
+                    for d in dirs {
+                        let fmeta = FileMetadata {
+                            filepath: format!("s3://{bucket}/{}", d.prefix().unwrap_or_default()),
+                            size: None,
+                            filetype: FileType::Directory,
+                        };
+                        all_files.push(fmeta);
+                    }
+                }
+                if let Some(files) = files {
+                    for f in files {
+                        let fmeta = FileMetadata {
+                            filepath: format!("s3://{bucket}/{}", f.key().unwrap_or_default()),
+                            size: Some(f.size() as u64),
+                            filetype: FileType::File,
+                        };
+                        all_files.push(fmeta);
+                    }
+                }
+                Ok(LSResult {
+                    files: all_files,
+                    continuation_token,
+                })
+            }
+            Err(SdkError::ServiceError(err)) => {
+                let bad_response = err.raw().http();
+                match bad_response.status() {
+                    StatusCode::MOVED_PERMANENTLY => {
+                        let headers = bad_response.headers();
+                        let new_region =
+                            headers.get(REGION_HEADER).ok_or(Error::MissingHeader {
+                                path: uri.into(),
+                                header: REGION_HEADER.into(),
+                            })?;
+
+                        let region_name = String::from_utf8(new_region.as_bytes().to_vec())
+                            .with_context(|_| UnableToParseUtf8Snafu::<String> {
+                                path: uri.into(),
+                            })?;
+
+                        let new_region = Region::new(region_name);
+                        log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
+                        self._list_impl(
+                            bucket,
+                            key,
+                            delimiter,
+                            continuation_token.clone(),
+                            &new_region,
+                        )
+                        .await
+                    }
+                    _ => Err(UnableToListObjectsSnafu { path: uri }
+                        .into_error(SdkError::ServiceError(err))
+                        .into()),
+                }
+            }
+            Err(err) => Err(UnableToListObjectsSnafu { path: uri }
+                .into_error(err)
+                .into()),
+        }
+    }
 }
 
 #[async_trait]
@@ -463,6 +600,63 @@ impl ObjectSource for S3LikeSource {
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
         self._head_impl(uri, &self.default_region).await
+    }
+    async fn ls(
+        &self,
+        path: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
+        let delimiter = delimiter.unwrap_or("/");
+        let bucket = match parsed.host_str() {
+            Some(s) => Ok(s),
+            None => Err(Error::InvalidUrl {
+                path: path.into(),
+                source: ParseError::EmptyHost,
+            }),
+        }?;
+        let key = parsed.path();
+
+        if let Some(key) = key.strip_prefix('/') {
+            // assume its a directory first
+            let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
+            let lsr = self
+                ._list_impl(
+                    bucket,
+                    &key,
+                    delimiter.into(),
+                    continuation_token.map(String::from),
+                    &self.default_region,
+                )
+                .await?;
+            if lsr.files.is_empty() && key.contains('/') {
+                // Might be a File
+                let split = key.rsplit_once('/');
+                let (new_key, _) = split.unwrap();
+                let mut lsr = self
+                    ._list_impl(
+                        bucket,
+                        new_key,
+                        delimiter.into(),
+                        continuation_token.map(String::from),
+                        &self.default_region,
+                    )
+                    .await?;
+                let target_path = format!("s3://{bucket}/{new_key}");
+                lsr.files.retain(|f| f.filepath == target_path);
+
+                if lsr.files.is_empty() {
+                    // Isnt a file or a directory
+                    return Err(Error::NotFound { path: path.into() }.into());
+                }
+                Ok(lsr)
+            } else {
+                Ok(lsr)
+            }
+        } else {
+            Err(Error::NotAFile { path: path.into() }.into())
+        }
     }
 }
 
@@ -518,6 +712,21 @@ mod tests {
 
         let size_from_get_size = client.get_size(parquet_file_path).await?;
         assert_eq!(size_from_get_size, all_bytes.len());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_full_ls_from_s3() -> Result<()> {
+        let file_path = "s3://daft-public-data/test_fixtures/parquet/";
+
+        let config = S3Config {
+            anonymous: true,
+            ..Default::default()
+        };
+        let client = S3LikeSource::get_client(&config).await?;
+
+        client.ls(file_path, None, None).await?;
 
         Ok(())
     }

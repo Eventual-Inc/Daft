@@ -8,6 +8,7 @@ use google_cloud_storage::client::ClientConfig;
 use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
+
 use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
@@ -15,6 +16,7 @@ use snafu::Snafu;
 
 use crate::config;
 use crate::config::GCSConfig;
+use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
 use crate::GetResult;
@@ -243,5 +245,14 @@ impl ObjectSource for GCSSource {
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
         self.client.get_size(uri).await
+    }
+
+    async fn ls(
+        &self,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        unimplemented!("gcs ls");
     }
 }

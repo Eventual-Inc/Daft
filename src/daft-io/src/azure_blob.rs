@@ -5,7 +5,11 @@ use futures::{StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
-use crate::{config::AzureConfig, object_io::ObjectSource, GetResult};
+use crate::{
+    config::AzureConfig,
+    object_io::{LSResult, ObjectSource},
+    GetResult,
+};
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -169,5 +173,14 @@ impl ObjectSource for AzureBlobSource {
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         Ok(metadata.blob.properties.content_length as usize)
+    }
+
+    async fn ls(
+        &self,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        unimplemented!("azure ls");
     }
 }

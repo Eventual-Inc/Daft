@@ -2,6 +2,8 @@ use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 
+use crate::object_io::LSResult;
+
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
 use async_trait::async_trait;
@@ -116,6 +118,15 @@ impl ObjectSource for LocalSource {
             }
             .into());
         }
+    }
+
+    async fn ls(
+        &self,
+        _path: &str,
+        _delimiter: Option<&str>,
+        _continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        unimplemented!("local ls");
     }
 }
 
