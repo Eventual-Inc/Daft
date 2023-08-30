@@ -4,14 +4,12 @@ use crate::array::{
     growable::{Growable, GrowableArray},
     FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{DaftDataType, Utf8Type};
 use crate::datatypes::{UInt64Array, Utf8Array};
 use crate::{with_match_daft_types, DataType};
 
 use crate::series::Series;
 
 use arrow2;
-use arrow2::array::Array;
 
 use common_error::DaftResult;
 
@@ -54,8 +52,7 @@ impl ListArray {
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let child_array = self.flat_child;
-        let offsets = self.offsets;
+        let offsets = self.offsets();
 
         let total_capacity: usize = (0..self.len())
             .map(|i| {

@@ -10,7 +10,6 @@ use crate::datatypes::DaftArrowBackedType;
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
 use crate::series::array_impl::binary_ops::SeriesBinaryOps;
-use crate::series::Field;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
@@ -23,7 +22,6 @@ use crate::{
 use common_error::DaftResult;
 
 use crate::datatypes::DataType;
-use std::borrow::Cow;
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where

@@ -133,7 +133,7 @@ impl ListArray {
             )));
         }
         let offsets = &self.offsets.as_slice()[start..end];
-        if offsets.len() == 0 {
+        if offsets.is_empty() {
             let sliced_child = self.flat_child.slice(0, 0)?;
             let new_offsets = arrow2::offset::OffsetsBuffer::default();
             Ok(Self::new(
@@ -170,7 +170,7 @@ impl ListArray {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(arrow2::array::ListArray::new(
             arrow_dtype,
-            self.offsets.into(),
+            self.offsets().clone(),
             self.flat_child.to_arrow(),
             self.validity.clone(),
         ))

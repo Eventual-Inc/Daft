@@ -1,4 +1,3 @@
-use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
 use common_error::DaftError;

@@ -1,18 +1,14 @@
-use std::sync::Arc;
-
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::DaftArrowBackedType,
-    with_match_daft_types, IntoSeries,
+    IntoSeries,
 };
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
-
-use dyn_clone::clone_box;
 
 impl<T> DaftListAggable for DataArray<T>
 where
@@ -22,14 +18,13 @@ where
 {
     type Output = DaftResult<ListArray>;
     fn list(&self) -> Self::Output {
-        let child_series = self.into_series();
+        let child_series = self.clone().into_series();
         let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
         let list_field = self.field.to_list_field()?;
         Ok(ListArray::new(list_field, child_series, offsets, None))
     }
 
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
-        let child_array = self.data.as_ref();
         let mut offsets = Vec::with_capacity(groups.len() + 1);
 
         offsets.push(0);

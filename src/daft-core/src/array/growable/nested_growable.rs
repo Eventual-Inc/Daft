@@ -267,19 +267,21 @@ impl<'a> Growable for ListGrowable<'a> {
 
     fn add_nulls(&mut self, additional: usize) {
         self.growable_validity.add_nulls(additional);
-        let last_offset = self.growable_offsets.last().unwrap();
+        let last_offset = *self.growable_offsets.last().unwrap();
         self.growable_offsets
             .extend(repeat(last_offset).take(additional));
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out self.growable_validity so we can use the values and move it
+        // Swap out values so we can use them and move it
+        let mut grown_offsets = vec![];
         let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
         swap(&mut self.growable_validity, &mut grown_validity);
+        swap(&mut self.growable_offsets, &mut grown_offsets);
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.build();
-        let built_offsets = arrow2::offset::Offsets::<i64>::try_from(self.growable_offsets)?.into();
+        let built_offsets = arrow2::offset::Offsets::<i64>::try_from(grown_offsets)?.into();
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,

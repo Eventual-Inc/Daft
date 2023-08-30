@@ -1,5 +1,3 @@
-use std::{iter::empty, vec};
-
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -7,7 +5,7 @@ use crate::{
     },
     with_match_daft_types,
 };
-use arrow2::{array::Array, offset::OffsetsBuffer};
+use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};
@@ -65,12 +63,12 @@ impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, self.flat_child.len() as i64])?;
-        return Ok(ListArray::new(
+        Ok(ListArray::new(
             self.field.clone(),
-            self.flat_child,
+            self.flat_child.clone(),
             new_offsets,
             None,
-        ));
+        ))
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
@@ -88,12 +86,10 @@ impl DaftConcatAggable for ListArray {
         )?;
 
         for group in groups {
-            let mut group_len = 0;
             for idx in group {
                 let (start, end) = self.offsets.start_end(*idx as usize);
                 let len = end - start;
                 child_array_growable.extend(0, start, len);
-                group_len += len;
             }
         }
 

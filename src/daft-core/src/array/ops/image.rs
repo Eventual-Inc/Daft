@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::io::{Seek, SeekFrom, Write};
 use std::vec;
 
-use arrow2::array::Array;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
 use crate::array::{FixedSizeListArray, ListArray, StructArray};
@@ -420,16 +419,19 @@ impl ImageArray {
                 panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
             }
         }
-
-        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-            arrow2::datatypes::Field::new("data", arrow_dtype, true),
-        ));
-        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-            list_datatype,
+        let data_array = ListArray::new(
+            Field::new(
+                name,
+                DataType::List(Box::new(Field::new("data", (&arrow_dtype).into()))),
+            ),
+            Series::try_from((
+                "data",
+                Box::new(arrow2::array::PrimitiveArray::from_vec(data))
+                    as Box<dyn arrow2::array::Array>,
+            ))?,
             offsets,
-            Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
             sidecar_data.validity.clone(),
-        ));
+        );
 
         Self::from_list_array(name, data_type, data_array, sidecar_data)
     }
@@ -437,15 +439,11 @@ impl ImageArray {
     pub fn from_list_array(
         name: &str,
         data_type: DataType,
-        data_array: Box<arrow2::array::ListArray<i64>>,
+        data_array: ListArray,
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
-            ListArray::from_arrow(
-                &Field::new("data", data_array.data_type().into()),
-                data_array,
-            )?
-            .into_series(),
+            data_array.into_series(),
             UInt16Array::from((
                 "channel",
                 Box::new(
