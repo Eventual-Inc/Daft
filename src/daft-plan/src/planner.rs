@@ -214,7 +214,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             use daft_dsl::Expr::Column;
             let input_plan = plan(input)?;
 
-            let num_input_partitions = logical_plan.partition_spec().num_partitions;
+            let num_input_partitions = input.partition_spec().num_partitions;
 
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(

@@ -150,7 +150,21 @@ impl LogicalPlan {
                 PartitionSpec::new_internal(PartitionScheme::Unknown, *num_to, None).into()
             }
             Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
-            Self::Aggregate(Aggregate { input, .. }) => input.partition_spec(), // TODO
+            Self::Aggregate(Aggregate { input, groupby, .. }) => {
+                let input_partition_spec = input.partition_spec();
+                if input_partition_spec.num_partitions == 1 {
+                    input_partition_spec.clone()
+                } else if groupby.is_empty() {
+                    PartitionSpec::new_internal(PartitionScheme::Unknown, 1, None).into()
+                } else {
+                    PartitionSpec::new_internal(
+                        PartitionScheme::Hash,
+                        input.partition_spec().num_partitions,
+                        Some(groupby.clone()),
+                    )
+                    .into()
+                }
+            }
             Self::Concat(Concat { input, other }) => PartitionSpec::new_internal(
                 PartitionScheme::Unknown,
                 input.partition_spec().num_partitions + other.partition_spec().num_partitions,
