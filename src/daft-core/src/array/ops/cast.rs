@@ -1709,8 +1709,11 @@ impl ListArray {
                         let mut invalid_ptr = 0;
                         for (start, len) in SlicesIterator::new(validity) {
                             child_growable.add_nulls((start - invalid_ptr) * size);
+                            let child_start = self.offsets().start_end(start).0;
+                            child_growable.extend(0, child_start, len * size);
                             invalid_ptr = start + len;
                         }
+                        child_growable.add_nulls((self.len() - invalid_ptr) * size);
 
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
