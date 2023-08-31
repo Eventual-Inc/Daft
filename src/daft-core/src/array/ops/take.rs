@@ -207,7 +207,7 @@ impl StructArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let idx_as_u64 = idx.cast(&DataType::UInt64)?;
-        let taken_validity = self.validity.as_ref().map(|v| {
+        let taken_validity = self.validity().map(|v| {
             arrow2::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
                 Some(i) => v.get_bit(i.to_usize()),

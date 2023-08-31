@@ -43,10 +43,10 @@ fn join_arrow_list_of_utf8s(
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let lengths = self.offsets.lengths().map(|l| Some(l as u64));
+        let lengths = self.offsets().lengths().map(|l| Some(l as u64));
         let array = Box::new(
             arrow2::array::PrimitiveArray::from_iter(lengths)
-                .with_validity(self.validity.as_ref().cloned()),
+                .with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -119,7 +119,7 @@ impl ListArray {
 impl FixedSizeListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        match &self.validity {
+        match self.validity() {
             None => Ok(UInt64Array::from((
                 self.name(),
                 repeat(size as u64)
@@ -145,7 +145,7 @@ impl FixedSizeListArray {
         let total_capacity = if list_size == 0 {
             self.len()
         } else {
-            let null_count = self.validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
+            let null_count = self.validity().map(|v| v.unset_bits()).unwrap_or(0);
             list_size * (self.len() - null_count)
         };
 

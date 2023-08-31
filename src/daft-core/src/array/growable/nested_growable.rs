@@ -71,7 +71,7 @@ impl<'a> FixedSizeListGrowable<'a> {
                         capacity * element_fixed_len,
                     );
                     let growable_validity = ArrowBitmapGrowable::new(
-                        arrays.iter().map(|a| a.validity.as_ref()).collect(),
+                        arrays.iter().map(|a| a.validity()).collect(),
                         capacity,
                     );
                     Self {
@@ -149,7 +149,7 @@ impl<'a> StructGrowable<'a> {
                     })
                 }).collect::<Vec<_>>();
                 let growable_validity = ArrowBitmapGrowable::new(
-                    arrays.iter().map(|a| a.validity.as_ref()).collect(),
+                    arrays.iter().map(|a| a.validity()).collect(),
                     capacity,
                 );
                 Self {
@@ -227,11 +227,11 @@ impl<'a> ListGrowable<'a> {
                         0,   // List is variable-length per element, so we cannot provide a good estimate for capacity
                     );
                     let growable_validity = ArrowBitmapGrowable::new(
-                        arrays.iter().map(|a| a.validity.as_ref()).collect(),
+                        arrays.iter().map(|a| a.validity()).collect(),
                         capacity,
                     );
                     let growable_offsets: Vec<i64> = vec![0];
-                    let child_arrays_offsets = arrays.iter().map(|arr| &arr.offsets).collect::<Vec<_>>();
+                    let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
                     Self {
                         name,
                         dtype: dtype.clone(),

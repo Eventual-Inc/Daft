@@ -150,8 +150,8 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok(ListArray::new(
                     new_field,
                     data_array.flat_child.cast(self.data_type())?,
-                    data_array.offsets,
-                    data_array.validity,
+                    data_array.offsets().clone(),
+                    data_array.validity().cloned(),
                 )
                 .into_series())
             }

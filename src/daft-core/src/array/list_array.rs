@@ -11,8 +11,8 @@ use crate::DataType;
 pub struct ListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
-    pub offsets: arrow2::offset::OffsetsBuffer<i64>,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    offsets: arrow2::offset::OffsetsBuffer<i64>,
+    validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for ListArray {}

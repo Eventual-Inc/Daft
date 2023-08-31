@@ -148,7 +148,7 @@ impl ListArray {
         }
         let valid = self.is_valid(idx);
         if valid {
-            let (start, end) = self.offsets.start_end(idx);
+            let (start, end) = self.offsets().start_end(idx);
             Some(self.flat_child.slice(start, end).unwrap())
         } else {
             None

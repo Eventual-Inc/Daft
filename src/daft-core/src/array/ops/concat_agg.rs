@@ -86,7 +86,7 @@ impl DaftConcatAggable for ListArray {
         for group in groups {
             let mut group_len = 0;
             for idx in group {
-                let (start, end) = self.offsets.start_end(*idx as usize);
+                let (start, end) = self.offsets().start_end(*idx as usize);
                 let len = end - start;
                 child_array_growable.extend(0, start, len);
                 group_len += len;

@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct StructArray {
     pub field: Arc<Field>,
     pub children: Vec<Series>,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
     len: usize,
 }
 

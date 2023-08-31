@@ -1103,7 +1103,7 @@ impl EmbeddingArray {
                     .map(|a| a.unwrap().to_object(py))
                     .collect::<Vec<PyObject>>();
                 let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity.clone());
+                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1154,7 +1154,7 @@ impl ImageArray {
                     ndarrays.push(py_array);
                 }
                 let values_array =
-                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity.clone());
+                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1190,7 +1190,7 @@ impl ImageArray {
                     .step_by(ndim)
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
-                let validity = self.physical.validity.as_ref();
+                let validity = self.physical.validity();
                 let data_array = self.data_array();
                 let ca = self.channel_array();
                 let ha = self.height_array();
@@ -1264,7 +1264,7 @@ impl FixedShapeImageArray {
                         .map(|a| a.unwrap().to_object(py))
                         .collect::<Vec<PyObject>>();
                     let values_array =
-                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity.clone());
+                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -1327,10 +1327,8 @@ impl TensorArray {
                         ndarrays.push(py.None())
                     }
                 }
-                let values_array = PseudoArrowArray::new(
-                    ndarrays.into(),
-                    self.physical.validity.as_ref().cloned(),
-                );
+                let values_array =
+                    PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
                 Ok(PythonArray::new(
                     Field::new(self.name(), dtype.clone()).into(),
                     values_array.to_boxed(),
@@ -1509,10 +1507,8 @@ impl FixedShapeTensorArray {
                         .iter()?
                         .map(|a| a.unwrap().to_object(py))
                         .collect::<Vec<PyObject>>();
-                    let values_array = PseudoArrowArray::new(
-                        ndarrays.into(),
-                        self.physical.validity.as_ref().cloned(),
-                    );
+                    let values_array =
+                        PseudoArrowArray::new(ndarrays.into(), self.physical.validity().cloned());
                     Ok(PythonArray::new(
                         Field::new(self.name(), dtype.clone()).into(),
                         values_array.to_boxed(),
@@ -1534,7 +1530,7 @@ impl FixedShapeTensorArray {
                     .collect::<Vec<i64>>();
 
                 let physical_arr = &self.physical;
-                let validity = self.physical.validity.as_ref();
+                let validity = self.physical.validity();
 
                 // FixedSizeList -> List
                 let list_arr = physical_arr
@@ -1594,7 +1590,7 @@ impl FixedSizeListArray {
                 Ok(FixedSizeListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
-                    self.validity.clone(),
+                    self.validity().cloned(),
                 )
                 .into_series())
             }
@@ -1604,7 +1600,7 @@ impl FixedSizeListArray {
                     .flat_child
                     .cast(&child.dtype)?
                     .rename(child.name.as_str());
-                let offsets: Offsets<i64> = match &self.validity {
+                let offsets: Offsets<i64> = match self.validity() {
                     None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
                     Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
                         if v {
@@ -1618,7 +1614,7 @@ impl FixedSizeListArray {
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
                     offsets.into(),
-                    self.validity.clone(),
+                    self.validity().cloned(),
                 )
                 .into_series())
             }
@@ -1671,7 +1667,7 @@ impl ListArray {
                     .cast(&child_field.dtype)?
                     .rename(child_field.name.as_str()),
                 self.offsets().clone(),
-                self.validity.clone(),
+                self.validity().cloned(),
             )
             .into_series()),
             DataType::FixedSizeList(child_field, size) => {
@@ -1760,7 +1756,7 @@ impl StructArray {
                 Ok(StructArray::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,
-                    self.validity.clone(),
+                    self.validity().cloned(),
                 )
                 .into_series())
             }

@@ -44,7 +44,7 @@ macro_rules! impl_is_null_nested_array {
             type Output = DaftResult<DataArray<BooleanType>>;
 
             fn is_null(&self) -> Self::Output {
-                match &self.validity {
+                match self.validity() {
                     None => Ok(BooleanArray::from((
                         self.name(),
                         repeat(false)
@@ -79,7 +79,7 @@ where
 impl FixedSizeListArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        match &self.validity {
+        match self.validity() {
             None => true,
             Some(validity) => validity.get(idx).unwrap(),
         }
@@ -89,7 +89,7 @@ impl FixedSizeListArray {
 impl ListArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        match &self.validity {
+        match self.validity() {
             None => true,
             Some(validity) => validity.get(idx).unwrap(),
         }
@@ -99,7 +99,7 @@ impl ListArray {
 impl StructArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        match &self.validity {
+        match self.validity() {
             None => true,
             Some(validity) => validity.get(idx).unwrap(),
         }

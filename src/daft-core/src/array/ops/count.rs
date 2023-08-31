@@ -100,7 +100,7 @@ macro_rules! impl_daft_count_aggable_nested_array {
             type Output = DaftResult<DataArray<UInt64Type>>;
 
             fn count(&self, mode: CountMode) -> Self::Output {
-                let count = count_arrow_bitmap(&mode, self.validity.as_ref(), self.len());
+                let count = count_arrow_bitmap(&mode, self.validity(), self.len());
                 let result_arrow_array =
                     Box::new(arrow2::array::PrimitiveArray::from([Some(count)]));
                 DataArray::<UInt64Type>::new(
@@ -111,7 +111,7 @@ macro_rules! impl_daft_count_aggable_nested_array {
 
             fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
                 let counts_per_group: Vec<_> =
-                    grouped_count_arrow_bitmap(groups, &mode, self.validity.as_ref());
+                    grouped_count_arrow_bitmap(groups, &mode, self.validity());
                 Ok(DataArray::<UInt64Type>::from((
                     self.field.name.as_ref(),
                     counts_per_group,

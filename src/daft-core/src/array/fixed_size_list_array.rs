@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for FixedSizeListArray {}

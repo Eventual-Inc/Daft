@@ -50,7 +50,7 @@ fn offset_size(offsets: &arrow2::offset::OffsetsBuffer<i64>) -> usize {
 
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        Ok(self.flat_child.size_bytes()? + validity_size(self.validity.as_ref()))
+        Ok(self.flat_child.size_bytes()? + validity_size(self.validity()))
     }
 }
 
@@ -71,6 +71,6 @@ impl StructArray {
             .collect::<DaftResult<Vec<usize>>>()?
             .iter()
             .sum();
-        Ok(children_size_bytes + validity_size(self.validity.as_ref()))
+        Ok(children_size_bytes + validity_size(self.validity()))
     }
 }
