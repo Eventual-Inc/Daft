@@ -81,17 +81,19 @@ impl DaftConcatAggable for ListArray {
                 self.flat_child.len(),
             ))
         });
-        let new_offsets = arrow2::offset::Offsets::try_from_lengths(
-            std::iter::once(0).chain(groups.iter().map(|g| g.len())),
-        )?;
 
+        let mut group_lens = vec![];
         for group in groups {
+            let mut group_len = 0;
             for idx in group {
                 let (start, end) = self.offsets.start_end(*idx as usize);
                 let len = end - start;
                 child_array_growable.extend(0, start, len);
+                group_len += len;
             }
+            group_lens.push(group_len);
         }
+        let new_offsets = arrow2::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
 
         Ok(ListArray::new(
             self.field.clone(),
