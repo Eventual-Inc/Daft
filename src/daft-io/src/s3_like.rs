@@ -536,9 +536,10 @@ impl S3LikeSource {
         let uri = &format!("s3://{bucket}/{key}");
         match response {
             Ok(v) => {
+                println!("token in ls {:?}", v.continuation_token());
                 let dirs = v.common_prefixes();
                 let files = v.contents();
-                let continuation_token = v.continuation_token().map(|s| s.to_string());
+                let continuation_token = v.next_continuation_token().map(|s| s.to_string());
                 let mut total_len = 0;
                 if let Some(dirs) = dirs {
                     total_len += dirs.len()

@@ -67,6 +67,8 @@ pub struct LSResult {
     pub continuation_token: Option<String>,
 }
 
+use async_stream::stream;
+
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
@@ -81,5 +83,24 @@ pub(crate) trait ObjectSource: Sync + Send {
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult>;
 
-    // async fn iter_dir(&self, path: &str, limit: Option<usize>) -> super::Result<Box<dyn Stream<Item = super::Result<LSResult>>>>;
+    async fn iter_dir(&self, uri: &str, delimiter: Option<&str>, _limit: Option<usize>) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        let uri = uri.to_string();
+        let delimiter = delimiter.map(String::from);
+        let s = stream! {
+            let lsr = self.ls(&uri, delimiter.as_deref(), None).await?;
+            let mut continuation_token = lsr.continuation_token.clone();
+            for file in lsr.files {
+                yield Ok(file);
+            }
+
+            while continuation_token.is_some() {
+                let lsr = self.ls(&uri, delimiter.as_deref(), continuation_token.as_deref()).await?;
+                continuation_token = lsr.continuation_token.clone();
+                for file in lsr.files {
+                    yield Ok(file);
+                }
+            }
+        };
+        Ok(s.boxed())
+    }
 }

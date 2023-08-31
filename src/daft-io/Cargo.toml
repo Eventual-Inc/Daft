@@ -25,6 +25,7 @@ serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 url = "2.4.0"
+async-stream = "0.3.5"
 
 [dependencies.reqwest]
 default-features = false
