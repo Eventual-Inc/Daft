@@ -1687,11 +1687,18 @@ impl ListArray {
                     )));
                 }
 
+                // Cast child
+                let casted_child = self
+                    .flat_child
+                    .cast(&child_field.dtype)?
+                    .rename(child_field.name.as_str());
+
+                // Build a FixedSizeListArray
                 match self.validity() {
                     // All valid, easy conversion -- everything is correctly sized and valid
                     None => Ok(FixedSizeListArray::new(
                         Field::new(self.name(), dtype.clone()),
-                        self.flat_child.clone().rename(child_field.name.as_str()),
+                        casted_child.clone(),
                         None,
                     )
                     .into_series()),
@@ -1701,7 +1708,7 @@ impl ListArray {
                             Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
                                 child_field.name.clone(),
                                 &child_field.dtype,
-                                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
+                                vec![casted_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
                                 true,
                                 self.validity().map_or(self.len() * size, |v| v.len() * size),
                             ))
