@@ -18,7 +18,7 @@ use crate::{
         Utf8Array,
     },
     series::{IntoSeries, Series},
-    with_match_daft_logical_primitive_types, with_match_daft_types,
+    with_match_daft_logical_primitive_types,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -142,10 +142,7 @@ where
     };
 
     let new_field = Field::new(to_cast.name(), dtype.clone());
-
-    with_match_daft_types!(dtype, |$T| {
-        return Ok(<$T as DaftDataType>::ArrayType::from_arrow(&new_field, result_arrow_physical_array)?.into_series());
-    })
+    Series::from_arrow(&new_field, result_arrow_physical_array)
 }
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
@@ -228,10 +225,7 @@ where
     };
 
     let new_field = Field::new(to_cast.name(), dtype.clone());
-
-    with_match_daft_types!(dtype, |$T| {
-        Ok(<$T as DaftDataType>::ArrayType::from_arrow(&new_field, result_array)?.into_series())
-    })
+    Series::from_arrow(&new_field, result_array)
 }
 
 impl<T> DataArray<T>
@@ -1746,19 +1740,19 @@ impl StructArray {
                         .enumerate()
                         .map(|(i, f)| (f.name.as_str(), i)),
                 );
-                let casted_series = other_fields.iter().map(|field| {
-                    match self_field_names_to_idx.get(field.name.as_str()) {
-                        None => {
-                            with_match_daft_types!(
+                let casted_series = other_fields
+                    .iter()
+                    .map(
+                        |field| match self_field_names_to_idx.get(field.name.as_str()) {
+                            None => Ok(Series::full_null(
+                                field.name.as_str(),
                                 &field.dtype,
-                                |$T| {
-                                    Ok(<$T as DaftDataType>::ArrayType::full_null(field.name.as_str(), &field.dtype, self.len()).into_series())
-                                }
-                            )
+                                self.len(),
+                            )),
+                            Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
                         },
-                        Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
-                    }
-                }).collect::<DaftResult<Vec<Series>>>();
+                    )
+                    .collect::<DaftResult<Vec<Series>>>();
                 Ok(StructArray::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,

@@ -3,8 +3,7 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field},
-    series::IntoSeries,
-    with_match_daft_types, DataType, Series,
+    DataType, Series,
 };
 
 /// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn arrow2::array::Array>
@@ -46,9 +45,7 @@ impl FromArrow for FixedSizeListArray {
 
                 let arrow_arr = arrow_arr.as_ref().as_any().downcast_ref::<arrow2::array::FixedSizeListArray>().unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = with_match_daft_types!(daft_child_field.dtype, |$T| {
-                    <$T as DaftDataType>::ArrayType::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?.into_series()
-                });
+                let child_series = Series::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?;
                 Ok(FixedSizeListArray::new(
                     field.clone(),
                     child_series,
@@ -69,9 +66,7 @@ impl FromArrow for ListArray {
                 let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()));
                 let arrow_arr = arrow_arr.as_any().downcast_ref::<arrow2::array::ListArray<i64>>().unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = with_match_daft_types!(daft_child_field.dtype, |$T| {
-                    <$T as DaftDataType>::ArrayType::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?.into_series()
-                });
+                let child_series = Series::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?;
                 Ok(ListArray::new(
                     field.clone(),
                     child_series,
@@ -96,9 +91,7 @@ impl FromArrow for StructArray {
                 let arrow_child_arrays = arrow_arr.values();
 
                 let child_series = fields.iter().zip(arrow_child_arrays.iter()).map(|(daft_field, arrow_arr)| {
-                    with_match_daft_types!(&daft_field.dtype, |$T| {
-                        Ok(<$T as DaftDataType>::ArrayType::from_arrow(daft_field, arrow_arr.to_boxed())?.into_series())
-                    })
+                    Series::from_arrow(daft_field, arrow_arr.to_boxed())
                 }).collect::<DaftResult<Vec<Series>>>()?;
 
                 Ok(StructArray::new(
