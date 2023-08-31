@@ -111,7 +111,7 @@ impl FixedSizeListArray {
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),
-            self.flat_child.rename(name),
+            self.flat_child.clone(),
             self.validity.clone(),
         )
     }
