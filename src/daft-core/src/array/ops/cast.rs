@@ -1537,10 +1537,12 @@ impl FixedShapeTensorArray {
                 let validity = self.physical.validity.as_ref();
 
                 // FixedSizeList -> List
-                let list_arr = physical_arr.cast(&DataType::List(Box::new(Field::new(
-                    "data",
-                    inner_dtype.as_ref().clone(),
-                ))))?;
+                let list_arr = physical_arr
+                    .cast(&DataType::List(Box::new(Field::new(
+                        "data",
+                        inner_dtype.as_ref().clone(),
+                    ))))?
+                    .rename("data");
 
                 // List -> Struct
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
@@ -1598,7 +1600,10 @@ impl FixedSizeListArray {
             }
             DataType::List(child) => {
                 let element_size = self.fixed_element_len();
-                let casted_child = self.flat_child.cast(&child.dtype)?;
+                let casted_child = self
+                    .flat_child
+                    .cast(&child.dtype)?
+                    .rename(child.name.as_str());
                 let offsets: Offsets<i64> = match &self.validity {
                     None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
                     Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
@@ -1690,7 +1695,7 @@ impl ListArray {
                     // All valid, easy conversion -- everything is correctly sized and valid
                     None => Ok(FixedSizeListArray::new(
                         Field::new(self.name(), dtype.clone()),
-                        self.flat_child.clone(),
+                        self.flat_child.clone().rename(child_field.name.as_str()),
                         None,
                     )
                     .into_series()),
