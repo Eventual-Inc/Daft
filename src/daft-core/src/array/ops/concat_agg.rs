@@ -112,7 +112,7 @@ impl DaftConcatAggable for ListArray {
 
         let mut child_array_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
             Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.flat_child.name().to_string(),
+                self.flat_child.name(),
                 self.child_data_type(),
                 vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
                 false,

@@ -34,7 +34,7 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     // Build the result using a Growable
     let predicate = predicate.as_arrow();
     let mut growable = T::make_growable(
-        name.to_string(),
+        name,
         dtype,
         vec![lhs, rhs],
         predicate.null_count() > 0, // If predicate has nulls, we will need to append nulls to growable

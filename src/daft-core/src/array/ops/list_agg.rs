@@ -35,7 +35,7 @@ where
         let total_capacity = *offsets.last().unwrap();
 
         let mut growable: Box<dyn Growable> = Box::new(Self::make_growable(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             self.data.null_count() > 0,

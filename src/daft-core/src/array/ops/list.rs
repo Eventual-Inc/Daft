@@ -67,7 +67,7 @@ impl ListArray {
             .sum();
         let mut growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
             Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.name().to_string(),
+                self.name(),
                 self.child_data_type(),
                 vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
                 true,
@@ -151,7 +151,7 @@ impl FixedSizeListArray {
 
         let mut child_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
             Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.name().to_string(),
+                self.name(),
                 self.child_data_type(),
                 vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
                 true,

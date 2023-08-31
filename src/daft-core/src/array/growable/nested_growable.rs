@@ -59,7 +59,7 @@ pub struct FixedSizeListGrowable<'a> {
 
 impl<'a> FixedSizeListGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a FixedSizeListArray>,
         use_validity: bool,
@@ -69,7 +69,7 @@ impl<'a> FixedSizeListGrowable<'a> {
             DataType::FixedSizeList(child_field, element_fixed_len) => {
                 with_match_daft_types!(&child_field.dtype, |$T| {
                     let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        child_field.name.clone(),
+                        child_field.name.as_str(),
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
@@ -80,7 +80,7 @@ impl<'a> FixedSizeListGrowable<'a> {
                         capacity,
                     );
                     Self {
-                        name,
+                        name: name.to_string(),
                         dtype: dtype.clone(),
                         element_fixed_len: *element_fixed_len,
                         child_growable: Box::new(child_growable),
@@ -132,7 +132,7 @@ pub struct StructGrowable<'a> {
 
 impl<'a> StructGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a StructArray>,
         use_validity: bool,
@@ -143,7 +143,7 @@ impl<'a> StructGrowable<'a> {
                 let children_growables : Vec<Box<dyn Growable>>= fields.iter().enumerate().map(|(i, f)| {
                     with_match_daft_types!(&f.dtype, |$T| {
                         Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                            f.name.clone(),
+                            f.name.as_str(),
                             &f.dtype,
                             arrays.iter().map(|a| a.children.get(i).unwrap().downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                             use_validity,
@@ -156,7 +156,7 @@ impl<'a> StructGrowable<'a> {
                     capacity,
                 );
                 Self {
-                    name,
+                    name: name.to_string(),
                     dtype: dtype.clone(),
                     children_growables,
                     growable_validity,
@@ -211,7 +211,7 @@ pub struct ListGrowable<'a> {
 
 impl<'a> ListGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a ListArray>,
         use_validity: bool,
@@ -222,7 +222,7 @@ impl<'a> ListGrowable<'a> {
             DataType::List(child_field) => {
                 with_match_daft_types!(&child_field.dtype, |$T| {
                     let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        child_field.name.clone(),
+                        child_field.name.as_str(),
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
@@ -234,7 +234,7 @@ impl<'a> ListGrowable<'a> {
                     );
                     let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
                     Self {
-                        name,
+                        name: name.to_string(),
                         dtype: dtype.clone(),
                         child_growable: Box::new(child_growable),
                         child_arrays_offsets,

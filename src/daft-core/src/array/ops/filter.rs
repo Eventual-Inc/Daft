@@ -85,7 +85,7 @@ impl ListArray {
 
         let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
         let mut growable = <ListArray as GrowableArray>::GrowableType::new(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             false,
@@ -109,7 +109,7 @@ impl FixedSizeListArray {
         };
 
         let mut growable = FixedSizeListArray::make_growable(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             self.validity().is_some(),
@@ -132,7 +132,7 @@ impl StructArray {
         };
 
         let mut growable = StructArray::make_growable(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             self.validity().is_some(),

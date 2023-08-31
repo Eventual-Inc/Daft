@@ -65,7 +65,7 @@ impl FixedSizeListArray {
 
         let first_array = arrays.get(0).unwrap();
         let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.clone(),
+            first_array.field.name.as_str(),
             &first_array.field.dtype,
             arrays.to_vec(),
             arrays

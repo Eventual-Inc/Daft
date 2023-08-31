@@ -149,7 +149,7 @@ impl FixedSizeListArray {
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let mut growable = FixedSizeListArray::make_growable(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             idx.data().null_count() > 0,
@@ -189,7 +189,7 @@ impl ListArray {
             })
             .sum();
         let mut growable = <ListArray as GrowableArray>::GrowableType::new(
-            self.name().to_string(),
+            self.name(),
             self.data_type(),
             vec![self],
             idx.data().null_count() > 0,

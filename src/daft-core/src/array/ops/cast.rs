@@ -1706,7 +1706,7 @@ impl ListArray {
                     Some(validity) => {
                         let mut child_growable: Box<dyn Growable> = with_match_daft_types!(child_field.dtype, |$T| {
                             Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                                child_field.name.clone(),
+                                child_field.name.as_str(),
                                 &child_field.dtype,
                                 vec![casted_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
                                 true,

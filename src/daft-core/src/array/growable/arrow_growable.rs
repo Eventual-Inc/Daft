@@ -55,10 +55,10 @@ pub type ArrowNullGrowable<'a> =
     ArrowBackedDataArrayGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
 
 impl<'a> ArrowNullGrowable<'a> {
-    pub fn new(name: String, dtype: &DataType) -> Self {
+    pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable = arrow2::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
         Self {
-            name,
+            name: name.to_string(),
             dtype: dtype.clone(),
             arrow2_growable,
             _phantom: PhantomData,
@@ -73,7 +73,7 @@ macro_rules! impl_arrow_backed_data_array_growable {
 
         impl<'a> $growable_name<'a> {
             pub fn new(
-                name: String,
+                name: &str,
                 dtype: &DataType,
                 arrays: Vec<&'a <$daft_type as DaftDataType>::ArrayType>,
                 use_validity: bool,
@@ -84,7 +84,7 @@ macro_rules! impl_arrow_backed_data_array_growable {
                 let arrow2_growable =
                     <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
                 Self {
-                    name,
+                    name: name.to_string(),
                     dtype: dtype.clone(),
                     arrow2_growable,
                     _phantom: PhantomData,
@@ -174,7 +174,7 @@ pub struct ArrowExtensionGrowable<'a> {
 
 impl<'a> ArrowExtensionGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a ExtensionArray>,
         use_validity: bool,
@@ -188,7 +188,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
             capacity,
         );
         Self {
-            name,
+            name: name.to_string(),
             dtype: dtype.clone(),
             child_growable,
         }
