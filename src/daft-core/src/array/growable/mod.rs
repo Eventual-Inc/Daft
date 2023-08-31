@@ -15,8 +15,11 @@ use crate::{
 };
 
 mod arrow_growable;
+mod bitmap_growable;
+mod fixed_size_list_growable;
+mod list_growable;
 mod logical_growable;
-mod nested_growable;
+mod struct_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
@@ -142,7 +145,7 @@ macro_rules! impl_growable_array {
 }
 
 impl GrowableArray for ListArray {
-    type GrowableType<'a> = nested_growable::ListGrowable<'a>;
+    type GrowableType<'a> = list_growable::ListGrowable<'a>;
 
     fn make_growable<'a>(
         name: &str,
@@ -180,9 +183,9 @@ impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,
-    nested_growable::FixedSizeListGrowable<'a>
+    fixed_size_list_growable::FixedSizeListGrowable<'a>
 );
-impl_growable_array!(StructArray, nested_growable::StructGrowable<'a>);
+impl_growable_array!(StructArray, struct_growable::StructGrowable<'a>);
 impl_growable_array!(
     TimestampArray,
     logical_growable::LogicalTimestampGrowable<'a>
