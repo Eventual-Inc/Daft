@@ -105,6 +105,28 @@ macro_rules! impl_growable_array {
     };
 }
 
+impl GrowableArray for ListArray {
+    type GrowableType<'a> = nested_growable::ListGrowable<'a>;
+
+    fn make_growable<'a>(
+        name: String,
+        dtype: &DataType,
+        arrays: Vec<&'a Self>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self::GrowableType<'a> {
+        Self::GrowableType::new(
+            name,
+            dtype,
+            arrays,
+            use_validity,
+            capacity,
+            // NOTE: use ListGrowable::new directly if you wish to specify the child Series' capacity
+            0,
+        )
+    }
+}
+
 impl_growable_array!(BooleanArray, arrow_growable::ArrowBooleanGrowable<'a>);
 impl_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
 impl_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
@@ -125,7 +147,6 @@ impl_growable_array!(
     nested_growable::FixedSizeListGrowable<'a>
 );
 impl_growable_array!(StructArray, nested_growable::StructGrowable<'a>);
-impl_growable_array!(ListArray, nested_growable::ListGrowable<'a>);
 impl_growable_array!(
     TimestampArray,
     logical_growable::LogicalTimestampGrowable<'a>

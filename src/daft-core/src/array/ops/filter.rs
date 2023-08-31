@@ -76,12 +76,19 @@ impl crate::datatypes::PythonArray {
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let mut growable = ListArray::make_growable(
+        let child_capacity = SlicesIterator::new(mask.as_arrow().values())
+            .map(|(start_valid, len_valid)| {
+                self.offsets().start_end(start_valid + len_valid - 1).1
+                    - self.offsets().start_end(start_valid).0
+            })
+            .sum();
+        let mut growable = <ListArray as GrowableArray>::GrowableType::new(
             self.name().to_string(),
             self.data_type(),
             vec![self],
             self.validity().is_some(),
             mask.len(),
+            child_capacity,
         );
 
         for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {

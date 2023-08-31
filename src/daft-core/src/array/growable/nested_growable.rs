@@ -215,6 +215,7 @@ impl<'a> ListGrowable<'a> {
         arrays: Vec<&'a ListArray>,
         use_validity: bool,
         capacity: usize,
+        child_capacity: usize,
     ) -> Self {
         match dtype {
             DataType::List(child_field) => {
@@ -224,7 +225,7 @@ impl<'a> ListGrowable<'a> {
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
-                        0,   // List is variable-length per element, so we cannot provide a good estimate for capacity
+                        child_capacity,
                     );
                     let growable_validity = ArrowBitmapGrowable::new(
                         arrays.iter().map(|a| a.validity()).collect(),

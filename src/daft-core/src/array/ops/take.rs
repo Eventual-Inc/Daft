@@ -177,12 +177,24 @@ impl ListArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let mut growable = ListArray::make_growable(
+        let child_capacity = idx
+            .as_arrow()
+            .iter()
+            .map(|idx| match idx {
+                None => 0,
+                Some(idx) => {
+                    let (start, end) = self.offsets().start_end(idx.to_usize());
+                    end - start
+                }
+            })
+            .sum();
+        let mut growable = <ListArray as GrowableArray>::GrowableType::new(
             self.name().to_string(),
             self.data_type(),
             vec![self],
             idx.data().null_count() > 0,
             idx.len(),
+            child_capacity,
         );
 
         for i in idx {
