@@ -71,19 +71,15 @@ mod tests {
     use std::sync::Arc;
 
     #[cfg(feature = "python")]
-    use {
-        crate::source_info::{InMemoryInfo, SourceInfo},
-        pyo3::Python,
-    };
+    use pyo3::Python;
 
     use crate::{
-        ops::{Coalesce, Limit, Project, Repartition, Source},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownLimit,
             Optimizer,
         },
-        test::dummy_scan_node,
+        test::{dummy_scan_node, dummy_scan_node_with_limit},
         LogicalPlan, PartitionScheme,
     };
 
@@ -116,15 +112,15 @@ mod tests {
     /// Limit-Source -> Source[with_limit]
     #[test]
     fn limit_pushes_into_external_source() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let limit: LogicalPlan = Limit::new(5, source.into()).into();
+        .limit(5)?
+        .build();
         let expected = "\
         Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 5";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -133,16 +129,38 @@ mod tests {
     /// Limit-Source[existing_limit] -> Source[existing_limit]
     #[test]
     fn limit_does_not_push_into_external_source_if_smaller_limit() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .with_limit(Some(3))
-        .into();
-        let limit: LogicalPlan = Limit::new(5, source.into()).into();
+        let plan = dummy_scan_node_with_limit(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Some(3),
+        )
+        .limit(5)?
+        .build();
         let expected = "\
         Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 3";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does push into external Source with existing larger limit.
+    ///
+    /// Limit-Source[existing_limit] -> Source[new_limit]
+    #[test]
+    fn limit_does_push_into_external_source_if_larger_limit() -> DaftResult<()> {
+        let plan = dummy_scan_node_with_limit(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Some(10),
+        )
+        .limit(5)?
+        .build();
+        let expected = "\
+        Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 5";
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -150,20 +168,17 @@ mod tests {
     #[test]
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
+        use crate::LogicalPlanBuilder;
+
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let source: LogicalPlan = Source::new(
-            schema.clone(),
-            SourceInfo::InMemoryInfo(InMemoryInfo::new(schema.clone(), "foo".to_string(), py_obj))
-                .into(),
-            Default::default(),
-        )
-        .into();
-        let limit: LogicalPlan = Limit::new(5, source.into()).into();
+        let plan = LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default())?
+            .limit(5)?
+            .build();
         let expected = "\
         Limit: 5\
         \n . Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -172,18 +187,17 @@ mod tests {
     /// Limit-Repartition-Source -> Repartition-Source[with_limit]
     #[test]
     fn limit_commutes_with_repartition() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let repartition: LogicalPlan =
-            Repartition::new(1, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let limit: LogicalPlan = Limit::new(5, repartition.into()).into();
+        .repartition(1, vec![col("a")], PartitionScheme::Hash)?
+        .limit(5)?
+        .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 5";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -192,17 +206,17 @@ mod tests {
     /// Limit-Coalesce-Source -> Coalesce-Source[with_limit]
     #[test]
     fn limit_commutes_with_coalesce() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let coalesce: LogicalPlan = Coalesce::new(1, source.into()).into();
-        let limit: LogicalPlan = Limit::new(5, coalesce.into()).into();
+        .coalesce(1)?
+        .limit(5)?
+        .build();
         let expected = "\
         Coalesce: To = 1\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 5";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -211,18 +225,17 @@ mod tests {
     /// Limit-Project-Source -> Project-Source[with_limit]
     #[test]
     fn limit_commutes_with_projection() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let projection: LogicalPlan =
-            Project::try_new(source.into(), vec![col("a")], Default::default())?.into();
-        let limit: LogicalPlan = Limit::new(5, projection.into()).into();
+        .project(vec![col("a")], Default::default())?
+        .limit(5)?
+        .build();
         let expected = "\
         Project: col(a)\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8), Limit = 5";
-        assert_optimized_plan_eq(limit.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 }

@@ -28,7 +28,7 @@ use {
 #[derive(Debug)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
-    plan: Arc<LogicalPlan>,
+    pub plan: Arc<LogicalPlan>,
 }
 
 impl LogicalPlanBuilder {
@@ -41,19 +41,20 @@ impl LogicalPlanBuilder {
     #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         schema: Arc<Schema>,
         partition_spec: PartitionSpec,
     ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry.to_object(cache_entry.py()),
+            cache_entry,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(
             schema.clone(),
             source_info.into(),
             partition_spec.clone().into(),
+            None,
         )
         .into();
         Ok(logical_plan.into())
@@ -64,6 +65,15 @@ impl LogicalPlanBuilder {
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
     ) -> DaftResult<Self> {
+        Self::table_scan_with_limit(file_infos, schema, file_format_config, None)
+    }
+
+    pub fn table_scan_with_limit(
+        file_infos: InputFileInfos,
+        schema: Arc<Schema>,
+        file_format_config: Arc<FileFormatConfig>,
+        limit: Option<usize>,
+    ) -> DaftResult<Self> {
         let num_partitions = file_infos.len();
         let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
             schema.clone(),
@@ -72,8 +82,13 @@ impl LogicalPlanBuilder {
         ));
         let partition_spec =
             PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
-        let logical_plan: LogicalPlan =
-            ops::Source::new(schema.clone(), source_info.into(), partition_spec.into()).into();
+        let logical_plan: LogicalPlan = ops::Source::new(
+            schema.clone(),
+            source_info.into(),
+            partition_spec.into(),
+            limit,
+        )
+        .into();
         Ok(logical_plan.into())
     }
 
@@ -194,10 +209,8 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn optimize(&self) -> DaftResult<Self> {
-        let optimizer = Optimizer::new(Default::default());
-        let new_plan = optimizer.optimize(self.plan.clone(), |_, _, _, _, _| {})?;
-        Ok(Self::new(new_plan))
+    pub fn build(&self) -> Arc<LogicalPlan> {
+        self.plan.clone()
     }
 
     pub fn schema(&self) -> SchemaRef {
@@ -206,11 +219,6 @@ impl LogicalPlanBuilder {
 
     pub fn partition_spec(&self) -> PartitionSpec {
         self.plan.partition_spec().as_ref().clone()
-    }
-
-    pub fn to_physical_plan_scheduler(&self) -> DaftResult<PhysicalPlanScheduler> {
-        let physical_plan = plan(self.plan.as_ref())?;
-        Ok(Arc::new(physical_plan).into())
     }
 
     pub fn repr_ascii(&self) -> String {
@@ -249,7 +257,7 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
-            cache_entry,
+            cache_entry.to_object(cache_entry.py()),
             schema.into(),
             partition_spec,
         )?
@@ -380,10 +388,6 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn optimize(&self) -> PyResult<Self> {
-        Ok(self.builder.optimize()?.into())
-    }
-
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
     }
@@ -392,8 +396,18 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.partition_spec())
     }
 
+    pub fn optimize(&self) -> PyResult<Self> {
+        let optimizer = Optimizer::new(Default::default());
+        let unoptimized_plan = self.builder.build();
+        let optimized_plan = optimizer.optimize(unoptimized_plan, |_, _, _, _, _| {})?;
+        let builder = LogicalPlanBuilder::new(optimized_plan);
+        Ok(builder.into())
+    }
+
     pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
-        Ok(self.builder.to_physical_plan_scheduler()?)
+        let logical_plan = self.builder.build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        Ok(Arc::new(physical_plan).into())
     }
 
     pub fn repr_ascii(&self) -> PyResult<String> {

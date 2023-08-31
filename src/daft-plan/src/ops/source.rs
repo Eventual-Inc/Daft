@@ -30,13 +30,14 @@ impl Source {
         output_schema: SchemaRef,
         source_info: Arc<SourceInfo>,
         partition_spec: Arc<PartitionSpec>,
+        limit: Option<usize>,
     ) -> Self {
         Self {
             output_schema,
             source_info,
             partition_spec,
+            limit,
             filters: vec![], // Will be populated by plan optimizer.
-            limit: None,     // Will be populated by plan optimizer.
         }
     }
 

@@ -71,6 +71,7 @@ impl PushDownProjection {
                         schema.into(),
                         source.source_info.clone(),
                         source.partition_spec.clone(),
+                        source.limit,
                     )
                     .into();
 
