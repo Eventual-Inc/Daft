@@ -2,12 +2,14 @@ use arrow2::types::Index;
 use common_error::DaftResult;
 
 use crate::{
-    array::{fixed_size_list_array::FixedSizeListArray, ListArray, StructArray},
+    array::{
+        fixed_size_list_array::FixedSizeListArray, growable::make_growable, ListArray, StructArray,
+    },
     datatypes::Field,
-    with_match_daft_types, DataType, IntoSeries, Series,
+    DataType, IntoSeries, Series,
 };
 
-use super::{Growable, GrowableArray};
+use super::Growable;
 
 pub struct ArrowBitmapGrowable<'a> {
     bitmap_refs: Vec<Option<&'a arrow2::bitmap::Bitmap>>,
@@ -67,26 +69,24 @@ impl<'a> FixedSizeListGrowable<'a> {
     ) -> Self {
         match dtype {
             DataType::FixedSizeList(child_field, element_fixed_len) => {
-                with_match_daft_types!(&child_field.dtype, |$T| {
-                    let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        child_field.name.as_str(),
-                        &child_field.dtype,
-                        arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
-                        use_validity,
-                        capacity * element_fixed_len,
-                    );
-                    let growable_validity = ArrowBitmapGrowable::new(
-                        arrays.iter().map(|a| a.validity()).collect(),
-                        capacity,
-                    );
-                    Self {
-                        name: name.to_string(),
-                        dtype: dtype.clone(),
-                        element_fixed_len: *element_fixed_len,
-                        child_growable: Box::new(child_growable),
-                        growable_validity,
-                    }
-                })
+                let child_growable = make_growable(
+                    child_field.name.as_str(),
+                    &child_field.dtype,
+                    arrays.iter().map(|a| &a.flat_child).collect::<Vec<_>>(),
+                    use_validity,
+                    capacity * element_fixed_len,
+                );
+                let growable_validity = ArrowBitmapGrowable::new(
+                    arrays.iter().map(|a| a.validity()).collect(),
+                    capacity,
+                );
+                Self {
+                    name: name.to_string(),
+                    dtype: dtype.clone(),
+                    element_fixed_len: *element_fixed_len,
+                    child_growable,
+                    growable_validity,
+                }
             }
             _ => panic!("Cannot create FixedSizeListGrowable from dtype: {}", dtype),
         }
@@ -140,17 +140,22 @@ impl<'a> StructGrowable<'a> {
     ) -> Self {
         match dtype {
             DataType::Struct(fields) => {
-                let children_growables : Vec<Box<dyn Growable>>= fields.iter().enumerate().map(|(i, f)| {
-                    with_match_daft_types!(&f.dtype, |$T| {
-                        Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
+                let children_growables: Vec<Box<dyn Growable>> = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| {
+                        make_growable(
                             f.name.as_str(),
                             &f.dtype,
-                            arrays.iter().map(|a| a.children.get(i).unwrap().downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
+                            arrays
+                                .iter()
+                                .map(|a| a.children.get(i).unwrap())
+                                .collect::<Vec<_>>(),
                             use_validity,
                             capacity,
-                        )) as Box<dyn Growable>
+                        )
                     })
-                }).collect::<Vec<_>>();
+                    .collect::<Vec<_>>();
                 let growable_validity = ArrowBitmapGrowable::new(
                     arrays.iter().map(|a| a.validity()).collect(),
                     capacity,
@@ -220,28 +225,26 @@ impl<'a> ListGrowable<'a> {
     ) -> Self {
         match dtype {
             DataType::List(child_field) => {
-                with_match_daft_types!(&child_field.dtype, |$T| {
-                    let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        child_field.name.as_str(),
-                        &child_field.dtype,
-                        arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
-                        use_validity,
-                        child_capacity,
-                    );
-                    let growable_validity = ArrowBitmapGrowable::new(
-                        arrays.iter().map(|a| a.validity()).collect(),
-                        capacity,
-                    );
-                    let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
-                    Self {
-                        name: name.to_string(),
-                        dtype: dtype.clone(),
-                        child_growable: Box::new(child_growable),
-                        child_arrays_offsets,
-                        growable_validity,
-                        growable_offsets: arrow2::offset::Offsets::<i64>::default(),
-                    }
-                })
+                let child_growable = make_growable(
+                    child_field.name.as_str(),
+                    &child_field.dtype,
+                    arrays.iter().map(|a| &a.flat_child).collect::<Vec<_>>(),
+                    use_validity,
+                    child_capacity,
+                );
+                let growable_validity = ArrowBitmapGrowable::new(
+                    arrays.iter().map(|a| a.validity()).collect(),
+                    capacity,
+                );
+                let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
+                Self {
+                    name: name.to_string(),
+                    dtype: dtype.clone(),
+                    child_growable: child_growable,
+                    child_arrays_offsets,
+                    growable_validity,
+                    growable_offsets: arrow2::offset::Offsets::<i64>::default(),
+                }
             }
             _ => panic!("Cannot create ListGrowable from dtype: {}", dtype),
         }
