@@ -103,12 +103,12 @@ impl LogicalPlanBuilder {
     }
 
     pub fn filter(&self, predicate: Expr) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Filter::try_new(predicate, self.plan.clone())?.into();
+        let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn limit(&self, limit: i64) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(limit, self.plan.clone()).into();
+        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit).into();
         Ok(logical_plan.into())
     }
 
@@ -120,7 +120,7 @@ impl LogicalPlanBuilder {
 
     pub fn sort(&self, sort_by: Vec<Expr>, descending: Vec<bool>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sort::try_new(sort_by, descending, self.plan.clone())?.into();
+            ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
         Ok(logical_plan.into())
     }
 
@@ -131,13 +131,13 @@ impl LogicalPlanBuilder {
         scheme: PartitionScheme,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Repartition::new(num_partitions, partition_by, scheme, self.plan.clone()).into();
+            ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme).into();
         Ok(logical_plan.into())
     }
 
     pub fn coalesce(&self, num_partitions: usize) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Coalesce::new(num_partitions, self.plan.clone()).into();
+            ops::Coalesce::new(self.plan.clone(), num_partitions).into();
         Ok(logical_plan.into())
     }
 
@@ -201,9 +201,9 @@ impl LogicalPlanBuilder {
         ));
         let fields = vec![Field::new("file_paths", DataType::Utf8)];
         let logical_plan: LogicalPlan = ops::Sink::new(
+            self.plan.clone(),
             Schema::new(fields)?.into(),
             sink_info.into(),
-            self.plan.clone(),
         )
         .into();
         Ok(logical_plan.into())

@@ -7,22 +7,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Project {
-    pub projection: Vec<Expr>,
-    pub resource_request: ResourceRequest,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub projection: Vec<Expr>,
+    pub resource_request: ResourceRequest,
 }
 
 impl Project {
     pub(crate) fn new(
+        input: Arc<PhysicalPlan>,
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
-        input: Arc<PhysicalPlan>,
     ) -> Self {
         Self {
+            input,
             projection,
             resource_request,
-            input,
         }
     }
 }

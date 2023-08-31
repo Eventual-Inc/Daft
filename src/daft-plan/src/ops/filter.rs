@@ -10,14 +10,14 @@ use common_error::DaftError;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Filter {
-    // The Boolean expression to filter on.
-    pub predicate: Expr,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
+    // The Boolean expression to filter on.
+    pub predicate: Expr,
 }
 
 impl Filter {
-    pub(crate) fn try_new(predicate: Expr, input: Arc<LogicalPlan>) -> Result<Self> {
+    pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: Expr) -> Result<Self> {
         let field = predicate
             .to_field(input.schema().as_ref())
             .context(CreationSnafu)?;
@@ -28,6 +28,6 @@ impl Filter {
             )))
             .context(CreationSnafu);
         }
-        Ok(Self { predicate, input })
+        Ok(Self { input, predicate })
     }
 }

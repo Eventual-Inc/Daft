@@ -74,7 +74,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                         .iter()
                         .map(|(name, _)| Expr::Column(name.clone().into()))
                         .collect::<Vec<_>>();
-                    PhysicalPlan::Project(Project::new(projection, Default::default(), scan.into()))
+                    PhysicalPlan::Project(Project::new(scan.into(), projection, Default::default()))
                 } else {
                     scan
                 };
@@ -89,24 +89,24 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
         }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Project(Project::new(
+                input_physical.into(),
                 projection.clone(),
                 resource_request.clone(),
-                input_physical.into(),
             )))
         }
         LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Filter(Filter::new(
+                input_physical.into(),
                 predicate.clone(),
-                Arc::new(input_physical),
             )))
         }
         LogicalPlan::Limit(LogicalLimit { input, limit }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Limit(Limit::new(
+                input_physical.into(),
                 *limit,
                 logical_plan.partition_spec().num_partitions,
-                Arc::new(input_physical),
             )))
         }
         LogicalPlan::Explode(LogicalExplode {
@@ -126,10 +126,10 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             let input_physical = plan(input)?;
             let num_partitions = logical_plan.partition_spec().num_partitions;
             Ok(PhysicalPlan::Sort(Sort::new(
+                input_physical.into(),
                 sort_by.clone(),
                 descending.clone(),
                 num_partitions,
-                input_physical.into(),
             )))
         }
         LogicalPlan::Repartition(LogicalRepartition {
@@ -142,24 +142,24 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             match scheme {
                 PartitionScheme::Unknown => {
                     let split_op = PhysicalPlan::Split(Split::new(
+                        input_physical,
                         input.partition_spec().num_partitions,
                         *num_partitions,
-                        input_physical,
                     ));
                     Ok(PhysicalPlan::Flatten(Flatten::new(split_op.into())))
                 }
                 PartitionScheme::Random => {
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
-                        *num_partitions,
                         input_physical,
+                        *num_partitions,
                     ));
                     Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
                 }
                 PartitionScheme::Hash => {
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                        input_physical,
                         *num_partitions,
                         partition_by.clone(),
-                        input_physical,
                     ));
                     Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
                 }
@@ -190,9 +190,9 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             let num_partitions = logical_plan.partition_spec().num_partitions;
             if num_partitions > 1 {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    agg_op.into(),
                     num_partitions,
                     col_exprs.clone(),
-                    agg_op.into(),
                 ));
                 let reduce_op = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
                 Ok(PhysicalPlan::Aggregate(Aggregate::new(
@@ -376,9 +376,9 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                         ))
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                            first_stage_agg.into(),
                             num_input_partitions,
                             groupby.clone(),
-                            first_stage_agg.into(),
                         ));
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                     };
@@ -390,34 +390,34 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     ));
 
                     PhysicalPlan::Project(Project::new(
+                        second_stage_agg.into(),
                         final_exprs,
                         Default::default(),
-                        second_stage_agg.into(),
                     ))
                 }
             };
 
             Ok(result_plan)
         }
-        LogicalPlan::Concat(LogicalConcat { other, input }) => {
+        LogicalPlan::Concat(LogicalConcat { input, other }) => {
             let input_physical = plan(input)?;
             let other_physical = plan(other)?;
             Ok(PhysicalPlan::Concat(Concat::new(
-                other_physical.into(),
                 input_physical.into(),
+                other_physical.into(),
             )))
         }
         LogicalPlan::Join(LogicalJoin {
+            left,
             right,
-            input,
             left_on,
             right_on,
             join_type,
             ..
         }) => {
-            let mut left_physical = plan(input)?;
+            let mut left_physical = plan(left)?;
             let mut right_physical = plan(right)?;
-            let left_pspec = input.partition_spec();
+            let left_pspec = left.partition_spec();
             let right_pspec = right.partition_spec();
             let num_partitions = max(left_pspec.num_partitions, right_pspec.num_partitions);
             let new_left_pspec = Arc::new(PartitionSpec::new_internal(
@@ -434,9 +434,9 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 && left_pspec != new_left_pspec
             {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    left_physical.into(),
                     num_partitions,
                     left_on.clone(),
-                    left_physical.into(),
                 ));
                 left_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
             }
@@ -444,18 +444,18 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 && right_pspec != new_right_pspec
             {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    right_physical.into(),
                     num_partitions,
                     right_on.clone(),
-                    right_physical.into(),
                 ));
                 right_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
             }
             Ok(PhysicalPlan::Join(Join::new(
+                left_physical.into(),
                 right_physical.into(),
                 left_on.clone(),
                 right_on.clone(),
                 *join_type,
-                left_physical.into(),
             )))
         }
         LogicalPlan::Sink(LogicalSink {

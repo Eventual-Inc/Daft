@@ -63,7 +63,7 @@ impl OptimizerRule for PushDownFilter {
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
                 let new_filter: Arc<LogicalPlan> =
-                    LogicalPlan::from(Filter::try_new(new_predicate, child_filter.input.clone())?)
+                    LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
                 self.try_optimize(new_filter.clone())?
                     .or(Transformed::Yes(new_filter))
@@ -114,7 +114,7 @@ impl OptimizerRule for PushDownFilter {
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
-                    Filter::try_new(predicates_to_push, child_project.input.clone())?.into();
+                    Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
                 // Create new Projection.
                 let new_projection: LogicalPlan = Project::try_new(
                     push_down_filter.into(),
@@ -131,7 +131,7 @@ impl OptimizerRule for PushDownFilter {
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
                     let post_projection_predicate = conjuct(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
-                        Filter::try_new(post_projection_predicate, new_projection.into())?.into();
+                        Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
                     post_projection_filter.into()
                 }
             }
@@ -143,9 +143,9 @@ impl OptimizerRule for PushDownFilter {
             LogicalPlan::Concat(Concat { input, other }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
-                    Filter::try_new(filter.predicate.clone(), input.clone())?.into();
+                    Filter::try_new(input.clone(), filter.predicate.clone())?.into();
                 let new_other: LogicalPlan =
-                    Filter::try_new(filter.predicate.clone(), other.clone())?.into();
+                    Filter::try_new(other.clone(), filter.predicate.clone())?.into();
                 let new_concat: LogicalPlan =
                     Concat::try_new(new_input.into(), new_other.into())?.into();
                 new_concat.into()
@@ -163,7 +163,7 @@ impl OptimizerRule for PushDownFilter {
                 // Only push the filter into the left side of the join if the left side of the join has all columns
                 // required by the predicate.
                 let left_cols: HashSet<_> =
-                    child_join.input.schema().names().iter().cloned().collect();
+                    child_join.left.schema().names().iter().cloned().collect();
                 let can_push_left = left_cols
                     .intersection(&predicate_cols)
                     .collect::<HashSet<_>>()
@@ -183,17 +183,17 @@ impl OptimizerRule for PushDownFilter {
                 }
                 let new_left: Arc<LogicalPlan> = if can_push_left {
                     LogicalPlan::from(Filter::try_new(
+                        child_join.left.clone(),
                         filter.predicate.clone(),
-                        child_join.input.clone(),
                     )?)
                     .into()
                 } else {
-                    child_join.input.clone()
+                    child_join.left.clone()
                 };
                 let new_right: Arc<LogicalPlan> = if can_push_right {
                     LogicalPlan::from(Filter::try_new(
-                        filter.predicate.clone(),
                         child_join.right.clone(),
+                        filter.predicate.clone(),
                     )?)
                     .into()
                 } else {

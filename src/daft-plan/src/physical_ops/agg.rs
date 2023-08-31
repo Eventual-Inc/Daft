@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Aggregate {
+    // Upstream node.
+    pub input: Arc<PhysicalPlan>,
+
     /// Aggregations to apply.
     pub aggregations: Vec<AggExpr>,
 
     /// Grouping to apply.
     pub groupby: Vec<Expr>,
-
-    // Upstream node.
-    pub input: Arc<PhysicalPlan>,
 }
 
 impl Aggregate {
@@ -24,9 +24,9 @@ impl Aggregate {
         groupby: Vec<Expr>,
     ) -> Self {
         Self {
+            input,
             aggregations,
             groupby,
-            input,
         }
     }
 }

@@ -535,7 +535,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.or(&lit(false));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
+                LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))
         }
     }
@@ -563,7 +563,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.and(&lit(true));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
+                LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))
         }
     }

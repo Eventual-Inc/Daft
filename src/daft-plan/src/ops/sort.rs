@@ -12,17 +12,17 @@ use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
-    pub sort_by: Vec<Expr>,
-    pub descending: Vec<bool>,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
+    pub sort_by: Vec<Expr>,
+    pub descending: Vec<bool>,
 }
 
 impl Sort {
     pub(crate) fn try_new(
+        input: Arc<LogicalPlan>,
         sort_by: Vec<Expr>,
         descending: Vec<bool>,
-        input: Arc<LogicalPlan>,
     ) -> logical_plan::Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::ValueError(
@@ -50,9 +50,9 @@ impl Sort {
             }
         }
         Ok(Self {
+            input,
             sort_by,
             descending,
-            input,
         })
     }
 

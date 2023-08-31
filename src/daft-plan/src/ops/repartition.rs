@@ -6,25 +6,25 @@ use crate::{LogicalPlan, PartitionScheme};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
+    // Upstream node.
+    pub input: Arc<LogicalPlan>,
     pub num_partitions: usize,
     pub partition_by: Vec<Expr>,
     pub scheme: PartitionScheme,
-    // Upstream node.
-    pub input: Arc<LogicalPlan>,
 }
 
 impl Repartition {
     pub(crate) fn new(
+        input: Arc<LogicalPlan>,
         num_partitions: usize,
         partition_by: Vec<Expr>,
         scheme: PartitionScheme,
-        input: Arc<LogicalPlan>,
     ) -> Self {
         Self {
+            input,
             num_partitions,
             partition_by,
             scheme,
-            input,
         }
     }
 
