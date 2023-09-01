@@ -1,4 +1,4 @@
-use std::{iter::repeat, mem::swap};
+use std::iter::repeat;
 
 use common_error::DaftResult;
 
@@ -41,6 +41,12 @@ impl<'a> ArrowBitmapGrowable<'a> {
 
     fn build(self) -> arrow2::bitmap::Bitmap {
         self.mutable_bitmap.clone().into()
+    }
+}
+
+impl<'a> Default for ArrowBitmapGrowable<'a> {
+    fn default() -> Self {
+        ArrowBitmapGrowable::new(vec![], 0)
     }
 }
 
@@ -105,9 +111,7 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out self.growable_validity so we can use the values and move it
-        let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
-        swap(&mut self.growable_validity, &mut grown_validity);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.build();
@@ -180,9 +184,7 @@ impl<'a> Growable for StructGrowable<'a> {
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out self.growable_validity so we can use the values and move it
-        let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
-        swap(&mut self.growable_validity, &mut grown_validity);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_children = self
             .children_growables
@@ -274,11 +276,8 @@ impl<'a> Growable for ListGrowable<'a> {
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out values so we can use them and move it
-        let mut grown_offsets = vec![];
-        let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
-        swap(&mut self.growable_validity, &mut grown_validity);
-        swap(&mut self.growable_offsets, &mut grown_offsets);
+        let grown_offsets = std::mem::take(&mut self.growable_offsets);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.build();
