@@ -228,7 +228,7 @@ impl LogicalPlanBuilder {
             part_cols,
             compression,
         ));
-        let fields = vec![Field::new("file_paths", DataType::Utf8)];
+        let fields = vec![Field::new("path", DataType::Utf8)];
         let logical_plan: LogicalPlan = ops::Sink::new(
             Schema::new(fields)?.into(),
             sink_info.into(),

@@ -281,7 +281,7 @@ impl FileInfos {
 
     pub fn from_table_internal(table: Table) -> DaftResult<Self> {
         let file_paths = table
-            .get_column("file_paths")?
+            .get_column("path")?
             .utf8()?
             .data()
             .as_any()
@@ -291,7 +291,7 @@ impl FileInfos {
             .map(|s| s.unwrap().to_string())
             .collect::<Vec<_>>();
         let file_sizes = table
-            .get_column("file_sizes")?
+            .get_column("size")?
             .i64()?
             .data()
             .as_any()
@@ -324,12 +324,12 @@ impl FileInfos {
     pub fn to_table_internal(&self) -> DaftResult<Table> {
         let columns = vec![
             Series::try_from((
-                "file_paths",
+                "path",
                 arrow2::array::Utf8Array::<i64>::from_iter_values(self.file_paths.iter())
                     .to_boxed(),
             ))?,
             Series::try_from((
-                "file_sizes",
+                "size",
                 arrow2::array::PrimitiveArray::<i64>::from(&self.file_sizes).to_boxed(),
             ))?,
             Series::try_from((

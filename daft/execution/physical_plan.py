@@ -85,7 +85,7 @@ def file_read(
 
             vpartition = done_task.vpartition()
             file_infos = vpartition.to_pydict()
-            file_sizes_bytes = file_infos["file_sizes"]
+            file_sizes_bytes = file_infos["size"]
             file_rows = file_infos["num_rows"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).

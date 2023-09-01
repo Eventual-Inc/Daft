@@ -351,7 +351,7 @@ class ReadFile(SingleOutputInstruction):
         filepaths_partition: Table,
     ) -> Table:
         data = filepaths_partition.to_pydict()
-        filepaths = data["file_paths"]
+        filepaths = data["path"]
 
         if self.index is not None:
             filepaths = [filepaths[self.index]]
