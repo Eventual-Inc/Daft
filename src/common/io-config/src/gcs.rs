@@ -4,23 +4,20 @@ use std::fmt::Formatter;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::{AzureConfig, GCSConfig, S3Config};
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct IOConfig {
-    pub s3: S3Config,
-    pub azure: AzureConfig,
-    pub gcs: GCSConfig,
+pub struct GCSConfig {
+    pub project_id: Option<String>,
+    pub anonymous: bool,
 }
 
-impl Display for IOConfig {
+impl Display for GCSConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
             f,
-            "IOConfig:
-{}
-{}
-{}",
-            self.s3, self.azure, self.gcs
+            "GCSConfig
+    project_id: {:?}
+    anonymous: {:?}",
+            self.project_id, self.anonymous
         )
     }
 }

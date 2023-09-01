@@ -25,7 +25,7 @@ use crate::config;
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct S3Config {
-    pub config: config::S3Config,
+    pub config: crate::S3Config,
 }
 /// Create configurations to be used when accessing Azure Blob Storage
 ///
@@ -40,7 +40,7 @@ pub struct S3Config {
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct AzureConfig {
-    pub config: config::AzureConfig,
+    pub config: crate::AzureConfig,
 }
 
 /// Create configurations to be used when accessing Google Cloud Storage
@@ -55,7 +55,7 @@ pub struct AzureConfig {
 #[derive(Clone, Default)]
 #[pyclass]
 pub struct GCSConfig {
-    pub config: config::GCSConfig,
+    pub config: crate::GCSConfig,
 }
 
 /// Create configurations to be used when accessing storage
@@ -149,9 +149,9 @@ impl S3Config {
         retry_mode: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
-        let def = config::S3Config::default();
+        let def = crate::S3Config::default();
         S3Config {
-            config: config::S3Config {
+            config: crate::S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 key_id: key_id.or(def.key_id),
@@ -242,9 +242,9 @@ impl AzureConfig {
         access_key: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
-        let def = config::AzureConfig::default();
+        let def = crate::AzureConfig::default();
         AzureConfig {
-            config: config::AzureConfig {
+            config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.or(def.access_key),
                 anonymous: anonymous.unwrap_or(def.anonymous),
@@ -274,9 +274,9 @@ impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(project_id: Option<String>, anonymous: Option<bool>) -> Self {
-        let def = config::GCSConfig::default();
+        let def = crate::GCSConfig::default();
         GCSConfig {
-            config: config::GCSConfig {
+            config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
                 anonymous: anonymous.unwrap_or(def.anonymous),
             },

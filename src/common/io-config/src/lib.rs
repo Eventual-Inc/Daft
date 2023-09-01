@@ -1,6 +1,9 @@
 #[cfg(feature = "python")]
 pub mod python;
 
-pub mod config;
+mod azure;
+mod config;
+mod gcs;
+mod s3;
 
-pub use config::{AzureConfig, GCSConfig, IOConfig, S3Config};
+pub use crate::{azure::AzureConfig, config::IOConfig, gcs::GCSConfig, s3::S3Config};
