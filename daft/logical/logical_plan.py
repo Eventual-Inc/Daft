@@ -484,7 +484,7 @@ class TabularFilesScan(UnaryNode):
         )
 
     def required_columns(self) -> list[set[str]]:
-        return [{"file_paths"} | self._predicate.required_columns()]
+        return [{"path"} | self._predicate.required_columns()]
 
     def input_mapping(self) -> list[dict[str, str]]:
         return [dict()]
