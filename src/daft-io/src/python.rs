@@ -40,7 +40,8 @@ fn io_list(
     Ok(PyList::new(py, to_rtn))
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(py: Python, parent: &PyModule) -> PyResult<()> {
+    common_io_config::python::register_modules(py, parent)?;
     parent.add_function(wrap_pyfunction!(io_list, parent)?)?;
     Ok(())
 }
