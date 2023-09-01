@@ -27,10 +27,7 @@ impl ListArray {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::List(child_field) => {
-                if validity
-                    .as_ref()
-                    .map_or(false, |validity| validity.len() != offsets.len_proxy())
-                {
+                if let Some(validity) = validity.as_ref() && validity.len() != offsets.len_proxy() {
                     panic!("ListArray::new validity length does not match computed length from offsets")
                 }
                 if child_field.as_ref() != flat_child.field() {
@@ -63,6 +60,13 @@ impl ListArray {
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.validity.as_ref()
+    }
+
+    pub fn null_count(&self) -> usize {
+        match self.validity() {
+            None => 0,
+            Some(validity) => validity.unset_bits(),
+        }
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
