@@ -847,6 +847,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-io-config"
+version = "0.1.10"
+dependencies = [
+ "common-error",
+ "pyo3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1038,6 +1048,7 @@ version = "0.1.10"
 dependencies = [
  "bincode",
  "common-error",
+ "common-io-config",
  "daft-core",
  "daft-io",
  "pyo3",
@@ -1062,6 +1073,7 @@ dependencies = [
  "azure_storage_blobs",
  "bytes",
  "common-error",
+ "common-io-config",
  "daft-core",
  "futures",
  "google-cloud-storage",
@@ -1110,9 +1122,9 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-io-config",
  "daft-core",
  "daft-dsl",
- "daft-io",
  "daft-table",
  "indexmap 2.0.0",
  "pyo3",

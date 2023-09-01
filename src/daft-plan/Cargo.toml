@@ -2,9 +2,9 @@
 arrow2 = {workspace = true, features = ["chrono-tz", "compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "io_ipc"]}
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -14,7 +14,7 @@ snafu = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-io/python", "daft-table/python"]
+python = ["dep:pyo3", "common-error/python", "common-io-config/python", "daft-core/python", "daft-dsl/python", "daft-table/python"]
 
 [package]
 edition = {workspace = true}

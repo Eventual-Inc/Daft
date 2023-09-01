@@ -6,10 +6,10 @@ use snafu::{IntoError, ResultExt, Snafu};
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use crate::{
-    config::AzureConfig,
     object_io::{LSResult, ObjectSource},
     GetResult,
 };
+use common_io_config::AzureConfig;
 
 #[derive(Debug, Snafu)]
 enum Error {

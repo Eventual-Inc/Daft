@@ -9,7 +9,7 @@ use crate::Expr;
 
 use super::FunctionEvaluator;
 
-use daft_io::config::IOConfig;
+use common_io_config::IOConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum UriExpr {
