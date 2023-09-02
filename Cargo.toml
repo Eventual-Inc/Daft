@@ -52,6 +52,7 @@ inherits = "dev"
 [workspace]
 members = [
   "src/common/error",
+  "src/common/io-config",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",

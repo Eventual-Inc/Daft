@@ -6,13 +6,13 @@ use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
 
-use crate::config::S3Config;
 use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::{InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sig_auth::signer::SigningRequirements;
+use common_io_config::S3Config;
 use futures::{StreamExt, TryStreamExt};
 use s3::client::customize::Response;
 use s3::config::{Credentials, Region};
@@ -664,8 +664,9 @@ impl ObjectSource for S3LikeSource {
 mod tests {
 
     use crate::object_io::ObjectSource;
+    use crate::Result;
     use crate::S3LikeSource;
-    use crate::{config::S3Config, Result};
+    use common_io_config::S3Config;
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

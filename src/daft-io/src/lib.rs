@@ -1,7 +1,6 @@
 #![feature(async_closure)]
 
 mod azure_blob;
-pub mod config;
 mod google_cloud;
 mod http;
 mod local;
@@ -13,7 +12,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
-use config::IOConfig;
+pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;

@@ -308,7 +308,8 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::{config::IOConfig, IOClient};
+
+    use daft_io::{IOClient, IOConfig};
 
     use super::read_parquet;
     #[test]

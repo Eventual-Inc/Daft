@@ -5,17 +5,17 @@ use std::{
 
 use arrow2::array::Array;
 use common_error::DaftResult;
+use common_io_config::IOConfig;
 use daft_core::{
     impl_bincode_py_state_serialization,
     schema::{Schema, SchemaRef},
     Series,
 };
-use daft_io::config::IOConfig;
 use daft_table::Table;
 
 #[cfg(feature = "python")]
 use {
-    daft_io::python::IOConfig as PyIOConfig,
+    common_io_config::python::IOConfig as PyIOConfig,
     daft_table::python::PyTable,
     pyo3::{
         exceptions::{PyKeyError, PyValueError},

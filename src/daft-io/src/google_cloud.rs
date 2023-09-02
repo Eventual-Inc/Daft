@@ -14,12 +14,11 @@ use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
 
-use crate::config;
-use crate::config::GCSConfig;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
 use crate::GetResult;
+use common_io_config::GCSConfig;
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -201,7 +200,7 @@ pub(crate) struct GCSSource {
 
 impl GCSSource {
     async fn build_s3_compat_client() -> super::Result<Arc<Self>> {
-        let s3_config = config::S3Config {
+        let s3_config = common_io_config::S3Config {
             anonymous: true,
             endpoint_url: Some("https://storage.googleapis.com".to_string()),
             ..Default::default()
