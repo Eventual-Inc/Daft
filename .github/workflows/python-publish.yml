@@ -35,7 +35,7 @@ jobs:
         os: [ubuntu, macos]
         compile_arch: [x86_64, aarch64]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: true
         fetch-depth: 0
@@ -121,7 +121,7 @@ jobs:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
     - run: pip install -U twine
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: actions/download-artifact@v3
       with:
         name: wheels
