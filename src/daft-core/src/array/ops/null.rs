@@ -54,7 +54,11 @@ macro_rules! impl_is_null_nested_array {
                     ))),
                     Some(validity) => Ok(BooleanArray::from((
                         self.name(),
-                        validity.into_iter().collect::<Vec<_>>().as_slice(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            validity.clone(),
+                            None,
+                        ),
                     ))),
                 }
             }
