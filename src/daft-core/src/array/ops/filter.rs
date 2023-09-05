@@ -1,3 +1,5 @@
+use std::borrow::{Borrow, Cow};
+
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -76,22 +78,29 @@ impl crate::datatypes::PythonArray {
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let child_capacity = SlicesIterator::new(mask.as_arrow().values())
+        let keep_bitmap = match mask.as_arrow().validity() {
+            None => Cow::Borrowed(mask.as_arrow().values()),
+            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+        };
+        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
+
+        let child_capacity = SlicesIterator::new(keep_bitmap)
             .map(|(start_valid, len_valid)| {
                 self.offsets().start_end(start_valid + len_valid - 1).1
                     - self.offsets().start_end(start_valid).0
             })
             .sum();
+
         let mut growable = <ListArray as GrowableArray>::GrowableType::new(
             self.name().to_string(),
             self.data_type(),
             vec![self],
             self.validity().is_some(),
-            mask.len(),
+            keep_bitmap.len() - keep_bitmap.unset_bits(),
             child_capacity,
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
             growable.extend(0, start_keep, len_keep);
         }
 
@@ -101,6 +110,12 @@ impl ListArray {
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let keep_bitmap = match mask.as_arrow().validity() {
+            None => Cow::Borrowed(mask.as_arrow().values()),
+            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+        };
+        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
+
         let mut growable = FixedSizeListArray::make_growable(
             self.name().to_string(),
             self.data_type(),
@@ -109,7 +124,7 @@ impl FixedSizeListArray {
             mask.len(),
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
             growable.extend(0, start_keep, len_keep);
         }
 
@@ -119,6 +134,12 @@ impl FixedSizeListArray {
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let keep_bitmap = match mask.as_arrow().validity() {
+            None => Cow::Borrowed(mask.as_arrow().values()),
+            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+        };
+        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
+
         let mut growable = StructArray::make_growable(
             self.name().to_string(),
             self.data_type(),
@@ -127,7 +148,7 @@ impl StructArray {
             mask.len(),
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(mask.as_arrow().values()) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
             growable.extend(0, start_keep, len_keep);
         }
 
