@@ -16,7 +16,6 @@ from typing import Any
 
 import fsspec
 import pyarrow as pa
-from fsspec.implementations.http import HTTPFileSystem
 from fsspec.registry import get_filesystem_class
 from loguru import logger
 from pyarrow.fs import (
@@ -254,6 +253,8 @@ def _resolve_path_and_filesystem(
 
 def _is_http_fs(fs: FileSystem) -> bool:
     """Returns whether the provided pyarrow filesystem is an HTTP filesystem."""
+    from fsspec.implementations.http import HTTPFileSystem
+
     return (
         isinstance(fs, PyFileSystem)
         and isinstance(fs.handler, FSSpecHandler)
