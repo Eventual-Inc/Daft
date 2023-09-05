@@ -1,4 +1,4 @@
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 
 use crate::{
     array::{
@@ -82,9 +82,8 @@ impl ListArray {
             None => Cow::Borrowed(mask.as_arrow().values()),
             Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
         };
-        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
 
-        let child_capacity = SlicesIterator::new(keep_bitmap)
+        let child_capacity = SlicesIterator::new(keep_bitmap.as_ref())
             .map(|(start_valid, len_valid)| {
                 self.offsets().start_end(start_valid + len_valid - 1).1
                     - self.offsets().start_end(start_valid).0
@@ -100,7 +99,7 @@ impl ListArray {
             child_capacity,
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
             growable.extend(0, start_keep, len_keep);
         }
 
@@ -114,7 +113,6 @@ impl FixedSizeListArray {
             None => Cow::Borrowed(mask.as_arrow().values()),
             Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
         };
-        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
 
         let mut growable = FixedSizeListArray::make_growable(
             self.name().to_string(),
@@ -124,7 +122,7 @@ impl FixedSizeListArray {
             mask.len(),
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
             growable.extend(0, start_keep, len_keep);
         }
 
@@ -138,7 +136,6 @@ impl StructArray {
             None => Cow::Borrowed(mask.as_arrow().values()),
             Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
         };
-        let keep_bitmap: &arrow2::bitmap::Bitmap = keep_bitmap.borrow();
 
         let mut growable = StructArray::make_growable(
             self.name().to_string(),
@@ -148,7 +145,7 @@ impl StructArray {
             mask.len(),
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap) {
+        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
             growable.extend(0, start_keep, len_keep);
         }
 
