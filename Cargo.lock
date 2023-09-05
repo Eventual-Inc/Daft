@@ -105,7 +105,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.1"
-source = "git+https://github.com/Eventual-Inc/arrow2?rev=2834446a10545156bdf9c2898577e87e07d4d42d#2834446a10545156bdf9c2898577e87e07d4d42d"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=3ffe9226#3ffe92263335b645c04cd77405f3a09f43b6f44b"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -2111,9 +2111,9 @@ dependencies = [
 
 [[package]]
 name = "multiversion"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cda45dade5144c2c929bf2ed6c24bebbba784e9198df049ec87d722b9462bd1"
+checksum = "b2c7b9d7fe61760ce5ea19532ead98541f6b4c495d87247aff9826445cf6872a"
 dependencies = [
  "multiversion-macros",
  "target-features",
@@ -2121,9 +2121,9 @@ dependencies = [
 
 [[package]]
 name = "multiversion-macros"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04bffdccbd4798b61dce08c97ce8c66a68976f95541aaf284a6e90c1d1c306e1"
+checksum = "26a83d8500ed06d68877e9de1dde76c1dbb83885dcdbda4ef44ccbc3fbda2ac8"
 dependencies = [
  "proc-macro2",
  "quote",

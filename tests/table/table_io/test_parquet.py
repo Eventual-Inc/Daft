@@ -247,15 +247,26 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
 
 
 @pytest.mark.parametrize("coerce_to", [TimeUnit.ms(), TimeUnit.us()])
-def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
+@pytest.mark.parametrize("store_schema", [True, False])
+def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema):
+    dt = datetime.datetime(2000, 1, 1)
+    ns_ts_array = pa.array(
+        [dt, dt, dt],
+        pa.timestamp("ns"),
+    )
     data = {
-        "timestamp": pa.array(
-            [datetime.datetime(1000, 1, 1), datetime.datetime(2000, 1, 1), datetime.datetime(3000, 1, 1)],
-            pa.timestamp(str(coerce_to)),
+        "timestamp": ns_ts_array,
+        "nested_timestamp": pa.array([[dt], [dt], [dt]], type=pa.list_(pa.timestamp("ns"))),
+        "struct_timestamp": pa.array([{"foo": dt} for _ in range(3)], type=pa.struct({"foo": pa.timestamp("ns")})),
+        "struct_nested_timestamp": pa.array(
+            [{"foo": [dt]} for _ in range(3)], type=pa.struct({"foo": pa.list_(pa.timestamp("ns"))})
         ),
     }
     schema = [
         ("timestamp", DataType.timestamp(coerce_to)),
+        ("nested_timestamp", DataType.list("item", DataType.timestamp(coerce_to))),
+        ("struct_timestamp", DataType.struct({"foo": DataType.timestamp(coerce_to)})),
+        ("struct_nested_timestamp", DataType.struct({"foo": DataType.list("item", DataType.timestamp(coerce_to))})),
     ]
     expected = Schema._from_field_name_and_types(schema)
 
@@ -263,7 +274,7 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to):
         "use_deprecated_int96_timestamps": True,
     }
     if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = False
+        papq_write_table_kwargs["store_schema"] = store_schema
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),

@@ -77,8 +77,8 @@ tokio = {version = "1.29.1", features = ["net", "time", "bytes", "process", "sig
 [workspace.dependencies.arrow2]
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-# branch = "jay/decimal-binary-types"
-rev = "2834446a10545156bdf9c2898577e87e07d4d42d"
+# branch = "jay/logical-type-null"
+rev = "3ffe9226"
 version = "0.17.1"
 
 [workspace.dependencies.bincode]
