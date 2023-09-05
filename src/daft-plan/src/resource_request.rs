@@ -101,6 +101,10 @@ impl ResourceRequest {
             _ => unimplemented!("not implemented"),
         }
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self))
+    }
 }
 
 impl_bincode_py_state_serialization!(ResourceRequest);
