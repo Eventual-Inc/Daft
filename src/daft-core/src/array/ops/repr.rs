@@ -8,7 +8,7 @@ use crate::{
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
-        Utf8Array,
+        UInt64Array, Utf8Array,
     },
     with_match_daft_types, DataType, Series,
 };
@@ -276,10 +276,25 @@ impl FixedShapeTensorArray {
 
 impl TensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        if self.physical.is_valid(idx) {
-            Ok("<Tensor>".to_string())
-        } else {
-            Ok("None".to_string())
+        let shape_element = self.physical.children[1]
+            .downcast::<ListArray>()
+            .unwrap()
+            .get(idx);
+        match shape_element {
+            Some(shape) => Ok(format!(
+                "<Tensor shape=({})>",
+                shape
+                    .downcast::<UInt64Array>()
+                    .unwrap()
+                    .into_iter()
+                    .map(|dim| match dim {
+                        None => "None".to_string(),
+                        Some(dim) => dim.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            None => Ok("None".to_string()),
         }
     }
 }

@@ -116,3 +116,26 @@ def test_tensor_numpy_inference(dtype, fixed_shape):
     assert s.datatype() == DataType.tensor(DataType.from_arrow_type(dtype))
     out = s.to_pylist()
     np.testing.assert_equal(out, arrs)
+
+
+def test_tensor_repr():
+    arr = np.arange(np.prod((2, 2)), dtype=np.int64).reshape((2, 2))
+    arrs = [arr, arr, None]
+    s = Series.from_pylist(arrs, pyobj="allow")
+    assert (
+        repr(s)
+        == """
++-----------------------+
+| list_series           |
+| Tensor(Int64)         |
++-----------------------+
+| <Tensor shape=(2, 2)> |
++-----------------------+
+| <Tensor shape=(2, 2)> |
++-----------------------+
+| None                  |
++-----------------------+
+"""[
+            1:
+        ]
+    )
