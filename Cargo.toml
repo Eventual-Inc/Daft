@@ -76,8 +76,8 @@ tokio = {version = "1.29.1", features = ["net", "time", "bytes", "process", "sig
 [workspace.dependencies.arrow2]
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-# branch = "jay/parquet-parsing-options-arrow-schema"
-rev = "766eb727a9a06e99fc94de1880f6e5c2b1e211ee"
+# branch = "jay/logical-type-null"
+rev = "3ffe9226"
 version = "0.17.1"
 
 [workspace.dependencies.bincode]

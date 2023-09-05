@@ -53,7 +53,7 @@ def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write
         (1, DataType.int64()),
         (1.5, DataType.float64()),
         (True, DataType.bool()),
-        (None, DataType.int32()),  # NOTE: When data is all-none, Arrow still stores it as int32
+        (None, DataType.null()),
         ({"foo": 1}, DataType.struct({"foo": DataType.int64()})),
         ([1, None, 2], DataType.list("item", DataType.int64())),
     ],
