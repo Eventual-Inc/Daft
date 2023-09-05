@@ -26,15 +26,15 @@ impl ListArray {
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
-            DataType::List(child_field) => {
+            DataType::List(child_dtype) => {
                 if let Some(validity) = validity.as_ref() && validity.len() != offsets.len_proxy() {
                     panic!("ListArray::new validity length does not match computed length from offsets")
                 }
-                if child_field.as_ref() != flat_child.field() {
+                if child_dtype.as_ref() != flat_child.data_type() {
                     panic!(
                         "ListArray::new expects the child series to have field {}, but received: {}",
-                        child_field,
-                        flat_child.field(),
+                        child_dtype,
+                        flat_child.data_type(),
                     )
                 }
                 if *offsets.last() > flat_child.len() as i64 {
@@ -116,7 +116,7 @@ impl ListArray {
 
     pub fn child_data_type(&self) -> &DataType {
         match &self.field.dtype {
-            DataType::List(child) => &child.dtype,
+            DataType::List(child_dtype) => child_dtype.as_ref(),
             _ => unreachable!("ListArray must have DataType::List(..)"),
         }
     }

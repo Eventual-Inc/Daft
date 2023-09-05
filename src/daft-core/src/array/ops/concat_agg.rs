@@ -164,7 +164,7 @@ mod test {
         let list_array = ListArray::new(
             Field::new(
                 "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
+                DataType::List(Box::new(DataType::Int64)),
             ),
             Int64Array::from((
                 "item",
@@ -191,7 +191,7 @@ mod test {
         let list_array = ListArray::new(
             Field::new(
                 "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
+                DataType::List(Box::new(DataType::Int64)),
             ),
             Int64Array::from((
                 "item",
@@ -229,7 +229,7 @@ mod test {
         let list_array = ListArray::new(
             Field::new(
                 "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
+                DataType::List(Box::new(DataType::Int64)),
             ),
             Int64Array::from((
                 "item",

@@ -27,8 +27,8 @@ impl FunctionEvaluator for CropEvaluator {
                             "bbox FixedSizeList field must have size 4 for cropping".to_string(),
                         ));
                     }
-                    DataType::FixedSizeList(field, _) | DataType::List(field)
-                        if !field.dtype.is_numeric() =>
+                    DataType::FixedSizeList(child_dtype, _) | DataType::List(child_dtype)
+                        if !child_dtype.is_numeric() =>
                     {
                         return Err(DaftError::TypeError(
                             "bbox list field must have numeric child type".to_string(),

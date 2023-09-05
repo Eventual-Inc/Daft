@@ -28,10 +28,10 @@ impl<'a> ListGrowable<'a> {
         child_capacity: usize,
     ) -> Self {
         match dtype {
-            DataType::List(child_field) => {
+            DataType::List(child_dtype) => {
                 let child_growable = make_growable(
-                    child_field.name.as_str(),
-                    &child_field.dtype,
+                    "list",
+                    child_dtype.as_ref(),
                     arrays.iter().map(|a| &a.flat_child).collect::<Vec<_>>(),
                     use_validity,
                     child_capacity,
