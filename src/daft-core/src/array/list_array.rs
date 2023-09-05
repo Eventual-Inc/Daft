@@ -136,9 +136,9 @@ impl ListArray {
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let new_offsets = arrow2::offset::OffsetsBuffer::try_from(
-            self.offsets.as_slice()[start..end + 1].to_vec(),
-        )?;
+        let mut new_offsets = self.offsets.clone();
+        new_offsets.slice(start, end - start + 1);
+
         let new_validity = self
             .validity
             .as_ref()
