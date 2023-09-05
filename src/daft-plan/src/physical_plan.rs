@@ -445,14 +445,14 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::Join(Join {
+                left,
                 right,
                 left_on,
                 right_on,
                 join_type,
-                input,
                 ..
             }) => {
-                let upstream_input_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_left_iter = left.to_partition_tasks(py, psets)?;
                 let upstream_right_iter = right.to_partition_tasks(py, psets)?;
                 let left_on_pyexprs: Vec<PyExpr> = left_on
                     .iter()
@@ -466,7 +466,7 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "join"))?
                     .call1((
-                        upstream_input_iter,
+                        upstream_left_iter,
                         upstream_right_iter,
                         left_on_pyexprs,
                         right_on_pyexprs,

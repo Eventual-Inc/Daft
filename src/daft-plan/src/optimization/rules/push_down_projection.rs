@@ -71,6 +71,7 @@ impl PushDownProjection {
                         schema.into(),
                         source.source_info.clone(),
                         source.partition_spec.clone(),
+                        source.limit,
                     )
                     .into();
 
@@ -250,7 +251,7 @@ impl PushDownProjection {
                 };
 
                 let left_upstream_names = join
-                    .input
+                    .left
                     .schema()
                     .names()
                     .iter()
@@ -294,7 +295,7 @@ impl PushDownProjection {
                             .map(|s| Expr::Column(s.into()))
                             .collect::<Vec<_>>();
                         let new_project: LogicalPlan = Project::try_new(
-                            join.input.clone(),
+                            join.left.clone(),
                             pushdown_column_exprs,
                             Default::default(),
                         )?
@@ -325,7 +326,7 @@ impl PushDownProjection {
 
                 // If either pushdown is possible, create a new Join node.
                 if maybe_new_left_upstream.is_some() || maybe_new_right_upstream.is_some() {
-                    let new_left_upstream = maybe_new_left_upstream.unwrap_or(join.input.clone());
+                    let new_left_upstream = maybe_new_left_upstream.unwrap_or(join.left.clone());
                     let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
                     let new_join =
                         upstream_plan.with_new_children(&[new_left_upstream, new_right_upstream]);

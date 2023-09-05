@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Filter {
-    // The Boolean expression to filter on.
-    pub predicate: Expr,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    // The Boolean expression to filter on.
+    pub predicate: Expr,
 }
 
 impl Filter {
-    pub(crate) fn new(predicate: Expr, input: Arc<PhysicalPlan>) -> Self {
-        Self { predicate, input }
+    pub(crate) fn new(input: Arc<PhysicalPlan>, predicate: Expr) -> Self {
+        Self { input, predicate }
     }
 }

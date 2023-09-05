@@ -77,55 +77,46 @@ mod tests {
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
-    use crate::{
-        ops::{Concat, Filter, Project},
-        optimization::logical_plan_tracker::LogicalPlanDigest,
-        test::dummy_scan_node,
-        LogicalPlan,
-    };
+    use crate::{optimization::logical_plan_tracker::LogicalPlanDigest, test::dummy_scan_node};
 
     #[test]
     fn node_count() -> DaftResult<()> {
         // plan is Filter -> Concat -> {Projection -> Source, Projection -> Source},
         // and should have a node count of 6.
-        let plan1: LogicalPlan = dummy_scan_node(vec![
+        let builder1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .into();
+        ]);
         assert_eq!(
-            LogicalPlanDigest::new(&plan1, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let plan1: LogicalPlan =
-            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
+        let builder1 = builder1.project(vec![col("a")], Default::default())?;
         assert_eq!(
-            LogicalPlanDigest::new(&plan1, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
         );
-        let plan2: LogicalPlan = dummy_scan_node(vec![
+        let builder2 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .into();
+        ]);
         assert_eq!(
-            LogicalPlanDigest::new(&plan2, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
         );
-        let plan2: LogicalPlan =
-            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
+        let builder2 = builder2.project(vec![col("a")], Default::default())?;
         assert_eq!(
-            LogicalPlanDigest::new(&plan2, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
         );
-        let plan: LogicalPlan = Concat::try_new(plan1.into(), plan2.into())?.into();
+        let builder = builder1.concat(&builder2)?;
         assert_eq!(
-            LogicalPlanDigest::new(&plan, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(builder.plan.as_ref(), &mut Default::default()).node_count,
             5usize.try_into().unwrap()
         );
-        let plan: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan.into())?.into();
+        let plan = builder.filter(col("a").lt(&lit(2)))?.build();
         assert_eq!(
-            LogicalPlanDigest::new(&plan, &mut Default::default()).node_count,
+            LogicalPlanDigest::new(plan.as_ref(), &mut Default::default()).node_count,
             6usize.try_into().unwrap()
         );
         Ok(())
@@ -134,22 +125,20 @@ mod tests {
     #[test]
     fn same_plans_eq() -> DaftResult<()> {
         // Both plan1 and plan2 are Filter -> Project -> Source
-        let plan1: LogicalPlan = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let plan1: LogicalPlan =
-            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
-        let plan1: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan1.into())?.into();
-        let plan2: LogicalPlan = dummy_scan_node(vec![
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let plan2 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let plan2: LogicalPlan =
-            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
-        let plan2: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan2.into())?.into();
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         // Double-check that logical plans are equal.
         assert_eq!(plan1, plan2);
 
@@ -166,28 +155,58 @@ mod tests {
     }
 
     #[test]
-    fn different_plans_not_eq() -> DaftResult<()> {
+    fn different_plans_not_eq_op_ordering() -> DaftResult<()> {
         // plan1 is Project -> Filter -> Source, while plan2 is Filter -> Project -> Source.
-        let plan1: LogicalPlan = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let plan1: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan1.into())?.into();
-        let plan1: LogicalPlan =
-            Project::try_new(plan1.into(), vec![col("a")], Default::default())?.into();
-        let plan2: LogicalPlan = dummy_scan_node(vec![
+        .filter(col("a").lt(&lit(2)))?
+        .project(vec![col("a")], Default::default())?
+        .build();
+        let plan2 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let plan2: LogicalPlan =
-            Project::try_new(plan2.into(), vec![col("a")], Default::default())?.into();
-        let plan2: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan2.into())?.into();
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
 
         // Plans should NOT have the same digest.
+        let digest1 = LogicalPlanDigest::new(&plan1, &mut Default::default());
+        let digest2 = LogicalPlanDigest::new(&plan2, &mut Default::default());
+        assert_ne!(digest1, digest2);
+        let mut hasher1 = DefaultHasher::new();
+        digest1.hash(&mut hasher1);
+        let mut hasher2 = DefaultHasher::new();
+        digest2.hash(&mut hasher2);
+        assert_ne!(hasher1.finish(), hasher2.finish());
+        Ok(())
+    }
+
+    #[test]
+    fn different_plans_not_eq_same_order_diff_config() -> DaftResult<()> {
+        // Both plan1 and plan2 are Filter -> Project -> Source, but with different filter predicates.
+        let plan1 = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let plan2 = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(4)))?
+        .build();
+        // Double-check that logical plans are NOT equal.
+        assert_ne!(plan1, plan2);
+
+        // Plans should have the same digest.
         let digest1 = LogicalPlanDigest::new(&plan1, &mut Default::default());
         let digest2 = LogicalPlanDigest::new(&plan2, &mut Default::default());
         assert_ne!(digest1, digest2);

@@ -307,7 +307,7 @@ mod tests {
             OptimizerConfig::new(5),
         );
         let plan: Arc<LogicalPlan> =
-            LogicalPlan::from(dummy_scan_node(vec![Field::new("a", DataType::Int64)])).into();
+            dummy_scan_node(vec![Field::new("a", DataType::Int64)]).build();
         let mut pass_count = 0;
         let mut did_transform = false;
         optimizer.optimize(plan.clone(), |new_plan, _, _, transformed, _| {
@@ -356,18 +356,17 @@ mod tests {
             )],
             OptimizerConfig::new(20),
         );
-        let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
         let proj_exprs = vec![
             col("a") + lit(1),
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan: LogicalPlan =
-            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
-        let initial_plan: Arc<LogicalPlan> = plan.into();
+        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+            .project(proj_exprs, Default::default())?
+            .build();
         let mut pass_count = 0;
         let mut did_transform = false;
-        optimizer.optimize(initial_plan.clone(), |_, _, _, transformed, _| {
+        optimizer.optimize(plan, |_, _, _, transformed, _| {
             pass_count += 1;
             did_transform |= transformed;
         })?;
@@ -392,18 +391,17 @@ mod tests {
             )],
             OptimizerConfig::new(20),
         );
-        let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
         let proj_exprs = vec![
             col("a") + lit(1),
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan: LogicalPlan =
-            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
-        let initial_plan: Arc<LogicalPlan> = plan.into();
+        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+            .project(proj_exprs, Default::default())?
+            .build();
         let mut pass_count = 0;
         let mut did_transform = false;
-        optimizer.optimize(initial_plan.clone(), |_, _, _, transformed, _| {
+        optimizer.optimize(plan, |_, _, _, transformed, _| {
             pass_count += 1;
             did_transform |= transformed;
         })?;
@@ -488,19 +486,18 @@ mod tests {
             ],
             OptimizerConfig::new(20),
         );
-        let plan: LogicalPlan = dummy_scan_node(vec![Field::new("a", DataType::Int64)]).into();
         let proj_exprs = vec![
             col("a") + lit(1),
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan: LogicalPlan =
-            Project::try_new(plan.into(), proj_exprs.clone(), Default::default())?.into();
-        let plan: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), plan.into())?.into();
-        let initial_plan: Arc<LogicalPlan> = plan.into();
+        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+            .project(proj_exprs, Default::default())?
+            .filter(col("a").lt(&lit(2)))?
+            .build();
         let mut pass_count = 0;
         let mut did_transform = false;
-        let opt_plan = optimizer.optimize(initial_plan.clone(), |_, _, _, transformed, _| {
+        let opt_plan = optimizer.optimize(plan, |_, _, _, transformed, _| {
             pass_count += 1;
             did_transform |= transformed;
         })?;
@@ -538,7 +535,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.or(&lit(false));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
+                LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))
         }
     }
@@ -566,7 +563,7 @@ mod tests {
             };
             let new_predicate = filter.predicate.and(&lit(true));
             Ok(Transformed::Yes(
-                LogicalPlan::from(Filter::try_new(new_predicate, filter.input.clone())?).into(),
+                LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
             ))
         }
     }

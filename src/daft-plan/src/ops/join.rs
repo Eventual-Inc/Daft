@@ -16,7 +16,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Join {
     // Upstream nodes.
-    pub input: Arc<LogicalPlan>,
+    pub left: Arc<LogicalPlan>,
     pub right: Arc<LogicalPlan>,
 
     pub left_on: Vec<Expr>,
@@ -31,7 +31,7 @@ pub struct Join {
 
 impl std::hash::Hash for Join {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.input, state);
+        std::hash::Hash::hash(&self.left, state);
         std::hash::Hash::hash(&self.right, state);
         std::hash::Hash::hash(&self.left_on, state);
         std::hash::Hash::hash(&self.right_on, state);
@@ -43,13 +43,13 @@ impl std::hash::Hash for Join {
 
 impl Join {
     pub(crate) fn try_new(
-        input: Arc<LogicalPlan>,
+        left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> logical_plan::Result<Self> {
-        for (on_exprs, schema) in [(&left_on, input.schema()), (&right_on, right.schema())] {
+        for (on_exprs, schema) in [(&left_on, left.schema()), (&right_on, right.schema())] {
             let on_fields = on_exprs
                 .iter()
                 .map(|e| e.to_field(schema.as_ref()))
@@ -74,7 +74,7 @@ impl Join {
                 .map(|e| e.name())
                 .collect::<common_error::DaftResult<HashSet<_>>>()
                 .context(CreationSnafu)?;
-            let left_schema = &input.schema().fields;
+            let left_schema = &left.schema().fields;
             let fields = left_schema
                 .iter()
                 .map(|(_, field)| field)
@@ -96,7 +96,7 @@ impl Join {
             Schema::new(fields).context(CreationSnafu)?.into()
         };
         Ok(Self {
-            input,
+            left,
             right,
             left_on,
             right_on,

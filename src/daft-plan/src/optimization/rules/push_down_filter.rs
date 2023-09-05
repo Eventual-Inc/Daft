@@ -63,7 +63,7 @@ impl OptimizerRule for PushDownFilter {
                 // Reconjunct predicate expressions.
                 let new_predicate = conjuct(new_predicates).unwrap();
                 let new_filter: Arc<LogicalPlan> =
-                    LogicalPlan::from(Filter::try_new(new_predicate, child_filter.input.clone())?)
+                    LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
                 self.try_optimize(new_filter.clone())?
                     .or(Transformed::Yes(new_filter))
@@ -114,7 +114,7 @@ impl OptimizerRule for PushDownFilter {
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
-                    Filter::try_new(predicates_to_push, child_project.input.clone())?.into();
+                    Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
                 // Create new Projection.
                 let new_projection: LogicalPlan = Project::try_new(
                     push_down_filter.into(),
@@ -131,7 +131,7 @@ impl OptimizerRule for PushDownFilter {
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
                     let post_projection_predicate = conjuct(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
-                        Filter::try_new(post_projection_predicate, new_projection.into())?.into();
+                        Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
                     post_projection_filter.into()
                 }
             }
@@ -143,9 +143,9 @@ impl OptimizerRule for PushDownFilter {
             LogicalPlan::Concat(Concat { input, other }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
-                    Filter::try_new(filter.predicate.clone(), input.clone())?.into();
+                    Filter::try_new(input.clone(), filter.predicate.clone())?.into();
                 let new_other: LogicalPlan =
-                    Filter::try_new(filter.predicate.clone(), other.clone())?.into();
+                    Filter::try_new(other.clone(), filter.predicate.clone())?.into();
                 let new_concat: LogicalPlan =
                     Concat::try_new(new_input.into(), new_other.into())?.into();
                 new_concat.into()
@@ -163,7 +163,7 @@ impl OptimizerRule for PushDownFilter {
                 // Only push the filter into the left side of the join if the left side of the join has all columns
                 // required by the predicate.
                 let left_cols: HashSet<_> =
-                    child_join.input.schema().names().iter().cloned().collect();
+                    child_join.left.schema().names().iter().cloned().collect();
                 let can_push_left = left_cols
                     .intersection(&predicate_cols)
                     .collect::<HashSet<_>>()
@@ -183,17 +183,17 @@ impl OptimizerRule for PushDownFilter {
                 }
                 let new_left: Arc<LogicalPlan> = if can_push_left {
                     LogicalPlan::from(Filter::try_new(
+                        child_join.left.clone(),
                         filter.predicate.clone(),
-                        child_join.input.clone(),
                     )?)
                     .into()
                 } else {
-                    child_join.input.clone()
+                    child_join.left.clone()
                 };
                 let new_right: Arc<LogicalPlan> = if can_push_right {
                     LogicalPlan::from(Filter::try_new(
-                        filter.predicate.clone(),
                         child_join.right.clone(),
+                        filter.predicate.clone(),
                     )?)
                     .into()
                 } else {
@@ -216,7 +216,6 @@ mod tests {
     use daft_dsl::{col, lit};
 
     use crate::{
-        ops::{Coalesce, Concat, Filter, Join, Project, Repartition, Sort},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownFilter,
@@ -253,82 +252,73 @@ mod tests {
     /// Tests combining of two Filters by merging their predicates.
     #[test]
     fn filter_combine_with_filter() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let first_filter: LogicalPlan =
-            Filter::try_new(col("a").lt(&lit(2)), source.into())?.into();
-        let second_filter: LogicalPlan =
-            Filter::try_new(col("b").eq(&lit("foo")), first_filter.into())?.into();
+        .filter(col("a").lt(&lit(2)))?
+        .filter(col("b").eq(&lit("foo")))?
+        .build();
         let expected = "\
         Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(second_filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Projections.
     #[test]
     fn filter_commutes_with_projection() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let projection: LogicalPlan =
-            Project::try_new(source.into(), vec![col("a")], Default::default())?.into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Project: col(a)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that a Filter with multiple columns in its predicate commutes with a Projection on both of those columns.
     #[test]
     fn filter_commutes_with_projection_multi() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let projection: LogicalPlan =
-            Project::try_new(source.into(), vec![col("a"), col("b")], Default::default())?.into();
-        let filter: LogicalPlan = Filter::try_new(
-            col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))),
-            projection.into(),
-        )?
-        .into();
+        .project(vec![col("a"), col("b")], Default::default())?
+        .filter(col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))))?
+        .build();
         let expected = "\
         Project: col(a), col(b)\
         \n  Filter: [col(a) < lit(2)] & [col(b) == lit(\"foo\")]\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter does not commute with a Projection if the projection expression involves compute.
     #[test]
     fn filter_does_not_commute_with_projection_if_compute() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
         // Projection involves compute on filtered column "a".
-        let projection: LogicalPlan =
-            Project::try_new(source.into(), vec![col("a") + lit(1)], Default::default())?.into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
+        .project(vec![col("a") + lit(1)], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Project: col(a) + lit(1)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -337,76 +327,75 @@ mod tests {
     #[ignore]
     #[test]
     fn filter_commutes_with_projection_deterministic_compute() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let projection: LogicalPlan =
-            Project::try_new(source.into(), vec![col("a") + lit(1)], Default::default())?.into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), projection.into())?.into();
+        // Projection involves compute on filtered column "a".
+        .project(vec![col("a") + lit(1)], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Project: col(a) + lit(1)\
         \n  Filter: [col(a) + lit(1)] < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Sort.
     #[test]
     fn filter_commutes_with_sort() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let sort: LogicalPlan = Sort::try_new(vec![col("a")], vec![true], source.into())?.into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), sort.into())?.into();
+        .sort(vec![col("a")], vec![true])?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Sort: Sort by = (col(a), descending)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
         // TODO(Clark): For tests in which we only care about reordering of operators, maybe switch to a form that leverages the single-node display?
         // let expected = format!("{sort}\n  {filter}\n    {source}");
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Repartition.
     #[test]
     fn filter_commutes_with_repartition() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let repartition: LogicalPlan =
-            Repartition::new(1, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), repartition.into())?.into();
+        .repartition(1, vec![col("a")], PartitionScheme::Hash)?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Coalesce.
     #[test]
     fn filter_commutes_with_coalesce() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let coalesce: LogicalPlan = Coalesce::new(1, source.into()).into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), coalesce.into())?.into();
+        .coalesce(1)?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Coalesce: To = 1\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -417,108 +406,97 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ];
-        let source1: LogicalPlan = dummy_scan_node(fields.clone()).into();
-        let source2: LogicalPlan = dummy_scan_node(fields).into();
-        let concat: LogicalPlan = Concat::try_new(source1.into(), source2.into())?.into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), concat.into())?.into();
+        let plan = dummy_scan_node(fields.clone())
+            .concat(&dummy_scan_node(fields))?
+            .filter(col("a").lt(&lit(2)))?
+            .build();
         let expected = "\
         Concat\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter can be pushed into the left side of a Join.
     #[test]
     fn filter_commutes_with_join_left_side() -> DaftResult<()> {
-        let source1: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let source2: LogicalPlan = dummy_scan_node(vec![
-            Field::new("b", DataType::Utf8),
-            Field::new("c", DataType::Float64),
-        ])
-        .into();
-        let join: LogicalPlan = Join::try_new(
-            source1.into(),
-            source2.into(),
+        .join(
+            &dummy_scan_node(vec![
+                Field::new("b", DataType::Utf8),
+                Field::new("c", DataType::Float64),
+            ]),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
         )?
-        .into();
-        let filter: LogicalPlan = Filter::try_new(col("a").lt(&lit(2)), join.into())?.into();
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)\
         \n  Source: \"Json\", File paths = /foo, File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Utf8), c (Float64)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter can be pushed into the right side of a Join.
     #[test]
     fn filter_commutes_with_join_right_side() -> DaftResult<()> {
-        let source1: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let source2: LogicalPlan = dummy_scan_node(vec![
-            Field::new("b", DataType::Utf8),
-            Field::new("c", DataType::Float64),
-        ])
-        .into();
-        let join: LogicalPlan = Join::try_new(
-            source1.into(),
-            source2.into(),
+        .join(
+            &dummy_scan_node(vec![
+                Field::new("b", DataType::Utf8),
+                Field::new("c", DataType::Float64),
+            ]),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
         )?
-        .into();
-        let filter: LogicalPlan = Filter::try_new(col("c").lt(&lit(2.0)), join.into())?.into();
+        .filter(col("c").lt(&lit(2.0)))?
+        .build();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)\
         \n  Filter: col(c) < lit(2.0)\
         \n    Source: \"Json\", File paths = /foo, File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Utf8), c (Float64)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter can be pushed into both sides of a Join.
     #[test]
     fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
-        let source1: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Float64),
         ])
-        .into();
-        let source2: LogicalPlan = dummy_scan_node(vec![Field::new("b", DataType::Int64)]).into();
-        let join: LogicalPlan = Join::try_new(
-            source1.into(),
-            source2.into(),
+        .join(
+            &dummy_scan_node(vec![Field::new("b", DataType::Int64)]),
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
         )?
-        .into();
-        let filter: LogicalPlan = Filter::try_new(col("b").lt(&lit(2.0)), join.into())?.into();
+        .filter(col("b").lt(&lit(2)))?
+        .build();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
-        \n  Filter: col(b) < lit(2.0)\
+        \n  Filter: col(b) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Int64), c (Float64)\
-        \n  Filter: col(b) < lit(2.0)\
+        \n  Filter: col(b) < lit(2)\
         \n    Source: \"Json\", File paths = /foo, File schema = b (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = b (Int64)";
-        assert_optimized_plan_eq(filter.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 }

@@ -59,11 +59,10 @@ impl OptimizerRule for DropRepartition {
 mod tests {
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{col, lit, AggExpr};
+    use daft_dsl::{col, lit, AggExpr, Expr};
     use std::sync::Arc;
 
     use crate::{
-        ops::{Aggregate, Filter, Repartition, Sort},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::drop_repartition::DropRepartition,
@@ -102,24 +101,17 @@ mod tests {
     /// Repartition1-Repartition2 -> Repartition1
     #[test]
     fn repartition_dropped_in_back_to_back() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let repartition1: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let repartition2: LogicalPlan = Repartition::new(
-            5,
-            vec![col("a")],
-            PartitionScheme::Hash,
-            repartition1.into(),
-        )
-        .into();
+        .repartition(10, vec![col("a")], PartitionScheme::Hash)?
+        .repartition(5, vec![col("a")], PartitionScheme::Hash)?
+        .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 5, Partition by = col(a)\
         \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(repartition2.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -129,17 +121,17 @@ mod tests {
     #[test]
     fn repartition_dropped_single_partition() -> DaftResult<()> {
         // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let builder = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .into();
-        assert_eq!(source.partition_spec().num_partitions, 1);
-        let repartition: LogicalPlan =
-            Repartition::new(1, vec![col("a")], PartitionScheme::Hash, source.into()).into();
+        ]);
+        assert_eq!(builder.partition_spec().num_partitions, 1);
+        let plan = builder
+            .repartition(1, vec![col("a")], PartitionScheme::Hash)?
+            .build();
         let expected = "\
         Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(repartition.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -148,22 +140,19 @@ mod tests {
     /// Repartition-LogicalPlan -> LogicalPlan
     #[test]
     fn repartition_dropped_same_partition_spec() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let repartition1: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let filter: LogicalPlan =
-            Filter::try_new(col("a").lt(&lit(2)), repartition1.into())?.into();
-        let repartition2: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Hash, filter.into()).into();
+        .repartition(10, vec![col("a")], PartitionScheme::Hash)?
+        .filter(col("a").lt(&lit(2)))?
+        .repartition(10, vec![col("a")], PartitionScheme::Hash)?
+        .build();
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(repartition2.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
@@ -172,49 +161,42 @@ mod tests {
     /// Repartition-Aggregation -> Aggregation
     #[test]
     fn repartition_dropped_same_partition_spec_agg() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ])
-        .into();
-        let repartition1: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let agg: LogicalPlan = Aggregate::try_new(
-            repartition1.into(),
-            vec![AggExpr::Sum(col("a").into())],
+        .repartition(10, vec![col("a")], PartitionScheme::Hash)?
+        .aggregate(
+            vec![Expr::Agg(AggExpr::Sum(col("a").into()))],
             vec![col("b")],
         )?
-        .into();
-        let repartition2: LogicalPlan =
-            Repartition::new(10, vec![col("b")], PartitionScheme::Hash, agg.into()).into();
+        .repartition(10, vec![col("b")], PartitionScheme::Hash)?
+        .build();
         let expected = "\
         Aggregation: [Sum(Column(\"a\"))], Group by = [Column(\"b\")], Output schema = b (Int64), a (Int64)\
         \n  Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
         \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Int64)";
-        assert_optimized_plan_eq(repartition2.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that DropRepartition does NOT drop a Repartition if both the Repartition and the child have the same partition spec but they are range-partitioned.
     #[test]
     fn repartition_not_dropped_same_partition_spec() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .into();
-        let repartition1: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Hash, source.into()).into();
-        let sort: LogicalPlan =
-            Sort::try_new(vec![col("a")], vec![true], repartition1.into())?.into();
-        let repartition2: LogicalPlan =
-            Repartition::new(10, vec![col("a")], PartitionScheme::Range, sort.into()).into();
+        .repartition(10, vec![col("a")], PartitionScheme::Hash)?
+        .sort(vec![col("a")], vec![true])?
+        .repartition(10, vec![col("a")], PartitionScheme::Range)?
+        .build();
         let expected = "\
         Repartition: Scheme = Range, Number of partitions = 10, Partition by = col(a)\
         \n  Sort: Sort by = (col(a), descending)\
         \n    Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
         \n      Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(repartition2.into(), expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 }
