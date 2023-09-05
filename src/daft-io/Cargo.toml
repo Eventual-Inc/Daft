@@ -17,7 +17,7 @@ futures = {workspace = true}
 google-cloud-storage = {version = "0.13.0", default-features = false, features = ["default-tls", "auth"]}
 lazy_static = {workspace = true}
 log = {workspace = true}
-openssl-sys = "0.9.93"
+openssl-sys = {version = "0.9.93", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
