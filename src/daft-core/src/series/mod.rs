@@ -8,7 +8,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::datatypes::{DataType, Field};
+use crate::{
+    array::ops::{from_arrow::FromArrow, full::FullNull},
+    datatypes::{DataType, Field},
+    with_match_daft_types,
+};
 use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;
@@ -23,6 +27,30 @@ pub struct Series {
 impl Series {
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         self.inner.to_arrow()
+    }
+
+    /// Creates a Series given an Arrow [`arrow2::array::Array`]
+    ///
+    /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
+    /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
+    pub fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        with_match_daft_types!(field.dtype, |$T| {
+            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
+        })
+    }
+
+    /// Creates a Series that is all nulls
+    pub fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        with_match_daft_types!(dtype, |$T| {
+            <<$T as DaftDataType>::ArrayType as FullNull>::full_null(name, dtype, length).into_series()
+        })
+    }
+
+    /// Creates an empty [`Series`]
+    pub fn empty(field_name: &str, dtype: &DataType) -> Self {
+        with_match_daft_types!(dtype, |$T| {
+            <<$T as DaftDataType>::ArrayType as FullNull>::empty(field_name, dtype).into_series()
+        })
     }
 
     pub fn data_type(&self) -> &DataType {

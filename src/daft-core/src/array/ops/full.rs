@@ -11,7 +11,7 @@ use crate::{
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field,
     },
-    with_match_daft_types, IntoSeries,
+    Series,
 };
 
 pub trait FullNull {
@@ -94,9 +94,7 @@ impl FullNull for FixedSizeListArray {
 
         match dtype {
             DataType::FixedSizeList(child, size) => {
-                let flat_child = with_match_daft_types!(&child.dtype, |$T| {
-                    <<$T as DaftDataType>::ArrayType as FullNull>::full_null(name, &child.dtype, length * size).into_series()
-                });
+                let flat_child = Series::full_null(name, &child.dtype, length * size);
                 Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
             }
             _ => panic!(
@@ -110,9 +108,7 @@ impl FullNull for FixedSizeListArray {
         match dtype {
             DataType::FixedSizeList(child, _) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = with_match_daft_types!(&child.dtype, |$T| {
-                    <$T as DaftDataType>::ArrayType::empty(name, &child.dtype).into_series()
-                });
+                let empty_child = Series::empty(name, &child.dtype);
                 Self::new(field, empty_child, None)
             }
             _ => panic!(
@@ -129,9 +125,7 @@ impl FullNull for ListArray {
 
         match dtype {
             DataType::List(child) => {
-                let empty_flat_child = with_match_daft_types!(&child.dtype, |$T| {
-                    <<$T as DaftDataType>::ArrayType as FullNull>::empty(name, &child.dtype).into_series()
-                });
+                let empty_flat_child = Series::empty(name, &child.dtype);
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
@@ -150,9 +144,7 @@ impl FullNull for ListArray {
         match dtype {
             DataType::List(child) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = with_match_daft_types!(&child.dtype, |$T| {
-                    <$T as DaftDataType>::ArrayType::empty(name, &child.dtype).into_series()
-                });
+                let empty_child = Series::empty(name, &child.dtype);
                 Self::new(field, empty_child, OffsetsBuffer::default(), None)
             }
             _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
@@ -166,11 +158,10 @@ impl FullNull for StructArray {
         match dtype {
             DataType::Struct(children) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_children = children.iter().map(|f| {
-                    with_match_daft_types!(&f.dtype, |$T| {
-                        <$T as DaftDataType>::ArrayType::full_null(name, &f.dtype, length).into_series()
-                    })
-                }).collect::<Vec<_>>();
+                let empty_children = children
+                    .iter()
+                    .map(|f| Series::full_null(name, &f.dtype, length))
+                    .collect::<Vec<_>>();
                 Self::new(field, empty_children, Some(validity))
             }
             _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
@@ -183,11 +174,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| {
-                        with_match_daft_types!(&f.dtype, |$T| {
-                            <$T as DaftDataType>::ArrayType::empty(name, &f.dtype).into_series()
-                        })
-                    })
+                    .map(|f| Series::empty(name, &f.dtype))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, None)
             }
