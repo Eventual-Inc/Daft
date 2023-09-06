@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct StructArray {
     pub field: Arc<Field>,
     pub children: Vec<Series>,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
     len: usize,
 }
 
@@ -65,6 +65,10 @@ impl StructArray {
                 field
             ),
         }
+    }
+
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {

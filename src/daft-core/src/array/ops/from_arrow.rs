@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field},
     series::IntoSeries,
     with_match_daft_types, DataType, Series,
@@ -52,6 +52,30 @@ impl FromArrow for FixedSizeListArray {
                 Ok(FixedSizeListArray::new(
                     field.clone(),
                     child_series,
+                    arrow_arr.validity().cloned(),
+                ))
+            }
+            (d, a) => Err(DaftError::TypeError(format!("Attempting to create Daft FixedSizeListArray with type {} from arrow array with type {:?}", d, a)))
+        }
+    }
+}
+
+impl FromArrow for ListArray {
+    fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        match (&field.dtype, arrow_arr.data_type()) {
+            (DataType::List(daft_child_field), arrow2::datatypes::DataType::List(arrow_child_field)) |
+            (DataType::List(daft_child_field), arrow2::datatypes::DataType::LargeList(arrow_child_field))
+            => {
+                let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()));
+                let arrow_arr = arrow_arr.as_any().downcast_ref::<arrow2::array::ListArray<i64>>().unwrap();
+                let arrow_child_array = arrow_arr.values();
+                let child_series = with_match_daft_types!(daft_child_field.dtype, |$T| {
+                    <$T as DaftDataType>::ArrayType::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?.into_series()
+                });
+                Ok(ListArray::new(
+                    field.clone(),
+                    child_series,
+                    arrow_arr.offsets().clone(),
                     arrow_arr.validity().cloned(),
                 ))
             }

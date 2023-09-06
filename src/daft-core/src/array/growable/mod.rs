@@ -1,15 +1,15 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::{FixedSizeListArray, StructArray},
+    array::{FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
-        Int16Array, Int32Array, Int64Array, Int8Array, ListArray, NullArray, UInt16Array,
-        UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
+        UInt64Array, UInt8Array, Utf8Array,
     },
     DataType, Series,
 };
@@ -105,6 +105,28 @@ macro_rules! impl_growable_array {
     };
 }
 
+impl GrowableArray for ListArray {
+    type GrowableType<'a> = nested_growable::ListGrowable<'a>;
+
+    fn make_growable<'a>(
+        name: String,
+        dtype: &DataType,
+        arrays: Vec<&'a Self>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self::GrowableType<'a> {
+        Self::GrowableType::new(
+            name,
+            dtype,
+            arrays,
+            use_validity,
+            capacity,
+            // NOTE: use ListGrowable::new directly if you wish to specify the child Series' capacity
+            0,
+        )
+    }
+}
+
 impl_growable_array!(BooleanArray, arrow_growable::ArrowBooleanGrowable<'a>);
 impl_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
 impl_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
@@ -119,7 +141,6 @@ impl_growable_array!(Float32Array, arrow_growable::ArrowFloat32Growable<'a>);
 impl_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
 impl_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
 impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
-impl_growable_array!(ListArray, arrow_growable::ArrowListGrowable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,

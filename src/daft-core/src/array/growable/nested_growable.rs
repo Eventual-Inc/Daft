@@ -1,9 +1,8 @@
-use std::mem::swap;
-
+use arrow2::types::Index;
 use common_error::DaftResult;
 
 use crate::{
-    array::{fixed_size_list_array::FixedSizeListArray, StructArray},
+    array::{fixed_size_list_array::FixedSizeListArray, ListArray, StructArray},
     datatypes::Field,
     with_match_daft_types, DataType, IntoSeries, Series,
 };
@@ -44,6 +43,12 @@ impl<'a> ArrowBitmapGrowable<'a> {
     }
 }
 
+impl<'a> Default for ArrowBitmapGrowable<'a> {
+    fn default() -> Self {
+        ArrowBitmapGrowable::new(vec![], 0)
+    }
+}
+
 pub struct FixedSizeListGrowable<'a> {
     name: String,
     dtype: DataType,
@@ -64,14 +69,14 @@ impl<'a> FixedSizeListGrowable<'a> {
             DataType::FixedSizeList(child_field, element_fixed_len) => {
                 with_match_daft_types!(&child_field.dtype, |$T| {
                     let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                        name.clone(),
+                        child_field.name.clone(),
                         &child_field.dtype,
                         arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
                         use_validity,
                         capacity * element_fixed_len,
                     );
                     let growable_validity = ArrowBitmapGrowable::new(
-                        arrays.iter().map(|a| a.validity.as_ref()).collect(),
+                        arrays.iter().map(|a| a.validity()).collect(),
                         capacity,
                     );
                     Self {
@@ -105,9 +110,7 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out self.growable_validity so we can use the values and move it
-        let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
-        swap(&mut self.growable_validity, &mut grown_validity);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.build();
@@ -149,7 +152,7 @@ impl<'a> StructGrowable<'a> {
                     })
                 }).collect::<Vec<_>>();
                 let growable_validity = ArrowBitmapGrowable::new(
-                    arrays.iter().map(|a| a.validity.as_ref()).collect(),
+                    arrays.iter().map(|a| a.validity()).collect(),
                     capacity,
                 );
                 Self {
@@ -180,9 +183,7 @@ impl<'a> Growable for StructGrowable<'a> {
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Swap out self.growable_validity so we can use the values and move it
-        let mut grown_validity = ArrowBitmapGrowable::new(vec![], 0);
-        swap(&mut self.growable_validity, &mut grown_validity);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_children = self
             .children_growables
@@ -193,6 +194,93 @@ impl<'a> Growable for StructGrowable<'a> {
         Ok(StructArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_children,
+            Some(built_validity),
+        )
+        .into_series())
+    }
+}
+
+pub struct ListGrowable<'a> {
+    name: String,
+    dtype: DataType,
+    child_growable: Box<dyn Growable + 'a>,
+    child_arrays_offsets: Vec<&'a arrow2::offset::OffsetsBuffer<i64>>,
+    growable_validity: ArrowBitmapGrowable<'a>,
+    growable_offsets: arrow2::offset::Offsets<i64>,
+}
+
+impl<'a> ListGrowable<'a> {
+    pub fn new(
+        name: String,
+        dtype: &DataType,
+        arrays: Vec<&'a ListArray>,
+        use_validity: bool,
+        capacity: usize,
+        child_capacity: usize,
+    ) -> Self {
+        match dtype {
+            DataType::List(child_field) => {
+                with_match_daft_types!(&child_field.dtype, |$T| {
+                    let child_growable = <<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
+                        child_field.name.clone(),
+                        &child_field.dtype,
+                        arrays.iter().map(|a| a.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
+                        use_validity,
+                        child_capacity,
+                    );
+                    let growable_validity = ArrowBitmapGrowable::new(
+                        arrays.iter().map(|a| a.validity()).collect(),
+                        capacity,
+                    );
+                    let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
+                    Self {
+                        name,
+                        dtype: dtype.clone(),
+                        child_growable: Box::new(child_growable),
+                        child_arrays_offsets,
+                        growable_validity,
+                        growable_offsets: arrow2::offset::Offsets::<i64>::default(),
+                    }
+                })
+            }
+            _ => panic!("Cannot create ListGrowable from dtype: {}", dtype),
+        }
+    }
+}
+
+impl<'a> Growable for ListGrowable<'a> {
+    fn extend(&mut self, index: usize, start: usize, len: usize) {
+        let offsets = self.child_arrays_offsets.get(index).unwrap();
+        let start_offset = &offsets.buffer()[start];
+        let end_offset = &offsets.buffer()[start + len];
+        self.child_growable.extend(
+            index,
+            start_offset.to_usize(),
+            (end_offset - start_offset).to_usize(),
+        );
+        self.growable_validity.extend(index, start, len);
+
+        self.growable_offsets
+            .try_extend_from_slice(offsets, start, len)
+            .unwrap();
+    }
+
+    fn add_nulls(&mut self, additional: usize) {
+        self.growable_validity.add_nulls(additional);
+        self.growable_offsets.extend_constant(additional);
+    }
+
+    fn build(&mut self) -> DaftResult<Series> {
+        let grown_offsets = std::mem::take(&mut self.growable_offsets);
+        let grown_validity = std::mem::take(&mut self.growable_validity);
+
+        let built_child = self.child_growable.build()?;
+        let built_validity = grown_validity.build();
+        let built_offsets = grown_offsets.into();
+        Ok(ListArray::new(
+            Field::new(self.name.clone(), self.dtype.clone()),
+            built_child,
+            built_offsets,
             Some(built_validity),
         )
         .into_series())

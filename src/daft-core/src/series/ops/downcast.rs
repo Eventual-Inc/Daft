@@ -1,6 +1,4 @@
-use std::marker::PhantomData;
-
-use crate::array::{FixedSizeListArray, StructArray};
+use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::logical::FixedShapeImageArray;
 use crate::datatypes::*;
 use crate::series::array_impl::ArrayWrapper;
@@ -12,11 +10,10 @@ impl Series {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
             None => {
-                let phantom: PhantomData<Arr> = PhantomData {};
                 panic!(
                     "Attempting to downcast {:?} to {:?}",
                     self.data_type(),
-                    phantom
+                    std::any::type_name::<Arr>(),
                 )
             }
         }

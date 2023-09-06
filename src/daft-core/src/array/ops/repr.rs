@@ -1,16 +1,16 @@
 use base64::Engine;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, ListArray,
-        NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
+        UInt64Array, Utf8Array,
     },
-    with_match_daft_types, DataType,
+    with_match_daft_types, DataType, Series,
 };
 use common_error::DaftResult;
 
@@ -32,7 +32,6 @@ macro_rules! impl_array_str_value {
 }
 
 impl_array_str_value!(BooleanArray, "{}");
-impl_array_str_value!(ListArray, "{:?}");
 impl_array_str_value!(ExtensionArray, "{:?}");
 impl_array_str_value!(DurationArray, "{}");
 
@@ -203,21 +202,34 @@ impl Decimal128Array {
     }
 }
 
+/// Helper that prints a Series as a list ("[e1, e2, e3, ...]")
+fn series_as_list_str(series: &Series) -> DaftResult<String> {
+    with_match_daft_types!(series.data_type(), |$T| {
+        let arr = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
+        let mut s = String::new();
+        s += "[";
+        s += (0..series.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
+        s += "]";
+        Ok(s)
+    })
+}
+
+impl ListArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => series_as_list_str(&v),
+        }
+    }
+}
+
 impl FixedSizeListArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => {
-                with_match_daft_types!(self.child_data_type(), |$T| {
-                    let arr = v.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                    let mut s = String::new();
-                    s += "[";
-                    s += (0..v.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
-                    s += "]";
-                    Ok(s)
-                })
-            }
+            Some(v) => series_as_list_str(&v),
         }
     }
 }
@@ -258,6 +270,31 @@ impl FixedShapeTensorArray {
             Ok("<FixedShapeTensor>".to_string())
         } else {
             Ok("None".to_string())
+        }
+    }
+}
+
+impl TensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let shape_element = self.physical.children[1]
+            .downcast::<ListArray>()
+            .unwrap()
+            .get(idx);
+        match shape_element {
+            Some(shape) => Ok(format!(
+                "<Tensor shape=({})>",
+                shape
+                    .downcast::<UInt64Array>()
+                    .unwrap()
+                    .into_iter()
+                    .map(|dim| match dim {
+                        None => "None".to_string(),
+                        Some(dim) => dim.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            None => Ok("None".to_string()),
         }
     }
 }
@@ -406,6 +443,15 @@ impl FixedShapeImageArray {
 }
 
 impl FixedShapeTensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl TensorArray {
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)

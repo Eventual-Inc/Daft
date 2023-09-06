@@ -1,7 +1,7 @@
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
-        DataArray, FixedSizeListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };
@@ -71,6 +71,23 @@ impl Broadcastable for FixedSizeListArray {
                 self.data_type(),
                 num,
             ))
+        }
+    }
+}
+
+impl Broadcastable for ListArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        if self.is_valid(0) {
+            generic_growable_broadcast(self, num, self.name(), self.data_type())
+        } else {
+            Ok(ListArray::full_null(self.name(), self.data_type(), num))
         }
     }
 }

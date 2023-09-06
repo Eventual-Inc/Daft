@@ -3,7 +3,7 @@ use std::{iter::repeat, sync::Arc};
 use arrow2;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::*,
 };
 use common_error::DaftResult;
@@ -38,45 +38,37 @@ where
     }
 }
 
-impl DaftIsNull for FixedSizeListArray {
-    type Output = DaftResult<DataArray<BooleanType>>;
+macro_rules! impl_is_null_nested_array {
+    ($arr:ident) => {
+        impl DaftIsNull for $arr {
+            type Output = DaftResult<DataArray<BooleanType>>;
 
-    fn is_null(&self) -> Self::Output {
-        match &self.validity {
-            None => Ok(BooleanArray::from((
-                self.name(),
-                repeat(false)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => Ok(BooleanArray::from((
-                self.name(),
-                validity.into_iter().collect::<Vec<_>>().as_slice(),
-            ))),
+            fn is_null(&self) -> Self::Output {
+                match self.validity() {
+                    None => Ok(BooleanArray::from((
+                        self.name(),
+                        repeat(false)
+                            .take(self.len())
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    ))),
+                    Some(validity) => Ok(BooleanArray::from((
+                        self.name(),
+                        arrow2::array::BooleanArray::new(
+                            arrow2::datatypes::DataType::Boolean,
+                            validity.clone(),
+                            None,
+                        ),
+                    ))),
+                }
+            }
         }
-    }
+    };
 }
 
-impl DaftIsNull for StructArray {
-    type Output = DaftResult<DataArray<BooleanType>>;
-
-    fn is_null(&self) -> Self::Output {
-        match &self.validity {
-            None => Ok(BooleanArray::from((
-                self.name(),
-                repeat(false)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => Ok(BooleanArray::from((
-                self.name(),
-                validity.into_iter().collect::<Vec<_>>().as_slice(),
-            ))),
-        }
-    }
-}
+impl_is_null_nested_array!(ListArray);
+impl_is_null_nested_array!(FixedSizeListArray);
+impl_is_null_nested_array!(StructArray);
 
 impl<T> DataArray<T>
 where
@@ -91,7 +83,17 @@ where
 impl FixedSizeListArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        match &self.validity {
+        match self.validity() {
+            None => true,
+            Some(validity) => validity.get(idx).unwrap(),
+        }
+    }
+}
+
+impl ListArray {
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        match self.validity() {
             None => true,
             Some(validity) => validity.get(idx).unwrap(),
         }
@@ -101,7 +103,7 @@ impl FixedSizeListArray {
 impl StructArray {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        match &self.validity {
+        match self.validity() {
             None => true,
             Some(validity) => validity.get(idx).unwrap(),
         }

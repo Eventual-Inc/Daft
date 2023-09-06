@@ -141,14 +141,19 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-                use crate::array::ops::DaftListAggable;
-                use crate::datatypes::ListArray;
+                use crate::array::{ops::DaftListAggable, ListArray};
                 let data_array = match groups {
                     Some(groups) => self.0.physical.grouped_list(groups)?,
                     None => self.0.physical.list()?,
                 };
                 let new_field = self.field().to_list_field()?;
-                Ok(ListArray::new(Arc::new(new_field), data_array.data)?.into_series())
+                Ok(ListArray::new(
+                    new_field,
+                    data_array.flat_child.cast(self.data_type())?,
+                    data_array.offsets().clone(),
+                    data_array.validity().cloned(),
+                )
+                .into_series())
             }
 
             fn add(&self, rhs: &Series) -> DaftResult<Series> {

@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for FixedSizeListArray {}
@@ -24,7 +24,7 @@ impl FixedSizeListArray {
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
-            DataType::FixedSizeList(_, size) => {
+            DataType::FixedSizeList(child_field, size) => {
                 if let Some(validity) = validity.as_ref() && (validity.len() * size) != flat_child.len() {
                     panic!(
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity * size: {}",
@@ -32,17 +32,28 @@ impl FixedSizeListArray {
                         (validity.len() * size),
                     )
                 }
+                if child_field.as_ref() != flat_child.field() {
+                    panic!(
+                        "FixedSizeListArray::new expects the child series to have field {}, but received: {}",
+                        child_field,
+                        flat_child.field(),
+                    )
+                }
             }
             _ => panic!(
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
                 field
-            )
+            ),
         }
         FixedSizeListArray {
             field,
             flat_child,
             validity,
         }
+    }
+
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
@@ -100,7 +111,7 @@ impl FixedSizeListArray {
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),
-            self.flat_child.rename(name),
+            self.flat_child.clone(),
             self.validity.clone(),
         )
     }

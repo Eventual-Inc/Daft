@@ -2,15 +2,14 @@ use std::borrow::Cow;
 use std::io::{Seek, SeekFrom, Write};
 use std::vec;
 
-use arrow2::array::Array;
 use image::{ColorType, DynamicImage, ImageBuffer};
 
-use crate::array::{FixedSizeListArray, StructArray};
+use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::{
     logical::{DaftImageryType, FixedShapeImageArray, ImageArray, LogicalArray},
     BinaryArray, DataType, Field, ImageFormat, ImageMode,
 };
-use crate::datatypes::{ListArray, UInt16Array, UInt32Array, UInt8Array};
+use crate::datatypes::{UInt16Array, UInt32Array, UInt8Array};
 use crate::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 use image::{Luma, LumaA, Rgb, Rgba};
@@ -369,10 +368,10 @@ impl ImageArray {
         }
     }
 
-    pub fn data_array(&self) -> &arrow2::array::ListArray<i64> {
+    pub fn data_array(&self) -> &ListArray {
         const IMAGE_DATA_IDX: usize = 0;
         let array = self.physical.children.get(IMAGE_DATA_IDX).unwrap();
-        array.list().unwrap().as_arrow()
+        array.list().unwrap()
     }
 
     pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
@@ -420,16 +419,19 @@ impl ImageArray {
                 panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
             }
         }
-
-        let list_datatype = arrow2::datatypes::DataType::LargeList(Box::new(
-            arrow2::datatypes::Field::new("data", arrow_dtype, true),
-        ));
-        let data_array = Box::new(arrow2::array::ListArray::<i64>::new(
-            list_datatype,
+        let data_array = ListArray::new(
+            Field::new(
+                "data",
+                DataType::List(Box::new(Field::new("data", (&arrow_dtype).into()))),
+            ),
+            Series::try_from((
+                "data",
+                Box::new(arrow2::array::PrimitiveArray::from_vec(data))
+                    as Box<dyn arrow2::array::Array>,
+            ))?,
             offsets,
-            Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
             sidecar_data.validity.clone(),
-        ));
+        );
 
         Self::from_list_array(name, data_type, data_array, sidecar_data)
     }
@@ -437,15 +439,11 @@ impl ImageArray {
     pub fn from_list_array(
         name: &str,
         data_type: DataType,
-        data_array: Box<arrow2::array::ListArray<i64>>,
+        data_array: ListArray,
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
-            ListArray::from_arrow(
-                &Field::new("data", data_array.data_type().into()),
-                data_array,
-            )?
-            .into_series(),
+            data_array.into_series().rename("data"),
             UInt16Array::from((
                 "channel",
                 Box::new(
@@ -606,8 +604,10 @@ impl AsImageObj for ImageArray {
         let end = *offsets.get(idx + 1).unwrap() as usize;
 
         let values = da
-            .values()
-            .as_ref()
+            .flat_child
+            .u8()
+            .unwrap()
+            .data()
             .as_any()
             .downcast_ref::<arrow2::array::UInt8Array>()
             .unwrap();
