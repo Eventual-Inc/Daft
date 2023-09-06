@@ -25,7 +25,7 @@ fn generic_growable_broadcast<'a, Arr>(
 where
     Arr: DaftArrayType + GrowableArray + 'static,
 {
-    let mut growable = Arr::make_growable(name.to_string(), dtype, vec![arr], false, num);
+    let mut growable = Arr::make_growable(name, dtype, vec![arr], false, num);
     for _ in 0..num {
         growable.extend(0, 0, 1);
     }

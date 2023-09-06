@@ -11,17 +11,56 @@ use crate::{
         Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
         UInt64Array, UInt8Array, Utf8Array,
     },
-    DataType, Series,
+    with_match_daft_types, DataType, Series,
 };
 
 mod arrow_growable;
+mod bitmap_growable;
+mod fixed_size_list_growable;
+mod list_growable;
 mod logical_growable;
-mod nested_growable;
+mod struct_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
 #[cfg(feature = "python")]
 use crate::datatypes::PythonArray;
+
+/// This function creates a [`Box<dyn Growable>`] when provided with a [`DataType`] and a [`Vec<&Series>`].
+///
+/// This is most useful when running dynamic code that operates on [`Series`] rather than concrete Array types
+///
+/// If working in Array kernels, it may be more useful instead to use [`GrowableArray::make_growable`] which is
+/// a trait that is implemented on each concrete Array type.
+///
+/// # Arguments
+///
+/// * `name` - Name of the [`Series`] to be returned after building the [`Growable`]
+/// * `dtype` - [`DataType`] of the built [`Series`]. **NOTE: This must match the dtype of each Series**
+/// * `series` - A vector of `&Series` references to the [`Series`] that this [`Growable`] copies data from
+/// * `use_validity` - Whether or not the [`Growable`] will need to grow a validity mask. Setting this to `false` will
+///     lead to performance gains, but give bad answers if you try to call [`Growable::add_nulls`].
+/// * `capacity` - Helps pre-allocate memory to the [`Growable`] by providing a capacity up-front. Note that variable-length types
+///     such as [`ListArray`] only understands this as the "top-level" capacity, but the capacity of nested children arrays cannot be specified
+///     through this [`make_growable`] API. Instead, you may wish to instantiate and use the [`nested_growable::ListGrowable`] directly if
+///     this is important to your use0-case.
+pub fn make_growable<'a>(
+    name: &str,
+    dtype: &DataType,
+    series: Vec<&'a Series>,
+    use_validity: bool,
+    capacity: usize,
+) -> Box<dyn Growable + 'a> {
+    with_match_daft_types!(dtype, |$T| {
+        Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
+            name,
+            dtype,
+            series.iter().map(|s| s.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()).collect::<Vec<_>>(),
+            use_validity,
+            capacity,
+        ))
+    })
+}
 
 /// Describes a struct that can be extended from slices of other pre-existing Series.
 /// This is very useful for abstracting many "physical" operations such as takes, broadcasts,
@@ -47,7 +86,7 @@ pub trait GrowableArray {
         Self: 'a;
 
     fn make_growable<'a>(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         use_validity: bool,
@@ -59,7 +98,7 @@ impl GrowableArray for NullArray {
     type GrowableType<'a> = arrow_growable::ArrowNullGrowable<'a>;
 
     fn make_growable<'a>(
-        name: String,
+        name: &str,
         dtype: &DataType,
         _arrays: Vec<&'a Self>,
         _use_validity: bool,
@@ -74,7 +113,7 @@ impl GrowableArray for PythonArray {
     type GrowableType<'a> = python_growable::PythonGrowable<'a>;
 
     fn make_growable<'a>(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         _use_validity: bool,
@@ -93,7 +132,7 @@ macro_rules! impl_growable_array {
             type GrowableType<'a> = $growable;
 
             fn make_growable<'a>(
-                name: String,
+                name: &str,
                 dtype: &DataType,
                 arrays: Vec<&'a Self>,
                 use_validity: bool,
@@ -106,10 +145,10 @@ macro_rules! impl_growable_array {
 }
 
 impl GrowableArray for ListArray {
-    type GrowableType<'a> = nested_growable::ListGrowable<'a>;
+    type GrowableType<'a> = list_growable::ListGrowable<'a>;
 
     fn make_growable<'a>(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a Self>,
         use_validity: bool,
@@ -144,9 +183,9 @@ impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
 impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
 impl_growable_array!(
     FixedSizeListArray,
-    nested_growable::FixedSizeListGrowable<'a>
+    fixed_size_list_growable::FixedSizeListGrowable<'a>
 );
-impl_growable_array!(StructArray, nested_growable::StructGrowable<'a>);
+impl_growable_array!(StructArray, struct_growable::StructGrowable<'a>);
 impl_growable_array!(
     TimestampArray,
     logical_growable::LogicalTimestampGrowable<'a>

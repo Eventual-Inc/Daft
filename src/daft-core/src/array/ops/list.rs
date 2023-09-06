@@ -1,11 +1,11 @@
 use std::iter::repeat;
 
 use crate::array::{
-    growable::{Growable, GrowableArray},
+    growable::{make_growable, Growable},
     FixedSizeListArray, ListArray,
 };
 use crate::datatypes::{UInt64Array, Utf8Array};
-use crate::{with_match_daft_types, DataType};
+use crate::DataType;
 
 use crate::series::Series;
 
@@ -65,15 +65,13 @@ impl ListArray {
                 }
             })
             .sum();
-        let mut growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
-            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.name().to_string(),
-                self.child_data_type(),
-                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
-                true,
-                total_capacity,
-            ))
-        });
+        let mut growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            total_capacity,
+        );
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i);
@@ -149,15 +147,13 @@ impl FixedSizeListArray {
             list_size * (self.len() - null_count)
         };
 
-        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
-            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.name().to_string(),
-                self.child_data_type(),
-                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
-                true,
-                total_capacity,
-            ))
-        });
+        let mut child_growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            total_capacity,
+        );
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i) && (list_size > 0);

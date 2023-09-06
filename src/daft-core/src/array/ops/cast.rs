@@ -3,7 +3,7 @@ use std::iter::repeat;
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
-        growable::{Growable, GrowableArray},
+        growable::make_growable,
         ops::image::ImageArraySidecarData,
         ops::{from_arrow::FromArrow, full::FullNull},
         DataArray, FixedSizeListArray, ListArray, StructArray,
@@ -1704,15 +1704,14 @@ impl ListArray {
                     .into_series()),
                     // Some invalids, we need to insert nulls into the child
                     Some(validity) => {
-                        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(child_field.dtype, |$T| {
-                            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                                child_field.name.clone(),
-                                &child_field.dtype,
-                                vec![casted_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
-                                true,
-                                self.validity().map_or(self.len() * size, |v| v.len() * size),
-                            ))
-                        });
+                        let mut child_growable = make_growable(
+                            child_field.name.as_str(),
+                            &child_field.dtype,
+                            vec![&casted_child],
+                            true,
+                            self.validity()
+                                .map_or(self.len() * size, |v| v.len() * size),
+                        );
 
                         let mut invalid_ptr = 0;
                         for (start, len) in SlicesIterator::new(validity) {

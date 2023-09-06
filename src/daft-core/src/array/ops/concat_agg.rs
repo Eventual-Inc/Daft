@@ -1,9 +1,6 @@
-use crate::{
-    array::{
-        growable::{Growable, GrowableArray},
-        ListArray,
-    },
-    with_match_daft_types,
+use crate::array::{
+    growable::{make_growable, Growable},
+    ListArray,
 };
 use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
 use common_error::DaftResult;
@@ -82,15 +79,13 @@ impl DaftConcatAggable for ListArray {
         };
 
         // Re-grow the child, dropping elements where the parent is null
-        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(self.flat_child.data_type(), |$T| {
-            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.flat_child.name().to_string(),
-                self.flat_child.data_type(),
-                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
-                true,
-                self.flat_child.len(),  // Conservatively reserve a capacity == full size of the child
-            ))
-        });
+        let mut child_growable: Box<dyn Growable> = make_growable(
+            self.flat_child.name(),
+            self.flat_child.data_type(),
+            vec![&self.flat_child],
+            true,
+            self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
+        );
         for (start_valid, len_valid) in SlicesIterator::new(self.validity().unwrap()) {
             let child_start = self.offsets().start_end(start_valid).0;
             let child_end = self.offsets().start_end(start_valid + len_valid - 1).1;
@@ -110,15 +105,13 @@ impl DaftConcatAggable for ListArray {
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
         let all_valid = self.null_count() == 0;
 
-        let mut child_array_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
-            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.flat_child.name().to_string(),
-                self.child_data_type(),
-                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>().unwrap()],
-                false,
-                self.flat_child.len(),
-            ))
-        });
+        let mut child_array_growable: Box<dyn Growable> = make_growable(
+            self.flat_child.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            false,
+            self.flat_child.len(),
+        );
 
         let mut group_lens: Vec<usize> = vec![];
         let mut group_valids: Vec<bool> = vec![];
