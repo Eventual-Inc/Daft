@@ -14,7 +14,7 @@ pub struct ListGrowable<'a> {
     dtype: DataType,
     child_growable: Box<dyn Growable + 'a>,
     child_arrays_offsets: Vec<&'a arrow2::offset::OffsetsBuffer<i64>>,
-    growable_validity: ArrowBitmapGrowable<'a>,
+    growable_validity: Option<ArrowBitmapGrowable<'a>>,
     growable_offsets: arrow2::offset::Offsets<i64>,
 }
 
@@ -36,10 +36,15 @@ impl<'a> ListGrowable<'a> {
                     use_validity,
                     child_capacity,
                 );
-                let growable_validity = ArrowBitmapGrowable::new(
-                    arrays.iter().map(|a| a.validity()).collect(),
-                    capacity,
-                );
+                let growable_validity =
+                    if use_validity || arrays.iter().any(|arr| arr.validity().is_some()) {
+                        Some(ArrowBitmapGrowable::new(
+                            arrays.iter().map(|a| a.validity()).collect(),
+                            capacity,
+                        ))
+                    } else {
+                        None
+                    };
                 let child_arrays_offsets =
                     arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
                 Self {
@@ -66,7 +71,11 @@ impl<'a> Growable for ListGrowable<'a> {
             start_offset.to_usize(),
             (end_offset - start_offset).to_usize(),
         );
-        self.growable_validity.extend(index, start, len);
+
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.extend(index, start, len),
+            None => (),
+        }
 
         self.growable_offsets
             .try_extend_from_slice(offsets, start, len)
@@ -74,7 +83,10 @@ impl<'a> Growable for ListGrowable<'a> {
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        self.growable_validity.add_nulls(additional);
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.add_nulls(additional),
+            None => (),
+        }
         self.growable_offsets.extend_constant(additional);
     }
 
@@ -83,13 +95,13 @@ impl<'a> Growable for ListGrowable<'a> {
         let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
-        let built_validity = grown_validity.build();
+        let built_validity = grown_validity.map(|v| v.build());
         let built_offsets = grown_offsets.into();
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,
             built_offsets,
-            Some(built_validity),
+            built_validity,
         )
         .into_series())
     }

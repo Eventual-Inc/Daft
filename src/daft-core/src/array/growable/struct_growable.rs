@@ -12,7 +12,7 @@ pub struct StructGrowable<'a> {
     name: String,
     dtype: DataType,
     children_growables: Vec<Box<dyn Growable + 'a>>,
-    growable_validity: ArrowBitmapGrowable<'a>,
+    growable_validity: Option<ArrowBitmapGrowable<'a>>,
 }
 
 impl<'a> StructGrowable<'a> {
@@ -41,10 +41,15 @@ impl<'a> StructGrowable<'a> {
                         )
                     })
                     .collect::<Vec<_>>();
-                let growable_validity = ArrowBitmapGrowable::new(
-                    arrays.iter().map(|a| a.validity()).collect(),
-                    capacity,
-                );
+                let growable_validity =
+                    if use_validity || arrays.iter().any(|arr| arr.validity().is_some()) {
+                        Some(ArrowBitmapGrowable::new(
+                            arrays.iter().map(|a| a.validity()).collect(),
+                            capacity,
+                        ))
+                    } else {
+                        None
+                    };
                 Self {
                     name: name.to_string(),
                     dtype: dtype.clone(),
@@ -62,14 +67,22 @@ impl<'a> Growable for StructGrowable<'a> {
         for child_growable in &mut self.children_growables {
             child_growable.extend(index, start, len)
         }
-        self.growable_validity.extend(index, start, len);
+
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.extend(index, start, len),
+            None => (),
+        }
     }
 
     fn add_nulls(&mut self, additional: usize) {
         for child_growable in &mut self.children_growables {
             child_growable.add_nulls(additional);
         }
-        self.growable_validity.add_nulls(additional);
+
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.add_nulls(additional),
+            None => (),
+        }
     }
 
     fn build(&mut self) -> DaftResult<Series> {
@@ -80,11 +93,11 @@ impl<'a> Growable for StructGrowable<'a> {
             .iter_mut()
             .map(|cg| cg.build())
             .collect::<DaftResult<Vec<_>>>()?;
-        let built_validity = grown_validity.build();
+        let built_validity = grown_validity.map(|v| v.build());
         Ok(StructArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_children,
-            Some(built_validity),
+            built_validity,
         )
         .into_series())
     }

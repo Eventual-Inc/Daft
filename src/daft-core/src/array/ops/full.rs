@@ -94,7 +94,8 @@ impl FullNull for FixedSizeListArray {
 
         match dtype {
             DataType::FixedSizeList(child, size) => {
-                let flat_child = Series::full_null(name, &child.dtype, length * size);
+                let flat_child =
+                    Series::full_null(child.name.as_str(), &child.dtype, length * size);
                 Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
             }
             _ => panic!(
@@ -108,7 +109,7 @@ impl FullNull for FixedSizeListArray {
         match dtype {
             DataType::FixedSizeList(child, _) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = Series::empty(name, &child.dtype);
+                let empty_child = Series::empty(child.name.as_str(), &child.dtype);
                 Self::new(field, empty_child, None)
             }
             _ => panic!(
@@ -125,7 +126,7 @@ impl FullNull for ListArray {
 
         match dtype {
             DataType::List(child) => {
-                let empty_flat_child = Series::empty(name, &child.dtype);
+                let empty_flat_child = Series::empty(child.name.as_str(), &child.dtype);
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
@@ -144,7 +145,7 @@ impl FullNull for ListArray {
         match dtype {
             DataType::List(child) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = Series::empty(name, &child.dtype);
+                let empty_child = Series::empty(child.name.as_str(), &child.dtype);
                 Self::new(field, empty_child, OffsetsBuffer::default(), None)
             }
             _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
@@ -160,7 +161,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::full_null(name, &f.dtype, length))
+                    .map(|f| Series::full_null(f.name.as_str(), &f.dtype, length))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, Some(validity))
             }
@@ -174,7 +175,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::empty(name, &f.dtype))
+                    .map(|f| Series::empty(f.name.as_str(), &f.dtype))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, None)
             }
@@ -197,7 +198,7 @@ mod tests {
     fn create_fixed_size_list_full_null() -> DaftResult<()> {
         let arr = FixedSizeListArray::full_null(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
             3,
         );
         assert_eq!(arr.len(), 3);
@@ -207,10 +208,11 @@ mod tests {
         Ok(())
     }
 
+    #[test]
     fn create_struct_full_null() -> DaftResult<()> {
         let arr = StructArray::full_null(
             "foo",
-            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
+            &DataType::Struct(vec![Field::new("bar", DataType::Int64)]),
             3,
         );
         assert_eq!(arr.len(), 3);
@@ -224,17 +226,18 @@ mod tests {
     fn create_fixed_size_list_full_null_empty() -> DaftResult<()> {
         let arr = FixedSizeListArray::full_null(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
             0,
         );
         assert_eq!(arr.len(), 0);
         Ok(())
     }
 
+    #[test]
     fn create_struct_full_null_empty() -> DaftResult<()> {
         let arr = StructArray::full_null(
             "foo",
-            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
+            &DataType::Struct(vec![Field::new("bar", DataType::Int64)]),
             0,
         );
         assert_eq!(arr.len(), 0);
@@ -245,16 +248,17 @@ mod tests {
     fn create_fixed_size_list_empty() -> DaftResult<()> {
         let arr = FixedSizeListArray::empty(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
         );
         assert_eq!(arr.len(), 0);
         Ok(())
     }
 
+    #[test]
     fn create_struct_empty() -> DaftResult<()> {
         let arr = StructArray::empty(
             "foo",
-            &DataType::Struct(vec![Field::new("foo", DataType::Int64)]),
+            &DataType::Struct(vec![Field::new("bar", DataType::Int64)]),
         );
         assert_eq!(arr.len(), 0);
         Ok(())
