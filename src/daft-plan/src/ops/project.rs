@@ -25,8 +25,6 @@ impl Project {
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
     ) -> Result<Self> {
-        println!("try_new({:?})", projection);
-
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection, &resource_request)?;
@@ -60,7 +58,6 @@ impl Project {
         let upstream_schema = input.schema();
         let (projection, substitutions) = Self::factor_expressions(&projection, &upstream_schema);
 
-        println!("substitutions: {:?}", substitutions);
         // If there are substitutions to factor out,
         // create a child projection node to do the factoring.
         let input = if substitutions.is_empty() {
