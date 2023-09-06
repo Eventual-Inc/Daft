@@ -10,7 +10,7 @@ use crate::{
 use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, full::FullNull};
 
 impl<T> DataArray<T>
 where
@@ -82,6 +82,13 @@ impl ListArray {
             None => Cow::Borrowed(mask.as_arrow().values()),
             Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
         };
+
+        let num_invalid = keep_bitmap.as_ref().unset_bits();
+        if num_invalid == 0 {
+            return Ok(self.clone());
+        } else if num_invalid == mask.len() {
+            return Ok(ListArray::empty(self.name(), self.data_type()));
+        }
 
         let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
         let mut growable = <ListArray as GrowableArray>::GrowableType::new(
