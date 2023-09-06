@@ -94,7 +94,8 @@ impl FullNull for FixedSizeListArray {
 
         match dtype {
             DataType::FixedSizeList(child, size) => {
-                let flat_child = Series::full_null(child.name.as_str(), &child.dtype, length * size);
+                let flat_child =
+                    Series::full_null(child.name.as_str(), &child.dtype, length * size);
                 Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
             }
             _ => panic!(
