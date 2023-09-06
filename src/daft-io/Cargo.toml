@@ -33,7 +33,7 @@ version = "0.11.18"
 
 [dev-dependencies]
 md5 = "0.7.0"
-tempfile = "3.7.1"
+tempfile = "3.8.0"
 
 [features]
 default = ["python"]
