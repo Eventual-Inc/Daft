@@ -93,7 +93,7 @@ version = "0.4.19"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py37"]
-version = "0.19.1"
+version = "0.19.2"
 
 [workspace.dependencies.pyo3-log]
 version = "0.8.3"
