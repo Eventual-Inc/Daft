@@ -5,7 +5,8 @@ use crate::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::{BooleanArray, DaftArrowBackedType},
+    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType},
+    DataType,
 };
 use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;
@@ -76,80 +77,52 @@ impl crate::datatypes::PythonArray {
     }
 }
 
+fn generic_filter<Arr>(
+    arr: &Arr,
+    mask: &BooleanArray,
+    arr_name: &str,
+    arr_dtype: &DataType,
+) -> DaftResult<Arr>
+where
+    Arr: FullNull + Clone + GrowableArray + DaftArrayType,
+{
+    let keep_bitmap = match mask.as_arrow().validity() {
+        None => Cow::Borrowed(mask.as_arrow().values()),
+        Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+    };
+
+    let num_invalid = keep_bitmap.as_ref().unset_bits();
+    if num_invalid == 0 {
+        return Ok(arr.clone());
+    } else if num_invalid == mask.len() {
+        return Ok(Arr::empty(arr_name, arr_dtype));
+    }
+
+    let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
+    let mut growable =
+        Arr::make_growable(arr_name, arr_dtype, vec![arr], false, slice_iter.slots());
+
+    for (start_keep, len_keep) in slice_iter {
+        growable.extend(0, start_keep, len_keep);
+    }
+
+    Ok(growable.build()?.downcast::<Arr>()?.clone())
+}
+
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let keep_bitmap = match mask.as_arrow().validity() {
-            None => Cow::Borrowed(mask.as_arrow().values()),
-            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
-        };
-
-        let num_invalid = keep_bitmap.as_ref().unset_bits();
-        if num_invalid == 0 {
-            return Ok(self.clone());
-        } else if num_invalid == mask.len() {
-            return Ok(ListArray::empty(self.name(), self.data_type()));
-        }
-
-        let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
-        let mut growable = <ListArray as GrowableArray>::GrowableType::new(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            false,
-            slice_iter.slots(),
-            0,
-        );
-
-        for (start_keep, len_keep) in slice_iter {
-            growable.extend(0, start_keep, len_keep);
-        }
-
-        Ok(growable.build()?.downcast::<ListArray>()?.clone())
+        generic_filter(self, mask, self.name(), self.data_type())
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let keep_bitmap = match mask.as_arrow().validity() {
-            None => Cow::Borrowed(mask.as_arrow().values()),
-            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
-        };
-
-        let mut growable = FixedSizeListArray::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            self.validity().is_some(),
-            mask.len(),
-        );
-
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
-            growable.extend(0, start_keep, len_keep);
-        }
-
-        Ok(growable.build()?.downcast::<FixedSizeListArray>()?.clone())
+        generic_filter(self, mask, self.name(), self.data_type())
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let keep_bitmap = match mask.as_arrow().validity() {
-            None => Cow::Borrowed(mask.as_arrow().values()),
-            Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
-        };
-
-        let mut growable = StructArray::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            self.validity().is_some(),
-            mask.len(),
-        );
-
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
-            growable.extend(0, start_keep, len_keep);
-        }
-
-        Ok(growable.build()?.downcast::<StructArray>()?.clone())
+        generic_filter(self, mask, self.name(), self.data_type())
     }
 }
