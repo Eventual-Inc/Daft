@@ -1,22 +1,23 @@
 [dependencies]
 async-recursion = "1.0.4"
 async-trait = "0.1.71"
-aws-config = {version = "0.55.3"}
+aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = "0.28.0"
+aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
 aws-sig-auth = "0.55.3"
 aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
-azure_storage = {version = "0.13.0", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage_blobs = {version = "0.13.1", features = ["enable_reqwest_rustls"], default-features = false}
+azure_storage = {version = "0.13.0", features = ["enable_reqwest"], default-features = false}
+azure_storage_blobs = {version = "0.13.1", features = ["enable_reqwest"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
-google-cloud-storage = {version = "0.13.0", default-features = false, features = ["rustls-tls", "auth"]}
+google-cloud-storage = {version = "0.13.0", default-features = false, features = ["default-tls", "auth"]}
 lazy_static = {workspace = true}
 log = {workspace = true}
+openssl-sys = {version = "0.9.93", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
@@ -27,7 +28,7 @@ url = "2.4.0"
 
 [dependencies.reqwest]
 default-features = false
-features = ["stream", "rustls-tls"]
+features = ["stream", "native-tls"]
 version = "0.11.18"
 
 [dev-dependencies]
