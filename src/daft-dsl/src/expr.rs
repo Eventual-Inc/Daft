@@ -120,6 +120,19 @@ impl AggExpr {
         }
     }
 
+    pub fn child(&self) -> ExprRef {
+        use AggExpr::*;
+        match self {
+            Count(expr, ..)
+            | Sum(expr)
+            | Mean(expr)
+            | Min(expr)
+            | Max(expr)
+            | List(expr)
+            | Concat(expr) => expr.clone(),
+        }
+    }
+
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         use AggExpr::*;
         match self {
@@ -360,6 +373,32 @@ impl Expr {
 
             // Agg: Separate path.
             Agg(agg_expr) => agg_expr.semantic_id(schema),
+        }
+    }
+
+    pub fn children(&self) -> Vec<ExprRef> {
+        use Expr::*;
+        match self {
+            // No children.
+            Column(..) => vec![],
+            Literal(..) => vec![],
+
+            // One child.
+            Not(expr) | IsNull(expr) | Cast(expr, ..) | Alias(expr, ..) => vec![expr.clone()],
+            Agg(agg_expr) => vec![agg_expr.child()],
+
+            // Multiple children.
+            Function { inputs, .. } => inputs.iter().map(|e| e.clone().into()).collect(),
+            BinaryOp { left, right, .. } => {
+                vec![left.clone(), right.clone()]
+            }
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                vec![predicate.clone(), if_true.clone(), if_false.clone()]
+            }
         }
     }
 

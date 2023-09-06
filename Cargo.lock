@@ -1051,6 +1051,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-io",
+ "indexmap 2.0.0",
  "pyo3",
  "pyo3-log",
  "serde",

@@ -3,3 +3,4 @@ mod optimizer;
 mod rules;
 
 pub use optimizer::Optimizer;
+pub use rules::Transformed;

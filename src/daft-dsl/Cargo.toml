@@ -4,6 +4,7 @@ common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
+indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true}
