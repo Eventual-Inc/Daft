@@ -83,23 +83,17 @@ impl ListArray {
             Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
         };
 
-        let child_capacity = SlicesIterator::new(keep_bitmap.as_ref())
-            .map(|(start_valid, len_valid)| {
-                self.offsets().start_end(start_valid + len_valid - 1).1
-                    - self.offsets().start_end(start_valid).0
-            })
-            .sum();
-
+        let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
         let mut growable = <ListArray as GrowableArray>::GrowableType::new(
             self.name().to_string(),
             self.data_type(),
             vec![self],
-            self.validity().is_some(),
-            keep_bitmap.len() - keep_bitmap.unset_bits(),
-            child_capacity,
+            false,
+            slice_iter.slots(),
+            0,
         );
 
-        for (start_keep, len_keep) in SlicesIterator::new(keep_bitmap.as_ref()) {
+        for (start_keep, len_keep) in slice_iter {
             growable.extend(0, start_keep, len_keep);
         }
 

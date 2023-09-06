@@ -1,5 +1,4 @@
-use std::iter::repeat;
-
+use arrow2::types::Index;
 use common_error::DaftResult;
 
 use crate::{
@@ -207,7 +206,7 @@ pub struct ListGrowable<'a> {
     child_growable: Box<dyn Growable + 'a>,
     child_arrays_offsets: Vec<&'a arrow2::offset::OffsetsBuffer<i64>>,
     growable_validity: ArrowBitmapGrowable<'a>,
-    growable_offsets: Vec<i64>,
+    growable_offsets: arrow2::offset::Offsets<i64>,
 }
 
 impl<'a> ListGrowable<'a> {
@@ -233,7 +232,6 @@ impl<'a> ListGrowable<'a> {
                         arrays.iter().map(|a| a.validity()).collect(),
                         capacity,
                     );
-                    let growable_offsets: Vec<i64> = vec![0];
                     let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
                     Self {
                         name,
@@ -241,7 +239,7 @@ impl<'a> ListGrowable<'a> {
                         child_growable: Box::new(child_growable),
                         child_arrays_offsets,
                         growable_validity,
-                        growable_offsets,
+                        growable_offsets: arrow2::offset::Offsets::<i64>::default(),
                     }
                 })
             }
@@ -253,26 +251,23 @@ impl<'a> ListGrowable<'a> {
 impl<'a> Growable for ListGrowable<'a> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
-        let offset_slice = &offsets.as_slice()[start..(start + len + 1)];
+        let start_offset = &offsets.buffer()[start];
+        let end_offset = &offsets.buffer()[start + len];
         self.child_growable.extend(
             index,
-            *offset_slice.first().unwrap() as usize,
-            (offset_slice.last().unwrap() - offset_slice.first().unwrap()) as usize,
+            start_offset.to_usize(),
+            (end_offset - start_offset).to_usize(),
         );
         self.growable_validity.extend(index, start, len);
 
-        let element_lengths = offset_slice.windows(2).map(|window| window[1] - window[0]);
-        for element_length in element_lengths {
-            let last_offset = self.growable_offsets.last().unwrap();
-            self.growable_offsets.push(last_offset + element_length);
-        }
+        self.growable_offsets
+            .try_extend_from_slice(offsets, start, len)
+            .unwrap();
     }
 
     fn add_nulls(&mut self, additional: usize) {
         self.growable_validity.add_nulls(additional);
-        let last_offset = *self.growable_offsets.last().unwrap();
-        self.growable_offsets
-            .extend(repeat(last_offset).take(additional));
+        self.growable_offsets.extend_constant(additional);
     }
 
     fn build(&mut self) -> DaftResult<Series> {
@@ -281,7 +276,7 @@ impl<'a> Growable for ListGrowable<'a> {
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.build();
-        let built_offsets = arrow2::offset::Offsets::<i64>::try_from(grown_offsets)?.into();
+        let built_offsets = grown_offsets.into();
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,
