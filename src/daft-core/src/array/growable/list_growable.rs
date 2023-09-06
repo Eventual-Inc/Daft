@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use arrow2::types::Index;
 use common_error::DaftResult;
 
@@ -42,11 +40,12 @@ impl<'a> ListGrowable<'a> {
                     arrays.iter().map(|a| a.validity()).collect(),
                     capacity,
                 );
-                let child_arrays_offsets = arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
+                let child_arrays_offsets =
+                    arrays.iter().map(|arr| arr.offsets()).collect::<Vec<_>>();
                 Self {
                     name: name.to_string(),
                     dtype: dtype.clone(),
-                    child_growable: child_growable,
+                    child_growable,
                     child_arrays_offsets,
                     growable_validity,
                     growable_offsets: arrow2::offset::Offsets::<i64>::default(),

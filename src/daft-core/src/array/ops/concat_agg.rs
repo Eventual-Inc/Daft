@@ -84,7 +84,7 @@ impl DaftConcatAggable for ListArray {
             self.flat_child.data_type(),
             vec![&self.flat_child],
             true,
-            self.flat_child.len(),  // Conservatively reserve a capacity == full size of the child
+            self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
         );
         for (start_valid, len_valid) in SlicesIterator::new(self.validity().unwrap()) {
             let child_start = self.offsets().start_end(start_valid).0;
