@@ -1106,7 +1106,7 @@ impl EmbeddingArray {
             (DataType::Tensor(_), DataType::Embedding(inner_dtype, size)) => {
                 let image_shape = vec![*size as u64];
                 let fixed_shape_tensor_dtype =
-                    DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
+                    DataType::FixedShapeTensor(Box::new(inner_dtype.as_ref().clone()), image_shape);
                 let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
                 let fixed_shape_tensor_array =
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
@@ -1527,18 +1527,13 @@ impl FixedShapeTensorArray {
 
                 // FixedSizeList -> List
                 let list_arr = physical_arr
-                    .cast(&DataType::List(Box::new(
-                        inner_dtype.as_ref().clone(),
-                    )))?
+                    .cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?
                     .rename("data");
 
                 // List -> Struct
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
-                    Field::new(
-                        "shape",
-                        DataType::List(Box::new(DataType::UInt64)),
-                    ),
+                    Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
                         "shape",
                         Box::new(arrow2::array::PrimitiveArray::from_vec(shapes))
@@ -1575,9 +1570,7 @@ impl FixedSizeListArray {
                         size
                     )));
                 }
-                let casted_child = self
-                    .flat_child
-                    .cast(child_dtype.as_ref())?;
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 Ok(FixedSizeListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
@@ -1587,9 +1580,7 @@ impl FixedSizeListArray {
             }
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
-                let casted_child = self
-                    .flat_child
-                    .cast(child_dtype.as_ref())?;
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 let offsets: Offsets<i64> = match self.validity() {
                     None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
                     Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
@@ -1653,8 +1644,7 @@ impl ListArray {
         match dtype {
             DataType::List(child_dtype) => Ok(ListArray::new(
                 Field::new(self.name(), dtype.clone()),
-                self.flat_child
-                    .cast(child_dtype.as_ref())?,
+                self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
                 self.validity().cloned(),
             )
@@ -1677,9 +1667,7 @@ impl ListArray {
                 }
 
                 // Cast child
-                let casted_child = self
-                    .flat_child
-                    .cast(child_dtype.as_ref())?;
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
 
                 // Build a FixedSizeListArray
                 match self.validity() {

@@ -80,7 +80,7 @@ pub enum DataType {
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
     /// A logical type for embeddings.
-    Embedding(Box<Field>, usize),
+    Embedding(Box<DataType>, usize),
     /// A logical type for images with variable shapes.
     Image(Option<ImageMode>),
     /// A logical type for images with the same size (height x width).
@@ -198,7 +198,7 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
-            Embedding(field, size) => FixedSizeList(Box::new(field.dtype.to_physical()), *size),
+            Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
                     "data",
@@ -471,7 +471,7 @@ impl Display for DataType {
                 write!(f, "Struct[{fields}]")
             }
             DataType::Embedding(inner, size) => {
-                write!(f, "Embedding[{}; {}]", inner.dtype, size)
+                write!(f, "Embedding[{}; {}]", inner, size)
             }
             DataType::Image(mode) => {
                 write!(

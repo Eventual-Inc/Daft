@@ -420,10 +420,7 @@ impl ImageArray {
             }
         }
         let data_array = ListArray::new(
-            Field::new(
-                "data",
-                DataType::List(Box::new((&arrow_dtype).into())),
-            ),
+            Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),
             Series::try_from((
                 "data",
                 Box::new(arrow2::array::PrimitiveArray::from_vec(data))

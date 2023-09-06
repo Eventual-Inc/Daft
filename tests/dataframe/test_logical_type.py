@@ -18,7 +18,7 @@ def test_embedding_type_df() -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
     df = daft.from_pydict({"index": np.arange(len(data)), "embeddings": Series.from_pylist(data, pyobj="force")})
 
-    target = DataType.embedding("arr", DataType.float32(), 3)
+    target = DataType.embedding(DataType.float32(), 3)
     df = df.select(col("index"), col("embeddings").cast(target))
     df = df.repartition(4, "index")
     df = df.sort("index")
