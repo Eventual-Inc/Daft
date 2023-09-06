@@ -13,7 +13,7 @@ pub struct FixedSizeListGrowable<'a> {
     dtype: DataType,
     element_fixed_len: usize,
     child_growable: Box<dyn Growable + 'a>,
-    growable_validity: ArrowBitmapGrowable<'a>,
+    growable_validity: Option<ArrowBitmapGrowable<'a>>,
 }
 
 impl<'a> FixedSizeListGrowable<'a> {
@@ -33,10 +33,15 @@ impl<'a> FixedSizeListGrowable<'a> {
                     use_validity,
                     capacity * element_fixed_len,
                 );
-                let growable_validity = ArrowBitmapGrowable::new(
-                    arrays.iter().map(|a| a.validity()).collect(),
-                    capacity,
-                );
+                let growable_validity =
+                    if use_validity || arrays.iter().any(|arr| arr.validity().is_some()) {
+                        Some(ArrowBitmapGrowable::new(
+                            arrays.iter().map(|a| a.validity()).collect(),
+                            capacity,
+                        ))
+                    } else {
+                        None
+                    };
                 Self {
                     name: name.to_string(),
                     dtype: dtype.clone(),
@@ -57,24 +62,32 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
             start * self.element_fixed_len,
             len * self.element_fixed_len,
         );
-        self.growable_validity.extend(index, start, len);
+
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.extend(index, start, len),
+            None => (),
+        }
     }
 
     fn add_nulls(&mut self, additional: usize) {
         self.child_growable
             .add_nulls(additional * self.element_fixed_len);
-        self.growable_validity.add_nulls(additional);
+
+        match &mut self.growable_validity {
+            Some(growable_validity) => growable_validity.add_nulls(additional),
+            None => (),
+        }
     }
 
     fn build(&mut self) -> DaftResult<Series> {
         let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
-        let built_validity = grown_validity.build();
+        let built_validity = grown_validity.map(|v| v.build());
         Ok(FixedSizeListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,
-            Some(built_validity),
+            built_validity,
         )
         .into_series())
     }
