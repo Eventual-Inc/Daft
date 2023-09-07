@@ -78,8 +78,7 @@ impl Project {
                     )
                 })
                 .collect::<IndexMap<_, _>>()
-                .values()
-                .cloned()
+                .into_values()
                 .collect::<Vec<_>>();
             let plan: LogicalPlan =
                 Self::try_new(input, child_projection, resource_request.clone())?.into();
