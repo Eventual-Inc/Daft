@@ -15,7 +15,7 @@ app = FastAPI()
 
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
-    return get_response(request.url, status_code=503)
+    return get_response(request.url, status_code=503, status_code_str="SlowDown")
 
 
 limiter = Limiter(key_func=get_remote_address)
