@@ -172,7 +172,7 @@ impl Display for Schema {
         let header = self
             .fields
             .iter()
-            .map(|(name, field)| format!("{}\n{:?}", name, field.dtype))
+            .map(|(name, field)| format!("{}\n{}", name, field.dtype))
             .collect();
         table.add_row(header);
         write!(f, "{table}")
