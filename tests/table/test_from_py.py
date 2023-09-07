@@ -100,8 +100,8 @@ ARROW_TYPE_ARRAYS = {
             ],
             pa.struct(
                 {
-                    "data": pa.large_list(pa.field("data", pa.int64())),
-                    "shape": pa.large_list(pa.field("shape", pa.uint64())),
+                    "data": pa.large_list(pa.field("item", pa.int64())),
+                    "shape": pa.large_list(pa.field("item", pa.uint64())),
                 }
             ),
         ),
