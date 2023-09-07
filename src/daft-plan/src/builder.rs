@@ -221,8 +221,8 @@ impl LogicalPlanBuilder {
         self.plan.partition_spec().as_ref().clone()
     }
 
-    pub fn repr_ascii(&self) -> String {
-        self.plan.repr_ascii()
+    pub fn repr_ascii(&self, simple: bool) -> String {
+        self.plan.repr_ascii(simple)
     }
 }
 
@@ -410,8 +410,8 @@ impl PyLogicalPlanBuilder {
         Ok(Arc::new(physical_plan).into())
     }
 
-    pub fn repr_ascii(&self) -> PyResult<String> {
-        Ok(self.builder.repr_ascii())
+    pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        Ok(self.builder.repr_ascii(simple))
     }
 }
 

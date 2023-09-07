@@ -71,6 +71,22 @@ impl RuleBatch {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn with_order(
+        rules: Vec<Box<dyn OptimizerRule>>,
+        strategy: RuleExecutionStrategy,
+        order: Option<ApplyOrder>,
+    ) -> Self {
+        debug_assert!(order.clone().map_or(true, |order| rules
+            .iter()
+            .all(|rule| rule.apply_order() == order)));
+        Self {
+            rules,
+            strategy,
+            order,
+        }
+    }
+
     /// Get the maximum number of passes the optimizer should make over this rule batch.
     fn max_passes(&self, config: &OptimizerConfig) -> usize {
         use RuleExecutionStrategy::*;
@@ -85,13 +101,13 @@ impl RuleBatch {
 /// The execution strategy for a batch of rules.
 pub enum RuleExecutionStrategy {
     // Apply the batch of rules only once.
+    #[allow(dead_code)]
     Once,
     // Apply the batch of rules multiple times, to a fixed-point or until the max
     // passes is hit.
     // If parametrized by Some(n), the batch of rules will be run a maximum
     // of n passes; if None, the number of passes is capped by the default max
     // passes given in the OptimizerConfig.
-    #[allow(dead_code)]
     FixedPoint(Option<usize>),
 }
 
@@ -113,7 +129,11 @@ impl Optimizer {
                 Box::new(PushDownProjection::new()),
                 Box::new(PushDownLimit::new()),
             ],
-            RuleExecutionStrategy::Once,
+            // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
+            // at the current node, which would require another batch application in order to have a chance to push
+            // that Filter node through upstream nodes.
+            // TODO(Clark): Refine this fixed-point policy.
+            RuleExecutionStrategy::FixedPoint(Some(3)),
         )];
         Self::with_rule_batches(rule_batches, config)
     }

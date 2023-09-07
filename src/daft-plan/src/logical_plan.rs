@@ -261,6 +261,24 @@ impl LogicalPlan {
             ),
         }
     }
+    pub fn name(&self) -> String {
+        let name = match self {
+            Self::Source(..) => "Source",
+            Self::Project(..) => "Project",
+            Self::Filter(..) => "Filter",
+            Self::Limit(..) => "Limit",
+            Self::Explode(..) => "Explode",
+            Self::Sort(..) => "Sort",
+            Self::Repartition(..) => "Repartition",
+            Self::Coalesce(..) => "Coalesce",
+            Self::Distinct(..) => "Distinct",
+            Self::Aggregate(..) => "Aggregate",
+            Self::Concat(..) => "Concat",
+            Self::Join(..) => "Join",
+            Self::Sink(..) => "Sink",
+        };
+        name.to_string()
+    }
 
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
@@ -291,9 +309,9 @@ impl LogicalPlan {
         }
     }
 
-    pub fn repr_ascii(&self) -> String {
+    pub fn repr_ascii(&self, simple: bool) -> String {
         let mut s = String::new();
-        self.fmt_tree(&mut s).unwrap();
+        self.fmt_tree(&mut s, simple).unwrap();
         s
     }
 
