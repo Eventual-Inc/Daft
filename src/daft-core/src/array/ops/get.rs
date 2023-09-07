@@ -168,10 +168,7 @@ mod tests {
 
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
-        let field = Field::new(
-            "foo",
-            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
-        );
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let validity = None;
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
@@ -201,10 +198,7 @@ mod tests {
 
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
-        let field = Field::new(
-            "foo",
-            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
-        );
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
         let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));

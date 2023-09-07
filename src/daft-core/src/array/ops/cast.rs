@@ -721,23 +721,20 @@ fn extract_python_like_to_fixed_size_list<
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
-    child_field: &Field,
+    child_dtype: &DataType,
     list_size: usize,
 ) -> DaftResult<FixedSizeListArray> {
-    let (values_vec, _, _, _) = extract_python_to_vec::<Tgt>(
-        py,
-        python_objects,
-        &child_field.dtype,
-        None,
-        Some(list_size),
-        None,
-    )?;
+    let (values_vec, _, _, _) =
+        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, Some(list_size), None)?;
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
 
-    let inner_field = child_field.to_arrow()?;
-    let list_dtype = arrow2::datatypes::DataType::FixedSizeList(Box::new(inner_field), list_size);
+    let inner_dtype = child_dtype.to_arrow()?;
+    let list_dtype = arrow2::datatypes::DataType::FixedSizeList(
+        Box::new(arrow2::datatypes::Field::new("item", inner_dtype, true)),
+        list_size,
+    );
     let daft_type = (&list_dtype).into();
 
     let list_array = arrow2::array::FixedSizeListArray::new(
@@ -758,19 +755,21 @@ fn extract_python_like_to_list<
 >(
     py: Python<'_>,
     python_objects: &PythonArray,
-    child_field: &Field,
+    child_dtype: &DataType,
 ) -> DaftResult<ListArray> {
     let (values_vec, offsets, _, _) =
-        extract_python_to_vec::<Tgt>(py, python_objects, &child_field.dtype, None, None, None)?;
+        extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, None, None)?;
 
     let offsets = offsets.expect("Offsets should but non-None for dynamic list");
 
     let values_array: Box<dyn arrow2::array::Array> =
         Box::new(arrow2::array::PrimitiveArray::from_vec(values_vec));
 
-    let inner_field = child_field.to_arrow()?;
+    let inner_dtype = child_dtype.to_arrow()?;
 
-    let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(inner_field));
+    let list_dtype = arrow2::datatypes::DataType::LargeList(Box::new(
+        arrow2::datatypes::Field::new("item", inner_dtype, true),
+    ));
 
     let daft_type = (&list_dtype).into();
 
@@ -995,32 +994,32 @@ impl PythonArray {
             dt @ DataType::Float32 | dt @ DataType::Float64 => {
                 pycast_then_arrowcast!(self, dt, "float")
             }
-            DataType::List(field) => {
-                if !field.dtype.is_numeric() {
+            DataType::List(child_dtype) => {
+                if !child_dtype.is_numeric() {
                     return Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to List, got {}",
-                        field.dtype
+                        child_dtype
                     )));
                 }
-                with_match_numeric_daft_types!(field.dtype, |$T| {
+                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_list::<Tgt>(py, self, field)?;
+                        let result = extract_python_like_to_list::<Tgt>(py, self, child_dtype.as_ref())?;
                         Ok(result.into_series())
                     })
                 })
             }
-            DataType::FixedSizeList(field, size) => {
-                if !field.dtype.is_numeric() {
+            DataType::FixedSizeList(child_dtype, size) => {
+                if !child_dtype.is_numeric() {
                     return Err(DaftError::ValueError(format!(
                         "We can only convert numeric python types to FixedSizeList, got {}",
-                        field.dtype
+                        child_dtype,
                     )));
                 }
-                with_match_numeric_daft_types!(field.dtype, |$T| {
+                with_match_numeric_daft_types!(child_dtype.as_ref(), |$T| {
                     type Tgt = <$T as DaftNumericType>::Native;
                     pyo3::Python::with_gil(|py| {
-                        let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, field, *size)?;
+                        let result = extract_python_like_to_fixed_size_list::<Tgt>(py, self, child_dtype.as_ref(), *size)?;
                         Ok(result.into_series())
                     })
                 })
@@ -1107,7 +1106,7 @@ impl EmbeddingArray {
             (DataType::Tensor(_), DataType::Embedding(inner_dtype, size)) => {
                 let image_shape = vec![*size as u64];
                 let fixed_shape_tensor_dtype =
-                    DataType::FixedShapeTensor(Box::new(inner_dtype.clone().dtype), image_shape);
+                    DataType::FixedShapeTensor(Box::new(inner_dtype.as_ref().clone()), image_shape);
                 let fixed_shape_tensor_array = self.cast(&fixed_shape_tensor_dtype)?;
                 let fixed_shape_tensor_array =
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
@@ -1194,7 +1193,7 @@ impl ImageArray {
                     shapes.push(wa.value(i) as u64);
                     shapes.push(ca.value(i) as u64);
                 }
-                let shapes_dtype = DataType::List(Box::new(Field::new("shape", DataType::UInt64)));
+                let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
@@ -1350,7 +1349,7 @@ impl TensorArray {
                 let size = shape.iter().product::<u64>() as usize;
 
                 let result = da.cast(&DataType::FixedSizeList(
-                    Box::new(Field::new("data", inner_dtype.as_ref().clone())),
+                    Box::new(inner_dtype.as_ref().clone()),
                     size,
                 ))?;
                 let tensor_array = FixedShapeTensorArray::new(
@@ -1528,19 +1527,13 @@ impl FixedShapeTensorArray {
 
                 // FixedSizeList -> List
                 let list_arr = physical_arr
-                    .cast(&DataType::List(Box::new(Field::new(
-                        "data",
-                        inner_dtype.as_ref().clone(),
-                    ))))?
+                    .cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?
                     .rename("data");
 
                 // List -> Struct
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
-                    Field::new(
-                        "shape",
-                        DataType::List(Box::new(Field::new("shape", DataType::UInt64))),
-                    ),
+                    Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
                         "shape",
                         Box::new(arrow2::array::PrimitiveArray::from_vec(shapes))
@@ -1569,7 +1562,7 @@ impl FixedShapeTensorArray {
 impl FixedSizeListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::FixedSizeList(child, size) => {
+            DataType::FixedSizeList(child_dtype, size) => {
                 if size != &self.fixed_element_len() {
                     return Err(DaftError::ValueError(format!(
                         "Cannot cast from FixedSizeListSeries with size {} to size: {}",
@@ -1577,10 +1570,7 @@ impl FixedSizeListArray {
                         size
                     )));
                 }
-                let casted_child = self
-                    .flat_child
-                    .cast(&child.dtype)?
-                    .rename(child.name.as_str());
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 Ok(FixedSizeListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
@@ -1588,12 +1578,9 @@ impl FixedSizeListArray {
                 )
                 .into_series())
             }
-            DataType::List(child) => {
+            DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
-                let casted_child = self
-                    .flat_child
-                    .cast(&child.dtype)?
-                    .rename(child.name.as_str());
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 let offsets: Offsets<i64> = match self.validity() {
                     None => Offsets::try_from_iter(repeat(element_size).take(self.len()))?,
                     Some(validity) => Offsets::try_from_iter(validity.iter().map(|v| {
@@ -1655,16 +1642,14 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::List(child_field) => Ok(ListArray::new(
+            DataType::List(child_dtype) => Ok(ListArray::new(
                 Field::new(self.name(), dtype.clone()),
-                self.flat_child
-                    .cast(&child_field.dtype)?
-                    .rename(child_field.name.as_str()),
+                self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
                 self.validity().cloned(),
             )
             .into_series()),
-            DataType::FixedSizeList(child_field, size) => {
+            DataType::FixedSizeList(child_dtype, size) => {
                 // Validate lengths of elements are equal to `size`
                 let lengths_ok = match self.validity() {
                     None => self.offsets().lengths().all(|l| l == *size),
@@ -1682,10 +1667,7 @@ impl ListArray {
                 }
 
                 // Cast child
-                let casted_child = self
-                    .flat_child
-                    .cast(&child_field.dtype)?
-                    .rename(child_field.name.as_str());
+                let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
 
                 // Build a FixedSizeListArray
                 match self.validity() {
@@ -1699,8 +1681,8 @@ impl ListArray {
                     // Some invalids, we need to insert nulls into the child
                     Some(validity) => {
                         let mut child_growable = make_growable(
-                            child_field.name.as_str(),
-                            &child_field.dtype,
+                            "item",
+                            child_dtype.as_ref(),
                             vec![&casted_child],
                             true,
                             self.validity()

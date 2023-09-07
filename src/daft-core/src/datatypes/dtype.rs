@@ -71,16 +71,16 @@ pub enum DataType {
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
     /// A list of some logical data type with a fixed number of elements.
-    FixedSizeList(Box<Field>, usize),
+    FixedSizeList(Box<DataType>, usize),
     /// A list of some logical data type whose offsets are represented as [`i64`].
-    List(Box<Field>),
+    List(Box<DataType>),
     /// A nested [`DataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
     /// A logical type for embeddings.
-    Embedding(Box<Field>, usize),
+    Embedding(Box<DataType>, usize),
     /// A logical type for images with variable shapes.
     Image(Option<ImageMode>),
     /// A logical type for images with the same size (height x width).
@@ -142,10 +142,17 @@ impl DataType {
             DataType::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
             DataType::Binary => Ok(ArrowType::LargeBinary),
             DataType::Utf8 => Ok(ArrowType::LargeUtf8),
-            DataType::FixedSizeList(field, size) => {
-                Ok(ArrowType::FixedSizeList(Box::new(field.to_arrow()?), *size))
-            }
-            DataType::List(field) => Ok(ArrowType::LargeList(Box::new(field.to_arrow()?))),
+            DataType::FixedSizeList(child_dtype, size) => Ok(ArrowType::FixedSizeList(
+                Box::new(arrow2::datatypes::Field::new(
+                    "item",
+                    child_dtype.to_arrow()?,
+                    true,
+                )),
+                *size,
+            )),
+            DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
+                arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
+            ))),
             DataType::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
@@ -187,28 +194,15 @@ impl DataType {
             Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
-            List(field) => List(Box::new(
-                Field::new(field.name.clone(), field.dtype.to_physical())
-                    .with_metadata(field.metadata.clone()),
-            )),
-            FixedSizeList(field, size) => FixedSizeList(
-                Box::new(
-                    Field::new(field.name.clone(), field.dtype.to_physical())
-                        .with_metadata(field.metadata.clone()),
-                ),
-                *size,
-            ),
-            Embedding(field, size) => FixedSizeList(
-                Box::new(Field::new(field.name.clone(), field.dtype.to_physical())),
-                *size,
-            ),
+            List(child_dtype) => List(Box::new(child_dtype.to_physical())),
+            FixedSizeList(child_dtype, size) => {
+                FixedSizeList(Box::new(child_dtype.to_physical()), *size)
+            }
+            Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
                     "data",
-                    List(Box::new(Field::new(
-                        "data",
-                        mode.map_or(DataType::UInt8, |m| m.get_dtype()),
-                    ))),
+                    List(Box::new(mode.map_or(DataType::UInt8, |m| m.get_dtype()))),
                 ),
                 Field::new("channel", UInt16),
                 Field::new("height", UInt32),
@@ -216,18 +210,15 @@ impl DataType {
                 Field::new("mode", UInt8),
             ]),
             FixedShapeImage(mode, height, width) => FixedSizeList(
-                Box::new(Field::new("data", mode.get_dtype())),
+                Box::new(mode.get_dtype()),
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
             Tensor(dtype) => Struct(vec![
-                Field::new("data", List(Box::new(Field::new("data", *dtype.clone())))),
-                Field::new(
-                    "shape",
-                    List(Box::new(Field::new("shape", DataType::UInt64))),
-                ),
+                Field::new("data", List(Box::new(*dtype.clone()))),
+                Field::new("shape", List(Box::new(DataType::UInt64))),
             ]),
             FixedShapeTensor(dtype, shape) => FixedSizeList(
-                Box::new(Field::new("data", *dtype.clone())),
+                Box::new(*dtype.clone()),
                 usize::try_from(shape.iter().product::<u64>()).unwrap(),
             ),
             _ => {
@@ -373,8 +364,8 @@ impl DataType {
     #[inline]
     pub fn get_exploded_dtype(&self) -> DaftResult<&DataType> {
         match self {
-            DataType::List(child_field) | DataType::FixedSizeList(child_field, _) => {
-                Ok(&child_field.dtype)
+            DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => {
+                Ok(child_dtype.as_ref())
             }
             _ => Err(DaftError::ValueError(format!(
                 "Datatype cannot be exploded: {self}"
@@ -422,10 +413,10 @@ impl From<&ArrowType> for DataType {
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
             ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
-                DataType::List(Box::new(field.as_ref().into()))
+                DataType::List(Box::new(field.as_ref().data_type().into()))
             }
             ArrowType::FixedSizeList(field, size) => {
-                DataType::FixedSizeList(Box::new(field.as_ref().into()), *size)
+                DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
@@ -467,9 +458,9 @@ impl Display for DataType {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            DataType::List(nested) => write!(f, "List[{}:{}]", nested.name, nested.dtype),
+            DataType::List(nested) => write!(f, "List[{}]", nested),
             DataType::FixedSizeList(inner, size) => {
-                write!(f, "FixedSizeList[{}; {}]", inner.dtype, size)
+                write!(f, "FixedSizeList[{}; {}]", inner, size)
             }
             DataType::Struct(fields) => {
                 let fields: String = fields
@@ -480,7 +471,7 @@ impl Display for DataType {
                 write!(f, "Struct[{fields}]")
             }
             DataType::Embedding(inner, size) => {
-                write!(f, "Embedding[{}; {}]", inner.dtype, size)
+                write!(f, "Embedding[{}; {}]", inner, size)
             }
             DataType::Image(mode) => {
                 write!(

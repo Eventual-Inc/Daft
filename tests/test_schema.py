@@ -146,7 +146,7 @@ def test_schema_from_pyarrow():
         [
             ("int", DataType.int64()),
             ("str", DataType.string()),
-            ("list", DataType.list("item", DataType.int64())),
+            ("list", DataType.list(DataType.int64())),
         ]
     )
 

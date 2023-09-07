@@ -87,7 +87,7 @@ impl Field {
         if self.dtype.is_python() {
             return Ok(self.clone());
         }
-        let list_dtype = DataType::List(Box::new(self.clone()));
+        let list_dtype = DataType::List(Box::new(self.dtype.clone()));
         Ok(Self {
             name: self.name.clone(),
             dtype: list_dtype,

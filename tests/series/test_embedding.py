@@ -13,7 +13,7 @@ def test_embedding_arrow_round_trip():
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.embedding("arr", DataType.int32(), 3)
+    target_dtype = DataType.embedding(DataType.int32(), 3)
 
     t = s.cast(target_dtype)
 

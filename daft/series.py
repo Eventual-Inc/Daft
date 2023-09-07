@@ -68,7 +68,7 @@ class Series:
                 storage_series = Series.from_arrow(array.storage, name=name)
                 series = storage_series.cast(
                     DataType.fixed_size_list(
-                        "item", DataType.from_arrow_type(array.type.scalar_type), int(np.prod(array.type.shape))
+                        DataType.from_arrow_type(array.type.scalar_type), int(np.prod(array.type.shape))
                     )
                 )
                 return series.cast(DataType.from_arrow_type(array.type))

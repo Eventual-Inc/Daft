@@ -93,9 +93,8 @@ impl FullNull for FixedSizeListArray {
         let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
 
         match dtype {
-            DataType::FixedSizeList(child, size) => {
-                let flat_child =
-                    Series::full_null(child.name.as_str(), &child.dtype, length * size);
+            DataType::FixedSizeList(child_dtype, size) => {
+                let flat_child = Series::full_null("item", child_dtype, length * size);
                 Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
             }
             _ => panic!(
@@ -107,9 +106,9 @@ impl FullNull for FixedSizeListArray {
 
     fn empty(name: &str, dtype: &DataType) -> Self {
         match dtype {
-            DataType::FixedSizeList(child, _) => {
+            DataType::FixedSizeList(child_dtype, _) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = Series::empty(child.name.as_str(), &child.dtype);
+                let empty_child = Series::empty("item", child_dtype.as_ref());
                 Self::new(field, empty_child, None)
             }
             _ => panic!(
@@ -125,8 +124,8 @@ impl FullNull for ListArray {
         let validity = arrow2::bitmap::Bitmap::from_iter(repeat(false).take(length));
 
         match dtype {
-            DataType::List(child) => {
-                let empty_flat_child = Series::empty(child.name.as_str(), &child.dtype);
+            DataType::List(child_dtype) => {
+                let empty_flat_child = Series::empty("list", child_dtype.as_ref());
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
@@ -143,9 +142,9 @@ impl FullNull for ListArray {
 
     fn empty(name: &str, dtype: &DataType) -> Self {
         match dtype {
-            DataType::List(child) => {
+            DataType::List(child_dtype) => {
                 let field = Field::new(name, dtype.clone());
-                let empty_child = Series::empty(child.name.as_str(), &child.dtype);
+                let empty_child = Series::empty("list", child_dtype.as_ref());
                 Self::new(field, empty_child, OffsetsBuffer::default(), None)
             }
             _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
@@ -198,7 +197,7 @@ mod tests {
     fn create_fixed_size_list_full_null() -> DaftResult<()> {
         let arr = FixedSizeListArray::full_null(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(DataType::Int64), 3),
             3,
         );
         assert_eq!(arr.len(), 3);
@@ -226,7 +225,7 @@ mod tests {
     fn create_fixed_size_list_full_null_empty() -> DaftResult<()> {
         let arr = FixedSizeListArray::full_null(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(DataType::Int64), 3),
             0,
         );
         assert_eq!(arr.len(), 0);
@@ -248,7 +247,7 @@ mod tests {
     fn create_fixed_size_list_empty() -> DaftResult<()> {
         let arr = FixedSizeListArray::empty(
             "foo",
-            &DataType::FixedSizeList(Box::new(Field::new("bar", DataType::Int64)), 3),
+            &DataType::FixedSizeList(Box::new(DataType::Int64), 3),
         );
         assert_eq!(arr.len(), 0);
         Ok(())

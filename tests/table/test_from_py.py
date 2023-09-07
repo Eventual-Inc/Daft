@@ -40,7 +40,7 @@ PYTHON_INFERRED_TYPES = {
     "str": DataType.string(),
     "binary": DataType.binary(),
     "date": DataType.date(),
-    "list": DataType.list("item", DataType.int64()),
+    "list": DataType.list(DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
     "empty_struct": DataType.struct({"": DataType.null()}),
     "null": DataType.null(),
@@ -100,8 +100,8 @@ ARROW_TYPE_ARRAYS = {
             ],
             pa.struct(
                 {
-                    "data": pa.large_list(pa.field("data", pa.int64())),
-                    "shape": pa.large_list(pa.field("shape", pa.uint64())),
+                    "data": pa.large_list(pa.field("item", pa.int64())),
+                    "shape": pa.large_list(pa.field("item", pa.uint64())),
                 }
             ),
         ),
@@ -508,7 +508,7 @@ def test_nested_list_dates(levels: int) -> None:
     expected_dtype = DataType.date()
     expected_arrow_type = pa.date32()
     for _ in range(levels):
-        expected_dtype = DataType.list("item", expected_dtype)
+        expected_dtype = DataType.list(expected_dtype)
         expected_arrow_type = pa.large_list(pa.field("item", expected_arrow_type))
 
     assert dtype == expected_dtype
@@ -528,7 +528,7 @@ def test_nested_fixed_size_list_dates(levels: int) -> None:
     expected_dtype = DataType.date()
     expected_arrow_type = pa.date32()
     for _ in range(levels):
-        expected_dtype = DataType.fixed_size_list("item", expected_dtype, 2)
+        expected_dtype = DataType.fixed_size_list(expected_dtype, 2)
         expected_arrow_type = pa.list_(expected_arrow_type, 2)
 
     pa_data = pa.array(data, type=expected_arrow_type)

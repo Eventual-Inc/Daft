@@ -427,7 +427,7 @@ def test_global_list_aggs(dtype) -> None:
     daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
     result = daft_table.eval_expression_list([col("input").alias("list")._agg_list()])
-    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+    assert result.get_column("list").datatype() == DataType.list(dtype)
     assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
 
 
@@ -452,7 +452,7 @@ def test_grouped_list_aggs(dtype) -> None:
     daft_table = Table.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
     result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
-    assert result.get_column("list").datatype() == DataType.list("list", dtype)
+    assert result.get_column("list").datatype() == DataType.list(dtype)
 
     input_as_dtype = daft_table.get_column("input").to_pylist()
     expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
@@ -478,7 +478,7 @@ def test_list_aggs_empty() -> None:
         [col("col_A").cast(DataType.int32()).alias("list")._agg_list()],
         group_by=[col("col_B")],
     )
-    assert daft_table.get_column("list").datatype() == DataType.list("list", DataType.int32())
+    assert daft_table.get_column("list").datatype() == DataType.list(DataType.int32())
     res = daft_table.to_pydict()
 
     assert res == {"col_B": [], "list": []}
@@ -498,11 +498,9 @@ def test_global_concat_aggs(dtype, with_null) -> None:
     if with_null:
         input += [None]
 
-    daft_table = Table.from_pydict({"input": input}).eval_expression_list(
-        [col("input").cast(DataType.list("item", dtype))]
-    )
+    daft_table = Table.from_pydict({"input": input}).eval_expression_list([col("input").cast(DataType.list(dtype))])
     concated = daft_table.agg([col("input").alias("concat")._agg_concat()])
-    assert concated.get_column("concat").datatype() == DataType.list("item", dtype)
+    assert concated.get_column("concat").datatype() == DataType.list(dtype)
 
     input_as_dtype = daft_table.get_column("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
@@ -537,12 +535,12 @@ def test_grouped_concat_aggs(dtype) -> None:
     input = [[x] for x in input] + [None]
     groups = [1, 2, 3, 4, 5, 6, 7]
     daft_table = Table.from_pydict({"groups": groups, "input": input}).eval_expression_list(
-        [col("groups"), col("input").cast(DataType.list("item", dtype))]
+        [col("groups"), col("input").cast(DataType.list(dtype))]
     )
     concat_grouped = daft_table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups") % 2]).sort(
         [col("groups")]
     )
-    assert concat_grouped.get_column("concat").datatype() == DataType.list("item", dtype)
+    assert concat_grouped.get_column("concat").datatype() == DataType.list(dtype)
 
     input_as_dtype = daft_table.get_column("input").to_pylist()
     # We should ignore Null Array elements when performing the concat agg
@@ -580,11 +578,11 @@ def test_concat_aggs_empty() -> None:
 
     daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
-        [col("col_A").cast(DataType.list("list", DataType.int32())).alias("concat")._agg_concat()],
+        [col("col_A").cast(DataType.list(DataType.int32())).alias("concat")._agg_concat()],
         group_by=[col("col_B")],
     )
 
-    assert daft_table.get_column("concat").datatype() == DataType.list("list", DataType.int32())
+    assert daft_table.get_column("concat").datatype() == DataType.list(DataType.int32())
     res = daft_table.to_pydict()
 
     assert res == {"col_B": [], "concat": []}

@@ -38,14 +38,14 @@ where
 impl FromArrow for FixedSizeListArray {
     fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         match (&field.dtype, arrow_arr.data_type()) {
-            (DataType::FixedSizeList(daft_child_field, daft_size), arrow2::datatypes::DataType::FixedSizeList(_arrow_child_field, arrow_size)) => {
+            (DataType::FixedSizeList(daft_child_dtype, daft_size), arrow2::datatypes::DataType::FixedSizeList(_arrow_child_field, arrow_size)) => {
                 if daft_size != arrow_size {
                     return Err(DaftError::TypeError(format!("Attempting to create Daft FixedSizeListArray with element length {} from Arrow FixedSizeList array with element length {}", daft_size, arrow_size)));
                 }
 
                 let arrow_arr = arrow_arr.as_ref().as_any().downcast_ref::<arrow2::array::FixedSizeListArray>().unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = Series::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?;
+                let child_series = Series::from_arrow(&Field::new("item", daft_child_dtype.as_ref().clone()), arrow_child_array.clone())?;
                 Ok(FixedSizeListArray::new(
                     field.clone(),
                     child_series,
@@ -60,13 +60,13 @@ impl FromArrow for FixedSizeListArray {
 impl FromArrow for ListArray {
     fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         match (&field.dtype, arrow_arr.data_type()) {
-            (DataType::List(daft_child_field), arrow2::datatypes::DataType::List(arrow_child_field)) |
-            (DataType::List(daft_child_field), arrow2::datatypes::DataType::LargeList(arrow_child_field))
+            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::List(arrow_child_field)) |
+            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::LargeList(arrow_child_field))
             => {
                 let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()));
                 let arrow_arr = arrow_arr.as_any().downcast_ref::<arrow2::array::ListArray<i64>>().unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = Series::from_arrow(daft_child_field.as_ref(), arrow_child_array.clone())?;
+                let child_series = Series::from_arrow(&Field::new("list", daft_child_dtype.as_ref().clone()), arrow_child_array.clone())?;
                 Ok(ListArray::new(
                     field.clone(),
                     child_series,

@@ -25,10 +25,10 @@ impl<'a> FixedSizeListGrowable<'a> {
         capacity: usize,
     ) -> Self {
         match dtype {
-            DataType::FixedSizeList(child_field, element_fixed_len) => {
+            DataType::FixedSizeList(child_dtype, element_fixed_len) => {
                 let child_growable = make_growable(
-                    child_field.name.as_str(),
-                    &child_field.dtype,
+                    "item",
+                    child_dtype.as_ref(),
                     arrays.iter().map(|a| &a.flat_child).collect::<Vec<_>>(),
                     use_validity,
                     capacity * element_fixed_len,

@@ -132,7 +132,7 @@ def test_series_cast_python_to_list(dtype) -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2]), (1, 2), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.list("arr", DataType.from_arrow_type(dtype))
+    target_dtype = DataType.list(DataType.from_arrow_type(dtype))
 
     t = s.cast(target_dtype)
 
@@ -153,7 +153,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.fixed_size_list("arr", DataType.from_arrow_type(dtype), 3)
+    target_dtype = DataType.fixed_size_list(DataType.from_arrow_type(dtype), 3)
 
     t = s.cast(target_dtype)
 
@@ -174,7 +174,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     data = [[1, 2, 3], np.arange(3), ["1", "2", "3"], [1, "2", 3.0], pd.Series([1.1, 2, 3]), (1, 2, 3), None]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.embedding("arr", DataType.from_arrow_type(dtype), 3)
+    target_dtype = DataType.embedding(DataType.from_arrow_type(dtype), 3)
 
     t = s.cast(target_dtype)
 
@@ -471,7 +471,7 @@ def test_series_cast_embedding_to_fixed_shape_tensor() -> None:
     ]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.embedding("arr", DataType.uint8(), 4)
+    target_dtype = DataType.embedding(DataType.uint8(), 4)
 
     t = s.cast(target_dtype)
 
@@ -498,7 +498,7 @@ def test_series_cast_embedding_to_tensor() -> None:
     ]
     s = Series.from_pylist(data, pyobj="force")
 
-    target_dtype = DataType.embedding("arr", DataType.uint8(), 4)
+    target_dtype = DataType.embedding(DataType.uint8(), 4)
 
     t = s.cast(target_dtype)
 

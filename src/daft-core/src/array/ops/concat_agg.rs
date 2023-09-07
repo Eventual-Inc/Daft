@@ -162,10 +162,7 @@ mod test {
     fn test_list_concat_agg_all_null() -> DaftResult<()> {
         // [None, None, None]
         let list_array = ListArray::new(
-            Field::new(
-                "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
-            ),
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(vec![].iter())),
@@ -189,10 +186,7 @@ mod test {
     fn test_list_concat_agg_with_nulls() -> DaftResult<()> {
         // [[0], [1, 1], [2, None], [None], [], None, None]
         let list_array = ListArray::new(
-            Field::new(
-                "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
-            ),
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(
@@ -227,10 +221,7 @@ mod test {
         // [[0], [0, 0], [1, None], [None], [2, None], None, None, None]
         //  |  group0 |  |     group1    |  | group 2     |  group 3   |
         let list_array = ListArray::new(
-            Field::new(
-                "foo",
-                DataType::List(Box::new(Field::new("item", DataType::Int64))),
-            ),
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(

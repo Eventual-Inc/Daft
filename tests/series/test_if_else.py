@@ -186,7 +186,7 @@ def test_series_if_else_list(if_true, if_false, expected) -> None:
     if_false_series = Series.from_arrow(if_false)
     predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
     result = predicate_series.if_else(if_true_series, if_false_series)
-    assert result.datatype() == DataType.list("item", DataType.int64())
+    assert result.datatype() == DataType.list(DataType.int64())
     assert result.to_pylist() == expected
 
 
@@ -227,7 +227,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
     if_false_series = Series.from_arrow(if_false)
     predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
     result = predicate_series.if_else(if_true_series, if_false_series)
-    assert result.datatype() == DataType.fixed_size_list("item", DataType.int64(), 2)
+    assert result.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
     assert result.to_pylist() == expected
 
 

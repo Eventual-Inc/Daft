@@ -204,16 +204,16 @@ class DataType:
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
 
     @classmethod
-    def list(cls, name: str, dtype: DataType) -> DataType:
+    def list(cls, dtype: DataType) -> DataType:
         """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``
 
         Args:
             dtype: DataType of each element in the list
         """
-        return cls._from_pydatatype(PyDataType.list(name, dtype._dtype))
+        return cls._from_pydatatype(PyDataType.list(dtype._dtype))
 
     @classmethod
-    def fixed_size_list(cls, name: str, dtype: DataType, size: int) -> DataType:
+    def fixed_size_list(cls, dtype: DataType, size: int) -> DataType:
         """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype``
         and each list has length ``size``.
 
@@ -223,7 +223,7 @@ class DataType:
         """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
-        return cls._from_pydatatype(PyDataType.fixed_size_list(name, dtype._dtype, size))
+        return cls._from_pydatatype(PyDataType.fixed_size_list(dtype._dtype, size))
 
     @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
@@ -239,7 +239,7 @@ class DataType:
         return cls._from_pydatatype(PyDataType.extension(name, storage_dtype._dtype, metadata))
 
     @classmethod
-    def embedding(cls, name: str, dtype: DataType, size: int) -> DataType:
+    def embedding(cls, dtype: DataType, size: int) -> DataType:
         """Create an Embedding DataType: embeddings are fixed size arrays, where each element
         in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
 
@@ -249,7 +249,7 @@ class DataType:
         """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
-        return cls._from_pydatatype(PyDataType.embedding(name, dtype._dtype, size))
+        return cls._from_pydatatype(PyDataType.embedding(dtype._dtype, size))
 
     @classmethod
     def image(
@@ -360,11 +360,11 @@ class DataType:
         elif pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
             assert isinstance(arrow_type, (pa.ListType, pa.LargeListType))
             field = arrow_type.value_field
-            return cls.list(field.name, cls.from_arrow_type(field.type))
+            return cls.list(cls.from_arrow_type(field.type))
         elif pa.types.is_fixed_size_list(arrow_type):
             assert isinstance(arrow_type, pa.FixedSizeListType)
             field = arrow_type.value_field
-            return cls.fixed_size_list(field.name, cls.from_arrow_type(field.type), arrow_type.list_size)
+            return cls.fixed_size_list(cls.from_arrow_type(field.type), arrow_type.list_size)
         elif pa.types.is_struct(arrow_type):
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]

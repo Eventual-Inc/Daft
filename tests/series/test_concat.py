@@ -53,9 +53,9 @@ def test_series_concat_list_array(chunks, fixed) -> None:
     concated = Series.concat(series)
 
     if fixed:
-        assert concated.datatype() == DataType.fixed_size_list("item", DataType.int64(), 2)
+        assert concated.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
     else:
-        assert concated.datatype() == DataType.list("item", DataType.int64())
+        assert concated.datatype() == DataType.list(DataType.int64())
     concated_list = concated.to_pylist()
 
     counter = 0
