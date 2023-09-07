@@ -23,6 +23,8 @@ def test_non_retryable_errors(retry_server_s3_config, status_code: tuple[int, st
 @pytest.mark.parametrize(
     "status_code",
     [
+        # NOTE: Certain errors are only correctly retried when the correct str code is returned in the XML response
+        # For these cases, we can pass them into our custom S3 endpoint so that it will echo it in the XML response on return
         (500, "InternalError"),
         (503, "SlowDown"),
         (504, "PLACEHOLDER_CODE - should not matter"),
