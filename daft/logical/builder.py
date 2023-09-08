@@ -56,7 +56,7 @@ class LogicalPlanBuilder(ABC):
         return self.partition_spec().num_partitions
 
     @abstractmethod
-    def pretty_print(self) -> str:
+    def pretty_print(self, simple: bool = False) -> str:
         """
         Pretty prints the current underlying logical plan.
         """

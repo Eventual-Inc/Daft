@@ -37,11 +37,14 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         # TODO(Clark): Push PartitionSpec into planner.
         return self._builder.partition_spec()
 
-    def pretty_print(self) -> str:
-        return repr(self)
+    def pretty_print(self, simple: bool = False) -> str:
+        if simple:
+            return self._builder.repr_ascii(simple=True)
+        else:
+            return repr(self)
 
     def __repr__(self) -> str:
-        return self._builder.repr_ascii()
+        return self._builder.repr_ascii(simple=False)
 
     def optimize(self) -> RustLogicalPlanBuilder:
         builder = self._builder.optimize()

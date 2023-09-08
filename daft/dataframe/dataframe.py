@@ -105,24 +105,26 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_optimized: bool = False) -> None:
-        """Prints the LogicalPlan that will be executed to produce this DataFrame.
+    def explain(self, show_optimized: bool = False, simple=False) -> None:
+        """Prints the logical plan that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
 
         Args:
             show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
+            simple (bool): Whether to only show the type of logical op for each node in the logical plan,
+                rather than showing details of how each logical op is configured.
         """
 
         if self._result_cache is not None:
             print("Result is cached and will skip computation\n")
-            print(self._builder.pretty_print())
+            print(self._builder.pretty_print(simple))
 
             print("However here is the logical plan used to produce this result:\n")
 
         builder = self.__builder
         if show_optimized:
             builder = builder.optimize()
-        print(builder.pretty_print())
+        print(builder.pretty_print(simple))
 
     def num_partitions(self) -> int:
         return self.__builder.num_partitions()

@@ -60,8 +60,8 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def partition_spec(self) -> PartitionSpec:
         return self._plan.partition_spec()
 
-    def pretty_print(self) -> str:
-        return self._plan.pretty_print()
+    def pretty_print(self, simple: bool = False) -> str:
+        return self._plan.pretty_print(simple)
 
     def optimize(self) -> PyLogicalPlanBuilder:
         from daft.internal.rule_runner import (
@@ -338,14 +338,15 @@ class LogicalPlan(TreeNode["LogicalPlan"]):
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         raise NotImplementedError()
 
-    def pretty_print(
-        self,
-    ) -> str:
+    def pretty_print(self, simple: bool = False) -> str:
         builder: list[str] = []
 
         def helper(node: LogicalPlan, depth: int = 0, index: int = 0, prefix: str = "", header: str = ""):
             children: list[LogicalPlan] = node._children()
-            obj_repr_lines = repr(node).splitlines()
+            if simple:
+                obj_repr_lines = [node.__class__.__name__]
+            else:
+                obj_repr_lines = repr(node).splitlines()
             builder.append(f"{header}{obj_repr_lines[0]}\n")
 
             if len(children) > 0:
