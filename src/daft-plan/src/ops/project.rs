@@ -56,7 +56,7 @@ impl Project {
         // Returns a new set of projection parameters
         // (a maybe new input node, and a maybe new list of projection expressions).
         let upstream_schema = input.schema();
-        let (projection, substitutions) = Self::factor_expressions(&projection, &upstream_schema);
+        let (projection, substitutions) = Self::factor_expressions(projection, &upstream_schema);
 
         // If there are substitutions to factor out,
         // create a child projection node to do the factoring.
@@ -84,7 +84,10 @@ impl Project {
         Ok((input, projection))
     }
 
-    fn factor_expressions(exprs: &[Expr], schema: &Schema) -> (Vec<Expr>, IndexMap<String, Expr>) {
+    fn factor_expressions(
+        exprs: Vec<Expr>,
+        schema: &Schema,
+    ) -> (Vec<Expr>, IndexMap<String, Expr>) {
         // Returns
         //  1. original expressions with substitutions
         //  2. substitution definitions
