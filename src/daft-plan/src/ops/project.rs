@@ -359,17 +359,16 @@ mod tests {
     /// 3: a+a as aa
     #[test]
     fn test_nested_subexpression() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let source = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ])
-        .into();
+        .build();
         let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
         let a4 = binary_op(Operator::Plus, &a2, &a2);
         let a8 = binary_op(Operator::Plus, &a4, &a4);
         let expressions = vec![a8.alias("x")];
-        let result_projection =
-            Project::try_new(source.clone().into(), expressions, Default::default())?;
+        let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
 
         let a4_colname = a4.semantic_id(&source.schema()).id;
         let a4_col = col(a4_colname.clone());
@@ -404,18 +403,17 @@ mod tests {
     /// 2. a+a as aa, a
     #[test]
     fn test_shared_subexpression() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let source = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ])
-        .into();
+        .build();
         let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
         let expressions = vec![
             a2.alias("x"),
             binary_op(Operator::Plus, &a2, &col("a")).alias("y"),
         ];
-        let result_projection =
-            Project::try_new(source.clone().into(), expressions, Default::default())?;
+        let result_projection = Project::try_new(source.clone(), expressions, Default::default())?;
 
         let a2_colname = a2.semantic_id(&source.schema()).id;
         let a2_col = col(a2_colname.clone());
@@ -441,22 +439,18 @@ mod tests {
     /// (unchanged)
     #[test]
     fn test_vacuous_subexpression() -> DaftResult<()> {
-        let source: LogicalPlan = dummy_scan_node(vec![
+        let source = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ])
-        .into();
+        .build();
         let expressions = vec![
             lit(3).alias("x"),
             lit(3).alias("y"),
             col("a").alias("w"),
             col("a").alias("z"),
         ];
-        let result_projection = Project::try_new(
-            source.clone().into(),
-            expressions.clone(),
-            Default::default(),
-        )?;
+        let result_projection = Project::try_new(source, expressions.clone(), Default::default())?;
 
         assert_eq!(result_projection.projection, expressions);
 
