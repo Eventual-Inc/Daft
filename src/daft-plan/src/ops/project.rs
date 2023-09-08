@@ -67,19 +67,16 @@ impl Project {
                 .iter()
                 .flat_map(optimization::get_required_columns)
                 .map(|colname| {
-                    substitutions.get(&colname).map_or_else(
-                        || (colname.clone(), Expr::Column(colname.clone().into())),
-                        |expr| {
-                            (
-                                colname.clone(),
-                                Expr::Alias(expr.clone().into(), colname.clone().into()),
-                            )
-                        },
+                    let expr = &substitutions[&colname];
+                    (
+                        colname.clone(),
+                        Expr::Alias(expr.clone().into(), colname.clone().into()),
                     )
                 })
                 .collect::<IndexMap<_, _>>()
                 .into_values()
                 .collect::<Vec<_>>();
+
             let plan: LogicalPlan =
                 Self::try_new(input, child_projection, resource_request.clone())?.into();
             plan.into()
@@ -101,6 +98,11 @@ impl Project {
         let mut seen_subexpressions = IndexSet::new();
         let mut subexpressions_to_cache = IndexMap::new();
 
+        // While walking, also find all column name references.
+        // If we do substitutions and create new semantic ID names,
+        // all existing names must also be converted to semantic IDs.
+        let mut column_name_substitutions = IndexMap::new();
+
         let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.iter().map(|e| e.clone().into()).collect();
         while !exprs_to_walk.is_empty() {
             exprs_to_walk = exprs_to_walk
@@ -121,6 +123,9 @@ impl Project {
                             // If previously seen, cache the expression (if it involves computation)
                             if optimization::requires_computation(expr) {
                                 subexpressions_to_cache.insert(expr_id.clone(), expr.clone());
+                            } else if let Expr::Column(..) = expr.as_ref() {
+                                column_name_substitutions
+                                    .insert(expr.semantic_id(schema), expr.clone());
                             }
                             // Stop recursing if previously seen;
                             // we only want top-level repeated subexpressions
@@ -131,27 +136,33 @@ impl Project {
                 .collect();
         }
 
-        // Then, substitute all the cached subexpressions in the original expressions.
-        let subexprs_to_replace = subexpressions_to_cache
-            .keys()
-            .cloned()
-            .collect::<IndexSet<_>>();
-        let substituted_expressions = exprs
-            .iter()
-            .map(|e| {
-                replace_column_with_semantic_id(e, &subexprs_to_replace, schema)
-                    .unwrap()
-                    .as_ref()
-                    .clone()
-            })
-            .collect::<Vec<_>>();
+        if subexpressions_to_cache.is_empty() {
+            (exprs.to_vec(), IndexMap::new())
+        } else {
+            // Then, substitute all the cached subexpressions in the original expressions.
+            let subexprs_to_replace = subexpressions_to_cache
+                .keys()
+                .chain(column_name_substitutions.keys())
+                .cloned()
+                .collect::<IndexSet<_>>();
+            let substituted_expressions = exprs
+                .iter()
+                .map(|e| {
+                    replace_column_with_semantic_id(e, &subexprs_to_replace, schema)
+                        .unwrap()
+                        .as_ref()
+                        .clone()
+                })
+                .collect::<Vec<_>>();
 
-        let substitutions = subexpressions_to_cache
-            .iter()
-            .map(|(k, v)| (k.id.as_ref().to_string(), v.as_ref().clone()))
-            .collect::<IndexMap<_, _>>();
+            let substitutions = subexpressions_to_cache
+                .iter()
+                .chain(column_name_substitutions.iter())
+                .map(|(k, v)| (k.id.as_ref().to_string(), v.as_ref().clone()))
+                .collect::<IndexMap<_, _>>();
 
-        (substituted_expressions, substitutions)
+            (substituted_expressions, substitutions)
+        }
     }
 }
 
@@ -167,7 +178,12 @@ fn replace_column_with_semantic_id(
 
     let sem_id = e.semantic_id(schema);
     if subexprs_to_replace.contains(&sem_id) {
-        Transformed::Yes(Expr::Column(sem_id.id.clone()).into())
+        let new_expr = Expr::Column(sem_id.id.clone());
+        let new_expr = match e {
+            Expr::Alias(_, name) => Expr::Alias(new_expr.into(), name.clone()),
+            _ => new_expr,
+        };
+        Transformed::Yes(new_expr.into())
     } else {
         match e {
             Expr::Column(_) | Expr::Literal(_) => Transformed::No(e.clone().into()),
@@ -295,5 +311,62 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child, subexprs_to_replace, schema)
                 .map(AggExpr::Concat, |_| e.clone())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::{datatypes::Field, DataType};
+    use daft_dsl::{binary_op, col, lit, Operator};
+
+    use crate::{ops::Project, test::dummy_scan_node, LogicalPlan};
+
+    /// Test that nested common subexpressions are correctly split
+    /// into multiple levels of projections.
+    /// e.g.
+    /// ((a+a)+(a+a))+((a+a)+(a+a)) as x
+    /// ->
+    /// 1. aaaa+aaaa as x
+    /// 2. aa+aa as aaaa
+    /// 3: a+a as aa
+    #[test]
+    fn test_recursive_subexpression() -> DaftResult<()> {
+        let source: LogicalPlan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .into();
+        let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
+        let a4 = binary_op(Operator::Plus, &a2, &a2);
+        let a8 = binary_op(Operator::Plus, &a4, &a4);
+        let expressions = vec![a8.alias("x")];
+        let result_projection =
+            Project::try_new(source.clone().into(), expressions, Default::default())?;
+
+        let a4_colname = a4.semantic_id(&source.schema()).id;
+        let a4_col = col(a4_colname.clone());
+        let expected_result_projection =
+            vec![binary_op(Operator::Plus, &a4_col, &a4_col).alias("x")];
+        assert_eq!(result_projection.projection, expected_result_projection);
+
+        let a2_colname = a2.semantic_id(&source.schema()).id;
+        let a2_col = col(a2_colname.clone());
+        let expected_subprojection =
+            vec![binary_op(Operator::Plus, &a2_col, &a2_col).alias(a4_colname.clone())];
+        let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
+            panic!()
+        };
+        assert_eq!(subprojection.projection, expected_subprojection);
+
+        let expected_third_projection = vec![a2.alias(a2_colname.clone())];
+        let LogicalPlan::Project(third_projection) = subprojection.input.as_ref() else {
+            panic!()
+        };
+        assert_eq!(third_projection.projection, expected_third_projection);
+
+        Ok(())
     }
 }
