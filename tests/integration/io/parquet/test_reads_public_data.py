@@ -202,9 +202,6 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
-)
 @pytest.mark.parametrize(
     "multithreaded_io",
     [False, True],
@@ -218,9 +215,6 @@ def test_parquet_read_table(parquet_file, public_storage_io_config, multithreade
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
-)
 @pytest.mark.parametrize(
     "multithreaded_io",
     [False, True],
@@ -257,9 +251,6 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multith
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
-)
 def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
     # This is a hack until we remove `fsspec.info`, `fsspec.glob` and `fsspec.glob` from  `daft.read_parquet`.

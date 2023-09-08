@@ -69,6 +69,7 @@ impl Source {
                 source_schema,
                 file_infos,
                 file_format_config,
+                storage_config,
             }) => {
                 res.push(format!("Source: {:?}", file_format_config.var_name()));
                 for fp in file_infos.file_paths.iter() {
@@ -76,6 +77,7 @@ impl Source {
                 }
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
+                res.push(format!("Storage config = {:?}", storage_config));
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(_) => {}

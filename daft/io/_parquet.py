@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Union
 import fsspec
 
 from daft.api_annotations import PublicAPI
-from daft.daft import FileFormatConfig, ParquetSourceConfig
+from daft.daft import (
+    FileFormatConfig,
+    NativeStorageConfig,
+    ParquetSourceConfig,
+    PythonStorageConfig,
+    StorageConfig,
+)
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
@@ -47,8 +53,11 @@ def read_parquet(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of Parquet filepaths")
 
-    parquet_config = ParquetSourceConfig(use_native_downloader=use_native_downloader, io_config=io_config)
-    file_format_config = FileFormatConfig.from_parquet_config(parquet_config)
+    file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
+    if use_native_downloader:
+        storage_config = StorageConfig.native(NativeStorageConfig(io_config))
+    else:
+        storage_config = StorageConfig.python(PythonStorageConfig(fs))
 
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config, fs=fs)
     return DataFrame(builder)

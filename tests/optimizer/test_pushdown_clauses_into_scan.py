@@ -27,7 +27,7 @@ def test_push_projection_scan_all_cols(valid_data_json_path: str, optimizer):
             predicate=df_unoptimized_scan._get_current_builder()._plan._predicate,
             columns=["sepal_length"],
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
-            fs=df_unoptimized_scan._get_current_builder()._plan._fs,
+            storage_config=df_unoptimized_scan._get_current_builder()._plan._storage_config,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
         ).to_builder()
     )
@@ -47,7 +47,7 @@ def test_push_projection_scan_all_cols_alias(valid_data_json_path: str, optimize
             predicate=df_unoptimized_scan._get_current_builder()._plan._predicate,
             columns=["sepal_length"],
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
-            fs=df_unoptimized_scan._get_current_builder()._plan._fs,
+            storage_config=df_unoptimized_scan._get_current_builder()._plan._storage_config,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
         ).to_builder()
     )
@@ -68,7 +68,7 @@ def test_push_projection_scan_some_cols_aliases(valid_data_json_path: str, optim
             predicate=df_unoptimized_scan._get_current_builder()._plan._predicate,
             columns=["sepal_length", "sepal_width"],
             file_format_config=df_unoptimized_scan._get_current_builder()._plan._file_format_config,
-            fs=df_unoptimized_scan._get_current_builder()._plan._fs,
+            storage_config=df_unoptimized_scan._get_current_builder()._plan._storage_config,
             filepaths_child=df_unoptimized_scan._get_current_builder()._plan._filepaths_child,
         ).to_builder()
     )

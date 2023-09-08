@@ -10,6 +10,7 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
@@ -17,6 +18,13 @@ from daft.table import Table, schema_inference, table_io
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
+
+
+def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
+    if use_native_downloader:
+        return StorageConfig.native(NativeStorageConfig(None))
+    else:
+        return StorageConfig.python(PythonStorageConfig(None))
 
 
 def test_read_input(tmpdir):
@@ -60,11 +68,11 @@ def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write
 )
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
-
     # HACK: Pyarrow 13 changed their schema parsing behavior so we receive DataType.list(..) instead of DataType.list(..)
     # However, our native downloader still parses DataType.list(..) regardless of PyArrow version
     if PYARROW_GE_13_0_0 and not use_native_downloader and expected_dtype == DataType.list(DataType.int64()):
         expected_dtype = DataType.list(DataType.int64())
+    storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
     with _parquet_write_helper(
         pa.Table.from_pydict(
@@ -74,7 +82,7 @@ def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
             }
         )
     ) as f:
-        schema = schema_inference.from_parquet(f, use_native_downloader=use_native_downloader)
+        schema = schema_inference.from_parquet(f, storage_config=storage_config)
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
@@ -114,7 +122,8 @@ def test_parquet_read_data(data, expected_data_series, use_native_downloader):
                 "data": expected_data_series,
             }
         )
-        table = table_io.read_parquet(f, schema, use_native_downloader=use_native_downloader)
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+        table = table_io.read_parquet(f, schema, storage_config=storage_config)
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
@@ -137,8 +146,9 @@ def test_parquet_read_data_limit_rows(row_group_size, use_native_downloader):
                 "data": [1, 2],
             }
         )
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
-            f, schema, read_options=TableReadOptions(num_rows=2), use_native_downloader=use_native_downloader
+            f, schema, read_options=TableReadOptions(num_rows=2), storage_config=storage_config
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
@@ -159,8 +169,9 @@ def test_parquet_read_data_select_columns(use_native_downloader):
                 "data": [1, 2, None],
             }
         )
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
-            f, schema, read_options=TableReadOptions(column_names=["data"]), use_native_downloader=use_native_downloader
+            f, schema, read_options=TableReadOptions(column_names=["data"]), storage_config=storage_config
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
@@ -199,11 +210,12 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
-            use_native_downloader=use_native_downloader,
+            storage_config=storage_config,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
@@ -236,12 +248,13 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
         expected = Table.from_pydict(data)
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
             f,
             schema,
             read_options=TableReadOptions(column_names=schema.column_names()),
             parquet_options=TableParseParquetOptions(coerce_int96_timestamp_unit=coerce_to),
-            use_native_downloader=use_native_downloader,
+            storage_config=storage_config,
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 

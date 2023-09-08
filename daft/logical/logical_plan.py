@@ -7,8 +7,6 @@ from enum import IntEnum
 from pprint import pformat
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-import fsspec
-
 from daft.context import get_context
 from daft.daft import (
     FileFormat,
@@ -18,6 +16,7 @@ from daft.daft import (
     PartitionScheme,
     PartitionSpec,
     ResourceRequest,
+    StorageConfig,
 )
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -116,7 +115,7 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
         file_infos: FileInfos,
         schema: Schema,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig,
     ) -> PyLogicalPlanBuilder:
         file_infos_table = Table._from_pytable(file_infos.to_table())
         partition = LocalPartitionSet({0: file_infos_table})
@@ -132,7 +131,7 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
             predicate=None,
             columns=None,
             file_format_config=file_format_config,
-            fs=fs,
+            storage_config=storage_config,
             filepaths_child=filepath_plan,
             # WARNING: This is currently hardcoded to be the same number of partitions as rows!! This is because we emit
             # one partition per filepath. This will change in the future and our logic here should change accordingly.
@@ -439,7 +438,7 @@ class TabularFilesScan(UnaryNode):
         *,
         schema: Schema,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig,
         predicate: ExpressionsProjection | None = None,
         columns: list[str] | None = None,
         filepaths_child: LogicalPlan,
@@ -466,7 +465,7 @@ class TabularFilesScan(UnaryNode):
         self._column_names = columns
         self._columns = self._schema
         self._file_format_config = file_format_config
-        self._fs = fs
+        self._storage_config = storage_config
         self._limit_rows = limit_rows
 
         self._register_child(filepaths_child)
@@ -504,7 +503,7 @@ class TabularFilesScan(UnaryNode):
         return TabularFilesScan(
             schema=self.schema(),
             file_format_config=self._file_format_config,
-            fs=self._fs,
+            storage_config=self._storage_config,
             predicate=self._predicate if self._predicate is not None else None,
             columns=self._column_names,
             filepaths_child=child,
@@ -515,7 +514,7 @@ class TabularFilesScan(UnaryNode):
         return TabularFilesScan(
             schema=self.schema(),
             file_format_config=self._file_format_config,
-            fs=self._fs,
+            storage_config=self._storage_config,
             predicate=self._predicate,
             columns=self._column_names,
             filepaths_child=new_children[0],

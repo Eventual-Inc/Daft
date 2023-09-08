@@ -8,7 +8,7 @@ use crate::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{
         ExternalInfo as ExternalSourceInfo, FileFormatConfig, FileInfos as InputFileInfos,
-        SourceInfo,
+        PyStorageConfig, SourceInfo, StorageConfig,
     },
     FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler, ResourceRequest,
 };
@@ -64,14 +64,16 @@ impl LogicalPlanBuilder {
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
+        storage_config: Arc<StorageConfig>,
     ) -> DaftResult<Self> {
-        Self::table_scan_with_limit(file_infos, schema, file_format_config, None)
+        Self::table_scan_with_limit(file_infos, schema, file_format_config, storage_config, None)
     }
 
     pub fn table_scan_with_limit(
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
+        storage_config: Arc<StorageConfig>,
         limit: Option<usize>,
     ) -> DaftResult<Self> {
         let num_partitions = file_infos.len();
@@ -79,6 +81,7 @@ impl LogicalPlanBuilder {
             schema.clone(),
             file_infos.into(),
             file_format_config,
+            storage_config,
         ));
         let partition_spec =
             PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
@@ -269,11 +272,15 @@ impl PyLogicalPlanBuilder {
         file_infos: InputFileInfos,
         schema: PySchema,
         file_format_config: PyFileFormatConfig,
+        storage_config: PyStorageConfig,
     ) -> PyResult<Self> {
-        Ok(
-            LogicalPlanBuilder::table_scan(file_infos, schema.into(), file_format_config.into())?
-                .into(),
-        )
+        Ok(LogicalPlanBuilder::table_scan(
+            file_infos,
+            schema.into(),
+            file_format_config.into(),
+            storage_config.into(),
+        )?
+        .into())
     }
 
     pub fn project(

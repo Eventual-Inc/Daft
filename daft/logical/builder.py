@@ -4,8 +4,6 @@ import pathlib
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-import fsspec
-
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
@@ -14,6 +12,7 @@ from daft.daft import (
     PartitionScheme,
     PartitionSpec,
     ResourceRequest,
+    StorageConfig,
 )
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
@@ -84,7 +83,7 @@ class LogicalPlanBuilder(ABC):
         file_infos: FileInfos,
         schema: Schema,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig,
     ) -> LogicalPlanBuilder:
         pass
 

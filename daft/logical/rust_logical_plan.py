@@ -3,12 +3,10 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING
 
-import fsspec
-
 from daft import col
 from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest
+from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest, StorageConfig
 from daft.expressions.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
@@ -66,11 +64,9 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         file_infos: FileInfos,
         schema: Schema,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig,
     ) -> RustLogicalPlanBuilder:
-        if fs is not None:
-            raise ValueError("fsspec filesystems not supported for Rust query planner.")
-        builder = _LogicalPlanBuilder.table_scan(file_infos, schema._schema, file_format_config)
+        builder = _LogicalPlanBuilder.table_scan(file_infos, schema._schema, file_format_config, storage_config)
         return cls(builder)
 
     def project(

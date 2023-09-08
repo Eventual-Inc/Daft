@@ -5,7 +5,12 @@ from typing import Dict, List, Optional, Union
 import fsspec
 
 from daft.api_annotations import PublicAPI
-from daft.daft import CsvSourceConfig, FileFormatConfig
+from daft.daft import (
+    CsvSourceConfig,
+    FileFormatConfig,
+    PythonStorageConfig,
+    StorageConfig,
+)
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
@@ -52,5 +57,6 @@ def read_csv(
 
     csv_config = CsvSourceConfig(delimiter=delimiter, has_headers=has_headers)
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, fs)
+    storage_config = StorageConfig.python(PythonStorageConfig(fs))
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)
