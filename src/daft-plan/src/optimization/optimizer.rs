@@ -307,7 +307,7 @@ mod tests {
     use daft_dsl::{col, lit};
 
     use crate::{
-        ops::{Filter, Project},
+        logical_ops::{Filter, Project},
         optimization::rules::{ApplyOrder, OptimizerRule, Transformed},
         test::dummy_scan_node,
         LogicalPlan,

@@ -6,7 +6,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use indexmap::IndexSet;
 use snafu::Snafu;
 
-use crate::{display::TreeDisplay, ops::*, PartitionScheme, PartitionSpec};
+use crate::{display::TreeDisplay, logical_ops::*, PartitionScheme, PartitionSpec};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LogicalPlan {

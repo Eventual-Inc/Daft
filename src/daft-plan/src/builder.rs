@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
+    logical_ops,
     logical_plan::LogicalPlan,
-    ops,
     optimization::Optimizer,
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
@@ -50,7 +50,7 @@ impl LogicalPlanBuilder {
             partition_key.into(),
             cache_entry,
         ));
-        let logical_plan: LogicalPlan = ops::Source::new(
+        let logical_plan: LogicalPlan = logical_ops::Source::new(
             schema.clone(),
             source_info.into(),
             partition_spec.clone().into(),
@@ -85,7 +85,7 @@ impl LogicalPlanBuilder {
         ));
         let partition_spec =
             PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
-        let logical_plan: LogicalPlan = ops::Source::new(
+        let logical_plan: LogicalPlan = logical_ops::Source::new(
             schema.clone(),
             source_info.into(),
             partition_spec.into(),
@@ -101,29 +101,30 @@ impl LogicalPlanBuilder {
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Project::try_new(self.plan.clone(), projection, resource_request)?.into();
+            logical_ops::Project::try_new(self.plan.clone(), projection, resource_request)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn filter(&self, predicate: Expr) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
+        let logical_plan: LogicalPlan =
+            logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn limit(&self, limit: i64) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit).into();
+        let logical_plan: LogicalPlan = logical_ops::Limit::new(self.plan.clone(), limit).into();
         Ok(logical_plan.into())
     }
 
     pub fn explode(&self, to_explode: Vec<Expr>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
+            logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn sort(&self, sort_by: Vec<Expr>, descending: Vec<bool>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
+            logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
         Ok(logical_plan.into())
     }
 
@@ -134,18 +135,19 @@ impl LogicalPlanBuilder {
         scheme: PartitionScheme,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme).into();
+            logical_ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme)
+                .into();
         Ok(logical_plan.into())
     }
 
     pub fn coalesce(&self, num_partitions: usize) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Coalesce::new(self.plan.clone(), num_partitions).into();
+            logical_ops::Coalesce::new(self.plan.clone(), num_partitions).into();
         Ok(logical_plan.into())
     }
 
     pub fn distinct(&self) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
+        let logical_plan: LogicalPlan = logical_ops::Distinct::new(self.plan.clone()).into();
         Ok(logical_plan.into())
     }
 
@@ -161,7 +163,7 @@ impl LogicalPlanBuilder {
             .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
         let logical_plan: LogicalPlan =
-            ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
+            logical_ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -172,7 +174,7 @@ impl LogicalPlanBuilder {
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Join::try_new(
+        let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
             other.plan.clone(),
             left_on,
@@ -185,7 +187,7 @@ impl LogicalPlanBuilder {
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
+            logical_ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
         Ok(logical_plan.into())
     }
 
@@ -203,7 +205,7 @@ impl LogicalPlanBuilder {
             compression,
         ));
         let fields = vec![Field::new("path", DataType::Utf8)];
-        let logical_plan: LogicalPlan = ops::Sink::new(
+        let logical_plan: LogicalPlan = logical_ops::Sink::new(
             self.plan.clone(),
             Schema::new(fields)?.into(),
             sink_info.into(),

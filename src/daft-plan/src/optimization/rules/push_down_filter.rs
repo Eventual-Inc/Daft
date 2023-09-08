@@ -11,7 +11,7 @@ use daft_dsl::{
 };
 
 use crate::{
-    ops::{Concat, Filter, Project},
+    logical_ops::{Concat, Filter, Project},
     LogicalPlan,
 };
 
