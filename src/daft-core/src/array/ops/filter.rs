@@ -1,12 +1,17 @@
-use std::iter::repeat;
+use std::borrow::Cow;
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, StructArray},
-    datatypes::{BooleanArray, DaftArrowBackedType},
+    array::{
+        growable::{Growable, GrowableArray},
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+    },
+    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType},
+    DataType,
 };
+use arrow2::bitmap::utils::SlicesIterator;
 use common_error::DaftResult;
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, full::FullNull};
 
 impl<T> DataArray<T>
 where
@@ -72,52 +77,52 @@ impl crate::datatypes::PythonArray {
     }
 }
 
+fn generic_filter<Arr>(
+    arr: &Arr,
+    mask: &BooleanArray,
+    arr_name: &str,
+    arr_dtype: &DataType,
+) -> DaftResult<Arr>
+where
+    Arr: FullNull + Clone + GrowableArray + DaftArrayType,
+{
+    let keep_bitmap = match mask.as_arrow().validity() {
+        None => Cow::Borrowed(mask.as_arrow().values()),
+        Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+    };
+
+    let num_invalid = keep_bitmap.as_ref().unset_bits();
+    if num_invalid == 0 {
+        return Ok(arr.clone());
+    } else if num_invalid == mask.len() {
+        return Ok(Arr::empty(arr_name, arr_dtype));
+    }
+
+    let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
+    let mut growable =
+        Arr::make_growable(arr_name, arr_dtype, vec![arr], false, slice_iter.slots());
+
+    for (start_keep, len_keep) in slice_iter {
+        growable.extend(0, start_keep, len_keep);
+    }
+
+    Ok(growable.build()?.downcast::<Arr>()?.clone())
+}
+
+impl ListArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        generic_filter(self, mask, self.name(), self.data_type())
+    }
+}
+
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let size = self.fixed_element_len();
-        let expanded_filter: Vec<bool> = mask
-            .into_iter()
-            .flat_map(|pred| repeat(pred.unwrap_or(false)).take(size))
-            .collect();
-        let expanded_filter = BooleanArray::from(("", expanded_filter.as_slice()));
-        let filtered_child = self.flat_child.filter(&expanded_filter)?;
-        let filtered_validity = self.validity.as_ref().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
-                |(keep, valid)| match keep {
-                    None => None,
-                    Some(false) => None,
-                    Some(true) => Some(valid),
-                },
-            ))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            filtered_child,
-            filtered_validity,
-        ))
+        generic_filter(self, mask, self.name(), self.data_type())
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let filtered_children = self
-            .children
-            .iter()
-            .map(|s| s.filter(mask))
-            .collect::<DaftResult<Vec<_>>>()?;
-        let filtered_validity = self.validity.as_ref().map(|validity| {
-            arrow2::bitmap::Bitmap::from_iter(mask.into_iter().zip(validity.iter()).filter_map(
-                |(keep, valid)| match keep {
-                    None => None,
-                    Some(false) => None,
-                    Some(true) => Some(valid),
-                },
-            ))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            filtered_children,
-            filtered_validity,
-        ))
+        generic_filter(self, mask, self.name(), self.data_type())
     }
 }

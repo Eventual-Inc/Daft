@@ -325,7 +325,7 @@ impl From<PySeries> for series::Series {
 fn infer_daft_dtype_for_sequence(
     vec_pyobj: &[PyObject],
     py: pyo3::Python,
-    name: &str,
+    _name: &str,
 ) -> PyResult<Option<DataType>> {
     let py_pil_image_type = py
         .import(pyo3::intern!(py, "PIL.Image"))
@@ -373,7 +373,7 @@ fn infer_daft_dtype_for_sequence(
             let inferred_inner_dtype = from_numpy_dtype.call1((np_dtype,)).map(|dt| dt.getattr(pyo3::intern!(py, "_dtype")).unwrap().extract::<PyDataType>().unwrap().dtype);
             let shape: Vec<u64> = obj.getattr(pyo3::intern!(py, "shape"))?.extract()?;
             let inferred_dtype = match inferred_inner_dtype {
-                Ok(inferred_inner_dtype) if shape.len() == 1 => Some(DataType::List(Box::new(Field::new(name, inferred_inner_dtype)))),
+                Ok(inferred_inner_dtype) if shape.len() == 1 => Some(DataType::List(Box::new(inferred_inner_dtype))),
                 Ok(inferred_inner_dtype) if shape.len() > 1 => Some(DataType::Tensor(Box::new(inferred_inner_dtype))),
                 _ => None,
             };

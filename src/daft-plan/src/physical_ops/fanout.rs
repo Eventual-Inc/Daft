@@ -7,57 +7,57 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutRandom {
-    pub num_partitions: usize,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub num_partitions: usize,
 }
 
 impl FanoutRandom {
-    pub(crate) fn new(num_partitions: usize, input: Arc<PhysicalPlan>) -> Self {
+    pub(crate) fn new(input: Arc<PhysicalPlan>, num_partitions: usize) -> Self {
         Self {
-            num_partitions,
             input,
+            num_partitions,
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutByHash {
-    pub num_partitions: usize,
-    pub partition_by: Vec<Expr>,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub num_partitions: usize,
+    pub partition_by: Vec<Expr>,
 }
 
 impl FanoutByHash {
     pub(crate) fn new(
+        input: Arc<PhysicalPlan>,
         num_partitions: usize,
         partition_by: Vec<Expr>,
-        input: Arc<PhysicalPlan>,
     ) -> Self {
         Self {
+            input,
             num_partitions,
             partition_by,
-            input,
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FanoutByRange {
-    pub num_partitions: usize,
-    pub sort_by: Vec<Expr>,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub num_partitions: usize,
+    pub sort_by: Vec<Expr>,
 }
 
 impl FanoutByRange {
     #[allow(dead_code)]
-    pub(crate) fn new(num_partitions: usize, sort_by: Vec<Expr>, input: Arc<PhysicalPlan>) -> Self {
+    pub(crate) fn new(input: Arc<PhysicalPlan>, num_partitions: usize, sort_by: Vec<Expr>) -> Self {
         Self {
+            input,
             num_partitions,
             sort_by,
-            input,
         }
     }
 }

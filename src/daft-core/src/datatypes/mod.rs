@@ -8,8 +8,8 @@ mod time_unit;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use crate::array::StructArray;
 pub use crate::array::{DataArray, FixedSizeListArray};
+use crate::array::{ListArray, StructArray};
 use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
@@ -164,11 +164,11 @@ impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
-impl_daft_arrow_datatype!(ListType, Unknown);
 impl_daft_arrow_datatype!(ExtensionType, Unknown);
 
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
+impl_nested_datatype!(ListType, ListArray);
 
 impl_daft_logical_data_array_datatype!(Decimal128Type, Unknown, Int128Type);
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
@@ -325,7 +325,6 @@ pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
-pub type ListArray = DataArray<ListType>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 
 #[cfg(feature = "python")]

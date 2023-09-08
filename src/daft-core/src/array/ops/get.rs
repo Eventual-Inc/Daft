@@ -1,9 +1,9 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray},
+    array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, TimestampArray},
-        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, ListArray,
-        NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, NullArray,
+        Utf8Array,
     },
     Series,
 };
@@ -64,7 +64,6 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 impl_array_arrow_get!(Utf8Array, &str);
 impl_array_arrow_get!(BooleanArray, bool);
 impl_array_arrow_get!(BinaryArray, &[u8]);
-impl_array_arrow_get!(ListArray, Box<dyn arrow2::array::Array>);
 impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(DurationArray, i64);
@@ -121,27 +120,6 @@ impl crate::datatypes::PythonArray {
     }
 }
 
-// impl ImageArray {
-//     #[inline]
-//     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::array::Array>> {
-//         if idx >= self.len() {
-//             panic!("Out of bounds: {} vs len: {}", idx, self.len())
-//         }
-//         let arrow_array = self.as_arrow();
-//         let is_valid = arrow_array
-//             .validity()
-//             .map_or(true, |validity| validity.get_bit(idx));
-//         if is_valid {
-//             let data_array = arrow_array.values()[0]
-//                 .as_any()
-//                 .downcast_ref::<arrow2::array::ListArray<i64>>()?;
-//             Some(unsafe { data_array.value_unchecked(idx) })
-//         } else {
-//             None
-//         }
-//     }
-// }
-
 impl FixedSizeListArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
@@ -162,6 +140,22 @@ impl FixedSizeListArray {
     }
 }
 
+impl ListArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        if idx >= self.len() {
+            panic!("Out of bounds: {} vs len: {}", idx, self.len())
+        }
+        let valid = self.is_valid(idx);
+        if valid {
+            let (start, end) = self.offsets().start_end(idx);
+            Some(self.flat_child.slice(start, end).unwrap())
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
@@ -174,10 +168,7 @@ mod tests {
 
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
-        let field = Field::new(
-            "foo",
-            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
-        );
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let validity = None;
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
@@ -207,10 +198,7 @@ mod tests {
 
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
-        let field = Field::new(
-            "foo",
-            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
-        );
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
         let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));

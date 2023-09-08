@@ -9,24 +9,23 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
+    // Upstream node.
+    pub input: Arc<LogicalPlan>,
     pub schema: SchemaRef,
     /// Information about the sink data location.
     pub sink_info: Arc<SinkInfo>,
-
-    // Upstream node.
-    pub input: Arc<LogicalPlan>,
 }
 
 impl Sink {
     pub(crate) fn new(
+        input: Arc<LogicalPlan>,
         schema: SchemaRef,
         sink_info: Arc<SinkInfo>,
-        input: Arc<LogicalPlan>,
     ) -> Self {
         Self {
+            input,
             schema,
             sink_info,
-            input,
         }
     }
 

@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Concat {
-    pub other: Arc<PhysicalPlan>,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub other: Arc<PhysicalPlan>,
 }
 
 impl Concat {
-    pub(crate) fn new(other: Arc<PhysicalPlan>, input: Arc<PhysicalPlan>) -> Self {
-        Self { other, input }
+    pub(crate) fn new(input: Arc<PhysicalPlan>, other: Arc<PhysicalPlan>) -> Self {
+        Self { input, other }
     }
 }

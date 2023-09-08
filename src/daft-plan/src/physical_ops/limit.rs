@@ -5,18 +5,18 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Limit {
-    pub limit: i64,
-    pub num_partitions: usize,
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
+    pub limit: i64,
+    pub num_partitions: usize,
 }
 
 impl Limit {
-    pub(crate) fn new(limit: i64, num_partitions: usize, input: Arc<PhysicalPlan>) -> Self {
+    pub(crate) fn new(input: Arc<PhysicalPlan>, limit: i64, num_partitions: usize) -> Self {
         Self {
+            input,
             limit,
             num_partitions,
-            input,
         }
     }
 }

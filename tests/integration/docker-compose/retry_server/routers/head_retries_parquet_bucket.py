@@ -9,7 +9,7 @@ from ..utils.parquet_generation import generate_parquet_file
 from ..utils.responses import get_response
 
 BUCKET_NAME = "head-retries-parquet-bucket"
-OBJECT_KEY_URL = "/{status_code}/{num_errors}/{item_id}"
+OBJECT_KEY_URL = "/{status_code}/{status_code_str}/{num_errors}/{item_id}"
 MOCK_PARQUET_DATA_PATH = generate_parquet_file()
 
 ITEM_ID_TO_NUM_RETRIES: dict[str, int] = {}
@@ -19,7 +19,9 @@ app = FastAPI()
 
 
 @app.head(OBJECT_KEY_URL)
-async def retryable_bucket_head(request: Request, status_code: int, num_errors: int, item_id: str):
+async def retryable_bucket_head(
+    request: Request, status_code: int, status_code_str: str, num_errors: int, item_id: str
+):
     """Reading of Parquet starts with a head request, which potentially must be retried as well"""
     key = item_id
     if key not in ITEM_ID_TO_NUM_RETRIES:
@@ -27,7 +29,7 @@ async def retryable_bucket_head(request: Request, status_code: int, num_errors: 
     else:
         ITEM_ID_TO_NUM_RETRIES[key] += 1
     if ITEM_ID_TO_NUM_RETRIES[key] <= num_errors:
-        return get_response(request.url, status_code)
+        return get_response(request.url, status_code, status_code_str)
 
     return Response(
         headers={
@@ -41,6 +43,7 @@ async def retryable_bucket_head(request: Request, status_code: int, num_errors: 
 @app.get(OBJECT_KEY_URL)
 async def bucket_get(
     status_code: int,
+    status_code_str: str,
     num_errors: int,
     item_id: str,
     range: Annotated[str, Header()],

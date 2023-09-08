@@ -59,7 +59,7 @@ def _json_write_helper(data: dict[str, list[Any]]):
         (True, DataType.bool()),
         (None, DataType.null()),
         ({"foo": 1}, DataType.struct({"foo": DataType.int64()})),
-        ([1, None, 2], DataType.list("item", DataType.int64())),
+        ([1, None, 2], DataType.list(DataType.int64())),
     ],
 )
 def test_json_infer_schema(data, expected_dtype):

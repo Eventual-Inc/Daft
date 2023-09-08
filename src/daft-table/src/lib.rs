@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
-use daft_core::with_match_daft_types;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;
@@ -73,9 +72,7 @@ impl Table {
             Some(schema) => {
                 let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
                 for (field_name, field) in schema.fields.iter() {
-                    let series = with_match_daft_types!(&field.dtype, |$T| {
-                        <$T as DaftDataType>::ArrayType::empty(field_name, &field.dtype).into_series()
-                    });
+                    let series = Series::empty(field_name, &field.dtype);
                     columns.push(series)
                 }
                 Ok(Table { schema, columns })

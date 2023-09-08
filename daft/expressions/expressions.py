@@ -800,6 +800,6 @@ class ExpressionImageNamespace(ExpressionNamespace):
                 raise ValueError(
                     f"Expected `bbox` to be either a tuple of 4 ints or an Expression but received: {bbox}"
                 )
-            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list("", DataType.uint64(), 4))
+            bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))

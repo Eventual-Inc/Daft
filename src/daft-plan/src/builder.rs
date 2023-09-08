@@ -1,29 +1,34 @@
 use std::sync::Arc;
 
-use crate::{logical_plan::LogicalPlan, optimization::Optimizer, ResourceRequest};
+use crate::{
+    logical_plan::LogicalPlan,
+    ops,
+    optimization::Optimizer,
+    planner::plan,
+    sink_info::{OutputFileInfo, SinkInfo},
+    source_info::{
+        ExternalInfo as ExternalSourceInfo, FileFormatConfig, FileInfos as InputFileInfos,
+        SourceInfo,
+    },
+    FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler, ResourceRequest,
+};
+use common_error::{DaftError, DaftResult};
+use daft_core::schema::SchemaRef;
+use daft_core::{datatypes::Field, schema::Schema, DataType};
+use daft_dsl::Expr;
 
 #[cfg(feature = "python")]
 use {
-    crate::{
-        ops,
-        planner::plan,
-        sink_info::{OutputFileInfo, SinkInfo},
-        source_info::{
-            ExternalInfo as ExternalSourceInfo, FileInfos as InputFileInfos, InMemoryInfo,
-            PyFileFormatConfig, SourceInfo,
-        },
-        FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler,
-    },
-    daft_core::{datatypes::Field, python::schema::PySchema, schema::Schema, DataType},
-    daft_dsl::{python::PyExpr, Expr},
-    pyo3::{exceptions::PyValueError, prelude::*},
+    crate::source_info::{InMemoryInfo, PyFileFormatConfig},
+    daft_core::python::schema::PySchema,
+    daft_dsl::python::PyExpr,
+    pyo3::prelude::*,
 };
 
-#[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
-    plan: Arc<LogicalPlan>,
+    pub plan: Arc<LogicalPlan>,
 }
 
 impl LogicalPlanBuilder {
@@ -32,47 +37,56 @@ impl LogicalPlanBuilder {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
 impl LogicalPlanBuilder {
-    #[staticmethod]
+    #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: &PyAny,
-        schema: &PySchema,
-        partition_spec: &PartitionSpec,
-    ) -> PyResult<LogicalPlanBuilder> {
+        cache_entry: PyObject,
+        schema: Arc<Schema>,
+        partition_spec: PartitionSpec,
+    ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
-            schema.schema.clone(),
+            schema.clone(),
             partition_key.into(),
-            cache_entry.to_object(cache_entry.py()),
+            cache_entry,
         ));
         let logical_plan: LogicalPlan = ops::Source::new(
-            schema.schema.clone(),
+            schema.clone(),
             source_info.into(),
             partition_spec.clone().into(),
+            None,
         )
         .into();
         Ok(logical_plan.into())
     }
 
-    #[staticmethod]
     pub fn table_scan(
         file_infos: InputFileInfos,
-        schema: &PySchema,
-        file_format_config: PyFileFormatConfig,
-    ) -> PyResult<LogicalPlanBuilder> {
+        schema: Arc<Schema>,
+        file_format_config: Arc<FileFormatConfig>,
+    ) -> DaftResult<Self> {
+        Self::table_scan_with_limit(file_infos, schema, file_format_config, None)
+    }
+
+    pub fn table_scan_with_limit(
+        file_infos: InputFileInfos,
+        schema: Arc<Schema>,
+        file_format_config: Arc<FileFormatConfig>,
+        limit: Option<usize>,
+    ) -> DaftResult<Self> {
         let num_partitions = file_infos.len();
         let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
-            schema.schema.clone(),
+            schema.clone(),
             file_infos.into(),
-            file_format_config.into(),
+            file_format_config,
         ));
-        let partition_spec = PartitionSpec::new(PartitionScheme::Unknown, num_partitions, None);
+        let partition_spec =
+            PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
         let logical_plan: LogicalPlan = ops::Source::new(
-            schema.schema.clone(),
+            schema.clone(),
             source_info.into(),
             partition_spec.into(),
+            limit,
         )
         .into();
         Ok(logical_plan.into())
@@ -80,134 +94,93 @@ impl LogicalPlanBuilder {
 
     pub fn project(
         &self,
-        projection: Vec<PyExpr>,
+        projection: Vec<Expr>,
         resource_request: ResourceRequest,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let projection_exprs = projection
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Project::try_new(self.plan.clone(), projection_exprs, resource_request)?.into();
+            ops::Project::try_new(self.plan.clone(), projection, resource_request)?.into();
         Ok(logical_plan.into())
     }
 
-    pub fn filter(&self, predicate: &PyExpr) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan: LogicalPlan =
-            ops::Filter::try_new(predicate.expr.clone(), self.plan.clone())?.into();
+    pub fn filter(&self, predicate: Expr) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
     }
 
-    pub fn limit(&self, limit: i64) -> PyResult<LogicalPlanBuilder> {
-        let logical_plan: LogicalPlan = ops::Limit::new(limit, self.plan.clone()).into();
+    pub fn limit(&self, limit: i64) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Limit::new(self.plan.clone(), limit).into();
         Ok(logical_plan.into())
     }
 
-    pub fn explode(&self, to_explode_pyexprs: Vec<PyExpr>) -> PyResult<LogicalPlanBuilder> {
-        let to_explode = to_explode_pyexprs
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+    pub fn explode(&self, to_explode: Vec<Expr>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
     }
 
-    pub fn sort(
-        &self,
-        sort_by: Vec<PyExpr>,
-        descending: Vec<bool>,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
+    pub fn sort(&self, sort_by: Vec<Expr>, descending: Vec<bool>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sort::try_new(sort_by_exprs, descending, self.plan.clone())?.into();
+            ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn repartition(
         &self,
         num_partitions: usize,
-        partition_by: Vec<PyExpr>,
+        partition_by: Vec<Expr>,
         scheme: PartitionScheme,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let partition_by_exprs: Vec<Expr> = partition_by
-            .iter()
-            .map(|expr| expr.clone().into())
-            .collect();
-        let logical_plan: LogicalPlan = ops::Repartition::new(
-            num_partitions,
-            partition_by_exprs,
-            scheme,
-            self.plan.clone(),
-        )
-        .into();
-        Ok(logical_plan.into())
-    }
-
-    pub fn coalesce(&self, num_partitions: usize) -> PyResult<LogicalPlanBuilder> {
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Coalesce::new(num_partitions, self.plan.clone()).into();
+            ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme).into();
         Ok(logical_plan.into())
     }
 
-    pub fn distinct(&self) -> PyResult<LogicalPlanBuilder> {
+    pub fn coalesce(&self, num_partitions: usize) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::Coalesce::new(self.plan.clone(), num_partitions).into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn distinct(&self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Distinct::new(self.plan.clone()).into();
         Ok(logical_plan.into())
     }
 
-    pub fn aggregate(
-        &self,
-        agg_exprs: Vec<PyExpr>,
-        groupby_exprs: Vec<PyExpr>,
-    ) -> PyResult<LogicalPlanBuilder> {
-        use crate::ops::Aggregate;
+    pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
-            .map(|expr| match &expr.expr {
+            .map(|expr| match expr {
                 Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-                _ => Err(PyValueError::new_err(format!(
-                    "Expected aggregation expression, but got: {}",
-                    expr.expr
+                _ => Err(DaftError::ValueError(format!(
+                    "Expected aggregation expression, but got: {expr}"
                 ))),
             })
-            .collect::<PyResult<Vec<daft_dsl::AggExpr>>>()?;
-        let groupby_exprs = groupby_exprs
-            .iter()
-            .map(|expr| expr.clone().into())
-            .collect::<Vec<Expr>>();
+            .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
         let logical_plan: LogicalPlan =
-            Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
+            ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn join(
         &self,
         other: &Self,
-        left_on: Vec<PyExpr>,
-        right_on: Vec<PyExpr>,
+        left_on: Vec<Expr>,
+        right_on: Vec<Expr>,
         join_type: JoinType,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let left_on_exprs = left_on
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
-        let right_on_exprs = right_on
-            .iter()
-            .map(|e| e.clone().into())
-            .collect::<Vec<Expr>>();
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Join::try_new(
             self.plan.clone(),
             other.plan.clone(),
-            left_on_exprs,
-            right_on_exprs,
+            left_on,
+            right_on,
             join_type,
         )?
         .into();
         Ok(logical_plan.into())
     }
 
-    pub fn concat(&self, other: &Self) -> PyResult<LogicalPlanBuilder> {
+    pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
         Ok(logical_plan.into())
@@ -217,53 +190,233 @@ impl LogicalPlanBuilder {
         &self,
         root_dir: &str,
         file_format: FileFormat,
-        partition_cols: Option<Vec<PyExpr>>,
+        partition_cols: Option<Vec<Expr>>,
         compression: Option<String>,
-    ) -> PyResult<LogicalPlanBuilder> {
-        let part_cols =
-            partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<Expr>>());
+    ) -> DaftResult<Self> {
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             file_format,
-            part_cols,
+            partition_cols,
             compression,
         ));
         let fields = vec![Field::new("path", DataType::Utf8)];
         let logical_plan: LogicalPlan = ops::Sink::new(
+            self.plan.clone(),
             Schema::new(fields)?.into(),
             sink_info.into(),
-            self.plan.clone(),
         )
         .into();
         Ok(logical_plan.into())
     }
 
-    pub fn optimize(&self) -> PyResult<LogicalPlanBuilder> {
-        let optimizer = Optimizer::new(Default::default());
-        let new_plan = optimizer.optimize(self.plan.clone(), |_, _, _, _, _| {})?;
-        Ok(Self::new(new_plan))
+    pub fn build(&self) -> Arc<LogicalPlan> {
+        self.plan.clone()
     }
 
-    pub fn schema(&self) -> PyResult<PySchema> {
-        Ok(self.plan.schema().into())
+    pub fn schema(&self) -> SchemaRef {
+        self.plan.schema()
     }
 
-    pub fn partition_spec(&self) -> PyResult<PartitionSpec> {
-        Ok(self.plan.partition_spec().as_ref().clone())
+    pub fn partition_spec(&self) -> PartitionSpec {
+        self.plan.partition_spec().as_ref().clone()
     }
 
-    pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
-        let physical_plan = plan(self.plan.as_ref())?;
-        Ok(Arc::new(physical_plan).into())
-    }
-
-    pub fn repr_ascii(&self) -> PyResult<String> {
-        Ok(self.plan.repr_ascii())
+    pub fn repr_ascii(&self, simple: bool) -> String {
+        self.plan.repr_ascii(simple)
     }
 }
 
 impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(plan: LogicalPlan) -> Self {
         Self::new(plan.into())
+    }
+}
+
+#[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
+#[derive(Debug)]
+pub struct PyLogicalPlanBuilder {
+    // Internal logical plan builder.
+    builder: LogicalPlanBuilder,
+}
+
+impl PyLogicalPlanBuilder {
+    pub fn new(builder: LogicalPlanBuilder) -> Self {
+        Self { builder }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyLogicalPlanBuilder {
+    #[staticmethod]
+    pub fn in_memory_scan(
+        partition_key: &str,
+        cache_entry: &PyAny,
+        schema: PySchema,
+        partition_spec: PartitionSpec,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::in_memory_scan(
+            partition_key,
+            cache_entry.to_object(cache_entry.py()),
+            schema.into(),
+            partition_spec,
+        )?
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn table_scan(
+        file_infos: InputFileInfos,
+        schema: PySchema,
+        file_format_config: PyFileFormatConfig,
+    ) -> PyResult<Self> {
+        Ok(
+            LogicalPlanBuilder::table_scan(file_infos, schema.into(), file_format_config.into())?
+                .into(),
+        )
+    }
+
+    pub fn project(
+        &self,
+        projection: Vec<PyExpr>,
+        resource_request: ResourceRequest,
+    ) -> PyResult<Self> {
+        let projection_exprs = projection
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        Ok(self
+            .builder
+            .project(projection_exprs, resource_request)?
+            .into())
+    }
+
+    pub fn filter(&self, predicate: PyExpr) -> PyResult<Self> {
+        Ok(self.builder.filter(predicate.expr)?.into())
+    }
+
+    pub fn limit(&self, limit: i64) -> PyResult<Self> {
+        Ok(self.builder.limit(limit)?.into())
+    }
+
+    pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
+        let to_explode_exprs = to_explode
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        Ok(self.builder.explode(to_explode_exprs)?.into())
+    }
+
+    pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
+        let sort_by_exprs: Vec<Expr> = sort_by.iter().map(|expr| expr.clone().into()).collect();
+        Ok(self.builder.sort(sort_by_exprs, descending)?.into())
+    }
+
+    pub fn repartition(
+        &self,
+        num_partitions: usize,
+        partition_by: Vec<PyExpr>,
+        scheme: PartitionScheme,
+    ) -> PyResult<Self> {
+        let partition_by_exprs: Vec<Expr> = partition_by
+            .iter()
+            .map(|expr| expr.clone().into())
+            .collect();
+        Ok(self
+            .builder
+            .repartition(num_partitions, partition_by_exprs, scheme)?
+            .into())
+    }
+
+    pub fn coalesce(&self, num_partitions: usize) -> PyResult<Self> {
+        Ok(self.builder.coalesce(num_partitions)?.into())
+    }
+
+    pub fn distinct(&self) -> PyResult<Self> {
+        Ok(self.builder.distinct()?.into())
+    }
+
+    pub fn aggregate(&self, agg_exprs: Vec<PyExpr>, groupby_exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let agg_exprs = agg_exprs
+            .iter()
+            .map(|expr| expr.clone().into())
+            .collect::<Vec<Expr>>();
+        let groupby_exprs = groupby_exprs
+            .iter()
+            .map(|expr| expr.clone().into())
+            .collect::<Vec<Expr>>();
+        Ok(self.builder.aggregate(agg_exprs, groupby_exprs)?.into())
+    }
+
+    pub fn join(
+        &self,
+        other: &Self,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        join_type: JoinType,
+    ) -> PyResult<Self> {
+        let left_on = left_on
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        let right_on = right_on
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<Expr>>();
+        Ok(self
+            .builder
+            .join(&other.builder, left_on, right_on, join_type)?
+            .into())
+    }
+
+    pub fn concat(&self, other: &Self) -> DaftResult<Self> {
+        Ok(self.builder.concat(&other.builder)?.into())
+    }
+
+    pub fn table_write(
+        &self,
+        root_dir: &str,
+        file_format: FileFormat,
+        partition_cols: Option<Vec<PyExpr>>,
+        compression: Option<String>,
+    ) -> PyResult<Self> {
+        let partition_cols =
+            partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<Expr>>());
+        Ok(self
+            .builder
+            .table_write(root_dir, file_format, partition_cols, compression)?
+            .into())
+    }
+
+    pub fn schema(&self) -> PyResult<PySchema> {
+        Ok(self.builder.schema().into())
+    }
+
+    pub fn partition_spec(&self) -> PyResult<PartitionSpec> {
+        Ok(self.builder.partition_spec())
+    }
+
+    pub fn optimize(&self) -> PyResult<Self> {
+        let optimizer = Optimizer::new(Default::default());
+        let unoptimized_plan = self.builder.build();
+        let optimized_plan = optimizer.optimize(unoptimized_plan, |_, _, _, _, _| {})?;
+        let builder = LogicalPlanBuilder::new(optimized_plan);
+        Ok(builder.into())
+    }
+
+    pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
+        let logical_plan = self.builder.build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        Ok(Arc::new(physical_plan).into())
+    }
+
+    pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        Ok(self.builder.repr_ascii(simple))
+    }
+}
+
+impl From<LogicalPlanBuilder> for PyLogicalPlanBuilder {
+    fn from(plan: LogicalPlanBuilder) -> Self {
+        Self::new(plan)
     }
 }

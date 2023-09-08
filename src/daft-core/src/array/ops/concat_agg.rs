@@ -1,8 +1,8 @@
-use std::vec;
-
-use arrow2::{array::Array, offset::OffsetsBuffer};
-
-use crate::datatypes::ListArray;
+use crate::array::{
+    growable::{make_growable, Growable},
+    ListArray,
+};
+use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};
@@ -59,110 +59,235 @@ impl DaftConcatAggable for crate::datatypes::PythonArray {
 impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
-        let array = self.as_arrow();
-        if array.null_count() == 0 {
-            let values = array.values();
-            let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, values.len() as i64])?;
-            let result = Box::new(
-                arrow2::array::ListArray::<i64>::try_new(
-                    self.data_type().to_physical().to_arrow()?,
-                    new_offsets,
-                    values.clone(),
-                    None,
-                )
-                .unwrap(),
-            );
-            return ListArray::new(self.field.clone(), result);
+        if self.null_count() == 0 {
+            let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *self.offsets().last()])?;
+            return Ok(ListArray::new(
+                self.field.clone(),
+                self.flat_child.clone(),
+                new_offsets,
+                None,
+            ));
         }
 
-        let old_offsets: &OffsetsBuffer<i64> = array.offsets();
-
-        let len = array.len();
-        let capacity: i64 = (0..len)
-            .map(|i| match array.is_valid(i) {
-                false => 0,
-                true => old_offsets.get(i + 1_usize).unwrap() - old_offsets.get(i).unwrap(),
-            })
-            .sum();
-        let mut growable = arrow2::array::growable::make_growable(
-            &[array.values().as_ref()],
-            true,
-            capacity as usize,
-        );
-
-        (0..len).for_each(|i| {
-            if array.is_valid(i) {
-                let start = *old_offsets.get(i).unwrap();
-                let len = old_offsets.get(i + 1).unwrap() - start;
-                growable.extend(0, start as usize, len as usize);
+        // Only the all-null case leads to a null result. If any single element is non-null (e.g. an empty list []),
+        // The concat will successfully return a single non-null element.
+        let new_validity = match self.validity() {
+            Some(validity) if validity.unset_bits() == self.len() => {
+                Some(arrow2::bitmap::Bitmap::from(vec![false]))
             }
-        });
+            _ => None,
+        };
 
-        let nested_array = Box::new(
-            arrow2::array::ListArray::<i64>::try_new(
-                self.data_type().to_physical().to_arrow()?,
-                arrow2::offset::OffsetsBuffer::try_from(vec![0, capacity])?,
-                growable.as_box(),
-                None,
-            )
-            .unwrap(),
+        // Re-grow the child, dropping elements where the parent is null
+        let mut child_growable: Box<dyn Growable> = make_growable(
+            self.flat_child.name(),
+            self.flat_child.data_type(),
+            vec![&self.flat_child],
+            true,
+            self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
         );
-        ListArray::new(self.field.clone(), nested_array)
+        for (start_valid, len_valid) in SlicesIterator::new(self.validity().unwrap()) {
+            let child_start = self.offsets().start_end(start_valid).0;
+            let child_end = self.offsets().start_end(start_valid + len_valid - 1).1;
+            child_growable.extend(0, child_start, child_end - child_start);
+        }
+        let new_child = child_growable.build()?;
+        let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, new_child.len() as i64])?;
+
+        Ok(ListArray::new(
+            self.field.clone(),
+            new_child,
+            new_offsets,
+            new_validity,
+        ))
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let all_valid = self.null_count() == 0;
 
-        let old_offsets: &OffsetsBuffer<i64> = arrow_array.offsets();
-        let mut offsets = Vec::with_capacity(groups.len() + 1);
-        offsets.push(0);
-
-        for g in groups {
-            let total_elems: i64 = g
-                .iter()
-                .map(|g_idx| {
-                    let g_idx = *g_idx as usize;
-                    let is_valid = arrow_array.is_valid(g_idx);
-                    match is_valid {
-                        false => 0,
-                        true => {
-                            old_offsets.get(g_idx + 1_usize).unwrap()
-                                - old_offsets.get(g_idx).unwrap()
-                        }
-                    }
-                })
-                .sum();
-
-            offsets.push(offsets.last().unwrap() + total_elems);
-        }
-
-        let total_capacity = *offsets.last().unwrap();
-
-        let offsets: OffsetsBuffer<i64> = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-
-        let mut growable = arrow2::array::growable::make_growable(
-            &[arrow_array.values().as_ref()],
-            true,
-            total_capacity as usize,
+        let mut child_array_growable: Box<dyn Growable> = make_growable(
+            self.flat_child.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            false,
+            self.flat_child.len(),
         );
-        for g in groups {
-            for idx in g {
-                let idx = *idx as usize;
-                if arrow_array.is_valid(idx) {
-                    let start = *old_offsets.get(idx).unwrap();
-                    let len = old_offsets.get(idx + 1).unwrap() - start;
-                    growable.extend(0, start as usize, len as usize);
+
+        let mut group_lens: Vec<usize> = vec![];
+        let mut group_valids: Vec<bool> = vec![];
+        for group in groups {
+            let mut group_valid = false;
+            let mut group_len: usize = 0;
+            for idx in group {
+                if all_valid || self.is_valid(idx.to_usize()) {
+                    let (start, end) = self.offsets().start_end(*idx as usize);
+                    let len = end - start;
+                    child_array_growable.extend(0, start, len);
+                    group_len += len;
+                    group_valid = true;
                 }
             }
+            group_valids.push(group_valid);
+            group_lens.push(if group_valid { group_len } else { 0 });
         }
+        let new_offsets = arrow2::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
+        let new_validities = if all_valid {
+            None
+        } else {
+            Some(arrow2::bitmap::Bitmap::from(group_valids))
+        };
 
-        let nested_array = Box::new(arrow2::array::ListArray::<i64>::try_new(
-            self.data_type().to_physical().to_arrow()?,
-            offsets,
-            growable.as_box(),
-            None,
-        )?);
+        Ok(ListArray::new(
+            self.field.clone(),
+            child_array_growable.build()?,
+            new_offsets.into(),
+            new_validities,
+        ))
+    }
+}
 
-        ListArray::new(self.field.clone(), nested_array)
+#[cfg(test)]
+mod test {
+    use std::iter::repeat;
+
+    use common_error::DaftResult;
+
+    use crate::{
+        array::{ops::DaftConcatAggable, ListArray},
+        datatypes::{Field, Int64Array},
+        DataType, IntoSeries,
+    };
+
+    #[test]
+    fn test_list_concat_agg_all_null() -> DaftResult<()> {
+        // [None, None, None]
+        let list_array = ListArray::new(
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
+            Int64Array::from((
+                "item",
+                Box::new(arrow2::array::Int64Array::from_iter(vec![].iter())),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
+            Some(arrow2::bitmap::Bitmap::from_iter(repeat(false).take(3))),
+        );
+
+        // Expected: [None]
+        let concatted = list_array.concat()?;
+        assert_eq!(concatted.len(), 1);
+        assert_eq!(
+            concatted.validity(),
+            Some(&arrow2::bitmap::Bitmap::from_iter(repeat(false).take(1)))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_concat_agg_with_nulls() -> DaftResult<()> {
+        // [[0], [1, 1], [2, None], [None], [], None, None]
+        let list_array = ListArray::new(
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
+            Int64Array::from((
+                "item",
+                Box::new(arrow2::array::Int64Array::from_iter(
+                    vec![Some(0), Some(1), Some(1), Some(2), None, None, Some(10000)].iter(),
+                )),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
+            Some(arrow2::bitmap::Bitmap::from(vec![
+                true, true, true, true, true, false, false,
+            ])),
+        );
+
+        // Expected: [[0, 1, 1, 2, None, None]]
+        let concatted = list_array.concat()?;
+        assert_eq!(concatted.len(), 1);
+        assert_eq!(concatted.validity(), None);
+        let element = concatted.get(0).unwrap();
+        assert_eq!(
+            element
+                .downcast::<Int64Array>()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<Option<&i64>>>(),
+            vec![Some(&0), Some(&1), Some(&1), Some(&2), None, None]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_grouped_list_concat_agg() -> DaftResult<()> {
+        // [[0], [0, 0], [1, None], [None], [2, None], None, None, None]
+        //  |  group0 |  |     group1    |  | group 2     |  group 3   |
+        let list_array = ListArray::new(
+            Field::new("foo", DataType::List(Box::new(DataType::Int64))),
+            Int64Array::from((
+                "item",
+                Box::new(arrow2::array::Int64Array::from_iter(
+                    vec![
+                        Some(0),
+                        Some(0),
+                        Some(0),
+                        Some(1),
+                        None,
+                        None,
+                        Some(2),
+                        None,
+                        Some(1000),
+                    ]
+                    .iter(),
+                )),
+            ))
+            .into_series(),
+            arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
+            Some(arrow2::bitmap::Bitmap::from(vec![
+                true, true, true, true, true, false, false, false,
+            ])),
+        );
+
+        let concatted =
+            list_array.grouped_concat(&vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]])?;
+
+        // Expected: [[0, 0, 0], [1, None, None], [2, None], None]
+        assert_eq!(concatted.len(), 4);
+        assert_eq!(
+            concatted.validity(),
+            Some(&arrow2::bitmap::Bitmap::from(vec![true, true, true, false]))
+        );
+
+        let element_0 = concatted.get(0).unwrap();
+        assert_eq!(
+            element_0
+                .downcast::<Int64Array>()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<Option<&i64>>>(),
+            vec![Some(&0), Some(&0), Some(&0)]
+        );
+
+        let element_1 = concatted.get(1).unwrap();
+        assert_eq!(
+            element_1
+                .downcast::<Int64Array>()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<Option<&i64>>>(),
+            vec![Some(&1), None, None]
+        );
+
+        let element_2 = concatted.get(2).unwrap();
+        assert_eq!(
+            element_2
+                .downcast::<Int64Array>()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<Option<&i64>>>(),
+            vec![Some(&2), None]
+        );
+
+        let element_3 = concatted.get(3);
+        assert!(element_3.is_none());
+        Ok(())
     }
 }

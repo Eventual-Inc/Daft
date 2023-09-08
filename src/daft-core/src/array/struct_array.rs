@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct StructArray {
     pub field: Arc<Field>,
     pub children: Vec<Series>,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
     len: usize,
 }
 
@@ -67,6 +67,10 @@ impl StructArray {
         }
     }
 
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
+    }
+
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
@@ -76,7 +80,7 @@ impl StructArray {
 
         let first_array = arrays.get(0).unwrap();
         let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.clone(),
+            first_array.field.name.as_str(),
             &first_array.field.dtype,
             arrays.to_vec(),
             arrays

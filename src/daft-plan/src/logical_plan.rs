@@ -172,12 +172,12 @@ impl LogicalPlan {
             )
             .into(),
             Self::Join(Join {
-                input,
+                left,
                 right,
                 left_on,
                 ..
             }) => {
-                let input_partition_spec = input.partition_spec();
+                let input_partition_spec = left.partition_spec();
                 match max(
                     input_partition_spec.num_partitions,
                     right.partition_spec().num_partitions,
@@ -212,7 +212,7 @@ impl LogicalPlan {
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Concat(Concat { input, other }) => vec![input, other],
-            Self::Join(Join { input, right, .. }) => vec![input, right],
+            Self::Join(Join { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
         }
     }
@@ -224,15 +224,15 @@ impl LogicalPlan {
                 Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(), resource_request.clone(),
                 ).unwrap()),
-                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(predicate.clone(), input.clone()).unwrap()),
-                Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(*limit, input.clone())),
+                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap()),
+                Self::Limit(Limit { limit, .. }) => Self::Limit(Limit::new(input.clone(), *limit)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
-                Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::try_new(sort_by.clone(), descending.clone(), input.clone()).unwrap()),
-                Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(*num_partitions, partition_by.clone(), scheme.clone(), input.clone())),
-                Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(*num_to, input.clone())),
+                Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone()).unwrap()),
+                Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(input.clone(), *num_partitions, partition_by.clone(), scheme.clone())),
+                Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(input.clone(), *num_to)),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
-                Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(schema.clone(), sink_info.clone(), input.clone())),
+                Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(input.clone(), schema.clone(), sink_info.clone())),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
@@ -260,6 +260,24 @@ impl LogicalPlan {
                 children.len()
             ),
         }
+    }
+    pub fn name(&self) -> String {
+        let name = match self {
+            Self::Source(..) => "Source",
+            Self::Project(..) => "Project",
+            Self::Filter(..) => "Filter",
+            Self::Limit(..) => "Limit",
+            Self::Explode(..) => "Explode",
+            Self::Sort(..) => "Sort",
+            Self::Repartition(..) => "Repartition",
+            Self::Coalesce(..) => "Coalesce",
+            Self::Distinct(..) => "Distinct",
+            Self::Aggregate(..) => "Aggregate",
+            Self::Concat(..) => "Concat",
+            Self::Join(..) => "Join",
+            Self::Sink(..) => "Sink",
+        };
+        name.to_string()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -291,9 +309,9 @@ impl LogicalPlan {
         }
     }
 
-    pub fn repr_ascii(&self) -> String {
+    pub fn repr_ascii(&self, simple: bool) -> String {
         let mut s = String::new();
-        self.fmt_tree(&mut s).unwrap();
+        self.fmt_tree(&mut s, simple).unwrap();
         s
     }
 

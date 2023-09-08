@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use crate::array::ops::broadcast::Broadcastable;
 use crate::array::ops::{DaftIsNull, GroupIndices};
-use crate::array::{FixedSizeListArray, StructArray};
+use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::BooleanArray;
 use crate::datatypes::Field;
 use crate::series::{array_impl::binary_ops::SeriesBinaryOps, IntoSeries, Series, SeriesLike};
@@ -187,3 +187,4 @@ macro_rules! impl_series_like_for_nested_arrays {
 
 impl_series_like_for_nested_arrays!(FixedSizeListArray);
 impl_series_like_for_nested_arrays!(StructArray);
+impl_series_like_for_nested_arrays!(ListArray);

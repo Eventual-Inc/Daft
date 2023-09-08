@@ -322,16 +322,16 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
         ),
         pytest.param(
             [np.array([1]), np.array([2]), np.array([3])],
-            DataType.list("item", DataType.int64()),
+            DataType.list(DataType.int64()),
             id="numpy_1d_arrays",
         ),
-        pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.list("item", DataType.int64()), id="pa_nested"),
+        pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.list(DataType.int64()), id="pa_nested"),
         pytest.param(
             pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
-            DataType.list("item", DataType.int64()),
+            DataType.list(DataType.int64()),
             id="pa_nested_chunked",
         ),
-        pytest.param(np.ones((3, 3)), DataType.list("item", DataType.float64()), id="np_nested_1d"),
+        pytest.param(np.ones((3, 3)), DataType.list(DataType.float64()), id="np_nested_1d"),
         pytest.param(np.ones((3, 3, 3)), DataType.tensor(DataType.float64()), id="np_nested_nd"),
     ],
 )

@@ -101,7 +101,6 @@ repos:
     pass_filenames: false
     args: [--workspace, --no-default-features]
 
-
   - id: clippy
     name: clippy
     description: Lint rust sources
@@ -111,6 +110,13 @@ repos:
     types: [rust]
     pass_filenames: false
 
+  - id: check-for-rustls
+    name: check-for-rustls
+    description: Lint rust sources
+    entry: ./tools/check_for_rustls.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
 
 
 - repo: https://github.com/abravalheri/validate-pyproject

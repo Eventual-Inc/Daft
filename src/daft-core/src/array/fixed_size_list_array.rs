@@ -11,7 +11,7 @@ use crate::DataType;
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<arrow2::bitmap::Bitmap>,
 }
 
 impl DaftArrayType for FixedSizeListArray {}
@@ -24,7 +24,7 @@ impl FixedSizeListArray {
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
-            DataType::FixedSizeList(_, size) => {
+            DataType::FixedSizeList(child_dtype, size) => {
                 if let Some(validity) = validity.as_ref() && (validity.len() * size) != flat_child.len() {
                     panic!(
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity * size: {}",
@@ -32,17 +32,28 @@ impl FixedSizeListArray {
                         (validity.len() * size),
                     )
                 }
+                if child_dtype.as_ref() != flat_child.data_type() {
+                    panic!(
+                        "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
+                        child_dtype,
+                        flat_child.data_type(),
+                    )
+                }
             }
             _ => panic!(
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
                 field
-            )
+            ),
         }
         FixedSizeListArray {
             field,
             flat_child,
             validity,
         }
+    }
+
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.validity.as_ref()
     }
 
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
@@ -54,7 +65,7 @@ impl FixedSizeListArray {
 
         let first_array = arrays.get(0).unwrap();
         let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.clone(),
+            first_array.field.name.as_str(),
             &first_array.field.dtype,
             arrays.to_vec(),
             arrays
@@ -92,7 +103,7 @@ impl FixedSizeListArray {
 
     pub fn child_data_type(&self) -> &DataType {
         match &self.field.dtype {
-            DataType::FixedSizeList(child, _) => &child.dtype,
+            DataType::FixedSizeList(child, _) => child.as_ref(),
             _ => unreachable!("FixedSizeListArray must have DataType::FixedSizeList(..)"),
         }
     }
@@ -100,7 +111,7 @@ impl FixedSizeListArray {
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),
-            self.flat_child.rename(name),
+            self.flat_child.clone(),
             self.validity.clone(),
         )
     }
@@ -152,10 +163,7 @@ mod tests {
 
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
     fn get_i32_fixed_size_list_array(validity: &[bool]) -> FixedSizeListArray {
-        let field = Field::new(
-            "foo",
-            DataType::FixedSizeList(Box::new(Field::new("foo", DataType::Int32)), 3),
-        );
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from((
             "foo",
             (0i32..(validity.len() * 3) as i32).collect::<Vec<i32>>(),

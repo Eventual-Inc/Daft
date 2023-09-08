@@ -18,6 +18,6 @@ def test_broadcast_fixed_size_list():
     data = [1, 2, 3]
     table = Table.from_pydict({"x": [1, 2, 3]})
     new_table = table.eval_expression_list(
-        [col("x"), lit(data).cast(daft.DataType.fixed_size_list("foo", daft.DataType.int64(), 3))]
+        [col("x"), lit(data).cast(daft.DataType.fixed_size_list(daft.DataType.int64(), 3))]
     )
     assert new_table.to_pydict() == {"x": [1, 2, 3], "literal": [data for _ in range(3)]}

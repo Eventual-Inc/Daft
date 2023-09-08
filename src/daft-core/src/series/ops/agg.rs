@@ -1,3 +1,4 @@
+use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
 use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};

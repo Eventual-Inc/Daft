@@ -16,7 +16,7 @@ mod source_info;
 #[cfg(test)]
 mod test;
 
-pub use builder::LogicalPlanBuilder;
+pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 pub use join::JoinType;
 pub use logical_plan::LogicalPlan;
 pub use partitioning::{PartitionScheme, PartitionSpec};
@@ -32,7 +32,7 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_class::<LogicalPlanBuilder>()?;
+    parent.add_class::<PyLogicalPlanBuilder>()?;
     parent.add_class::<FileFormat>()?;
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<ParquetSourceConfig>()?;

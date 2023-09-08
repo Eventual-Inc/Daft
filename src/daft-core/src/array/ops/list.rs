@@ -1,17 +1,15 @@
 use std::iter::repeat;
 
 use crate::array::{
-    growable::{Growable, GrowableArray},
-    FixedSizeListArray,
+    growable::{make_growable, Growable},
+    FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{DaftDataType, Utf8Type};
-use crate::datatypes::{ListArray, UInt64Array, Utf8Array};
-use crate::{with_match_daft_types, DataType};
+use crate::datatypes::{UInt64Array, Utf8Array};
+use crate::DataType;
 
 use crate::series::Series;
 
 use arrow2;
-use arrow2::array::Array;
 
 use common_error::DaftResult;
 
@@ -45,29 +43,21 @@ fn join_arrow_list_of_utf8s(
 
 impl ListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let list_array = self.as_arrow();
-        let offsets = list_array.offsets();
-
-        let mut lens = Vec::with_capacity(self.len());
-        for i in 0..self.len() {
-            lens.push((unsafe { offsets.get_unchecked(i + 1) - offsets.get_unchecked(i) }) as u64)
-        }
+        let lengths = self.offsets().lengths().map(|l| Some(l as u64));
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_vec(lens)
-                .with_validity(list_array.validity().cloned()),
+            arrow2::array::PrimitiveArray::from_iter(lengths)
+                .with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
-        let list_array = self.as_arrow();
-        let child_array = list_array.values().as_ref();
-        let offsets = list_array.offsets();
+        let offsets = self.offsets();
 
-        let total_capacity: i64 = (0..list_array.len())
+        let total_capacity: usize = (0..self.len())
             .map(|i| {
-                let is_valid = list_array.is_valid(i);
-                let len: i64 = offsets.get(i + 1).unwrap() - offsets.get(i).unwrap();
+                let is_valid = self.is_valid(i);
+                let len: usize = (offsets.get(i + 1).unwrap() - offsets.get(i).unwrap()) as usize;
                 match (is_valid, len) {
                     (false, _) => 1,
                     (true, 0) => 1,
@@ -75,62 +65,59 @@ impl ListArray {
                 }
             })
             .sum();
-        let mut growable =
-            arrow2::array::growable::make_growable(&[child_array], true, total_capacity as usize);
+        let mut growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            total_capacity,
+        );
 
-        for i in 0..list_array.len() {
-            let is_valid = list_array.is_valid(i);
+        for i in 0..self.len() {
+            let is_valid = self.is_valid(i);
             let start = offsets.get(i).unwrap();
             let len = offsets.get(i + 1).unwrap() - start;
             match (is_valid, len) {
-                (false, _) => growable.extend_validity(1),
-                (true, 0) => growable.extend_validity(1),
+                (false, _) => growable.add_nulls(1),
+                (true, 0) => growable.add_nulls(1),
                 (true, l) => growable.extend(0, *start as usize, l as usize),
             }
         }
 
-        Series::try_from((self.field.name.as_ref(), growable.as_box()))
+        growable.build()
     }
 
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
-        let list_array = self.as_arrow();
-        assert_eq!(
-            list_array.values().data_type(),
-            &arrow2::datatypes::DataType::LargeUtf8
-        );
+        assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
-        if delimiter.len() == 1 {
-            let delimiter_str = delimiter.get(0).unwrap();
-            let result = list_array.iter().map(|list_element| {
-                join_arrow_list_of_utf8s(list_element.as_ref().map(|b| b.as_ref()), delimiter_str)
-            });
-            Ok(Utf8Array::from((
-                self.name(),
-                Box::new(arrow2::array::Utf8Array::from_iter(result)),
-            )))
+        let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
+            Box::new(repeat(delimiter.get(0)).take(self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            let result = list_array.iter().zip(delimiter.as_arrow().iter()).map(
-                |(list_element, delimiter_element)| {
-                    let delimiter_str = delimiter_element.unwrap_or("");
-                    join_arrow_list_of_utf8s(
-                        list_element.as_ref().map(|b| b.as_ref()),
-                        delimiter_str,
-                    )
-                },
-            );
-            Ok(Utf8Array::from((
-                self.name(),
-                Box::new(arrow2::array::Utf8Array::from_iter(result)),
-            )))
-        }
+            Box::new(delimiter.as_arrow().iter())
+        };
+        let self_iter = (0..self.len()).map(|i| self.get(i));
+
+        let result = self_iter
+            .zip(delimiter_iter)
+            .map(|(list_element, delimiter)| {
+                join_arrow_list_of_utf8s(
+                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
+                    delimiter.unwrap_or(""),
+                )
+            });
+
+        Ok(Utf8Array::from((
+            self.name(),
+            Box::new(arrow2::array::Utf8Array::from_iter(result)),
+        )))
     }
 }
 
 impl FixedSizeListArray {
     pub fn lengths(&self) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        match &self.validity {
+        match self.validity() {
             None => Ok(UInt64Array::from((
                 self.name(),
                 repeat(size as u64)
@@ -156,19 +143,17 @@ impl FixedSizeListArray {
         let total_capacity = if list_size == 0 {
             self.len()
         } else {
-            let null_count = self.validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
+            let null_count = self.validity().map(|v| v.unset_bits()).unwrap_or(0);
             list_size * (self.len() - null_count)
         };
 
-        let mut child_growable: Box<dyn Growable> = with_match_daft_types!(self.child_data_type(), |$T| {
-            Box::new(<<$T as DaftDataType>::ArrayType as GrowableArray>::make_growable(
-                self.name().to_string(),
-                self.child_data_type(),
-                vec![self.flat_child.downcast::<<$T as DaftDataType>::ArrayType>()?],
-                true,
-                total_capacity,
-            ))
-        });
+        let mut child_growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            total_capacity,
+        );
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i) && (list_size > 0);
@@ -195,11 +180,7 @@ impl FixedSizeListArray {
             .zip(delimiter_iter)
             .map(|(list_element, delimiter)| {
                 join_arrow_list_of_utf8s(
-                    list_element.as_ref().map(|l| {
-                        l.downcast::<<Utf8Type as DaftDataType>::ArrayType>()
-                            .unwrap()
-                            .as_arrow() as &dyn arrow2::array::Array
-                    }),
+                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
                     delimiter.unwrap_or(""),
                 )
             });

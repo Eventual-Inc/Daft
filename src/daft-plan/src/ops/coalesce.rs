@@ -4,14 +4,14 @@ use crate::LogicalPlan;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Coalesce {
-    // Number of partitions to coalesce to.
-    pub num_to: usize,
     // Upstream node.
     pub input: Arc<LogicalPlan>,
+    // Number of partitions to coalesce to.
+    pub num_to: usize,
 }
 
 impl Coalesce {
-    pub(crate) fn new(num_to: usize, input: Arc<LogicalPlan>) -> Self {
-        Self { num_to, input }
+    pub(crate) fn new(input: Arc<LogicalPlan>, num_to: usize) -> Self {
+        Self { input, num_to }
     }
 }

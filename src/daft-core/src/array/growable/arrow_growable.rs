@@ -9,8 +9,8 @@ use crate::{
     },
     datatypes::{
         BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, ListType,
-        NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
+        Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, NullType,
+        UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
     },
     DataType, IntoSeries, Series,
 };
@@ -55,10 +55,10 @@ pub type ArrowNullGrowable<'a> =
     ArrowBackedDataArrayGrowable<'a, NullType, arrow2::array::growable::GrowableNull>;
 
 impl<'a> ArrowNullGrowable<'a> {
-    pub fn new(name: String, dtype: &DataType) -> Self {
+    pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable = arrow2::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
         Self {
-            name,
+            name: name.to_string(),
             dtype: dtype.clone(),
             arrow2_growable,
             _phantom: PhantomData,
@@ -73,7 +73,7 @@ macro_rules! impl_arrow_backed_data_array_growable {
 
         impl<'a> $growable_name<'a> {
             pub fn new(
-                name: String,
+                name: &str,
                 dtype: &DataType,
                 arrays: Vec<&'a <$daft_type as DaftDataType>::ArrayType>,
                 use_validity: bool,
@@ -84,7 +84,7 @@ macro_rules! impl_arrow_backed_data_array_growable {
                 let arrow2_growable =
                     <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
                 Self {
-                    name,
+                    name: name.to_string(),
                     dtype: dtype.clone(),
                     arrow2_growable,
                     _phantom: PhantomData,
@@ -164,11 +164,6 @@ impl_arrow_backed_data_array_growable!(
     Utf8Type,
     arrow2::array::growable::GrowableUtf8<'a, i64>
 );
-impl_arrow_backed_data_array_growable!(
-    ArrowListGrowable,
-    ListType,
-    arrow2::array::growable::GrowableList<'a, i64>
-);
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
@@ -179,7 +174,7 @@ pub struct ArrowExtensionGrowable<'a> {
 
 impl<'a> ArrowExtensionGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arrays: Vec<&'a ExtensionArray>,
         use_validity: bool,
@@ -193,7 +188,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
             capacity,
         );
         Self {
-            name,
+            name: name.to_string(),
             dtype: dtype.clone(),
             child_growable,
         }

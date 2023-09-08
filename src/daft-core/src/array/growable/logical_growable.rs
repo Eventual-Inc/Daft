@@ -55,16 +55,16 @@ macro_rules! impl_logical_growable {
 
         impl<'a> $growable_name<'a>
         {
-            pub fn new(name: String, dtype: &DataType, arrays: Vec<&'a <$daft_type as DaftDataType>::ArrayType>, use_validity: bool, capacity: usize) -> Self {
+            pub fn new(name: &str, dtype: &DataType, arrays: Vec<&'a <$daft_type as DaftDataType>::ArrayType>, use_validity: bool, capacity: usize) -> Self {
                 let physical_growable = <<$daft_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::make_growable(
-                    name.clone(),
+                    name,
                     &dtype.to_physical(),
                     arrays.iter().map(|a| &a.physical).collect(),
                     use_validity,
                     capacity,
                 );
                 Self {
-                    name,
+                    name: name.to_string(),
                     dtype: dtype.clone(),
                     physical_growable,
                     _phantom: PhantomData,

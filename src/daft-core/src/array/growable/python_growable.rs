@@ -19,13 +19,13 @@ pub struct PythonGrowable<'a> {
 
 impl<'a> PythonGrowable<'a> {
     pub fn new(
-        name: String,
+        name: &str,
         dtype: &DataType,
         arr_refs: Vec<&'a PythonArray>,
         capacity: usize,
     ) -> Self {
         Self {
-            name,
+            name: name.to_string(),
             dtype: dtype.clone(),
             arr_refs,
             buffer: Vec::with_capacity(capacity),
