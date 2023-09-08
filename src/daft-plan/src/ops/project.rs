@@ -66,15 +66,12 @@ impl Project {
             let child_projection = projection
                 .iter()
                 .flat_map(optimization::get_required_columns)
+                .collect::<IndexSet<_>>()
+                .into_iter()
                 .map(|colname| {
                     let expr = &substitutions[&colname];
-                    (
-                        colname.clone(),
-                        Expr::Alias(expr.clone().into(), colname.clone().into()),
-                    )
+                    Expr::Alias(expr.clone().into(), colname.clone().into())
                 })
-                .collect::<IndexMap<_, _>>()
-                .into_values()
                 .collect::<Vec<_>>();
 
             let plan: LogicalPlan =
