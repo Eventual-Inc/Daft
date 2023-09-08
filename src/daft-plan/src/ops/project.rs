@@ -151,7 +151,7 @@ impl Project {
             let substituted_expressions = exprs
                 .iter()
                 .map(|e| {
-                    replace_column_with_semantic_id(e, &subexprs_to_replace, schema)
+                    replace_column_with_semantic_id(e.clone().into(), &subexprs_to_replace, schema)
                         .unwrap()
                         .as_ref()
                         .clone()
@@ -170,7 +170,7 @@ impl Project {
 }
 
 fn replace_column_with_semantic_id(
-    e: &Expr,
+    e: ExprRef,
     subexprs_to_replace: &IndexSet<FieldID>,
     schema: &Schema,
 ) -> Transformed<ExprRef> {
@@ -182,49 +182,58 @@ fn replace_column_with_semantic_id(
     let sem_id = e.semantic_id(schema);
     if subexprs_to_replace.contains(&sem_id) {
         let new_expr = Expr::Column(sem_id.id.clone());
-        let new_expr = match e {
+        let new_expr = match e.as_ref() {
             Expr::Alias(_, name) => Expr::Alias(new_expr.into(), name.clone()),
             _ => new_expr,
         };
         Transformed::Yes(new_expr.into())
     } else {
-        match e {
-            Expr::Column(_) | Expr::Literal(_) => Transformed::No(e.clone().into()),
-            Expr::Agg(agg_expr) => {
-                replace_column_with_semantic_id_aggexpr(agg_expr, subexprs_to_replace, schema)
+        match e.as_ref() {
+            Expr::Column(_) | Expr::Literal(_) => Transformed::No(e),
+            Expr::Agg(agg_expr) => replace_column_with_semantic_id_aggexpr(
+                agg_expr.clone(),
+                subexprs_to_replace,
+                schema,
+            )
+            .map_yes_no(
+                |transformed_child| Expr::Agg(transformed_child).into(),
+                |_| e,
+            ),
+            Expr::Alias(child, name) => {
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                     .map_yes_no(
-                        |transformed_child| Expr::Agg(transformed_child).into(),
-                        |_| e.clone().into(),
+                        |transformed_child| Expr::Alias(transformed_child, name.clone()).into(),
+                        |_| e.clone(),
                     )
             }
-            Expr::Alias(child, name) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| Expr::Alias(transformed_child, name.clone()).into(),
-                    |_| e.clone().into(),
-                )
-            }
             Expr::Cast(child, datatype) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| Expr::Cast(transformed_child, datatype.clone()).into(),
-                    |_| e.clone().into(),
-                )
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::Cast(transformed_child, datatype.clone()).into(),
+                        |_| e.clone(),
+                    )
             }
-            Expr::Not(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-                .map_yes_no(
-                    |transformed_child| Expr::Not(transformed_child).into(),
-                    |_| e.clone().into(),
-                ),
+            Expr::Not(child) => {
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::Not(transformed_child).into(),
+                        |_| e,
+                    )
+            }
             Expr::IsNull(child) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
-                    |transformed_child| Expr::IsNull(transformed_child).into(),
-                    |_| e.clone().into(),
-                )
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::IsNull(transformed_child).into(),
+                        |_| e,
+                    )
             }
             Expr::BinaryOp { op, left, right } => {
-                let left = replace_column_with_semantic_id(left, subexprs_to_replace, schema);
-                let right = replace_column_with_semantic_id(right, subexprs_to_replace, schema);
+                let left =
+                    replace_column_with_semantic_id(left.clone(), subexprs_to_replace, schema);
+                let right =
+                    replace_column_with_semantic_id(right.clone(), subexprs_to_replace, schema);
                 if left.is_no() && right.is_no() {
-                    Transformed::No(e.clone().into())
+                    Transformed::No(e)
                 } else {
                     Transformed::Yes(
                         Expr::BinaryOp {
@@ -242,12 +251,13 @@ fn replace_column_with_semantic_id(
                 predicate,
             } => {
                 let predicate =
-                    replace_column_with_semantic_id(predicate, subexprs_to_replace, schema);
-                let if_true = replace_column_with_semantic_id(if_true, subexprs_to_replace, schema);
+                    replace_column_with_semantic_id(predicate.clone(), subexprs_to_replace, schema);
+                let if_true =
+                    replace_column_with_semantic_id(if_true.clone(), subexprs_to_replace, schema);
                 let if_false =
-                    replace_column_with_semantic_id(if_false, subexprs_to_replace, schema);
+                    replace_column_with_semantic_id(if_false.clone(), subexprs_to_replace, schema);
                 if predicate.is_no() && if_true.is_no() && if_false.is_no() {
-                    Transformed::No(e.clone().into())
+                    Transformed::No(e)
                 } else {
                     Transformed::Yes(
                         Expr::IfElse {
@@ -262,10 +272,16 @@ fn replace_column_with_semantic_id(
             Expr::Function { func, inputs } => {
                 let transforms = inputs
                     .iter()
-                    .map(|e| replace_column_with_semantic_id(e, subexprs_to_replace, schema))
+                    .map(|e| {
+                        replace_column_with_semantic_id(
+                            e.clone().into(),
+                            subexprs_to_replace,
+                            schema,
+                        )
+                    })
                     .collect::<Vec<_>>();
                 if transforms.iter().all(|e| e.is_no()) {
-                    Transformed::No(e.clone().into())
+                    Transformed::No(e)
                 } else {
                     Transformed::Yes(
                         Expr::Function {
@@ -285,7 +301,7 @@ fn replace_column_with_semantic_id(
 }
 
 fn replace_column_with_semantic_id_aggexpr(
-    e: &AggExpr,
+    e: AggExpr,
     subexprs_to_replace: &IndexSet<FieldID>,
     schema: &Schema,
 ) -> Transformed<AggExpr> {
@@ -295,24 +311,34 @@ fn replace_column_with_semantic_id_aggexpr(
     //  -> Col("(a + b)") + c
 
     match e {
-        AggExpr::Count(child, mode) => {
-            replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
-                |transformed_child| AggExpr::Count(transformed_child, *mode),
+        AggExpr::Count(ref child, mode) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Count(transformed_child, mode),
                 |_| e.clone(),
             )
         }
-        AggExpr::Sum(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map_yes_no(AggExpr::Sum, |_| e.clone()),
-        AggExpr::Mean(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map_yes_no(AggExpr::Mean, |_| e.clone()),
-        AggExpr::Min(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map_yes_no(AggExpr::Min, |_| e.clone()),
-        AggExpr::Max(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map_yes_no(AggExpr::Max, |_| e.clone()),
-        AggExpr::List(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map_yes_no(AggExpr::List, |_| e.clone()),
-        AggExpr::Concat(child) => {
-            replace_column_with_semantic_id(child, subexprs_to_replace, schema)
+        AggExpr::Sum(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Sum, |_| e.clone())
+        }
+        AggExpr::Mean(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Mean, |_| e.clone())
+        }
+        AggExpr::Min(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Min, |_| e.clone())
+        }
+        AggExpr::Max(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Max, |_| e.clone())
+        }
+        AggExpr::List(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::List, |_| e.clone())
+        }
+        AggExpr::Concat(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Concat, |_| e.clone())
         }
     }
