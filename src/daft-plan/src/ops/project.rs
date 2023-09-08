@@ -333,7 +333,7 @@ mod tests {
     /// 2. aa+aa as aaaa
     /// 3: a+a as aa
     #[test]
-    fn test_recursive_subexpression() -> DaftResult<()> {
+    fn test_nested_subexpression() -> DaftResult<()> {
         let source: LogicalPlan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
@@ -366,6 +366,45 @@ mod tests {
             panic!()
         };
         assert_eq!(third_projection.projection, expected_third_projection);
+
+        Ok(())
+    }
+
+    /// Test that common subexpressions are correctly identified
+    /// across separate expressions.
+    /// e.g.
+    /// (a+a) as x, (a+a)+a as y
+    /// ->
+    /// 1. aa as x, aa+a as y
+    /// 2. a+a as aa, a
+    #[test]
+    fn test_shared_subexpression() -> DaftResult<()> {
+        let source: LogicalPlan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .into();
+        let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
+        let expressions = vec![
+            a2.alias("x"),
+            binary_op(Operator::Plus, &a2, &col("a")).alias("y"),
+        ];
+        let result_projection =
+            Project::try_new(source.clone().into(), expressions, Default::default())?;
+
+        let a2_colname = a2.semantic_id(&source.schema()).id;
+        let a2_col = col(a2_colname.clone());
+        let expected_result_projection = vec![
+            a2_col.alias("x"),
+            binary_op(Operator::Plus, &a2_col, &col("a")).alias("y"),
+        ];
+        assert_eq!(result_projection.projection, expected_result_projection);
+
+        let expected_subprojection = vec![a2.alias(a2_colname.clone()), col("a").alias("a")];
+        let LogicalPlan::Project(subprojection) = result_projection.input.as_ref() else {
+            panic!()
+        };
+        assert_eq!(subprojection.projection, expected_subprojection);
 
         Ok(())
     }
