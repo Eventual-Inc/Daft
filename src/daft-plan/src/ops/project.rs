@@ -188,30 +188,31 @@ fn replace_column_with_semantic_id(
         match e {
             Expr::Column(_) | Expr::Literal(_) => Transformed::No(e.clone().into()),
             Expr::Agg(agg_expr) => {
-                replace_column_with_semantic_id_aggexpr(agg_expr, subexprs_to_replace, schema).map(
-                    |transformed_child| Expr::Agg(transformed_child).into(),
-                    |_| e.clone().into(),
-                )
+                replace_column_with_semantic_id_aggexpr(agg_expr, subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::Agg(transformed_child).into(),
+                        |_| e.clone().into(),
+                    )
             }
             Expr::Alias(child, name) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map(
+                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
                     |transformed_child| Expr::Alias(transformed_child, name.clone()).into(),
                     |_| e.clone().into(),
                 )
             }
             Expr::Cast(child, datatype) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map(
+                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
                     |transformed_child| Expr::Cast(transformed_child, datatype.clone()).into(),
                     |_| e.clone().into(),
                 )
             }
             Expr::Not(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-                .map(
+                .map_yes_no(
                     |transformed_child| Expr::Not(transformed_child).into(),
                     |_| e.clone().into(),
                 ),
             Expr::IsNull(child) => {
-                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map(
+                replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
                     |transformed_child| Expr::IsNull(transformed_child).into(),
                     |_| e.clone().into(),
                 )
@@ -292,32 +293,30 @@ fn replace_column_with_semantic_id_aggexpr(
 
     match e {
         AggExpr::Count(child, mode) => {
-            replace_column_with_semantic_id(child, subexprs_to_replace, schema).map(
+            replace_column_with_semantic_id(child, subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::Count(transformed_child, *mode),
                 |_| e.clone(),
             )
         }
         AggExpr::Sum(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map(AggExpr::Sum, |_| e.clone()),
+            .map_yes_no(AggExpr::Sum, |_| e.clone()),
         AggExpr::Mean(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map(AggExpr::Mean, |_| e.clone()),
+            .map_yes_no(AggExpr::Mean, |_| e.clone()),
         AggExpr::Min(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map(AggExpr::Min, |_| e.clone()),
+            .map_yes_no(AggExpr::Min, |_| e.clone()),
         AggExpr::Max(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map(AggExpr::Max, |_| e.clone()),
+            .map_yes_no(AggExpr::Max, |_| e.clone()),
         AggExpr::List(child) => replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-            .map(AggExpr::List, |_| e.clone()),
+            .map_yes_no(AggExpr::List, |_| e.clone()),
         AggExpr::Concat(child) => {
             replace_column_with_semantic_id(child, subexprs_to_replace, schema)
-                .map(AggExpr::Concat, |_| e.clone())
+                .map_yes_no(AggExpr::Concat, |_| e.clone())
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{binary_op, col, lit, Operator};
@@ -405,6 +404,35 @@ mod tests {
             panic!()
         };
         assert_eq!(subprojection.projection, expected_subprojection);
+
+        Ok(())
+    }
+
+    /// Test that common leaf expressions are not factored out.
+    /// e.g.
+    /// 3 as x, 3 as y, a as w, a as z
+    /// ->
+    /// (unchanged)
+    #[test]
+    fn test_vacuous_subexpression() -> DaftResult<()> {
+        let source: LogicalPlan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .into();
+        let expressions = vec![
+            lit(3).alias("x"),
+            lit(3).alias("y"),
+            col("a").alias("w"),
+            col("a").alias("z"),
+        ];
+        let result_projection = Project::try_new(
+            source.clone().into(),
+            expressions.clone(),
+            Default::default(),
+        )?;
+
+        assert_eq!(result_projection.projection, expressions);
 
         Ok(())
     }

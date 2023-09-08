@@ -64,7 +64,7 @@ impl<T> Transformed<T> {
     /// by supplying a function to apply to a contained Yes value
     /// as well as a function to apply to a contained No value.
     #[inline]
-    pub fn map<U, Y: FnOnce(T) -> U, N: FnOnce(T) -> U>(
+    pub fn map_yes_no<U, Y: FnOnce(T) -> U, N: FnOnce(T) -> U>(
         self,
         yes_op: Y,
         no_op: N,
