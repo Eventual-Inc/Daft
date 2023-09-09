@@ -9,7 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
 log = {workspace = true}
-parquet2 = "0.17.2"
+parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rayon = "1.7.0"
@@ -17,6 +17,8 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = "0.1.14"
 tokio-util = "0.7.8"
+itertools = "0.11.0"
+closure = "0.3.0"
 
 [features]
 default = ["python"]

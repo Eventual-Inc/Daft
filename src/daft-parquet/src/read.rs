@@ -80,7 +80,7 @@ async fn read_parquet_single(
 
     let parquet_reader = builder.build()?;
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
-    let table = parquet_reader.read_from_ranges(ranges).await?;
+    let table = parquet_reader.read_from_ranges2(ranges).await?;
 
     if let Some(row_groups) = row_groups {
         let expected_rows: usize = row_groups
