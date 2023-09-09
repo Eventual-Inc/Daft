@@ -41,7 +41,7 @@ def boto3_get_object_read(path: str, columns: list[str] | None = None) -> pa.Tab
 
 
 def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
-    tbl = daft.table.Table.read_parquet(path, columns=columns, multithreaded_io=False)
+    tbl = daft.table.Table.read_parquet(path, columns=columns)
     return tbl.to_arrow()
 
 
