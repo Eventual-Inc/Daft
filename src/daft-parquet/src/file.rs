@@ -95,7 +95,7 @@ pub struct StreamIterator<S> {
     src: tokio::sync::Mutex<S>,
 }
 
-impl<S> StreamIterator<S> 
+impl<S> StreamIterator<S>
 where S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin {
     pub fn new(src: S) -> Self {
         StreamIterator { curr: None, src: tokio::sync::Mutex::new(src) }
