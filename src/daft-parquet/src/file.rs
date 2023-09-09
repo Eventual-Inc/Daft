@@ -8,10 +8,12 @@ use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
+    read::get_owned_page_stream_from_column_start,
     read::get_page_stream_from_column_start,
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
+use rayon::prelude::*;
 
 use crate::{
     metadata::read_parquet_metadata,
@@ -86,6 +88,45 @@ impl FallibleStreamingIterator for VecIterator {
         }
     }
 }
+
+
+pub struct StreamIterator<S> {
+    curr: Option<Page>,
+    src: tokio::sync::Mutex<S>,
+}
+
+impl<S> StreamIterator<S> 
+where S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin {
+    pub fn new(src: S) -> Self {
+        StreamIterator { curr: None, src: tokio::sync::Mutex::new(src) }
+    }
+}
+
+impl<S> FallibleStreamingIterator for StreamIterator<S>
+where S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin {
+    type Error = parquet2::error::Error;
+    type Item = Page;
+    fn advance(&mut self) -> Result<(), Self::Error> {
+        let handle = tokio::runtime::Handle::current();
+        let val = handle.block_on(async {
+            let mut s_guard = self.src.lock().await;
+            s_guard.next().await
+        });
+        if let Some(val) = val {
+            let val = val?;
+            self.curr = Some(val);
+        } else {
+            self.curr = None;
+        }
+        Ok(())
+
+    }
+
+    fn get(&self) -> Option<&Self::Item> {
+        self.curr.as_ref()
+    }
+}
+
 
 impl ParquetReaderBuilder {
     pub async fn from_uri(uri: &str, io_client: Arc<daft_io::IOClient>) -> super::Result<Self> {
@@ -451,4 +492,81 @@ impl ParquetFileReader {
 
         Table::new(daft_schema, all_series)
     }
+
+
+
+    pub async fn read_from_ranges2(self, ranges: Arc<RangesContainer>) -> DaftResult<Table> {
+        // let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        let rg_fields = itertools::iproduct!(self.row_ranges.iter(), self.arrow_schema().fields.iter()).collect::<Vec<_>>();
+        let rt_handle = tokio::runtime::Handle::current();
+        let all_array_iter = rg_fields.into_par_iter().map(|(row_range, field)| {
+            let rg = self.metadata
+                .row_groups
+                .get(row_range.row_group_index)
+                .expect("Row Group index should be in bounds");
+            let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
+            let columns = rg.columns();
+            let field_name = &field.name;
+            let filtered_cols = columns
+                .iter()
+                .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
+                .collect::<Vec<_>>();
+
+            let mut decompressed_iters = Vec::with_capacity(filtered_cols.len());
+            let mut ptypes = Vec::with_capacity(filtered_cols.len());
+
+            for col in filtered_cols {
+                let (start, len) = col.byte_range();
+                let end = start + len;
+
+                let range_reader =
+                ranges.get_range_reader(start as usize..end as usize).unwrap();
+
+                let pinned = Box::pin(range_reader);
+                let compressed_page_stream = rt_handle.block_on(async  {
+                    get_owned_page_stream_from_column_start(
+                        col.clone(),
+                        pinned,
+                        vec![],
+                        Arc::new(|_, _| true),
+                        4 * 1024 * 1024,
+                    )
+                    .await
+                })
+                .with_context(
+                    |_| UnableToCreateParquetPageStreamSnafu::<String> {
+                        path: self.uri.clone(),
+                    },
+                ).unwrap();
+
+                let page_stream = streaming_decompression(compressed_page_stream);
+                let pinned_stream = Box::pin(page_stream);
+                decompressed_iters.push(StreamIterator::new(pinned_stream));
+
+                ptypes.push(&col.descriptor().descriptor.primitive_type);
+            }
+            let arr_iter = column_iter_to_arrays(
+                decompressed_iters,
+                ptypes,
+                field.clone(),
+                Some(2048),
+                num_rows,
+            ).unwrap();
+            arr_iter.collect::<Result<Vec<_>, _>>().unwrap()
+
+            // all_arrays
+            // .into_iter()
+            // .map(|a| {
+            //     Series::try_from((
+            //         field.name.as_str(),
+            //         cast_array_for_daft_if_needed(a),
+            //     ))
+            // })
+            // .collect::<DaftResult<Vec<Series>>>()
+        });
+        let values = all_array_iter.collect::<Vec<_>>();
+        let daft_schema = daft_core::schema::Schema::try_from(&self.arrow_schema)?;
+        Table::empty(Some(daft_schema.into()))
+    }
+
 }

@@ -830,6 +830,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "closure"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6173fd61b610d15a7566dd7b7620775627441c4ab9dac8906e17cb93a24b782"
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,11 +1104,13 @@ dependencies = [
  "async-compat",
  "async-stream",
  "bytes",
+ "closure",
  "common-error",
  "daft-core",
  "daft-io",
  "daft-table",
  "futures",
+ "itertools",
  "log",
  "parquet2",
  "pyo3",
@@ -1860,6 +1868,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2401,8 +2418,7 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "579fe5745f02cef3d5f236bfed216fd4693e49e4e920a13475c6132233283bce"
+source = "git+https://github.com/Eventual-Inc/parquet2?branch=sammy/owned-page-stream#730adebd314c8658e7da0758fbea43b9e8264ab4"
 dependencies = [
  "async-stream",
  "brotli",
