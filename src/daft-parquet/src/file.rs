@@ -408,7 +408,7 @@ impl ParquetFileReader {
 
                             let mut decompressed_iters = Vec::with_capacity(filtered_cols.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols.len());
-                            
+
                             for (col, range_reader) in filtered_cols.into_iter().zip(range_readers.into_iter()) {
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
 
@@ -467,15 +467,15 @@ impl ParquetFileReader {
                                         }
                                     }
 
-                                    all_arrays
-                                        .into_iter()
-                                        .map(|a| {
-                                            Series::try_from((
-                                                field.name.as_str(),
-                                                cast_array_for_daft_if_needed(a),
-                                            ))
-                                        })
-                                        .collect::<DaftResult<Vec<Series>>>()
+                                    Ok(all_arrays)
+                                        // .into_iter()
+                                        // .map(|a| {
+                                        //     Series::try_from((
+                                        //         field.name.as_str(),
+                                        //         cast_array_for_daft_if_needed(a),
+                                        //     ))
+                                        // })
+                                        // .collect::<DaftResult<Vec<Series>>>()
                                 })();
 
                                 let _ = send.send(ser);
@@ -494,14 +494,14 @@ impl ParquetFileReader {
                     let series_to_concat = series_to_concat
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-
-                    let (send, recv) = tokio::sync::oneshot::channel();
-                    rayon::spawn(move || {
-                        let concated =
-                            Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>());
-                        let _ = send.send(concated);
-                    });
-                    recv.await.context(OneShotRecvSnafu {})?
+                    Ok(series_to_concat)
+                    // let (send, recv) = tokio::sync::oneshot::channel();
+                    // rayon::spawn(move || {
+                    //     let concated =
+                    //         Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>());
+                    //     let _ = send.send(concated);
+                    // });
+                    // recv.await.context(OneShotRecvSnafu {})?
                 });
                 Ok(concated_handle)
             })
@@ -515,8 +515,9 @@ impl ParquetFileReader {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
         let daft_schema = daft_core::schema::Schema::try_from(&self.arrow_schema)?;
+        Table::empty(Some(daft_schema.into()))
 
-        Table::new(daft_schema, all_series)
+        // Table::new(daft_schema, all_series)
     }
 
     pub async fn read_from_ranges2(self, ranges: Arc<RangesContainer>) -> DaftResult<Table> {
