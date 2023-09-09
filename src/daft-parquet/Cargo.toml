@@ -3,11 +3,13 @@ arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = "0.2.1"
 async-stream = "0.3.5"
 bytes = {workspace = true}
+closure = "0.3.0"
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
+itertools = "0.11.0"
 log = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -17,8 +19,6 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = "0.1.14"
 tokio-util = "0.7.8"
-itertools = "0.11.0"
-closure = "0.3.0"
 
 [features]
 default = ["python"]
