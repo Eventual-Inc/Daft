@@ -520,7 +520,6 @@ impl ParquetFileReader {
         let rt_handle = tokio::runtime::Handle::current();
         let all_array_iter = rg_fields.into_par_iter().map(|(row_range, field)| {
             let _guard = rt_handle.enter();
-            log::warn!("loop start {field:?}");
             let rg = self
                 .metadata
                 .row_groups
@@ -568,7 +567,6 @@ impl ParquetFileReader {
 
                 ptypes.push(&col.descriptor().descriptor.primitive_type);
             }
-            log::warn!("before arr_iter {field:?}");
 
             let arr_iter = column_iter_to_arrays(
                 decompressed_iters,
@@ -578,12 +576,8 @@ impl ParquetFileReader {
                 num_rows,
             )
             .unwrap();
-            log::warn!("after arr_iter {field:?}");
 
-            let v = arr_iter.collect::<Result<Vec<_>, _>>().unwrap();
-            log::warn!("after arr_iter collect {field:?}");
-            v
-
+            arr_iter.collect::<Result<Vec<_>, _>>().unwrap()
             // all_arrays
             // .into_iter()
             // .map(|a| {
