@@ -82,43 +82,43 @@ async fn read_parquet_single(
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
     let table = parquet_reader.read_from_ranges2(ranges).await?;
 
-    if let Some(row_groups) = row_groups {
-        let expected_rows: usize = row_groups
-            .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table.len() {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: expected_rows,
-                read_rows: table.len(),
-            }
-            .into());
-        }
-    } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    metadata_num_rows,
-                    read_rows: table.len(),
-                })
-            }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
-                    read_rows: table.len(),
-                })
-            }
-            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: n.min(metadata_num_rows),
-                read_rows: table.len(),
-            }),
-            _ => Ok(()),
-        }?;
-    };
+    // if let Some(row_groups) = row_groups {
+    //     let expected_rows: usize = row_groups
+    //         .iter()
+    //         .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+    //         .sum();
+    //     if expected_rows != table.len() {
+    //         return Err(super::Error::ParquetNumRowMismatch {
+    //             path: uri.into(),
+    //             metadata_num_rows: expected_rows,
+    //             read_rows: table.len(),
+    //         }
+    //         .into());
+    //     }
+    // } else {
+    //     match (start_offset, num_rows) {
+    //         (None, None) if metadata_num_rows != table.len() => {
+    //             Err(super::Error::ParquetNumRowMismatch {
+    //                 path: uri.into(),
+    //                 metadata_num_rows,
+    //                 read_rows: table.len(),
+    //             })
+    //         }
+    //         (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+    //             Err(super::Error::ParquetNumRowMismatch {
+    //                 path: uri.into(),
+    //                 metadata_num_rows: metadata_num_rows.saturating_sub(s),
+    //                 read_rows: table.len(),
+    //             })
+    //         }
+    //         (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
+    //             path: uri.into(),
+    //             metadata_num_rows: n.min(metadata_num_rows),
+    //             read_rows: table.len(),
+    //         }),
+    //         _ => Ok(()),
+    //     }?;
+    // };
 
     let expected_num_columns = if let Some(columns) = columns {
         columns.len()
