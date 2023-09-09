@@ -733,7 +733,7 @@ class DataFrame:
         """
         if self.schema() != other.schema():
             raise ValueError(
-                f"DataFrames must have exactly the same schema for concatenation! Expected:\n{self.schema()}\n\nReceived:\n{other.schema()}"
+                f"DataFrames must have exactly the same schema for concatenation!\nExpected:\n{self.schema()}\n\nReceived:\n{other.schema()}"
             )
         builder = self._builder.concat(other._builder)
         return DataFrame(builder)

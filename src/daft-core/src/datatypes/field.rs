@@ -4,7 +4,7 @@ use std::sync::Arc;
 use arrow2::datatypes::Field as ArrowField;
 
 use crate::datatypes::dtype::DataType;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use serde::{Deserialize, Serialize};
 
@@ -93,6 +93,22 @@ impl Field {
             dtype: list_dtype,
             metadata: self.metadata.clone(),
         })
+    }
+
+    pub fn to_exploded_field(&self) -> DaftResult<Self> {
+        match &self.dtype {
+            DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => {
+                Ok(Self {
+                    name: self.name.clone(),
+                    dtype: child_dtype.as_ref().clone(),
+                    metadata: self.metadata.clone(),
+                })
+            }
+            _ => Err(DaftError::ValueError(format!(
+                "Column \"{}\" with dtype {} cannot be exploded, must be a List or FixedSizeList column.",
+                self.name, self.dtype,
+            ))),
+        }
     }
 }
 

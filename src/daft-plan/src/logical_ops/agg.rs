@@ -65,9 +65,23 @@ impl Aggregate {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Aggregation: {:?}", self.aggregations));
+        res.push(format!(
+            "Aggregation: {}",
+            self.aggregations
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
         if !self.groupby.is_empty() {
-            res.push(format!("Group by = {:?}", self.groupby));
+            res.push(format!(
+                "Group by = {:?}",
+                self.groupby
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         res.push(format!("Output schema = {}", self.schema().short_string()));
         res
