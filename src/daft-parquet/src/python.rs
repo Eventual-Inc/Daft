@@ -38,6 +38,7 @@ pub mod pylib {
                 num_rows,
                 row_groups.as_deref(),
                 io_client,
+                multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )?
             .into())
@@ -73,6 +74,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )?
             .into_iter()

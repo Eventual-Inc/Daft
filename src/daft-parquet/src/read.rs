@@ -138,6 +138,7 @@ async fn read_parquet_single(
     Ok(table)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_parquet(
     uri: &str,
     columns: Option<&[&str]>,
@@ -145,9 +146,10 @@ pub fn read_parquet(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
+    multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
         read_parquet_single(
@@ -163,6 +165,7 @@ pub fn read_parquet(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_parquet_bulk(
     uris: &[&str],
     columns: Option<&[&str]>,
@@ -170,9 +173,10 @@ pub fn read_parquet_bulk(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
+    multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
@@ -321,7 +325,16 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_parquet(file, None, None, None, None, io_client, &Default::default())?;
+        let table = read_parquet(
+            file,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            true,
+            &Default::default(),
+        )?;
         assert_eq!(table.len(), 100);
 
         Ok(())
