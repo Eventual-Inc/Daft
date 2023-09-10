@@ -1006,6 +1006,7 @@ dependencies = [
  "daft-parquet",
  "daft-plan",
  "daft-table",
+ "jemallocator",
  "pyo3",
  "pyo3-log",
 ]
@@ -1864,6 +1865,26 @@ name = "itoa"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62b02a5381cc465bd3041d84623d0fa3b66738b52b8e2fc3bab8ad63ab032f4a"
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.5.4+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac6c1946e1cea1788cbfde01c993b52a10e2da07f4bac608228d1bed20bfebf2"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0de374a9f8e63150e6f5e8a60cc14c668226d7a347d8aee1a45766e3c4dd3bc"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
 
 [[package]]
 name = "jobserver"

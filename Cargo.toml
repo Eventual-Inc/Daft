@@ -49,6 +49,9 @@ lto = 'fat'
 [profile.rust-analyzer]
 inherits = "dev"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls", "background_threads"]}
+
 [workspace]
 members = [
   "src/common/error",
