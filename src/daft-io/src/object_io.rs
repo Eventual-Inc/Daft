@@ -10,7 +10,11 @@ use crate::local::{collect_file, LocalFile};
 
 pub enum GetResult {
     File(LocalFile),
-    Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>, Option<OwnedSemaphorePermit>),
+    Stream(
+        BoxStream<'static, super::Result<Bytes>>,
+        Option<usize>,
+        Option<OwnedSemaphorePermit>,
+    ),
 }
 
 async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>

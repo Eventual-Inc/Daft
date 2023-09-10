@@ -5,7 +5,7 @@ use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
-use tokio::sync::{SemaphorePermit, OwnedSemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::{InvalidArgumentSnafu, SourceType};
@@ -254,7 +254,9 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
-        connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(2)),
+        connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
+            config.max_connections as usize,
+        )),
         s3_config: config.clone(),
         default_region,
         anonymous,
@@ -349,7 +351,6 @@ impl S3LikeSource {
             };
 
             match response {
-
                 Ok(v) => {
                     let body = v.body;
                     let owned_string = uri.to_owned();
@@ -362,7 +363,11 @@ impl S3LikeSource {
                             .into()
                         })
                         .boxed();
-                    Ok(GetResult::Stream(stream, Some(v.content_length as usize), Some(permit)))
+                    Ok(GetResult::Stream(
+                        stream,
+                        Some(v.content_length as usize),
+                        Some(permit),
+                    ))
                 }
 
                 Err(SdkError::ServiceError(err)) => {
@@ -398,10 +403,11 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _head_impl(&self,
+    async fn _head_impl(
+        &self,
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
-        region: &Region
+        region: &Region,
     ) -> super::Result<usize> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
@@ -607,8 +613,14 @@ impl S3LikeSource {
 impl ObjectSource for S3LikeSource {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         log::warn!("permits {}", self.connection_pool_sema.available_permits());
-        let permit = self.connection_pool_sema.clone().acquire_owned().await.unwrap();
-        self._get_impl(permit, uri, range, &self.default_region).await
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
+        self._get_impl(permit, uri, range, &self.default_region)
+            .await
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
@@ -633,13 +645,11 @@ impl ObjectSource for S3LikeSource {
         let key = parsed.path();
 
         if let Some(key) = key.strip_prefix('/') {
-            
             // assume its a directory first
             let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
             let lsr = {
                 let permit = self.connection_pool_sema.acquire().await.unwrap();
-                self
-                ._list_impl(
+                self._list_impl(
                     permit,
                     bucket,
                     &key,

@@ -11,7 +11,9 @@ use crate::config;
 ///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
+///     max_connections: Maximum number of connections to S3 at any time, defaults to 25
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
+///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
 ///     connect_timeout_ms: Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 60 seconds
 ///     read_timeout_ms: Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 60 seconds
@@ -142,6 +144,7 @@ impl S3Config {
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
+        max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
         connect_timeout_ms: Option<u64>,
         read_timeout_ms: Option<u64>,
@@ -157,6 +160,7 @@ impl S3Config {
                 key_id: key_id.or(def.key_id),
                 session_token: session_token.or(def.session_token),
                 access_key: access_key.or(def.access_key),
+                max_connections: max_connections.unwrap_or(def.max_connections),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
                     .unwrap_or(def.retry_initial_backoff_ms),
                 connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
@@ -200,6 +204,12 @@ impl S3Config {
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
+    }
+
+    /// AWS max connections
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections)
     }
 
     /// AWS Retry Initial Backoff Time in Milliseconds

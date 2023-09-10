@@ -11,6 +11,7 @@ pub struct S3Config {
     pub key_id: Option<String>,
     pub session_token: Option<String>,
     pub access_key: Option<String>,
+    pub max_connections: u32,
     pub retry_initial_backoff_ms: u64,
     pub connect_timeout_ms: u64,
     pub read_timeout_ms: u64,
@@ -27,6 +28,7 @@ impl Default for S3Config {
             key_id: None,
             session_token: None,
             access_key: None,
+            max_connections: 25,
             retry_initial_backoff_ms: 1000,
             connect_timeout_ms: 60_000,
             read_timeout_ms: 60_000,
@@ -47,6 +49,7 @@ impl Display for S3Config {
     key_id: {:?}
     session_token: {:?},
     access_key: {:?}
+    max_connections: {},
     retry_initial_backoff_ms: {},
     connect_timeout_ms: {},
     read_timeout_ms: {},
@@ -59,6 +62,7 @@ impl Display for S3Config {
             self.session_token,
             self.access_key,
             self.retry_initial_backoff_ms,
+            self.max_connections,
             self.connect_timeout_ms,
             self.read_timeout_ms,
             self.num_tries,
