@@ -405,7 +405,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _head_impl(
         &self,
-        permit: SemaphorePermit<'async_recursion>,
+        _permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
     ) -> super::Result<usize> {
@@ -471,7 +471,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(permit, uri, &new_region).await
+                            self._head_impl(_permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -488,7 +488,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _list_impl(
         &self,
-        permit: SemaphorePermit<'async_recursion>,
+        _permit: SemaphorePermit<'async_recursion>,
         bucket: &str,
         key: &str,
         delimiter: String,
@@ -588,7 +588,7 @@ impl S3LikeSource {
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
                         self._list_impl(
-                            permit,
+                            _permit,
                             bucket,
                             key,
                             delimiter,
