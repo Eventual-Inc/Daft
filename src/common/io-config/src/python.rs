@@ -11,7 +11,7 @@ use crate::config;
 ///     endpoint_url: URL to the S3 endpoint, defaults to endpoints to AWS
 ///     key_id: AWS Access Key ID, defaults to auto-detection from the current environment
 ///     access_key: AWS Secret Access Key, defaults to auto-detection from the current environment
-///     max_connections: Maximum number of connections to S3 at any time, defaults to 25
+///     max_connections: Maximum number of connections to S3 at any time, defaults to 1024
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
 ///     connect_timeout_ms: Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 60 seconds
