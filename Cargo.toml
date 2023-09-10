@@ -50,7 +50,8 @@ lto = 'fat'
 inherits = "dev"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls", "background_threads"]}
+libc = {version = "^0.2.8", default-features = false}
+tikv-jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls"]}
 
 [workspace]
 members = [
