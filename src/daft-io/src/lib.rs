@@ -306,10 +306,9 @@ pub fn set_io_pool_num_threads(num_threads: u64) -> bool {
         }
     }
     let mut client_guard = CLIENT_CACHE.blocking_write();
+    let mut guard = THREADED_RUNTIME.blocking_write();
 
     client_guard.clear();
-
-    let mut guard = THREADED_RUNTIME.blocking_write();
 
     guard.1 = num_threads;
     guard.0 = Arc::new(
