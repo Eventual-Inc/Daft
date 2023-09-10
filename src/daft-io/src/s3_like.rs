@@ -612,7 +612,6 @@ impl S3LikeSource {
 #[async_trait]
 impl ObjectSource for S3LikeSource {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
-        log::warn!("permits {}", self.connection_pool_sema.available_permits());
         let permit = self
             .connection_pool_sema
             .clone()
