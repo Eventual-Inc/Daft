@@ -119,7 +119,7 @@ impl ObjectSource for HttpSource {
             .into_error(e)
             .into()
         });
-        Ok(GetResult::Stream(stream.boxed(), size_bytes))
+        Ok(GetResult::Stream(stream.boxed(), size_bytes, None))
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
