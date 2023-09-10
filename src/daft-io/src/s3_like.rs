@@ -93,6 +93,9 @@ enum Error {
     #[snafu(display("Unable to create http client. {}", source))]
     UnableToCreateClient { source: reqwest::Error },
 
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
+
     #[snafu(display(
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
@@ -617,13 +620,17 @@ impl ObjectSource for S3LikeSource {
             .clone()
             .acquire_owned()
             .await
-            .unwrap();
+            .context(UnableToGrabSemaphoreSnafu)?;
         self._get_impl(permit, uri, range, &self.default_region)
             .await
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
-        let permit = self.connection_pool_sema.acquire().await.unwrap();
+        let permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
         self._head_impl(permit, uri, &self.default_region).await
     }
     async fn ls(
@@ -647,7 +654,11 @@ impl ObjectSource for S3LikeSource {
             // assume its a directory first
             let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
             let lsr = {
-                let permit = self.connection_pool_sema.acquire().await.unwrap();
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
                 self._list_impl(
                     permit,
                     bucket,
@@ -659,7 +670,11 @@ impl ObjectSource for S3LikeSource {
                 .await?
             };
             if lsr.files.is_empty() && key.contains('/') {
-                let permit = self.connection_pool_sema.acquire().await.unwrap();
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
                 // Might be a File
                 let split = key.rsplit_once('/');
                 let (new_key, _) = split.unwrap();
