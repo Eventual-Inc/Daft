@@ -4,12 +4,17 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::local::{collect_file, LocalFile};
 
 pub enum GetResult {
     File(LocalFile),
-    Stream(BoxStream<'static, super::Result<Bytes>>, Option<usize>),
+    Stream(
+        BoxStream<'static, super::Result<Bytes>>,
+        Option<usize>,
+        Option<OwnedSemaphorePermit>,
+    ),
 }
 
 async fn collect_bytes<S>(mut stream: S, size_hint: Option<usize>) -> super::Result<Bytes>
@@ -40,7 +45,7 @@ impl GetResult {
         use GetResult::*;
         match self {
             File(f) => collect_file(f).await,
-            Stream(stream, size) => collect_bytes(stream, size).await,
+            Stream(stream, size, _permit) => collect_bytes(stream, size).await,
         }
     }
 }

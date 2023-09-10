@@ -152,7 +152,7 @@ impl ObjectSource for AzureBlobSource {
                 .into_error(e)
                 .into()
             });
-        Ok(GetResult::Stream(stream.boxed(), None))
+        Ok(GetResult::Stream(stream.boxed(), None, None))
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {

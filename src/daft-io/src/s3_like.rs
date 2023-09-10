@@ -5,6 +5,7 @@ use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
 use crate::{InvalidArgumentSnafu, SourceType};
@@ -34,6 +35,7 @@ use std::sync::Arc;
 use std::time::Duration;
 pub(crate) struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
+    connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
     s3_config: S3Config,
     anonymous: bool,
@@ -90,6 +92,9 @@ enum Error {
 
     #[snafu(display("Unable to create http client. {}", source))]
     UnableToCreateClient { source: reqwest::Error },
+
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
 
     #[snafu(display(
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
@@ -252,6 +257,9 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
+        connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
+            config.max_connections as usize,
+        )),
         s3_config: config.clone(),
         default_region,
         anonymous,
@@ -290,6 +298,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _get_impl(
         &self,
+        permit: OwnedSemaphorePermit,
         uri: &str,
         range: Option<Range<usize>>,
         region: &Region,
@@ -357,7 +366,11 @@ impl S3LikeSource {
                             .into()
                         })
                         .boxed();
-                    Ok(GetResult::Stream(stream, Some(v.content_length as usize)))
+                    Ok(GetResult::Stream(
+                        stream,
+                        Some(v.content_length as usize),
+                        Some(permit),
+                    ))
                 }
 
                 Err(SdkError::ServiceError(err)) => {
@@ -378,7 +391,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
-                            self._get_impl(uri, range, &new_region).await
+                            self._get_impl(permit, uri, range, &new_region).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -393,7 +406,12 @@ impl S3LikeSource {
     }
 
     #[async_recursion]
-    async fn _head_impl(&self, uri: &str, region: &Region) -> super::Result<usize> {
+    async fn _head_impl(
+        &self,
+        _permit: SemaphorePermit<'async_recursion>,
+        uri: &str,
+        region: &Region,
+    ) -> super::Result<usize> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
         let bucket = match parsed.host_str() {
@@ -456,7 +474,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(uri, &new_region).await
+                            self._head_impl(_permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -473,6 +491,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _list_impl(
         &self,
+        _permit: SemaphorePermit<'async_recursion>,
         bucket: &str,
         key: &str,
         delimiter: String,
@@ -572,6 +591,7 @@ impl S3LikeSource {
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
                         self._list_impl(
+                            _permit,
                             bucket,
                             key,
                             delimiter,
@@ -595,11 +615,23 @@ impl S3LikeSource {
 #[async_trait]
 impl ObjectSource for S3LikeSource {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
-        self._get_impl(uri, range, &self.default_region).await
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        self._get_impl(permit, uri, range, &self.default_region)
+            .await
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
-        self._head_impl(uri, &self.default_region).await
+        let permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        self._head_impl(permit, uri, &self.default_region).await
     }
     async fn ls(
         &self,
@@ -621,21 +653,34 @@ impl ObjectSource for S3LikeSource {
         if let Some(key) = key.strip_prefix('/') {
             // assume its a directory first
             let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
-            let lsr = self
-                ._list_impl(
+            let lsr = {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
+                self._list_impl(
+                    permit,
                     bucket,
                     &key,
                     delimiter.into(),
                     continuation_token.map(String::from),
                     &self.default_region,
                 )
-                .await?;
+                .await?
+            };
             if lsr.files.is_empty() && key.contains('/') {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
                 // Might be a File
                 let split = key.rsplit_once('/');
                 let (new_key, _) = split.unwrap();
                 let mut lsr = self
                     ._list_impl(
+                        permit,
                         bucket,
                         new_key,
                         delimiter.into(),
