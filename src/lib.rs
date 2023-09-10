@@ -1,6 +1,37 @@
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
+union U {
+    x: &'static u8,
+    y: &'static libc::c_char,
+}
+
+#[cfg(target_env = "gnu")]
+#[allow(non_upper_case_globals)]
+#[export_name = "_rjem_malloc_conf"]
+pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
+    U {
+        x: &b"oversize_threshold:1,background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000\0"[0],
+    }
+    .y
+});
+
+#[cfg(target_os = "macos")]
+#[allow(non_upper_case_globals)]
+#[export_name = "_rjem_malloc_conf"]
+pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
+    U {
+        x: &b"oversize_threshold:1,background_thread:false,dirty_decay_ms:0,muzzy_decay_ms:0\0"[0],
+    }
+    .y
+});
+
 #[cfg(feature = "python")]
 pub mod pylib {
-
     use pyo3::prelude::*;
 
     #[pyfunction]

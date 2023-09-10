@@ -43,7 +43,8 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
 
             rayon::spawn(move || {
                 let mut buffer = vec![];
-                let _ = send.send(decompress(compressed_page, &mut buffer));
+                let page = decompress(compressed_page, &mut buffer);
+                let _ = send.send(page);
 
             });
             yield recv.await.expect("panic while decompressing page");
@@ -399,7 +400,6 @@ impl ParquetFileReader {
                                             all_arrays.push(arr);
                                         }
                                     }
-
                                     all_arrays
                                         .into_iter()
                                         .map(|a| {
@@ -432,6 +432,7 @@ impl ParquetFileReader {
                     rayon::spawn(move || {
                         let concated =
                             Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>());
+                        drop(series_to_concat);
                         let _ = send.send(concated);
                     });
                     recv.await.context(OneShotRecvSnafu {})?
