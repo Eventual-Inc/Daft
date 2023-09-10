@@ -14,7 +14,6 @@ use crate::config;
 ///     max_connections: Maximum number of connections to S3 at any time, defaults to 25
 ///     session_token: AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
-///     retry_initial_backoff_ms: Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
 ///     connect_timeout_ms: Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 60 seconds
 ///     read_timeout_ms: Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 60 seconds
 ///     num_tries: Number of attempts to make a connection, defaults to 5
