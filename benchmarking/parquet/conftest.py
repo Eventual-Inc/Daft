@@ -46,7 +46,7 @@ def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
 
 
 def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa.Table:
-    return daft.table(path, columns=columns)
+    return daft.table.daft_native_read_to_arrow(path, columns=columns)
 
 
 @pytest.fixture(
