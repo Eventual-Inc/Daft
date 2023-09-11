@@ -51,6 +51,28 @@ def test_url_download_aws_s3_public_bucket_native_downloader(aws_public_s3_confi
 
 
 @pytest.mark.integration()
+def test_url_download_aws_s3_public_bucket_native_downloader_io_thread_change(
+    aws_public_s3_config, small_images_s3_paths
+):
+    data = {"urls": small_images_s3_paths}
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
+
+    data = df.to_pydict()
+    assert len(data["data"]) == 6
+    for img_bytes in data["data"]:
+        assert img_bytes is not None
+    daft.io.set_io_pool_num_threads(2)
+    df = daft.from_pydict(data)
+    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
+
+    data = df.to_pydict()
+    assert len(data["data"]) == 6
+    for img_bytes in data["data"]:
+        assert img_bytes is not None
+
+
+@pytest.mark.integration()
 def test_url_download_aws_s3_public_bucket_native_downloader_with_connect_timeout(small_images_s3_paths):
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)

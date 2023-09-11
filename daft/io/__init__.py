@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import sys
 
-from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
+from daft.daft import (
+    AzureConfig,
+    GCSConfig,
+    IOConfig,
+    S3Config,
+    set_io_pool_num_threads,
+)
 from daft.io._csv import read_csv
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
@@ -32,4 +38,5 @@ __all__ = [
     "S3Config",
     "AzureConfig",
     "GCSConfig",
+    "set_io_pool_num_threads",
 ]
