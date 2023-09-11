@@ -28,7 +28,7 @@ impl Default for S3Config {
             key_id: None,
             session_token: None,
             access_key: None,
-            max_connections: 25,
+            max_connections: 1024,
             retry_initial_backoff_ms: 1000,
             connect_timeout_ms: 60_000,
             read_timeout_ms: 60_000,

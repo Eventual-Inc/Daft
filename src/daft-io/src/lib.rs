@@ -248,14 +248,19 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     }
 }
 type CacheKey = (bool, Arc<IOConfig>);
-
 lazy_static! {
-    static ref THREADED_RUNTIME: Arc<tokio::runtime::Runtime> = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-    );
+    static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+    static ref THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
+        tokio::sync::RwLock::new((
+            Arc::new(
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(8.min(*NUM_CPUS))
+                    .enable_all()
+                    .build()
+                    .unwrap()
+            ),
+            8.min(*NUM_CPUS)
+        ));
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
 }
@@ -286,8 +291,34 @@ pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime
                 .enable_all()
                 .build()?,
         )),
-        true => Ok(THREADED_RUNTIME.clone()),
+        true => {
+            let guard = THREADED_RUNTIME.blocking_read();
+            Ok(guard.clone().0)
+        }
     }
+}
+
+pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
+    {
+        let guard = THREADED_RUNTIME.blocking_read();
+        if guard.1 == num_threads {
+            return false;
+        }
+    }
+    let mut client_guard = CLIENT_CACHE.blocking_write();
+    let mut guard = THREADED_RUNTIME.blocking_write();
+
+    client_guard.clear();
+
+    guard.1 = num_threads;
+    guard.0 = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(num_threads)
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
+    true
 }
 
 pub fn _url_download(
