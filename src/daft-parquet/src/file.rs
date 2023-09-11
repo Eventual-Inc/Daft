@@ -14,7 +14,7 @@ use parquet2::{
 use snafu::ResultExt;
 
 use crate::{
-    metadata::{read_parquet_metadata, self},
+    metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu,
@@ -324,22 +324,24 @@ impl ParquetFileReader {
                         let rt_handle = tokio::runtime::Handle::current();
                         let field = field.clone();
                         let owned_uri = self.uri.clone();
-                        let rg = (&metadata)
+                        let rg = metadata
                             .row_groups
                             .get(row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let columns = rg.columns();
                         let field_name = &field.name;
-                        let filtered_cols = columns
+                        let filtered_cols_idx = columns
                             .iter()
-                            .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
+                            .enumerate()
+                            .filter(|(_, x)| &x.descriptor().path_in_schema[0] == field_name)
+                            .map(|(i, _)| i)
                             .collect::<Vec<_>>();
 
-                        let range_readers = filtered_cols
+                        let range_readers = filtered_cols_idx
                             .iter()
-                            .map(|c| {
-                                // let ranges = ranges.clone();
+                            .map(|i| {
+                                let c = columns.get(*i).unwrap();
                                 let (start, len) = c.byte_range();
                                 let end: u64 = start + len;
                                 let range_reader = ranges
@@ -349,13 +351,22 @@ impl ParquetFileReader {
                                 Box::pin(range_reader)
                             })
                             .collect::<Vec<_>>();
-
+                        let metadata = metadata.clone();
                         let handle = tokio::task::spawn(async move {
-                            let mut decompressed_iters = Vec::with_capacity(filtered_cols.len());
-                            let mut ptypes = Vec::with_capacity(filtered_cols.len());
+                            let mut decompressed_iters =
+                                Vec::with_capacity(filtered_cols_idx.len());
+                            let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
 
-                            for (col, range_reader) in filtered_cols.into_iter().zip(range_readers)
+                            for (col_idx, range_reader) in
+                                filtered_cols_idx.into_iter().zip(range_readers)
                             {
+                                let col = metadata
+                                    .row_groups
+                                    .get(row_range.row_group_index)
+                                    .expect("Row Group index should be in bounds")
+                                    .columns()
+                                    .get(col_idx)
+                                    .expect("Column index should be in bounds");
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
 
                                 let compressed_page_stream =
