@@ -44,9 +44,10 @@ def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
     tbl = daft.table.Table.read_parquet(path, columns=columns)
     return tbl.to_arrow()
 
+
 def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa.Table:
-    return daft.table.read_parquet_into_pyarrow(path, columns=columns)
-    
+    return daft.table.q(path, columns=columns)
+
 
 @pytest.fixture(
     params=[
@@ -57,7 +58,7 @@ def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa
     ],
     ids=[
         "daft_native_read",
-        "daft_native_read_to_arrow"
+        "daft_native_read_to_arrow",
         "pyarrow",
         "boto3_get_object",
     ],
