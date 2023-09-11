@@ -8,7 +8,7 @@ use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
     page::{CompressedPage, Page},
-    read::get_page_stream_from_column_start,
+    read::get_owned_page_stream_from_column_start,
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
@@ -47,40 +47,47 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
     }
 }
 
-pub struct VecIterator {
-    index: i64,
-    src: Vec<parquet2::error::Result<Page>>,
+pub struct StreamIterator<S> {
+    curr: Option<Page>,
+    src: tokio::sync::Mutex<S>,
+    handle: tokio::runtime::Handle,
 }
 
-impl VecIterator {
-    pub fn new(src: Vec<parquet2::error::Result<Page>>) -> Self {
-        VecIterator { index: -1, src }
+impl<S> StreamIterator<S>
+where
+    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+{
+    pub fn new(src: S, handle: tokio::runtime::Handle) -> Self {
+        StreamIterator {
+            curr: None,
+            src: tokio::sync::Mutex::new(src),
+            handle,
+        }
     }
 }
 
-impl FallibleStreamingIterator for VecIterator {
+impl<S> FallibleStreamingIterator for StreamIterator<S>
+where
+    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+{
     type Error = parquet2::error::Error;
     type Item = Page;
     fn advance(&mut self) -> Result<(), Self::Error> {
-        self.index += 1;
-        if (self.index as usize) < self.src.len() {
-            if let Err(value) = self.src.get(self.index as usize).unwrap() {
-                return Err(value.clone());
-            }
+        let val = self.handle.block_on(async {
+            let mut s_guard = self.src.lock().await;
+            s_guard.next().await
+        });
+        if let Some(val) = val {
+            let val = val?;
+            self.curr = Some(val);
+        } else {
+            self.curr = None;
         }
         Ok(())
     }
 
     fn get(&self) -> Option<&Self::Item> {
-        if self.index < 0 || (self.index as usize) >= self.src.len() {
-            return None;
-        }
-
-        if let Ok(val) = self.src.get(self.index as usize).unwrap() {
-            Some(val)
-        } else {
-            None
-        }
+        self.curr.as_ref()
     }
 }
 
@@ -313,59 +320,64 @@ impl ParquetFileReader {
                     .iter()
                     .map(|row_range| {
                         let row_range = *row_range;
+                        let rt_handle = tokio::runtime::Handle::current();
                         let field = field.clone();
                         let owned_uri = self.uri.clone();
-                        let ranges = ranges.clone();
                         let owned_metadata = metadata.clone();
+                        let rg = owned_metadata
+                            .row_groups
+                            .get(row_range.row_group_index)
+                            .expect("Row Group index should be in bounds");
+                        let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
+                        let columns = rg.columns();
+                        let field_name = &field.name;
+                        let filtered_cols = columns
+                            .iter()
+                            .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
+                            .cloned()
+                            .collect::<Vec<_>>();
+
+                        let range_readers = filtered_cols
+                            .iter()
+                            .map(|c| {
+                                // let ranges = ranges.clone();
+                                let (start, len) = c.byte_range();
+                                let end: u64 = start + len;
+                                let range_reader = ranges
+                                    .get_range_reader(start as usize..end as usize)
+                                    .unwrap();
+
+                                Box::pin(range_reader)
+                            })
+                            .collect::<Vec<_>>();
 
                         let handle = tokio::task::spawn(async move {
-                            let rg = owned_metadata
-                                .row_groups
-                                .get(row_range.row_group_index)
-                                .expect("Row Group index should be in bounds");
-                            let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-                            let columns = rg.columns();
-                            let field_name = &field.name;
-                            let filtered_cols = columns
-                                .iter()
-                                .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
-                                .collect::<Vec<_>>();
-
-                            let mut decompressed_pages = Vec::with_capacity(filtered_cols.len());
+                            let mut decompressed_iters = Vec::with_capacity(filtered_cols.len());
                             let mut ptypes = Vec::with_capacity(filtered_cols.len());
 
-                            for col in filtered_cols {
-                                let (start, len) = col.byte_range();
-                                let end = start + len;
-
-                                let range_reader =
-                                    ranges.get_range_reader(start as usize..end as usize)?;
-
-                                let mut pinned = Box::pin(range_reader);
-                                let compressed_page_stream = get_page_stream_from_column_start(
-                                    col,
-                                    &mut pinned,
-                                    vec![],
-                                    Arc::new(|_, _| true),
-                                    4 * 1024 * 1024,
-                                )
-                                .await
-                                .with_context(
-                                    |_| UnableToCreateParquetPageStreamSnafu::<String> {
-                                        path: owned_uri.clone(),
-                                    },
-                                )?;
-                                let page_stream = streaming_decompression(compressed_page_stream);
-
-                                decompressed_pages.push(page_stream.collect::<Vec<_>>().await);
-
+                            for (col, range_reader) in filtered_cols.into_iter().zip(range_readers)
+                            {
                                 ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-                            }
 
-                            let decompressed_iters = decompressed_pages
-                                .into_iter()
-                                .map(VecIterator::new)
-                                .collect();
+                                let compressed_page_stream =
+                                    get_owned_page_stream_from_column_start(
+                                        col,
+                                        range_reader,
+                                        vec![],
+                                        Arc::new(|_, _| true),
+                                        4 * 1024 * 1024,
+                                    )
+                                    .await
+                                    .with_context(|_| {
+                                        UnableToCreateParquetPageStreamSnafu::<String> {
+                                            path: owned_uri.clone(),
+                                        }
+                                    })?;
+                                let page_stream = streaming_decompression(compressed_page_stream);
+                                let pinned_stream = Box::pin(page_stream);
+                                decompressed_iters
+                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                            }
 
                             let (send, recv) = tokio::sync::oneshot::channel();
                             rayon::spawn(move || {
