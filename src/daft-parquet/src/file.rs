@@ -37,20 +37,16 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
     input: S,
 ) -> impl futures::Stream<Item = parquet2::error::Result<Page>> {
     async_stream::stream! {
+        let mut buffer = vec![];
+
         for await compressed_page in input {
             let compressed_page = compressed_page?;
-            let (send, recv) = tokio::sync::oneshot::channel();
-
-            rayon::spawn(move || {
-                let mut buffer = vec![];
-                let page = decompress(compressed_page, &mut buffer);
-                let _ = send.send(page);
-
-            });
-            yield recv.await.expect("panic while decompressing page");
+            yield decompress(compressed_page, &mut buffer);
         }
+        drop(buffer);
     }
 }
+
 pub struct VecIterator {
     index: i64,
     src: Vec<parquet2::error::Result<Page>>,
