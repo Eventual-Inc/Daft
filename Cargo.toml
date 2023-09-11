@@ -31,6 +31,9 @@ name = "daft"
 publish = false
 version = "0.1.10"
 
+[patch.crates-io]
+parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
+
 [profile.dev]
 overflow-checks = false
 
@@ -94,6 +97,13 @@ version = "1.4.0"
 [workspace.dependencies.log]
 features = ["std"]
 version = "0.4.19"
+
+[workspace.dependencies.parquet2]
+# branch = "sammy/owned-page-stream"
+features = ['async']
+git = "https://github.com/Eventual-Inc/parquet2"
+package = "parquet2"
+rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py37"]

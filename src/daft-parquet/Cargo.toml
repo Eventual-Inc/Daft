@@ -9,7 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
 log = {workspace = true}
-parquet2 = "0.17.2"
+parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rayon = "1.7.0"

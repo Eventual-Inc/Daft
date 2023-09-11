@@ -162,11 +162,11 @@ impl ReadPlanner {
                 get_result.bytes().await
             });
             let state = RangeCacheState::InFlight(join_handle);
-            let entry = RangeCacheEntry {
+            let entry = Arc::new(RangeCacheEntry {
                 start,
                 end,
                 state: tokio::sync::Mutex::new(state),
-            };
+            });
             entries.push(entry);
         }
         Ok(Arc::new(RangesContainer { ranges: entries }))
@@ -174,14 +174,11 @@ impl ReadPlanner {
 }
 
 pub(crate) struct RangesContainer {
-    ranges: Vec<RangeCacheEntry>,
+    ranges: Vec<Arc<RangeCacheEntry>>,
 }
 
 impl RangesContainer {
-    pub fn get_range_reader(
-        &self,
-        range: Range<usize>,
-    ) -> DaftResult<impl futures::AsyncRead + '_> {
+    pub fn get_range_reader(&self, range: Range<usize>) -> DaftResult<impl futures::AsyncRead> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -190,7 +187,7 @@ impl RangesContainer {
         let mut ranges_to_slice = vec![];
         match start_point {
             Ok(index) => {
-                let entry = &self.ranges[index];
+                let entry = self.ranges[index].clone();
                 let len = entry.end - entry.start;
                 assert_eq!(entry.start, current_pos);
                 let start_offset = 0;
@@ -210,7 +207,7 @@ impl RangesContainer {
                     &self.ranges[index].end
                 );
                 let index = index - 1;
-                let entry = &self.ranges[index];
+                let entry = self.ranges[index].clone();
                 let start = entry.start;
                 let end = entry.end;
                 let len = end - start;
@@ -224,7 +221,7 @@ impl RangesContainer {
             }
         };
         while current_pos < range.end && curr_index < self.ranges.len() {
-            let entry = &self.ranges[curr_index];
+            let entry = self.ranges[curr_index].clone();
             let start = entry.start;
             let end = entry.end;
             let len = end - start;

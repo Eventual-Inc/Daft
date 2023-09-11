@@ -2403,8 +2403,7 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "579fe5745f02cef3d5f236bfed216fd4693e49e4e920a13475c6132233283bce"
+source = "git+https://github.com/Eventual-Inc/parquet2?rev=d4c24086c4cc824fbabef093ab2fda95d3aacb78#d4c24086c4cc824fbabef093ab2fda95d3aacb78"
 dependencies = [
  "async-stream",
  "brotli",
