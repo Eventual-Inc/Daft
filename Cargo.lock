@@ -2403,7 +2403,6 @@ dependencies = [
 [[package]]
 name = "parquet2"
 version = "0.17.2"
-source = "git+https://github.com/Eventual-Inc/parquet2?rev=730adebd314c8658e7da0758fbea43b9e8264ab4#730adebd314c8658e7da0758fbea43b9e8264ab4"
 dependencies = [
  "async-stream",
  "brotli",

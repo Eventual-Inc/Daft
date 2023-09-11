@@ -14,7 +14,7 @@ use parquet2::{
 use snafu::ResultExt;
 
 use crate::{
-    metadata::read_parquet_metadata,
+    metadata::{read_parquet_metadata, self},
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu,
@@ -316,6 +316,7 @@ impl ParquetFileReader {
             .iter()
             .map(|field| {
                 let owned_row_ranges = self.row_ranges.clone();
+
                 let field_handles = owned_row_ranges
                     .iter()
                     .map(|row_range| {
@@ -323,8 +324,7 @@ impl ParquetFileReader {
                         let rt_handle = tokio::runtime::Handle::current();
                         let field = field.clone();
                         let owned_uri = self.uri.clone();
-                        let owned_metadata = metadata.clone();
-                        let rg = owned_metadata
+                        let rg = (&metadata)
                             .row_groups
                             .get(row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
@@ -334,7 +334,6 @@ impl ParquetFileReader {
                         let filtered_cols = columns
                             .iter()
                             .filter(|x| &x.descriptor().path_in_schema[0] == field_name)
-                            .cloned()
                             .collect::<Vec<_>>();
 
                         let range_readers = filtered_cols
