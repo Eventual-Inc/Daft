@@ -283,16 +283,7 @@ impl LogicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
-            Self::Project(Project { projection, .. }) => {
-                vec![format!(
-                    "Project: {}",
-                    projection
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )]
-            }
+            Self::Project(projection) => projection.multiline_display(),
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Explode(Explode { to_explode, .. }) => {

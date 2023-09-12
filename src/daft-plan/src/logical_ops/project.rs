@@ -50,6 +50,20 @@ impl Project {
         })
     }
 
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![
+            format!(
+                "Project: {}",
+                self.projection
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            format!("Partition spec = {:?}", self.partition_spec),
+        ]
+    }
+
     fn translate_partition_spec(
         input_pspec: Arc<PartitionSpec>,
         projection: &Vec<Expr>,
@@ -500,9 +514,11 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{binary_op, col, lit, Operator};
+    use daft_dsl::{binary_op, col, lit, Expr, Operator};
 
-    use crate::{logical_ops::Project, test::dummy_scan_node, LogicalPlan};
+    use crate::{
+        logical_ops::Project, test::dummy_scan_node, LogicalPlan, PartitionScheme, PartitionSpec,
+    };
 
     /// Test that nested common subexpressions are correctly split
     /// into multiple levels of projections.
@@ -608,6 +624,78 @@ mod tests {
         let result_projection = Project::try_new(source, expressions.clone(), Default::default())?;
 
         assert_eq!(result_projection.projection, expressions);
+
+        Ok(())
+    }
+
+    /// Test that projections preserving column inputs, even through aliasing,
+    /// do not destroy the partition spec.
+    #[test]
+    fn test_partition_spec_preserving() -> DaftResult<()> {
+        let source = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            3,
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .build();
+
+        let expressions = vec![
+            (col("a") % lit(2)), // this is now "a"
+            col("b"),
+            col("a").alias("aa"),
+        ];
+
+        let result_projection = Project::try_new(source, expressions, Default::default())?;
+
+        let expected_pspec =
+            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("aa"), col("b")]));
+
+        assert_eq!(
+            expected_pspec,
+            result_projection.partition_spec.as_ref().clone()
+        );
+
+        Ok(())
+    }
+
+    /// Test that projections destroying even a single column input from the partition spec
+    /// destroys the entire partition spec.
+    #[test]
+    fn test_partition_spec_destroying() -> DaftResult<()> {
+        let source = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            3,
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .build();
+
+        let expected_pspec = PartitionSpec::new_internal(PartitionScheme::Unknown, 3, None);
+
+        let test_cases = vec![
+            vec![col("a"), col("c").alias("b")], // original "b" is gone even though "b" is present
+            vec![col("b")],                      // original "a" dropped
+            vec![col("a") % lit(2), col("b")],   // original "a" gone
+            vec![col("c")],                      // everything gone
+        ];
+
+        for projection in test_cases {
+            let result_projection =
+                Project::try_new(source.clone(), projection, Default::default())?;
+            assert_eq!(
+                expected_pspec,
+                result_projection.partition_spec.as_ref().clone()
+            );
+        }
 
         Ok(())
     }
