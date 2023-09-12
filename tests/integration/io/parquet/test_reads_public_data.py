@@ -226,7 +226,7 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
     )
     pa_read = read_parquet_with_pyarrow(url)
-    assert daft_native_read.schema() == pa_read.schema()
+    assert daft_native_read.schema == pa_read.schema
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 
