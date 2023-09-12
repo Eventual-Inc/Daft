@@ -14,7 +14,7 @@ mod py {
     fn io_list(
         py: Python,
         path: String,
-        recursive: bool,
+        recursive: Option<bool>,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<&PyList> {
@@ -29,7 +29,7 @@ mod py {
 
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
-                let files = if recursive {
+                let files = if recursive.is_some_and(|r| r) {
                     recursive_iter(source, &path)
                         .await?
                         .try_collect::<Vec<_>>()

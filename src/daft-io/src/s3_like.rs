@@ -534,7 +534,6 @@ impl S3LikeSource {
             request.send().await
         };
         let uri = &format!("s3://{bucket}/{key}");
-        log::warn!("curr: {uri}");
         match response {
             Ok(v) => {
                 println!("token in ls {:?}", v.continuation_token());
