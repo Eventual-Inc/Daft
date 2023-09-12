@@ -166,6 +166,10 @@ DAFT_CAN_READ_FILES = [
         "gcs/mvp",
         "gs://daft-public-data-gs/mvp.parquet",
     ),
+    (
+        "daft/schema_with_metadata",
+        "tests/assets/parquet-data/parquet-with-schema-metadata.parquet",
+    ),
 ]
 
 
@@ -228,6 +232,7 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
     )
     pa_read = read_parquet_with_pyarrow(url)
     assert daft_native_read.schema == pa_read.schema
+    assert daft_native_read.schema.metadata == pa_read.schema.metadata
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 
