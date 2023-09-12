@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING
 
 import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 import pyarrow.parquet as papq
 
+from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -14,15 +14,10 @@ from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import Table
 from daft.table.table_io import FileInput, _open_stream
 
-if TYPE_CHECKING:
-    import fsspec
-
-    from daft.io import IOConfig
-
 
 def from_csv(
     file: FileInput,
-    fs: fsspec.AbstractFileSystem | None = None,
+    storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
 ) -> Schema:
     """Infers a Schema from a CSV file
@@ -35,10 +30,15 @@ def from_csv(
     Returns:
         Schema: Inferred Schema from the CSV
     """
-
     # Have PyArrow generate the column names if user specifies that there are no headers
     pyarrow_autogenerate_column_names = csv_options.header_index is None
 
+    if storage_config is not None:
+        config = storage_config.config
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(
             f,
@@ -55,7 +55,7 @@ def from_csv(
 
 def from_json(
     file: FileInput,
-    fs: fsspec.AbstractFileSystem | None = None,
+    storage_config: StorageConfig | None = None,
 ) -> Schema:
     """Reads a Schema from a JSON file
 
@@ -66,6 +66,12 @@ def from_json(
     Returns:
         Schema: Inferred Schema from the JSON
     """
+    if storage_config is not None:
+        config = storage_config.config
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
     with _open_stream(file, fs) as f:
         table = pajson.read_json(f)
 
@@ -74,14 +80,22 @@ def from_json(
 
 def from_parquet(
     file: FileInput,
-    fs: fsspec.AbstractFileSystem | None = None,
-    io_config: IOConfig | None = None,
-    use_native_downloader: bool = False,
+    storage_config: StorageConfig | None = None,
 ) -> Schema:
     """Infers a Schema from a Parquet file"""
-    if use_native_downloader:
-        assert isinstance(file, (str, pathlib.Path))
-        return Schema.from_parquet(str(file), io_config=io_config)
+    if storage_config is not None:
+        config = storage_config.config
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(
+                file, (str, pathlib.Path)
+            ), "Native downloader only works on string inputs to read_parquet"
+            io_config = config.io_config
+            return Schema.from_parquet(str(file), io_config=io_config)
+
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
 
     if not isinstance(file, (str, pathlib.Path)):
         # BytesIO path.

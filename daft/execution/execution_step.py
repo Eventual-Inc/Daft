@@ -4,10 +4,7 @@ import itertools
 import pathlib
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Generic, TypeVar
-
-if TYPE_CHECKING:
-    import fsspec
+from typing import Generic, TypeVar
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -22,6 +19,7 @@ from daft.daft import (
     JsonSourceConfig,
     ParquetSourceConfig,
     ResourceRequest,
+    StorageConfig,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -316,7 +314,7 @@ class ReadFile(SingleOutputInstruction):
     # Max number of rows to read.
     limit_rows: int | None
     schema: Schema
-    fs: fsspec.AbstractFileSystem | None
+    storage_config: StorageConfig
     columns_to_read: list[str] | None
     file_format_config: FileFormatConfig
 
@@ -363,18 +361,18 @@ class ReadFile(SingleOutputInstruction):
         )
 
         file_format = self.file_format_config.file_format()
-        config = self.file_format_config.config
+        format_config = self.file_format_config.config
         if file_format == FileFormat.Csv:
-            assert isinstance(config, CsvSourceConfig)
+            assert isinstance(format_config, CsvSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_csv(
                         file=fp,
                         schema=self.schema,
-                        fs=self.fs,
+                        storage_config=self.storage_config,
                         csv_options=TableParseCSVOptions(
-                            delimiter=config.delimiter,
-                            header_index=0 if config.has_headers else None,
+                            delimiter=format_config.delimiter,
+                            header_index=0 if format_config.has_headers else None,
                         ),
                         read_options=read_options,
                     )
@@ -382,29 +380,27 @@ class ReadFile(SingleOutputInstruction):
                 ]
             )
         elif file_format == FileFormat.Json:
-            assert isinstance(config, JsonSourceConfig)
+            assert isinstance(format_config, JsonSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_json(
                         file=fp,
                         schema=self.schema,
-                        fs=self.fs,
+                        storage_config=self.storage_config,
                         read_options=read_options,
                     )
                     for fp in filepaths
                 ]
             )
         elif file_format == FileFormat.Parquet:
-            assert isinstance(config, ParquetSourceConfig)
+            assert isinstance(format_config, ParquetSourceConfig)
             table = Table.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
                         schema=self.schema,
-                        fs=self.fs,
+                        storage_config=self.storage_config,
                         read_options=read_options,
-                        io_config=config.io_config,
-                        use_native_downloader=config.use_native_downloader,
                     )
                     for fp in filepaths
                 ]

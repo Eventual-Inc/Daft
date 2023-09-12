@@ -3,13 +3,18 @@ from __future__ import annotations
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
-from typing import Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator
 
-import fsspec
 import psutil
 from loguru import logger
 
-from daft.daft import FileFormatConfig, FileInfos, ResourceRequest
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    PythonStorageConfig,
+    ResourceRequest,
+    StorageConfig,
+)
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
@@ -26,6 +31,9 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.table import Table
+
+if TYPE_CHECKING:
+    import fsspec
 
 
 @dataclass
@@ -73,13 +81,19 @@ class PyRunnerIO(runner_io.RunnerIO):
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
+        storage_config: StorageConfig | None = None,
     ) -> FileInfos:
+        if fs is None and storage_config is not None:
+            config = storage_config.config
+            if isinstance(config, PythonStorageConfig):
+                fs = config.fs
         file_infos = FileInfos()
+        file_format = file_format_config.file_format() if file_format_config is not None else None
         for source_path in source_paths:
             if fs is None:
                 fs = get_filesystem_from_path(source_path)
 
-            path_file_infos = glob_path_with_stats(source_path, file_format_config, fs)
+            path_file_infos = glob_path_with_stats(source_path, file_format, fs, storage_config)
 
             if len(path_file_infos) == 0:
                 raise FileNotFoundError(f"No files found at {source_path}")
@@ -92,12 +106,12 @@ class PyRunnerIO(runner_io.RunnerIO):
         self,
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig,
     ) -> Schema:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
         # Naively retrieve the first filepath in the PartitionSet
-        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, fs)
+        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, storage_config)
 
 
 class PyRunner(Runner[Table]):

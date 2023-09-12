@@ -5,13 +5,13 @@ use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_dsl::Expr;
 
-use crate::logical_plan::LogicalPlan;
-use crate::ops::{
+use crate::logical_ops::{
     Aggregate as LogicalAggregate, Coalesce as LogicalCoalesce, Concat as LogicalConcat,
     Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
     Join as LogicalJoin, Limit as LogicalLimit, Project as LogicalProject,
     Repartition as LogicalRepartition, Sink as LogicalSink, Sort as LogicalSort, Source,
 };
+use crate::logical_plan::LogicalPlan;
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::{ExternalInfo as ExternalSourceInfo, FileFormatConfig, SourceInfo};

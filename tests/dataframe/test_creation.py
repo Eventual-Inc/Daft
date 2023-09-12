@@ -384,8 +384,8 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> N
 
 
 @pytest.mark.skipif(
-    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
-    reason="requires PyRunner and old query planner to be in use",
+    get_context().runner_config.name not in {"py"},
+    reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
@@ -557,8 +557,8 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
 
 
 @pytest.mark.skipif(
-    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
-    reason="requires PyRunner and old query planner to be in use",
+    get_context().runner_config.name not in {"py"},
+    reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
@@ -693,8 +693,8 @@ def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], 
 
 
 @pytest.mark.skipif(
-    (get_context().runner_config.name not in {"py"}) or get_context().use_rust_planner,
-    reason="requires PyRunner and old query planner to be in use",
+    get_context().runner_config.name not in {"py"},
+    reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) -> None:
     with tempfile.NamedTemporaryFile("w") as f:
