@@ -154,9 +154,10 @@ impl AggExpr {
                         | DataType::UInt64 => DataType::UInt64,
                         DataType::Float32 => DataType::Float32,
                         DataType::Float64 => DataType::Float64,
-                        _other => {
+                        other => {
                             return Err(DaftError::TypeError(format!(
-                                "Expected input to sum() to be numeric but received {field}",
+                                "Expected input to sum() to be numeric but received dtype {} for column \"{}\"",
+                                other, field.name,
                             )))
                         }
                     },
@@ -179,7 +180,8 @@ impl AggExpr {
                         | DataType::Float64 => DataType::Float64,
                         other => {
                             return Err(DaftError::TypeError(format!(
-                                "Numeric mean is not implemented for type {other}"
+                                "Numeric mean is not implemented for column \"{}\" of type {}",
+                                field.name, other,
                             )))
                         }
                     },
@@ -190,7 +192,8 @@ impl AggExpr {
                 // TODO: [ISSUE-688] Make Binary type comparable
                 if field.dtype == DataType::Binary {
                     return Err(DaftError::TypeError(format!(
-                        "Cannot get min/max of Binary type: {field}",
+                        "Cannot get min/max of Binary type in column \"{}\"",
+                        field.name,
                     )));
                 }
                 Ok(Field::new(field.name.as_str(), field.dtype))
@@ -203,7 +206,8 @@ impl AggExpr {
                     #[cfg(feature = "python")]
                     DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
-                        "We can only perform List Concat Agg on List or Python Types, got: {field}",
+                        "We can only perform List Concat Agg on List or Python Types, got dtype {} for column \"{}\"",
+                        field.dtype, field.name
                     ))),
                 }
             }

@@ -40,5 +40,5 @@ def test_explode_multiple_cols(data):
 
 def test_explode_bad_col_type():
     df = daft.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(ValueError, match="Datatype cannot be exploded:"):
+    with pytest.raises(ValueError, match="cannot be exploded"):
         df = df.explode(col("a"))

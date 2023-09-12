@@ -46,9 +46,9 @@ impl Schema {
     pub fn get_field(&self, name: &str) -> DaftResult<&Field> {
         match self.fields.get(name) {
             None => Err(DaftError::FieldNotFound(format!(
-                "Field: {} not found in {:?}",
+                "Column \"{}\" not found in schema: {:?}",
                 name,
-                self.fields.values()
+                self.fields.keys()
             ))),
             Some(val) => Ok(val),
         }
@@ -57,9 +57,9 @@ impl Schema {
     pub fn get_index(&self, name: &str) -> DaftResult<usize> {
         match self.fields.get_index_of(name) {
             None => Err(DaftError::FieldNotFound(format!(
-                "Field: {} not found in {:?}",
+                "Column \"{}\" not found in schema: {:?}",
                 name,
-                self.fields.values()
+                self.fields.keys()
             ))),
             Some(val) => Ok(val),
         }

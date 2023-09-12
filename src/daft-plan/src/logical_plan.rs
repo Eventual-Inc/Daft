@@ -287,7 +287,14 @@ impl LogicalPlan {
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
             Self::Explode(Explode { to_explode, .. }) => {
-                vec![format!("Explode: {to_explode:?}")]
+                vec![format!(
+                    "Explode: {}",
+                    to_explode
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )]
             }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
