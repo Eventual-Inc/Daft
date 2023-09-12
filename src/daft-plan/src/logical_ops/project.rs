@@ -699,4 +699,35 @@ mod tests {
 
         Ok(())
     }
+
+    /// Test that new partition specs favor existing instead of new names.
+    /// i.e. ("a", "a" as "b") remains partitioned by "a", not "b"
+    #[test]
+    fn test_partition_spec_prefer_existing_names() -> DaftResult<()> {
+        let source = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            3,
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .build();
+
+        let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
+
+        let result_projection = Project::try_new(source, expressions, Default::default())?;
+
+        let expected_pspec =
+            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("a"), col("b")]));
+
+        assert_eq!(
+            expected_pspec,
+            result_projection.partition_spec.as_ref().clone()
+        );
+
+        Ok(())
+    }
 }
