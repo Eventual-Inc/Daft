@@ -146,7 +146,10 @@ async fn read_parquet_single_into_arrow(
     row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-) -> DaftResult<(Vec<String>, Vec<Vec<Box<dyn arrow2::array::Array>>>)> {
+) -> DaftResult<(
+    arrow2::datatypes::SchemaRef,
+    Vec<Vec<Box<dyn arrow2::array::Array>>>,
+)> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
     let builder = builder.set_infer_schema_options(schema_infer_options);
 
@@ -180,12 +183,7 @@ async fn read_parquet_single_into_arrow(
 
     let parquet_reader = builder.build()?;
 
-    let schema = parquet_reader.arrow_schema();
-    let names = schema
-        .fields
-        .iter()
-        .map(|f| f.name.to_string())
-        .collect::<Vec<_>>();
+    let schema = parquet_reader.arrow_schema().clone();
     let ranges = parquet_reader.prebuffer_ranges(io_client)?;
     let all_arrays = parquet_reader
         .read_from_ranges_into_arrow_arrays(ranges)
@@ -257,7 +255,7 @@ async fn read_parquet_single_into_arrow(
         .into());
     }
 
-    Ok((names, all_arrays))
+    Ok((schema, all_arrays))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -298,7 +296,7 @@ pub fn read_parquet_into_pyarrow(
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-) -> DaftResult<(Vec<String>, Vec<ArrowChunk>)> {
+) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
@@ -383,7 +381,7 @@ pub fn read_parquet_schema(
         .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
-    Schema::try_from(builder.build()?.arrow_schema())
+    Schema::try_from(builder.build()?.arrow_schema().as_ref())
 }
 
 pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {

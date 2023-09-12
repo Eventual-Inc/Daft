@@ -1,7 +1,10 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
+    use daft_core::{
+        ffi::field_to_py,
+        python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
+    };
     use daft_io::{get_io_client, python::IOConfig};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
@@ -56,7 +59,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<(Vec<String>, Vec<Vec<pyo3::PyObject>>)> {
+    ) -> PyResult<(Vec<pyo3::PyObject>, Vec<Vec<pyo3::PyObject>>)> {
         let read_parquet_result = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -76,7 +79,7 @@ pub mod pylib {
                 &schema_infer_options,
             )
         })?;
-        let (names, all_arrays) = read_parquet_result;
+        let (schema, all_arrays) = read_parquet_result;
         let pyarrow = py.import("pyarrow")?;
         let converted_arrays = all_arrays
             .into_iter()
@@ -86,8 +89,12 @@ pub mod pylib {
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
-
-        Ok((names, converted_arrays))
+        let fields = schema
+            .fields
+            .iter()
+            .map(|f| field_to_py(f, py, pyarrow))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((fields, converted_arrays))
     }
 
     #[allow(clippy::too_many_arguments)]

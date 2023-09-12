@@ -465,7 +465,7 @@ def read_parquet_into_pyarrow(
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
 ) -> pa.Table:
 
-    names, columns = _read_parquet_into_pyarrow(
+    fields, columns = _read_parquet_into_pyarrow(
         uri=path,
         columns=columns,
         start_offset=start_offset,
@@ -475,5 +475,7 @@ def read_parquet_into_pyarrow(
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
+
+    schema = pa.schema(fields)
     columns = [pa.chunked_array(c) for c in columns]
-    return pa.table(columns, names=names)
+    return pa.table(columns, schema=schema)

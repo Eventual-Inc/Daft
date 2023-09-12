@@ -236,7 +236,7 @@ struct RowGroupRange {
 pub(crate) struct ParquetFileReader {
     uri: String,
     metadata: Arc<parquet2::metadata::FileMetaData>,
-    arrow_schema: arrow2::datatypes::Schema,
+    arrow_schema: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
 }
 
@@ -250,12 +250,12 @@ impl ParquetFileReader {
         Ok(ParquetFileReader {
             uri,
             metadata: Arc::new(metadata),
-            arrow_schema,
+            arrow_schema: arrow_schema.into(),
             row_ranges: Arc::new(row_ranges),
         })
     }
 
-    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
+    pub fn arrow_schema(&self) -> &Arc<arrow2::datatypes::Schema> {
         &self.arrow_schema
     }
 
@@ -469,7 +469,7 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::schema::Schema::try_from(&self.arrow_schema)?;
+        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new(daft_schema, all_series)
     }
