@@ -110,7 +110,7 @@ mod tests {
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 5, Partition by = col(a)\
-        \n  Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -130,7 +130,7 @@ mod tests {
             .repartition(1, vec![col("a")], PartitionScheme::Hash)?
             .build();
         let expected = "\
-        Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
+        Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -151,7 +151,7 @@ mod tests {
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -173,9 +173,9 @@ mod tests {
         .repartition(10, vec![col("b")], PartitionScheme::Hash)?
         .build();
         let expected = "\
-        Aggregation: [Sum(Column(\"a\"))], Group by = [Column(\"b\")], Output schema = b (Int64), a (Int64)\
+        Aggregation: sum(col(a)), Group by = col(b), Output schema = b (Int64), a (Int64)\
         \n  Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -195,7 +195,7 @@ mod tests {
         Repartition: Scheme = Range, Number of partitions = 10, Partition by = col(a)\
         \n  Sort: Sort by = (col(a), descending)\
         \n    Repartition: Scheme = Hash, Number of partitions = 10, Partition by = col(a)\
-        \n      Source: \"Json\", File paths = /foo, File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
+        \n      Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

@@ -75,7 +75,7 @@ impl Aggregate {
         ));
         if !self.groupby.is_empty() {
             res.push(format!(
-                "Group by = {:?}",
+                "Group by = {}",
                 self.groupby
                     .iter()
                     .map(|e| e.to_string())
