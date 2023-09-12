@@ -12,7 +12,7 @@ use crate::{
 pub fn dummy_scan_node(fields: Vec<Field>) -> LogicalPlanBuilder {
     let schema = Arc::new(Schema::new(fields).unwrap());
     LogicalPlanBuilder::table_scan(
-        FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]).into(),
+        FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]),
         schema,
         FileFormatConfig::Json(JsonSourceConfig {}).into(),
         StorageConfig::Native(NativeStorageConfig::new_internal(None).into()).into(),
@@ -24,7 +24,7 @@ pub fn dummy_scan_node(fields: Vec<Field>) -> LogicalPlanBuilder {
 pub fn dummy_scan_node_with_limit(fields: Vec<Field>, limit: Option<usize>) -> LogicalPlanBuilder {
     let schema = Arc::new(Schema::new(fields).unwrap());
     LogicalPlanBuilder::table_scan_with_limit(
-        FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]).into(),
+        FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]),
         schema,
         FileFormatConfig::Json(JsonSourceConfig {}).into(),
         StorageConfig::Native(NativeStorageConfig::new_internal(None).into()).into(),

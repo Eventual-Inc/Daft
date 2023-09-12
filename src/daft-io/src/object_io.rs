@@ -7,7 +7,6 @@ use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
-use tokio::sync::Semaphore;
 
 use crate::local::{collect_file, LocalFile};
 

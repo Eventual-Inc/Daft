@@ -2,13 +2,9 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{
-        get_io_client, get_runtime,
-        object_io::{recursive_iter, LSResult},
-        parse_url,
-    };
+    use crate::{get_io_client, get_runtime, object_io::recursive_iter, parse_url};
     use common_error::DaftResult;
-    use futures::{StreamExt, TryStreamExt};
+    use futures::TryStreamExt;
     use pyo3::{
         prelude::*,
         types::{PyDict, PyList},
