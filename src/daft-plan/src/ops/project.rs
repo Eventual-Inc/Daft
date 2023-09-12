@@ -8,7 +8,7 @@ use snafu::ResultExt;
 
 use crate::logical_plan::{CreationSnafu, Result};
 use crate::optimization::Transformed;
-use crate::{LogicalPlan, PartitionSpec, ResourceRequest};
+use crate::{LogicalPlan, PartitionScheme, PartitionSpec, ResourceRequest};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Project {
@@ -71,7 +71,7 @@ impl Project {
                         // Add the oldname -> newname mapping,
                         // but don't overwrite any existing identity mappings (e.g. "a" -> "a").
                         if old_colname_to_new_colname.get(&oldname) != Some(&oldname) {
-                            old_colname_to_new_colname[&oldname] = newname;
+                            old_colname_to_new_colname.insert(oldname, newname);
                         }
                     }
                 }
@@ -84,14 +84,24 @@ impl Project {
                     .iter()
                     .map(|e| Self::translate_partition_spec_expr(e, &old_colname_to_new_colname))
                     .collect::<std::result::Result<Vec<_>, _>>();
-                let new_pspec =
-                    maybe_new_pspec.unwrap_or_else(|()| input_pspec.by.clone().unwrap());
-                PartitionSpec::new_internal(
-                    input_pspec.scheme.clone(),
-                    input_pspec.num_partitions,
-                    Some(new_pspec),
+                maybe_new_pspec.map_or_else(
+                    |()| {
+                        PartitionSpec::new_internal(
+                            PartitionScheme::Unknown,
+                            input_pspec.num_partitions,
+                            None,
+                        )
+                        .into()
+                    },
+                    |new_pspec: Vec<Expr>| {
+                        PartitionSpec::new_internal(
+                            input_pspec.scheme.clone(),
+                            input_pspec.num_partitions,
+                            Some(new_pspec),
+                        )
+                        .into()
+                    },
                 )
-                .into()
             }
         }
     }
