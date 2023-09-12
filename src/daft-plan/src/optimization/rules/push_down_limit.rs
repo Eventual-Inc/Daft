@@ -7,7 +7,7 @@ use crate::{source_info::SourceInfo, LogicalPlan};
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
 /// Optimization rules for pushing Limits further into the logical plan.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PushDownLimit {}
 
 impl PushDownLimit {

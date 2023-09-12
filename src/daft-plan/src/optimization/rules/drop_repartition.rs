@@ -7,7 +7,7 @@ use crate::{LogicalPlan, PartitionScheme};
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
 /// Optimization rules for dropping unnecessary Repartitions.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DropRepartition {}
 
 impl DropRepartition {

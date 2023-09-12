@@ -21,7 +21,7 @@ use super::{
 };
 
 /// Optimization rules for pushing Filters further into the logical plan.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PushDownFilter {}
 
 impl PushDownFilter {
