@@ -102,6 +102,12 @@ pub enum Error {
     },
 
     #[snafu(display(
+        "Parquet file: {} has multiple columns with different number of rows",
+        path,
+    ))]
+    ParquetColumnsDontHaveEqualRows { path: String },
+
+    #[snafu(display(
         "Parquet file: {} metadata listed {} columns but only read: {} ",
         path,
         metadata_num_columns,

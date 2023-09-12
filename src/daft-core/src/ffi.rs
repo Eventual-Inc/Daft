@@ -51,6 +51,22 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
     Ok(array.to_object(py))
 }
 
+pub fn field_to_py(
+    field: &arrow2::datatypes::Field,
+    py: Python,
+    pyarrow: &PyModule,
+) -> PyResult<PyObject> {
+    let schema = Box::new(ffi::export_field_to_c(field));
+    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+
+    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (schema_ptr as Py_uintptr_t,),
+    )?;
+
+    Ok(field.to_object(py))
+}
+
 pub fn to_py_schema(
     dtype: &arrow2::datatypes::DataType,
     py: Python,

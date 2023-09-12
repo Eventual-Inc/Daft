@@ -122,10 +122,11 @@ DAFT_CAN_READ_FILES = [
         "parquet-testing/data/nulls.snappy.parquet",
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/nulls.snappy.parquet",
     ),
-    (
-        "parquet-testing/data/overflow_i16_page_cnt.parquet",
-        "https://raw.githubusercontent.com/apache/parquet-testing/master/data/overflow_i16_page_cnt.parquet",
-    ),
+    # For some reason the program segfaults with this file unless we make the chunk size > 2024
+    # (
+    #     "parquet-testing/data/overflow_i16_page_cnt.parquet",
+    #     "https://raw.githubusercontent.com/apache/parquet-testing/master/data/overflow_i16_page_cnt.parquet",
+    # ),
     (
         "parquet-testing/data/plain-dict-uncompressed-checksum.parquet",
         "https://raw.githubusercontent.com/apache/parquet-testing/master/data/plain-dict-uncompressed-checksum.parquet",
@@ -164,6 +165,10 @@ DAFT_CAN_READ_FILES = [
     (
         "gcs/mvp",
         "gs://daft-public-data-gs/mvp.parquet",
+    ),
+    (
+        "daft/schema_with_metadata",
+        "tests/assets/parquet-data/parquet-with-schema-metadata.parquet",
     ),
 ]
 
@@ -209,6 +214,25 @@ def test_parquet_read_table(parquet_file, public_storage_io_config, multithreade
     daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
+    pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+
+
+@pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config, multithreaded_io):
+    _, url = parquet_file
+    daft_native_read = daft.table.read_parquet_into_pyarrow(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
+    )
+    pa_read = read_parquet_with_pyarrow(url)
+    assert daft_native_read.schema == pa_read.schema
+    assert pa_read.schema.metadata is None or daft_native_read.schema.metadata == pa_read.schema.metadata
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
 

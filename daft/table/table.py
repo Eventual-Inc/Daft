@@ -11,6 +11,7 @@ from daft.daft import JoinType
 from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
+from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
@@ -451,3 +452,29 @@ def _trim_pyarrow_large_arrays(arr: pa.ChunkedArray) -> pa.ChunkedArray:
         return pa.chunked_array(all_chunks, type=target_type)
     else:
         return arr
+
+
+def read_parquet_into_pyarrow(
+    path: str,
+    columns: list[str] | None = None,
+    start_offset: int | None = None,
+    num_rows: int | None = None,
+    row_groups: list[int] | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
+) -> pa.Table:
+
+    fields, metadata, columns = _read_parquet_into_pyarrow(
+        uri=path,
+        columns=columns,
+        start_offset=start_offset,
+        num_rows=num_rows,
+        row_groups=row_groups,
+        io_config=io_config,
+        multithreaded_io=multithreaded_io,
+        coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+    )
+    schema = pa.schema(fields, metadata=metadata)
+    columns = [pa.chunked_array(c) for c in columns]  # type: ignore
+    return pa.table(columns, schema=schema)
