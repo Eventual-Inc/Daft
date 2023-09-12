@@ -325,16 +325,14 @@ impl LogicalPlan {
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub(crate) enum Error {
-    #[snafu(display("Unable to create logical plan node due to: {}", source))]
+    #[snafu(display("Unable to create logical plan node.\nDue to: {}", source))]
     CreationError { source: DaftError },
 }
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
-        match err {
-            Error::CreationError { source } => source,
-        }
+        DaftError::External(err.into())
     }
 }
 

@@ -59,4 +59,19 @@ impl<T> Transformed<T> {
             Self::No(inner) => inner,
         }
     }
+
+    /// Maps a `Transformed<T>` to `Transformed<U>`,
+    /// by supplying a function to apply to a contained Yes value
+    /// as well as a function to apply to a contained No value.
+    #[inline]
+    pub fn map_yes_no<U, Y: FnOnce(T) -> U, N: FnOnce(T) -> U>(
+        self,
+        yes_op: Y,
+        no_op: N,
+    ) -> Transformed<U> {
+        match self {
+            Self::Yes(t) => Transformed::Yes(yes_op(t)),
+            Self::No(t) => Transformed::No(no_op(t)),
+        }
+    }
 }
