@@ -13,7 +13,7 @@ use crate::{
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PushDownProjection {}
 
 impl PushDownProjection {

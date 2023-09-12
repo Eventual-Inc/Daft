@@ -361,18 +361,6 @@ impl DataType {
         )
     }
 
-    #[inline]
-    pub fn get_exploded_dtype(&self) -> DaftResult<&DataType> {
-        match self {
-            DataType::List(child_dtype) | DataType::FixedSizeList(child_dtype, _) => {
-                Ok(child_dtype.as_ref())
-            }
-            _ => Err(DaftError::ValueError(format!(
-                "Datatype cannot be exploded: {self}"
-            ))),
-        }
-    }
-
     pub fn to_json(&self) -> DaftResult<String> {
         let payload = DataTypePayload::new(self);
         Ok(serde_json::to_string(&payload)?)

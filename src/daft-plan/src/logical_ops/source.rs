@@ -71,10 +71,11 @@ impl Source {
                 file_format_config,
                 storage_config,
             }) => {
-                res.push(format!("Source: {:?}", file_format_config.var_name()));
-                for fp in file_infos.file_paths.iter() {
-                    res.push(format!("File paths = {}", fp));
-                }
+                res.push(format!("Source: {}", file_format_config.var_name()));
+                res.push(format!(
+                    "File paths = [{}]",
+                    file_infos.file_paths.join(", ")
+                ));
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
                 res.push(format!("Storage config = {:?}", storage_config));
@@ -87,7 +88,14 @@ impl Source {
             self.output_schema.short_string()
         ));
         if !self.filters.is_empty() {
-            res.push(format!("Filters = {:?}", self.filters));
+            res.push(format!(
+                "Filters = {}",
+                self.filters
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit = {}", limit));
