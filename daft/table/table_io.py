@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 from collections.abc import Generator
-from typing import IO, TYPE_CHECKING, Union
+from typing import IO, Union
 from uuid import uuid4
 
 import fsspec
@@ -14,6 +14,7 @@ from pyarrow import json as pajson
 from pyarrow import parquet as papq
 from pyarrow.fs import FileSystem
 
+from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -23,9 +24,6 @@ from daft.runners.partitioning import (
     TableReadOptions,
 )
 from daft.table import Table
-
-if TYPE_CHECKING:
-    from daft.io import IOConfig
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -69,7 +67,7 @@ def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: 
 def read_json(
     file: FileInput,
     schema: Schema,
-    fs: fsspec.AbstractFileSystem | None = None,
+    storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
     """Reads a Table from a JSON file
@@ -83,6 +81,12 @@ def read_json(
     Returns:
         Table: Parsed Table from JSON
     """
+    if storage_config is not None:
+        config = storage_config.config
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
     with _open_stream(file, fs) as f:
         table = pajson.read_json(f)
 
@@ -99,11 +103,9 @@ def read_json(
 def read_parquet(
     file: FileInput,
     schema: Schema,
-    fs: fsspec.AbstractFileSystem | None = None,
+    storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
-    io_config: IOConfig | None = None,
-    use_native_downloader: bool = False,
 ) -> Table:
     """Reads a Table from a Parquet file
 
@@ -116,16 +118,25 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
-    if use_native_downloader:
-        assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
-        tbl = Table.read_parquet(
-            str(file),
-            columns=read_options.column_names,
-            num_rows=read_options.num_rows,
-            io_config=io_config,
-            coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
-        )
-        return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+    if storage_config is not None:
+        config = storage_config.config
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(
+                file, (str, pathlib.Path)
+            ), "Native downloader only works on string inputs to read_parquet"
+            tbl = Table.read_parquet(
+                str(file),
+                columns=read_options.column_names,
+                num_rows=read_options.num_rows,
+                io_config=config.io_config,
+                coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
+            )
+            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
 
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
@@ -167,7 +178,7 @@ def read_parquet(
 def read_csv(
     file: FileInput,
     schema: Schema,
-    fs: fsspec.AbstractFileSystem | None = None,
+    storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
@@ -184,6 +195,12 @@ def read_csv(
     Returns:
         Table: Parsed Table from CSV
     """
+    if storage_config is not None:
+        config = storage_config.config
+        assert isinstance(config, PythonStorageConfig)
+        fs = config.fs
+    else:
+        fs = None
 
     with _open_stream(file, fs) as f:
         table = pacsv.read_csv(

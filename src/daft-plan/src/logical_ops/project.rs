@@ -347,7 +347,7 @@ mod tests {
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{binary_op, col, lit, Operator};
 
-    use crate::{ops::Project, test::dummy_scan_node, LogicalPlan};
+    use crate::{logical_ops::Project, test::dummy_scan_node, LogicalPlan};
 
     /// Test that nested common subexpressions are correctly split
     /// into multiple levels of projections.

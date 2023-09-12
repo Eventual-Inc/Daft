@@ -16,14 +16,17 @@ from __future__ import annotations
 import math
 import pathlib
 from collections import deque
-from typing import TYPE_CHECKING, Generator, Iterator, TypeVar, Union
-
-if TYPE_CHECKING:
-    import fsspec
+from typing import Generator, Iterator, TypeVar, Union
 
 from loguru import logger
 
-from daft.daft import FileFormat, FileFormatConfig, JoinType, ResourceRequest
+from daft.daft import (
+    FileFormat,
+    FileFormatConfig,
+    JoinType,
+    ResourceRequest,
+    StorageConfig,
+)
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -67,7 +70,7 @@ def file_read(
     # Max number of rows to read.
     limit_rows: int | None,
     schema: Schema,
-    fs: fsspec.AbstractFileSystem | None,
+    storage_config: StorageConfig,
     columns_to_read: list[str] | None,
     file_format_config: FileFormatConfig,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -99,7 +102,7 @@ def file_read(
                         file_rows=file_rows[i],
                         limit_rows=limit_rows,
                         schema=schema,
-                        fs=fs,
+                        storage_config=storage_config,
                         columns_to_read=columns_to_read,
                         file_format_config=file_format_config,
                     ),

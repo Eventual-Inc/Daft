@@ -3,7 +3,8 @@ use {
     crate::{
         sink_info::OutputFileInfo,
         source_info::{
-            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo, PyFileFormatConfig,
+            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo,
+            PyFileFormatConfig, PyStorageConfig, StorageConfig,
         },
     },
     daft_core::python::schema::PySchema,
@@ -124,6 +125,7 @@ fn tabular_scan(
     projection_schema: &SchemaRef,
     file_infos: &Arc<FileInfos>,
     file_format_config: &Arc<FileFormatConfig>,
+    storage_config: &Arc<StorageConfig>,
     limit: &Option<usize>,
 ) -> PyResult<PyObject> {
     let columns_to_read = projection_schema
@@ -140,6 +142,7 @@ fn tabular_scan(
             columns_to_read,
             file_infos.to_table()?,
             PyFileFormatConfig::from(file_format_config.clone()),
+            PyStorageConfig::from(storage_config.clone()),
             *limit,
         ))?;
     Ok(py_iter.into())
@@ -203,6 +206,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
+                        storage_config,
                         ..
                     },
                 limit,
@@ -213,6 +217,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
+                storage_config,
                 limit,
             ),
             PhysicalPlan::TabularScanCsv(TabularScanCsv {
@@ -222,6 +227,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
+                        storage_config,
                         ..
                     },
                 limit,
@@ -232,6 +238,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
+                storage_config,
                 limit,
             ),
             PhysicalPlan::TabularScanJson(TabularScanJson {
@@ -241,6 +248,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
+                        storage_config,
                         ..
                     },
                 limit,
@@ -251,6 +259,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
+                storage_config,
                 limit,
             ),
             PhysicalPlan::Project(Project {

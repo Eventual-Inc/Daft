@@ -8,7 +8,6 @@ from datetime import datetime
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Iterable, Iterator
 
-import fsspec
 import pyarrow as pa
 from loguru import logger
 
@@ -23,7 +22,13 @@ except ImportError:
     )
     raise
 
-from daft.daft import FileFormatConfig, FileInfos, ResourceRequest
+from daft.daft import (
+    FileFormatConfig,
+    FileInfos,
+    PythonStorageConfig,
+    ResourceRequest,
+    StorageConfig,
+)
 from daft.datatype import DataType
 from daft.execution.execution_step import (
     FanoutInstruction,
@@ -49,6 +54,7 @@ from daft.table import Table
 
 if TYPE_CHECKING:
     import dask
+    import fsspec
     import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
@@ -69,13 +75,18 @@ def _glob_path_into_file_infos(
     paths: list[str],
     file_format_config: FileFormatConfig | None,
     fs: fsspec.AbstractFileSystem | None,
+    storage_config: StorageConfig | None,
 ) -> Table:
+    if fs is None and storage_config is not None:
+        config = storage_config.config
+        if isinstance(config, PythonStorageConfig):
+            fs = config.fs
     file_infos = FileInfos()
     for path in paths:
         if fs is None:
             fs = get_filesystem_from_path(path)
 
-        path_file_infos = glob_path_with_stats(path, file_format_config, fs)
+        path_file_infos = glob_path_with_stats(path, file_format_config, fs, storage_config)
         if len(path_file_infos) == 0:
             raise FileNotFoundError(f"No files found at {path}")
         file_infos.extend(path_file_infos)
@@ -123,11 +134,11 @@ def remote_len_partition(p: Table) -> int:
 def sample_schema_from_filepath(
     first_file_path: str,
     file_format_config: FileFormatConfig,
-    fs: fsspec.AbstractFileSystem | None,
+    storage_config: StorageConfig | None,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a Table containing a single filepath"""
     # Currently just samples the Schema from the first file
-    return runner_io.sample_schema(first_file_path, file_format_config, fs)
+    return runner_io.sample_schema(first_file_path, file_format_config, storage_config)
 
 
 @dataclass
@@ -208,15 +219,18 @@ class RayRunnerIO(runner_io.RunnerIO):
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
         fs: fsspec.AbstractFileSystem | None = None,
+        storage_config: StorageConfig | None = None,
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
-        return ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, fs=fs))
+        return ray.get(
+            _glob_path_into_file_infos.remote(source_paths, file_format_config, fs=fs, storage_config=storage_config)
+        )
 
     def get_schema_from_first_filepath(
         self,
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
-        fs: fsspec.AbstractFileSystem | None,
+        storage_config: StorageConfig | None,
     ) -> Schema:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
@@ -226,7 +240,7 @@ class RayRunnerIO(runner_io.RunnerIO):
             sample_schema_from_filepath.remote(
                 first_path,
                 file_format_config,
-                fs,
+                storage_config,
             )
         )
 

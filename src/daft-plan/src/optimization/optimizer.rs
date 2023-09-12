@@ -307,7 +307,7 @@ mod tests {
     use daft_dsl::{col, lit};
 
     use crate::{
-        ops::{Filter, Project},
+        logical_ops::{Filter, Project},
         optimization::rules::{ApplyOrder, OptimizerRule, Transformed},
         test::dummy_scan_node,
         LogicalPlan,
@@ -527,7 +527,7 @@ mod tests {
         let expected = "\
         Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
         \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Output schema = a (Int64)";
+        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64)";
         assert_eq!(opt_plan.repr_indent(), expected);
         Ok(())
     }

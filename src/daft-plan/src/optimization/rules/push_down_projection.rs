@@ -7,7 +7,7 @@ use daft_dsl::Expr;
 use indexmap::IndexSet;
 
 use crate::{
-    ops::{Aggregate, Project, Source},
+    logical_ops::{Aggregate, Project, Source},
     LogicalPlan,
 };
 

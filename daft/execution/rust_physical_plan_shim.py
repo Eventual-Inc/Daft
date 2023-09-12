@@ -11,6 +11,7 @@ from daft.daft import (
     PySchema,
     PyTable,
     ResourceRequest,
+    StorageConfig,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
@@ -26,6 +27,7 @@ def tabular_scan(
     columns_to_read: list[str],
     file_info_table: PyTable,
     file_format_config: FileFormatConfig,
+    storage_config: StorageConfig,
     limit: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     # TODO(Clark): Fix this Ray runner hack.
@@ -43,7 +45,7 @@ def tabular_scan(
         child_plan=file_info_iter,
         limit_rows=limit,
         schema=Schema._from_pyschema(schema),
-        fs=None,
+        storage_config=storage_config,
         columns_to_read=columns_to_read,
         file_format_config=file_format_config,
     )
