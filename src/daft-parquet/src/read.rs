@@ -286,6 +286,7 @@ pub fn read_parquet(
         .await
     })
 }
+pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
@@ -297,7 +298,7 @@ pub fn read_parquet_into_pyarrow(
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-) -> DaftResult<(Vec<String>, Vec<Vec<Box<dyn arrow2::array::Array>>>)> {
+) -> DaftResult<(Vec<String>, Vec<ArrowChunk>)> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {

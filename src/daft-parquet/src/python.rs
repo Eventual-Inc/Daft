@@ -1,13 +1,11 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use std::sync::Arc;
-
-    use common_error::DaftResult;
     use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
     use daft_io::{get_io_client, python::IOConfig};
     use daft_table::python::PyTable;
-    use pyo3::{pyfunction, PyAny, PyResult, Python};
+    use pyo3::{pyfunction, PyResult, Python};
+    use std::sync::Arc;
 
     use crate::read::ParquetSchemaInferenceOptions;
     use daft_core::ffi::to_py_array;
