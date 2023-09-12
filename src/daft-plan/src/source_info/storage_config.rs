@@ -17,67 +17,6 @@ use {
     std::hash::{Hash, Hasher},
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(transparent)]
-#[cfg_attr(
-    feature = "python",
-    pyclass(module = "daft.daft", name = "StorageConfig")
-)]
-pub struct PyStorageConfig(Arc<StorageConfig>);
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl PyStorageConfig {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy inner StorageConfig, to be overridden by __setstate__.
-            0 => Ok(Arc::new(StorageConfig::Native(
-                NativeStorageConfig::new_internal(None).into(),
-            ))
-            .into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyStorageConfig, got : {}",
-                args.len()
-            ))),
-        }
-    }
-    #[staticmethod]
-    fn native(config: NativeStorageConfig) -> Self {
-        Self(Arc::new(StorageConfig::Native(config.into())))
-    }
-
-    #[staticmethod]
-    fn python(config: PythonStorageConfig) -> Self {
-        Self(Arc::new(StorageConfig::Python(config)))
-    }
-
-    #[getter]
-    fn get_config(&self, py: Python) -> PyObject {
-        use StorageConfig::*;
-
-        match self.0.as_ref() {
-            Native(config) => config.as_ref().clone().into_py(py),
-            Python(config) => config.clone().into_py(py),
-        }
-    }
-}
-
-impl_bincode_py_state_serialization!(PyStorageConfig);
-
-impl From<PyStorageConfig> for Arc<StorageConfig> {
-    fn from(value: PyStorageConfig) -> Self {
-        value.0
-    }
-}
-
-impl From<Arc<StorageConfig>> for PyStorageConfig {
-    fn from(value: Arc<StorageConfig>) -> Self {
-        Self(value)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum StorageConfig {
     Native(Arc<NativeStorageConfig>),
@@ -160,5 +99,66 @@ impl Hash for PythonStorageConfig {
             // Fall back to hashing the pickled Python object.
             Err(_) => Some(serde_json::to_vec(self).unwrap()).hash(state),
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", name = "StorageConfig")
+)]
+pub struct PyStorageConfig(Arc<StorageConfig>);
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyStorageConfig {
+    #[new]
+    #[pyo3(signature = (*args))]
+    pub fn new(args: &PyTuple) -> PyResult<Self> {
+        match args.len() {
+            // Create dummy inner StorageConfig, to be overridden by __setstate__.
+            0 => Ok(Arc::new(StorageConfig::Native(
+                NativeStorageConfig::new_internal(None).into(),
+            ))
+            .into()),
+            _ => Err(PyValueError::new_err(format!(
+                "expected no arguments to make new PyStorageConfig, got : {}",
+                args.len()
+            ))),
+        }
+    }
+    #[staticmethod]
+    fn native(config: NativeStorageConfig) -> Self {
+        Self(Arc::new(StorageConfig::Native(config.into())))
+    }
+
+    #[staticmethod]
+    fn python(config: PythonStorageConfig) -> Self {
+        Self(Arc::new(StorageConfig::Python(config)))
+    }
+
+    #[getter]
+    fn get_config(&self, py: Python) -> PyObject {
+        use StorageConfig::*;
+
+        match self.0.as_ref() {
+            Native(config) => config.as_ref().clone().into_py(py),
+            Python(config) => config.clone().into_py(py),
+        }
+    }
+}
+
+impl_bincode_py_state_serialization!(PyStorageConfig);
+
+impl From<PyStorageConfig> for Arc<StorageConfig> {
+    fn from(value: PyStorageConfig) -> Self {
+        value.0
+    }
+}
+
+impl From<Arc<StorageConfig>> for PyStorageConfig {
+    fn from(value: Arc<StorageConfig>) -> Self {
+        Self(value)
     }
 }

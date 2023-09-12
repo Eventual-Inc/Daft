@@ -89,7 +89,6 @@ def from_parquet(
             assert isinstance(
                 file, (str, pathlib.Path)
             ), "Native downloader only works on string inputs to read_parquet"
-            assert isinstance(file, (str, pathlib.Path))
             io_config = config.io_config
             return Schema.from_parquet(str(file), io_config=io_config)
 
