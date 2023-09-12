@@ -125,7 +125,7 @@ impl LogicalPlan {
     pub fn partition_spec(&self) -> Arc<PartitionSpec> {
         match self {
             Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
-            Self::Project(Project { input, .. }) => input.partition_spec(),
+            Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
             Self::Explode(Explode { input, .. }) => input.partition_spec(),
