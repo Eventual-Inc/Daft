@@ -79,8 +79,8 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
 
 
 @contextlib.contextmanager
-def mount_data_minio(
-    minio_io_config: daft.io.IOConfig, folder: pathlib.Path, bucket_name: str = "my-minio-bucket"
+def minio_create_bucket(
+    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-bucket"
 ) -> YieldFixture[list[str]]:
     """Mounts data in `folder` into files in minio
 
@@ -92,20 +92,31 @@ def mount_data_minio(
         client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
     )
     fs.mkdir(bucket_name)
-
-    urls = []
-    for p in folder.glob("**/*"):
-        if not p.is_file():
-            continue
-        key = str(p.relative_to(folder))
-        url = f"s3://{bucket_name}/{key}"
-        fs.write_bytes(url, p.read_bytes())
-        urls.append(url)
-
     try:
-        yield urls
+        yield fs
     finally:
         fs.rm(bucket_name, recursive=True)
+
+
+@contextlib.contextmanager
+def mount_data_minio(
+    minio_io_config: daft.io.IOConfig, folder: pathlib.Path, bucket_name: str = "my-minio-bucket"
+) -> YieldFixture[list[str]]:
+    """Mounts data in `folder` into files in minio
+
+    Yields a list of S3 URLs
+    """
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name) as fs:
+        urls = []
+        for p in folder.glob("**/*"):
+            if not p.is_file():
+                continue
+            key = str(p.relative_to(folder))
+            url = f"s3://{bucket_name}/{key}"
+            fs.write_bytes(url, p.read_bytes())
+            urls.append(url)
+
+        yield urls
 
 
 @contextlib.contextmanager
