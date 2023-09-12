@@ -475,8 +475,6 @@ def read_parquet_into_pyarrow(
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
-    if len(metadata) == 0:
-        metadata = None
     schema = pa.schema(fields, metadata=metadata)
     columns = [pa.chunked_array(c) for c in columns]  # type: ignore
     return pa.table(columns, schema=schema)
