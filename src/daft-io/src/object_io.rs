@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
-use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 
 use crate::local::{collect_file, LocalFile};
@@ -86,7 +86,12 @@ pub(crate) trait ObjectSource: Sync + Send {
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult>;
 
-    async fn iter_dir(&self, uri: &str, delimiter: Option<&str>, _limit: Option<usize>) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    async fn iter_dir(
+        &self,
+        uri: &str,
+        delimiter: Option<&str>,
+        _limit: Option<usize>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = uri.to_string();
         let delimiter = delimiter.map(String::from);
         let s = stream! {
@@ -108,38 +113,26 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
-pub(crate) async fn nested(
+pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
 ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
-    let sema = Arc::new(tokio::sync::Semaphore::new(64));
-    fn add_to_channel(
-        source: Arc<dyn ObjectSource>,
-        tx: Sender<FileMetadata>,
-        dir: String,
-        connection_counter: Arc<Semaphore>,
-    ) {
+    fn add_to_channel(source: Arc<dyn ObjectSource>, tx: Sender<FileMetadata>, dir: String) {
         tokio::spawn(async move {
-            let _handle = connection_counter.acquire().await.unwrap();
             let mut s = source.iter_dir(&dir, None, None).await.unwrap();
             let tx = &tx;
             while let Some(tr) = s.next().await {
                 let tr = tr.unwrap();
                 match tr.filetype {
                     FileType::File => tx.send(tr).await.unwrap(),
-                    FileType::Directory => add_to_channel(
-                        source.clone(),
-                        tx.clone(),
-                        tr.filepath,
-                        connection_counter.clone(),
-                    ),
+                    FileType::Directory => add_to_channel(source.clone(), tx.clone(), tr.filepath),
                 };
             }
         });
     }
 
-    add_to_channel(source, to_rtn_tx, uri.to_string(), sema);
+    add_to_channel(source, to_rtn_tx, uri.to_string());
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
