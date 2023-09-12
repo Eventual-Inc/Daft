@@ -31,4 +31,10 @@ def setup_logger() -> None:
 
             logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    # Clear out any existing standard loggers.
+    root = logging.root
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+        h.close()
+    # Add handler that redirects logs to loguru.
+    logging.basicConfig(handlers=[InterceptHandler()], level=0)
