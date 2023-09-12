@@ -8,7 +8,7 @@ pub mod pylib {
     use daft_io::{get_io_client, python::IOConfig};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
-    use std::sync::Arc;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use crate::read::ParquetSchemaInferenceOptions;
     use daft_core::ffi::to_py_array;
@@ -46,6 +46,8 @@ pub mod pylib {
             .into())
         })
     }
+    type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
+    type PyArrowFields = Vec<pyo3::PyObject>;
 
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
@@ -59,7 +61,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<(Vec<pyo3::PyObject>, Vec<Vec<pyo3::PyObject>>)> {
+    ) -> PyResult<(PyArrowFields, BTreeMap<String, String>, PyArrowChunks)> {
         let read_parquet_result = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -94,7 +96,9 @@ pub mod pylib {
             .iter()
             .map(|f| field_to_py(f, py, pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok((fields, converted_arrays))
+        let metadata = &schema.metadata;
+
+        Ok((fields, metadata.clone(), converted_arrays))
     }
 
     #[allow(clippy::too_many_arguments)]
