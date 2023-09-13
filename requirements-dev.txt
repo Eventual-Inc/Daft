@@ -47,7 +47,7 @@ adlfs==2022.2.0; python_version < '3.8'
 adlfs==2023.8.0; python_version >= '3.8'
 
 # Workaround until the next version of adlfs: https://github.com/fsspec/adlfs/issues/424
-azure-blob-storage==12.17.0; python_version >= '3.8'
+azure-storage-blob==12.17.0; python_version >= '3.8'
 
 # GCS
 gcsfs==2023.1.0; python_version < '3.8'
