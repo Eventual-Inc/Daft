@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 
 use daft_core::schema::Schema;
-use daft_dsl::Expr;
+use daft_dsl::{optimization::replace_columns_with_expressions, Expr};
 use indexmap::IndexSet;
 
 use crate::{
@@ -52,6 +52,90 @@ impl PushDownProjection {
             return Ok(new_plan);
         }
 
+        // Next, check if the upstream is another projection we can merge with.
+        // This is possible iff the upstream projection's computation-required columns
+        // are each only used once in this downstream projection.
+        if let LogicalPlan::Project(upstream_projection) = upstream_plan.as_ref() {
+            // Get all the computation-required columns from the upstream projection.
+            let upstream_computations = upstream_projection
+                .projection
+                .iter()
+                .flat_map(|e| {
+                    e.input_mapping().map_or_else(
+                        // None means computation required -> Some(colname)
+                        || Some(e.name().unwrap().to_string()),
+                        // Some(computation not required) -> None
+                        |_| None,
+                    )
+                })
+                .collect::<IndexSet<_>>();
+
+            // For each of them, make sure they are used only once in this downstream projection.
+            let mut exprs_to_walk: Vec<Arc<Expr>> = projection
+                .projection
+                .iter()
+                .map(|e| e.clone().into())
+                .collect();
+
+            let mut upstream_computations_used = IndexSet::new();
+            let mut okay_to_merge = true;
+
+            while !exprs_to_walk.is_empty() {
+                exprs_to_walk = exprs_to_walk
+                    .iter()
+                    .flat_map(|expr| {
+                        // If it's a reference for a column that requires computation,
+                        // record it.
+                        if let Expr::Column(name) = expr.as_ref() {
+                            if upstream_computations.contains(name.as_ref()) {
+                                okay_to_merge = okay_to_merge
+                                    && upstream_computations_used.insert(name.to_string())
+                            }
+                        };
+                        if okay_to_merge {
+                            expr.children()
+                        } else {
+                            vec![]
+                        }
+                    })
+                    .collect();
+            }
+
+            // If the upstream is okay to merge into the current projection,
+            // do the merge.
+            if okay_to_merge {
+                // Get the name and expression for each of the upstream columns.
+                let upstream_names_to_exprs = upstream_projection
+                    .projection
+                    .iter()
+                    .map(|e| (e.name().unwrap().to_string(), e.clone()))
+                    .collect::<HashMap<_, _>>();
+
+                // Merge the projections by applying the upstream expression substitutions
+                // to the current projection.
+                let merged_projection = projection
+                    .projection
+                    .iter()
+                    .map(|e| replace_columns_with_expressions(e, &upstream_names_to_exprs))
+                    .collect();
+
+                // Make a new projection node with the merged projections.
+                let new_plan: LogicalPlan = Project::try_new(
+                    upstream_projection.input.clone(),
+                    merged_projection,
+                    &upstream_projection.resource_request + &projection.resource_request,
+                )?
+                .into();
+                let new_plan: Arc<LogicalPlan> = new_plan.into();
+
+                // Root node is changed, look at it again.
+                let new_plan = self
+                    .try_optimize(new_plan.clone())?
+                    .or(Transformed::Yes(new_plan.clone()));
+                return Ok(new_plan);
+            }
+        }
+
         match upstream_plan.as_ref() {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
@@ -86,7 +170,7 @@ impl PushDownProjection {
                 }
             }
             LogicalPlan::Project(upstream_projection) => {
-                // Prune unnecessary columns from the child projection.
+                // Prune columns from the child projection that are not used in this projection.
                 let required_columns = &plan.required_columns()[0];
                 if required_columns.len() < upstream_schema.names().len() {
                     let pruned_upstream_projections = upstream_projection

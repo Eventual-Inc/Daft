@@ -371,7 +371,7 @@ class FoldProjections(Rule[LogicalPlan]):
         self.register_fn(Projection, Projection, self._drop_double_projection)
 
     def _drop_double_projection(self, parent: Projection, child: Projection) -> LogicalPlan | None:
-        """Folds two projections into one if the parent's expressions have no dependencies on the child's outputs
+        """Folds two projections into one if the parent's expressions depend only on no-computation columns of the child.
 
         Projection-Projection-* -> <Projection with combined expressions and resource requests>-*
         """
@@ -385,7 +385,7 @@ class FoldProjections(Rule[LogicalPlan]):
         can_skip_child = required_columns.issubset(child_mapping.keys())
 
         if can_skip_child:
-            logger.debug(f"Folding: {parent} into {child}")
+            logger.debug(f"Folding: {parent}\ninto {child}")
 
             new_exprs = []
             for e in parent_projection:
@@ -426,6 +426,7 @@ class DropProjections(Rule[LogicalPlan]):
             and len(parent_projection) == len(child_output)
             and all(p.name() == c.name for p, c in zip(parent_projection, child_output))
         ):
+            logger.debug(f"Dropping no-op: {parent}\nas parent of: {child}")
             return child
         else:
             return None

@@ -1,9 +1,10 @@
 use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
 use std::hash::{Hash, Hasher};
+use std::ops::Add;
 #[cfg(feature = "python")]
 use {
     pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python},
-    std::{cmp::max, ops::Add},
+    std::cmp::max,
 };
 
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,24 @@ impl ResourceRequest {
             num_gpus,
             memory_bytes,
         }
+    }
+}
+
+impl Add for &ResourceRequest {
+    type Output = ResourceRequest;
+    fn add(self, other: Self) -> Self::Output {
+        Self::Output::new_internal(
+            lift(Add::add, self.num_cpus, other.num_cpus),
+            lift(Add::add, self.num_gpus, other.num_gpus),
+            lift(Add::add, self.memory_bytes, other.memory_bytes),
+        )
+    }
+}
+
+impl Add for ResourceRequest {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        &self + &other
     }
 }
 
@@ -87,11 +106,7 @@ impl ResourceRequest {
     }
 
     fn __add__(&self, other: &Self) -> Self {
-        Self::new_internal(
-            lift(Add::add, self.num_cpus, other.num_cpus),
-            lift(Add::add, self.num_gpus, other.num_gpus),
-            lift(Add::add, self.memory_bytes, other.memory_bytes),
-        )
+        self + other
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
