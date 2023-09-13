@@ -31,11 +31,11 @@ impl FunctionEvaluator for JoinEvaluator {
 
                 match input_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {
-                        let child_type = input_field.dtype.get_exploded_dtype().unwrap();
-                        if child_type != &DataType::Utf8 {
-                            return Err(DaftError::TypeError(format!("Expected input to be a list type with a Utf8 child, received child: {}", child_type)));
+                        let exploded_field = input_field.to_exploded_field()?;
+                        if exploded_field.dtype != DataType::Utf8 {
+                            return Err(DaftError::TypeError(format!("Expected column \"{}\" to be a list type with a Utf8 child, received list type with child dtype {}", exploded_field.name, exploded_field.dtype)));
                         }
-                        Ok(Field::new(input.name()?, DataType::Utf8))
+                        Ok(exploded_field)
                     }
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to be a list type, received: {}",

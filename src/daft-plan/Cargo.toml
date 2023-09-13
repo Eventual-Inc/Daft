@@ -7,7 +7,9 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true}
+log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+pyo3-log = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 serde_json = {workspace = true}
 snafu = {workspace = true}

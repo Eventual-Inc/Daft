@@ -13,6 +13,7 @@ use super::{
 };
 
 /// Config for optimizer.
+#[derive(Debug)]
 pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
@@ -33,10 +34,15 @@ impl Default for OptimizerConfig {
     }
 }
 
+pub trait OptimizerRuleInBatch: OptimizerRule + std::fmt::Debug {}
+
+impl<T: OptimizerRule + std::fmt::Debug> OptimizerRuleInBatch for T {}
+
 /// A batch of logical optimization rules.
+#[derive(Debug)]
 pub struct RuleBatch {
     // Optimization rules in this batch.
-    pub rules: Vec<Box<dyn OptimizerRule>>,
+    pub rules: Vec<Box<dyn OptimizerRuleInBatch>>,
     // The rule execution strategy (once, fixed-point).
     pub strategy: RuleExecutionStrategy,
     // The application order for the entire rule batch, derived from the application
@@ -49,7 +55,7 @@ pub struct RuleBatch {
 }
 
 impl RuleBatch {
-    pub fn new(rules: Vec<Box<dyn OptimizerRule>>, strategy: RuleExecutionStrategy) -> Self {
+    pub fn new(rules: Vec<Box<dyn OptimizerRuleInBatch>>, strategy: RuleExecutionStrategy) -> Self {
         // Get all unique application orders for the rules.
         let unique_application_orders: Vec<ApplyOrder> = rules
             .iter()
@@ -73,7 +79,7 @@ impl RuleBatch {
 
     #[allow(dead_code)]
     pub fn with_order(
-        rules: Vec<Box<dyn OptimizerRule>>,
+        rules: Vec<Box<dyn OptimizerRuleInBatch>>,
         strategy: RuleExecutionStrategy,
         order: Option<ApplyOrder>,
     ) -> Self {
@@ -99,6 +105,7 @@ impl RuleBatch {
 }
 
 /// The execution strategy for a batch of rules.
+#[derive(Debug)]
 pub enum RuleExecutionStrategy {
     // Apply the batch of rules only once.
     #[allow(dead_code)]
@@ -182,12 +189,12 @@ impl Optimizer {
                         if plan_tracker.add_plan(new_plan.as_ref()) {
                             // Transformed plan has not yet been seen by this optimizer, which means we have
                             // not reached a fixed-point or a cycle. We therefore continue applying this rule batch.
-                            observer(new_plan.as_ref(), batch, pass, true, true);
+                            observer(new_plan.as_ref(), batch, pass, true, false);
                             ControlFlow::Continue(new_plan)
                         } else {
                             // We've already seen this transformed plan, which means we have hit a cycle while repeatedly
                             // applying this rule batch. We therefore stop applying this rule batch.
-                            observer(new_plan.as_ref(), batch, pass, true, false);
+                            observer(new_plan.as_ref(), batch, pass, true, true);
                             ControlFlow::Break(Ok(new_plan))
                         }
                     }
@@ -213,7 +220,7 @@ impl Optimizer {
     /// If order.is_some(), all rules are expected to have that application order.
     pub fn optimize_with_rules(
         &self,
-        rules: &[Box<dyn OptimizerRule>],
+        rules: &[Box<dyn OptimizerRuleInBatch>],
         plan: Arc<LogicalPlan>,
         order: &Option<ApplyOrder>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
@@ -258,7 +265,7 @@ impl Optimizer {
     /// in rule.try_optimize().
     fn optimize_node(
         &self,
-        rules: &[Box<dyn OptimizerRule>],
+        rules: &[Box<dyn OptimizerRuleInBatch>],
         plan: Arc<LogicalPlan>,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         // Fold over the rules, applying each rule to this plan node sequentially.
@@ -271,7 +278,7 @@ impl Optimizer {
     /// if the children are transformed.
     fn optimize_children(
         &self,
-        rules: &[Box<dyn OptimizerRule>],
+        rules: &[Box<dyn OptimizerRuleInBatch>],
         plan: Arc<LogicalPlan>,
         order: ApplyOrder,
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
@@ -340,6 +347,7 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Debug)]
     struct NoOp {}
 
     impl NoOp {
@@ -430,6 +438,7 @@ mod tests {
         Ok(())
     }
 
+    #[derive(Debug)]
     struct RotateProjection {
         reverse_first: Mutex<bool>,
     }
@@ -527,11 +536,12 @@ mod tests {
         let expected = "\
         Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
         \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
-        \n    Source: \"Json\", File paths = /foo, File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64)";
         assert_eq!(opt_plan.repr_indent(), expected);
         Ok(())
     }
 
+    #[derive(Debug)]
     struct FilterOrFalse {}
 
     impl FilterOrFalse {
@@ -560,6 +570,7 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct FilterAndTrue {}
 
     impl FilterAndTrue {

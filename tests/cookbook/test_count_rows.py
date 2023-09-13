@@ -41,5 +41,5 @@ def test_dataframe_length_after_collect(daft_df, service_requests_csv_pd_df, rep
 
 def test_dataframe_length_before_collect(daft_df):
     """Count rows for the entire table"""
-    with pytest.raises(RuntimeError) as err_info:
+    with pytest.raises(RuntimeError):
         len(daft_df)
