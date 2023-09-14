@@ -134,6 +134,20 @@ impl From<Error> for super::Error {
                     source: err.into(),
                 },
             },
+            UnableToListObjects { path, source } => match source.into_service_error() {
+                ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                    path,
+                    source: no_such_key.into(),
+                },
+                ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(v).to_string(),
+                },
+                err => super::Error::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
+            },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
                 path,
@@ -641,6 +655,8 @@ impl ObjectSource for S3LikeSource {
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
+        log::warn!("{:?}", parsed);
+
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
             None => Err(Error::InvalidUrl {
@@ -654,6 +670,7 @@ impl ObjectSource for S3LikeSource {
             .strip_prefix('/')
             .map(|k| k.strip_suffix('/').unwrap_or(k));
         let key = key.unwrap_or("");
+
         // assume its a directory first
         let lsr = {
             let permit = self
@@ -701,9 +718,6 @@ impl ObjectSource for S3LikeSource {
         } else {
             Ok(lsr)
         }
-        // } else {
-        //     Err(Error::NotAFile { path: path.into() }.into())
-        // }
     }
 }
 
