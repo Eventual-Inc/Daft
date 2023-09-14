@@ -580,4 +580,38 @@ mod tests {
         assert_optimized_plan_eq(unoptimized, expected)?;
         Ok(())
     }
+
+    /// Projection dropping: Test that a no-op projection is dropped.
+    #[test]
+    fn test_drop_projection() -> DaftResult<()> {
+        let unoptimized = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .project(vec![col("a"), col("b")], Default::default())?
+        .build();
+
+        let expected = "\
+        Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        assert_optimized_plan_eq(unoptimized, expected)?;
+
+        Ok(())
+    }
+    /// Projection dropping: Test that projections doing reordering are not dropped.
+    #[test]
+    fn test_dont_drop_projection() -> DaftResult<()> {
+        let unoptimized = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .project(vec![col("b"), col("a")], Default::default())?
+        .build();
+
+        let expected = "\
+        Project: col(b), col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        assert_optimized_plan_eq(unoptimized, expected)?;
+
+        Ok(())
+    }
 }
