@@ -19,12 +19,20 @@ use daft_dsl::Expr;
 
 #[cfg(feature = "python")]
 use {
-    crate::source_info::{InMemoryInfo, PyFileFormatConfig},
+    crate::{
+        physical_plan::PhysicalPlan,
+        source_info::{InMemoryInfo, PyFileFormatConfig},
+    },
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     pyo3::prelude::*,
 };
 
+/// A logical plan builder, which simplifies constructing logical plans via
+/// a fluent interface. E.g., LogicalPlanBuilder::table_scan(..).project(..).filter(..).build().
+///
+/// This builder holds the current root (sink) of the logical plan, and the building methods return
+/// a brand new builder holding a new plan; i.e., this is an immutable builder.
 #[derive(Debug)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
@@ -169,14 +177,14 @@ impl LogicalPlanBuilder {
 
     pub fn join(
         &self,
-        other: &Self,
+        right: &Self,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         join_type: JoinType,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
-            other.plan.clone(),
+            right.plan.clone(),
             left_on,
             right_on,
             join_type,
@@ -237,6 +245,11 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     }
 }
 
+/// A Python-facing wrapper of the LogicalPlanBuilder.
+///
+/// This lightweight proxy interface should hold as much of the Python-specific logic
+/// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
+/// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
 #[derive(Debug)]
 pub struct PyLogicalPlanBuilder {
@@ -359,7 +372,7 @@ impl PyLogicalPlanBuilder {
 
     pub fn join(
         &self,
-        other: &Self,
+        right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
         join_type: JoinType,
@@ -374,7 +387,7 @@ impl PyLogicalPlanBuilder {
             .collect::<Vec<Expr>>();
         Ok(self
             .builder
-            .join(&other.builder, left_on, right_on, join_type)?
+            .join(&right.builder, left_on, right_on, join_type)?
             .into())
     }
 
@@ -405,6 +418,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.partition_spec())
     }
 
+    /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
     pub fn optimize(&self) -> PyResult<Self> {
         let optimizer = Optimizer::new(Default::default());
         let unoptimized_plan = self.builder.build();
@@ -433,10 +447,13 @@ impl PyLogicalPlanBuilder {
         Ok(builder.into())
     }
 
+    /// Finalize the logical plan, translate the logical plan to a physical plan, and return
+    /// a physical plan scheduler that's capable of launching the work necessary to compute the output
+    /// of the physical plan.
     pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
         let logical_plan = self.builder.build();
-        let physical_plan = plan(logical_plan.as_ref())?;
-        Ok(Arc::new(physical_plan).into())
+        let physical_plan: Arc<PhysicalPlan> = plan(logical_plan.as_ref())?.into();
+        Ok(physical_plan.into())
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

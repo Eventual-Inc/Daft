@@ -15,6 +15,7 @@ use pyo3::{
 
 use serde::{Deserialize, Serialize};
 
+/// Type of a join operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum JoinType {

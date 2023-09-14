@@ -146,12 +146,14 @@ class Schema:
         cls,
         path: str,
         io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Schema:
         return Schema._from_pyschema(
             _read_parquet_schema(
                 uri=path,
                 io_config=io_config,
+                multithreaded_io=multithreaded_io,
                 coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
             )
         )

@@ -49,7 +49,7 @@ class RunnerIO:
     @abstractmethod
     def get_schema_from_first_filepath(
         self,
-        file_info: FileInfos,
+        file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
     ) -> Schema:
