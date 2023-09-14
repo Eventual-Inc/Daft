@@ -82,16 +82,17 @@ def _glob_path_into_file_infos(
         if isinstance(config, PythonStorageConfig):
             fs = config.fs
     file_infos = FileInfos()
+    file_format = file_format_config.file_format() if file_format_config is not None else None
     for path in paths:
         if fs is None:
             fs = get_filesystem_from_path(path)
 
-        path_file_infos = glob_path_with_stats(path, file_format_config, fs, storage_config)
+        path_file_infos = glob_path_with_stats(path, file_format, fs, storage_config)
         if len(path_file_infos) == 0:
             raise FileNotFoundError(f"No files found at {path}")
         file_infos.extend(path_file_infos)
 
-    return file_infos
+    return Table._from_pytable(file_infos.to_table())
 
 
 @ray.remote
@@ -134,7 +135,7 @@ def remote_len_partition(p: Table) -> int:
 def sample_schema_from_filepath(
     first_file_path: str,
     file_format_config: FileFormatConfig,
-    storage_config: StorageConfig | None,
+    storage_config: StorageConfig,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a Table containing a single filepath"""
     # Currently just samples the Schema from the first file
@@ -222,15 +223,19 @@ class RayRunnerIO(runner_io.RunnerIO):
         storage_config: StorageConfig | None = None,
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
-        return ray.get(
-            _glob_path_into_file_infos.remote(source_paths, file_format_config, fs=fs, storage_config=storage_config)
+        return FileInfos.from_table(
+            ray.get(
+                _glob_path_into_file_infos.remote(
+                    source_paths, file_format_config, fs=fs, storage_config=storage_config
+                )
+            )._table
         )
 
     def get_schema_from_first_filepath(
         self,
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
-        storage_config: StorageConfig | None,
+        storage_config: StorageConfig,
     ) -> Schema:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")

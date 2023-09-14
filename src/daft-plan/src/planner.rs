@@ -21,6 +21,7 @@ use crate::{FileFormat, PartitionScheme};
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
 
+/// Translate a logical plan to a physical plan.
 pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
     match logical_plan {
         LogicalPlan::Source(Source {

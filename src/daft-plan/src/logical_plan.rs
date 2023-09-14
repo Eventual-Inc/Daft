@@ -8,6 +8,7 @@ use snafu::Snafu;
 
 use crate::{display::TreeDisplay, logical_ops::*, PartitionScheme, PartitionSpec};
 
+/// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LogicalPlan {
     Source(Source),

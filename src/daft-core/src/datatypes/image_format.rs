@@ -9,12 +9,6 @@ use serde::{Deserialize, Serialize};
 use common_error::{DaftError, DaftResult};
 
 /// Supported image formats for Daft's I/O layer.
-///
-/// | PNG
-/// | JPEG
-/// | TIFF
-/// | GIF
-/// | BMP
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass)]

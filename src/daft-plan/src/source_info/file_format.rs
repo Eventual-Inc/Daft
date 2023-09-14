@@ -12,6 +12,7 @@ use pyo3::{
     IntoPy, PyObject, PyResult, Python,
 };
 
+/// Format of a file, e.g. Parquet, CSV, JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum FileFormat {
@@ -49,6 +50,7 @@ impl From<&FileFormatConfig> for FileFormat {
     }
 }
 
+/// Configuration for parsing a particular file format.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
@@ -68,6 +70,7 @@ impl FileFormatConfig {
     }
 }
 
+/// Configuration for a Parquet data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig;
@@ -75,6 +78,7 @@ pub struct ParquetSourceConfig;
 #[cfg(feature = "python")]
 #[pymethods]
 impl ParquetSourceConfig {
+    /// Create a config for a Parquet data source.
     #[new]
     fn new() -> Self {
         Self {}
@@ -83,6 +87,7 @@ impl ParquetSourceConfig {
 
 impl_bincode_py_state_serialization!(ParquetSourceConfig);
 
+/// Configuration for a CSV data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
@@ -93,6 +98,12 @@ pub struct CsvSourceConfig {
 #[cfg(feature = "python")]
 #[pymethods]
 impl CsvSourceConfig {
+    /// Create a config for a CSV data source.
+    ///
+    /// # Arguments
+    ///
+    /// * `delimiter` - The character delmiting individual cells in the CSV data.
+    /// * `has_headers` - Whether the CSV has a header row; if so, it will be skipped during data parsing.
     #[new]
     fn new(delimiter: String, has_headers: bool) -> Self {
         Self {
@@ -104,6 +115,7 @@ impl CsvSourceConfig {
 
 impl_bincode_py_state_serialization!(CsvSourceConfig);
 
+/// Configuration for a JSON data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct JsonSourceConfig {}
@@ -111,6 +123,7 @@ pub struct JsonSourceConfig {}
 #[cfg(feature = "python")]
 #[pymethods]
 impl JsonSourceConfig {
+    /// Create a config for a JSON data source.
     #[new]
     fn new() -> Self {
         Self {}
@@ -119,6 +132,7 @@ impl JsonSourceConfig {
 
 impl_bincode_py_state_serialization!(JsonSourceConfig);
 
+/// Configuration for parsing a particular file format.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(
@@ -143,21 +157,25 @@ impl PyFileFormatConfig {
         }
     }
 
+    /// Create a Parquet file format config.
     #[staticmethod]
     fn from_parquet_config(config: ParquetSourceConfig) -> Self {
         Self(Arc::new(FileFormatConfig::Parquet(config)))
     }
 
+    /// Create a CSV file format config.
     #[staticmethod]
     fn from_csv_config(config: CsvSourceConfig) -> Self {
         Self(Arc::new(FileFormatConfig::Csv(config)))
     }
 
+    /// Create a JSON file format config.
     #[staticmethod]
     fn from_json_config(config: JsonSourceConfig) -> Self {
         Self(Arc::new(FileFormatConfig::Json(config)))
     }
 
+    /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyObject {
         use FileFormatConfig::*;
@@ -169,6 +187,7 @@ impl PyFileFormatConfig {
         }
     }
 
+    /// Get the file format for this file format config.
     fn file_format(&self) -> FileFormat {
         self.0.as_ref().into()
     }

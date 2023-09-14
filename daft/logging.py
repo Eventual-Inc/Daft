@@ -29,7 +29,7 @@ def setup_logger() -> None:
                 frame = frame.f_back
                 depth += 1
 
-            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+            logger.opt(depth=depth - 1, exception=record.exc_info).log(level, record.getMessage())
 
     # Clear out any existing standard loggers.
     root = logging.root

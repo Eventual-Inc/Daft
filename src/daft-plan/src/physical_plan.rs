@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use crate::physical_ops::*;
 
+/// Physical plan for a Daft query.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     #[cfg(feature = "python")]
@@ -54,6 +55,7 @@ pub enum PhysicalPlan {
     TabularWriteCsv(TabularWriteCsv),
 }
 
+/// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalPlanScheduler {
@@ -85,6 +87,7 @@ impl PhysicalPlanScheduler {
         }
     }
 
+    /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
         Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets))
     }

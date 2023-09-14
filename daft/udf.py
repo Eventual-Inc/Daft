@@ -8,7 +8,7 @@ from typing import Callable
 
 from daft.datatype import DataType
 from daft.expressions import Expression
-from daft.series import Series
+from daft.series import PySeries, Series
 
 _NUMPY_AVAILABLE = True
 try:
@@ -29,7 +29,7 @@ class PartialUDF:
     def expressions(self) -> dict[str, Expression]:
         return {key: val for key, val in self.bound_args.arguments.items() if isinstance(val, Expression)}
 
-    def __call__(self, evaluated_expressions: list[Series]) -> Series:
+    def __call__(self, evaluated_expressions: list[Series]) -> PySeries:
         kwarg_keys = list(self.bound_args.kwargs.keys())
         arg_keys = [k for k in self.bound_args.arguments.keys() if k not in self.bound_args.kwargs.keys()]
         pyvalues = {key: val for key, val in self.bound_args.arguments.items() if not isinstance(val, Expression)}
