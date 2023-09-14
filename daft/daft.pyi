@@ -269,15 +269,37 @@ class S3Config:
     I/O configuration for accessing an S3-compatible system.
     """
 
+    def __init__(
+        self,
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+        key_id: str | None = None,
+        session_token: str | None = None,
+        access_key: str | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
+        retry_mode: str | None = None,
+        anonymous: bool | None = None,
+    ): ...
+
 class AzureConfig:
     """
     I/O configuration for accessing Azure Blob Storage.
     """
 
+    def __init__(
+        self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
+    ): ...
+
 class GCSConfig:
     """
     I/O configuration for accessing Google Cloud Storage.
     """
+
+    def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
 
 class IOConfig:
     """
@@ -302,7 +324,7 @@ class NativeStorageConfig:
 
     io_config: IOConfig
 
-    def __init__(self, io_config: IOConfig): ...
+    def __init__(self, io_config: IOConfig | None = None): ...
 
 class PythonStorageConfig:
     """
@@ -311,7 +333,7 @@ class PythonStorageConfig:
 
     fs: fsspec.AbstractFileSystem
 
-    def __init__(self, fs: fsspec.AbstractFileSystem): ...
+    def __init__(self, fs: fsspec.AbstractFileSystem | None = None): ...
 
 class StorageConfig:
     """
