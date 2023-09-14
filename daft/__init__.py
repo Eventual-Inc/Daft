@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
 
 from daft.logging import setup_logger
 
@@ -45,11 +44,6 @@ def get_build_type() -> str:
 
 
 __version__ = get_version()
-
-if TYPE_CHECKING:
-    # Placeholder for type checking for Rust module
-    class daft:
-        pass
 
 
 ###
