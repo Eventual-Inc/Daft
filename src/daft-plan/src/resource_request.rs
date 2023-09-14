@@ -8,6 +8,7 @@ use {
 
 use serde::{Deserialize, Serialize};
 
+/// Resource request for a query fragment task.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ResourceRequest {
@@ -56,11 +57,11 @@ fn float_max(left: f64, right: f64) -> f64 {
 #[pymethods]
 impl ResourceRequest {
     #[new]
-    #[pyo3(signature = (num_cpus=None, num_gpus=None, memory_bytes=None))]
     pub fn new(num_cpus: Option<f64>, num_gpus: Option<f64>, memory_bytes: Option<usize>) -> Self {
         Self::new_internal(num_cpus, num_gpus, memory_bytes)
     }
 
+    /// Take a field-wise max of the list of resource requests.
     #[staticmethod]
     pub fn max_resources(resource_requests: Vec<Self>) -> Self {
         resource_requests.iter().fold(Default::default(), |acc, e| {

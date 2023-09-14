@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
-from daft.daft import FileFormatConfig, LogicalPlanBuilder, StorageConfig
+from daft.daft import FileFormatConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema

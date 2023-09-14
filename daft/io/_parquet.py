@@ -7,6 +7,7 @@ import fsspec
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
+    IOConfig,
     NativeStorageConfig,
     ParquetSourceConfig,
     PythonStorageConfig,
@@ -55,6 +56,8 @@ def read_parquet(
 
     file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
     if use_native_downloader:
+        if io_config is None:
+            io_config = IOConfig()
         storage_config = StorageConfig.native(NativeStorageConfig(io_config))
     else:
         storage_config = StorageConfig.python(PythonStorageConfig(fs))

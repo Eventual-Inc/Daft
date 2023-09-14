@@ -12,6 +12,7 @@ use {
     },
 };
 
+/// Partition scheme for Daft DataFrame.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum PartitionScheme {
@@ -40,12 +41,12 @@ impl PartitionScheme {
 
 impl_bincode_py_state_serialization!(PartitionScheme);
 
+/// Partition specification: scheme, number of partitions, partition column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct PartitionSpec {
     pub scheme: PartitionScheme,
     pub num_partitions: usize,
-    // TODO(Clark): Port ExpressionsProjection.
     pub by: Option<Vec<Expr>>,
 }
 

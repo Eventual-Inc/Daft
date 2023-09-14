@@ -109,7 +109,10 @@ class DaftContext:
         from daft.logical.logical_plan import PyLogicalPlanBuilder
         from daft.logical.rust_logical_plan import RustLogicalPlanBuilder
 
-        return RustLogicalPlanBuilder if self.use_rust_planner else PyLogicalPlanBuilder
+        if self.use_rust_planner:
+            return RustLogicalPlanBuilder
+        else:
+            return PyLogicalPlanBuilder
 
 
 _DaftContext = DaftContext()

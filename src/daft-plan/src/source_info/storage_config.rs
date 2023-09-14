@@ -17,6 +17,8 @@ use {
     std::hash::{Hash, Hasher},
 };
 
+/// Configuration for interacting with a particular storage backend, using a particular
+/// I/O layer implementation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum StorageConfig {
     Native(Arc<NativeStorageConfig>),
@@ -24,6 +26,7 @@ pub enum StorageConfig {
     Python(PythonStorageConfig),
 }
 
+/// Storage configuration for the Rust-native I/O layer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeStorageConfig {
@@ -50,10 +53,12 @@ impl NativeStorageConfig {
     }
 }
 
+/// Storage configuration for the legacy Python I/O layer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct PythonStorageConfig {
+    /// An fsspec filesystem instance.
     #[serde(
         serialize_with = "serialize_py_object_optional",
         deserialize_with = "deserialize_py_object_optional",
@@ -102,6 +107,7 @@ impl Hash for PythonStorageConfig {
     }
 }
 
+/// A Python-exposed interface for storage configs.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(
@@ -128,16 +134,20 @@ impl PyStorageConfig {
             ))),
         }
     }
+
+    /// Create from a native storage config.
     #[staticmethod]
     fn native(config: NativeStorageConfig) -> Self {
         Self(Arc::new(StorageConfig::Native(config.into())))
     }
 
+    /// Create from a Python storage config.
     #[staticmethod]
     fn python(config: PythonStorageConfig) -> Self {
         Self(Arc::new(StorageConfig::Python(config)))
     }
 
+    /// Get the underlying storage config.
     #[getter]
     fn get_config(&self, py: Python) -> PyObject {
         use StorageConfig::*;

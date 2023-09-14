@@ -430,7 +430,6 @@ class Table:
 
 
 def _trim_pyarrow_large_arrays(arr: pa.ChunkedArray) -> pa.ChunkedArray:
-
     if pa.types.is_large_binary(arr.type) or pa.types.is_large_string(arr.type):
         if pa.types.is_large_binary(arr.type):
             target_type = pa.binary()
@@ -464,7 +463,6 @@ def read_parquet_into_pyarrow(
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
 ) -> pa.Table:
-
     fields, metadata, columns = _read_parquet_into_pyarrow(
         uri=path,
         columns=columns,
