@@ -226,7 +226,6 @@ impl Project {
         // (a maybe new input node, and a maybe new list of projection expressions).
         let upstream_schema = input.schema();
         let (projection, substitutions) = Self::factor_expressions(projection, &upstream_schema);
-
         // If there are substitutions to factor out,
         // create a child projection node to do the factoring.
         let input = if substitutions.is_empty() {
@@ -317,10 +316,23 @@ impl Project {
             let substituted_expressions = exprs
                 .iter()
                 .map(|e| {
-                    replace_column_with_semantic_id(e.clone().into(), &subexprs_to_replace, schema)
-                        .unwrap()
-                        .as_ref()
-                        .clone()
+                    let new_expr = replace_column_with_semantic_id(
+                        e.clone().into(),
+                        &subexprs_to_replace,
+                        schema,
+                    )
+                    .unwrap()
+                    .as_ref()
+                    .clone();
+                    // The substitution can unintentionally change the expression's name
+                    // (since the name depends on the first column referenced, which can be substituted away)
+                    // so re-alias the original name here if it has changed.
+                    let old_name = e.name().unwrap();
+                    if new_expr.name().unwrap() != old_name {
+                        Expr::Alias(new_expr.into(), old_name.into())
+                    } else {
+                        new_expr
+                    }
                 })
                 .collect::<Vec<_>>();
 

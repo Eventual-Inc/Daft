@@ -547,4 +547,37 @@ mod tests {
         assert_optimized_plan_eq(unoptimized, expected.as_str())?;
         Ok(())
     }
+
+    /// Projection merging: Ensure merging happens even when there is computation
+    /// in both the parent and the child.
+    #[test]
+    fn test_merge_projections() -> DaftResult<()> {
+        let unoptimized = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .project(
+            vec![
+                binary_op(Operator::Plus, &col("a"), &lit(1)),
+                binary_op(Operator::Plus, &col("b"), &lit(2)),
+                col("a").alias("c"),
+            ],
+            Default::default(),
+        )?
+        .project(
+            vec![
+                binary_op(Operator::Plus, &col("a"), &lit(3)),
+                col("b"),
+                binary_op(Operator::Plus, &col("c"), &lit(4)),
+            ],
+            Default::default(),
+        )?
+        .build();
+
+        let expected = "\
+        Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        assert_optimized_plan_eq(unoptimized, expected)?;
+        Ok(())
+    }
 }
