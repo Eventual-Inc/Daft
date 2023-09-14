@@ -535,7 +535,7 @@ mod tests {
         assert_eq!(pass_count, 6);
         let expected = "\
         Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
-        \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
+        \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b, Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64)";
         assert_eq!(opt_plan.repr_indent(), expected);
         Ok(())
