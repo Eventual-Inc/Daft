@@ -536,7 +536,6 @@ impl S3LikeSource {
         let uri = &format!("s3://{bucket}/{key}");
         match response {
             Ok(v) => {
-                println!("token in ls {:?}", v.continuation_token());
                 let dirs = v.common_prefixes();
                 let files = v.contents();
                 let continuation_token = v.next_continuation_token().map(|s| s.to_string());
@@ -651,58 +650,60 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
 
-        if let Some(key) = key.strip_prefix('/') {
-            // assume its a directory first
-            let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
-            let lsr = {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                self._list_impl(
+        let key = key
+            .strip_prefix('/')
+            .and_then(|k| Some(k.strip_suffix('/').unwrap_or(k)));
+        let key = key.unwrap_or("");
+        // assume its a directory first
+        let lsr = {
+            let permit = self
+                .connection_pool_sema
+                .acquire()
+                .await
+                .context(UnableToGrabSemaphoreSnafu)?;
+            self._list_impl(
+                permit,
+                bucket,
+                &key,
+                delimiter.into(),
+                continuation_token.map(String::from),
+                &self.default_region,
+            )
+            .await?
+        };
+        if lsr.files.is_empty() && key.contains('/') {
+            let permit = self
+                .connection_pool_sema
+                .acquire()
+                .await
+                .context(UnableToGrabSemaphoreSnafu)?;
+            // Might be a File
+            let split = key.rsplit_once('/');
+            let (new_key, _) = split.unwrap();
+            let mut lsr = self
+                ._list_impl(
                     permit,
                     bucket,
-                    &key,
+                    new_key,
                     delimiter.into(),
                     continuation_token.map(String::from),
                     &self.default_region,
                 )
-                .await?
-            };
-            if lsr.files.is_empty() && key.contains('/') {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                // Might be a File
-                let split = key.rsplit_once('/');
-                let (new_key, _) = split.unwrap();
-                let mut lsr = self
-                    ._list_impl(
-                        permit,
-                        bucket,
-                        new_key,
-                        delimiter.into(),
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                    )
-                    .await?;
-                let target_path = format!("s3://{bucket}/{new_key}");
-                lsr.files.retain(|f| f.filepath == target_path);
+                .await?;
+            let target_path = format!("s3://{bucket}/{new_key}");
+            lsr.files.retain(|f| f.filepath == target_path);
 
-                if lsr.files.is_empty() {
-                    // Isnt a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
-                }
-                Ok(lsr)
-            } else {
-                Ok(lsr)
+            if lsr.files.is_empty() {
+                // Isnt a file or a directory
+                return Err(Error::NotFound { path: path.into() }.into());
             }
+            Ok(lsr)
         } else {
-            Err(Error::NotAFile { path: path.into() }.into())
+            Ok(lsr)
         }
+        // } else {
+        //     Err(Error::NotAFile { path: path.into() }.into())
+        // }
     }
 }
 
