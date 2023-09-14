@@ -652,7 +652,7 @@ impl ObjectSource for S3LikeSource {
 
         let key = key
             .strip_prefix('/')
-            .and_then(|k| Some(k.strip_suffix('/').unwrap_or(k)));
+            .map(|k| k.strip_suffix('/').unwrap_or(k));
         let key = key.unwrap_or("");
         // assume its a directory first
         let lsr = {
@@ -664,7 +664,7 @@ impl ObjectSource for S3LikeSource {
             self._list_impl(
                 permit,
                 bucket,
-                &key,
+                key,
                 delimiter.into(),
                 continuation_token.map(String::from),
                 &self.default_region,
