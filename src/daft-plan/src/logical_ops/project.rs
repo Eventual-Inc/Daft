@@ -114,6 +114,9 @@ impl Project {
                         expr.children()
                     } else {
                         let expr_id = expr.semantic_id(schema);
+                        if let Expr::Column(..) = expr.as_ref() {
+                            column_name_substitutions.insert(expr_id.clone(), expr.clone());
+                        }
                         // Mark expr as seen
                         let newly_seen = seen_subexpressions.insert(expr_id.clone());
                         if newly_seen {
@@ -123,9 +126,6 @@ impl Project {
                             // If previously seen, cache the expression (if it involves computation)
                             if optimization::requires_computation(expr) {
                                 subexpressions_to_cache.insert(expr_id.clone(), expr.clone());
-                            } else if let Expr::Column(..) = expr.as_ref() {
-                                column_name_substitutions
-                                    .insert(expr.semantic_id(schema), expr.clone());
                             }
                             // Stop recursing if previously seen;
                             // we only want top-level repeated subexpressions
