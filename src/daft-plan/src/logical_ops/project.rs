@@ -603,7 +603,8 @@ mod tests {
         Ok(())
     }
 
-    /// Test that common leaf expressions are not factored out.
+    /// Test that common leaf expressions are not factored out
+    /// (since this would not save computation and only introduces another materialization)
     /// e.g.
     /// 3 as x, 3 as y, a as w, a as z
     /// ->
