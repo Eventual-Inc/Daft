@@ -1,11 +1,8 @@
 use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
+#[cfg(feature = "python")]
+use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
-#[cfg(feature = "python")]
-use {
-    pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python},
-    std::cmp::max,
-};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +25,15 @@ impl ResourceRequest {
             num_gpus,
             memory_bytes,
         }
+    }
+
+    pub fn max(resource_requests: &[&Self]) -> Self {
+        resource_requests.iter().fold(Default::default(), |acc, e| {
+            let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);
+            let max_num_gpus = lift(float_max, acc.num_gpus, e.num_gpus);
+            let max_memory_bytes = lift(std::cmp::max, acc.memory_bytes, e.memory_bytes);
+            Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
+        })
     }
 }
 
@@ -82,12 +88,7 @@ impl ResourceRequest {
 
     #[staticmethod]
     pub fn max_resources(resource_requests: Vec<Self>) -> Self {
-        resource_requests.iter().fold(Default::default(), |acc, e| {
-            let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);
-            let max_num_gpus = lift(float_max, acc.num_gpus, e.num_gpus);
-            let max_memory_bytes = lift(max, acc.memory_bytes, e.memory_bytes);
-            Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
-        })
+        Self::max(&resource_requests.iter().collect::<Vec<_>>())
     }
 
     #[getter]

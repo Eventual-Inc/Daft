@@ -8,7 +8,7 @@ use indexmap::IndexSet;
 
 use crate::{
     logical_ops::{Aggregate, Project, Source},
-    LogicalPlan,
+    LogicalPlan, ResourceRequest,
 };
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
@@ -123,7 +123,10 @@ impl PushDownProjection {
                 let new_plan: LogicalPlan = Project::try_new(
                     upstream_projection.input.clone(),
                     merged_projection,
-                    &upstream_projection.resource_request + &projection.resource_request,
+                    ResourceRequest::max(&[
+                        &upstream_projection.resource_request,
+                        &projection.resource_request,
+                    ]),
                 )?
                 .into();
                 let new_plan: Arc<LogicalPlan> = new_plan.into();
