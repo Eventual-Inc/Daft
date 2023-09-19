@@ -55,7 +55,7 @@ jobs:
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        args: --profile release --out dist --sdist
+        args: --profile release --out dist --sdist # CHANGE THIS BACK TO LTO
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - name: Build wheels - Linux x86
