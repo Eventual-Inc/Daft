@@ -348,6 +348,10 @@ impl PyDataType {
         Ok(self.dtype.is_logical())
     }
 
+    pub fn is_temporal(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_temporal())
+    }
+
     pub fn is_equal(&self, other: &PyAny) -> PyResult<bool> {
         if other.is_instance_of::<PyDataType>() {
             let other = other.extract::<PyDataType>()?;

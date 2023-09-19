@@ -79,3 +79,60 @@ def test_series_date_day_of_week_operation() -> None:
     assert day_of_weeks.datatype() == DataType.uint32()
 
     assert [0, 1, 2, None, 3, 4, None, 5, 6] == day_of_weeks.to_pylist()
+
+
+def test_series_timestamp_day_operation() -> None:
+    from datetime import datetime
+
+    def ts_maker(d):
+        if d is None:
+            return None
+        return datetime(2023, 1, d, 1, 1, 1)
+
+    input = [1, 5, 14, None, 23, None, 28]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts)
+    days = s.dt.day()
+
+    assert days.datatype() == DataType.uint32()
+
+    assert input == days.to_pylist()
+
+
+def test_series_timestamp_month_operation() -> None:
+    from datetime import datetime
+
+    def ts_maker(m):
+        if m is None:
+            return None
+        return datetime(2023, m, 1, 1, 1, 1)
+
+    input = list(range(1, 10)) + [None, 11, 12]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts)
+    months = s.dt.month()
+
+    assert months.datatype() == DataType.uint32()
+
+    assert input == months.to_pylist()
+
+
+def test_series_timestamp_year_operation() -> None:
+    from datetime import datetime
+
+    def ts_maker(y):
+        if y is None:
+            return None
+        return datetime(y, 1, 1, 1, 1, 1)
+
+    input = [1, 1969, 2023 + 5, 2023 + 4, 2023 + 1, None, 2023 + 2, None]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts)
+    years = s.dt.year()
+
+    assert years.datatype() == DataType.int32()
+
+    assert input == years.to_pylist()
