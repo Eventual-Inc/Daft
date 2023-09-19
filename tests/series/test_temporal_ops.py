@@ -83,7 +83,7 @@ def test_series_date_day_of_week_operation() -> None:
     assert [0, 1, 2, None, 3, 4, None, 5, 6] == day_of_weeks.to_pylist()
 
 
-@pytest.mark.parametrize("tz", [None, "UTC", "+08:00"])
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_day_operation(tz) -> None:
     from datetime import datetime
 
@@ -101,12 +101,12 @@ def test_series_timestamp_day_operation(tz) -> None:
     assert days.datatype() == DataType.uint32()
 
     # If tz is +08:00, then we expect the days to be +1 because our ts_maker makes timestamps with times at 23:00
-    expected = [d and d + 1 for d in input] if tz == "+08:00" else input
+    expected = [d and d + 1 for d in input] if tz in {"+08:00", "Asia/Singapore"} else input
 
     assert expected == days.to_pylist()
 
 
-@pytest.mark.parametrize("tz", [None, "UTC", "+08:00"])
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_month_operation(tz) -> None:
     from datetime import datetime
 
@@ -126,7 +126,7 @@ def test_series_timestamp_month_operation(tz) -> None:
     assert input == months.to_pylist()
 
 
-@pytest.mark.parametrize("tz", [None, "UTC", "+08:00"])
+@pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_year_operation(tz) -> None:
     from datetime import datetime
 
