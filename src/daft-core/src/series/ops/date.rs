@@ -1,3 +1,4 @@
+use crate::datatypes::logical::TimestampArray;
 use crate::series::array_impl::IntoSeries;
 use crate::{
     datatypes::{logical::DateArray, DataType},
@@ -13,8 +14,8 @@ impl Series {
                 Ok(downcasted.day()?.into_series())
             }
             DataType::Timestamp(..) => {
-                let date_series = self.cast(&DataType::Date)?;
-                date_series.dt_day()
+                let ts_array = self.downcast::<TimestampArray>()?;
+                Ok(ts_array.date()?.day()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run day() operation on DateType, got {}",
@@ -30,8 +31,8 @@ impl Series {
                 Ok(downcasted.month()?.into_series())
             }
             DataType::Timestamp(..) => {
-                let date_series = self.cast(&DataType::Date)?;
-                date_series.dt_month()
+                let ts_array = self.downcast::<TimestampArray>()?;
+                Ok(ts_array.date()?.month()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run month() operation on DateType, got {}",
@@ -47,8 +48,8 @@ impl Series {
                 Ok(downcasted.year()?.into_series())
             }
             DataType::Timestamp(..) => {
-                let date_series = self.cast(&DataType::Date)?;
-                date_series.dt_year()
+                let ts_array = self.downcast::<TimestampArray>()?;
+                Ok(ts_array.date()?.year()?.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run year() operation on DateType, got {}",
