@@ -1,6 +1,9 @@
 use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
 #[cfg(feature = "python")]
-use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python};
+use pyo3::{
+    pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo, Python,
+    ToPyObject,
+};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
 

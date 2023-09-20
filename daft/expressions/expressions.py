@@ -382,12 +382,8 @@ class Expression:
     def __hash__(self) -> int:
         return self._expr.__hash__()
 
-    def __getstate__(self) -> bytes:
-        return self._expr.__getstate__()
-
-    def __setstate__(self, state: bytes) -> None:
-        self._expr = _PyExpr.__new__(_PyExpr)
-        self._expr.__setstate__(state)
+    def __reduce__(self) -> tuple:
+        return Expression._from_pyexpr, (self._expr,)
 
     ###
     # Helper methods required by optimizer:

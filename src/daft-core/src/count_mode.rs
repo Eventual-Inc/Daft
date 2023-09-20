@@ -1,8 +1,6 @@
 #[cfg(feature = "python")]
 use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    types::{PyBytes, PyTuple},
+    exceptions::PyValueError, prelude::*, types::PyBytes, PyObject, PyTypeInfo, ToPyObject,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result};
@@ -20,7 +18,7 @@ use common_error::{DaftError, DaftResult};
 /// | Null  - Count only null values.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum CountMode {
     All = 1,
     Valid = 2,
@@ -30,19 +28,6 @@ pub enum CountMode {
 #[cfg(feature = "python")]
 #[pymethods]
 impl CountMode {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy variant, to be overridden by __setstate__.
-            0 => Ok(Self::All),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new JoinType, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     /// Create a CountMode from its string representation.
     ///
     /// Args:

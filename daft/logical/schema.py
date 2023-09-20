@@ -134,12 +134,8 @@ class Schema:
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 
-    def __getstate__(self) -> bytes:
-        return self._schema.__getstate__()
-
-    def __setstate__(self, state: bytes) -> None:
-        self._schema = _PySchema.__new__(_PySchema)
-        self._schema.__setstate__(state)
+    def __reduce__(self) -> tuple:
+        return Schema._from_pyschema, (self._schema,)
 
     @classmethod
     def from_parquet(

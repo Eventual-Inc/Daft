@@ -24,7 +24,7 @@ use common_error::{DaftError, DaftResult};
 /// | RGBA32F - 32-bit floating RGB + alpha
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash, FromPrimitive)]
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageMode {
     L = 1,
     LA = 2,
