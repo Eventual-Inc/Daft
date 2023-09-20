@@ -329,7 +329,7 @@ impl Project {
                     // so re-alias the original name here if it has changed.
                     let old_name = e.name().unwrap();
                     if new_expr.name().unwrap() != old_name {
-                        new_expr.alias(old_name.into())
+                        new_expr.alias(old_name)
                     } else {
                         new_expr
                     }
