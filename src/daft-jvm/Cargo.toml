@@ -1,0 +1,14 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+jni = {version="0.21.1", features=["invocation"]}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "common-error/python"]
+
+[package]
+edition = {workspace = true}
+name = "daft-jvm"
+version = {workspace = true}

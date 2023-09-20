@@ -5,6 +5,8 @@ daft-io = {path = "src/daft-io", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+daft-jvm = {path = "src/daft-jvm", default-features = false}
+
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 
@@ -18,7 +20,8 @@ python = [
   "daft-dsl/python",
   "daft-io/python",
   "daft-plan/python",
-  "daft-parquet/python"
+  "daft-parquet/python",
+  "daft-jvm/python"
 ]
 
 [lib]
@@ -65,7 +68,8 @@ members = [
   "src/daft-parquet",
   "src/daft-dsl",
   "src/daft-table",
-  "src/daft-plan"
+  "src/daft-plan",
+  "src/daft-jvm",
 ]
 
 [workspace.dependencies]

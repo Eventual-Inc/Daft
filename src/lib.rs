@@ -58,6 +58,11 @@ pub mod pylib {
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
+
+        let start = std::time::Instant::now();
+        daft_jvm::start_jvm();
+        let dur = std::time::Instant::now()- start;
+        println!("duration: {}", dur.as_millis());
         Ok(())
     }
 }
