@@ -134,6 +134,20 @@ impl From<Error> for super::Error {
                     source: err.into(),
                 },
             },
+            UnableToListObjects { path, source } => match source.into_service_error() {
+                ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                    path,
+                    source: no_such_key.into(),
+                },
+                ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(v).to_string(),
+                },
+                err => super::Error::UnableToOpenFile {
+                    path,
+                    source: err.into(),
+                },
+            },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
                 path,
@@ -538,7 +552,7 @@ impl S3LikeSource {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
-                let continuation_token = v.continuation_token().map(|s| s.to_string());
+                let continuation_token = v.next_continuation_token().map(|s| s.to_string());
                 let mut total_len = 0;
                 if let Some(dirs) = dirs {
                     total_len += dirs.len()
@@ -641,6 +655,8 @@ impl ObjectSource for S3LikeSource {
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
+        log::warn!("{:?}", parsed);
+
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
             None => Err(Error::InvalidUrl {
@@ -650,57 +666,57 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
 
-        if let Some(key) = key.strip_prefix('/') {
-            // assume its a directory first
-            let key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
-            let lsr = {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                self._list_impl(
+        let key = key
+            .strip_prefix('/')
+            .map(|k| k.strip_suffix('/').unwrap_or(k));
+        let key = key.unwrap_or("");
+
+        // assume its a directory first
+        let lsr = {
+            let permit = self
+                .connection_pool_sema
+                .acquire()
+                .await
+                .context(UnableToGrabSemaphoreSnafu)?;
+            self._list_impl(
+                permit,
+                bucket,
+                key,
+                delimiter.into(),
+                continuation_token.map(String::from),
+                &self.default_region,
+            )
+            .await?
+        };
+        if lsr.files.is_empty() && key.contains('/') {
+            let permit = self
+                .connection_pool_sema
+                .acquire()
+                .await
+                .context(UnableToGrabSemaphoreSnafu)?;
+            // Might be a File
+            let split = key.rsplit_once('/');
+            let (new_key, _) = split.unwrap();
+            let mut lsr = self
+                ._list_impl(
                     permit,
                     bucket,
-                    &key,
+                    new_key,
                     delimiter.into(),
                     continuation_token.map(String::from),
                     &self.default_region,
                 )
-                .await?
-            };
-            if lsr.files.is_empty() && key.contains('/') {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                // Might be a File
-                let split = key.rsplit_once('/');
-                let (new_key, _) = split.unwrap();
-                let mut lsr = self
-                    ._list_impl(
-                        permit,
-                        bucket,
-                        new_key,
-                        delimiter.into(),
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                    )
-                    .await?;
-                let target_path = format!("s3://{bucket}/{new_key}");
-                lsr.files.retain(|f| f.filepath == target_path);
+                .await?;
+            let target_path = format!("s3://{bucket}/{new_key}");
+            lsr.files.retain(|f| f.filepath == target_path);
 
-                if lsr.files.is_empty() {
-                    // Isnt a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
-                }
-                Ok(lsr)
-            } else {
-                Ok(lsr)
+            if lsr.files.is_empty() {
+                // Isnt a file or a directory
+                return Err(Error::NotFound { path: path.into() }.into());
             }
+            Ok(lsr)
         } else {
-            Err(Error::NotAFile { path: path.into() }.into())
+            Ok(lsr)
         }
     }
 }

@@ -2,8 +2,9 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, object_io::LSResult, parse_url};
+    use crate::{get_io_client, get_runtime, object_io::recursive_iter, parse_url};
     use common_error::DaftResult;
+    use futures::TryStreamExt;
     use pyo3::{
         prelude::*,
         types::{PyDict, PyList},
@@ -13,10 +14,11 @@ mod py {
     fn io_list(
         py: Python,
         path: String,
+        recursive: Option<bool>,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<&PyList> {
-        let lsr: DaftResult<LSResult> = py.allow_threads(|| {
+        let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -27,12 +29,25 @@ mod py {
 
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
-                Ok(source.ls(&path, None, None).await?)
+                let files = if recursive.is_some_and(|r| r) {
+                    recursive_iter(source, &path)
+                        .await?
+                        .try_collect::<Vec<_>>()
+                        .await?
+                } else {
+                    source
+                        .iter_dir(&path, None, None)
+                        .await?
+                        .try_collect::<Vec<_>>()
+                        .await?
+                };
+
+                Ok(files)
             })
         });
         let lsr = lsr?;
         let mut to_rtn = vec![];
-        for file in lsr.files {
+        for file in lsr {
             let dict = PyDict::new(py);
             dict.set_item("type", format!("{:?}", file.filetype))?;
             dict.set_item("path", file.filepath)?;

@@ -1,9 +1,11 @@
 use std::ops::Range;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::local::{collect_file, LocalFile};
@@ -67,6 +69,8 @@ pub struct LSResult {
     pub continuation_token: Option<String>,
 }
 
+use async_stream::stream;
+
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
@@ -81,5 +85,59 @@ pub(crate) trait ObjectSource: Sync + Send {
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult>;
 
-    // async fn iter_dir(&self, path: &str, limit: Option<usize>) -> super::Result<Box<dyn Stream<Item = super::Result<LSResult>>>>;
+    async fn iter_dir(
+        &self,
+        uri: &str,
+        delimiter: Option<&str>,
+        _limit: Option<usize>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        let uri = uri.to_string();
+        let delimiter = delimiter.map(String::from);
+        let s = stream! {
+            let lsr = self.ls(&uri, delimiter.as_deref(), None).await?;
+            let mut continuation_token = lsr.continuation_token.clone();
+            for file in lsr.files {
+                yield Ok(file);
+            }
+
+            while continuation_token.is_some() {
+                let lsr = self.ls(&uri, delimiter.as_deref(), continuation_token.as_deref()).await?;
+                continuation_token = lsr.continuation_token.clone();
+                for file in lsr.files {
+                    yield Ok(file);
+                }
+            }
+        };
+        Ok(s.boxed())
+    }
+}
+
+pub(crate) async fn recursive_iter(
+    source: Arc<dyn ObjectSource>,
+    uri: &str,
+) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
+    fn add_to_channel(source: Arc<dyn ObjectSource>, tx: Sender<FileMetadata>, dir: String) {
+        tokio::spawn(async move {
+            let mut s = source.iter_dir(&dir, None, None).await.unwrap();
+            let tx = &tx;
+            while let Some(tr) = s.next().await {
+                let tr = tr.unwrap();
+                match tr.filetype {
+                    FileType::File => tx.send(tr).await.unwrap(),
+                    FileType::Directory => add_to_channel(source.clone(), tx.clone(), tr.filepath),
+                };
+            }
+        });
+    }
+
+    add_to_channel(source, to_rtn_tx, uri.to_string());
+
+    let to_rtn_stream = stream! {
+        while let Some(v) = to_rtn_rx.recv().await {
+            yield Ok(v)
+        }
+    };
+
+    Ok(to_rtn_stream.boxed())
 }

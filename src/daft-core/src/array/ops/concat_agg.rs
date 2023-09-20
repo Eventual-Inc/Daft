@@ -165,7 +165,7 @@ mod test {
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
-                Box::new(arrow2::array::Int64Array::from_iter(vec![].iter())),
+                Box::new(arrow2::array::Int64Array::from_iter([].iter())),
             ))
             .into_series(),
             arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
@@ -190,7 +190,7 @@ mod test {
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(
-                    vec![Some(0), Some(1), Some(1), Some(2), None, None, Some(10000)].iter(),
+                    [Some(0), Some(1), Some(1), Some(2), None, None, Some(10000)].iter(),
                 )),
             ))
             .into_series(),
@@ -225,7 +225,7 @@ mod test {
             Int64Array::from((
                 "item",
                 Box::new(arrow2::array::Int64Array::from_iter(
-                    vec![
+                    [
                         Some(0),
                         Some(0),
                         Some(0),

@@ -1,5 +1,6 @@
 [dependencies]
 async-recursion = "1.0.4"
+async-stream = "0.3.5"
 async-trait = "0.1.71"
 aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
