@@ -57,7 +57,7 @@ _RUNNER: Runner | None = None
 
 def _get_planner_from_env() -> bool:
     """Returns whether or not to use the new query planner."""
-    return bool(int(os.getenv("DAFT_NEW_QUERY_PLANNER", default="0")))
+    return bool(int(os.getenv("DAFT_NEW_QUERY_PLANNER", default="1")))
 
 
 @dataclasses.dataclass(frozen=True)
