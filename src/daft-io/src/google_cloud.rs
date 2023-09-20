@@ -196,6 +196,66 @@ impl GCSClientWrapper {
         }
     }
 
+    async fn _ls_impl(
+        &self,
+        client: &Client,
+        bucket: &str,
+        key: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        let req = ListObjectsRequest {
+            bucket: bucket.to_string(),
+            prefix: Some(key.to_string()),
+            end_offset: None,
+            start_offset: None,
+            page_token: continuation_token.map(|s| s.to_string()),
+            delimiter: Some(delimiter.unwrap_or("/").to_string()), // returns results in "directory mode"
+            max_results: Some(1000), // Recommended value from API docs
+            include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
+            projection: None,
+            versions: None,
+        };
+        let ls_response = client
+            .list_objects(&req)
+            .await
+            .context(UnableToListObjectsSnafu {
+                path: format!("gs://{}/{}", bucket, key),
+            })?;
+        let mut files = ls_response.items.map_or(vec![], |items| {
+            items
+                .into_iter()
+                .filter_map(|obj| {
+                    if obj.name.ends_with('/') {
+                        // Sometimes the GCS API returns "folders" in .items[], so we manually filter here
+                        None
+                    } else {
+                        Some(FileMetadata {
+                            filepath: format!("gs://{}/{}", bucket, obj.name),
+                            size: Some(obj.size as u64),
+                            filetype: FileType::File,
+                        })
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+        let mut dirs = ls_response.prefixes.map_or(vec![], |prefixes| {
+            prefixes
+                .into_iter()
+                .map(|pref| FileMetadata {
+                    filepath: format!("gs://{}/{}", bucket, pref),
+                    size: None,
+                    filetype: FileType::Directory,
+                })
+                .collect::<Vec<_>>()
+        });
+        files.append(&mut dirs);
+        Ok(LSResult {
+            files,
+            continuation_token: ls_response.next_page_token,
+        })
+    }
+
     async fn ls(
         &self,
         path: &str,
@@ -206,47 +266,24 @@ impl GCSClientWrapper {
         let (bucket, key) = parse_uri(&uri)?;
         match self {
             GCSClientWrapper::Native(client) => {
-                let req = ListObjectsRequest {
-                    bucket: bucket.to_string(),
-                    prefix: Some(key.to_string()),
-                    end_offset: None,
-                    start_offset: None,
-                    page_token: continuation_token.map(|s| s.to_string()),
-                    delimiter: Some("/".to_string()), // returns results in "directory mode"
-                    max_results: Some(1000),          // Recommended value from API docs
-                    include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
-                    projection: None,
-                    versions: None,
-                };
-                let ls_response = client
-                    .list_objects(&req)
-                    .await
-                    .context(UnableToListObjectsSnafu { path })?;
-                let mut files = ls_response.items.map_or(vec![], |items| {
-                    items
-                        .into_iter()
-                        .map(|obj| FileMetadata {
-                            filepath: obj.name,
-                            size: Some(obj.size as u64),
-                            filetype: FileType::File,
-                        })
-                        .collect::<Vec<_>>()
-                });
-                let mut dirs = ls_response.prefixes.map_or(vec![], |prefixes| {
-                    prefixes
-                        .into_iter()
-                        .map(|pref| FileMetadata {
-                            filepath: pref,
-                            size: None,
-                            filetype: FileType::Directory,
-                        })
-                        .collect::<Vec<_>>()
-                });
-                files.append(&mut dirs);
-                Ok(LSResult {
-                    files,
-                    continuation_token: ls_response.next_page_token,
-                })
+                // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file
+                let forced_directory_key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
+                let forced_directory_ls_result = self
+                    ._ls_impl(
+                        client,
+                        bucket,
+                        forced_directory_key.as_str(),
+                        delimiter,
+                        continuation_token,
+                    )
+                    .await?;
+                if forced_directory_ls_result.files.is_empty() {
+                    Ok(forced_directory_ls_result)
+                } else {
+                    self._ls_impl(client, bucket, key, delimiter, continuation_token)
+                        .await
+                }
             }
             GCSClientWrapper::S3Compat(client) => {
                 client.ls(path, delimiter, continuation_token).await
