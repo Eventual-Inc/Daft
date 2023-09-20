@@ -80,6 +80,10 @@ def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
     return [t.to_arrow() for t in tables]
 
 
+def daft_into_pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
+    return daft.table.read_parquet_into_pyarrow_bulk(paths, columns=columns)
+
+
 def pyarrow_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
     return [pyarrow_read(f, columns=columns) for f in paths]
 
@@ -91,11 +95,13 @@ def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
 @pytest.fixture(
     params=[
         daft_bulk_read,
+        daft_into_pyarrow_bulk_read,
         pyarrow_bulk_read,
         boto_bulk_read,
     ],
     ids=[
         "daft_bulk_read",
+        "daft_into_pyarrow_bulk_read",
         "pyarrow_bulk_read",
         "boto3_bulk_read",
     ],
