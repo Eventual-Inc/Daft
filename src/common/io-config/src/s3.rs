@@ -18,6 +18,8 @@ pub struct S3Config {
     pub num_tries: u32,
     pub retry_mode: Option<String>,
     pub anonymous: bool,
+    pub verify_ssl: bool,
+    pub check_hostname_ssl: bool,
 }
 
 impl Default for S3Config {
@@ -35,6 +37,8 @@ impl Default for S3Config {
             num_tries: 5,
             retry_mode: Some("standard".to_string()),
             anonymous: false,
+            verify_ssl: true,
+            check_hostname_ssl: true,
         }
     }
 }
@@ -55,7 +59,9 @@ impl Display for S3Config {
     read_timeout_ms: {},
     num_tries: {:?},
     retry_mode: {:?},
-    anonymous: {}",
+    anonymous: {},
+    verify_ssl: {},
+    check_hostname_ssl: {}",
             self.region_name,
             self.endpoint_url,
             self.key_id,
@@ -67,7 +73,9 @@ impl Display for S3Config {
             self.read_timeout_ms,
             self.num_tries,
             self.retry_mode,
-            self.anonymous
+            self.anonymous,
+            self.verify_ssl,
+            self.check_hostname_ssl
         )
     }
 }

@@ -283,6 +283,8 @@ class S3Config:
         num_tries: int | None = None,
         retry_mode: str | None = None,
         anonymous: bool | None = None,
+        verify_ssl: bool | None = None,
+        check_hostname_ssl: bool | None = None,
     ): ...
 
 class AzureConfig:

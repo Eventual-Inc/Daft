@@ -19,6 +19,8 @@ use crate::config;
 ///     num_tries: Number of attempts to make a connection, defaults to 5
 ///     retry_mode: Retry Mode when a request fails, current supported values are `standard` and `adaptive`
 ///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
+///     verify_ssl: Whether or not to use verify ssl certificates, which will access S3 without checking if the certs are valid
+///     check_hostname_ssl: Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl
 ///
 /// Example:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
@@ -150,6 +152,8 @@ impl S3Config {
         num_tries: Option<u32>,
         retry_mode: Option<String>,
         anonymous: Option<bool>,
+        verify_ssl: Option<bool>,
+        check_hostname_ssl: Option<bool>,
     ) -> Self {
         let def = crate::S3Config::default();
         S3Config {
@@ -167,6 +171,8 @@ impl S3Config {
                 num_tries: num_tries.unwrap_or(def.num_tries),
                 retry_mode: retry_mode.or(def.retry_mode),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+                verify_ssl: verify_ssl.unwrap_or(def.verify_ssl),
+                check_hostname_ssl: check_hostname_ssl.unwrap_or(def.check_hostname_ssl),
             },
         }
     }
