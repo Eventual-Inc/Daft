@@ -117,6 +117,8 @@ fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
 
     let key = if let Some(key) = key.strip_prefix('/') {
         key
+    } else if key.is_empty() {
+        key
     } else {
         return Err(Error::NotAFile {
             path: uri.to_string(),
@@ -267,7 +269,8 @@ impl GCSClientWrapper {
         match self {
             GCSClientWrapper::Native(client) => {
                 // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file
+                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                // details as the one-and-only-one entry
                 let forced_directory_key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
                 let forced_directory_ls_result = self
                     ._ls_impl(
@@ -279,10 +282,10 @@ impl GCSClientWrapper {
                     )
                     .await?;
                 if forced_directory_ls_result.files.is_empty() {
-                    Ok(forced_directory_ls_result)
-                } else {
                     self._ls_impl(client, bucket, key, delimiter, continuation_token)
                         .await
+                } else {
+                    Ok(forced_directory_ls_result)
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
