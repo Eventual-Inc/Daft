@@ -285,7 +285,7 @@ pub fn read_parquet(
     })
 }
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
-
+pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -296,7 +296,7 @@ pub fn read_parquet_into_pyarrow(
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
+) -> DaftResult<ParquetPyarrowChunk> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
@@ -353,6 +353,64 @@ pub fn read_parquet_bulk(
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
                     read_parquet_single(
+                        &uri,
+                        columns.as_deref(),
+                        start_offset,
+                        num_rows,
+                        owned_row_group.as_deref(),
+                        io_client,
+                        &schema_infer_options,
+                    )
+                    .await
+                })
+            }))
+            .await
+        })
+        .context(JoinSnafu { path: "UNKNOWN" })?;
+    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+}
+
+
+#[allow(clippy::too_many_arguments)]
+pub fn read_parquet_into_pyarrow_bulk(
+    uris: &[&str],
+    columns: Option<&[&str]>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<Vec<i64>>>,
+    io_client: Arc<IOClient>,
+    multithreaded_io: bool,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
+) -> DaftResult<Vec<ParquetPyarrowChunk>> {
+    let runtime_handle = get_runtime(multithreaded_io)?;
+    let _rt_guard = runtime_handle.enter();
+    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
+    if let Some(ref row_groups) = row_groups {
+        if row_groups.len() != uris.len() {
+            return Err(common_error::DaftError::ValueError(format!(
+                "Mismatch of length of `uris` and `row_groups`. {} vs {}",
+                uris.len(),
+                row_groups.len()
+            )));
+        }
+    }
+    let tables = runtime_handle
+        .block_on(async move {
+            try_join_all(uris.iter().enumerate().map(|(i, uri)| {
+                let uri = uri.to_string();
+                let owned_columns = owned_columns.clone();
+                let owned_row_group = match &row_groups {
+                    None => None,
+                    Some(v) => v.get(i).cloned(),
+                };
+
+                let io_client = io_client.clone();
+                let schema_infer_options = schema_infer_options.clone();
+                tokio::task::spawn(async move {
+                    let columns = owned_columns
+                        .as_ref()
+                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
+                    read_parquet_single_into_arrow(
                         &uri,
                         columns.as_deref(),
                         start_offset,
