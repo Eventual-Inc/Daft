@@ -114,18 +114,7 @@ fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
         }),
     }?;
     let key = uri.path();
-
-    let key = if let Some(key) = key.strip_prefix('/') {
-        key
-    } else if key.is_empty() {
-        key
-    } else {
-        return Err(Error::NotAFile {
-            path: uri.to_string(),
-        }
-        .into());
-    };
-
+    let key = key.strip_prefix('/').unwrap_or(key);
     Ok((bucket, key))
 }
 
