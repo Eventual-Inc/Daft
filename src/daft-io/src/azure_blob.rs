@@ -1,12 +1,15 @@
 use async_trait::async_trait;
 use azure_storage::prelude::*;
-use azure_storage_blobs::prelude::*;
+use azure_storage_blobs::{
+    container::{operations::BlobItem, Container},
+    prelude::*,
+};
 use futures::{StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use crate::{
-    object_io::{LSResult, ObjectSource},
+    object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     GetResult,
 };
 use common_io_config::AzureConfig;
@@ -86,6 +89,25 @@ impl From<Error> for super::Error {
     }
 }
 
+fn container_to_file_metadata(container: &Container) -> FileMetadata {
+    FileMetadata {
+        filepath: format!("https://{}", container.name),
+        size: None,
+        filetype: FileType::Directory,
+    }
+}
+
+fn blob_item_to_file_metadata(prefix: &str, blob_item: &BlobItem) -> FileMetadata {
+    match blob_item {
+        BlobItem::Blob(blob) => {
+            todo!()
+        }
+        BlobItem::BlobPrefix(prefix) => {
+            todo!()
+        }
+    }
+}
+
 pub(crate) struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
 }
@@ -116,6 +138,76 @@ impl AzureBlobSource {
             blob_client: blob_client.into(),
         }
         .into())
+    }
+
+    async fn _list_containers(&self) -> super::Result<LSResult> {
+        let responses_stream = self
+            .blob_client
+            .clone()
+            .list_containers()
+            .include_metadata(true)
+            .into_stream();
+
+        // It looks like the azure rust library API
+        // does not currently allow using the continuation token:
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
+        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
+        // For now, collect the entire result.
+        let responses = responses_stream.try_collect::<Vec<_>>().await;
+
+        match responses {
+            Ok(responses) => {
+                let containers = responses
+                    .iter()
+                    .flat_map(|resp| &resp.containers)
+                    .map(container_to_file_metadata)
+                    .collect::<Vec<_>>();
+
+                let result = LSResult {
+                    files: containers,
+                    continuation_token: None,
+                };
+
+                Ok(result)
+            }
+            Err(e) => todo!(),
+        }
+    }
+
+    async fn _list_directory(
+        &self,
+        container_name: &str,
+        delimiter: &str,
+        prefix: &str,
+    ) -> super::Result<LSResult> {
+        let responses_stream = self
+            .blob_client
+            .container_client(container_name)
+            .list_blobs()
+            .delimiter(delimiter.to_string())
+            .into_stream();
+
+        // It looks like the azure rust library API
+        // does not currently allow using the continuation token:
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
+        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
+        // For now, collect the entire result.
+        let responses = responses_stream.try_collect::<Vec<_>>().await;
+
+        match responses {
+            Ok(responses) => {
+                let blob_items = responses
+                    .iter()
+                    .flat_map(|resp| &resp.blobs.items)
+                    .map(|blob_item| blob_item_to_file_metadata(prefix, blob_item))
+                    .collect::<Vec<_>>();
+
+                todo!()
+            }
+            Err(e) => {
+                todo!()
+            }
+        }
     }
 }
 
@@ -175,12 +267,24 @@ impl ObjectSource for AzureBlobSource {
         Ok(metadata.blob.properties.content_length as usize)
     }
 
+    // path can be root (buckets) or path within a bucket.
     async fn ls(
         &self,
-        _path: &str,
-        _delimiter: Option<&str>,
+        path: &str,
+        delimiter: Option<&str>,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        unimplemented!("azure ls");
+        let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
+        let delimiter = delimiter.unwrap_or("/");
+
+        // "Container" is Azure's name for Bucket.
+        let container = parsed.host_str();
+
+        match container {
+            // List containers.
+            None => self._list_containers().await,
+            // List a path within a container.
+            Some(s) => todo!(),
+        }
     }
 }
