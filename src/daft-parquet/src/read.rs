@@ -370,7 +370,6 @@ pub fn read_parquet_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
-
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow_bulk(
     uris: &[&str],

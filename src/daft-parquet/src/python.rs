@@ -7,10 +7,10 @@ pub mod pylib {
     };
     use daft_io::{get_io_client, python::IOConfig};
     use daft_table::python::PyTable;
-    use pyo3::{pyfunction, PyResult, Python, types::PyModule};
+    use pyo3::{pyfunction, types::PyModule, PyResult, Python};
     use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::read::{ParquetSchemaInferenceOptions, ArrowChunk};
+    use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
     use daft_core::ffi::to_py_array;
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
@@ -48,8 +48,13 @@ pub mod pylib {
     }
     type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
     type PyArrowFields = Vec<pyo3::PyObject>;
-
-    fn convert_pyarrow_parquet_read_result_into_py(py: Python, schema: arrow2::datatypes::SchemaRef, all_arrays: Vec<ArrowChunk>, pyarrow: &PyModule) -> PyResult<(PyArrowFields, BTreeMap<String, String>, PyArrowChunks)> {
+    type PyArrowParquetType = (PyArrowFields, BTreeMap<String, String>, PyArrowChunks);
+    fn convert_pyarrow_parquet_read_result_into_py(
+        py: Python,
+        schema: arrow2::datatypes::SchemaRef,
+        all_arrays: Vec<ArrowChunk>,
+        pyarrow: &PyModule,
+    ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
             .map(|v| {
@@ -79,7 +84,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<(PyArrowFields, BTreeMap<String, String>, PyArrowChunks)> {
+    ) -> PyResult<PyArrowParquetType> {
         let read_parquet_result = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -103,7 +108,6 @@ pub mod pylib {
         let pyarrow = py.import("pyarrow")?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, pyarrow)
     }
-
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet_bulk(
@@ -154,7 +158,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    ) -> PyResult<Vec<(PyArrowFields, BTreeMap<String, String>, PyArrowChunks)>> {
+    ) -> PyResult<Vec<PyArrowParquetType>> {
         let parquet_read_results = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -176,10 +180,12 @@ pub mod pylib {
             )
         })?;
         let pyarrow = py.import("pyarrow")?;
-        parquet_read_results.into_iter().map(|(s, all_arrays)| {
-            convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, pyarrow)
-        }).collect::<PyResult<Vec<_>>>()
-
+        parquet_read_results
+            .into_iter()
+            .map(|(s, all_arrays)| {
+                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, pyarrow)
+            })
+            .collect::<PyResult<Vec<_>>>()
     }
 
     #[pyfunction]
@@ -226,7 +232,7 @@ pub mod pylib {
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_into_pyarrow))?;
-
+    parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_into_pyarrow_bulk))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_bulk))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_schema))?;
     parent.add_wrapped(wrap_pyfunction!(pylib::read_parquet_statistics))?;
