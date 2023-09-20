@@ -125,6 +125,7 @@ Example: ``e.dt.day()``
     daft.expressions.expressions.ExpressionDatetimeNamespace.month
     daft.expressions.expressions.ExpressionDatetimeNamespace.year
     daft.expressions.expressions.ExpressionDatetimeNamespace.day_of_week
+    daft.expressions.expressions.ExpressionDatetimeNamespace.date
 
 .. _api-expressions-urls:
 

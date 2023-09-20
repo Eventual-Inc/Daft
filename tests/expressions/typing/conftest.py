@@ -13,7 +13,7 @@ from typing import Callable
 import pyarrow as pa
 import pytest
 
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.series import Series
 from daft.table import Table
@@ -34,6 +34,10 @@ ALL_DTYPES = [
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
     (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
     (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    (
+        DataType.timestamp(TimeUnit.ms()),
+        pa.array([datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None], type=pa.timestamp("ms")),
+    ),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
