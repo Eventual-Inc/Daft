@@ -255,6 +255,10 @@ impl PySeries {
         Ok(self.series.is_nan()?.into())
     }
 
+    pub fn dt_date(&self) -> PyResult<Self> {
+        Ok(self.series.dt_date()?.into())
+    }
+
     pub fn dt_day(&self) -> PyResult<Self> {
         Ok(self.series.dt_day()?.into())
     }

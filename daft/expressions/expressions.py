@@ -489,6 +489,17 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
 
 class ExpressionDatetimeNamespace(ExpressionNamespace):
+    def date(self) -> Expression:
+        """Retrieves the date for a datetime column
+
+        Example:
+            >>> col("x").dt.date()
+
+        Returns:
+            Expression: a Date expression
+        """
+        return Expression._from_pyexpr(self._expr.dt_date())
+
     def day(self) -> Expression:
         """Retrieves the day for a datetime column
 

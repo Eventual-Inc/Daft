@@ -34,6 +34,11 @@ ALL_DTYPES = [
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
     (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
     (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    # TODO(jay): Some of the fixtures are broken/become very complicated when testing against timestamps
+    # (
+    #     DataType.timestamp(TimeUnit.ms()),
+    #     pa.array([datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None], type=pa.timestamp("ms")),
+    # ),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
@@ -126,11 +131,6 @@ def is_numeric(dt: DataType) -> bool:
     )
 
 
-def is_temporal(dt: DataType) -> bool:
-    """Checks if this type is a temporal type"""
-    return dt == DataType.date()
-
-
 def is_comparable(dt: DataType):
     """Checks if this type is a comparable type"""
     return (
@@ -138,7 +138,19 @@ def is_comparable(dt: DataType):
         or dt == DataType.bool()
         or dt == DataType.string()
         or dt == DataType.null()
-        or dt == DataType.date()
+        or dt._is_temporal_type()
+    )
+
+
+def is_numeric_bitwidth_gte_32(dt: DataType):
+    """Checks if type is numeric and above a bitwidth of 32"""
+    return (
+        dt == DataType.int32()
+        or dt == DataType.int64()
+        or dt == DataType.uint32()
+        or dt == DataType.uint64()
+        or dt == DataType.float32()
+        or dt == DataType.float64()
     )
 
 
@@ -159,12 +171,20 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
 
         # --- Within type hierarchies ---
         both_numeric = (is_numeric(x) and is_numeric(y)) or ((x == DataType.bool()) and is_numeric(y))
-        both_temporal = is_temporal(x) and is_temporal(y)
+        both_temporal = x._is_temporal_type() and y._is_temporal_type()
 
         # --- Across type hierarchies ---
-        temporal_and_numeric = is_temporal(x) and is_numeric(y)
+        date_and_numeric = x == DataType.date() and is_numeric(y)
+        timestamp_and_big_numeric = x._is_temporal_type() and is_numeric_bitwidth_gte_32(y)
 
-        if either_null or either_string_and_other_not_binary or both_numeric or both_temporal or temporal_and_numeric:
+        if (
+            either_null
+            or either_string_and_other_not_binary
+            or both_numeric
+            or both_temporal
+            or date_and_numeric
+            or timestamp_and_big_numeric
+        ):
             return True
 
     return False

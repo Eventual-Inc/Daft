@@ -273,6 +273,11 @@ impl PyExpr {
         Ok(is_nan(&self.expr).into())
     }
 
+    pub fn dt_date(&self) -> PyResult<Self> {
+        use functions::temporal::date;
+        Ok(date(&self.expr).into())
+    }
+
     pub fn dt_day(&self) -> PyResult<Self> {
         use functions::temporal::day;
         Ok(day(&self.expr).into())

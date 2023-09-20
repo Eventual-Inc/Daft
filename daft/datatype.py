@@ -449,6 +449,9 @@ class DataType:
     def _is_logical_type(self) -> builtins.bool:
         return self._dtype.is_logical()
 
+    def _is_temporal_type(self) -> builtins.bool:
+        return self._dtype.is_temporal()
+
     def __repr__(self) -> str:
         return self._dtype.__repr__()
 

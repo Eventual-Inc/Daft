@@ -546,6 +546,9 @@ class SeriesStringNamespace(SeriesNamespace):
 
 
 class SeriesDateNamespace(SeriesNamespace):
+    def date(self) -> Series:
+        return Series._from_pyseries(self._series.dt_date())
+
     def day(self) -> Series:
         return Series._from_pyseries(self._series.dt_day())
 

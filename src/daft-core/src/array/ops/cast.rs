@@ -356,6 +356,9 @@ impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
+            DataType::Date => Err(DaftError::TypeError(
+                "Cannot cast Timestamp to Date, use .date() instead.".to_string(),
+            )),
             DataType::Utf8 => {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
