@@ -82,9 +82,9 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
 def minio_create_bucket(
     minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-bucket"
 ) -> YieldFixture[list[str]]:
-    """Mounts data in `folder` into files in minio
+    """Creates a bucket in MinIO
 
-    Yields a list of S3 URLs
+    Yields a s3fs FileSystem
     """
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
