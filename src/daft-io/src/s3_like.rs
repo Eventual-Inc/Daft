@@ -100,6 +100,10 @@ enum Error {
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
     UnableToParseUtf8 { path: String, source: FromUtf8Error },
+    #[snafu(display("Unable to create TlsConnector. {source}"))]
+    UnableToCreateTlsConnector {
+        source: hyper_tls::native_tls::Error,
+    },
 }
 
 impl From<Error> for super::Error {
@@ -174,6 +178,35 @@ impl From<Error> for super::Error {
     }
 }
 
+fn handle_https_client_settings(
+    builder: aws_sdk_s3::config::Builder,
+    config: &S3Config,
+) -> super::Result<aws_sdk_s3::config::Builder> {
+    let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(!config.verify_ssl)
+        .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
+        .build()
+        .context(UnableToCreateTlsConnectorSnafu {})?;
+    let mut http_connector = hyper::client::HttpConnector::new();
+    http_connector.enforce_http(false);
+    let https_connector = hyper_tls::HttpsConnector::<hyper::client::HttpConnector>::from((
+        http_connector,
+        tls_connector.into(),
+    ));
+    use aws_smithy_client::http_connector::ConnectorSettings;
+    use aws_smithy_client::hyper_ext;
+    let smithy_client = hyper_ext::Adapter::builder()
+        .connector_settings(
+            ConnectorSettings::builder()
+                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+                .read_timeout(Duration::from_millis(config.read_timeout_ms))
+                .build(),
+        )
+        .build(https_connector);
+    let builder = builder.http_connector(smithy_client);
+    Ok(builder)
+}
+
 async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
@@ -220,6 +253,8 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     };
 
     let builder = builder.retry_config(retry_config);
+
+    let builder = handle_https_client_settings(builder, config)?;
 
     let sleep_impl = Arc::new(TokioSleep::new());
     let builder = builder.sleep_impl(sleep_impl);

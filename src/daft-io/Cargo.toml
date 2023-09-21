@@ -8,6 +8,7 @@ aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default
 aws-sig-auth = "0.55.3"
 aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
+aws-smithy-client = "0.55.3"
 azure_storage = {version = "0.13.0", features = ["enable_reqwest"], default-features = false}
 azure_storage_blobs = {version = "0.13.1", features = ["enable_reqwest"], default-features = false}
 bytes = {workspace = true}
@@ -16,6 +17,8 @@ common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
 google-cloud-storage = {version = "0.13.0", default-features = false, features = ["default-tls", "auth"]}
+hyper = "0.14.27"
+hyper-tls = "0.5.0"
 lazy_static = {workspace = true}
 log = {workspace = true}
 openssl-sys = {version = "0.9.93", features = ["vendored"]}
