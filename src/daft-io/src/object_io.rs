@@ -117,20 +117,27 @@ pub(crate) async fn recursive_iter(
     uri: &str,
 ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
-    fn add_to_channel(source: Arc<dyn ObjectSource>, tx: Sender<FileMetadata>, dir: String) {
+    fn add_to_channel(
+        source: Arc<dyn ObjectSource>,
+        tx: Sender<super::Result<FileMetadata>>,
+        dir: String,
+    ) {
         tokio::spawn(async move {
-            let mut s = source.iter_dir(&dir, None, None).await.unwrap();
+            let s = source.iter_dir(&dir, None, None).await;
+            let mut s = match s {
+                Ok(s) => s,
+                Err(e) => {
+                    tx.send(Err(e)).await.unwrap();
+                    return;
+                }
+            };
             let tx = &tx;
             while let Some(tr) = s.next().await {
-                let tr = tr.unwrap();
-                match tr.filetype {
-                    FileType::File => tx.send(tr).await.unwrap(),
-                    FileType::Directory => {
-                        let dirpath = tr.filepath.clone();
-                        tx.send(tr).await.unwrap();
-                        add_to_channel(source.clone(), tx.clone(), dirpath)
-                    }
-                };
+                let tr = tr;
+                if let Ok(ref tr) = tr && matches!(tr.filetype, FileType::Directory) {
+                    add_to_channel(source.clone(), tx.clone(), tr.filepath.clone())
+                }
+                tx.send(tr).await.unwrap();
             }
         });
     }
@@ -139,7 +146,7 @@ pub(crate) async fn recursive_iter(
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
-            yield Ok(v)
+            yield v
         }
     };
 
