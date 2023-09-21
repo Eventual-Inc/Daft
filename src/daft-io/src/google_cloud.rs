@@ -213,36 +213,27 @@ impl GCSClientWrapper {
             .context(UnableToListObjectsSnafu {
                 path: format!("gs://{}/{}", bucket, key),
             })?;
-        let mut files = ls_response.items.map_or(vec![], |items| {
-            items
-                .into_iter()
-                .filter_map(|obj| {
-                    if obj.name.ends_with('/') {
-                        // Sometimes the GCS API returns "folders" in .items[], so we manually filter here
-                        None
-                    } else {
-                        Some(FileMetadata {
-                            filepath: format!("gs://{}/{}", bucket, obj.name),
-                            size: Some(obj.size as u64),
-                            filetype: FileType::File,
-                        })
-                    }
+        let response_items = ls_response.items.unwrap_or_default();
+        let response_prefixes = ls_response.prefixes.unwrap_or_default();
+        let files = response_items.iter().filter_map(|obj| {
+            if obj.name.ends_with('/') {
+                // Sometimes the GCS API returns "folders" in .items[], so we manually filter here
+                None
+            } else {
+                Some(FileMetadata {
+                    filepath: format!("gs://{}/{}", bucket, obj.name),
+                    size: Some(obj.size as u64),
+                    filetype: FileType::File,
                 })
-                .collect::<Vec<_>>()
+            }
         });
-        let mut dirs = ls_response.prefixes.map_or(vec![], |prefixes| {
-            prefixes
-                .into_iter()
-                .map(|pref| FileMetadata {
-                    filepath: format!("gs://{}/{}", bucket, pref),
-                    size: None,
-                    filetype: FileType::Directory,
-                })
-                .collect::<Vec<_>>()
+        let dirs = response_prefixes.iter().map(|pref| FileMetadata {
+            filepath: format!("gs://{}/{}", bucket, pref),
+            size: None,
+            filetype: FileType::Directory,
         });
-        files.append(&mut dirs);
         Ok(LSResult {
-            files,
+            files: files.chain(dirs).collect(),
             continuation_token: ls_response.next_page_token,
         })
     }
