@@ -9,7 +9,7 @@ use daft_core::{
 };
 use daft_io::{get_runtime, IOClient};
 use daft_table::Table;
-use futures::future::{join_all, try_join_all};
+use futures::{future::join_all, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
@@ -321,6 +321,7 @@ pub fn read_parquet_bulk(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
+    num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
@@ -338,7 +339,7 @@ pub fn read_parquet_bulk(
     }
     let tables = runtime_handle
         .block_on(async move {
-            try_join_all(uris.iter().enumerate().map(|(i, uri)| {
+            let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = match &row_groups {
@@ -352,22 +353,31 @@ pub fn read_parquet_bulk(
                     let columns = owned_columns
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
-                    read_parquet_single(
-                        &uri,
-                        columns.as_deref(),
-                        start_offset,
-                        num_rows,
-                        owned_row_group.as_deref(),
-                        io_client,
-                        &schema_infer_options,
-                    )
-                    .await
+                    Ok((
+                        i,
+                        read_parquet_single(
+                            &uri,
+                            columns.as_deref(),
+                            start_offset,
+                            num_rows,
+                            owned_row_group.as_deref(),
+                            io_client,
+                            &schema_infer_options,
+                        )
+                        .await?,
+                    ))
                 })
-            }))
-            .await
+            }));
+            task_stream
+                .buffer_unordered(num_parallel_tasks)
+                .try_collect::<Vec<_>>()
+                .await
         })
         .context(JoinSnafu { path: "UNKNOWN" })?;
-    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+
+    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    collected.sort_by_key(|(idx, _)| *idx);
+    Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -378,6 +388,7 @@ pub fn read_parquet_into_pyarrow_bulk(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
+    num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
@@ -395,7 +406,7 @@ pub fn read_parquet_into_pyarrow_bulk(
     }
     let tables = runtime_handle
         .block_on(async move {
-            try_join_all(uris.iter().enumerate().map(|(i, uri)| {
+            futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = match &row_groups {
@@ -409,22 +420,29 @@ pub fn read_parquet_into_pyarrow_bulk(
                     let columns = owned_columns
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
-                    read_parquet_single_into_arrow(
-                        &uri,
-                        columns.as_deref(),
-                        start_offset,
-                        num_rows,
-                        owned_row_group.as_deref(),
-                        io_client,
-                        &schema_infer_options,
-                    )
-                    .await
+                    Ok((
+                        i,
+                        read_parquet_single_into_arrow(
+                            &uri,
+                            columns.as_deref(),
+                            start_offset,
+                            num_rows,
+                            owned_row_group.as_deref(),
+                            io_client,
+                            &schema_infer_options,
+                        )
+                        .await?,
+                    ))
                 })
             }))
+            .buffer_unordered(num_parallel_tasks)
+            .try_collect::<Vec<_>>()
             .await
         })
         .context(JoinSnafu { path: "UNKNOWN" })?;
-    tables.into_iter().collect::<DaftResult<Vec<_>>>()
+    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    collected.sort_by_key(|(idx, _)| *idx);
+    Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
 pub fn read_parquet_schema(

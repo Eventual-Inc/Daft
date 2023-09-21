@@ -118,6 +118,7 @@ pub mod pylib {
         num_rows: Option<usize>,
         row_groups: Option<Vec<Vec<i64>>>,
         io_config: Option<IOConfig>,
+        num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
@@ -137,6 +138,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )?
@@ -156,6 +158,7 @@ pub mod pylib {
         num_rows: Option<usize>,
         row_groups: Option<Vec<Vec<i64>>>,
         io_config: Option<IOConfig>,
+        num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyArrowParquetType>> {
@@ -175,6 +178,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )

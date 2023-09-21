@@ -396,6 +396,7 @@ class Table:
         num_rows: int | None = None,
         row_groups_per_path: list[list[int]] | None = None,
         io_config: IOConfig | None = None,
+        num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> list[Table]:
@@ -406,6 +407,7 @@ class Table:
             num_rows=num_rows,
             row_groups=row_groups_per_path,
             io_config=io_config,
+            num_parallel_tasks=num_parallel_tasks,
             multithreaded_io=multithreaded_io,
             coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
         )
@@ -486,6 +488,7 @@ def read_parquet_into_pyarrow_bulk(
     num_rows: int | None = None,
     row_groups_per_path: list[list[int]] | None = None,
     io_config: IOConfig | None = None,
+    num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
 ) -> list[pa.Table]:
@@ -496,6 +499,7 @@ def read_parquet_into_pyarrow_bulk(
         num_rows=num_rows,
         row_groups=row_groups_per_path,
         io_config=io_config,
+        num_parallel_tasks=num_parallel_tasks,
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
