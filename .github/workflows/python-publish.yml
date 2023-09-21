@@ -27,12 +27,12 @@ env:
 jobs:
   build-and-test:
 
-    name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
-    runs-on: ${{ matrix.os }}-latest
+    name: platform wheels for ${{ matrix.runs }}-${{ matrix.compile_arch }}
+    runs-on: ${{ matrix.runs }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos]
+        runs: [ubuntu-latest, macos-latest-xl]
         compile_arch: [x86_64, aarch64]
     steps:
     - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
     - run: python tools/patch_package_version.py
     - uses: moonrepo/setup-rust@v0
     - name: Build wheels - Mac x86
-      if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ (matrix.runs == 'macos-latest-xl') && (matrix.compile_arch == 'x86_64')  }}
       uses: messense/maturin-action@v1
       with:
         target: x86_64
@@ -56,7 +56,7 @@ jobs:
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
     - name: Build wheels - Linux x86
-      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
+      if: ${{ (matrix.runs == 'ubuntu-latest') && (matrix.compile_arch == 'x86_64') }}
       uses: messense/maturin-action@v1
       with:
         target: x86_64
@@ -66,7 +66,7 @@ jobs:
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
     - name: Build wheels - Linux aarch64
-      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
+      if: ${{ (matrix.runs == 'ubuntu-latest') && (matrix.compile_arch == 'aarch64') }}
       uses: messense/maturin-action@v1
       with:
         target: aarch64-unknown-linux-gnu
@@ -77,7 +77,7 @@ jobs:
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
 
     - name: Build wheels - Mac aarch64
-      if: ${{ (matrix.os == 'macos') && (matrix.compile_arch == 'aarch64')  }}
+      if: ${{ (matrix.runs == 'macos-latest-xl') && (matrix.compile_arch == 'aarch64')  }}
       uses: messense/maturin-action@v1
       with:
         target: aarch64
