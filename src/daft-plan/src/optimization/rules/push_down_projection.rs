@@ -86,15 +86,14 @@ impl PushDownProjection {
                     .flat_map(|expr| {
                         // If it's a reference for a column that requires computation,
                         // record it.
-                        if let Expr::Column(name) = expr.as_ref() {
-                            if upstream_computations.contains(name.as_ref()) {
-                                okay_to_merge = okay_to_merge
-                                    && upstream_computations_used.insert(name.to_string())
-                            }
+                        if okay_to_merge && let Expr::Column(name) = expr.as_ref() && upstream_computations.contains(name.as_ref()) {
+                            okay_to_merge = okay_to_merge
+                                && upstream_computations_used.insert(name.to_string())
                         };
                         if okay_to_merge {
                             expr.children()
                         } else {
+                            // Short circuit to avoid continuing walking the tree.
                             vec![]
                         }
                     })
@@ -534,9 +533,9 @@ mod tests {
     /// Projection merging: Ensure factored projections do not get merged.
     #[test]
     fn test_merge_does_not_unfactor() -> DaftResult<()> {
-        let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
-        let a4 = binary_op(Operator::Plus, &a2, &a2);
-        let a8 = binary_op(Operator::Plus, &a4, &a4);
+        let a2 = col("a") + col("a");
+        let a4 = &a2 + &a2;
+        let a8 = &a4 + &a4;
         let expressions = vec![a8.alias("x")];
         let unoptimized = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
             .project(expressions, Default::default())?
@@ -556,19 +555,11 @@ mod tests {
             Field::new("b", DataType::Int64),
         ])
         .project(
-            vec![
-                binary_op(Operator::Plus, &col("a"), &lit(1)),
-                binary_op(Operator::Plus, &col("b"), &lit(2)),
-                col("a").alias("c"),
-            ],
+            vec![col("a") + lit(1), col("b") + lit(2), col("a").alias("c")],
             Default::default(),
         )?
         .project(
-            vec![
-                binary_op(Operator::Plus, &col("a"), &lit(3)),
-                col("b"),
-                binary_op(Operator::Plus, &col("c"), &lit(4)),
-            ],
+            vec![col("a") + lit(3), col("b"), col("c") + lit(4)],
             Default::default(),
         )?
         .build();
@@ -621,10 +612,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ])
-        .project(
-            vec![binary_op(Operator::Plus, &col("b"), &lit(3))],
-            Default::default(),
-        )?
+        .project(vec![col("b") + lit(3)], Default::default())?
         .build();
 
         let expected = "\
@@ -643,11 +631,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ])
         .project(
-            vec![
-                binary_op(Operator::Plus, &col("b"), &lit(3)),
-                col("a"),
-                col("a").alias("x"),
-            ],
+            vec![col("b") + lit(3), col("a"), col("a").alias("x")],
             Default::default(),
         )?
         .project(
