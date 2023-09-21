@@ -388,6 +388,7 @@ def read_parquet_into_pyarrow(
     num_rows: int | None = None,
     row_groups: list[int] | None = None,
     io_config: IOConfig | None = None,
+    num_parallel_tasks: int | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ): ...
@@ -398,6 +399,7 @@ def read_parquet_into_pyarrow_bulk(
     num_rows: int | None = None,
     row_groups: list[list[int]] | None = None,
     io_config: IOConfig | None = None,
+    num_parallel_tasks: int | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ): ...
