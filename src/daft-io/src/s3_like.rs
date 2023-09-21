@@ -700,9 +700,13 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
 
-        let key = key.strip_prefix('/');
-        let key = key.unwrap_or("");
-
+        let key = key.strip_prefix('/').unwrap_or("");
+        let key = if key.is_empty() {
+            "".to_string()
+        } else {
+            let key = key.strip_suffix('/').unwrap_or(key);
+            format!("{key}/")
+        };
         // assume its a directory first
         let lsr = {
             let permit = self
@@ -710,13 +714,7 @@ impl ObjectSource for S3LikeSource {
                 .acquire()
                 .await
                 .context(UnableToGrabSemaphoreSnafu)?;
-            let key = if key.is_empty() {
-                "".to_string()
-            } else {
-                let key = key.strip_suffix('/').unwrap_or(key);
-                format!("{key}/")
-            };
-            log::warn!("dir key: {}", key);
+
             self._list_impl(
                 permit,
                 bucket,
@@ -736,7 +734,6 @@ impl ObjectSource for S3LikeSource {
             // Might be a File
             let split = key.rsplit_once('/');
             let (new_key, _) = split.unwrap();
-            log::warn!("file key: {}", new_key);
             let mut lsr = self
                 ._list_impl(
                     permit,
