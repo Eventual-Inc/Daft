@@ -226,7 +226,6 @@ impl Project {
         // (a maybe new input node, and a maybe new list of projection expressions).
         let upstream_schema = input.schema();
         let (projection, substitutions) = Self::factor_expressions(projection, &upstream_schema);
-
         // If there are substitutions to factor out,
         // create a child projection node to do the factoring.
         let input = if substitutions.is_empty() {
@@ -283,6 +282,9 @@ impl Project {
                         expr.children()
                     } else {
                         let expr_id = expr.semantic_id(schema);
+                        if let Expr::Column(..) = expr.as_ref() {
+                            column_name_substitutions.insert(expr_id.clone(), expr.clone());
+                        }
                         // Mark expr as seen
                         let newly_seen = seen_subexpressions.insert(expr_id.clone());
                         if newly_seen {
@@ -292,9 +294,6 @@ impl Project {
                             // If previously seen, cache the expression (if it involves computation)
                             if optimization::requires_computation(expr) {
                                 subexpressions_to_cache.insert(expr_id.clone(), expr.clone());
-                            } else if let Expr::Column(..) = expr.as_ref() {
-                                column_name_substitutions
-                                    .insert(expr.semantic_id(schema), expr.clone());
                             }
                             // Stop recursing if previously seen;
                             // we only want top-level repeated subexpressions
@@ -317,10 +316,23 @@ impl Project {
             let substituted_expressions = exprs
                 .iter()
                 .map(|e| {
-                    replace_column_with_semantic_id(e.clone().into(), &subexprs_to_replace, schema)
-                        .unwrap()
-                        .as_ref()
-                        .clone()
+                    let new_expr = replace_column_with_semantic_id(
+                        e.clone().into(),
+                        &subexprs_to_replace,
+                        schema,
+                    )
+                    .unwrap()
+                    .as_ref()
+                    .clone();
+                    // The substitution can unintentionally change the expression's name
+                    // (since the name depends on the first column referenced, which can be substituted away)
+                    // so re-alias the original name here if it has changed.
+                    let old_name = e.name().unwrap();
+                    if new_expr.name().unwrap() != old_name {
+                        new_expr.alias(old_name)
+                    } else {
+                        new_expr
+                    }
                 })
                 .collect::<Vec<_>>();
 
@@ -603,7 +615,8 @@ mod tests {
         Ok(())
     }
 
-    /// Test that common leaf expressions are not factored out.
+    /// Test that common leaf expressions are not factored out
+    /// (since this would not save computation and only introduces another materialization)
     /// e.g.
     /// 3 as x, 3 as y, a as w, a as z
     /// ->

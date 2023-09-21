@@ -1,10 +1,8 @@
 use daft_core::{impl_bincode_py_state_serialization, utils::hashable_float_wrapper::FloatWrapper};
-use std::hash::{Hash, Hasher};
 #[cfg(feature = "python")]
-use {
-    pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python},
-    std::{cmp::max, ops::Add},
-};
+use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyResult, Python};
+use std::hash::{Hash, Hasher};
+use std::ops::Add;
 
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +26,33 @@ impl ResourceRequest {
             num_gpus,
             memory_bytes,
         }
+    }
+
+    pub fn max(resource_requests: &[&Self]) -> Self {
+        resource_requests.iter().fold(Default::default(), |acc, e| {
+            let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);
+            let max_num_gpus = lift(float_max, acc.num_gpus, e.num_gpus);
+            let max_memory_bytes = lift(std::cmp::max, acc.memory_bytes, e.memory_bytes);
+            Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
+        })
+    }
+}
+
+impl Add for &ResourceRequest {
+    type Output = ResourceRequest;
+    fn add(self, other: Self) -> Self::Output {
+        Self::Output::new_internal(
+            lift(Add::add, self.num_cpus, other.num_cpus),
+            lift(Add::add, self.num_gpus, other.num_gpus),
+            lift(Add::add, self.memory_bytes, other.memory_bytes),
+        )
+    }
+}
+
+impl Add for ResourceRequest {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        &self + &other
     }
 }
 
@@ -64,12 +89,7 @@ impl ResourceRequest {
     /// Take a field-wise max of the list of resource requests.
     #[staticmethod]
     pub fn max_resources(resource_requests: Vec<Self>) -> Self {
-        resource_requests.iter().fold(Default::default(), |acc, e| {
-            let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);
-            let max_num_gpus = lift(float_max, acc.num_gpus, e.num_gpus);
-            let max_memory_bytes = lift(max, acc.memory_bytes, e.memory_bytes);
-            Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
-        })
+        Self::max(&resource_requests.iter().collect::<Vec<_>>())
     }
 
     #[getter]
@@ -88,11 +108,7 @@ impl ResourceRequest {
     }
 
     fn __add__(&self, other: &Self) -> Self {
-        Self::new_internal(
-            lift(Add::add, self.num_cpus, other.num_cpus),
-            lift(Add::add, self.num_gpus, other.num_gpus),
-            lift(Add::add, self.memory_bytes, other.memory_bytes),
-        )
+        self + other
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
