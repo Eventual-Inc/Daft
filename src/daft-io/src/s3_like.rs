@@ -690,7 +690,6 @@ impl ObjectSource for S3LikeSource {
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
-        log::warn!("{:?}", parsed);
 
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -701,9 +700,7 @@ impl ObjectSource for S3LikeSource {
         }?;
         let key = parsed.path();
 
-        let key = key
-            .strip_prefix('/')
-            .map(|k| k.strip_suffix('/').unwrap_or(k));
+        let key = key.strip_prefix('/');
         let key = key.unwrap_or("");
 
         // assume its a directory first
@@ -713,10 +710,17 @@ impl ObjectSource for S3LikeSource {
                 .acquire()
                 .await
                 .context(UnableToGrabSemaphoreSnafu)?;
+            let key = if key.is_empty() {
+                "".to_string()
+            } else {
+                let key = key.strip_suffix('/').unwrap_or(key);
+                format!("{key}/")
+            };
+            log::warn!("dir key: {}", key);
             self._list_impl(
                 permit,
                 bucket,
-                key,
+                &key,
                 delimiter.into(),
                 continuation_token.map(String::from),
                 &self.default_region,
@@ -732,6 +736,7 @@ impl ObjectSource for S3LikeSource {
             // Might be a File
             let split = key.rsplit_once('/');
             let (new_key, _) = split.unwrap();
+            log::warn!("file key: {}", new_key);
             let mut lsr = self
                 ._list_impl(
                     permit,

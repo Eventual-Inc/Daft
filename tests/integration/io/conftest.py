@@ -91,6 +91,8 @@ def minio_create_bucket(
         password=minio_io_config.s3.access_key,
         client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
     )
+    if fs.exists(bucket_name):
+        fs.rm(bucket_name, recursive=True)
     fs.mkdir(bucket_name)
     try:
         yield fs

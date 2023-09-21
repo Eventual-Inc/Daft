@@ -125,7 +125,11 @@ pub(crate) async fn recursive_iter(
                 let tr = tr.unwrap();
                 match tr.filetype {
                     FileType::File => tx.send(tr).await.unwrap(),
-                    FileType::Directory => add_to_channel(source.clone(), tx.clone(), tr.filepath),
+                    FileType::Directory => {
+                        let dirpath = tr.filepath.clone();
+                        tx.send(tr).await.unwrap();
+                        add_to_channel(source.clone(), tx.clone(), dirpath)
+                    }
                 };
             }
         });
