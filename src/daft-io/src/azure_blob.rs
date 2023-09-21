@@ -89,25 +89,6 @@ impl From<Error> for super::Error {
     }
 }
 
-fn container_to_file_metadata(container: &Container) -> FileMetadata {
-    FileMetadata {
-        filepath: format!("https://{}", container.name),
-        size: None,
-        filetype: FileType::Directory,
-    }
-}
-
-fn blob_item_to_file_metadata(prefix: &str, blob_item: &BlobItem) -> FileMetadata {
-    match blob_item {
-        BlobItem::Blob(blob) => {
-            todo!()
-        }
-        BlobItem::BlobPrefix(prefix) => {
-            todo!()
-        }
-    }
-}
-
 pub(crate) struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
 }
@@ -160,7 +141,7 @@ impl AzureBlobSource {
                 let containers = responses
                     .iter()
                     .flat_map(|resp| &resp.containers)
-                    .map(container_to_file_metadata)
+                    .map(|container| self.container_to_file_metadata(container))
                     .collect::<Vec<_>>();
 
                 let result = LSResult {
@@ -199,13 +180,48 @@ impl AzureBlobSource {
                 let blob_items = responses
                     .iter()
                     .flat_map(|resp| &resp.blobs.items)
-                    .map(|blob_item| blob_item_to_file_metadata(prefix, blob_item))
+                    .map(|blob_item| {
+                        self.blob_item_to_file_metadata(container_name, prefix, blob_item)
+                    })
                     .collect::<Vec<_>>();
 
                 todo!()
             }
             Err(e) => {
                 todo!()
+            }
+        }
+    }
+    fn _container_to_file_metadata(&self, container: &Container) -> super::Result<FileMetadata> {
+        Ok(FileMetadata {
+            filepath: self
+                .blob_client
+                .container_client(container.name)
+                .url()?
+                .to_string(),
+            size: None,
+            filetype: FileType::Directory,
+        })
+    }
+
+    fn _blob_item_to_file_metadata(
+        &self,
+        container_client: &ContainerClient,
+        blob_item: &BlobItem,
+    ) -> super::Result<FileMetadata> {
+        match blob_item {
+            BlobItem::Blob(blob) => Ok(FileMetadata {
+                filepath: container_client.blob_client(&blob.name).url()?.to_string(),
+                size: Some(blob.properties.content_length),
+                filetype: FileType::File,
+            }),
+            BlobItem::BlobPrefix(prefix) => {
+                let container_url = container_client.url()?.to_string();
+                Ok(FileMetadata {
+                    filepath: format!("{}/{}", container_url, &prefix.name),
+                    size: None,
+                    filetype: FileType::Directory,
+                })
             }
         }
     }
@@ -267,7 +283,7 @@ impl ObjectSource for AzureBlobSource {
         Ok(metadata.blob.properties.content_length as usize)
     }
 
-    // path can be root (buckets) or path within a bucket.
+    // path can be root (buckets) or path prefix within a bucket.
     async fn ls(
         &self,
         path: &str,
