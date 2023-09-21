@@ -251,6 +251,26 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multith
 
 
 @pytest.mark.integration()
+@pytest.mark.skipif(
+    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
+)
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multithreaded_io):
+    _, url = parquet_file
+    daft_native_reads = daft.table.read_parquet_into_pyarrow_bulk(
+        [url] * 2, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
+    )
+    pa_read = read_parquet_with_pyarrow(url)
+
+    for daft_native_read in daft_native_reads:
+        assert daft_native_read.schema == pa_read.schema
+        pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+
+
+@pytest.mark.integration()
 def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
     # This is a hack until we remove `fsspec.info`, `fsspec.glob` and `fsspec.glob` from  `daft.read_parquet`.
@@ -321,3 +341,22 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
     for i, t in enumerate(rest):
         assert len(t) == 10
         assert first.to_arrow()[i * 10 : (i + 1) * 10] == t.to_arrow()
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_row_groups_selection_into_pyarrow_bulk(public_storage_io_config, multithreaded_io):
+    url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
+    row_groups = [list(range(10))] + [[i] for i in range(10)]
+    first, *rest = daft.table.read_parquet_into_pyarrow_bulk(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
+    )
+    assert len(first) == 100
+    assert len(rest) == 10
+
+    for i, t in enumerate(rest):
+        assert len(t) == 10
+        assert first[i * 10 : (i + 1) * 10] == t

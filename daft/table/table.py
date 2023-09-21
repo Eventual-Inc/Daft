@@ -12,6 +12,7 @@ from daft.daft import PyTable as _PyTable
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
+from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
@@ -476,3 +477,29 @@ def read_parquet_into_pyarrow(
     schema = pa.schema(fields, metadata=metadata)
     columns = [pa.chunked_array(c) for c in columns]  # type: ignore
     return pa.table(columns, schema=schema)
+
+
+def read_parquet_into_pyarrow_bulk(
+    paths: list[str],
+    columns: list[str] | None = None,
+    start_offset: int | None = None,
+    num_rows: int | None = None,
+    row_groups_per_path: list[list[int]] | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
+) -> list[pa.Table]:
+    bulk_result = _read_parquet_into_pyarrow_bulk(
+        uris=paths,
+        columns=columns,
+        start_offset=start_offset,
+        num_rows=num_rows,
+        row_groups=row_groups_per_path,
+        io_config=io_config,
+        multithreaded_io=multithreaded_io,
+        coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+    )
+    return [
+        pa.table([pa.chunked_array(c) for c in columns], schema=pa.schema(fields, metadata=metadata))  # type: ignore
+        for fields, metadata, columns in bulk_result
+    ]

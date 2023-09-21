@@ -391,6 +391,16 @@ def read_parquet_into_pyarrow(
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ): ...
+def read_parquet_into_pyarrow_bulk(
+    uris: list[str],
+    columns: list[str] | None = None,
+    start_offset: int | None = None,
+    num_rows: int | None = None,
+    row_groups: list[list[int]] | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    coerce_int96_timestamp_unit: PyTimeUnit | None = None,
+): ...
 def read_parquet_schema(
     uri: str,
     io_config: IOConfig | None = None,
