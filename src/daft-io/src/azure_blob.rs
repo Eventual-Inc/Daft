@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use azure_storage::prelude::*;
 use azure_storage_blobs::{
-    container::{operations::BlobItem, Container},
+    container::{self, operations::BlobItem, Container},
     prelude::*,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -37,13 +37,19 @@ enum Error {
         source: azure_storage::Error,
     },
 
-    #[snafu(display("Unable to create Http Client {}", source))]
-    UnableToCreateClient { source: reqwest::Error },
+    #[snafu(display("Unable to create Azure Client {}", source))]
+    UnableToCreateClient { source: azure_storage::Error },
 
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
         path: String,
         source: url::ParseError,
+    },
+
+    #[snafu(display("Unable to produce Azure URL for: \"{}\"", object))]
+    AzureUrlError {
+        object: String,
+        source: azure_storage::Error,
     },
 
     #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
@@ -141,8 +147,8 @@ impl AzureBlobSource {
                 let containers = responses
                     .iter()
                     .flat_map(|resp| &resp.containers)
-                    .map(|container| self.container_to_file_metadata(container))
-                    .collect::<Vec<_>>();
+                    .map(|container| self._container_to_file_metadata(container))
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 let result = LSResult {
                     files: containers,
@@ -161,9 +167,9 @@ impl AzureBlobSource {
         delimiter: &str,
         prefix: &str,
     ) -> super::Result<LSResult> {
-        let responses_stream = self
-            .blob_client
-            .container_client(container_name)
+        let container_client = self.blob_client.container_client(container_name);
+
+        let responses_stream = container_client
             .list_blobs()
             .delimiter(delimiter.to_string())
             .into_stream();
@@ -180,10 +186,8 @@ impl AzureBlobSource {
                 let blob_items = responses
                     .iter()
                     .flat_map(|resp| &resp.blobs.items)
-                    .map(|blob_item| {
-                        self.blob_item_to_file_metadata(container_name, prefix, blob_item)
-                    })
-                    .collect::<Vec<_>>();
+                    .map(|blob_item| self._blob_item_to_file_metadata(&container_client, blob_item))
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 todo!()
             }
@@ -196,8 +200,11 @@ impl AzureBlobSource {
         Ok(FileMetadata {
             filepath: self
                 .blob_client
-                .container_client(container.name)
-                .url()?
+                .container_client(&container.name)
+                .url()
+                .context(AzureUrlSnafu {
+                    object: &container.name,
+                })?
                 .to_string(),
             size: None,
             filetype: FileType::Directory,
@@ -211,12 +218,21 @@ impl AzureBlobSource {
     ) -> super::Result<FileMetadata> {
         match blob_item {
             BlobItem::Blob(blob) => Ok(FileMetadata {
-                filepath: container_client.blob_client(&blob.name).url()?.to_string(),
+                filepath: container_client
+                    .blob_client(&blob.name)
+                    .url()
+                    .context(AzureUrlSnafu { object: &blob.name })?
+                    .to_string(),
                 size: Some(blob.properties.content_length),
                 filetype: FileType::File,
             }),
             BlobItem::BlobPrefix(prefix) => {
-                let container_url = container_client.url()?.to_string();
+                let container_url = container_client
+                    .url()
+                    .context(AzureUrlSnafu {
+                        object: &prefix.name,
+                    })?
+                    .to_string();
                 Ok(FileMetadata {
                     filepath: format!("{}/{}", container_url, &prefix.name),
                     size: None,
@@ -300,7 +316,10 @@ impl ObjectSource for AzureBlobSource {
             // List containers.
             None => self._list_containers().await,
             // List a path within a container.
-            Some(s) => todo!(),
+            Some(container_name) => {
+                self._list_directory(container_name, delimiter, path);
+                todo!()
+            }
         }
     }
 }
