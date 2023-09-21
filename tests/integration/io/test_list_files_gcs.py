@@ -24,6 +24,7 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
     size_0_files = {f"gs://{f['name']}" for f in fsspec_result if f["size"] == 0 and f["type"] == "file"}
     gcsfs_files = [(path, type_) for path, type_ in gcsfs_files if path not in size_0_files]
 
+    assert len(daft_files) == len(gcsfs_files)
     assert sorted(daft_files) == sorted(gcsfs_files)
 
 
@@ -42,4 +43,19 @@ def test_gs_flat_directory_listing(path):
     fs = gcsfs.GCSFileSystem()
     daft_ls_result = io_list(path)
     fsspec_result = fs.ls(path, detail=True)
+    compare_gcs_result(daft_ls_result, fsspec_result)
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"gs://{BUCKET}/test_ls",
+        f"gs://{BUCKET}/test_ls/",
+    ],
+)
+def test_gs_flat_directory_listing_recursive(path):
+    fs = gcsfs.GCSFileSystem()
+    daft_ls_result = io_list(path, recursive=True)
+    fsspec_result = list(fs.glob(path.rstrip("/") + "/**", detail=True).values())
     compare_gcs_result(daft_ls_result, fsspec_result)
