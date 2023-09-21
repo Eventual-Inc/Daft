@@ -258,6 +258,11 @@ jobs:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
+    - name: Assume GitHub Actions GCloud Credentials
+      uses: google-github-actions/auth@v1
+      with:
+        workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.1
       with:
