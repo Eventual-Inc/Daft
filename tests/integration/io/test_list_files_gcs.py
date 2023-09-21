@@ -47,6 +47,28 @@ def test_gs_flat_directory_listing(path):
 
 
 @pytest.mark.integration()
+def test_gs_single_file_listing():
+    path = f"gs://{BUCKET}/test_ls/file.txt"
+    fs = gcsfs.GCSFileSystem()
+    daft_ls_result = io_list(path)
+    fsspec_result = fs.ls(path, detail=True)
+    compare_gcs_result(daft_ls_result, fsspec_result)
+
+
+@pytest.mark.integration()
+def test_gs_notfound():
+    path = f"gs://{BUCKET}/test_ls/MISSING"
+    fs = gcsfs.GCSFileSystem()
+    with pytest.raises(FileNotFoundError):
+        fs.ls(path, detail=True)
+
+    # NOTE: Google Cloud does not return a 404 to indicate anything missing, but just returns empty results
+    # Thus Daft is unable to differentiate between "missing" folders and "empty" folders
+    daft_ls_result = io_list(path)
+    assert daft_ls_result == []
+
+
+@pytest.mark.integration()
 @pytest.mark.parametrize(
     "path",
     [
