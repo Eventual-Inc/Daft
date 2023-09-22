@@ -90,13 +90,37 @@ class DataframeIcebergNamespace:
         self.df = df
 
     @classmethod
-    def read(cls, catalog: IcebergCatalog, table_identifier: str, snapshot_id: int) -> DataFrame:
+    def read(cls, catalog: IcebergCatalog, table_identifier: str, snapshot_id: int | None = None) -> DataFrame:
+        """Produces a lazy daft DataFrame that is backed by an Iceberg table.
+
+        Args:
+            catalog (IcebergCatalog): Iceberg catalog to read from
+            table_identifier (str): table name to read from
+            snapshot_id (Optional[int], optional): snapshot id of table to read from. Defaults to None, which is the latest snapshot.
+
+        Returns:
+            DataFrame: a lazy daft dataframe that is backed by the input iceberg table.
+        """
         ...
 
     def append(self, catalog: IcebergCatalog, table_identifier: str) -> None:
+        """Appends records from a daft DataFrame into an Iceberg table following it's Partitioning Spec.
+        This operation will not affect any of the existing records in the Iceberg Table.
+
+        Args:
+            catalog (IcebergCatalog): Iceberg catalog to write to
+            table_identifier (str): table name to write to
+        """
         ...
 
     def overwrite(self, catalog: IcebergCatalog, table_identifier: str) -> None:
+        """Overwrites the records in this Iceberg Table from a daft DataFrame.
+        This operation follows the Iceberg Table's Schema, Partitioning Scheme and properties when writing the new records.
+
+        Args:
+            catalog (IcebergCatalog): Iceberg catalog to write to
+            table_identifier (str): table name to write to
+        """
         ...
 
 
