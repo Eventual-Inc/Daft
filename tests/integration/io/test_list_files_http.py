@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fsspec.implementations.http import HTTPFileSystem
 
+from daft.daft import io_list
 from tests.integration.io.conftest import mount_data_nginx
 
 
@@ -58,7 +59,8 @@ def test_http_flat_directory_listing(path, nginx_http_url):
     http_path = f"{nginx_http_url}/{path}"
     fs = HTTPFileSystem()
     fsspec_result = fs.ls(http_path, detail=True)
-    # compare_http_result(daft_ls_result, fsspec_result)
+    daft_ls_result = io_list(http_path)
+    compare_http_result(daft_ls_result, fsspec_result)
 
 
 # @pytest.mark.integration()

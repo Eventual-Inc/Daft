@@ -3,12 +3,19 @@ use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 
+use lazy_static::lazy_static;
+use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 
-use crate::object_io::LSResult;
+use crate::object_io::{FileMetadata, FileType, LSResult};
 
 use super::object_io::{GetResult, ObjectSource};
+
+lazy_static! {
+    static ref HTML_A_TAG_HREF_RE: Regex =
+        Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap();
+}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -45,7 +52,15 @@ enum Error {
     #[snafu(display(
         "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
     ))]
-    UnableToParseUtf8 { path: String, source: FromUtf8Error },
+    UnableToParseUtf8Header { path: String, source: FromUtf8Error },
+
+    #[snafu(display(
+        "Unable to parse data as Utf8 while reading body for file: {path}. {source}"
+    ))]
+    UnableToParseUtf8Body {
+        path: String,
+        source: reqwest::Error,
+    },
 
     #[snafu(display(
         "Unable to parse data as Integer while reading header for file: {path}. {source}"
@@ -135,8 +150,9 @@ impl ObjectSource for HttpSource {
         let headers = response.headers();
         match headers.get(CONTENT_LENGTH) {
             Some(v) => {
-                let size_bytes = String::from_utf8(v.as_bytes().to_vec())
-                    .with_context(|_| UnableToParseUtf8Snafu::<String> { path: uri.into() })?;
+                let size_bytes = String::from_utf8(v.as_bytes().to_vec()).with_context(|_| {
+                    UnableToParseUtf8HeaderSnafu::<String> { path: uri.into() }
+                })?;
 
                 Ok(size_bytes
                     .parse()
@@ -148,11 +164,54 @@ impl ObjectSource for HttpSource {
 
     async fn ls(
         &self,
-        _path: &str,
+        path: &str,
         _delimiter: Option<&str>,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        unimplemented!("http ls");
+        let request = self.client.get(path);
+        let response = request
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> { path: path.into() })?;
+        match response.headers().get("content-type") {
+            // If the content-type is text/html, we treat the data on this path as a traversable "directory"
+            Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
+                let text = response
+                    .text()
+                    .await
+                    .with_context(|_| UnableToParseUtf8BodySnafu {
+                        path: path.to_string(),
+                    })?;
+                let metas = HTML_A_TAG_HREF_RE
+                    .captures_iter(text.as_str())
+                    .map(|captures| {
+                        let matched_url = captures.name("url").unwrap().as_str();
+                        let filetype = if matched_url.ends_with('/') {
+                            FileType::Directory
+                        } else {
+                            FileType::File
+                        };
+                        FileMetadata {
+                            filepath: matched_url.to_string(),
+                            size: None, // TODO: fire HEAD requests to grab the content-length headers
+                            filetype,
+                        }
+                    });
+                Ok(LSResult {
+                    files: metas.collect(),
+                    continuation_token: None,
+                })
+            }
+            // All other forms of content-type is treated as a raw file
+            _ => Ok(LSResult {
+                files: vec![FileMetadata {
+                    filepath: path.to_string(),
+                    filetype: FileType::File,
+                    size: response.content_length(),
+                }],
+                continuation_token: None,
+            }),
+        }
     }
 }
 
