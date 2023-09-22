@@ -10,8 +10,8 @@ from tests.integration.io.conftest import mount_data_nginx
 
 
 def compare_http_result(daft_ls_result: list, fsspec_result: list):
-    daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
-    httpfs_files = [(f["name"], f["type"]) for f in fsspec_result]
+    daft_files = [(f["path"], f["type"].lower(), f["size"]) for f in daft_ls_result]
+    httpfs_files = [(f["name"], f["type"], f["size"]) for f in fsspec_result]
     assert len(daft_files) == len(httpfs_files)
     assert sorted(daft_files) == sorted(httpfs_files)
 
@@ -61,7 +61,7 @@ def test_gs_single_file_listing(nginx_http_url):
     # fsspec_result = fs.ls(path, detail=True)
 
     assert len(daft_ls_result) == 1
-    assert daft_ls_result[0] == {"path": path, "size": None, "type": "File"}
+    assert daft_ls_result[0] == {"path": path, "size": 0, "type": "File"}
 
 
 @pytest.mark.integration()
