@@ -115,7 +115,7 @@ pub(crate) trait ObjectSource: Sync + Send {
 pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
-) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
     fn add_to_channel(
         source: Arc<dyn ObjectSource>,
@@ -127,18 +127,22 @@ pub(crate) async fn recursive_iter(
             let mut s = match s {
                 Ok(s) => s,
                 Err(e) => {
-                    tx.send(Err(e)).await.unwrap();
-                    return;
+                    tx.send(Err(e)).await.map_err(|se| {
+                        super::Error::UnableToSendDataOverChannel { source: se.into() }
+                    })?;
+                    return super::Result::<_, super::Error>::Ok(());
                 }
             };
             let tx = &tx;
             while let Some(tr) = s.next().await {
-                let tr = tr;
                 if let Ok(ref tr) = tr && matches!(tr.filetype, FileType::Directory) {
                     add_to_channel(source.clone(), tx.clone(), tr.filepath.clone())
                 }
-                tx.send(tr).await.unwrap();
+                tx.send(tr)
+                    .await
+                    .map_err(|e| super::Error::UnableToSendDataOverChannel { source: e.into() })?;
             }
+            super::Result::Ok(())
         });
     }
 
