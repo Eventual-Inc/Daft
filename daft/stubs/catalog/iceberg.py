@@ -136,3 +136,9 @@ def example_updating_rows() -> None:
     df: DataFrame = daft.read_iceberg(catalog, "my-table")
     df = df.with_column("x", (df["x"] < 10).if_else(0, df["x"]))
     df.iceberg.save(catalog, "my-table")
+
+
+def example_appending_rows() -> None:
+    catalog = IcebergCatalog.from_glue("path/to/glue")
+    df: DataFrame = daft.read_parquet("s3://my-pq-file")
+    df.iceberg.append(catalog, "my-table")
