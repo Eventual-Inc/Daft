@@ -7,6 +7,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
+use url::Position;
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
 
@@ -66,6 +67,58 @@ enum Error {
         "Unable to parse data as Integer while reading header for file: {path}. {source}"
     ))]
     UnableToParseInteger { path: String, source: ParseIntError },
+}
+
+/// Finds and retrieves FileMetadata from HTML text
+///
+/// This function will look for `<a href=***>` tags and return all the links that it finds as
+/// absolute URLs
+fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
+    let metas = HTML_A_TAG_HREF_RE
+        .captures_iter(text)
+        .map(|captures| {
+            let matched_url = captures.name("url").unwrap().as_str();
+
+            // Ignore "FTP-like" links to parent folder
+            if matched_url == "../" {
+                return Ok(None);
+            }
+
+            let absolute_path = if let Ok(parsed_matched_url) = url::Url::parse(matched_url) {
+                // matched_url is already an absolute path
+                parsed_matched_url.to_string()
+            } else if matched_url.starts_with('/') {
+                // matched_url is a path relative to the origin of `path`
+                let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
+                let base = url::Url::parse(&path_url[..Position::BeforePath]).unwrap();
+                base.join(matched_url)
+                    .with_context(|_| InvalidUrlSnafu { path: matched_url })?
+                    .to_string()
+            } else {
+                // matched_url is a path relative to `path`
+                let path = format!("{}/", path.trim_end_matches('/')); // Ensure suffix is a single '/' so that it properly works with Url::join
+                let path_url =
+                    url::Url::parse(path.as_str()).with_context(|_| InvalidUrlSnafu { path })?;
+                path_url
+                    .join(matched_url)
+                    .with_context(|_| InvalidUrlSnafu { path: matched_url })?
+                    .to_string()
+            };
+
+            let filetype = if matched_url.ends_with('/') {
+                FileType::Directory
+            } else {
+                FileType::File
+            };
+            Ok(Some(FileMetadata {
+                filepath: absolute_path,
+                size: None, // TODO: fire HEAD requests to grab the content-length headers
+                filetype,
+            }))
+        })
+        .collect::<super::Result<Vec<_>>>()?;
+
+    Ok(metas.into_iter().flatten().collect())
 }
 
 pub(crate) struct HttpSource {
@@ -182,23 +235,9 @@ impl ObjectSource for HttpSource {
                     .with_context(|_| UnableToParseUtf8BodySnafu {
                         path: path.to_string(),
                     })?;
-                let metas = HTML_A_TAG_HREF_RE
-                    .captures_iter(text.as_str())
-                    .map(|captures| {
-                        let matched_url = captures.name("url").unwrap().as_str();
-                        let filetype = if matched_url.ends_with('/') {
-                            FileType::Directory
-                        } else {
-                            FileType::File
-                        };
-                        FileMetadata {
-                            filepath: matched_url.to_string(),
-                            size: None, // TODO: fire HEAD requests to grab the content-length headers
-                            filetype,
-                        }
-                    });
+                let file_metadatas = _get_file_metadata_from_html(path, text.as_str())?;
                 Ok(LSResult {
-                    files: metas.collect(),
+                    files: file_metadatas,
                     continuation_token: None,
                 })
             }

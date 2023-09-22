@@ -11,7 +11,7 @@ from tests.integration.io.conftest import mount_data_nginx
 
 def compare_http_result(daft_ls_result: list, fsspec_result: list):
     daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
-    gcsfs_files = [(f"http://{f['name']}", f["type"]) for f in fsspec_result]
+    httpfs_files = [(f["name"], f["type"]) for f in fsspec_result]
 
     # Perform necessary post-processing of fsspec results to match expected behavior from Daft:
 
@@ -25,8 +25,8 @@ def compare_http_result(daft_ls_result: list, fsspec_result: list):
     # size_0_files = {f"gs://{f['name']}" for f in fsspec_result if f["size"] == 0 and f["type"] == "file"}
     # gcsfs_files = [(path, type_) for path, type_ in gcsfs_files if path not in size_0_files]
 
-    assert len(daft_files) == len(gcsfs_files)
-    assert sorted(daft_files) == sorted(gcsfs_files)
+    assert len(daft_files) == len(httpfs_files)
+    assert sorted(daft_files) == sorted(httpfs_files)
 
 
 @pytest.fixture(scope="module")
@@ -89,12 +89,13 @@ def test_http_flat_directory_listing(path, nginx_http_url):
 # @pytest.mark.parametrize(
 #     "path",
 #     [
-#         f"gs://{BUCKET}/test_ls",
-#         f"gs://{BUCKET}/test_ls/",
+#         f"",
+#         f"/",
 #     ],
 # )
-# def test_gs_flat_directory_listing_recursive(path):
-#     fs = gcsfs.GCSFileSystem()
-#     daft_ls_result = io_list(path, recursive=True)
-#     fsspec_result = list(fs.glob(path.rstrip("/") + "/**", detail=True).values())
-#     compare_gcs_result(daft_ls_result, fsspec_result)
+# def test_http_flat_directory_listing_recursive(path, nginx_http_url):
+#     http_path = f"{nginx_http_url}/{path}"
+#     fs = HTTPFileSystem()
+#     fsspec_result = list(fs.glob(http_path.rstrip("/") + "/**", detail=True).values())
+#     # daft_ls_result = io_list(http_path, recursive=True)
+#     # compare_http_result(daft_ls_result, fsspec_result)
