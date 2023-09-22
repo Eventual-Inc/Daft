@@ -115,7 +115,7 @@ pub(crate) trait ObjectSource: Sync + Send {
 pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
-) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
     fn add_to_channel(
         source: Arc<dyn ObjectSource>,
