@@ -14,6 +14,7 @@ use crate::object_io::{FileMetadata, FileType, LSResult};
 use super::object_io::{GetResult, ObjectSource};
 
 lazy_static! {
+    // Taken from: https://stackoverflow.com/a/15926317/3821154
     static ref HTML_A_TAG_HREF_RE: Regex =
         Regex::new(r#"<(a|A)\s+(?:[^>]*?\s+)?(href|HREF)=["'](?P<url>[^"']+)"#).unwrap();
 }
