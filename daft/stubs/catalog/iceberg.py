@@ -113,8 +113,8 @@ class DataframeIcebergNamespace:
         """
         ...
 
-    def overwrite(self, catalog: IcebergCatalog, table_identifier: str) -> None:
-        """Overwrites the records in this Iceberg Table from a daft DataFrame.
+    def save(self, catalog: IcebergCatalog, table_identifier: str) -> None:
+        """saves the records in this Iceberg Table from a daft DataFrame.
         This operation follows the Iceberg Table's Schema, Partitioning Scheme and properties when writing the new records.
 
         Args:
@@ -128,11 +128,11 @@ def example_deleting_rows() -> None:
     catalog = IcebergCatalog.from_glue("path/to/glue")
     df: DataFrame = daft.read_iceberg(catalog, "my-table")
     df = df.where(df["id"] > 10 & df["id"] < 20)
-    df.iceberg.overwrite(catalog, "my-table")
+    df.iceberg.save(catalog, "my-table")
 
 
 def example_updating_rows() -> None:
     catalog = IcebergCatalog.from_glue("path/to/glue")
     df: DataFrame = daft.read_iceberg(catalog, "my-table")
     df = df.with_column("x", (df["x"] < 10).if_else(0, df["x"]))
-    df.iceberg.overwrite(catalog, "my-table")
+    df.iceberg.save(catalog, "my-table")
