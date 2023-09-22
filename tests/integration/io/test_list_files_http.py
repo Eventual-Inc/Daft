@@ -61,7 +61,7 @@ def test_gs_single_file_listing(nginx_http_url):
     # fsspec_result = fs.ls(path, detail=True)
 
     assert len(daft_ls_result) == 1
-    assert daft_ls_result[0] == {"path": path, "size": 24, "type": "File"}
+    assert daft_ls_result[0] == {"path": path, "size": None, "type": "File"}
 
 
 @pytest.mark.integration()

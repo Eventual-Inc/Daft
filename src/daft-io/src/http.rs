@@ -112,7 +112,9 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
             };
             Ok(Some(FileMetadata {
                 filepath: absolute_path,
-                size: None, // TODO: fire HEAD requests to grab the content-length headers
+                // NOTE: This is consistent with fsspec behavior, but we may choose to HEAD the files to grab Content-Length
+                // for populating `size` if necessary
+                size: None,
                 filetype,
             }))
         })
