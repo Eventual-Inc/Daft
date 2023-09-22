@@ -5,9 +5,9 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 
 import daft
-from daft.daft import PartitionSpec
+from daft.daft import PartitionScheme, PartitionSpec
 from daft.dataframe import DataFrame
-from daft.logical.schema import Schema
+from daft.logical.schema import Field, Schema
 
 
 class IcebergCatalog:
@@ -70,11 +70,19 @@ class Table:
 
 
 class SchemaUpdate(AbstractContextManager):
-    ...
+    def add_column(self, field: Field) -> SchemaUpdate:
+        ...
+
+    def drop_column(self, name: str) -> SchemaUpdate:
+        ...
+
+    def rename_column(self, name: str, new_name: str) -> SchemaUpdate:
+        ...
 
 
 class PartitionSpecUpdate(AbstractContextManager):
-    ...
+    def add_partitioning_field(self, name: str, scheme: PartitionScheme) -> PartitionSpecUpdate:
+        ...
 
 
 class DataframeIcebergNamespace:
