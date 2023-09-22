@@ -74,35 +74,40 @@ enum Error {
 /// This function will look for `<a href=***>` tags and return all the links that it finds as
 /// absolute URLs
 fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
+    let path = format!("{}/", path.trim_end_matches('/')); // Ensure suffix is a single '/' so that it properly works with Url::join
+    let path_url = url::Url::parse(path.as_str()).with_context(|_| InvalidUrlSnafu { path })?;
     let metas = HTML_A_TAG_HREF_RE
         .captures_iter(text)
         .map(|captures| {
             let matched_url = captures.name("url").unwrap().as_str();
 
-            // Ignore "FTP-like" links to parent folder
-            if matched_url == "../" {
-                return Ok(None);
-            }
-
             let absolute_path = if let Ok(parsed_matched_url) = url::Url::parse(matched_url) {
                 // matched_url is already an absolute path
-                parsed_matched_url.to_string()
+                parsed_matched_url
             } else if matched_url.starts_with('/') {
                 // matched_url is a path relative to the origin of `path`
-                let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
                 let base = url::Url::parse(&path_url[..Position::BeforePath]).unwrap();
                 base.join(matched_url)
                     .with_context(|_| InvalidUrlSnafu { path: matched_url })?
-                    .to_string()
             } else {
                 // matched_url is a path relative to `path`
-                let path = format!("{}/", path.trim_end_matches('/')); // Ensure suffix is a single '/' so that it properly works with Url::join
-                let path_url =
-                    url::Url::parse(path.as_str()).with_context(|_| InvalidUrlSnafu { path })?;
                 path_url
                     .join(matched_url)
                     .with_context(|_| InvalidUrlSnafu { path: matched_url })?
-                    .to_string()
+            };
+
+            // Ignore any links that are not descendants of `path` to avoid cycles
+            let relative = path_url.make_relative(&absolute_path);
+            match relative {
+                None => {
+                    return Ok(None);
+                }
+                Some(relative_path)
+                    if relative_path.is_empty() || relative_path.starts_with("..") =>
+                {
+                    return Ok(None);
+                }
+                _ => (),
             };
 
             let filetype = if matched_url.ends_with('/') {
@@ -111,7 +116,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
                 FileType::File
             };
             Ok(Some(FileMetadata {
-                filepath: absolute_path,
+                filepath: absolute_path.to_string(),
                 // NOTE: This is consistent with fsspec behavior, but we may choose to HEAD the files to grab Content-Length
                 // for populating `size` if necessary
                 size: None,
