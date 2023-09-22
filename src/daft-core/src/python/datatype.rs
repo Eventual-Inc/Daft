@@ -1,13 +1,15 @@
 use crate::{
     datatypes::{DataType, Field, ImageMode, TimeUnit},
-    ffi,
+    ffi, impl_bincode_py_state_serialization,
 };
 use pyo3::{
     class::basic::CompareOp,
     exceptions::PyValueError,
     prelude::*,
-    types::{PyBytes, PyDict, PyString, PyTuple},
+    types::{PyBytes, PyDict, PyString},
+    PyTypeInfo,
 };
+use serde::{Deserialize, Serialize};
 
 #[pyclass]
 #[derive(Clone)]
@@ -66,26 +68,14 @@ impl PyTimeUnit {
     }
 }
 
-#[pyclass]
-#[derive(Clone)]
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyDataType {
     pub dtype: DataType,
 }
 
 #[pymethods]
 impl PyDataType {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            0 => Ok(DataType::new_null().into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyDataType, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.dtype))
     }
@@ -283,49 +273,51 @@ impl PyDataType {
         Ok(DataType::Python.into())
     }
 
-    pub fn to_arrow(&self, cast_tensor_type_for_ray: Option<bool>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
-            let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-            let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
-            match (&self.dtype, cast_tensor_to_ray_type) {
-                (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
-                    if py
-                        .import(pyo3::intern!(py, "daft.utils"))?
-                        .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
-                        .call0()?
-                        .extract()?
-                    {
-                        pyarrow
-                            .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
-                            .call1((
-                                Self {
-                                    dtype: *dtype.clone(),
-                                }
-                                .to_arrow(None)?,
-                                pyo3::types::PyTuple::new(py, shape.clone()),
-                            ))?
-                            .to_object(py)
-                    } else {
-                        // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
-                        // canonical tensor extension type.
-                        ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
-                    },
-                ),
-                (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
-                    .import(pyo3::intern!(py, "ray.data.extensions"))?
-                    .getattr(pyo3::intern!(py, "ArrowTensorType"))?
-                    .call1((
-                        pyo3::types::PyTuple::new(py, shape.clone()),
-                        Self {
-                            dtype: *dtype.clone(),
-                        }
-                        .to_arrow(None)?,
-                    ))?
-                    .to_object(py)),
-                (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
-                    .getattr(py, pyo3::intern!(py, "type")),
-            }
-        })
+    pub fn to_arrow(
+        &self,
+        py: Python,
+        cast_tensor_type_for_ray: Option<bool>,
+    ) -> PyResult<PyObject> {
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let cast_tensor_to_ray_type = cast_tensor_type_for_ray.unwrap_or(false);
+        match (&self.dtype, cast_tensor_to_ray_type) {
+            (DataType::FixedShapeTensor(dtype, shape), false) => Ok(
+                if py
+                    .import(pyo3::intern!(py, "daft.utils"))?
+                    .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
+                    .call0()?
+                    .extract()?
+                {
+                    pyarrow
+                        .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
+                        .call1((
+                            Self {
+                                dtype: *dtype.clone(),
+                            }
+                            .to_arrow(py, None)?,
+                            pyo3::types::PyTuple::new(py, shape.clone()),
+                        ))?
+                        .to_object(py)
+                } else {
+                    // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
+                    // canonical tensor extension type.
+                    ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                },
+            ),
+            (DataType::FixedShapeTensor(dtype, shape), true) => Ok(py
+                .import(pyo3::intern!(py, "ray.data.extensions"))?
+                .getattr(pyo3::intern!(py, "ArrowTensorType"))?
+                .call1((
+                    pyo3::types::PyTuple::new(py, shape.clone()),
+                    Self {
+                        dtype: *dtype.clone(),
+                    }
+                    .to_arrow(py, None)?,
+                ))?
+                .to_object(py)),
+            (_, _) => ffi::to_py_schema(&self.dtype.to_arrow()?, py, pyarrow)?
+                .getattr(py, pyo3::intern!(py, "type")),
+        }
     }
 
     pub fn is_image(&self) -> PyResult<bool> {
@@ -366,20 +358,6 @@ impl PyDataType {
         Ok(DataType::from_json(serialized)?.into())
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                self.dtype = bincode::deserialize(s.as_bytes()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self.dtype).unwrap()).to_object(py))
-    }
-
     pub fn __hash__(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::Hash;
@@ -389,6 +367,8 @@ impl PyDataType {
         hasher.finish()
     }
 }
+
+impl_bincode_py_state_serialization!(PyDataType);
 
 impl From<DataType> for PyDataType {
     fn from(value: DataType) -> Self {

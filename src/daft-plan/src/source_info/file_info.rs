@@ -7,10 +7,8 @@ use serde::{Deserialize, Serialize};
 use {
     daft_table::python::PyTable,
     pyo3::{
-        exceptions::{PyKeyError, PyValueError},
-        pyclass, pymethods,
-        types::{PyBytes, PyTuple},
-        PyResult, Python,
+        exceptions::PyKeyError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
+        Python, ToPyObject,
     },
 };
 
@@ -55,16 +53,8 @@ pub struct FileInfos {
 #[pymethods]
 impl FileInfos {
     #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create an empty FileInfos, to be overridden by __setstate__ and/or extended with self.extend().
-            0 => Ok(Self::new_internal(vec![], vec![], vec![])),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new FileInfos, got : {}",
-                args.len()
-            ))),
-        }
+    pub fn new() -> Self {
+        Default::default()
     }
 
     #[staticmethod]
@@ -187,5 +177,11 @@ impl FileInfos {
             Schema::new(columns.iter().map(|s| s.field().clone()).collect())?,
             columns,
         )
+    }
+}
+
+impl Default for FileInfos {
+    fn default() -> Self {
+        Self::new_internal(vec![], vec![], vec![])
     }
 }

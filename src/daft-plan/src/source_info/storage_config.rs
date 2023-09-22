@@ -9,10 +9,8 @@ use {
     super::py_object_serde::{deserialize_py_object_optional, serialize_py_object_optional},
     common_io_config::python,
     pyo3::{
-        exceptions::PyValueError,
-        pyclass, pymethods,
-        types::{PyBytes, PyTuple},
-        IntoPy, PyObject, PyResult, Python,
+        pyclass, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo, Python,
+        ToPyObject,
     },
     std::hash::{Hash, Hasher},
 };
@@ -119,22 +117,6 @@ pub struct PyStorageConfig(Arc<StorageConfig>);
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyStorageConfig {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy inner StorageConfig, to be overridden by __setstate__.
-            0 => Ok(Arc::new(StorageConfig::Native(
-                NativeStorageConfig::new_internal(None).into(),
-            ))
-            .into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyStorageConfig, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     /// Create from a native storage config.
     #[staticmethod]
     fn native(config: NativeStorageConfig) -> Self {

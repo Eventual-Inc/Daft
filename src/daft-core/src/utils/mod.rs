@@ -20,13 +20,21 @@ macro_rules! impl_bincode_py_state_serialization {
         #[cfg(feature = "python")]
         #[pymethods]
         impl $ty {
-            pub fn __setstate__(&mut self, state: &PyBytes) -> PyResult<()> {
-                *self = bincode::deserialize(state.as_bytes()).unwrap();
-                Ok(())
+            pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
+                Ok((
+                    Self::type_object(py)
+                        .getattr("_from_serialized")?
+                        .to_object(py),
+                    (PyBytes::new(py, &bincode::serialize(&self).unwrap()).to_object(py),)
+                        .to_object(py),
+                ))
             }
 
-            pub fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyBytes> {
-                Ok(PyBytes::new(py, &bincode::serialize(&self).unwrap()))
+            #[staticmethod]
+            pub fn _from_serialized(py: Python, serialized: PyObject) -> PyResult<Self> {
+                serialized
+                    .extract::<&PyBytes>(py)
+                    .map(|s| bincode::deserialize(s.as_bytes()).unwrap())
             }
         }
     };

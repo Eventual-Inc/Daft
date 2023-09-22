@@ -12,10 +12,8 @@ use {
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
     pyo3::{
-        exceptions::PyValueError,
-        pyclass, pymethods,
-        types::{PyBytes, PyTuple},
-        PyObject, PyRef, PyRefMut, PyResult, Python,
+        pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
+        Python, ToPyObject,
     },
     std::collections::HashMap,
 };
@@ -56,7 +54,7 @@ pub enum PhysicalPlan {
 }
 
 /// A work scheduler for physical plans.
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalPlanScheduler {
     plan: Arc<PhysicalPlan>,
@@ -65,28 +63,6 @@ pub struct PhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PhysicalPlanScheduler {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy inner PhysicalPlan, to be overridden by __setstate__.
-            0 => Ok(Arc::new(PhysicalPlan::InMemoryScan(InMemoryScan::new(
-                Default::default(),
-                InMemoryInfo::new(
-                    daft_core::schema::Schema::new(vec![])?.into(),
-                    "".to_string(),
-                    args.py().None(),
-                ),
-                Default::default(),
-            )))
-            .into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PhysicalPlanScheduler, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
         Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets))
