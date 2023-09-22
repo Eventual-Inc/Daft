@@ -1,9 +1,71 @@
-use crate::datatypes::{BooleanArray, UInt64Array, Utf8Array};
+use crate::{
+    array::ListArray,
+    datatypes::{BooleanArray, Field, UInt64Array, Utf8Array},
+    DataType, Series,
+};
 use arrow2;
 
 use common_error::{DaftError, DaftResult};
 
 use super::{as_arrow::AsArrow, full::FullNull};
+
+fn split_array_on_patterns<'a, T, U>(
+    arr_iter: T,
+    pattern_iter: U,
+    buffer_len: usize,
+    name: &str,
+) -> DaftResult<ListArray>
+where
+    T: arrow2::trusted_len::TrustedLen + Iterator<Item = Option<&'a str>>,
+    U: Iterator<Item = Option<&'a str>>,
+{
+    // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurences in the ith string in arr_iter.
+    let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
+    // arr_iter implementing TrustedLen guarantees that the size_hint reports an accurate length. Specifically, we have that either
+    //  (1) size_hint().0 == size_hint().1 == iterator length in the common case, or;
+    //  (2) size_hint().0 == usize::MAX and size_hint().1 == None if the iterator is larger than usize::MAX.
+    //
+    // Since the iterator is guaranteed to be smaller than usize::MAX due to the UTF8Array i64 offset array constraint (no more than i64::MAX,
+    // which we assume to be smaller than usize::MAX), we should have that (1) always holds, so we can reliably unwrap the size hint upper bound
+    // and treat it as the iterator length.
+    let arr_len = arr_iter.size_hint().1.unwrap();
+    let mut offsets = Vec::with_capacity(arr_len + 1);
+    offsets.push(0i64);
+    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(arr_len);
+    for (val, pat) in arr_iter.zip(pattern_iter) {
+        let mut num_splits = 0i64;
+        match (val, pat) {
+            (Some(val), Some(pat)) => {
+                for split in val.split(pat) {
+                    splits.push(Some(split));
+                    num_splits += 1;
+                }
+                validity.push(true);
+            }
+            (_, _) => {
+                validity.push(false);
+            }
+        }
+        let offset = offsets.last().unwrap() + num_splits;
+        offsets.push(offset);
+    }
+    // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
+    splits.shrink_to_fit();
+    let splits: arrow2::array::Utf8Array<i64> = splits.into();
+    let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+        0 => None,
+        _ => Some(validity.into()),
+    };
+    let flat_child =
+        Series::try_from(("splits", Box::new(splits) as Box<dyn arrow2::array::Array>))?;
+    Ok(ListArray::new(
+        Field::new(name, DataType::List(Box::new(DataType::Utf8))),
+        flat_child,
+        offsets,
+        validity,
+    ))
+}
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -16,6 +78,65 @@ impl Utf8Array {
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.contains(pat))
+    }
+
+    pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+        // Handle all-null cases.
+        if self_arrow
+            .validity()
+            .map_or(false, |v| v.unset_bits() == v.len())
+            || pattern_arrow
+                .validity()
+                .map_or(false, |v| v.unset_bits() == v.len())
+        {
+            return Ok(ListArray::full_null(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+                std::cmp::max(self.len(), pattern.len()),
+            ));
+        // Handle empty cases.
+        } else if self.is_empty() || pattern.is_empty() {
+            return Ok(ListArray::empty(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ));
+        }
+        let buffer_len = self_arrow.values().len();
+        match (self.len(), pattern.len()) {
+            // Matching len case:
+            (self_len, pattern_len) if self_len == pattern_len => split_array_on_patterns(
+                self_arrow.into_iter(),
+                pattern_arrow.into_iter(),
+                buffer_len,
+                self.name(),
+            ),
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let pattern_scalar_value = pattern.get(0).unwrap();
+                split_array_on_patterns(
+                    self_arrow.into_iter(),
+                    std::iter::repeat(Some(pattern_scalar_value)).take(self_len),
+                    buffer_len,
+                    self.name(),
+                )
+            }
+            // Broadcast self case:
+            (1, pattern_len) => {
+                let self_scalar_value = self.get(0).unwrap();
+                split_array_on_patterns(
+                    std::iter::repeat(Some(self_scalar_value)).take(pattern_len),
+                    pattern_arrow.into_iter(),
+                    buffer_len * pattern_len,
+                    self.name(),
+                )
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
     }
 
     pub fn length(&self) -> DaftResult<UInt64Array> {
