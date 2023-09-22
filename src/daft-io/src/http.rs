@@ -225,7 +225,10 @@ impl ObjectSource for HttpSource {
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: path.into() })?;
+            .context(UnableToConnectSnafu::<String> { path: path.into() })?
+            .error_for_status()
+            .with_context(|_| UnableToOpenFileSnafu { path })?;
+
         match response.headers().get("content-type") {
             // If the content-type is text/html, we treat the data on this path as a traversable "directory"
             Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
