@@ -699,14 +699,15 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-
-        let key = key.strip_prefix('/').unwrap_or("");
+        let key = key
+            .trim_start_matches(delimiter)
+            .trim_end_matches(delimiter);
         let key = if key.is_empty() {
             "".to_string()
         } else {
-            let key = key.strip_suffix('/').unwrap_or(key);
-            format!("{key}/")
+            format!("{key}{delimiter}")
         };
+
         // assume its a directory first
         let lsr = {
             let permit = self
@@ -725,26 +726,25 @@ impl ObjectSource for S3LikeSource {
             )
             .await?
         };
-        if lsr.files.is_empty() && key.contains('/') {
+        if lsr.files.is_empty() && key.contains(delimiter) {
             let permit = self
                 .connection_pool_sema
                 .acquire()
                 .await
                 .context(UnableToGrabSemaphoreSnafu)?;
             // Might be a File
-            let split = key.rsplit_once('/');
-            let (new_key, _) = split.unwrap();
+            let key = key.trim_end_matches(delimiter);
             let mut lsr = self
                 ._list_impl(
                     permit,
                     bucket,
-                    new_key,
+                    key,
                     delimiter.into(),
                     continuation_token.map(String::from),
                     &self.default_region,
                 )
                 .await?;
-            let target_path = format!("s3://{bucket}/{new_key}");
+            let target_path = format!("s3://{bucket}/{key}");
             lsr.files.retain(|f| f.filepath == target_path);
 
             if lsr.files.is_empty() {

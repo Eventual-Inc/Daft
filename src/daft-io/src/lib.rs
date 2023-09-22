@@ -84,6 +84,12 @@ pub enum Error {
     #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
     Unhandled { path: String, msg: String },
 
+    #[snafu(
+        display("Error sending data over a tokio channel: {}", source),
+        context(false)
+    )]
+    UnableToSendDataOverChannel { source: DynError },
+
     #[snafu(display("Error joining spawned task: {}", source), context(false))]
     JoinError { source: tokio::task::JoinError },
 }
