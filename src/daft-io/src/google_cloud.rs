@@ -9,11 +9,14 @@ use async_trait::async_trait;
 use google_cloud_storage::client::Client;
 use google_cloud_storage::http::objects::get::GetObjectRequest;
 
+use google_cloud_storage::http::objects::list::ListObjectsRequest;
 use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
 
+use crate::object_io::FileMetadata;
+use crate::object_io::FileType;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
@@ -24,6 +27,9 @@ use common_io_config::GCSConfig;
 enum Error {
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile { path: String, source: GError },
+
+    #[snafu(display("Unable to list objects: \"{}\"", path))]
+    UnableToListObjects { path: String, source: GError },
 
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes { path: String, source: GError },
@@ -46,44 +52,44 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
-                match source {
-                    GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                        Some(404) | Some(410) => super::Error::NotFound {
-                            path,
-                            source: err.into(),
-                        },
-                        Some(401) => super::Error::Unauthorized {
-                            store: super::SourceType::GCS,
-                            path,
-                            source: err.into(),
-                        },
-                        _ => super::Error::UnableToOpenFile {
-                            path,
-                            source: err.into(),
-                        },
+            UnableToReadBytes { path, source }
+            | UnableToOpenFile { path, source }
+            | UnableToListObjects { path, source } => match source {
+                GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
+                    Some(404) | Some(410) => super::Error::NotFound {
+                        path,
+                        source: err.into(),
                     },
-                    GError::Response(err) => match err.code {
-                        404 | 410 => super::Error::NotFound {
-                            path,
-                            source: err.into(),
-                        },
-                        401 => super::Error::Unauthorized {
-                            store: super::SourceType::GCS,
-                            path,
-                            source: err.into(),
-                        },
-                        _ => super::Error::UnableToOpenFile {
-                            path,
-                            source: err.into(),
-                        },
-                    },
-                    GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                    Some(401) => super::Error::Unauthorized {
                         store: super::SourceType::GCS,
-                        source: err,
+                        path,
+                        source: err.into(),
                     },
-                }
-            }
+                    _ => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
+                },
+                GError::Response(err) => match err.code {
+                    404 | 410 => super::Error::NotFound {
+                        path,
+                        source: err.into(),
+                    },
+                    401 => super::Error::Unauthorized {
+                        store: super::SourceType::GCS,
+                        path,
+                        source: err.into(),
+                    },
+                    _ => super::Error::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    },
+                },
+                GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                    store: super::SourceType::GCS,
+                    source: err,
+                },
+            },
             NotAFile { path } => super::Error::NotAFile { path },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
@@ -99,23 +105,23 @@ enum GCSClientWrapper {
     S3Compat(Arc<s3_like::S3LikeSource>),
 }
 
+fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
+    let bucket = match uri.host_str() {
+        Some(s) => Ok(s),
+        None => Err(Error::InvalidUrl {
+            path: uri.to_string(),
+            source: url::ParseError::EmptyHost,
+        }),
+    }?;
+    let key = uri.path();
+    let key = key.strip_prefix('/').unwrap_or(key);
+    Ok((bucket, key))
+}
+
 impl GCSClientWrapper {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-        let bucket = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: url::ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
-        let key = if let Some(key) = key.strip_prefix('/') {
-            key
-        } else {
-            return Err(Error::NotAFile { path: uri.into() }.into());
-        };
-
+        let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let (bucket, key) = parse_uri(&uri)?;
         match self {
             GCSClientWrapper::Native(client) => {
                 let req = GetObjectRequest {
@@ -156,20 +162,8 @@ impl GCSClientWrapper {
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-        let bucket = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: url::ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
-        let key = if let Some(key) = key.strip_prefix('/') {
-            key
-        } else {
-            return Err(Error::NotAFile { path: uri.into() }.into());
-        };
+        let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let (bucket, key) = parse_uri(&uri)?;
         match self {
             GCSClientWrapper::Native(client) => {
                 let req = GetObjectRequest {
@@ -189,6 +183,93 @@ impl GCSClientWrapper {
             GCSClientWrapper::S3Compat(client) => {
                 let uri = format!("s3://{}/{}", bucket, key);
                 client.get_size(&uri).await
+            }
+        }
+    }
+
+    async fn _ls_impl(
+        &self,
+        client: &Client,
+        bucket: &str,
+        key: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        let req = ListObjectsRequest {
+            bucket: bucket.to_string(),
+            prefix: Some(key.to_string()),
+            end_offset: None,
+            start_offset: None,
+            page_token: continuation_token.map(|s| s.to_string()),
+            delimiter: Some(delimiter.unwrap_or("/").to_string()), // returns results in "directory mode"
+            max_results: Some(1000), // Recommended value from API docs
+            include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
+            projection: None,
+            versions: None,
+        };
+        let ls_response = client
+            .list_objects(&req)
+            .await
+            .context(UnableToListObjectsSnafu {
+                path: format!("gs://{}/{}", bucket, key),
+            })?;
+        let response_items = ls_response.items.unwrap_or_default();
+        let response_prefixes = ls_response.prefixes.unwrap_or_default();
+        let files = response_items.iter().filter_map(|obj| {
+            if obj.name.ends_with('/') {
+                // Sometimes the GCS API returns "folders" in .items[], so we manually filter here
+                None
+            } else {
+                Some(FileMetadata {
+                    filepath: format!("gs://{}/{}", bucket, obj.name),
+                    size: Some(obj.size as u64),
+                    filetype: FileType::File,
+                })
+            }
+        });
+        let dirs = response_prefixes.iter().map(|pref| FileMetadata {
+            filepath: format!("gs://{}/{}", bucket, pref),
+            size: None,
+            filetype: FileType::Directory,
+        });
+        Ok(LSResult {
+            files: files.chain(dirs).collect(),
+            continuation_token: ls_response.next_page_token,
+        })
+    }
+
+    async fn ls(
+        &self,
+        path: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
+    ) -> super::Result<LSResult> {
+        let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
+        let (bucket, key) = parse_uri(&uri)?;
+        match self {
+            GCSClientWrapper::Native(client) => {
+                // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                // details as the one-and-only-one entry
+                let forced_directory_key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
+                let forced_directory_ls_result = self
+                    ._ls_impl(
+                        client,
+                        bucket,
+                        forced_directory_key.as_str(),
+                        delimiter,
+                        continuation_token,
+                    )
+                    .await?;
+                if forced_directory_ls_result.files.is_empty() {
+                    self._ls_impl(client, bucket, key, delimiter, continuation_token)
+                        .await
+                } else {
+                    Ok(forced_directory_ls_result)
+                }
+            }
+            GCSClientWrapper::S3Compat(client) => {
+                client.ls(path, delimiter, continuation_token).await
             }
         }
     }
@@ -248,10 +329,10 @@ impl ObjectSource for GCSSource {
 
     async fn ls(
         &self,
-        _path: &str,
-        _delimiter: Option<&str>,
-        _continuation_token: Option<&str>,
+        path: &str,
+        delimiter: Option<&str>,
+        continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        unimplemented!("gcs ls");
+        self.client.ls(path, delimiter, continuation_token).await
     }
 }
