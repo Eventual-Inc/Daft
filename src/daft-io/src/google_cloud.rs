@@ -195,7 +195,7 @@ impl GCSClientWrapper {
         client: &Client,
         bucket: &str,
         key: &str,
-        delimiter: Option<&str>,
+        delimiter: &str,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let req = ListObjectsRequest {
@@ -204,8 +204,8 @@ impl GCSClientWrapper {
             end_offset: None,
             start_offset: None,
             page_token: continuation_token.map(|s| s.to_string()),
-            delimiter: Some(delimiter.unwrap_or("/").to_string()), // returns results in "directory mode"
-            max_results: Some(1000), // Recommended value from API docs
+            delimiter: Some(delimiter.to_string()), // returns results in "directory mode"
+            max_results: Some(1000),                // Recommended value from API docs
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
             versions: None,
@@ -242,10 +242,12 @@ impl GCSClientWrapper {
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
+        let delimiter = delimiter.unwrap_or("/");
         match self {
             GCSClientWrapper::Native(client) => {
                 // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                let forced_directory_key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
+                let forced_directory_key =
+                    format!("{}{delimiter}", key.trim_end_matches(delimiter));
                 let forced_directory_ls_result = self
                     ._ls_impl(
                         client,
@@ -277,7 +279,7 @@ impl GCSClientWrapper {
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
-                client.ls(path, delimiter, continuation_token).await
+                client.ls(path, Some(delimiter), continuation_token).await
             }
         }
     }

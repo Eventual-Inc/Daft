@@ -30,7 +30,7 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
         f"gs://{BUCKET}/",
         f"gs://{BUCKET}/test_ls",
         f"gs://{BUCKET}/test_ls/",
-        # f"gs://{BUCKET}/test_ls//",
+        f"gs://{BUCKET}/test_ls//",
         f"gs://{BUCKET}/test_ls/paginated-1100-files/",
     ],
 )
