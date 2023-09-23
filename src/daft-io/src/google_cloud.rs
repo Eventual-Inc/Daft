@@ -45,7 +45,7 @@ enum Error {
     },
 
     #[snafu(display("Not a File: \"{}\"", path))]
-    NotAFile { path: String },
+    NotFound { path: String },
 }
 
 impl From<Error> for super::Error {
@@ -90,7 +90,10 @@ impl From<Error> for super::Error {
                     source: err,
                 },
             },
-            NotAFile { path } => super::Error::NotAFile { path },
+            NotFound { ref path } => super::Error::NotFound {
+                path: path.into(),
+                source: error.into(),
+            },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
@@ -215,17 +218,10 @@ impl GCSClientWrapper {
             })?;
         let response_items = ls_response.items.unwrap_or_default();
         let response_prefixes = ls_response.prefixes.unwrap_or_default();
-        let files = response_items.iter().filter_map(|obj| {
-            if obj.name.ends_with('/') {
-                // Sometimes the GCS API returns "folders" in .items[], so we manually filter here
-                None
-            } else {
-                Some(FileMetadata {
-                    filepath: format!("gs://{}/{}", bucket, obj.name),
-                    size: Some(obj.size as u64),
-                    filetype: FileType::File,
-                })
-            }
+        let files = response_items.iter().map(|obj| FileMetadata {
+            filepath: format!("gs://{}/{}", bucket, obj.name),
+            size: Some(obj.size as u64),
+            filetype: FileType::File,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
             filepath: format!("gs://{}/{}", bucket, pref),
@@ -249,8 +245,6 @@ impl GCSClientWrapper {
         match self {
             GCSClientWrapper::Native(client) => {
                 // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-                // details as the one-and-only-one entry
                 let forced_directory_key = format!("{}/", key.strip_suffix('/').unwrap_or(key));
                 let forced_directory_ls_result = self
                     ._ls_impl(
@@ -261,9 +255,23 @@ impl GCSClientWrapper {
                         continuation_token,
                     )
                     .await?;
+
+                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                // details as the one-and-only-one entry
                 if forced_directory_ls_result.files.is_empty() {
-                    self._ls_impl(client, bucket, key, delimiter, continuation_token)
-                        .await
+                    let file_result = self
+                        ._ls_impl(client, bucket, key, delimiter, continuation_token)
+                        .await?;
+
+                    // Not dir and not file, so it is missing
+                    if file_result.files.is_empty() {
+                        return Err(Error::NotFound {
+                            path: path.to_string(),
+                        }
+                        .into());
+                    }
+
+                    Ok(file_result)
                 } else {
                     Ok(forced_directory_ls_result)
                 }
