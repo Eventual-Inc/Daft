@@ -99,7 +99,7 @@ def test_series_concat_tensor_array_ray(chunks) -> None:
     chunk_size = 3
     chunk_shape = (chunk_size,) + element_shape
     chunks = [
-        np.arange(i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor).reshape(
+        np.arange(i * chunk_size * num_elements_per_tensor, (i + 1) * chunk_size * num_elements_per_tensor, dtype=np.int64).reshape(
             chunk_shape
         )
         for i in range(chunks)
