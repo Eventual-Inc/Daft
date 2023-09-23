@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import uuid
-
+import sys
 import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
@@ -16,8 +16,9 @@ from tests.conftest import assert_df_equals
 def _get_filename():
     name = str(uuid.uuid4())
 
-    # Inject colons into the name
-    name += ":foo:bar"
+    # Inject colons into the name if not windows
+    if sys.platform != 'win32':
+        name += ":foo:bar"
 
     return name
 
@@ -39,7 +40,6 @@ def test_download(files, use_native_downloader):
         pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
         pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])
         assert_df_equals(df.to_pandas(), pd_df, sort_key="filenames")
-        print(_)
 
 
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
