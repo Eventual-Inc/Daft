@@ -39,6 +39,7 @@ def nginx_http_url(nginx_config, tmpdir_factory):
         f"/",
         f"test_ls",
         f"test_ls/",
+        f"test_ls//",
         f"test_ls/paginated-10-files/",
     ],
 )

@@ -129,21 +129,32 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
     """
     server_url, static_assets_tmpdir = nginx_config
 
-    # Copy data
-    for root, dirs, files in os.walk(folder, topdown=False):
-        for file in files:
-            shutil.copy2(os.path.join(root, file), os.path.join(static_assets_tmpdir, file))
-        for dir in dirs:
-            shutil.copytree(os.path.join(root, dir), os.path.join(static_assets_tmpdir, dir))
+    # Cleanup any old stuff in mount folder
+    for item in os.listdir(static_assets_tmpdir):
+        path = static_assets_tmpdir / item
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
 
-    yield [f"{server_url}/{p.relative_to(folder)}" for p in folder.glob("**/*") if p.is_file()]
+    # Copy data to mount folder
+    for item in os.listdir(folder):
+        src = folder / item
+        dest = static_assets_tmpdir / item
+        if src.is_dir():
+            shutil.copytree(str(src), str(dest))
+        else:
+            shutil.copy2(src, dest)
 
-    # Delete data
-    for root, dirs, files in os.walk(static_assets_tmpdir, topdown=False):
-        for file in files:
-            os.remove(os.path.join(root, file))
-        for dir in dirs:
-            os.rmdir(os.path.join(root, dir))
+    try:
+        yield [f"{server_url}/{p.relative_to(folder)}" for p in folder.glob("**/*") if p.is_file()]
+    finally:
+        for item in os.listdir(static_assets_tmpdir):
+            path = static_assets_tmpdir / item
+            if path.is_dir():
+                shutil.rmtree(static_assets_tmpdir / item)
+            else:
+                os.remove(static_assets_tmpdir / item)
 
 
 ###
