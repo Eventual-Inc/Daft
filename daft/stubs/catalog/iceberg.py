@@ -124,21 +124,46 @@ class DataframeIcebergNamespace:
         ...
 
 
+#################
+# EXAMPLE USAGE #
+#################
+
+
 def example_deleting_rows() -> None:
+    """Delete rows from an Iceberg table"""
+    # 1. Grab an iceberg catalog from AWS Glue
     catalog = IcebergCatalog.from_glue("path/to/glue")
-    df: DataFrame = daft.read_iceberg(catalog, "my-table")
+
+    # 2. Read dataframe from an Iceberg table in the catalog
+    df: DataFrame = daft.read_iceberg(catalog, "my-glue-database.my-table")
+
+    # 3. Run filters on the dataframe itself
     df = df.where(df["id"] > 10 & df["id"] < 20)
-    df.iceberg.save(catalog, "my-table")
+
+    # 4. Save the dataframe to your table
+    df.iceberg.save(catalog, "my-glue-database.my-table")
 
 
 def example_updating_rows() -> None:
+    """Update an Iceberg table"""
+    # 1. Grab an iceberg catalog from AWS Glue
     catalog = IcebergCatalog.from_glue("path/to/glue")
-    df: DataFrame = daft.read_iceberg(catalog, "my-table")
+
+    # 2. Read dataframe from an Iceberg table in the catalog
+    df: DataFrame = daft.read_iceberg(catalog, "my-glue-database.my-table")
+
+    # 3. Run updates on the dataframe itself
     df = df.with_column("x", (df["x"] < 10).if_else(0, df["x"]))
-    df.iceberg.save(catalog, "my-table")
+
+    # 4. Save the dataframe to your table
+    df.iceberg.save(catalog, "my-glue-database.my-table")
 
 
 def example_appending_rows() -> None:
+    """Appending data to an Iceberg table"""
+    # 1. Load new data in a dataframe
+    new_data_df = daft.read_parquet("s3://my/new/data/**.pq")
+
+    # 2. Append new data to the Iceberg Table
     catalog = IcebergCatalog.from_glue("path/to/glue")
-    df: DataFrame = daft.read_parquet("s3://my-pq-file")
-    df.iceberg.append(catalog, "my-table")
+    new_data_df.iceberg.append(catalog, "my-glue-database.my-table")
