@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import sys
+import string
 import urllib.parse
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -102,6 +103,8 @@ def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
     if parsed_scheme == "" or parsed_scheme is None:
+        return "file"
+    if sys.platform == 'win32' and len(parsed_scheme) == 1 and parsed_scheme in string.ascii_letters:
         return "file"
     return parsed_scheme
 
