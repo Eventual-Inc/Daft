@@ -352,6 +352,7 @@ impl S3LikeSource {
         range: Option<Range<usize>>,
         region: &Region,
     ) -> super::Result<GetResult> {
+        log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -362,6 +363,7 @@ impl S3LikeSource {
         }?;
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
+            log::debug!("S3 get parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
                 .await?
@@ -461,6 +463,7 @@ impl S3LikeSource {
         uri: &str,
         region: &Region,
     ) -> super::Result<usize> {
+        log::debug!("S3 head at {uri} in region: {region}");
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
         let bucket = match parsed.host_str() {
@@ -472,6 +475,7 @@ impl S3LikeSource {
         }?;
         let key = parsed.path();
         if let Some(key) = key.strip_prefix('/') {
+            log::debug!("S3 head parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
                 .await?
@@ -547,6 +551,7 @@ impl S3LikeSource {
         continuation_token: Option<String>,
         region: &Region,
     ) -> super::Result<LSResult> {
+        log::debug!("S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}");
         let request = self
             .get_s3_client(region)
             .await?
