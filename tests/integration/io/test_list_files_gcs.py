@@ -8,6 +8,20 @@ from daft.daft import io_list
 BUCKET = "daft-public-data-gs"
 
 
+def gcsfs_recursive_list(fs, path) -> list:
+    all_results = []
+    curr_level_result = fs.ls(path, detail=True)
+    for item in curr_level_result:
+        if item["type"] == "directory":
+            new_path = f'gs://{item["name"]}'
+            all_results.extend(gcsfs_recursive_list(fs, new_path))
+            item["name"] += "/"
+            all_results.append(item)
+        else:
+            all_results.append(item)
+    return all_results
+
+
 def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
     daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
     gcsfs_files = [(f"gs://{f['name']}", f["type"]) for f in fsspec_result]
@@ -71,5 +85,5 @@ def test_gs_notfound():
 def test_gs_flat_directory_listing_recursive(path):
     fs = gcsfs.GCSFileSystem()
     daft_ls_result = io_list(path, recursive=True)
-    fsspec_result = list(fs.glob(path.rstrip("/") + "/**", detail=True).values())
+    fsspec_result = gcsfs_recursive_list(fs, path)
     compare_gcs_result(daft_ls_result, fsspec_result)
