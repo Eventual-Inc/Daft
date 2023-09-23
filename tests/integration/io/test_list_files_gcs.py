@@ -48,19 +48,21 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
         f"gs://{BUCKET}/test_ls/paginated-1100-files/",
     ],
 )
-def test_gs_flat_directory_listing(path):
+@pytest.mark.parametrize("recursive", [False, True])
+def test_gs_flat_directory_listing(path, recursive):
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_list(path)
-    fsspec_result = fs.ls(path, detail=True)
+    daft_ls_result = io_list(path, recursive=recursive)
+    fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
-def test_gs_single_file_listing():
+@pytest.mark.parametrize("recursive", [False, True])
+def test_gs_single_file_listing(recursive):
     path = f"gs://{BUCKET}/test_ls/file.txt"
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_list(path)
-    fsspec_result = fs.ls(path, detail=True)
+    daft_ls_result = io_list(path, recursive=recursive)
+    fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
@@ -72,18 +74,3 @@ def test_gs_notfound():
         fs.ls(path, detail=True)
     with pytest.raises(FileNotFoundError, match=path):
         io_list(path)
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "path",
-    [
-        f"gs://{BUCKET}/test_ls",
-        f"gs://{BUCKET}/test_ls/",
-    ],
-)
-def test_gs_flat_directory_listing_recursive(path):
-    fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_list(path, recursive=True)
-    fsspec_result = gcsfs_recursive_list(fs, path)
-    compare_gcs_result(daft_ls_result, fsspec_result)
