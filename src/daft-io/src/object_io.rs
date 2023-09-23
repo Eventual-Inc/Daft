@@ -116,21 +116,21 @@ pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
 ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-    log::debug!("starting recursive lister with top level of: {uri}");
+    log::debug!(target: "recursive_iter", "starting recursive_iter: with top level of: {uri}");
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
     fn add_to_channel(
         source: Arc<dyn ObjectSource>,
         tx: Sender<super::Result<FileMetadata>>,
         dir: String,
     ) {
-        log::debug!("spawning task to list: {dir}");
+        log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
         tokio::spawn(async move {
             let s = source.iter_dir(&dir, None, None).await;
-            log::debug!("started listing task for {dir}");
+            log::debug!(target: "recursive_iter", "started listing task for {dir}");
             let mut s = match s {
                 Ok(s) => s,
                 Err(e) => {
-                    log::debug!("Error occured when listing {dir}\nerror:\n{e}");
+                    log::debug!(target: "recursive_iter", "Error occurred when listing {dir}\nerror:\n{e}");
                     tx.send(Err(e)).await.map_err(|se| {
                         super::Error::UnableToSendDataOverChannel { source: se.into() }
                     })?;
@@ -146,7 +146,7 @@ pub(crate) async fn recursive_iter(
                     .await
                     .map_err(|e| super::Error::UnableToSendDataOverChannel { source: e.into() })?;
             }
-            log::debug!("completed listing task for {dir}");
+            log::debug!(target: "recursive_iter", "completed listing task for {dir}");
             super::Result::Ok(())
         });
     }
