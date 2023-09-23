@@ -27,10 +27,10 @@ upload_wheels() {
         else
             if compgen -G "./dist/*"; then
                 echo "Found in dist"
-                anaconda -q -t ${TOKEN} upload --force --skip -u ${ANACONDA_ORG} ./dist/
+                anaconda -q -t ${TOKEN} upload --force -u ${ANACONDA_ORG} ./dist/
             elif compgen -G "./wheelhouse/*"; then
                 echo "Found in wheelhouse"
-                anaconda -q -t ${TOKEN} upload --force --skip -u ${ANACONDA_ORG} ./wheelhouse/
+                anaconda -q -t ${TOKEN} upload --force -u ${ANACONDA_ORG} ./wheelhouse/
             else
                 echo "Files do not exist"
                 return 1
