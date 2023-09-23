@@ -131,31 +131,27 @@ class DataframeIcebergNamespace:
 
 def example_deleting_rows() -> None:
     """Delete rows from an Iceberg table"""
-    # 1. Grab an iceberg catalog from AWS Glue
+    # 1. Read a dataframe from a iceberg table on AWS Glue
     catalog = IcebergCatalog.from_glue("path/to/glue")
-
-    # 2. Read dataframe from an Iceberg table in the catalog
     df: DataFrame = daft.read_iceberg(catalog, "my-glue-database.my-table")
 
-    # 3. Run filters on the dataframe itself
+    # 2. Run filters on the dataframe itself
     df = df.where(df["id"] > 10 & df["id"] < 20)
 
-    # 4. Save the dataframe to your table
+    # 3. Save the dataframe back to your table
     df.iceberg.save(catalog, "my-glue-database.my-table")
 
 
 def example_updating_rows() -> None:
     """Update an Iceberg table"""
-    # 1. Grab an iceberg catalog from AWS Glue
+    # 1. Read a dataframe from a iceberg table on AWS Glue
     catalog = IcebergCatalog.from_glue("path/to/glue")
-
-    # 2. Read dataframe from an Iceberg table in the catalog
     df: DataFrame = daft.read_iceberg(catalog, "my-glue-database.my-table")
 
-    # 3. Run updates on the dataframe itself
+    # 2. Run updates on the dataframe itself
     df = df.with_column("x", (df["x"] < 10).if_else(0, df["x"]))
 
-    # 4. Save the dataframe to your table
+    # 3. Save the dataframe back to your table
     df.iceberg.save(catalog, "my-glue-database.my-table")
 
 
