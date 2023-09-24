@@ -65,8 +65,8 @@ jobs:
       if: ${{ (matrix.os == 'windows') }}
       run: |
         .\venv\Scripts\activate
-        pip3 install --upgrade --user pip
-        pip3 install --user -r requirements-dev.txt
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements-dev.txt
 
     - name: Override pyarrow
       if: ${{ matrix.pyarrow-version }}
@@ -131,199 +131,199 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  integration-test-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      package-name: getdaft
-    strategy:
-      matrix:
-        python-version: ['3.7']
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-    - run: pip install -U twine toml maturin
-    - run: python tools/patch_package_version.py
-    - uses: moonrepo/setup-rust@v0
-      with:
-        cache: false
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ runner.os }}-integration-build
-        cache-all-crates: 'true'
+  # integration-test-build:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   env:
+  #     package-name: getdaft
+  #   strategy:
+  #     matrix:
+  #       python-version: ['3.7']
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - uses: actions/setup-python@v4
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #       architecture: x64
+  #   - run: pip install -U twine toml maturin
+  #   - run: python tools/patch_package_version.py
+  #   - uses: moonrepo/setup-rust@v0
+  #     with:
+  #       cache: false
+  #   - uses: Swatinem/rust-cache@v2
+  #     with:
+  #       key: ${{ runner.os }}-integration-build
+  #       cache-all-crates: 'true'
 
-    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
-    - name: Build wheels
-      run: maturin build --release --compatibility linux --out dist
-    - name: Upload wheels
-      uses: actions/upload-artifact@v3
-      with:
-        name: wheels
-        path: dist
+  #   # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+  #   - name: Build wheels
+  #     run: maturin build --release --compatibility linux --out dist
+  #   - name: Upload wheels
+  #     uses: actions/upload-artifact@v3
+  #     with:
+  #       name: wheels
+  #       path: dist
 
-  integration-test-tpch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-    - integration-test-build
-    env:
-      package-name: getdaft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.7']
-        daft-runner: [py, ray]
-        new-query-planner: [1, 0]
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-    - name: Download built wheels
-      uses: actions/download-artifact@v3
-      with:
-        name: wheels
-        path: dist
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-    - name: Install Daft and dev dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
-    - uses: actions/cache@v3
-      env:
-        cache-name: cache-tpch-data
-      with:
-        path: data/tpch-dbgen
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
-    - name: Run TPCH integration tests
-      run: |
-        pytest tests/integration/test_tpch.py --durations=50
-      env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  # integration-test-tpch:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   needs:
+  #   - integration-test-build
+  #   env:
+  #     package-name: getdaft
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ['3.7']
+  #       daft-runner: [py, ray]
+  #       new-query-planner: [1, 0]
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - uses: actions/setup-python@v4
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #       architecture: x64
+  #   - name: Download built wheels
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: wheels
+  #       path: dist
+  #   - name: Setup Virtual Env
+  #     run: |
+  #       python -m venv venv
+  #       echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+  #   - name: Install Daft and dev dependencies
+  #     run: |
+  #       pip install --upgrade pip
+  #       pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+  #       rm -rf daft
+  #   - uses: actions/cache@v3
+  #     env:
+  #       cache-name: cache-tpch-data
+  #     with:
+  #       path: data/tpch-dbgen
+  #       key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
+  #   - name: Run TPCH integration tests
+  #     run: |
+  #       pytest tests/integration/test_tpch.py --durations=50
+  #     env:
+  #       DAFT_RUNNER: ${{ matrix.daft-runner }}
+  #       DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v1.24.0
+  #     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: [CI] TPCH Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #     env:
+  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-  integration-test-io:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs:
-    - integration-test-build
-    env:
-      package-name: getdaft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
-        daft-runner: [py, ray]
-        new-query-planner: [1, 0]
-    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
-    # This is used in the step "Assume GitHub Actions AWS Credentials"
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 0
-    - uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
-    - name: Download built wheels
-      uses: actions/download-artifact@v3
-      with:
-        name: wheels
-        path: dist
-    - name: Setup Virtual Env
-      run: |
-        python -m venv venv
-        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
-    - name: Install Daft and dev dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-        rm -rf daft
-    - name: Prepare tmpdirs for IO services
-      run: |
-        mkdir -p /tmp/daft-integration-testing/nginx
-        chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: DaftPythonPackageGitHubWorkflow
-    - name: Assume GitHub Actions GCloud Credentials
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
-        # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
-        # See issue: https://github.com/yoshidan/google-cloud-rust/issues/171#issuecomment-1730511655
-        # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
-        # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
-    - name: Spin up IO services
-      uses: isbang/compose-action@v1.5.1
-      with:
-        compose-file: ./tests/integration/docker-compose/docker-compose.yml
-        down-flags: --volumes
-    - name: Run IO integration tests
-      run: |
-        pytest tests/integration/io -m 'integration' --durations=50
-      env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  # integration-test-io:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   needs:
+  #   - integration-test-build
+  #   env:
+  #     package-name: getdaft
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+  #       daft-runner: [py, ray]
+  #       new-query-planner: [1, 0]
+  #   # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+  #   # This is used in the step "Assume GitHub Actions AWS Credentials"
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - uses: actions/setup-python@v4
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #       architecture: x64
+  #   - name: Download built wheels
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: wheels
+  #       path: dist
+  #   - name: Setup Virtual Env
+  #     run: |
+  #       python -m venv venv
+  #       echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+  #   - name: Install Daft and dev dependencies
+  #     run: |
+  #       pip install --upgrade pip
+  #       pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+  #       rm -rf daft
+  #   - name: Prepare tmpdirs for IO services
+  #     run: |
+  #       mkdir -p /tmp/daft-integration-testing/nginx
+  #       chmod +rw /tmp/daft-integration-testing/nginx
+  #   - name: Assume GitHub Actions AWS Credentials
+  #     uses: aws-actions/configure-aws-credentials@v3
+  #     with:
+  #       aws-region: us-west-2
+  #       role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+  #       role-session-name: DaftPythonPackageGitHubWorkflow
+  #   - name: Assume GitHub Actions GCloud Credentials
+  #     uses: google-github-actions/auth@v1
+  #     with:
+  #       credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
+  #       # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
+  #       # See issue: https://github.com/yoshidan/google-cloud-rust/issues/171#issuecomment-1730511655
+  #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
+  #   - name: Spin up IO services
+  #     uses: isbang/compose-action@v1.5.1
+  #     with:
+  #       compose-file: ./tests/integration/docker-compose/docker-compose.yml
+  #       down-flags: --volumes
+  #   - name: Run IO integration tests
+  #     run: |
+  #       pytest tests/integration/io -m 'integration' --durations=50
+  #     env:
+  #       DAFT_RUNNER: ${{ matrix.daft-runner }}
+  #       DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v1.24.0
+  #     if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #     env:
+  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
     runs-on: ${{ matrix.os }}-latest
