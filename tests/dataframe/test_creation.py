@@ -323,7 +323,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
             id="arrow_struct",
         ),
         pytest.param(
-            [np.array([1]), np.array([2]), np.array([3])],
+            [np.array([1], dtype=np.int64), np.array([2], dtype=np.int64), np.array([3], dtype=np.int64)],
             DataType.list(DataType.int64()),
             id="numpy_1d_arrays",
         ),
