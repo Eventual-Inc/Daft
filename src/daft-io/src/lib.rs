@@ -251,7 +251,7 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         #[cfg(target_env = "msvc")]
-        _ if scheme.len() == 1 => k((SourceType::File, Cow::Owned(format!("file://{input}")))),
+        _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => Ok((SourceType::File, Cow::Owned(format!("file://{input}")))),
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
