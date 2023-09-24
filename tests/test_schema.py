@@ -64,7 +64,7 @@ def test_schema_to_name_set():
 def test_repr():
     schema = TABLE.schema()
     assert (
-        repr(schema).replace('\r','')
+        repr(schema).replace("\r", "")
         == """+-------+---------+--------+---------+
 | int   | float   | string | bool    |
 | Int64 | Float64 | Utf8   | Boolean |

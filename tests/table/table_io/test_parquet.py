@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import os
 import pathlib
 import tempfile
-import os
+
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest

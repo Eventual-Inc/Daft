@@ -200,7 +200,7 @@ def test_repr_html_custom_hooks():
     df.collect()
 
     assert (
-        df.__repr__().replace('\r', '')
+        df.__repr__().replace("\r", "")
         == """+-------------------+-------------+----------------------------------+
 | objects           | np          | pil                              |
 | Python            | Python      | Python                           |

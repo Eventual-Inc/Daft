@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import pathlib
-import uuid
 import sys
+import uuid
+
 import pandas as pd
 import pytest
 from fsspec.implementations.local import LocalFileSystem
@@ -17,7 +18,7 @@ def _get_filename():
     name = str(uuid.uuid4())
 
     # Inject colons into the name if not windows
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         name += ":foo:bar"
 
     return name
