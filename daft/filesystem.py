@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-import string
 import sys
 import urllib.parse
 from collections import defaultdict
@@ -105,7 +104,7 @@ def get_protocol_from_path(path: str) -> str:
     parsed_scheme = parsed_scheme.lower()
     if parsed_scheme == "" or parsed_scheme is None:
         return "file"
-    if sys.platform == "win32" and len(parsed_scheme) == 1 and ('a' <= parsed_scheme) and (parsed_scheme <= 'z'):
+    if sys.platform == "win32" and len(parsed_scheme) == 1 and ("a" <= parsed_scheme) and (parsed_scheme <= "z"):
         return "file"
     return parsed_scheme
 
