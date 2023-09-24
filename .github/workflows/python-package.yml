@@ -318,7 +318,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, windows-latest]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -399,7 +399,7 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   test-imports:
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, windows-latest]
     timeout-minutes: 15
     strategy:
       fail-fast: false
