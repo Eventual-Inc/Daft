@@ -37,7 +37,7 @@ jobs:
         runs: [windows-latest]
         compile_arch: [x86_64, aarch64]
         exclude:
-        - os: windows-latest
+        - runs: windows-latest
           compile_arch: aarch64
     steps:
     - uses: actions/checkout@v4
@@ -102,7 +102,7 @@ jobs:
         pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
         rd -r daft
         pytest -v
-  
+
     - name: Upload wheels
       uses: actions/upload-artifact@v3
       with:

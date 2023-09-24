@@ -6,15 +6,15 @@ name: daft
 on:
   push:
     branches: [main]
-  # pull_request:
-  #   branches: [main]
+  pull_request:
+    branches: [main]
 
 env:
   DAFT_ANALYTICS_ENABLED: '0'
 
 jobs:
   unit-tests-with-coverage:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -23,12 +23,15 @@ jobs:
         daft-runner: [py, ray]
         new-query-planner: [1, 0]
         pyarrow-version: [6.0.1, 12.0]
+        os: [ubuntu, windows]
         exclude:
         - daft-runner: ray
           pyarrow-version: 6.0.1
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 6.0.1
+        - os: windows
+          pyarrow-version: 12.0
 
     steps:
     - uses: actions/checkout@v4
