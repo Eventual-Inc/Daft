@@ -250,6 +250,8 @@ fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "s3" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
+        #[cfg(target_env = "msvc")]
+        _ if scheme.len() == 1 => k((SourceType::File, Cow::Owned(format!("file://{input}")))),
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
