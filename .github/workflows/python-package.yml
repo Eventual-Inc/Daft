@@ -326,10 +326,12 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
-    runs-on: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
+      matrix:
+        os: [windows]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v0
@@ -407,13 +409,13 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   test-imports:
-    runs-on: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
+        os: [windows]
         python-version: ['3.7']
-
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v0
