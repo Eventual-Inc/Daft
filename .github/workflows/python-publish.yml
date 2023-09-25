@@ -14,10 +14,9 @@ on:
     tags:
     - v*
   workflow_dispatch:
-
 env:
   PACKAGE_NAME: getdaft
-  PYTHON_VERSION: 3.7.16   # to build abi3 wheels
+  PYTHON_VERSION: 3.8
   DAFT_ANALYTICS_ENABLED: '0'
 
   IS_PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && ( ! endsWith(github.ref, 'dev0')) }}
@@ -32,8 +31,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs: [ubuntu-latest, macos-latest-xl]
+        runs: [ubuntu-latest, macos-latest-xl, windows-latest-l]
         compile_arch: [x86_64, aarch64]
+        exclude:
+        - runs: windows-latest-l
+          compile_arch: aarch64
     steps:
     - uses: actions/checkout@v4
       with:
@@ -45,16 +47,14 @@ jobs:
         architecture: x64
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
-    - uses: moonrepo/setup-rust@v0
-    - name: Build wheels - Mac x86
-      if: ${{ (matrix.runs == 'macos-latest-xl') && (matrix.compile_arch == 'x86_64')  }}
+    - name: Build wheels - Mac and Windows x86
+      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'windows-latest-l')) && (matrix.compile_arch == 'x86_64')  }}
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        manylinux: auto
         args: --profile release-lto --out dist --sdist
       env:
-        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - name: Build wheels - Linux x86
       if: ${{ (matrix.runs == 'ubuntu-latest') && (matrix.compile_arch == 'x86_64') }}
       uses: messense/maturin-action@v1
@@ -86,11 +86,19 @@ jobs:
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
 
-    - name: Install and test built wheel - x86_64
-      if: ${{ matrix.compile_arch == 'x86_64' }}
+    - name: Install and test built wheel - Linux and Mac x86_64
+      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'ubuntu-latest')) && (matrix.compile_arch == 'x86_64')  }}
       run: |
         pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
         rm -rf daft
+        pytest -v
+
+    - name: Install and test built wheel - Windows x86_64
+      if: ${{ (matrix.runs == 'windows-latest-l') && (matrix.compile_arch == 'x86_64')  }}
+      run: |
+        $FILES = Get-ChildItem -Path .\dist\${{ env.PACKAGE_NAME }}-*-win_amd64.whl -Force -Recurse
+        pip install -r requirements-dev.txt $FILES[0].FullName --force-reinstall
+        rd -r daft
         pytest -v
 
     - name: Upload wheels
@@ -101,7 +109,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
-      if: failure()
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
           {
@@ -122,6 +130,7 @@ jobs:
 
   publish:
     name: Publish wheels to PYPI and Anaconda
+    if: ${{ (github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     needs:
     - build-and-test

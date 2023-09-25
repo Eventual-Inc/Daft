@@ -123,7 +123,7 @@ def test_tensor_repr():
     arrs = [arr, arr, None]
     s = Series.from_pylist(arrs, pyobj="allow")
     assert (
-        repr(s)
+        repr(s).replace("\r", "")
         == """
 +-----------------------+
 | list_series           |

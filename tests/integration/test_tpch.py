@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import sqlite3
+import sys
 
 import pandas as pd
 import pytest
@@ -14,6 +15,9 @@ from tests.conftest import assert_df_equals
 
 # Hardcode scale factor to 200M for local testing
 SCALE_FACTOR = 0.2
+
+if sys.platform == "win32":
+    pytest.skip(allow_module_level=True)
 
 
 @pytest.fixture(scope="session", autouse=True, params=[1, 2])

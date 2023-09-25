@@ -5,6 +5,7 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[cfg(not(target_env = "msvc"))]
 union U {
     x: &'static u8,
     y: &'static libc::c_char,

@@ -14,21 +14,25 @@ env:
 
 jobs:
   unit-tests-with-coverage:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.7', '3.10']
         daft-runner: [py, ray]
-        new-query-planner: [1, 0]
         pyarrow-version: [6.0.1, 12.0]
+        os: [ubuntu, windows]
         exclude:
         - daft-runner: ray
           pyarrow-version: 6.0.1
+          os: ubuntu
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 6.0.1
+          os: ubuntu
+        - os: windows
+          pyarrow-version: 12.0
 
     steps:
     - uses: actions/checkout@v4
@@ -53,15 +57,24 @@ jobs:
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
+      if: ${{ (matrix.os != 'windows') }}
       run: |
         pip install --upgrade pip
         pip install -r requirements-dev.txt
 
+    - name: Install dependencies (Windows)
+      if: ${{ (matrix.os == 'windows') }}
+      run: |
+        .\venv\Scripts\activate
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements-dev.txt
+
     - name: Override pyarrow
-      if: ${{ matrix.pyarrow-version }}
+      if: ${{ (matrix.pyarrow-version) && (matrix.os != 'windows') }}
       run: pip install pyarrow==${{ matrix.pyarrow-version }}
 
-    - name: Build library and Test with pytest
+    - name: Build library and Test with pytest (unix)
+      if: ${{ (matrix.os != 'windows') }}
       run: |
         source activate
         # source <(cargo llvm-cov show-env --export-prefix)
@@ -71,11 +84,25 @@ jobs:
         maturin develop
         mkdir -p report-output && pytest --cov=daft --ignore tests/integration --durations=50
         coverage combine -a --data-file='.coverage' || true
-        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}-${{ matrix.new-query-planner }}.xml
-        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}-${{ matrix.new-query-planner }}.lcov
+        coverage xml -o ./report-output/coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
+    - name: Build library and Test with pytest (windows)
+      if: ${{ (matrix.os == 'windows') }}
+      run: |
+        .\venv\Scripts\activate
+        # source <(cargo llvm-cov show-env --export-prefix)
+        # export CARGO_TARGET_DIR=$CARGO_LLVM_COV_TARGET_DIR
+        # export CARGO_INCREMENTAL=1
+        # cargo llvm-cov clean --workspace
+        maturin develop
+        mkdir -p report-output && pytest --cov=daft --ignore tests\integration --durations=50
+        coverage combine -a --data-file='.coverage' || true
+        coverage xml -o .\report-output\coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.xml
+        # cargo llvm-cov --no-run --lcov --output-path report-output\rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v3
@@ -151,7 +178,6 @@ jobs:
       matrix:
         python-version: ['3.7']
         daft-runner: [py, ray]
-        new-query-planner: [1, 0]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -186,7 +212,6 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -219,7 +244,6 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
-        new-query-planner: [1, 0]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -276,7 +300,6 @@ jobs:
         pytest tests/integration/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_NEW_QUERY_PLANNER: ${{ matrix.new-query-planner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -298,10 +321,12 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   rust-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
+      matrix:
+        os: [ubuntu, windows]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v0
@@ -379,13 +404,13 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   test-imports:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu, windows]
         python-version: ['3.7']
-
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v0
@@ -401,25 +426,43 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Setup Virtual Env
+    - name: Unix Build
+      if: ${{ (matrix.os != 'windows') }}
       run: |
         python -m venv venv
         source venv/bin/activate
-        pip install maturin
+        python -m pip install maturin
+        maturin build --out dist
 
-    - name: Build Rust Library
+    - name: Windows Build
+      if: ${{ (matrix.os == 'windows') }}
       run: |
-        venv/bin/maturin build --out dist
+        python -m venv venv
+        .\venv\Scripts\activate
+        python -m pip install maturin
+        maturin build --out dist
 
-    - name: Test Imports in Clean Env
+    - name: Test Imports in Clean Env (Unix)
+      if: ${{ (matrix.os != 'windows') }}
       run: |
         rm -rf daft
         rm -rf venv
         python -m venv venv
         source venv/bin/activate
         ls -R ./dist
-        venv/bin/pip install dist/*.whl
-        venv/bin/python -c 'import daft; from daft import *'
+        pip install dist/*.whl
+        python -c 'import daft; from daft import *'
+
+    - name: Test Imports in Clean Env (Windows)
+      if: ${{ (matrix.os == 'windows') }}
+      run: |
+        rd -r daft
+        rd -r venv
+        python -m venv venv
+        .\venv\Scripts\activate
+        $FILES = Get-ChildItem -Path .\dist\*.whl -Force -Recurse
+        python -m pip install $FILES[0].FullName
+        python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
