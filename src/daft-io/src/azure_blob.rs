@@ -127,7 +127,7 @@ impl AzureBlobSource {
         .into())
     }
 
-    async fn _list_containers(&self) -> super::Result<LSResult> {
+    async fn _list_containers(&self, protocol: &str) -> super::Result<LSResult> {
         let responses_stream = self
             .blob_client
             .clone()
@@ -147,8 +147,8 @@ impl AzureBlobSource {
                 let containers = responses
                     .iter()
                     .flat_map(|resp| &resp.containers)
-                    .map(|container| self._container_to_file_metadata(container))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .map(|container| self._container_to_file_metadata(protocol, container))
+                    .collect::<Vec<_>>();
 
                 let result = LSResult {
                     files: containers,
@@ -163,15 +163,17 @@ impl AzureBlobSource {
 
     async fn _list_directory(
         &self,
+        protocol: &str,
         container_name: &str,
-        delimiter: &str,
         prefix: &str,
+        delimiter: &str,
     ) -> super::Result<LSResult> {
         let container_client = self.blob_client.container_client(container_name);
 
         let responses_stream = container_client
             .list_blobs()
             .delimiter(delimiter.to_string())
+            .prefix(prefix.to_string())
             .into_stream();
 
         // It looks like the azure rust library API
@@ -186,58 +188,47 @@ impl AzureBlobSource {
                 let blob_items = responses
                     .iter()
                     .flat_map(|resp| &resp.blobs.items)
-                    .map(|blob_item| self._blob_item_to_file_metadata(&container_client, blob_item))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .map(|blob_item| self._blob_item_to_file_metadata(protocol, container_name, blob_item))
+                    .collect::<Vec<_>>();
 
-                todo!()
+                let result = LSResult {
+                    files: blob_items,
+                    continuation_token: None,
+                };
+                Ok(result)
             }
             Err(e) => {
                 todo!()
             }
         }
     }
-    fn _container_to_file_metadata(&self, container: &Container) -> super::Result<FileMetadata> {
-        Ok(FileMetadata {
-            filepath: self
-                .blob_client
-                .container_client(&container.name)
-                .url()
-                .context(AzureUrlSnafu {
-                    object: &container.name,
-                })?
-                .to_string(),
+
+    fn _container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
+        // NB: Cannot pass through to Azure client's .url() methods here
+        // because they return URIs of the form https://.../container/path.
+        FileMetadata {
+            filepath: format!("{protocol}://{}", &container.name),
             size: None,
             filetype: FileType::Directory,
-        })
+        }
     }
 
     fn _blob_item_to_file_metadata(
         &self,
-        container_client: &ContainerClient,
+        protocol: &str,
+        container_name: &str,
         blob_item: &BlobItem,
-    ) -> super::Result<FileMetadata> {
+    ) -> FileMetadata {
         match blob_item {
-            BlobItem::Blob(blob) => Ok(FileMetadata {
-                filepath: container_client
-                    .blob_client(&blob.name)
-                    .url()
-                    .context(AzureUrlSnafu { object: &blob.name })?
-                    .to_string(),
+            BlobItem::Blob(blob) => FileMetadata {
+                filepath: format!("{protocol}://{}/{}", container_name, &blob.name),
                 size: Some(blob.properties.content_length),
                 filetype: FileType::File,
-            }),
-            BlobItem::BlobPrefix(prefix) => {
-                let container_url = container_client
-                    .url()
-                    .context(AzureUrlSnafu {
-                        object: &prefix.name,
-                    })?
-                    .to_string();
-                Ok(FileMetadata {
-                    filepath: format!("{}/{}", container_url, &prefix.name),
-                    size: None,
-                    filetype: FileType::Directory,
-                })
+            },
+            BlobItem::BlobPrefix(prefix) => FileMetadata {
+                filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
+                size: None,
+                filetype: FileType::Directory,
             }
         }
     }
@@ -304,21 +295,47 @@ impl ObjectSource for AzureBlobSource {
         &self,
         path: &str,
         delimiter: Option<&str>,
-        _continuation_token: Option<&str>,
+        continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
 
+
+        // It looks like the azure rust library API
+        // does not currently allow using the continuation token:
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
+        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
+        if continuation_token.is_some() {
+            todo!()
+        }
+        
         // "Container" is Azure's name for Bucket.
-        let container = parsed.host_str();
+        let container = {
+            // fsspec supports two URI formats are supported; for compatibility, we will support both as well.
+            // PROTOCOL://container/path-part/file
+            // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
+            // See https://github.com/fsspec/adlfs/ for more details
+            let username = parsed.username();
+            match username {
+                "" => parsed.host_str(),
+                _ => Some(username),
+            }
+        };
+
+        // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
+        // NB: It's unclear if there is a semantic difference between the protocols
+        // or if there is a standard for the behaviour either; 
+        // here, we will treat them both the same, but persist whichever protocol string was used.
+        let protocol = parsed.scheme();
 
         match container {
             // List containers.
-            None => self._list_containers().await,
+            None => self._list_containers(protocol).await,
             // List a path within a container.
             Some(container_name) => {
-                self._list_directory(container_name, delimiter, path);
-                todo!()
+                let prefix = parsed.path();
+                self._list_directory(protocol, container_name, prefix, delimiter).await
             }
         }
     }
