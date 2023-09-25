@@ -33,11 +33,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # runs: [ubuntu-latest, macos-latest-xl, windows-latest]
-        runs: [windows-latest]
+        runs: [ubuntu-latest, macos-latest-xl, windows-latest-xl]
         compile_arch: [x86_64, aarch64]
         exclude:
-        - runs: windows-latest
+        - runs: windows-latest-xl;
           compile_arch: aarch64
     steps:
     - uses: actions/checkout@v4
@@ -51,11 +50,11 @@ jobs:
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
     - name: Build wheels - Mac and Windows x86
-      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'windows-latest')) && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'windows-latest-xl')) && (matrix.compile_arch == 'x86_64')  }}
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        args: --profile release --out dist --sdist # CHANGE THIS BACK TO LTO
+        args: --profile release-lto --out dist --sdist
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - name: Build wheels - Linux x86
@@ -97,7 +96,7 @@ jobs:
         pytest -v
 
     - name: Install and test built wheel - Windows x86_64
-      if: ${{ (matrix.runs == 'windows-latest') && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ (matrix.runs == 'windows-latest-xl') && (matrix.compile_arch == 'x86_64')  }}
       run: |
         pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
         rd -r daft
@@ -109,96 +108,97 @@ jobs:
         name: wheels
         path: dist
 
-    # - name: Send Slack notification on failure
-    #   uses: slackapi/slack-github-action@v1.24.0
-    #   if: failure()
-    #   with:
-    #     payload: |
-    #       {
-    #         "blocks": [
-    #           {
-    #             "type": "section",
-    #             "text": {
-    #               "type": "mrkdwn",
-    #               "text": ":rotating_light: Release: Building Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-    #             }
-    #           }
-    #         ]
-    #       }
-    #   env:
-    #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-    #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Building Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
 
-  # publish:
-  #   name: Publish wheels to PYPI and Anaconda
-  #   runs-on: ubuntu-latest
-  #   needs:
-  #   - build-and-test
-  #   steps:
-  #   - uses: actions/setup-python@v4
-  #     with:
-  #       python-version: ${{ env.PYTHON_VERSION }}
-  #       architecture: x64
-  #   - run: pip install -U twine
-  #   - uses: actions/checkout@v4
-  #   - uses: actions/download-artifact@v3
-  #     with:
-  #       name: wheels
-  #       path: dist
-  #   - run: ls -R ./dist
-  #   - name: Publish bdist package to PYPI
-  #     if: ${{ success() && (env.IS_PUSH == 'true') }}
-  #     run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-  #     env:
-  #       TWINE_USERNAME: __token__
-  #       TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+  publish:
+    name: Publish wheels to PYPI and Anaconda
+    if: ${{ (github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    needs:
+    - build-and-test
+    steps:
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+    - run: pip install -U twine
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v3
+      with:
+        name: wheels
+        path: dist
+    - run: ls -R ./dist
+    - name: Publish bdist package to PYPI
+      if: ${{ success() && (env.IS_PUSH == 'true') }}
+      run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
-  #   - uses: conda-incubator/setup-miniconda@v2
-  #     with:
-  #       # Really doesn't matter what version we upload with
-  #       # just the version we test with
-  #       python-version: '3.8'
-  #       channels: conda-forge
-  #       channel-priority: true
+    - uses: conda-incubator/setup-miniconda@v2
+      with:
+        # Really doesn't matter what version we upload with
+        # just the version we test with
+        python-version: '3.8'
+        channels: conda-forge
+        channel-priority: true
 
-  #   - name: Install anaconda client
-  #     shell: bash -el {0}
-  #     run: conda install -q -y anaconda-client "urllib3<2.0"
+    - name: Install anaconda client
+      shell: bash -el {0}
+      run: conda install -q -y anaconda-client "urllib3<2.0"
 
-  #   - name: Upload wheels to anaconda nightly
-  #     if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
-  #     shell: bash -el {0}
-  #     env:
-  #       DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
-  #       DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
-  #     run: |
-  #       source ci/upload_wheels.sh
-  #       set_upload_vars
-  #       # trigger an upload to
-  #       # https://anaconda.org/daft-nightly/getdaft
-  #       # for cron jobs or "Run workflow" (restricted to main branch).
-  #       # Tags will upload to
-  #       # https://anaconda.org/daft/getdaft
-  #       # The tokens were originally generated at anaconda.org
-  #       upload_wheels
+    - name: Upload wheels to anaconda nightly
+      if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
+      shell: bash -el {0}
+      env:
+        DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
+        DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
+      run: |
+        source ci/upload_wheels.sh
+        set_upload_vars
+        # trigger an upload to
+        # https://anaconda.org/daft-nightly/getdaft
+        # for cron jobs or "Run workflow" (restricted to main branch).
+        # Tags will upload to
+        # https://anaconda.org/daft/getdaft
+        # The tokens were originally generated at anaconda.org
+        upload_wheels
 
-  #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v1.24.0
-  #     if: failure()
-  #     with:
-  #       payload: |
-  #         {
-  #           "blocks": [
-  #             {
-  #               "type": "section",
-  #               "text": {
-  #                 "type": "mrkdwn",
-  #                 "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-  #               }
-  #             }
-  #           ]
-  #         }
-  #     env:
-  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-  #       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: failure()
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
