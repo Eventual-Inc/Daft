@@ -171,7 +171,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Coalesce(Coalesce::new(
                 input_physical.into(),
-                logical_plan.partition_spec().num_partitions,
+                input.partition_spec().num_partitions,
                 *num_to,
             )))
         }
