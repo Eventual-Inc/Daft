@@ -152,7 +152,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
         architecture: x64
     - run: pip install -U twine toml maturin
-    - run: python tools/patch_package_version.py
     - uses: moonrepo/setup-rust@v0
       with:
         cache: false
