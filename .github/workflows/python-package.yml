@@ -30,6 +30,7 @@ jobs:
         - daft-runner: py
           python-version: '3.10'
           pyarrow-version: 6.0.1
+          os: ubuntu
         - os: windows
           pyarrow-version: 12.0
 
