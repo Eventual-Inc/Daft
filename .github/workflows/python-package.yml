@@ -324,7 +324,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows]
+        os: [ubuntu, windows]
     steps:
     - uses: actions/checkout@v4
     - uses: moonrepo/setup-rust@v0
@@ -407,7 +407,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows]
+        os: [ubuntu, windows]
         python-version: ['3.7']
     steps:
     - uses: actions/checkout@v4
