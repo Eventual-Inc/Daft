@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import csv
 import decimal
 import json
+import os
 import tempfile
 import uuid
 from unittest.mock import MagicMock, patch
@@ -321,7 +323,7 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
             id="arrow_struct",
         ),
         pytest.param(
-            [np.array([1]), np.array([2]), np.array([3])],
+            [np.array([1], dtype=np.int64), np.array([2], dtype=np.int64), np.array([3], dtype=np.int64)],
             DataType.list(DataType.int64()),
             id="numpy_1d_arrays",
         ),
@@ -348,17 +350,22 @@ def test_load_pydict_types(data, expected_dtype):
 ###
 # CSV tests
 ###
+@contextlib.contextmanager
+def create_temp_filename() -> str:
+    with tempfile.TemporaryDirectory() as dir:
+        yield os.path.join(dir, "tempfile")
 
 
 def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
-        df = daft.read_csv(f.name)
+        df = daft.read_csv(fname)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -367,15 +374,16 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
 
 
 def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
-        for f in (f1, f2):
-            header = list(valid_data[0].keys())
-            writer = csv.writer(f)
-            writer.writerow(header)
-            writer.writerows([[item[col] for col in header] for item in valid_data])
-            f.flush()
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                header = list(valid_data[0].keys())
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows([[item[col] for col in header] for item in valid_data])
+                f.flush()
 
-        df = daft.read_csv([f1.name, f2.name])
+        df = daft.read_csv([f1name, f2name])
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -388,12 +396,13 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> N
     reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
         # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
         # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
@@ -403,7 +412,7 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
         with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
             fs, "open", wraps=fs.open
         ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_csv(f.name, fs=fs)
+            df = daft.read_csv(fname, fs=fs)
             # Check that info() is called on the passed filesystem.
             mock_info.assert_called()
 
@@ -418,14 +427,15 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
 
 
 def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
         cnames = [f"f{i}" for i in range(5)]
-        df = daft.read_csv(f.name, has_headers=False)
+        df = daft.read_csv(fname, has_headers=False)
         assert df.column_names == cnames
 
         pd_df = df.to_pandas()
@@ -434,16 +444,17 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
 
 
 def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_csv(f.name)
+        df = daft.read_csv(fname)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -453,14 +464,15 @@ def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float
 
 
 def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
-        df = daft.read_csv(f.name, delimiter="\t")
+        df = daft.read_csv(fname, delimiter="\t")
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -469,15 +481,16 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
 
 
 def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerow(header)
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
         df = daft.read_csv(
-            f.name,
+            fname,
             delimiter="\t",
             schema_hints={
                 "sepal_length": DataType.float32(),
@@ -495,14 +508,15 @@ def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]])
 
 
 def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        header = list(valid_data[0].keys())
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerows([[item[col] for col in header] for item in valid_data])
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
 
         df = daft.read_csv(
-            f.name,
+            fname,
             delimiter="\t",
             schema_hints={
                 "sepal_length": DataType.float64(),
@@ -526,13 +540,14 @@ def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[st
 
 
 def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        for data in valid_data:
-            f.write(json.dumps(data))
-            f.write("\n")
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
 
-        df = daft.read_json(f.name)
+        df = daft.read_json(fname)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -541,14 +556,15 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
 
 
 def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
-        for f in (f1, f2):
-            for data in valid_data:
-                f.write(json.dumps(data))
-                f.write("\n")
-            f.flush()
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                for data in valid_data:
+                    f.write(json.dumps(data))
+                    f.write("\n")
+                f.flush()
 
-        df = daft.read_json([f1.name, f2.name])
+        df = daft.read_json([f1name, f2name])
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -561,11 +577,12 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
     reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        for data in valid_data:
-            f.write(json.dumps(data))
-            f.write("\n")
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
 
         # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
         # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
@@ -575,7 +592,7 @@ def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> 
         with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
             fs, "open", wraps=fs.open
         ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_json(f.name, fs=fs)
+            df = daft.read_json(fname, fs=fs)
 
             # Check that info() is called on the passed filesystem.
             mock_info.assert_called()
@@ -591,15 +608,16 @@ def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> 
 
 
 def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        for data in valid_data:
-            f.write(json.dumps(data))
-            f.write("\n")
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_json(f.name)
+        df = daft.read_json(fname)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -616,14 +634,15 @@ def test_create_dataframe_json_https() -> None:
 
 
 def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        for data in valid_data:
-            f.write(json.dumps(data))
-            f.write("\n")
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
 
         df = daft.read_json(
-            f.name,
+            fname,
             schema_hints={
                 "sepal_length": DataType.float32(),
                 "sepal_width": DataType.float32(),
@@ -646,12 +665,13 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-        papq.write_table(table, f.name)
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, f.name)
+            f.flush()
 
-        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -661,12 +681,13 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]], use_native_downloader) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-        papq.write_table(table, f.name)
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, f.name)
+            f.flush()
 
-        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         df = df.where(daft.col("sepal_length") > 4.8)
@@ -678,13 +699,14 @@ def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]]
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], use_native_downloader) -> None:
-    with tempfile.NamedTemporaryFile("w") as f1, tempfile.NamedTemporaryFile("w") as f2:
-        for f in (f1, f2):
-            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-            papq.write_table(table, f.name)
-            f.flush()
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+                papq.write_table(table, f.name)
+                f.flush()
 
-        df = daft.read_parquet([f1.name, f2.name], use_native_downloader=use_native_downloader)
+        df = daft.read_parquet([f1name, f2name], use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -697,10 +719,11 @@ def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], 
     reason="requires PyRunner to be in use",
 )
 def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-        papq.write_table(table, f.name)
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, f.name)
+            f.flush()
 
         # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
         # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
@@ -710,7 +733,7 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
         with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
             fs, "open", wraps=fs.open
         ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_parquet(f.name, fs=fs)
+            df = daft.read_parquet(fname, fs=fs)
 
             # Check that info() is called on the passed filesystem.
             mock_info.assert_called()
@@ -727,14 +750,15 @@ def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) 
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-        papq.write_table(table, f.name)
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, fname)
+            f.flush()
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_parquet(f.name, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -745,13 +769,14 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
 
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
-    with tempfile.NamedTemporaryFile("w") as f:
-        table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-        papq.write_table(table, f.name)
-        f.flush()
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, fname)
+            f.flush()
 
         df = daft.read_parquet(
-            f.name,
+            fname,
             schema_hints={
                 "sepal_length": DataType.float64(),
                 "sepal_width": DataType.float64(),

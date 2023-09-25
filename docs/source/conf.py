@@ -112,7 +112,7 @@ def linkcode_resolve(domain, info):
     try:
         file = inspect.getsourcefile(obj)
         lines = inspect.getsourcelines(obj)
-    except TypeError:
+    except (TypeError, OSError):
         # e.g. object is a typing.Union
         return None
     path_start = file.find("daft/")

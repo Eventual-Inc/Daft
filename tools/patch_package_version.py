@@ -32,10 +32,21 @@ def calculate_version() -> str:
 def patch_cargo_toml_version(version: str):
     CARGO_TOML = "Cargo.toml"
     source = toml.load(CARGO_TOML)
+
+    # update package version
     assert "package" in source
     package = source["package"]
     assert "version" in package
     package["version"] = version
+
+    # update workspace version
+    assert "workspace" in source
+    workspace = source["workspace"]
+    assert "package" in workspace
+    package = workspace["package"]
+    assert "version" in package
+    package["version"] = version
+
     with open("Cargo.toml", "w") as out_file:
         toml.dump(source, out_file)
     print(f"Patched {CARGO_TOML} to version: {version}")

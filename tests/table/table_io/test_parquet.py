@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import os
 import pathlib
 import tempfile
 
@@ -45,9 +46,10 @@ def test_read_input(tmpdir):
 
 @contextlib.contextmanager
 def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write_table_kwargs: dict = {}):
-    with tempfile.NamedTemporaryFile() as tmpfile:
-        papq.write_table(data, tmpfile.name, row_group_size=row_group_size, **papq_write_table_kwargs)
-        yield tmpfile.name
+    with tempfile.TemporaryDirectory() as directory_name:
+        file = os.path.join(directory_name, "tempfile")
+        papq.write_table(data, file, row_group_size=row_group_size, **papq_write_table_kwargs)
+        yield file
 
 
 @pytest.mark.parametrize(

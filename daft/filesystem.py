@@ -101,7 +101,10 @@ def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
 
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
+    parsed_scheme = parsed_scheme.lower()
     if parsed_scheme == "" or parsed_scheme is None:
+        return "file"
+    if sys.platform == "win32" and len(parsed_scheme) == 1 and ("a" <= parsed_scheme) and (parsed_scheme <= "z"):
         return "file"
     return parsed_scheme
 
