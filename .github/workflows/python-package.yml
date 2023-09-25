@@ -465,7 +465,7 @@ jobs:
         rd -r venv
         python -m venv venv
         .\venv\Scripts\activate
-        python -m pip install dist\*.whl
+        python -m pip install --find-links=.\dist getdaft
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
