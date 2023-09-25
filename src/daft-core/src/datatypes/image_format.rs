@@ -11,7 +11,7 @@ use common_error::{DaftError, DaftResult};
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub enum ImageFormat {
     PNG,
     JPEG,

@@ -1,38 +1,25 @@
 use std::sync::Arc;
 
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::types::PyTuple;
+use pyo3::PyTypeInfo;
+
+use serde::{Deserialize, Serialize};
 
 use super::datatype::PyDataType;
 use super::field::PyField;
 use crate::datatypes;
+use crate::impl_bincode_py_state_serialization;
 use crate::schema;
-use crate::schema::Schema;
 
-#[pyclass]
-#[derive(Clone)]
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PySchema {
     pub schema: schema::SchemaRef,
 }
 
 #[pymethods]
 impl PySchema {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            0 => Ok(Self {
-                schema: Schema::empty().into(),
-            }),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyDataType, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     pub fn __getitem__(&self, name: &str) -> PyResult<PyField> {
         Ok(self.schema.get_field(name)?.clone().into())
     }
@@ -71,20 +58,6 @@ impl PySchema {
         })
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                self.schema = bincode::deserialize(s.as_bytes()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self.schema).unwrap()).to_object(py))
-    }
-
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.schema))
     }
@@ -93,6 +66,8 @@ impl PySchema {
         Ok(self.schema.repr_html())
     }
 }
+
+impl_bincode_py_state_serialization!(PySchema);
 
 impl From<schema::SchemaRef> for PySchema {
     fn from(schema: schema::SchemaRef) -> Self {

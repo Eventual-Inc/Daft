@@ -4,12 +4,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "python")]
 use pyo3::{
-    exceptions::PyValueError,
-    pyclass,
-    pyclass::CompareOp,
-    pymethods,
-    types::{PyBytes, PyTuple},
-    IntoPy, PyObject, PyResult, Python,
+    pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo,
+    Python, ToPyObject,
 };
 
 /// Format of a file, e.g. Parquet, CSV, JSON.
@@ -19,23 +15,6 @@ pub enum FileFormat {
     Parquet,
     Csv,
     Json,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl FileFormat {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy variant, to be overridden by __setstate__.
-            0 => Ok(Self::Json),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new FileFormat, got : {}",
-                args.len()
-            ))),
-        }
-    }
 }
 
 impl_bincode_py_state_serialization!(FileFormat);
@@ -144,19 +123,6 @@ pub struct PyFileFormatConfig(Arc<FileFormatConfig>);
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyFileFormatConfig {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy inner FileFormatConfig, to be overridden by __setstate__.
-            0 => Ok(Arc::new(FileFormatConfig::Json(JsonSourceConfig::new())).into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyFileFormatConfig, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     /// Create a Parquet file format config.
     #[staticmethod]
     fn from_parquet_config(config: ParquetSourceConfig) -> Self {

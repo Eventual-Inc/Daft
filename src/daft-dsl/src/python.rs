@@ -2,10 +2,13 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{functions, optimization, Expr};
 use daft_core::{
     count_mode::CountMode,
     datatypes::ImageFormat,
+    impl_bincode_py_state_serialization,
     python::{datatype::PyDataType, field::PyField, schema::PySchema},
 };
 
@@ -14,7 +17,8 @@ use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyBool, PyBytes, PyFloat, PyInt, PyString, PyTuple},
+    types::{PyBool, PyBytes, PyFloat, PyInt, PyString},
+    PyTypeInfo,
 };
 
 #[pyfunction]
@@ -83,8 +87,8 @@ pub fn udf(
     })
 }
 
-#[pyclass]
-#[derive(Clone)]
+#[pyclass(module = "daft.daft")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
     pub expr: crate::Expr,
 }
@@ -96,18 +100,6 @@ pub fn eq(expr1: &PyExpr, expr2: &PyExpr) -> PyResult<bool> {
 
 #[pymethods]
 impl PyExpr {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            0 => Ok(crate::null_lit().into()),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PyExpr, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     pub fn _input_mapping(&self) -> PyResult<Option<String>> {
         Ok(self.expr.input_mapping())
     }
@@ -254,20 +246,6 @@ impl PyExpr {
         hasher.finish()
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        match state.extract::<&PyBytes>(py) {
-            Ok(s) => {
-                self.expr = bincode::deserialize(s.as_bytes()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(py, &bincode::serialize(&self.expr).unwrap()).to_object(py))
-    }
-
     pub fn is_nan(&self) -> PyResult<Self> {
         use functions::float::is_nan;
         Ok(is_nan(&self.expr).into())
@@ -381,6 +359,8 @@ impl PyExpr {
         .into())
     }
 }
+
+impl_bincode_py_state_serialization!(PyExpr);
 
 impl From<crate::Expr> for PyExpr {
     fn from(value: crate::Expr) -> Self {

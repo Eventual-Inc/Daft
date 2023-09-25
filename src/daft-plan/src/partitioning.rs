@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use {
     daft_dsl::python::PyExpr,
     pyo3::{
-        exceptions::PyValueError, pyclass, pyclass::CompareOp, pymethods, types::PyBytes,
-        types::PyTuple, PyResult, Python,
+        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
+        Python, ToPyObject,
     },
 };
 
@@ -20,23 +20,6 @@ pub enum PartitionScheme {
     Hash,
     Random,
     Unknown,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl PartitionScheme {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy variant, to be overridden by __setstate__.
-            0 => Ok(Self::Unknown),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new PartitionScheme, got : {}",
-                args.len()
-            ))),
-        }
-    }
 }
 
 impl_bincode_py_state_serialization!(PartitionScheme);

@@ -7,10 +7,8 @@ use common_error::{DaftError, DaftResult};
 use daft_core::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{
-    exceptions::PyValueError,
-    pyclass, pymethods,
-    types::{PyBytes, PyTuple},
-    PyResult, Python,
+    exceptions::PyValueError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
+    Python, ToPyObject,
 };
 
 use serde::{Deserialize, Serialize};
@@ -27,19 +25,6 @@ pub enum JoinType {
 #[cfg(feature = "python")]
 #[pymethods]
 impl JoinType {
-    #[new]
-    #[pyo3(signature = (*args))]
-    pub fn new(args: &PyTuple) -> PyResult<Self> {
-        match args.len() {
-            // Create dummy variant, to be overridden by __setstate__.
-            0 => Ok(Self::Inner),
-            _ => Err(PyValueError::new_err(format!(
-                "expected no arguments to make new JoinType, got : {}",
-                args.len()
-            ))),
-        }
-    }
-
     /// Create a JoinType from its string representation.
     ///
     /// Args:
