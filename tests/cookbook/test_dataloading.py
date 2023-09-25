@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib
 from unittest.mock import patch
+import sys
 
 import pandas as pd
 import pytest
@@ -120,7 +121,12 @@ def test_glob_files_directory(tmpdir):
         {"path": str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(filepaths, [i for i in range(10) for _ in range(2)])
     ]
-    listing_records = listing_records + [{"path": str(extra_empty_dir.as_posix()), "size": 0, "num_rows": None}]
+
+    dir_size = extra_empty_dir.stat().st_size
+    if sys.platform == 'win32':
+        dir_size = 0
+
+    listing_records = listing_records + [{"path": str(extra_empty_dir.as_posix()), "size": dir_size, "num_rows": None}]
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
@@ -142,7 +148,12 @@ def test_glob_files_recursive(tmpdir):
         {"path": str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
     ]
-    listing_records = listing_records + [{"path": str(nested_dir_path.as_posix()), "size": 0, "num_rows": None}]
+    dir_size = nested_dir_path.stat().st_size
+    if sys.platform == 'win32':
+        dir_size = 0
+        
+
+    listing_records = listing_records + [{"path": str(nested_dir_path.as_posix()), "size": dir_size, "num_rows": None}]
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
 
