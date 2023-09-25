@@ -36,7 +36,7 @@ jobs:
         runs: [ubuntu-latest, macos-latest-xl, windows-latest]
         compile_arch: [x86_64, aarch64]
         exclude:
-        - runs: windows-latest;
+        - runs: windows-latest
           compile_arch: aarch64
     steps:
     - uses: actions/checkout@v4
