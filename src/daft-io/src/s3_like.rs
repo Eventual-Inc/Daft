@@ -541,10 +541,12 @@ impl S3LikeSource {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[async_recursion]
     async fn _list_impl(
         &self,
         _permit: SemaphorePermit<'async_recursion>,
+        scheme: &str,
         bucket: &str,
         key: &str,
         delimiter: String,
@@ -587,7 +589,7 @@ impl S3LikeSource {
         } else {
             request.send().await
         };
-        let uri = &format!("s3://{bucket}/{key}");
+        let uri = &format!("{scheme}://{bucket}/{key}");
         match response {
             Ok(v) => {
                 let dirs = v.common_prefixes();
@@ -604,7 +606,10 @@ impl S3LikeSource {
                 if let Some(dirs) = dirs {
                     for d in dirs {
                         let fmeta = FileMetadata {
-                            filepath: format!("s3://{bucket}/{}", d.prefix().unwrap_or_default()),
+                            filepath: format!(
+                                "{scheme}://{bucket}/{}",
+                                d.prefix().unwrap_or_default()
+                            ),
                             size: None,
                             filetype: FileType::Directory,
                         };
@@ -614,7 +619,10 @@ impl S3LikeSource {
                 if let Some(files) = files {
                     for f in files {
                         let fmeta = FileMetadata {
-                            filepath: format!("s3://{bucket}/{}", f.key().unwrap_or_default()),
+                            filepath: format!(
+                                "{scheme}://{bucket}/{}",
+                                f.key().unwrap_or_default()
+                            ),
                             size: Some(f.size() as u64),
                             filetype: FileType::File,
                         };
@@ -646,6 +654,7 @@ impl S3LikeSource {
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
                         self._list_impl(
                             _permit,
+                            scheme,
                             bucket,
                             key,
                             delimiter,
@@ -694,6 +703,7 @@ impl ObjectSource for S3LikeSource {
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
+        let scheme = parsed.scheme();
         let delimiter = delimiter.unwrap_or("/");
 
         let bucket = match parsed.host_str() {
@@ -723,6 +733,7 @@ impl ObjectSource for S3LikeSource {
 
             self._list_impl(
                 permit,
+                scheme,
                 bucket,
                 &key,
                 delimiter.into(),
@@ -742,6 +753,7 @@ impl ObjectSource for S3LikeSource {
             let mut lsr = self
                 ._list_impl(
                     permit,
+                    scheme,
                     bucket,
                     key,
                     delimiter.into(),
@@ -749,7 +761,7 @@ impl ObjectSource for S3LikeSource {
                     &self.default_region,
                 )
                 .await?;
-            let target_path = format!("s3://{bucket}/{key}");
+            let target_path = format!("{scheme}://{bucket}/{key}");
             lsr.files.retain(|f| f.filepath == target_path);
 
             if lsr.files.is_empty() {
