@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import pathlib
-from unittest.mock import patch
 import sys
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -123,7 +123,7 @@ def test_glob_files_directory(tmpdir):
     ]
 
     dir_size = extra_empty_dir.stat().st_size
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         dir_size = 0
 
     listing_records = listing_records + [{"path": str(extra_empty_dir.as_posix()), "size": dir_size, "num_rows": None}]
@@ -149,9 +149,8 @@ def test_glob_files_recursive(tmpdir):
         for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
     ]
     dir_size = nested_dir_path.stat().st_size
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         dir_size = 0
-        
 
     listing_records = listing_records + [{"path": str(nested_dir_path.as_posix()), "size": dir_size, "num_rows": None}]
     pd_df = pd.DataFrame.from_records(listing_records)
