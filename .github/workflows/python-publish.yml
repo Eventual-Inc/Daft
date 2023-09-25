@@ -33,10 +33,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs: [ubuntu-latest, macos-latest-xl, windows-latest-xl]
+        runs: [ubuntu-latest, macos-latest-xl, windows-latest]
         compile_arch: [x86_64, aarch64]
         exclude:
-        - runs: windows-latest-xl;
+        - runs: windows-latest;
           compile_arch: aarch64
     steps:
     - uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
     - run: pip install -U twine toml
     - run: python tools/patch_package_version.py
     - name: Build wheels - Mac and Windows x86
-      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'windows-latest-xl')) && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ ((matrix.runs == 'macos-latest-xl') || (matrix.runs == 'windows-latest')) && (matrix.compile_arch == 'x86_64')  }}
       uses: messense/maturin-action@v1
       with:
         target: x86_64
@@ -96,7 +96,7 @@ jobs:
         pytest -v
 
     - name: Install and test built wheel - Windows x86_64
-      if: ${{ (matrix.runs == 'windows-latest-xl') && (matrix.compile_arch == 'x86_64')  }}
+      if: ${{ (matrix.runs == 'windows-latest') && (matrix.compile_arch == 'x86_64')  }}
       run: |
         pip install -r requirements-dev.txt dist/${{ env.PACKAGE_NAME }}-*x86_64*.whl --force-reinstall
         rd -r daft
