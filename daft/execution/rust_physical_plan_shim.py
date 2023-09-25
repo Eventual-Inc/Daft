@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Iterator, TypeVar, cast
 
-from daft.context import get_context
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
@@ -29,10 +28,11 @@ def tabular_scan(
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
     limit: int,
+    is_ray_runner: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     # TODO(Clark): Fix this Ray runner hack.
     part = Table._from_pytable(file_info_table)
-    if get_context().is_ray_runner:
+    if is_ray_runner:
         import ray
 
         parts = [ray.put(part)]

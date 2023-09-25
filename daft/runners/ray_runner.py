@@ -432,7 +432,7 @@ class Scheduler:
         from loguru import logger
 
         # Get executable tasks from plan scheduler.
-        tasks = plan_scheduler.to_partition_tasks(psets)
+        tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
 
         # Note: For autoscaling clusters, we will probably want to query cores dynamically.
         # Keep in mind this call takes about 0.3ms.

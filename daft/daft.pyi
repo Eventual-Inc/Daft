@@ -673,7 +673,9 @@ class PhysicalPlanScheduler:
     A work scheduler for physical query plans.
     """
 
-    def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan: ...
+    def to_partition_tasks(
+        self, psets: dict[str, list[PartitionT]], is_ray_runner: bool
+    ) -> physical_plan.MaterializedPhysicalPlan: ...
 
 class LogicalPlanBuilder:
     """

@@ -64,8 +64,12 @@ pub struct PhysicalPlanScheduler {
 #[pymethods]
 impl PhysicalPlanScheduler {
     /// Converts the contained physical plan into an iterator of executable partition tasks.
-    pub fn to_partition_tasks(&self, psets: HashMap<String, Vec<PyObject>>) -> PyResult<PyObject> {
-        Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets))
+    pub fn to_partition_tasks(
+        &self,
+        psets: HashMap<String, Vec<PyObject>>,
+        is_ray_runner: bool,
+    ) -> PyResult<PyObject> {
+        Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets, is_ray_runner))
     }
 }
 
@@ -98,6 +102,7 @@ impl PartitionIterator {
 }
 
 #[cfg(feature = "python")]
+#[allow(clippy::too_many_arguments)]
 fn tabular_scan(
     py: Python<'_>,
     source_schema: &SchemaRef,
@@ -106,6 +111,7 @@ fn tabular_scan(
     file_format_config: &Arc<FileFormatConfig>,
     storage_config: &Arc<StorageConfig>,
     limit: &Option<usize>,
+    is_ray_runner: bool,
 ) -> PyResult<PyObject> {
     let columns_to_read = projection_schema
         .fields
@@ -123,6 +129,7 @@ fn tabular_scan(
             PyFileFormatConfig::from(file_format_config.clone()),
             PyStorageConfig::from(storage_config.clone()),
             *limit,
+            is_ray_runner,
         ))?;
     Ok(py_iter.into())
 }
@@ -162,6 +169,7 @@ impl PhysicalPlan {
         &self,
         py: Python<'_>,
         psets: &HashMap<String, Vec<PyObject>>,
+        is_ray_runner: bool,
     ) -> PyResult<PyObject> {
         match self {
             PhysicalPlan::InMemoryScan(InMemoryScan {
@@ -198,6 +206,7 @@ impl PhysicalPlan {
                 file_format_config,
                 storage_config,
                 limit,
+                is_ray_runner,
             ),
             PhysicalPlan::TabularScanCsv(TabularScanCsv {
                 projection_schema,
@@ -219,6 +228,7 @@ impl PhysicalPlan {
                 file_format_config,
                 storage_config,
                 limit,
+                is_ray_runner,
             ),
             PhysicalPlan::TabularScanJson(TabularScanJson {
                 projection_schema,
@@ -240,13 +250,14 @@ impl PhysicalPlan {
                 file_format_config,
                 storage_config,
                 limit,
+                is_ray_runner,
             ),
             PhysicalPlan::Project(Project {
                 input,
                 projection,
                 resource_request,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let projection_pyexprs: Vec<PyExpr> = projection
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -258,7 +269,7 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::Filter(Filter { input, predicate }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let expressions_mod =
                     py.import(pyo3::intern!(py, "daft.expressions.expressions"))?;
                 let py_predicate = expressions_mod
@@ -287,7 +298,7 @@ impl PhysicalPlan {
                 limit,
                 num_partitions,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_physical_plan =
                     py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
                 let local_limit_iter = py_physical_plan
@@ -299,7 +310,7 @@ impl PhysicalPlan {
                 Ok(global_limit_iter.into())
             }
             PhysicalPlan::Explode(Explode { input, to_explode }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let explode_pyexprs: Vec<PyExpr> = to_explode
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -316,7 +327,7 @@ impl PhysicalPlan {
                 descending,
                 num_partitions,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let sort_by_pyexprs: Vec<PyExpr> = sort_by
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -337,7 +348,7 @@ impl PhysicalPlan {
                 input_num_partitions,
                 output_num_partitions,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "split"))?
@@ -345,7 +356,7 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::Flatten(Flatten { input }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "flatten_plan"))?
@@ -356,7 +367,7 @@ impl PhysicalPlan {
                 input,
                 num_partitions,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "fanout_random"))?
@@ -368,7 +379,7 @@ impl PhysicalPlan {
                 num_partitions,
                 partition_by,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let partition_by_pyexprs: Vec<PyExpr> = partition_by
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -383,7 +394,7 @@ impl PhysicalPlan {
                 "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
             ),
             PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "reduce_merge"))?
@@ -396,7 +407,7 @@ impl PhysicalPlan {
                 input,
                 ..
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let aggs_as_pyexprs: Vec<PyExpr> = aggregations
                     .iter()
                     .map(|agg_expr| PyExpr::from(Expr::Agg(agg_expr.clone())))
@@ -416,7 +427,7 @@ impl PhysicalPlan {
                 num_from,
                 num_to,
             }) => {
-                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "coalesce"))?
@@ -424,8 +435,8 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::Concat(Concat { other, input }) => {
-                let upstream_input_iter = input.to_partition_tasks(py, psets)?;
-                let upstream_other_iter = other.to_partition_tasks(py, psets)?;
+                let upstream_input_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
+                let upstream_other_iter = other.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
                     .getattr(pyo3::intern!(py, "concat"))?
@@ -440,8 +451,8 @@ impl PhysicalPlan {
                 join_type,
                 ..
             }) => {
-                let upstream_left_iter = left.to_partition_tasks(py, psets)?;
-                let upstream_right_iter = right.to_partition_tasks(py, psets)?;
+                let upstream_left_iter = left.to_partition_tasks(py, psets, is_ray_runner)?;
+                let upstream_right_iter = right.to_partition_tasks(py, psets, is_ray_runner)?;
                 let left_on_pyexprs: Vec<PyExpr> = left_on
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -474,7 +485,7 @@ impl PhysicalPlan {
                 input,
             }) => tabular_write(
                 py,
-                input.to_partition_tasks(py, psets)?,
+                input.to_partition_tasks(py, psets, is_ray_runner)?,
                 file_format,
                 schema,
                 root_dir,
@@ -493,7 +504,7 @@ impl PhysicalPlan {
                 input,
             }) => tabular_write(
                 py,
-                input.to_partition_tasks(py, psets)?,
+                input.to_partition_tasks(py, psets, is_ray_runner)?,
                 file_format,
                 schema,
                 root_dir,
@@ -512,7 +523,7 @@ impl PhysicalPlan {
                 input,
             }) => tabular_write(
                 py,
-                input.to_partition_tasks(py, psets)?,
+                input.to_partition_tasks(py, psets, is_ray_runner)?,
                 file_format,
                 schema,
                 root_dir,
