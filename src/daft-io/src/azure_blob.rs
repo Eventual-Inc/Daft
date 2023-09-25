@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use azure_storage::prelude::*;
 use azure_storage_blobs::{
-    container::{self, operations::BlobItem, Container},
+    container::{operations::BlobItem, Container},
     prelude::*,
 };
 use futures::{StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
-use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
+use std::{collections::HashSet, num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -16,6 +16,31 @@ use common_io_config::AzureConfig;
 
 #[derive(Debug, Snafu)]
 enum Error {
+    // Input parsing errors.
+    #[snafu(display("Unable to parse URL: \"{}\"", path))]
+    InvalidUrl {
+        path: String,
+        source: url::ParseError,
+    },
+    #[snafu(display(
+        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
+    ))]
+    UnableToParseUtf8 { path: String, source: FromUtf8Error },
+
+    #[snafu(display(
+        "Unable to parse data as Integer while reading header for file: {path}. {source}"
+    ))]
+    UnableToParseInteger { path: String, source: ParseIntError },
+
+    // Generic client errors.
+    #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
+    StorageAccountNotSet,
+    #[snafu(display("Unable to create Azure Client {}", source))]
+    UnableToCreateClient { source: azure_storage::Error },
+    #[snafu(display("Azure client generic error: {}", source))]
+    AzureGenericError { source: azure_storage::Error },
+
+    // Parameterized client errors.\
     #[snafu(display("Unable to connect to {}: {}", path, source))]
     UnableToConnect {
         path: String,
@@ -28,42 +53,26 @@ enum Error {
         source: azure_storage::Error,
     },
 
-    #[snafu(display("Unable to determine size of {}", path))]
-    UnableToDetermineSize { path: String },
-
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
         source: azure_storage::Error,
     },
 
-    #[snafu(display("Unable to create Azure Client {}", source))]
-    UnableToCreateClient { source: azure_storage::Error },
-
-    #[snafu(display("Unable to parse URL: \"{}\"", path))]
-    InvalidUrl {
+    #[snafu(display("Unable to read metadata about {}: {}", path, source))]
+    RequestFailedForPath {
         path: String,
-        source: url::ParseError,
-    },
-
-    #[snafu(display("Unable to produce Azure URL for: \"{}\"", object))]
-    AzureUrlError {
-        object: String,
         source: azure_storage::Error,
     },
 
-    #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
-    StorageAccountNotSet,
+    #[snafu(display("Not Found: \"{}\"", path))]
+    NotFound { path: String },
 
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseUtf8 { path: String, source: FromUtf8Error },
-
-    #[snafu(display(
-        "Unable to parse data as Integer while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseInteger { path: String, source: ParseIntError },
+    #[snafu(display("Unable to access container: {}: {}", path, source))]
+    ContainerAccessError {
+        path: String,
+        source: azure_storage::Error,
+    },
 }
 
 impl From<Error> for super::Error {
@@ -87,6 +96,10 @@ impl From<Error> for super::Error {
                     },
                 }
             }
+            NotFound { ref path } => super::Error::NotFound {
+                path: path.into(),
+                source: error.into(),
+            },
             _ => super::Error::Generic {
                 store: super::SourceType::AzureBlob,
                 source: error.into(),
@@ -140,25 +153,19 @@ impl AzureBlobSource {
         // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
         // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
         // For now, collect the entire result.
-        let responses = responses_stream.try_collect::<Vec<_>>().await;
+        let containers = responses_stream
+            .try_collect::<Vec<_>>()
+            .await
+            .with_context(|_| AzureGenericSnafu {})?
+            .iter()
+            .flat_map(|resp| &resp.containers)
+            .map(|container| self._container_to_file_metadata(protocol, container))
+            .collect::<Vec<_>>();
 
-        match responses {
-            Ok(responses) => {
-                let containers = responses
-                    .iter()
-                    .flat_map(|resp| &resp.containers)
-                    .map(|container| self._container_to_file_metadata(protocol, container))
-                    .collect::<Vec<_>>();
-
-                let result = LSResult {
-                    files: containers,
-                    continuation_token: None,
-                };
-
-                Ok(result)
-            }
-            Err(e) => todo!(),
-        }
+        Ok(LSResult {
+            files: containers,
+            continuation_token: None,
+        })
     }
 
     async fn _list_directory(
@@ -170,36 +177,101 @@ impl AzureBlobSource {
     ) -> super::Result<LSResult> {
         let container_client = self.blob_client.container_client(container_name);
 
-        let responses_stream = container_client
+        // Blob stores expose listing by prefix and delimiter,
+        // but this is not the exact same as a unix-like LS behaviour
+        // (e.g. /somef is a prefix of /somefile, but you cannot ls /somef)
+        // To use prefix listing as LS, we need to ensure the path given is exactly a directory or a file, not a prefix.
+
+        // It turns out Azure list_blobs("path/") will match both a file at "path" and a folder at "path/", which is exactly what we need.
+        let prefix_with_delimiter = format!("{}{delimiter}", prefix.trim_end_matches(delimiter));
+        let full_path = format!("{}://{}{}", protocol, container_name, prefix);
+        let full_path_with_trailing_delimiter = format!(
+            "{}://{}{}",
+            protocol, container_name, &prefix_with_delimiter
+        );
+
+        let results = container_client
             .list_blobs()
             .delimiter(delimiter.to_string())
-            .prefix(prefix.to_string())
-            .into_stream();
+            .prefix(prefix_with_delimiter.clone())
+            .into_stream()
+            .try_collect::<Vec<_>>()
+            .await
+            .with_context(|_| RequestFailedForPathSnafu {
+                path: &full_path_with_trailing_delimiter,
+            })?
+            .iter()
+            .flat_map(|resp| &resp.blobs.items)
+            .map(|blob_item| self._blob_item_to_file_metadata(protocol, container_name, blob_item))
+            .collect::<Vec<_>>();
 
-        // It looks like the azure rust library API
-        // does not currently allow using the continuation token:
-        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
-        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
-        // For now, collect the entire result.
-        let responses = responses_stream.try_collect::<Vec<_>>().await;
+        match &results[..] {
+            [] => {
+                // If an empty list is returned, we need to check whether the prefix actually exists and has nothing after it
+                // or if it is a nonexistent prefix.
+                // (Azure does not return marker files for empty directories.)
 
-        match responses {
-            Ok(responses) => {
-                let blob_items = responses
-                    .iter()
-                    .flat_map(|resp| &resp.blobs.items)
-                    .map(|blob_item| self._blob_item_to_file_metadata(protocol, container_name, blob_item))
-                    .collect::<Vec<_>>();
+                let prefix_exists = match prefix {
+                    "" | "/" => true,
+                    _ => {
+                        // To check whether the prefix actually exists, check whether it exists as a result one directory above.
+                        let upper_dir = prefix // "/upper/blah/"
+                            .trim_end_matches(delimiter) // "/upper/blah"
+                            .trim_end_matches(|c: char| c.to_string() != delimiter); // "/upper/"
 
-                let result = LSResult {
-                    files: blob_items,
-                    continuation_token: None,
+                        let upper_results = container_client
+                            .list_blobs()
+                            .delimiter(delimiter.to_string())
+                            .prefix(upper_dir.to_string())
+                            .into_stream()
+                            .try_collect::<Vec<_>>()
+                            .await
+                            .with_context(|_| RequestFailedForPathSnafu {
+                                path: format!("{}://{}{}", protocol, container_name, upper_dir),
+                            })?
+                            .iter()
+                            .flat_map(|resp| &resp.blobs.items)
+                            .map(|blob_item| {
+                                self._blob_item_to_file_metadata(
+                                    protocol,
+                                    container_name,
+                                    blob_item,
+                                )
+                                .filepath
+                            })
+                            .collect::<HashSet<_>>();
+                        upper_results.contains(&full_path_with_trailing_delimiter)
+                    }
                 };
-                Ok(result)
+
+                if prefix_exists {
+                    Ok(LSResult {
+                        files: vec![],
+                        continuation_token: None,
+                    })
+                } else {
+                    Err(Error::NotFound { path: full_path }.into())
+                }
             }
-            Err(e) => {
-                todo!()
+            [result] => {
+                // Azure prefixing does not differentiate between directories and files even if the trailing slash is provided.
+                // This returns incorrect results when we asked for a directory and got a file.
+                // (The other way around is okay - we can ask for a path without a trailing slash and get a directory with a trailing slash.)
+                // If we get a single result, we need to check whether we asked for a directory but got a file, in which case the requested directory does not exist.
+
+                if full_path.len() > result.filepath.len() {
+                    Err(Error::NotFound { path: full_path }.into())
+                } else {
+                    Ok(LSResult {
+                        files: results,
+                        continuation_token: None,
+                    })
+                }
             }
+            _ => Ok(LSResult {
+                files: results,
+                continuation_token: None,
+            }),
         }
     }
 
@@ -229,7 +301,7 @@ impl AzureBlobSource {
                 filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
                 size: None,
                 filetype: FileType::Directory,
-            }
+            },
         }
     }
 }
@@ -300,16 +372,17 @@ impl ObjectSource for AzureBlobSource {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let delimiter = delimiter.unwrap_or("/");
 
-
         // It looks like the azure rust library API
         // does not currently allow using the continuation token:
         // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
         // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
         // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
-        if continuation_token.is_some() {
-            todo!()
-        }
-        
+        assert!(
+            continuation_token.is_none(),
+            "unexpected Azure continuation_token {:?} received",
+            continuation_token
+        );
+
         // "Container" is Azure's name for Bucket.
         let container = {
             // fsspec supports two URI formats are supported; for compatibility, we will support both as well.
@@ -325,7 +398,7 @@ impl ObjectSource for AzureBlobSource {
 
         // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
         // NB: It's unclear if there is a semantic difference between the protocols
-        // or if there is a standard for the behaviour either; 
+        // or if there is a standard for the behaviour either;
         // here, we will treat them both the same, but persist whichever protocol string was used.
         let protocol = parsed.scheme();
 
@@ -335,7 +408,8 @@ impl ObjectSource for AzureBlobSource {
             // List a path within a container.
             Some(container_name) => {
                 let prefix = parsed.path();
-                self._list_directory(protocol, container_name, prefix, delimiter).await
+                self._list_directory(protocol, container_name, prefix, delimiter)
+                    .await
             }
         }
     }
