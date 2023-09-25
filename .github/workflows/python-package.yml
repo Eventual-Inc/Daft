@@ -15,7 +15,7 @@ env:
 jobs:
   unit-tests-with-coverage:
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -327,7 +327,7 @@ jobs:
 
   rust-tests:
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -410,7 +410,7 @@ jobs:
 
   test-imports:
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -431,25 +431,43 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Setup Virtual Env
+
+    - name: Unix Build
+      if: ${{ (matrix.os != 'windows') }}
       run: |
-        python -m venv venv
+        python3 -m venv venv
         source venv/bin/activate
-        pip install maturin
+        python -m pip install maturin
+        maturin build --out dist
 
-    - name: Build Rust Library
+    - name: Windows Build
+      if: ${{ (matrix.os == 'windows') }}
       run: |
-        venv/bin/maturin build --out dist
+        python3 -m venv venv
+        .\venv\Scripts\activate
+        python -m pip install maturin
+        maturin build --out dist
 
-    - name: Test Imports in Clean Env
+    - name: Test Imports in Clean Env (Unix)
+      if: ${{ (matrix.os != 'windows') }}
       run: |
         rm -rf daft
         rm -rf venv
         python -m venv venv
         source venv/bin/activate
         ls -R ./dist
-        venv/bin/pip install dist/*.whl
-        venv/bin/python -c 'import daft; from daft import *'
+        pip install dist/*.whl
+        python -c 'import daft; from daft import *'
+
+    - name: Test Imports in Clean Env (Windows)
+      if: ${{ (matrix.os == 'windows') }}
+      run: |
+        rd -r daft
+        rd -r venv
+        python -m venv venv
+        .\venv\Scripts\activate
+        python -m pip install dist\*.whl
+        python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
