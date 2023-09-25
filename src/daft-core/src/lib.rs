@@ -18,16 +18,6 @@ pub use count_mode::CountMode;
 pub use datatypes::DataType;
 pub use series::{IntoSeries, Series};
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const BUILD_TYPE_DEV: &str = "dev";
-pub const DAFT_BUILD_TYPE: &str = {
-    let env_build_type: Option<&str> = option_env!("RUST_DAFT_PKG_BUILD_TYPE");
-    match env_build_type {
-        Some(val) => val,
-        None => BUILD_TYPE_DEV,
-    }
-};
-
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<CountMode>()?;

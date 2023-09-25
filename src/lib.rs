@@ -31,18 +31,28 @@ pub static malloc_conf: Option<&'static libc::c_char> = Some(unsafe {
     .y
 });
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const BUILD_TYPE_DEV: &str = "dev";
+pub const DAFT_BUILD_TYPE: &str = {
+    let env_build_type: Option<&str> = option_env!("RUST_DAFT_PKG_BUILD_TYPE");
+    match env_build_type {
+        Some(val) => val,
+        None => BUILD_TYPE_DEV,
+    }
+};
+
 #[cfg(feature = "python")]
 pub mod pylib {
     use pyo3::prelude::*;
 
     #[pyfunction]
     pub fn version() -> &'static str {
-        daft_core::VERSION
+        crate::VERSION
     }
 
     #[pyfunction]
     pub fn build_type() -> &'static str {
-        daft_core::DAFT_BUILD_TYPE
+        crate::DAFT_BUILD_TYPE
     }
 
     #[pymodule]
