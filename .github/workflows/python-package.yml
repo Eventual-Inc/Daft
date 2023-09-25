@@ -465,7 +465,8 @@ jobs:
         rd -r venv
         python -m venv venv
         .\venv\Scripts\activate
-        python -m pip install --find-links=.\dist getdaft
+        $FILES = Get-ChildItem -Path .\dist\*.whl -Force -Recurse
+        python -m pip install $FILES[0].FullName
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
