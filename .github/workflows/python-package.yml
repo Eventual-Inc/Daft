@@ -431,11 +431,10 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-
     - name: Unix Build
       if: ${{ (matrix.os != 'windows') }}
       run: |
-        python3 -m venv venv
+        python -m venv venv
         source venv/bin/activate
         python -m pip install maturin
         maturin build --out dist
@@ -443,7 +442,7 @@ jobs:
     - name: Windows Build
       if: ${{ (matrix.os == 'windows') }}
       run: |
-        python3 -m venv venv
+        python -m venv venv
         .\venv\Scripts\activate
         python -m pip install maturin
         maturin build --out dist
