@@ -37,14 +37,14 @@ def nginx_http_url(nginx_config, tmpdir_factory):
     [
         f"",
         f"/",
-        f"test_ls",
-        f"test_ls/",
-        f"test_ls//",
-        f"test_ls/paginated-10-files/",
+        f"/test_ls",
+        f"/test_ls/",
+        f"/test_ls//",
+        f"/test_ls/paginated-10-files/",
     ],
 )
 def test_http_flat_directory_listing(path, nginx_http_url):
-    http_path = f"{nginx_http_url}/{path}"
+    http_path = f"{nginx_http_url}{path}"
     fs = HTTPFileSystem()
     fsspec_result = fs.ls(http_path, detail=True)
     daft_ls_result = io_list(http_path)
@@ -90,3 +90,57 @@ def test_http_flat_directory_listing_recursive(path, nginx_http_url):
     fsspec_result = list(fs.glob(http_path.rstrip("/") + "/**", detail=True).values())
     daft_ls_result = io_list(http_path, recursive=True)
     compare_http_result(daft_ls_result, fsspec_result)
+
+
+@pytest.mark.integration()
+def test_http_listing_absolute_urls(nginx_config, tmpdir):
+    nginx_http_url, _ = nginx_config
+
+    tmpdir = Path(tmpdir)
+    test_manifest_file = tmpdir / "index.html"
+    test_manifest_file.write_text(
+        f"""
+        <a href="{nginx_http_url}/other.html">this is an absolute path to a file</a>
+        <a href="{nginx_http_url}/dir/">this is an absolute path to a dir</a>
+    """
+    )
+
+    with mount_data_nginx(nginx_config, tmpdir):
+        http_path = f"{nginx_http_url}/index.html"
+        daft_ls_result = io_list(http_path, recursive=False)
+
+        # NOTE: Cannot use fsspec here because they do not correctly find the links
+        # fsspec_result = fs.ls(http_path, detail=True)
+        # compare_http_result(daft_ls_result, fsspec_result)
+
+        assert daft_ls_result == [
+            {"type": "File", "path": f"{nginx_http_url}/other.html", "size": None},
+            {"type": "Directory", "path": f"{nginx_http_url}/dir/", "size": None},
+        ]
+
+
+@pytest.mark.integration()
+def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
+    nginx_http_url, _ = nginx_config
+
+    tmpdir = Path(tmpdir)
+    test_manifest_file = tmpdir / "index.html"
+    test_manifest_file.write_text(
+        f"""
+        <a href="/other.html">this is an absolute base path to a file</a>
+        <a href="/dir/">this is an absolute base path to a dir</a>
+    """
+    )
+
+    with mount_data_nginx(nginx_config, tmpdir):
+        http_path = f"{nginx_http_url}/index.html"
+        daft_ls_result = io_list(http_path, recursive=False)
+
+        # NOTE: Cannot use fsspec here because they do not correctly find the links
+        # fsspec_result = fs.ls(http_path, detail=True)
+        # compare_http_result(daft_ls_result, fsspec_result)
+
+        assert daft_ls_result == [
+            {"type": "File", "path": f"{nginx_http_url}/other.html", "size": None},
+            {"type": "Directory", "path": f"{nginx_http_url}/dir/", "size": None},
+        ]

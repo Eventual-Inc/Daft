@@ -75,13 +75,12 @@ enum Error {
 /// This function will look for `<a href=***>` tags and return all the links that it finds as
 /// absolute URLs
 fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<FileMetadata>> {
-    let path = format!("{}/", path.trim_end_matches('/')); // Ensure suffix is a single '/' so that it properly works with Url::join
-    let path_url = url::Url::parse(path.as_str()).with_context(|_| InvalidUrlSnafu { path })?;
+    let path_url = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
     let metas = HTML_A_TAG_HREF_RE
         .captures_iter(text)
         .map(|captures| {
+            // Parse the matched URL into an absolute URL
             let matched_url = captures.name("url").unwrap().as_str();
-
             let absolute_path = if let Ok(parsed_matched_url) = url::Url::parse(matched_url) {
                 // matched_url is already an absolute path
                 parsed_matched_url
@@ -91,7 +90,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
                 base.join(matched_url)
                     .with_context(|_| InvalidUrlSnafu { path: matched_url })?
             } else {
-                // matched_url is a path relative to `path`
+                // matched_url is a path relative to `path` and needs to be joined
                 path_url
                     .join(matched_url)
                     .with_context(|_| InvalidUrlSnafu { path: matched_url })?
@@ -237,6 +236,15 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
 
+        // Reconstruct the actual path of the request, which may have been redirected via a 301
+        // This is important because downstream URL joining logic relies on proper trailing-slashes/index.html
+        let path = response.url().to_string();
+        let path = if path.ends_with('/') {
+            format!("{}/", path.trim_end_matches('/'))
+        } else {
+            path
+        };
+
         match response.headers().get("content-type") {
             // If the content-type is text/html, we treat the data on this path as a traversable "directory"
             Some(header_value) if header_value.to_str().map_or(false, |v| v == "text/html") => {
@@ -246,7 +254,7 @@ impl ObjectSource for HttpSource {
                     .with_context(|_| UnableToParseUtf8BodySnafu {
                         path: path.to_string(),
                     })?;
-                let file_metadatas = _get_file_metadata_from_html(path, text.as_str())?;
+                let file_metadatas = _get_file_metadata_from_html(path.as_str(), text.as_str())?;
                 Ok(LSResult {
                     files: file_metadatas,
                     continuation_token: None,
