@@ -52,12 +52,27 @@ impl GetResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileType {
     File,
     Directory,
 }
-#[derive(Debug)]
+
+impl From<std::fs::FileType> for FileType {
+    fn from(value: std::fs::FileType) -> Self {
+        if value.is_dir() {
+            Self::Directory
+        } else if value.is_file() {
+            Self::File
+        } else if value.is_symlink() {
+            panic!("Should never encounter symlinks here, {:?}", value)
+        } else {
+            unreachable!("Can only be directory or file, but got: {:?}", value)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,

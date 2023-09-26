@@ -1095,6 +1095,7 @@ dependencies = [
  "snafu",
  "tempfile",
  "tokio",
+ "tokio-stream",
  "url",
 ]
 
