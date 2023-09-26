@@ -15,12 +15,11 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     JsonSourceConfig,
-    NativeStorageConfig,
     ParquetSourceConfig,
     ResourceRequest,
-    StorageConfig,
 )
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
@@ -315,7 +314,7 @@ class ReadFile(SingleOutputInstruction):
     # Max number of rows to read.
     limit_rows: int | None
     schema: Schema
-    storage_config: StorageConfig
+    io_config: IOConfig | None
     columns_to_read: list[str] | None
     file_format_config: FileFormatConfig
 
@@ -393,13 +392,12 @@ class ReadFile(SingleOutputInstruction):
             )
         elif file_format == FileFormat.Parquet:
             assert isinstance(format_config, ParquetSourceConfig)
-            assert isinstance(self.storage_config.config, NativeStorageConfig)
             table = Table.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
                         schema=self.schema,
-                        storage_config=self.storage_config.config,
+                        io_config=self.io_config,
                         read_options=read_options,
                     )
                     for fp in filepaths

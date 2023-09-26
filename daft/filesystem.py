@@ -23,7 +23,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.daft import FileFormat, FileInfos, StorageConfig
+from daft.daft import FileFormat, FileInfos, IOConfig
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -81,6 +81,22 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     return kwargs
 
 
+def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
+    if protocol == "s3" or protocol == "s3a":
+        kwargs = {**kwargs, **_get_s3fs_kwargs()}
+
+    try:
+        klass = fsspec.get_filesystem_class(protocol)
+    except ImportError:
+        logger.error(
+            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+        )
+        raise
+
+    fs = klass(**kwargs)
+    return fs
+
+
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
     parsed_scheme = parsed_scheme.lower()
@@ -109,6 +125,12 @@ def canonicalize_protocol(protocol: str) -> str:
     mapping between protocols and pyarrow/fsspec filesystem implementations.
     """
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
+
+
+def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
+    protocol = get_protocol_from_path(path)
+    fs = get_filesystem(protocol, **kwargs)
+    return fs
 
 
 def _resolve_paths_and_filesystem(
@@ -258,7 +280,7 @@ def _unwrap_protocol(path):
 def glob_path_with_stats(
     path: str,
     file_format: FileFormat | None,
-    storage_config: StorageConfig | None,
+    io_config: IOConfig | None,
 ) -> FileInfos:
     """Glob a path, returning a list ListingInfo."""
 
@@ -268,7 +290,7 @@ def glob_path_with_stats(
 
     # Set number of rows if available.
     if file_format is not None and file_format == FileFormat.Parquet:
-        config = storage_config.config if storage_config is not None else None
+        config = io_config.config if io_config is not None else None
         parquet_statistics = Table.read_parquet_statistics(
             list(filepaths_to_infos.keys()), config.io_config
         ).to_pydict()

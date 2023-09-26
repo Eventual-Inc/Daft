@@ -11,7 +11,7 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 
-from daft.daft import NativeStorageConfig
+from daft.daft import IOConfig
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -92,7 +92,7 @@ def read_json(
 def read_parquet(
     file: FileInput,
     schema: Schema,
-    storage_config: NativeStorageConfig,
+    io_config: IOConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
 ) -> Table:
@@ -112,7 +112,7 @@ def read_parquet(
         str(file),
         columns=read_options.column_names,
         num_rows=read_options.num_rows,
-        io_config=storage_config.io_config,
+        io_config=io_config,
         coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
     )
     return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)

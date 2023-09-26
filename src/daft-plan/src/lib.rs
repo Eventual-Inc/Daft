@@ -23,12 +23,12 @@ pub use partitioning::{PartitionScheme, PartitionSpec};
 pub use physical_plan::PhysicalPlanScheduler;
 pub use resource_request::ResourceRequest;
 pub use source_info::{
-    CsvSourceConfig, FileFormat, FileInfo, FileInfos, JsonSourceConfig, NativeStorageConfig,
-    ParquetSourceConfig, PyFileFormatConfig, PyStorageConfig,
+    CsvSourceConfig, FileFormat, FileInfo, FileInfos, JsonSourceConfig, ParquetSourceConfig,
+    PyFileFormatConfig,
 };
 
 #[cfg(feature = "python")]
-use {pyo3::prelude::*, source_info::PythonStorageConfig};
+use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
@@ -45,9 +45,6 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<ResourceRequest>()?;
     parent.add_class::<FileInfos>()?;
     parent.add_class::<FileInfo>()?;
-    parent.add_class::<PyStorageConfig>()?;
-    parent.add_class::<NativeStorageConfig>()?;
-    parent.add_class::<PythonStorageConfig>()?;
 
     Ok(())
 }

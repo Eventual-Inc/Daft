@@ -7,19 +7,16 @@ import json
 import os
 import tempfile
 import uuid
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
-from fsspec.implementations.local import LocalFileSystem
 from ray.data.extensions import ArrowTensorArray, TensorArray
 
 import daft
 from daft.api_annotations import APITypeError
-from daft.context import get_context
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -391,41 +388,6 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> N
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"py"},
-    reason="requires PyRunner to be in use",
-)
-def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with create_temp_filename() as fname:
-        with open(fname, "w") as f:
-            header = list(valid_data[0].keys())
-            writer = csv.writer(f)
-            writer.writerow(header)
-            writer.writerows([[item[col] for col in header] for item in valid_data])
-            f.flush()
-
-        # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
-        # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
-        # which would make this test pass without the passed filesystem being used.
-        fs = LocalFileSystem(skip_instance_cache=True)
-        mock_cache = MagicMock(return_value=None)
-        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
-            fs, "open", wraps=fs.open
-        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_csv(fname, fs=fs)
-            # Check that info() is called on the passed filesystem.
-            mock_info.assert_called()
-
-            assert df.column_names == COL_NAMES
-            pd_df = df.to_pandas()
-
-            # Check that open() is called on the passed filesystem.
-            mock_open.assert_called()
-
-        assert list(pd_df.columns) == COL_NAMES
-        assert len(pd_df) == len(valid_data)
-
-
 def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
@@ -572,41 +534,6 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"py"},
-    reason="requires PyRunner to be in use",
-)
-def test_create_dataframe_json_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with create_temp_filename() as fname:
-        with open(fname, "w") as f:
-            for data in valid_data:
-                f.write(json.dumps(data))
-                f.write("\n")
-            f.flush()
-
-        # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
-        # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
-        # which would make this test pass without the passed filesystem being used.
-        fs = LocalFileSystem(skip_instance_cache=True)
-        mock_cache = MagicMock(return_value=None)
-        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
-            fs, "open", wraps=fs.open
-        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_json(fname, fs=fs)
-
-            # Check that info() is called on the passed filesystem.
-            mock_info.assert_called()
-
-            assert df.column_names == COL_NAMES
-            pd_df = df.to_pandas()
-
-            # Check that open() is called on the passed filesystem.
-            mock_open.assert_called()
-
-        assert list(pd_df.columns) == COL_NAMES
-        assert len(pd_df) == len(valid_data)
-
-
 def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
@@ -663,15 +590,14 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
 ###
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
             papq.write_table(table, f.name)
             f.flush()
 
-        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -679,15 +605,14 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]], use_native
         assert len(pd_df) == len(valid_data)
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
             papq.write_table(table, f.name)
             f.flush()
 
-        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname)
         assert df.column_names == COL_NAMES
 
         df = df.where(daft.col("sepal_length") > 4.8)
@@ -697,8 +622,7 @@ def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]]
         assert len(pd_df) == len(valid_data) - 1
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as f1name, create_temp_filename() as f2name:
         with open(f1name, "w") as f1, open(f2name, "w") as f2:
             for f in (f1, f2):
@@ -706,7 +630,7 @@ def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], 
                 papq.write_table(table, f.name)
                 f.flush()
 
-        df = daft.read_parquet([f1name, f2name], use_native_downloader=use_native_downloader)
+        df = daft.read_parquet([f1name, f2name])
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -714,42 +638,7 @@ def test_create_dataframe_multiple_parquets(valid_data: list[dict[str, float]], 
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-@pytest.mark.skipif(
-    get_context().runner_config.name not in {"py"},
-    reason="requires PyRunner to be in use",
-)
-def test_create_dataframe_parquet_custom_fs(valid_data: list[dict[str, float]]) -> None:
-    with create_temp_filename() as fname:
-        with open(fname, "w") as f:
-            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
-            papq.write_table(table, f.name)
-            f.flush()
-
-        # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
-        # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
-        # which would make this test pass without the passed filesystem being used.
-        fs = LocalFileSystem(skip_instance_cache=True)
-        mock_cache = MagicMock(return_value=None)
-        with patch.object(fs, "info", wraps=fs.info) as mock_info, patch.object(
-            fs, "open", wraps=fs.open
-        ) as mock_open, patch("daft.filesystem._get_fs_from_cache", mock_cache):
-            df = daft.read_parquet(fname, fs=fs)
-
-            # Check that info() is called on the passed filesystem.
-            mock_info.assert_called()
-
-            assert df.column_names == COL_NAMES
-            pd_df = df.to_pandas()
-
-            # Check that open() is called on the passed filesystem.
-            mock_open.assert_called()
-
-        assert list(pd_df.columns) == COL_NAMES
-        assert len(pd_df) == len(valid_data)
-
-
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -758,7 +647,7 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_parquet(fname, use_native_downloader=use_native_downloader)
+        df = daft.read_parquet(fname)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -767,8 +656,7 @@ def test_create_dataframe_parquet_column_projection(valid_data: list[dict[str, f
         assert len(pd_df) == len(valid_data)
 
 
-@pytest.mark.parametrize("use_native_downloader", [True, False])
-def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -784,7 +672,6 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
                 "petal_width": DataType.float64(),
                 "variety": DataType.string(),
             },
-            use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
 

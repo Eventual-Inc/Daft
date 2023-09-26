@@ -318,41 +318,6 @@ class IOConfig:
         Recreate an IOConfig from a JSON string.
         """
 
-class NativeStorageConfig:
-    """
-    Storage configuration for the Rust-native I/O layer.
-    """
-
-    io_config: IOConfig
-
-    def __init__(self, io_config: IOConfig | None = None): ...
-
-class PythonStorageConfig:
-    """Storage configuration indicating falling back to Python I/O"""
-
-    def __init__(self): ...
-
-class StorageConfig:
-    """
-    Configuration for interacting with a particular storage backend, using a particular
-    I/O layer implementation.
-    """
-
-    @staticmethod
-    def native(config: NativeStorageConfig) -> StorageConfig:
-        """
-        Create from a native storage config.
-        """
-        ...
-    @staticmethod
-    def python() -> StorageConfig:
-        """
-        Create from a Python storage config.
-        """
-        ...
-    @property
-    def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
-
 def read_parquet(
     uri: str,
     columns: list[str] | None = None,
@@ -689,7 +654,7 @@ class LogicalPlanBuilder:
     ) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(
-        file_infos: FileInfos, schema: PySchema, file_format_config: FileFormatConfig, storage_config: StorageConfig
+        file_infos: FileInfos, schema: PySchema, file_format_config: FileFormatConfig, io_config: IOConfig | None = None
     ) -> LogicalPlanBuilder: ...
     def project(self, projection: list[PyExpr], resource_request: ResourceRequest) -> LogicalPlanBuilder: ...
     def filter(self, predicate: PyExpr) -> LogicalPlanBuilder: ...

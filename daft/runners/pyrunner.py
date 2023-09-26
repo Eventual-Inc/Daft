@@ -8,7 +8,7 @@ from typing import Iterable, Iterator
 import psutil
 from loguru import logger
 
-from daft.daft import FileFormatConfig, FileInfos, ResourceRequest, StorageConfig
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
 from daft.filesystem import glob_path_with_stats
@@ -71,12 +71,12 @@ class PyRunnerIO(runner_io.RunnerIO):
         self,
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
-        storage_config: StorageConfig | None = None,
+        io_config: IOConfig | None = None,
     ) -> FileInfos:
         file_infos = FileInfos()
         file_format = file_format_config.file_format() if file_format_config is not None else None
         for source_path in source_paths:
-            path_file_infos = glob_path_with_stats(source_path, file_format, storage_config)
+            path_file_infos = glob_path_with_stats(source_path, file_format, io_config)
 
             if len(path_file_infos) == 0:
                 raise FileNotFoundError(f"No files found at {source_path}")
@@ -89,12 +89,12 @@ class PyRunnerIO(runner_io.RunnerIO):
         self,
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
+        io_config: IOConfig | None = None,
     ) -> Schema:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
         # Naively retrieve the first filepath in the PartitionSet
-        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, storage_config)
+        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, io_config)
 
 
 class PyRunner(Runner[Table]):

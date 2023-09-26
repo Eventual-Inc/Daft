@@ -20,13 +20,7 @@ from typing import Generator, Iterator, TypeVar, Union
 
 from loguru import logger
 
-from daft.daft import (
-    FileFormat,
-    FileFormatConfig,
-    JoinType,
-    ResourceRequest,
-    StorageConfig,
-)
+from daft.daft import FileFormat, FileFormatConfig, IOConfig, JoinType, ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -70,7 +64,7 @@ def file_read(
     # Max number of rows to read.
     limit_rows: int | None,
     schema: Schema,
-    storage_config: StorageConfig,
+    io_config: IOConfig | None,
     columns_to_read: list[str] | None,
     file_format_config: FileFormatConfig,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -102,7 +96,7 @@ def file_read(
                         file_rows=file_rows[i],
                         limit_rows=limit_rows,
                         schema=schema,
-                        storage_config=storage_config,
+                        io_config=io_config,
                         columns_to_read=columns_to_read,
                         file_format_config=file_format_config,
                     ),

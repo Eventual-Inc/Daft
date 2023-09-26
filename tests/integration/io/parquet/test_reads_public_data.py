@@ -281,7 +281,7 @@ def test_parquet_read_df(parquet_file, public_storage_io_config):
         fs = adlfs.AzureBlobFileSystem(account_name="dafttestdata", anon=True)
     else:
         fs = None
-    daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config, use_native_downloader=True, fs=fs)
+    daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config, fs=fs)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())

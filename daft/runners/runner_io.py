@@ -8,10 +8,9 @@ from daft.daft import (
     FileFormat,
     FileFormatConfig,
     FileInfos,
+    IOConfig,
     JsonSourceConfig,
-    NativeStorageConfig,
     ParquetSourceConfig,
-    StorageConfig,
 )
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
@@ -31,7 +30,7 @@ class RunnerIO:
         self,
         source_path: list[str],
         file_format_config: FileFormatConfig | None = None,
-        storage_config: StorageConfig | None = None,
+        io_config: IOConfig | None = None,
     ) -> FileInfos:
         """Globs the specified filepath to construct a FileInfos object containing file and dir metadata.
 
@@ -48,7 +47,7 @@ class RunnerIO:
         self,
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
+        io_config: IOConfig | None = None,
     ) -> Schema:
         raise NotImplementedError()
 
@@ -56,7 +55,7 @@ class RunnerIO:
 def sample_schema(
     filepath: str,
     file_format_config: FileFormatConfig,
-    storage_config: StorageConfig,
+    io_config: IOConfig | None = None,
 ) -> Schema:
     """Helper method that samples a schema from the specified source"""
     file_format = file_format_config.file_format()
@@ -77,12 +76,9 @@ def sample_schema(
         )
     elif file_format == FileFormat.Parquet:
         assert isinstance(config, ParquetSourceConfig)
-        assert isinstance(
-            storage_config.config, NativeStorageConfig
-        ), "Sampling schema from Parquet should be done with native code"
         return schema_inference.from_parquet(
             file=filepath,
-            storage_config=storage_config.config,
+            io_config=io_config,
         )
     else:
         raise NotImplementedError(f"Schema inference for {file_format} not implemented")

@@ -8,11 +8,11 @@ from daft.daft import (
     FileFormat,
     FileFormatConfig,
     FileInfos,
+    IOConfig,
     JoinType,
     PartitionScheme,
     PartitionSpec,
     ResourceRequest,
-    StorageConfig,
 )
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
@@ -83,7 +83,7 @@ class LogicalPlanBuilder(ABC):
         file_infos: FileInfos,
         schema: Schema,
         file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
+        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder:
         pass
 

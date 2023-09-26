@@ -8,11 +8,12 @@ use crate::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{
         ExternalInfo as ExternalSourceInfo, FileFormatConfig, FileInfos as InputFileInfos,
-        PyStorageConfig, SourceInfo, StorageConfig,
+        SourceInfo,
     },
     FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
+use common_io_config::IOConfig;
 use daft_core::schema::SchemaRef;
 use daft_core::{datatypes::Field, schema::Schema, DataType};
 use daft_dsl::Expr;
@@ -23,6 +24,7 @@ use {
         physical_plan::PhysicalPlan,
         source_info::{InMemoryInfo, PyFileFormatConfig},
     },
+    common_io_config::python::IOConfig as PyIOConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     pyo3::prelude::*,
@@ -72,16 +74,16 @@ impl LogicalPlanBuilder {
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
-        storage_config: Arc<StorageConfig>,
+        io_config: Arc<IOConfig>,
     ) -> DaftResult<Self> {
-        Self::table_scan_with_limit(file_infos, schema, file_format_config, storage_config, None)
+        Self::table_scan_with_limit(file_infos, schema, file_format_config, io_config, None)
     }
 
     pub fn table_scan_with_limit(
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
-        storage_config: Arc<StorageConfig>,
+        io_config: Arc<IOConfig>,
         limit: Option<usize>,
     ) -> DaftResult<Self> {
         let num_partitions = file_infos.len();
@@ -89,7 +91,7 @@ impl LogicalPlanBuilder {
             schema.clone(),
             file_infos.into(),
             file_format_config,
-            storage_config,
+            io_config,
         ));
         let partition_spec =
             PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
@@ -287,13 +289,13 @@ impl PyLogicalPlanBuilder {
         file_infos: InputFileInfos,
         schema: PySchema,
         file_format_config: PyFileFormatConfig,
-        storage_config: PyStorageConfig,
+        io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::table_scan(
             file_infos,
             schema.into(),
             file_format_config.into(),
-            storage_config.into(),
+            io_config.map_or_else(Default::default, |pyio| Arc::new(pyio.config)),
         )?
         .into())
     }

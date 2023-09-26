@@ -2,8 +2,8 @@ pub mod file_format;
 pub mod file_info;
 #[cfg(feature = "python")]
 mod py_object_serde;
-pub mod storage_config;
 
+use common_io_config::IOConfig;
 use daft_core::schema::SchemaRef;
 pub use file_format::{
     CsvSourceConfig, FileFormat, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
@@ -12,9 +12,7 @@ pub use file_format::{
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
 use std::{hash::Hash, sync::Arc};
-#[cfg(feature = "python")]
-pub use storage_config::PythonStorageConfig;
-pub use storage_config::{NativeStorageConfig, PyStorageConfig, StorageConfig};
+
 #[cfg(feature = "python")]
 use {
     py_object_serde::{deserialize_py_object, serialize_py_object},
@@ -87,7 +85,7 @@ pub struct ExternalInfo {
     pub source_schema: SchemaRef,
     pub file_infos: Arc<FileInfos>,
     pub file_format_config: Arc<FileFormatConfig>,
-    pub storage_config: Arc<StorageConfig>,
+    pub io_config: Arc<IOConfig>,
 }
 
 impl ExternalInfo {
@@ -95,13 +93,13 @@ impl ExternalInfo {
         source_schema: SchemaRef,
         file_infos: Arc<FileInfos>,
         file_format_config: Arc<FileFormatConfig>,
-        storage_config: Arc<StorageConfig>,
+        io_config: Arc<IOConfig>,
     ) -> Self {
         Self {
             source_schema,
             file_infos,
             file_format_config,
-            storage_config,
+            io_config,
         }
     }
 }

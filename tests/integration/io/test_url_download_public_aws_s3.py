@@ -36,7 +36,7 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs_wrong_region(small_images
 def test_url_download_aws_s3_public_bucket_native_downloader(aws_public_s3_config, small_images_s3_paths):
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
+    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config))
 
     data = df.to_pydict()
     assert len(data["data"]) == 6
@@ -50,7 +50,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_io_thread_change(
 ):
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
+    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config))
 
     data = df.to_pydict()
     assert len(data["data"]) == 6
@@ -58,7 +58,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_io_thread_change(
         assert img_bytes is not None
     daft.io.set_io_pool_num_threads(2)
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
+    df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config))
 
     data = df.to_pydict()
     assert len(data["data"]) == 6
@@ -81,9 +81,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_with_connect_timeou
     )
 
     with pytest.raises(ValueError, match="HTTP connect timeout"):
-        df = df.with_column(
-            "data", df["urls"].url.download(io_config=connect_timeout_config, use_native_downloader=True)
-        ).collect()
+        df = df.with_column("data", df["urls"].url.download(io_config=connect_timeout_config)).collect()
 
 
 @pytest.mark.integration()
@@ -101,6 +99,4 @@ def test_url_download_aws_s3_public_bucket_native_downloader_with_read_timeout(s
     )
 
     with pytest.raises(ValueError, match="HTTP read timeout"):
-        df = df.with_column(
-            "data", df["urls"].url.download(io_config=read_timeout_config, use_native_downloader=True)
-        ).collect()
+        df = df.with_column("data", df["urls"].url.download(io_config=read_timeout_config)).collect()

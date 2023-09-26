@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional, Union
 
 from daft.api_annotations import PublicAPI
-from daft.daft import FileFormatConfig, JsonSourceConfig, StorageConfig
+from daft.daft import FileFormatConfig, JsonSourceConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.io.common import _get_tabular_files_scan
@@ -35,6 +35,5 @@ def read_json(
 
     json_config = JsonSourceConfig()
     file_format_config = FileFormatConfig.from_json_config(json_config)
-    storage_config = StorageConfig.python()
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config)
     return DataFrame(builder)

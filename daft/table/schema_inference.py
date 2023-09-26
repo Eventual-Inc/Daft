@@ -5,7 +5,7 @@ import pathlib
 import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 
-from daft.daft import NativeStorageConfig
+from daft.daft import IOConfig
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import Table
@@ -63,9 +63,8 @@ def from_json(
 
 def from_parquet(
     file: FileInput,
-    storage_config: NativeStorageConfig,
+    io_config: IOConfig | None = None,
 ) -> Schema:
     """Infers a Schema from a Parquet file"""
     assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
-    io_config = storage_config.io_config
     return Schema.from_parquet(str(file), io_config=io_config)

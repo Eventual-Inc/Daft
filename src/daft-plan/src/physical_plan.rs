@@ -3,10 +3,10 @@ use {
     crate::{
         sink_info::OutputFileInfo,
         source_info::{
-            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo,
-            PyFileFormatConfig, PyStorageConfig, StorageConfig,
+            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo, PyFileFormatConfig,
         },
     },
+    common_io_config::{python::IOConfig as PyIOConfig, IOConfig},
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
@@ -109,7 +109,7 @@ fn tabular_scan(
     projection_schema: &SchemaRef,
     file_infos: &Arc<FileInfos>,
     file_format_config: &Arc<FileFormatConfig>,
-    storage_config: &Arc<StorageConfig>,
+    io_config: &Arc<IOConfig>,
     limit: &Option<usize>,
     is_ray_runner: bool,
 ) -> PyResult<PyObject> {
@@ -127,7 +127,9 @@ fn tabular_scan(
             columns_to_read,
             file_infos.to_table()?,
             PyFileFormatConfig::from(file_format_config.clone()),
-            PyStorageConfig::from(storage_config.clone()),
+            PyIOConfig {
+                config: io_config.as_ref().clone(),
+            },
             *limit,
             is_ray_runner,
         ))?;
@@ -193,7 +195,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
-                        storage_config,
+                        io_config,
                         ..
                     },
                 limit,
@@ -204,7 +206,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
-                storage_config,
+                io_config,
                 limit,
                 is_ray_runner,
             ),
@@ -215,7 +217,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
-                        storage_config,
+                        io_config,
                         ..
                     },
                 limit,
@@ -226,7 +228,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
-                storage_config,
+                io_config,
                 limit,
                 is_ray_runner,
             ),
@@ -237,7 +239,7 @@ impl PhysicalPlan {
                         source_schema,
                         file_infos,
                         file_format_config,
-                        storage_config,
+                        io_config,
                         ..
                     },
                 limit,
@@ -248,7 +250,7 @@ impl PhysicalPlan {
                 projection_schema,
                 file_infos,
                 file_format_config,
-                storage_config,
+                io_config,
                 limit,
                 is_ray_runner,
             ),

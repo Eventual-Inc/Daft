@@ -333,7 +333,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             predicate=child._predicate,
             columns=child._column_names,
             file_format_config=child._file_format_config,
-            storage_config=child._storage_config,
+            io_config=child._io_config,
             filepaths_child=child._filepaths_child,
             limit_rows=new_limit_rows,
         )
@@ -356,7 +356,7 @@ class PushDownClausesIntoScan(Rule[LogicalPlan]):
             predicate=child._predicate,
             columns=ordered_required_columns,
             file_format_config=child._file_format_config,
-            storage_config=child._storage_config,
+            io_config=child._io_config,
             filepaths_child=child._filepaths_child,
         )
         if any(not e._is_column() for e in parent._projection):

@@ -5,12 +5,12 @@ from typing import Iterator, TypeVar, cast
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     PyExpr,
     PySchema,
     PyTable,
     ResourceRequest,
-    StorageConfig,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
@@ -26,7 +26,7 @@ def tabular_scan(
     columns_to_read: list[str],
     file_info_table: PyTable,
     file_format_config: FileFormatConfig,
-    storage_config: StorageConfig,
+    io_config: IOConfig,
     limit: int,
     is_ray_runner: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -45,7 +45,7 @@ def tabular_scan(
         child_plan=file_info_iter,
         limit_rows=limit,
         schema=Schema._from_pyschema(schema),
-        storage_config=storage_config,
+        io_config=io_config,
         columns_to_read=columns_to_read,
         file_format_config=file_format_config,
     )

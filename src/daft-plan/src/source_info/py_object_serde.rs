@@ -68,20 +68,6 @@ where
 #[cfg(feature = "python")]
 struct PyObjSerdeWrapper<'a>(#[serde(serialize_with = "serialize_py_object")] &'a PyObject);
 
-#[cfg(feature = "python")]
-pub(super) fn serialize_py_object_optional<S>(
-    obj: &Option<PyObject>,
-    s: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match obj {
-        Some(obj) => s.serialize_some(&PyObjSerdeWrapper(obj)),
-        None => s.serialize_none(),
-    }
-}
-
 struct OptPyObjectVisitor;
 
 #[cfg(feature = "python")]
@@ -105,12 +91,4 @@ impl<'de> Visitor<'de> for OptPyObjectVisitor {
     {
         Ok(None)
     }
-}
-
-#[cfg(feature = "python")]
-pub(super) fn deserialize_py_object_optional<'de, D>(d: D) -> Result<Option<PyObject>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    d.deserialize_option(OptPyObjectVisitor)
 }
