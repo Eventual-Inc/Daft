@@ -1,8 +1,5 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional
-
-import fsspec
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
@@ -13,7 +10,7 @@ from daft.table import Table
 
 
 @PublicAPI
-def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> DataFrame:
+def from_glob_path(path: str) -> DataFrame:
     """Creates a DataFrame of file paths and other metadata from a glob path.
 
     This method supports wildcards:
@@ -45,7 +42,7 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
     """
     context = get_context()
     runner_io = context.runner().runner_io()
-    file_infos = runner_io.glob_paths_details([path], fs=fs)
+    file_infos = runner_io.glob_paths_details([path])
     file_infos_table = Table._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet({0: file_infos_table})
     cache_entry = context.runner().put_partition_set_into_cache(partition)

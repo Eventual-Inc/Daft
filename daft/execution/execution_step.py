@@ -17,6 +17,7 @@ from daft.daft import (
     FileFormatConfig,
     JoinType,
     JsonSourceConfig,
+    NativeStorageConfig,
     ParquetSourceConfig,
     ResourceRequest,
     StorageConfig,
@@ -369,7 +370,6 @@ class ReadFile(SingleOutputInstruction):
                     table_io.read_csv(
                         file=fp,
                         schema=self.schema,
-                        storage_config=self.storage_config,
                         csv_options=TableParseCSVOptions(
                             delimiter=format_config.delimiter,
                             header_index=0 if format_config.has_headers else None,
@@ -386,7 +386,6 @@ class ReadFile(SingleOutputInstruction):
                     table_io.read_json(
                         file=fp,
                         schema=self.schema,
-                        storage_config=self.storage_config,
                         read_options=read_options,
                     )
                     for fp in filepaths
@@ -394,12 +393,13 @@ class ReadFile(SingleOutputInstruction):
             )
         elif file_format == FileFormat.Parquet:
             assert isinstance(format_config, ParquetSourceConfig)
+            assert isinstance(self.storage_config.config, NativeStorageConfig)
             table = Table.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
                         schema=self.schema,
-                        storage_config=self.storage_config,
+                        storage_config=self.storage_config.config,
                         read_options=read_options,
                     )
                     for fp in filepaths

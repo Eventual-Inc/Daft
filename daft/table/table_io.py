@@ -6,15 +6,12 @@ from collections.abc import Generator
 from typing import IO, Union
 from uuid import uuid4
 
-import fsspec
 import pyarrow as pa
 from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
-from pyarrow import parquet as papq
-from pyarrow.fs import FileSystem
 
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
+from daft.daft import NativeStorageConfig
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -31,11 +28,10 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 @contextlib.contextmanager
 def _open_stream(
     file: FileInput,
-    fs: FileSystem | fsspec.AbstractFileSystem | None,
 ) -> Generator[pa.NativeFile, None, None]:
     """Opens the provided file for reading, yield a pyarrow file handle."""
     if isinstance(file, (pathlib.Path, str)):
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        paths, fs = _resolve_paths_and_filesystem(file, None)
         assert len(paths) == 1
         path = paths[0]
         with fs.open_input_stream(path) as f:
@@ -67,7 +63,6 @@ def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: 
 def read_json(
     file: FileInput,
     schema: Schema,
-    storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
     """Reads a Table from a JSON file
@@ -81,13 +76,7 @@ def read_json(
     Returns:
         Table: Parsed Table from JSON
     """
-    if storage_config is not None:
-        config = storage_config.config
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-    with _open_stream(file, fs) as f:
+    with _open_stream(file) as f:
         table = pajson.read_json(f)
 
     if read_options.column_names is not None:
@@ -103,7 +92,7 @@ def read_json(
 def read_parquet(
     file: FileInput,
     schema: Schema,
-    storage_config: StorageConfig | None = None,
+    storage_config: NativeStorageConfig,
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
 ) -> Table:
@@ -118,67 +107,20 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
-    if storage_config is not None:
-        config = storage_config.config
-        if isinstance(config, NativeStorageConfig):
-            assert isinstance(
-                file, (str, pathlib.Path)
-            ), "Native downloader only works on string inputs to read_parquet"
-            tbl = Table.read_parquet(
-                str(file),
-                columns=read_options.column_names,
-                num_rows=read_options.num_rows,
-                io_config=config.io_config,
-                coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
-            )
-            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
-
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-
-    f: IO
-    if not isinstance(file, (str, pathlib.Path)):
-        f = file
-    else:
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
-        assert len(paths) == 1
-        path = paths[0]
-        f = fs.open_input_file(path)
-
-    # If no rows required, we manually construct an empty table with the right schema
-    if read_options.num_rows == 0:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit))
-        arrow_schema = pqf.metadata.schema.to_arrow_schema()
-        table = pa.Table.from_arrays([pa.array([], type=field.type) for field in arrow_schema], schema=arrow_schema)
-    elif read_options.num_rows is not None:
-        pqf = papq.ParquetFile(f, coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit))
-        # Only read the required row groups.
-        rows_needed = read_options.num_rows
-        for i in range(pqf.metadata.num_row_groups):
-            row_group_meta = pqf.metadata.row_group(i)
-            rows_needed -= row_group_meta.num_rows
-            if rows_needed <= 0:
-                break
-        table = pqf.read_row_groups(list(range(i + 1)), columns=read_options.column_names)
-        if rows_needed < 0:
-            # Need to truncate the table to the row limit.
-            table = table.slice(length=read_options.num_rows)
-    else:
-        table = papq.read_table(
-            f,
-            columns=read_options.column_names,
-            coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
-        )
-
-    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
+    assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_parquet"
+    tbl = Table.read_parquet(
+        str(file),
+        columns=read_options.column_names,
+        num_rows=read_options.num_rows,
+        io_config=storage_config.io_config,
+        coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
+    )
+    return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
 
 def read_csv(
     file: FileInput,
     schema: Schema,
-    storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
 ) -> Table:
@@ -195,14 +137,7 @@ def read_csv(
     Returns:
         Table: Parsed Table from CSV
     """
-    if storage_config is not None:
-        config = storage_config.config
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-
-    with _open_stream(file, fs) as f:
+    with _open_stream(file) as f:
         table = pacsv.read_csv(
             f,
             parse_options=pacsv.ParseOptions(

@@ -4,8 +4,6 @@ import dataclasses
 import pathlib
 import sys
 import urllib.parse
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -25,7 +23,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.daft import FileFormat, FileInfos, NativeStorageConfig, StorageConfig
+from daft.daft import FileFormat, FileInfos, StorageConfig
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -83,22 +81,6 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     return kwargs
 
 
-def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
-    if protocol == "s3" or protocol == "s3a":
-        kwargs = {**kwargs, **_get_s3fs_kwargs()}
-
-    try:
-        klass = fsspec.get_filesystem_class(protocol)
-    except ImportError:
-        logger.error(
-            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
-        )
-        raise
-
-    fs = klass(**kwargs)
-    return fs
-
-
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
     parsed_scheme = parsed_scheme.lower()
@@ -127,12 +109,6 @@ def canonicalize_protocol(protocol: str) -> str:
     mapping between protocols and pyarrow/fsspec filesystem implementations.
     """
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
-
-
-def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
-    protocol = get_protocol_from_path(path)
-    fs = get_filesystem(protocol, **kwargs)
-    return fs
 
 
 def _resolve_paths_and_filesystem(
@@ -279,83 +255,32 @@ def _unwrap_protocol(path):
 ###
 
 
-def _ensure_path_protocol(protocol: str, returned_path: str) -> str:
-    """This function adds the protocol that fsspec strips from returned results"""
-    if protocol == "file":
-        return returned_path
-    parsed_scheme = urllib.parse.urlparse(returned_path).scheme
-    if parsed_scheme == "" or parsed_scheme is None:
-        return f"{protocol}://{returned_path}"
-    return returned_path
-
-
-def _path_is_glob(path: str) -> bool:
-    # fsspec glob supports *, ? and [..] patterns
-    # See: : https://filesystem-spec.readthedocs.io/en/latest/api.html
-    return any([char in path for char in ["*", "?", "["]])
-
-
 def glob_path_with_stats(
     path: str,
     file_format: FileFormat | None,
-    fs: fsspec.AbstractFileSystem,
     storage_config: StorageConfig | None,
 ) -> FileInfos:
     """Glob a path, returning a list ListingInfo."""
-    protocol = get_protocol_from_path(path)
 
-    filepaths_to_infos: dict[str, dict[str, Any]] = defaultdict(dict)
-
-    if _path_is_glob(path):
-        globbed_data = fs.glob(path, detail=True)
-
-        for path, details in globbed_data.items():
-            path = _ensure_path_protocol(protocol, path)
-            filepaths_to_infos[path]["size"] = details["size"]
-
-    elif fs.isfile(path):
-        file_info = fs.info(path)
-
-        filepaths_to_infos[path]["size"] = file_info["size"]
-
-    elif fs.isdir(path):
-        files_info = fs.ls(path, detail=True)
-
-        for file_info in files_info:
-            path = file_info["name"]
-            path = _ensure_path_protocol(protocol, path)
-            filepaths_to_infos[path]["size"] = file_info["size"]
-
-    else:
-        raise FileNotFoundError(f"File or directory not found: {path}")
+    # TODO: REPLACE WITH NATIVE GLOB IMPL
+    raise NotImplementedError("REPLACE WITH NATIVE GLOB IMPL")
+    filepaths_to_infos: list[dict] = []
 
     # Set number of rows if available.
     if file_format is not None and file_format == FileFormat.Parquet:
         config = storage_config.config if storage_config is not None else None
-        if config is not None and isinstance(config, NativeStorageConfig):
-            parquet_statistics = Table.read_parquet_statistics(
-                list(filepaths_to_infos.keys()), config.io_config
-            ).to_pydict()
-            for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
-                filepaths_to_infos[path]["rows"] = num_rows
-        else:
-            parquet_metadatas = ThreadPoolExecutor().map(_get_parquet_metadata_single, filepaths_to_infos.keys())
-            for path, parquet_metadata in zip(filepaths_to_infos.keys(), parquet_metadatas):
-                filepaths_to_infos[path]["rows"] = parquet_metadata.num_rows
+        parquet_statistics = Table.read_parquet_statistics(
+            list(filepaths_to_infos.keys()), config.io_config
+        ).to_pydict()
+        for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
+            filepaths_to_infos[path]["rows"] = num_rows
 
     file_paths = []
     file_sizes = []
     num_rows = []
     for path, infos in filepaths_to_infos.items():
-        file_paths.append(_ensure_path_protocol(protocol, path))
+        file_paths.append(path)
         file_sizes.append(infos.get("size"))
         num_rows.append(infos.get("rows"))
 
     return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
-
-
-def _get_parquet_metadata_single(path: str) -> pa.parquet.FileMetadata:
-    """Get the Parquet metadata for a given Parquet file."""
-    fs = get_filesystem_from_path(path)
-    with fs.open(path) as f:
-        return pa.parquet.ParquetFile(f).metadata

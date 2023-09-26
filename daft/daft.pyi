@@ -6,7 +6,6 @@ from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
 from daft.planner.planner import PartitionT
 import pyarrow
-import fsspec
 
 class ImageMode(Enum):
     """
@@ -329,13 +328,9 @@ class NativeStorageConfig:
     def __init__(self, io_config: IOConfig | None = None): ...
 
 class PythonStorageConfig:
-    """
-    Storage configuration for the legacy Python I/O layer.
-    """
+    """Storage configuration indicating falling back to Python I/O"""
 
-    fs: fsspec.AbstractFileSystem
-
-    def __init__(self, fs: fsspec.AbstractFileSystem | None = None): ...
+    def __init__(self): ...
 
 class StorageConfig:
     """
@@ -350,7 +345,7 @@ class StorageConfig:
         """
         ...
     @staticmethod
-    def python(config: PythonStorageConfig) -> StorageConfig:
+    def python() -> StorageConfig:
         """
         Create from a Python storage config.
         """

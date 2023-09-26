@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 from daft.daft import (
     CsvSourceConfig,
@@ -9,15 +9,13 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     JsonSourceConfig,
+    NativeStorageConfig,
     ParquetSourceConfig,
     StorageConfig,
 )
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import schema_inference
-
-if TYPE_CHECKING:
-    import fsspec
 
 PartitionT = TypeVar("PartitionT")
 
@@ -33,7 +31,6 @@ class RunnerIO:
         self,
         source_path: list[str],
         file_format_config: FileFormatConfig | None = None,
-        fs: fsspec.AbstractFileSystem | None = None,
         storage_config: StorageConfig | None = None,
     ) -> FileInfos:
         """Globs the specified filepath to construct a FileInfos object containing file and dir metadata.
@@ -68,7 +65,6 @@ def sample_schema(
         assert isinstance(config, CsvSourceConfig)
         return schema_inference.from_csv(
             file=filepath,
-            storage_config=storage_config,
             csv_options=TableParseCSVOptions(
                 delimiter=config.delimiter,
                 header_index=0 if config.has_headers else None,
@@ -78,13 +74,15 @@ def sample_schema(
         assert isinstance(config, JsonSourceConfig)
         return schema_inference.from_json(
             file=filepath,
-            storage_config=storage_config,
         )
     elif file_format == FileFormat.Parquet:
         assert isinstance(config, ParquetSourceConfig)
+        assert isinstance(
+            storage_config.config, NativeStorageConfig
+        ), "Sampling schema from Parquet should be done with native code"
         return schema_inference.from_parquet(
             file=filepath,
-            storage_config=storage_config,
+            storage_config=storage_config.config,
         )
     else:
         raise NotImplementedError(f"Schema inference for {file_format} not implemented")
