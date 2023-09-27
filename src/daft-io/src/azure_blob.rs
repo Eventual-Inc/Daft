@@ -361,7 +361,7 @@ impl AzureBlobSource {
         // NB: Cannot pass through to Azure client's .url() methods here
         // because they return URIs of a very different format (https://.../container/path).
         FileMetadata {
-            filepath: format!("{protocol}://{}", &container.name),
+            filepath: format!("{protocol}://{}/", &container.name),
             size: None,
             filetype: FileType::Directory,
         }
