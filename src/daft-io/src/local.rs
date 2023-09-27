@@ -99,20 +99,25 @@ pub struct LocalFile {
 impl ObjectSource for LocalSource {
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
-        let path = uri.strip_prefix(LOCAL_PROTOCOL).unwrap_or(uri);
-        Ok(GetResult::File(LocalFile {
-            path: path.into(),
-            range,
-        }))
+        if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            Ok(GetResult::File(LocalFile {
+                path: uri.into(),
+                range,
+            }))
+        } else {
+            Err(Error::InvalidFilePath { path: uri.into() }.into())
+        }
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
         const LOCAL_PROTOCOL: &str = "file://";
-        let path = uri.strip_prefix(LOCAL_PROTOCOL).unwrap_or(uri);
-        let meta = tokio::fs::metadata(path)
+        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+            return Err(Error::InvalidFilePath { path: uri.into() }.into());
+        };
+        let meta = tokio::fs::metadata(uri)
             .await
             .context(UnableToFetchFileMetadataSnafu {
-                path: path.to_string(),
+                path: uri.to_string(),
             })?;
         Ok(meta.len() as usize)
     }
@@ -124,7 +129,9 @@ impl ObjectSource for LocalSource {
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         const LOCAL_PROTOCOL: &str = "file://";
-        let path = path.strip_prefix(LOCAL_PROTOCOL).unwrap_or(path);
+        let Some(path) = path.strip_prefix(LOCAL_PROTOCOL) else {
+            return Err(Error::InvalidFilePath { path: path.into() }.into());
+        };
         let meta = tokio::fs::metadata(path)
             .await
             .context(UnableToFetchFileMetadataSnafu {
@@ -284,7 +291,8 @@ mod tests {
         Ok(())
     }
 
-    async fn _test_local_full_ls(protocol_prefix: bool) -> Result<()> {
+    #[tokio::test]
+    async fn test_local_full_ls() -> Result<()> {
         let dir = tempfile::tempdir().unwrap();
         let mut file1 = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         write_remote_parquet_to_local_file(&mut file1).await?;
@@ -292,11 +300,7 @@ mod tests {
         write_remote_parquet_to_local_file(&mut file2).await?;
         let mut file3 = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         write_remote_parquet_to_local_file(&mut file3).await?;
-        let dir_path = if protocol_prefix {
-            format!("file://{}", dir.path().to_string_lossy())
-        } else {
-            dir.path().to_string_lossy().into()
-        };
+        let dir_path = format!("file://{}", dir.path().to_string_lossy());
         let client = LocalSource::get_client().await?;
 
         let ls_result = client.ls(dir_path.as_ref(), None, None).await?;
@@ -325,15 +329,5 @@ mod tests {
         assert_eq!(ls_result.continuation_token, None);
 
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_local_full_ls() -> Result<()> {
-        _test_local_full_ls(false).await
-    }
-
-    #[tokio::test]
-    async fn test_local_full_ls_protocol_prefix() -> Result<()> {
-        _test_local_full_ls(true).await
     }
 }
