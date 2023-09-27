@@ -65,7 +65,9 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            UnableToOpenFile { path, source } => {
+            UnableToOpenFile { path, source }
+            | UnableToFetchFileMetadata { path, source }
+            | UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
                     NotFound => super::Error::NotFound {
@@ -168,7 +170,7 @@ impl ObjectSource for LocalSource {
             if meta.file_type().is_file() {
                 // Provided uri points to a file, so only return that file.
                 yield Ok(FileMetadata {
-                    filepath: uri,
+                    filepath: format!("{}{}", LOCAL_PROTOCOL, uri),
                     size: Some(meta.len()),
                     filetype: object_io::FileType::File,
                 });
@@ -196,7 +198,7 @@ impl ObjectSource for LocalSource {
                     },
                 )?;
                 yield Ok(FileMetadata {
-                    filepath: entry.path().to_string_lossy().to_string(),
+                    filepath: format!("{}{}{}", LOCAL_PROTOCOL, entry.path().to_string_lossy(), if meta.is_dir() { "/" } else { "" }),
                     size: Some(meta.len()),
                     filetype: meta
                         .file_type()
@@ -335,17 +337,17 @@ mod tests {
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));
         let mut expected = vec![
             FileMetadata {
-                filepath: file1.path().to_string_lossy().to_string(),
+                filepath: format!("file://{}", file1.path().to_string_lossy()),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: file2.path().to_string_lossy().to_string(),
+                filepath: format!("file://{}", file2.path().to_string_lossy()),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: file3.path().to_string_lossy().to_string(),
+                filepath: format!("file://{}", file3.path().to_string_lossy()),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
