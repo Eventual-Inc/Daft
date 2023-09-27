@@ -4,7 +4,7 @@ use azure_storage_blobs::{
     container::{operations::BlobItem, Container},
     prelude::*,
 };
-use futures::{pin_mut, stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
 use std::{collections::HashSet, num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
@@ -173,59 +173,6 @@ impl AzureBlobSource {
             .boxed()
     }
 
-    async fn _list_directory_delimiter_stream(
-        &self,
-        container_client: &ContainerClient,
-        protocol: &str,
-        container_name: &str,
-        prefix: &str,
-        delimiter: &str,
-    ) -> BoxStream<super::Result<FileMetadata>> {
-        // Calls Azure list_blobs with the prefix
-        // and returns the result flattened and standardized into FileMetadata.
-
-        // Clone and own some references that we need for the lifetime of the stream.
-        let protocol = protocol.to_string();
-        let container_name = container_name.to_string();
-        let prefix = prefix.to_string();
-
-        // Paginated response stream from Azure API.
-        let responses_stream = container_client
-            .list_blobs()
-            .delimiter(delimiter.to_string())
-            .prefix(prefix.clone())
-            .into_stream();
-
-        // Map each page of results to a page of standardized FileMetadata.
-        responses_stream
-            .flat_map(move |response| match response {
-                Ok(response) => {
-                    let paths_data = response
-                        .blobs
-                        .items
-                        .iter()
-                        .map(|blob_item| {
-                            Ok(self._blob_item_to_file_metadata(
-                                &protocol,
-                                &container_name,
-                                blob_item,
-                            ))
-                        })
-                        .collect::<Vec<_>>();
-                    futures::stream::iter(paths_data)
-                }
-                Err(error) => {
-                    let error = Err(Error::RequestFailedForPath {
-                        path: format!("{}://{}{}", &protocol, &container_name, &prefix),
-                        source: error,
-                    }
-                    .into());
-                    futures::stream::iter(vec![error])
-                }
-            })
-            .boxed()
-    }
-
     async fn list_directory_stream(
         &self,
         protocol: &str,
@@ -272,13 +219,24 @@ impl AzureBlobSource {
         // To check for and deal with these cases,
         // manually process the first two items of the stream.
 
-        let maybe_first_two_items = vec![
-            unchecked_results.next().await,
-            unchecked_results.next().await,
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+        let mut maybe_first_two_items = vec![];
+        let mut stream_exhausted = false;
+        for _ in 0..2 {
+            let item = unchecked_results.next().await;
+            if let Some(item) = item {
+                maybe_first_two_items.push(item);
+            } else {
+                stream_exhausted = true;
+                break;
+            }
+        }
+
+        // Make sure the stream is pollable even if empty, since we will chain it later.
+        let unchecked_results = if !stream_exhausted {
+            unchecked_results
+        } else {
+            futures::stream::iter(vec![]).boxed()
+        };
 
         match &maybe_first_two_items[..] {
             [] => {
@@ -345,111 +303,57 @@ impl AzureBlobSource {
         }
     }
 
-    async fn _list_directory(
+    async fn _list_directory_delimiter_stream(
         &self,
+        container_client: &ContainerClient,
         protocol: &str,
         container_name: &str,
         prefix: &str,
         delimiter: &str,
-    ) -> super::Result<LSResult> {
-        let container_client = self.blob_client.container_client(container_name);
+    ) -> BoxStream<super::Result<FileMetadata>> {
+        // Calls Azure list_blobs with the prefix
+        // and returns the result flattened and standardized into FileMetadata.
 
-        // Blob stores expose listing by prefix and delimiter,
-        // but this is not the exact same as a unix-like LS behaviour
-        // (e.g. /somef is a prefix of /somefile, but you cannot ls /somef)
-        // To use prefix listing as LS, we need to ensure the path given is exactly a directory or a file, not a prefix.
+        // Clone and own some references that we need for the lifetime of the stream.
+        let protocol = protocol.to_string();
+        let container_name = container_name.to_string();
+        let prefix = prefix.to_string();
 
-        // It turns out Azure list_blobs("path/") will match both a file at "path" and a folder at "path/", which is exactly what we need.
-        let prefix_with_delimiter = format!("{}{delimiter}", prefix.trim_end_matches(delimiter));
-        let full_path = format!("{}://{}{}", protocol, container_name, prefix);
-        let full_path_with_trailing_delimiter = format!(
-            "{}://{}{}",
-            protocol, container_name, &prefix_with_delimiter
-        );
-
-        let results = container_client
+        // Paginated response stream from Azure API.
+        let responses_stream = container_client
             .list_blobs()
             .delimiter(delimiter.to_string())
-            .prefix(prefix_with_delimiter.clone())
-            .into_stream()
-            .try_collect::<Vec<_>>()
-            .await
-            .with_context(|_| RequestFailedForPathSnafu {
-                path: &full_path_with_trailing_delimiter,
-            })?
-            .iter()
-            .flat_map(|resp| &resp.blobs.items)
-            .map(|blob_item| self._blob_item_to_file_metadata(protocol, container_name, blob_item))
-            .collect::<Vec<_>>();
+            .prefix(prefix.clone())
+            .into_stream();
 
-        match &results[..] {
-            [] => {
-                // If an empty list is returned, we need to check whether the prefix actually exists and has nothing after it
-                // or if it is a nonexistent prefix.
-                // (Azure does not return marker files for empty directories.)
-
-                let prefix_exists = match prefix {
-                    "" | "/" => true,
-                    _ => {
-                        // To check whether the prefix actually exists, check whether it exists as a result one directory above.
-                        let upper_dir = prefix // "/upper/blah/"
-                            .trim_end_matches(delimiter) // "/upper/blah"
-                            .trim_end_matches(|c: char| c.to_string() != delimiter); // "/upper/"
-
-                        let upper_results = container_client
-                            .list_blobs()
-                            .delimiter(delimiter.to_string())
-                            .prefix(upper_dir.to_string())
-                            .into_stream()
-                            .try_collect::<Vec<_>>()
-                            .await
-                            .with_context(|_| RequestFailedForPathSnafu {
-                                path: format!("{}://{}{}", protocol, container_name, upper_dir),
-                            })?
-                            .iter()
-                            .flat_map(|resp| &resp.blobs.items)
-                            .map(|blob_item| {
-                                self._blob_item_to_file_metadata(
-                                    protocol,
-                                    container_name,
-                                    blob_item,
-                                )
-                                .filepath
-                            })
-                            .collect::<HashSet<_>>();
-                        upper_results.contains(&full_path_with_trailing_delimiter)
+        // Map each page of results to a page of standardized FileMetadata.
+        responses_stream
+            .flat_map(move |response| match response {
+                Ok(response) => {
+                    let paths_data = response
+                        .blobs
+                        .items
+                        .iter()
+                        .map(|blob_item| {
+                            Ok(self._blob_item_to_file_metadata(
+                                &protocol,
+                                &container_name,
+                                blob_item,
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    futures::stream::iter(paths_data)
+                }
+                Err(error) => {
+                    let error = Err(Error::RequestFailedForPath {
+                        path: format!("{}://{}{}", &protocol, &container_name, &prefix),
+                        source: error,
                     }
-                };
-
-                if prefix_exists {
-                    Ok(LSResult {
-                        files: vec![],
-                        continuation_token: None,
-                    })
-                } else {
-                    Err(Error::NotFound { path: full_path }.into())
+                    .into());
+                    futures::stream::iter(vec![error])
                 }
-            }
-            [result] => {
-                // Azure prefixing does not differentiate between directories and files even if the trailing slash is provided.
-                // This returns incorrect results when we asked for a directory and got a file.
-                // (The other way around is okay - we can ask for a path without a trailing slash and get a directory with a trailing slash.)
-                // If we get a single result, we need to check whether we asked for a directory but got a file, in which case the requested directory does not exist.
-
-                if full_path.len() > result.filepath.len() {
-                    Err(Error::NotFound { path: full_path }.into())
-                } else {
-                    Ok(LSResult {
-                        files: results,
-                        continuation_token: None,
-                    })
-                }
-            }
-            _ => Ok(LSResult {
-                files: results,
-                continuation_token: None,
-            }),
-        }
+            })
+            .boxed()
     }
 
     fn _container_to_file_metadata(&self, protocol: String, container: &Container) -> FileMetadata {
@@ -548,6 +452,7 @@ impl ObjectSource for AzureBlobSource {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let delimiter = delimiter.unwrap_or("/");
 
+        // path can be root (buckets) or path prefix within a bucket.
         let container = {
             // "Container" is Azure's name for Bucket.
             //
@@ -579,77 +484,34 @@ impl ObjectSource for AzureBlobSource {
                     .await)
             }
         }
-
-        // let uri = uri.to_string();
-        // let delimiter = delimiter.map(String::from);
-        // let s = stream! {
-        //     let lsr = self.ls(&uri, delimiter.as_deref(), None).await?;
-        //     let mut continuation_token = lsr.continuation_token.clone();
-        //     for file in lsr.files {
-        //         yield Ok(file);
-        //     }
-
-        //     while continuation_token.is_some() {
-        //         let lsr = self.ls(&uri, delimiter.as_deref(), continuation_token.as_deref()).await?;
-        //         continuation_token = lsr.continuation_token.clone();
-        //         for file in lsr.files {
-        //             yield Ok(file);
-        //         }
-        //     }
-        // };
-        // Ok(s.boxed())
     }
 
-    // path can be root (buckets) or path prefix within a bucket.
     async fn ls(
         &self,
         path: &str,
         delimiter: Option<&str>,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        todo!()
-        // let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
-        // let delimiter = delimiter.unwrap_or("/");
+        // It looks like the azure rust library API
+        // does not currently allow using the continuation token:
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
+        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
+        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
+        assert!(
+            continuation_token.is_none(),
+            "Azure continuation_token {:?} received, which we cannot use",
+            continuation_token
+        );
 
-        // // It looks like the azure rust library API
-        // // does not currently allow using the continuation token:
-        // // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
-        // // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
-        // // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
-        // assert!(
-        //     continuation_token.is_none(),
-        //     "Azure continuation_token {:?} received, which we cannot use",
-        //     continuation_token
-        // );
+        let files = self
+            .iter_dir(path, delimiter, None)
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
 
-        // // "Container" is Azure's name for Bucket.
-        // let container = {
-        //     // fsspec supports two URI formats are supported; for compatibility, we will support both as well.
-        //     // PROTOCOL://container/path-part/file
-        //     // PROTOCOL://container@account.dfs.core.windows.net/path-part/file
-        //     // See https://github.com/fsspec/adlfs/ for more details
-        //     let username = parsed.username();
-        //     match username {
-        //         "" => parsed.host_str(),
-        //         _ => Some(username),
-        //     }
-        // };
-
-        // // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
-        // // NB: It's unclear if there is a semantic difference between the protocols
-        // // or if there is a standard for the behaviour either;
-        // // here, we will treat them both the same, but persist whichever protocol string was used.
-        // let protocol = parsed.scheme();
-
-        // match container {
-        //     // List containers.
-        //     None => self._list_containers(protocol).await,
-        //     // List a path within a container.
-        //     Some(container_name) => {
-        //         let prefix = parsed.path();
-        //         self._list_directory(protocol, container_name, prefix, delimiter)
-        //             .await
-        //     }
-        // }
+        Ok(LSResult {
+            files,
+            continuation_token: None,
+        })
     }
 }
