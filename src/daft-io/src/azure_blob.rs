@@ -231,7 +231,8 @@ impl AzureBlobSource {
             }
         }
 
-        // Make sure the stream is pollable even if empty, since we will chain it later.
+        // Make sure the stream is pollable even if empty,
+        // since we will chain it later with the two items we already popped.
         let unchecked_results = if !stream_exhausted {
             unchecked_results
         } else {
