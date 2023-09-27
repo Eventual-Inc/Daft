@@ -20,6 +20,7 @@ pub enum DaftError {
         path: String,
         source: GenericError,
     },
+    InternalError(String),
     External(GenericError),
 }
 
@@ -31,7 +32,8 @@ impl std::error::Error for DaftError {
             | DaftError::TypeError(_)
             | DaftError::ComputeError(_)
             | DaftError::ArrowError(_)
-            | DaftError::ValueError(_) => None,
+            | DaftError::ValueError(_)
+            | DaftError::InternalError(_) => None,
             DaftError::IoError(io_error) => Some(io_error),
             DaftError::FileNotFound { source, .. } | DaftError::External(source) => Some(&**source),
             #[cfg(feature = "python")]
@@ -96,6 +98,7 @@ impl Display for DaftError {
             Self::ComputeError(s) => write!(f, "DaftError::ComputeError {s}"),
             Self::ArrowError(s) => write!(f, "DaftError::ArrowError {s}"),
             Self::ValueError(s) => write!(f, "DaftError::ValueError {s}"),
+            Self::InternalError(s) => write!(f, "DaftError::InternalError {s}"),
             #[cfg(feature = "python")]
             Self::PyO3Error(e) => write!(f, "DaftError::PyO3Error {e}"),
             Self::IoError(e) => write!(f, "DaftError::IoError {e}"),

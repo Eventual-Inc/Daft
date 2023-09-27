@@ -6,13 +6,17 @@ use crate::object_io::{self, FileMetadata, LSResult};
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
+use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
+use common_error::DaftError;
+use futures::stream::BoxStream;
 use futures::Stream;
+use futures::StreamExt;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_stream::StreamExt;
+use tokio_stream::StreamExt as TokioStreamExt;
 use url::ParseError;
 pub(crate) struct LocalSource {}
 
@@ -46,6 +50,9 @@ enum Error {
         path: String,
         source: std::io::Error,
     },
+
+    #[snafu(display("Unexpected symlink when processing directory {}: {}", path, source))]
+    UnexpectedSymlink { path: String, source: DaftError },
 
     #[snafu(display("Unable to parse URL \"{}\"", url.to_string_lossy()))]
     InvalidUrl { url: PathBuf, source: ParseError },
@@ -128,60 +135,79 @@ impl ObjectSource for LocalSource {
         _delimiter: Option<&str>,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        let Some(path) = path.strip_prefix(LOCAL_PROTOCOL) else {
-            return Err(Error::InvalidFilePath { path: path.into() }.into());
-        };
-        let meta = tokio::fs::metadata(path)
-            .await
-            .context(UnableToFetchFileMetadataSnafu {
-                path: path.to_string(),
-            })?;
-        if meta.file_type().is_file() {
-            // Provided path points to a file, so only return that file.
-            return Ok(LSResult {
-                files: vec![FileMetadata {
-                    filepath: path.into(),
-                    size: Some(meta.len()),
-                    filetype: object_io::FileType::File,
-                }],
-                continuation_token: None,
-            });
-        }
-        // NOTE(Clark): read_dir follows symbolic links, so no special handling is needed there.
-        let dir_entries =
-            tokio::fs::read_dir(path)
-                .await
-                .context(UnableToFetchDirectoryEntriesSnafu {
-                    path: path.to_string(),
-                })?;
-        let mut dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
-        let size = dir_stream.size_hint().1.unwrap_or(0);
+        let mut s = self.iter_dir(path, None, None).await?;
+        let size = s.size_hint().1.unwrap_or(0);
         let mut files = Vec::with_capacity(size);
-        while let Some(entry) =
-            dir_stream
-                .next()
-                .await
-                .transpose()
-                .context(UnableToFetchDirectoryEntriesSnafu {
-                    path: path.to_string(),
-                })?
-        {
-            let meta = tokio::fs::metadata(entry.path()).await.context(
-                UnableToFetchDirectoryEntriesSnafu {
-                    path: entry.path().to_string_lossy(),
-                },
-            )?;
-            files.push(FileMetadata {
-                filepath: entry.path().to_string_lossy().to_string(),
-                size: Some(meta.len()),
-                filetype: meta.file_type().into(),
-            })
+        while let Some(file_meta) = StreamExt::next(&mut s).await.transpose()? {
+            files.push(file_meta);
         }
         Ok(LSResult {
             files,
             continuation_token: None,
         })
+    }
+
+    async fn iter_dir(
+        &self,
+        uri: &str,
+        _delimiter: Option<&str>,
+        _limit: Option<usize>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        const LOCAL_PROTOCOL: &str = "file://";
+        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+            return Err(Error::InvalidFilePath { path: uri.into() }.into());
+        };
+        let meta =
+            tokio::fs::metadata(uri)
+                .await
+                .with_context(|_| UnableToFetchFileMetadataSnafu {
+                    path: uri.to_string(),
+                })?;
+        let uri = uri.to_string();
+        let s = stream! {
+            if meta.file_type().is_file() {
+                // Provided uri points to a file, so only return that file.
+                yield Ok(FileMetadata {
+                    filepath: uri,
+                    size: Some(meta.len()),
+                    filetype: object_io::FileType::File,
+                });
+                return;
+            }
+            // NOTE(Clark): read_dir follows symbolic links, so no special handling is needed.
+            let dir_entries =
+                tokio::fs::read_dir(&uri)
+                    .await
+                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu {
+                        path: uri.clone(),
+                    })?;
+            let mut dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
+            while let Some(entry) =
+                TokioStreamExt::next(&mut dir_stream)
+                    .await
+                    .transpose()
+                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu {
+                        path: uri.clone(),
+                    })?
+            {
+                let meta = tokio::fs::metadata(entry.path()).await.with_context(|_|
+                    UnableToFetchDirectoryEntriesSnafu {
+                        path: entry.path().to_string_lossy().to_string(),
+                    },
+                )?;
+                yield Ok(FileMetadata {
+                    filepath: entry.path().to_string_lossy().to_string(),
+                    size: Some(meta.len()),
+                    filetype: meta
+                        .file_type()
+                        .try_into()
+                        .with_context(|_| UnexpectedSymlinkSnafu {
+                            path: entry.path().to_string_lossy().to_string(),
+                        })?,
+                });
+            }
+        };
+        Ok(s.boxed())
     }
 }
 
