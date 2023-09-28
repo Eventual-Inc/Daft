@@ -6,7 +6,7 @@ use azure_storage_blobs::{
 };
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
-use std::{collections::HashSet, num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -16,21 +16,14 @@ use common_io_config::AzureConfig;
 
 #[derive(Debug, Snafu)]
 enum Error {
-    // Input parsing errors.
+    // Input errors.
     #[snafu(display("Unable to parse URL: \"{}\"", path))]
     InvalidUrl {
         path: String,
         source: url::ParseError,
     },
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseUtf8 { path: String, source: FromUtf8Error },
-
-    #[snafu(display(
-        "Unable to parse data as Integer while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseInteger { path: String, source: ParseIntError },
+    #[snafu(display("Continuation tokens are not supported: \"{}\"", token))]
+    ContinuationToken { token: String },
 
     // Generic client errors.
     #[snafu(display("Azure Storage Account not set and is required.\n Set either `AzureConfig.storage_account` or the `AZURE_STORAGE_ACCOUNT` environment variable."))]
@@ -38,7 +31,7 @@ enum Error {
     #[snafu(display("Unable to create Azure Client {}", source))]
     UnableToCreateClient { source: azure_storage::Error },
     #[snafu(display("Azure client generic error: {}", source))]
-    AzureGenericError { source: azure_storage::Error },
+    AzureGeneric { source: azure_storage::Error },
 
     // Parameterized client errors.
     #[snafu(display("Unable to connect to {}: {}", path, source))]
@@ -69,7 +62,7 @@ enum Error {
     NotFound { path: String },
 
     #[snafu(display("Unable to access container: {}: {}", path, source))]
-    ContainerAccessError {
+    ContainerAccess {
         path: String,
         source: azure_storage::Error,
     },
@@ -165,7 +158,7 @@ impl AzureBlobSource {
                     futures::stream::iter(containers).boxed()
                 }
                 Err(error) => {
-                    let error = Err(Error::AzureGenericError { source: error }.into());
+                    let error = Err(Error::AzureGeneric { source: error }.into());
                     futures::stream::iter(vec![error]).boxed()
                 }
             })
@@ -251,29 +244,24 @@ impl AzureBlobSource {
                                 .trim_end_matches(&delimiter) // "/upper/blah"
                                 .trim_end_matches(|c: char| c.to_string() != delimiter); // "/upper/"
 
-                            let upper_results = container_client
-                                .list_blobs()
-                                .delimiter(delimiter.to_string())
-                                .prefix(upper_dir.to_string())
-                                .into_stream()
-                                .try_collect::<Vec<_>>()
-                                .await
-                                .with_context(|_| RequestFailedForPathSnafu {
-                                    path: format!("{}://{}{}", protocol, container_name, upper_dir),
-                                })?
-                                .iter()
-                                .flat_map(|resp| &resp.blobs.items)
-                                .map(|blob_item| {
-                                    self._blob_item_to_file_metadata(
-                                        &protocol,
-                                        &container_name,
-                                        blob_item,
-                                    )
-                                    .filepath
-                                })
-                                .collect::<HashSet<_>>();
+                            let upper_results_stream = self._list_directory_delimiter_stream(
+                                &container_client,
+                                &protocol,
+                                &container_name,
+                                upper_dir,
+                                &delimiter,
+                            ).await;
 
-                            upper_results.contains(&full_path_with_trailing_delimiter)
+                            // At this point, we have a stream of Result<FileMetadata>.
+                            // We would like to stop as soon as there is a file match,
+                            // or if there is an error.
+                            upper_results_stream
+                                .map_ok(|file_info| (file_info.filepath == full_path_with_trailing_delimiter))
+                                .try_skip_while(|is_match| futures::future::ready(Ok(!is_match)))
+                                .boxed()
+                                .try_next()
+                                .await?
+                                .is_some()
                         }
                     };
                     // If the prefix does not exist, the stream needs to yield a single NotFound error.
@@ -328,21 +316,18 @@ impl AzureBlobSource {
 
         // Map each page of results to a page of standardized FileMetadata.
         responses_stream
-            .flat_map(move |response| match response {
+            .map(move |response| (response, protocol.clone(), container_name.clone()))
+            .flat_map(move |(response, protocol, container_name)| match response {
                 Ok(response) => {
-                    let paths_data = response
-                        .blobs
-                        .items
-                        .iter()
-                        .map(|blob_item| {
+                    let paths_data =
+                        response.blobs.items.into_iter().map(move |blob_item| {
                             Ok(self._blob_item_to_file_metadata(
                                 &protocol,
                                 &container_name,
-                                blob_item,
+                                &blob_item,
                             ))
-                        })
-                        .collect::<Vec<_>>();
-                    futures::stream::iter(paths_data)
+                        });
+                    futures::stream::iter(paths_data).boxed()
                 }
                 Err(error) => {
                     let error = Err(Error::RequestFailedForPath {
@@ -350,7 +335,7 @@ impl AzureBlobSource {
                         source: error,
                     }
                     .into());
-                    futures::stream::iter(vec![error])
+                    futures::stream::iter(vec![error]).boxed()
                 }
             })
             .boxed()
@@ -497,11 +482,12 @@ impl ObjectSource for AzureBlobSource {
         // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
         // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
         // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
-        assert!(
-            continuation_token.is_none(),
-            "Azure continuation_token {:?} received, which we cannot use",
-            continuation_token
-        );
+        match continuation_token {
+            None => Ok(()),
+            Some(token) => Err(Error::ContinuationToken {
+                token: token.to_string(),
+            }),
+        }?;
 
         let files = self
             .iter_dir(path, delimiter, None)
