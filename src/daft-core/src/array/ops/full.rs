@@ -129,7 +129,8 @@ impl FullNull for ListArray {
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
-                    OffsetsBuffer::try_from(repeat(0).take(length).collect::<Vec<_>>()).unwrap(),
+                    OffsetsBuffer::try_from(repeat(0).take(length + 1).collect::<Vec<_>>())
+                        .unwrap(),
                     Some(validity),
                 )
             }

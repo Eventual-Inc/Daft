@@ -15,6 +15,7 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
         pytest.param(lambda data, pat: data.str.contains(pat), id="contains"),
         pytest.param(lambda data, pat: data.str.startswith(pat), id="startswith"),
         pytest.param(lambda data, pat: data.str.endswith(pat), id="endswith"),
+        pytest.param(lambda data, pat: data.str.endswith(pat), id="split"),
         pytest.param(lambda data, pat: data.str.concat(pat), id="concat"),
     ],
 )
