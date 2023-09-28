@@ -29,8 +29,7 @@ where
     // which we assume to be smaller than usize::MAX), we should have that (1) always holds, so we can reliably unwrap the size hint upper bound
     // and treat it as the iterator length.
     let arr_len = arr_iter.size_hint().1.unwrap();
-    let mut offsets = Vec::with_capacity(arr_len + 1);
-    offsets.push(0i64);
+    let mut offsets = arrow2::offset::Offsets::new();
     let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(arr_len);
     for (val, pat) in arr_iter.zip(pattern_iter) {
         let mut num_splits = 0i64;
@@ -46,13 +45,12 @@ where
                 validity.push(false);
             }
         }
-        let offset = offsets.last().unwrap() + num_splits;
-        offsets.push(offset);
+        offsets.try_push(num_splits)?;
     }
     // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
     splits.shrink_to_fit();
     let splits: arrow2::array::Utf8Array<i64> = splits.into();
-    let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
     let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
         0 => None,
         _ => Some(validity.into()),
