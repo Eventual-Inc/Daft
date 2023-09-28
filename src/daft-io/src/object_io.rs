@@ -137,25 +137,27 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
-pub(crate) async fn glob(
-    source: Arc<dyn ObjectSource>,
-    glob: &str,
-) -> super::Result<Vec<FileMetadata>> {
-    // TODO: we should derive this depending on backend, will probably fail on Windows + local fs
-    let delimiter = "/";
+/// Parses a glob URL string into "fragments"
+/// Fragments are the glob URL string but:
+///   1. Split by delimiter ("/")
+///   2. Non-wildcard fragments are joined and coalesced by delimiter
+///   3. The first fragment is prefixed by "{scheme}://"
+fn to_glob_fragments(glob_str: &str) -> Vec<String> {
+    let delimiter = "/".to_string();
+    let glob_url = url::Url::parse(glob_str)
+        .unwrap_or_else(|_| panic!("Glob string must be able to be parsed as URL: {glob_str}"));
+    let url_scheme = glob_url.scheme();
 
-    let glob_url = url::Url::parse(glob)
-        .expect(format!("Glob must be able to be parsed as URL: {glob}").as_str());
-    let scheme = glob_url.scheme();
-    let glob = &glob_url[Position::BeforeUsername..];
-
-    // Parse glob fragments
-    let mut glob_fragments = glob.split(delimiter).fold(
+    // Parse glob fragments: split by delimiter and join any non-wildcard fragments
+    let mut glob_fragments = glob_url[Position::BeforeUsername..].split(&delimiter).fold(
         (vec![], vec![]),
         |(mut acc, mut fragments_so_far), current_fragment| {
-            if current_fragment.contains('*') {
+            if current_fragment.contains('*')
+                || current_fragment.contains('[')
+                || current_fragment.contains('?')
+            {
                 if !fragments_so_far.is_empty() {
-                    acc.push(fragments_so_far.join(delimiter));
+                    acc.push(fragments_so_far.join(delimiter.as_str()));
                 }
                 acc.push(current_fragment.to_string());
                 (acc, vec![])
@@ -171,11 +173,19 @@ pub(crate) async fn glob(
         glob_fragments
             .0
             .drain(..)
-            .chain(std::iter::once(glob_fragments.1.join(delimiter)))
+            .chain(std::iter::once(glob_fragments.1.join(delimiter.as_str())))
             .collect()
     };
-    glob_fragments[0] = format!("{scheme}://") + glob_fragments[0].as_str();
-    println!("Glob {glob} fragments: {:?}", glob_fragments);
+    glob_fragments[0] = format!("{url_scheme}://") + glob_fragments[0].as_str();
+
+    glob_fragments
+}
+
+pub(crate) async fn glob(
+    source: Arc<dyn ObjectSource>,
+    glob: &str,
+) -> super::Result<Vec<FileMetadata>> {
+    let glob_fragments = to_glob_fragments(glob);
 
     // Visits the specified path + next_fragment, enqueuing work and returning results where appropriate
     #[async_recursion]
