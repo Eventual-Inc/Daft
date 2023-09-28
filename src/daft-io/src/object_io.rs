@@ -210,20 +210,32 @@ pub(crate) async fn glob(
             let (glob_fragments, i) = glob_fragments;
             let current_fragment = glob_fragments[i].as_str();
 
-            // BASE CASE: current_fragment contains a **
+            // CASE: current_fragment contains a **
             // We have no choice but to perform a naive recursive ls and filter on the results for only FileType::File results that
             // match the full glob
             if current_fragment.contains("**") {
-                let mut all_file_metadata = recursive_iter(source.clone(), path.as_str()).await?;
                 let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
                     .literal_separator(true)
                     .build()
                     .expect("Cannot parse glob")
                     .compile_matcher();
 
-                while let Some(fm) = all_file_metadata.next().await {
+                let mut next_level_file_metadata =
+                    source.iter_dir(path.as_str(), Some("/"), None).await?;
+
+                while let Some(fm) = next_level_file_metadata.next().await {
                     match fm {
                         Ok(fm) => {
+                            // Recursively visit each sub-directory, do not increment `i` so as to keep visiting the "**" fragmemt
+                            if matches!(fm.filetype, FileType::Directory) {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    &fm.filepath,
+                                    (glob_fragments.clone(), i),
+                                )
+                            }
+                            // Return any Files that match
                             if glob_matcher.is_match(fm.filepath.as_str())
                                 && matches!(fm.filetype, FileType::File)
                             {
