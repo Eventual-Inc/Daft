@@ -10,6 +10,7 @@ use futures::StreamExt;
 use globset::GlobBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
+use url::Position;
 
 use crate::local::{collect_file, LocalFile};
 
@@ -143,31 +144,38 @@ pub(crate) async fn glob(
     // TODO: we should derive this depending on backend, will probably fail on Windows + local fs
     let delimiter = "/";
 
+    let glob_url = url::Url::parse(glob)
+        .expect(format!("Glob must be able to be parsed as URL: {glob}").as_str());
+    let scheme = glob_url.scheme();
+    let glob = &glob_url[Position::BeforeUsername..];
+
     // Parse glob fragments
     let mut glob_fragments = glob.split(delimiter).fold(
-        (vec![], String::new()),
-        |(mut acc, fragment_so_far), current_fragment| {
+        (vec![], vec![]),
+        |(mut acc, mut fragments_so_far), current_fragment| {
             if current_fragment.contains('*') {
-                acc.push(fragment_so_far);
+                if !fragments_so_far.is_empty() {
+                    acc.push(fragments_so_far.join(delimiter));
+                }
                 acc.push(current_fragment.to_string());
-                (acc, String::new())
+                (acc, vec![])
             } else {
-                (
-                    acc,
-                    format!("{fragment_so_far}{delimiter}{current_fragment}"),
-                )
+                fragments_so_far.push(current_fragment.to_string());
+                (acc, fragments_so_far)
             }
         },
     );
-    let glob_fragments = if glob_fragments.1.is_empty() {
+    let mut glob_fragments = if glob_fragments.1.is_empty() {
         glob_fragments.0
     } else {
         glob_fragments
             .0
             .drain(..)
-            .chain(std::iter::once(glob_fragments.1))
+            .chain(std::iter::once(glob_fragments.1.join(delimiter)))
             .collect()
     };
+    glob_fragments[0] = format!("{scheme}://") + glob_fragments[0].as_str();
+    println!("Glob {glob} fragments: {:?}", glob_fragments);
 
     // Visits the specified path + next_fragment, enqueuing work and returning results where appropriate
     #[async_recursion]
@@ -176,6 +184,7 @@ pub(crate) async fn glob(
         path: &str,
         glob_fragments: (Vec<String>, usize),
     ) -> super::Result<Vec<FileMetadata>> {
+        println!("Visiting '{path}' with glob_fragments: {glob_fragments:?}");
         let (glob_fragments, i) = glob_fragments;
         let current_fragment = glob_fragments[i].as_str();
 
@@ -202,11 +211,14 @@ pub(crate) async fn glob(
                     }
                 }
             }
-            Ok(results)
+            Ok(results
+                .into_iter()
+                .filter(|fm| matches!(fm.filetype, FileType::File))
+                .collect())
         } else if current_fragment.contains('*') {
             // Perform a directory listing of the next level and run it against the (partial) glob filter. Then enqueue more work where necessary
             let mut next_level_file_metadata = source.iter_dir(path, Some("/"), None).await?;
-            let mut matches = vec![];
+            let mut glob_matches = vec![];
             let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
                 .literal_separator(true)
                 .build()
@@ -215,8 +227,8 @@ pub(crate) async fn glob(
             while let Some(fm) = next_level_file_metadata.next().await {
                 match fm {
                     Ok(fm) => {
-                        if glob_matcher.is_match(fm.filepath.as_str()) {
-                            matches.push(fm)
+                        if glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/')) {
+                            glob_matches.push(fm)
                         }
                     }
                     Err(e) => {
@@ -224,15 +236,22 @@ pub(crate) async fn glob(
                     }
                 }
             }
+            println!("Matched: {glob_matches:?}");
 
-            // BASE CASE: we've reached the last remaining glob fragment and these matches are the final matches
+            // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
             if i == glob_fragments.len() - 1 {
-                return Ok(matches);
+                return Ok(glob_matches
+                    .into_iter()
+                    .filter(|fm| matches!(fm.filetype, FileType::File))
+                    .collect());
             }
 
             // RECURSIVE CASE: keep visiting recursively
             let mut results = vec![];
-            for m in matches {
+            for m in glob_matches
+                .iter()
+                .filter(|fm| matches!(fm.filetype, FileType::Directory))
+            {
                 let mut partial_results = visit(
                     source.clone(),
                     m.filepath.as_str(),

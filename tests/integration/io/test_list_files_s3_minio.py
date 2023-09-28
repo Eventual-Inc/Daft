@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from daft.daft import io_list
+from daft.daft import io_glob, io_list
 
 from .conftest import minio_create_bucket
 
@@ -25,6 +25,123 @@ def s3fs_recursive_list(fs, path) -> list:
         else:
             all_results.append(item)
     return all_results
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "path_expect_pair",
+    [
+        # Exact filepath: fallback onto ls behavior
+        (f"s3://bucket/a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
+        ###
+        # `**`: recursive wildcard
+        ###
+        # All files with **
+        (
+            f"s3://bucket/**",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3://bucket/c.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/c.match", "size": 0},
+            ],
+        ),
+        # Exact filepath after **
+        (
+            f"s3://bucket/**/a.match",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
+            ],
+        ),
+        # Wildcard filepath after **
+        (
+            f"s3://bucket/**/nested1/*.match",
+            [
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+            ],
+        ),
+        # Wildcard folder before **
+        (
+            f"s3://bucket/*/**/*.match",
+            [
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/c.match", "size": 0},
+            ],
+        ),
+        ###
+        # `*`: wildcard
+        ###
+        # Wildcard file
+        (
+            f"s3://bucket/*.match",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/c.match", "size": 0},
+            ],
+        ),
+        # Nested wildcard file
+        (
+            f"s3://bucket/nested1/*.match",
+            [
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+            ],
+        ),
+        # Wildcard folder + wildcard file
+        (
+            f"s3://bucket/*1/*.match",
+            [
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+            ],
+        ),
+        # Wildcard folder + exact file
+        (
+            f"s3://bucket/*/a.match",
+            [
+                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
+            ],
+        ),
+        ###
+        # Directories: glob ignores directories and never returns them
+        ###
+        # Exact directory: we don't return directories
+        (f"s3://bucket/nested1", []),
+        # Wildcard folder: we don't select directories
+        (f"s3://bucket/nested*", []),
+        # Exact folder after **: we don't return directories
+        (f"s3://bucket/**/nested1", []),
+    ],
+)
+def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair):
+    globpath, expect = path_expect_pair
+    with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
+        files = [
+            "a.match",
+            "b.nomatch",
+            "c.match",
+            "nested1/a.match",
+            "nested1/b.nomatch",
+            "nested1/c.match",
+            "nested2/a.match",
+            "nested2/b.nomatch",
+            "nested2/c.match",
+        ]
+        for name in files:
+            fs.touch(f"bucket/{name}")
+        daft_ls_result = io_glob(globpath, io_config=minio_io_config)
+        assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])
 
 
 @pytest.mark.integration()
