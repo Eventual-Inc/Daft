@@ -28,7 +28,7 @@ mod py {
 
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
-                let files = glob(source, path.as_ref()).await?;
+                let files = glob(source, path.as_ref()).await?.try_collect().await?;
                 Ok(files)
             })
         });

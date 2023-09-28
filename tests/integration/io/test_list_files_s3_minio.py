@@ -31,7 +31,7 @@ def s3fs_recursive_list(fs, path) -> list:
 @pytest.mark.parametrize(
     "path_expect_pair",
     [
-        # Exact filepath: fallback onto ls behavior
+        # Exact filepath:
         (f"s3://bucket/a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
         ###
         # `**`: recursive wildcard
@@ -113,6 +113,17 @@ def s3fs_recursive_list(fs, path) -> list:
                 {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
             ],
         ),
+        ###
+        # Missing paths
+        ###
+        # Exact filepath missing:
+        # (f"s3://bucket/MISSING", []),
+        # Wildcard file no match:
+        (f"s3://bucket/*.MISSING", []),
+        # Exact folder missing:
+        # (f"s3://bucket/MISSING/*.match", []),
+        # Wildcard folder no match:
+        (f"s3://bucket/*NOMATCH/*.match", []),
         ###
         # Directories: glob ignores directories and never returns them
         ###

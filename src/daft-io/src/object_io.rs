@@ -137,6 +137,13 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
+/// Checks if a given string contains special glob characters
+/// NOTE: we use the `globset` crate which defines the following glob behavior:
+/// https://docs.rs/globset/latest/globset/index.html#syntax
+fn contains_special_character(s: &str) -> bool {
+    s.contains('*') || s.contains('?') || s.contains('{') || s.contains('[')
+}
+
 /// Parses a glob URL string into "fragments"
 /// Fragments are the glob URL string but:
 ///   1. Split by delimiter ("/")
@@ -152,10 +159,7 @@ fn to_glob_fragments(glob_str: &str) -> Vec<String> {
     let mut glob_fragments = glob_url[Position::BeforeUsername..].split(&delimiter).fold(
         (vec![], vec![]),
         |(mut acc, mut fragments_so_far), current_fragment| {
-            if current_fragment.contains('*')
-                || current_fragment.contains('[')
-                || current_fragment.contains('?')
-            {
+            if contains_special_character(current_fragment) {
                 if !fragments_so_far.is_empty() {
                     acc.push(fragments_so_far.join(delimiter.as_str()));
                 }
@@ -184,61 +188,100 @@ fn to_glob_fragments(glob_str: &str) -> Vec<String> {
 pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
-) -> super::Result<Vec<FileMetadata>> {
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     let glob_fragments = to_glob_fragments(glob);
 
-    // Visits the specified path + next_fragment, enqueuing work and returning results where appropriate
+    // Channel to send results back to caller. Note that all results must have FileType::File.
+    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
+
+    /// Dispatches a task to visit the specified `path` (a concrete path on the filesystem to either a File or Directory).
     #[async_recursion]
     async fn visit(
+        result_tx: Sender<super::Result<FileMetadata>>,
         source: Arc<dyn ObjectSource>,
         path: &str,
         glob_fragments: (Vec<String>, usize),
-    ) -> super::Result<Vec<FileMetadata>> {
-        println!("Visiting '{path}' with glob_fragments: {glob_fragments:?}");
+    ) -> super::Result<()> {
+        log::debug!(target: "glob", "Visiting '{path}' with glob_fragments: {glob_fragments:?}");
         let (glob_fragments, i) = glob_fragments;
         let current_fragment = glob_fragments[i].as_str();
 
         // BASE CASE: current_fragment contains a **
-        // We have no choice but to perform a naive recursive ls and filter on the results
+        // We have no choice but to perform a naive recursive ls and filter on the results for only FileType::File results that
+        // match the full glob
         if current_fragment.contains("**") {
-            // Perform recursive listing of everything from here on out and run it against the (full) glob filter"
             let mut all_file_metadata = recursive_iter(source.clone(), path).await?;
-            let mut results = vec![];
             let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
                 .literal_separator(true)
                 .build()
                 .expect("Cannot parse glob")
                 .compile_matcher();
+
             while let Some(fm) = all_file_metadata.next().await {
                 match fm {
                     Ok(fm) => {
-                        if glob_matcher.is_match(fm.filepath.as_str()) {
-                            results.push(fm)
+                        if glob_matcher.is_match(fm.filepath.as_str())
+                            && matches!(fm.filetype, FileType::File)
+                        {
+                            result_tx.send(Ok(fm)).await.map_err(|se| {
+                                super::Error::UnableToSendDataOverChannel { source: se.into() }
+                            })?;
                         }
                     }
                     Err(e) => {
-                        return Err(e);
+                        result_tx.send(Err(e)).await.map_err(|se| {
+                            super::Error::UnableToSendDataOverChannel { source: se.into() }
+                        })?;
                     }
                 }
             }
-            Ok(results
-                .into_iter()
-                .filter(|fm| matches!(fm.filetype, FileType::File))
-                .collect())
-        } else if current_fragment.contains('*') {
-            // Perform a directory listing of the next level and run it against the (partial) glob filter. Then enqueue more work where necessary
+            Ok(())
+
+        // CASE: current_fragment contains a special character (e.g. *)
+        // Perform a directory listing of the just next level and run it against the (partial) glob filter
+        } else if contains_special_character(current_fragment) {
             let mut next_level_file_metadata = source.iter_dir(path, Some("/"), None).await?;
-            let mut glob_matches = vec![];
             let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
                 .literal_separator(true)
                 .build()
                 .expect("Cannot parse glob")
                 .compile_matcher();
+
+            // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
+            if i == glob_fragments.len() - 1 {
+                while let Some(fm) = next_level_file_metadata.next().await {
+                    match fm {
+                        Ok(fm) => {
+                            if glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/'))
+                                && matches!(fm.filetype, FileType::File)
+                            {
+                                result_tx.send(Ok(fm)).await.map_err(|se| {
+                                    super::Error::UnableToSendDataOverChannel { source: se.into() }
+                                })?;
+                            }
+                        }
+                        Err(e) => {
+                            result_tx.send(Err(e)).await.map_err(|se| {
+                                super::Error::UnableToSendDataOverChannel { source: se.into() }
+                            })?;
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
+            // RECURSIVE CASE: keep visiting recursively
             while let Some(fm) = next_level_file_metadata.next().await {
                 match fm {
                     Ok(fm) => {
-                        if glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/')) {
-                            glob_matches.push(fm)
+                        if matches!(fm.filetype, FileType::Directory) {
+                            visit(
+                                result_tx.clone(),
+                                source.clone(),
+                                fm.filepath.as_str(),
+                                (glob_fragments.clone(), i + 1),
+                            )
+                            .await?;
                         }
                     }
                     Err(e) => {
@@ -246,49 +289,30 @@ pub(crate) async fn glob(
                     }
                 }
             }
-            println!("Matched: {glob_matches:?}");
+            Ok(())
 
-            // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
-            if i == glob_fragments.len() - 1 {
-                return Ok(glob_matches
-                    .into_iter()
-                    .filter(|fm| matches!(fm.filetype, FileType::File))
-                    .collect());
-            }
-
-            // RECURSIVE CASE: keep visiting recursively
-            let mut results = vec![];
-            for m in glob_matches
-                .iter()
-                .filter(|fm| matches!(fm.filetype, FileType::Directory))
-            {
-                let mut partial_results = visit(
-                    source.clone(),
-                    m.filepath.as_str(),
-                    (glob_fragments.clone(), i + 1),
-                )
-                .await?;
-                results.append(&mut partial_results);
-            }
-            Ok(results)
+        // CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
+        // We just append it to the current `path` and check whether or not it exists.
         } else {
-            // Perform a directory listing of the new concatted path and enqueue that
             let full_dir_path = path.to_string() + current_fragment;
 
             // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
             // We need to verify that it exists before returning.
             if i == glob_fragments.len() - 1 {
                 // TODO: can we implement a .exists instead? This might have weird behavior with directories
-                let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await?;
+                let mut single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await?;
                 if single_file_ls.files.len() == 1 {
-                    return Ok(single_file_ls.files);
-                } else {
-                    return Ok(vec![]);
+                    let fm = single_file_ls.files.drain(..).next().unwrap();
+                    result_tx.send(Ok(fm)).await.map_err(|se| {
+                        super::Error::UnableToSendDataOverChannel { source: se.into() }
+                    })?;
                 }
+                return Ok(());
             }
 
             // RECURSIVE CASE: keep going with the next fragment
             visit(
+                result_tx.clone(),
                 source.clone(),
                 full_dir_path.as_str(),
                 (glob_fragments.clone(), i + 1),
@@ -297,7 +321,15 @@ pub(crate) async fn glob(
         }
     }
 
-    visit(source.clone(), "", (glob_fragments, 0)).await
+    visit(to_rtn_tx, source.clone(), "", (glob_fragments, 0)).await?;
+
+    let to_rtn_stream = stream! {
+        while let Some(v) = to_rtn_rx.recv().await {
+            yield v
+        }
+    };
+
+    Ok(to_rtn_stream.boxed())
 }
 
 pub(crate) async fn recursive_iter(
