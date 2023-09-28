@@ -1,11 +1,13 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use globset::GlobBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
@@ -99,6 +101,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         self.get(uri, Some(range)).await
     }
     async fn get_size(&self, uri: &str) -> super::Result<usize>;
+
     async fn ls(
         &self,
         path: &str,
@@ -133,10 +136,145 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
+pub(crate) async fn glob(
+    source: Arc<dyn ObjectSource>,
+    glob: &str,
+) -> super::Result<Vec<FileMetadata>> {
+    // TODO: we should derive this depending on backend, will probably fail on Windows + local fs
+    let delimiter = "/";
+
+    // Parse glob fragments
+    let mut glob_fragments = glob.split(delimiter).fold(
+        (vec![], String::new()),
+        |(mut acc, fragment_so_far), current_fragment| {
+            if current_fragment.contains('*') {
+                acc.push(fragment_so_far);
+                acc.push(current_fragment.to_string());
+                (acc, String::new())
+            } else {
+                (
+                    acc,
+                    format!("{fragment_so_far}{delimiter}{current_fragment}"),
+                )
+            }
+        },
+    );
+    let glob_fragments = if glob_fragments.1.is_empty() {
+        glob_fragments.0
+    } else {
+        glob_fragments
+            .0
+            .drain(..)
+            .chain(std::iter::once(glob_fragments.1))
+            .collect()
+    };
+
+    // Visits the specified path + next_fragment, enqueuing work and returning results where appropriate
+    #[async_recursion]
+    async fn visit(
+        source: Arc<dyn ObjectSource>,
+        path: &str,
+        glob_fragments: (Vec<String>, usize),
+    ) -> super::Result<Vec<FileMetadata>> {
+        let (glob_fragments, i) = glob_fragments;
+        let current_fragment = glob_fragments[i].as_str();
+
+        // BASE CASE: current_fragment contains a **
+        // We have no choice but to perform a naive recursive ls and filter on the results
+        if current_fragment.contains("**") {
+            // Perform recursive listing of everything from here on out and run it against the (full) glob filter"
+            let mut all_file_metadata = recursive_iter(source.clone(), path).await?;
+            let mut results = vec![];
+            let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
+                .literal_separator(true)
+                .build()
+                .expect("Cannot parse glob")
+                .compile_matcher();
+            while let Some(fm) = all_file_metadata.next().await {
+                match fm {
+                    Ok(fm) => {
+                        if glob_matcher.is_match(fm.filepath.as_str()) {
+                            results.push(fm)
+                        }
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+            Ok(results)
+        } else if current_fragment.contains('*') {
+            // Perform a directory listing of the next level and run it against the (partial) glob filter. Then enqueue more work where necessary
+            let mut next_level_file_metadata = source.iter_dir(path, Some("/"), None).await?;
+            let mut matches = vec![];
+            let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
+                .literal_separator(true)
+                .build()
+                .expect("Cannot parse glob")
+                .compile_matcher();
+            while let Some(fm) = next_level_file_metadata.next().await {
+                match fm {
+                    Ok(fm) => {
+                        if glob_matcher.is_match(fm.filepath.as_str()) {
+                            matches.push(fm)
+                        }
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+
+            // BASE CASE: we've reached the last remaining glob fragment and these matches are the final matches
+            if i == glob_fragments.len() - 1 {
+                return Ok(matches);
+            }
+
+            // RECURSIVE CASE: keep visiting recursively
+            let mut results = vec![];
+            for m in matches {
+                let mut partial_results = visit(
+                    source.clone(),
+                    m.filepath.as_str(),
+                    (glob_fragments.clone(), i + 1),
+                )
+                .await?;
+                results.append(&mut partial_results);
+            }
+            Ok(results)
+        } else {
+            // Perform a directory listing of the new concatted path and enqueue that
+            let full_dir_path = path.to_string() + current_fragment;
+
+            // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
+            // We need to verify that it exists before returning.
+            if i == glob_fragments.len() - 1 {
+                // TODO: can we implement a .exists instead? This might have weird behavior with directories
+                let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await?;
+                if single_file_ls.files.len() == 1 {
+                    return Ok(single_file_ls.files);
+                } else {
+                    return Ok(vec![]);
+                }
+            }
+
+            // RECURSIVE CASE: keep going with the next fragment
+            visit(
+                source.clone(),
+                full_dir_path.as_str(),
+                (glob_fragments.clone(), i + 1),
+            )
+            .await
+        }
+    }
+
+    visit(source.clone(), "", (glob_fragments, 0)).await
+}
+
 pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
-) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     log::debug!(target: "recursive_iter", "starting recursive_iter: with top level of: {uri}");
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
     fn add_to_channel(
@@ -145,6 +283,7 @@ pub(crate) async fn recursive_iter(
         dir: String,
     ) {
         log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
+        let source = source.clone();
         tokio::spawn(async move {
             let s = source.iter_dir(&dir, None, None).await;
             log::debug!(target: "recursive_iter", "started listing task for {dir}");
