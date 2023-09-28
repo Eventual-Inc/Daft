@@ -117,11 +117,11 @@ def s3fs_recursive_list(fs, path) -> list:
         # Missing paths
         ###
         # Exact filepath missing:
-        # (f"s3://bucket/MISSING", []),
+        (f"s3://bucket/MISSING", []),
         # Wildcard file no match:
         (f"s3://bucket/*.MISSING", []),
         # Exact folder missing:
-        # (f"s3://bucket/MISSING/*.match", []),
+        (f"s3://bucket/MISSING/*.match", []),
         # Wildcard folder no match:
         (f"s3://bucket/*NOMATCH/*.match", []),
         ###

@@ -233,7 +233,7 @@ pub(crate) async fn glob(
                                     source.clone(),
                                     &fm.filepath,
                                     (glob_fragments.clone(), i),
-                                )
+                                );
                             }
                             // Return any Files that match
                             if glob_matcher.is_match(fm.filepath.as_str())
@@ -244,6 +244,7 @@ pub(crate) async fn glob(
                                 })?;
                             }
                         }
+                        Err(super::Error::NotFound { .. }) => {}
                         Err(e) => {
                             result_tx.send(Err(e)).await.map_err(|se| {
                                 super::Error::UnableToSendDataOverChannel { source: se.into() }
@@ -258,6 +259,7 @@ pub(crate) async fn glob(
             } else if contains_special_character(current_fragment) {
                 let mut next_level_file_metadata =
                     source.iter_dir(path.as_str(), Some("/"), None).await?;
+
                 let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
                     .literal_separator(true)
                     .build()
@@ -279,6 +281,7 @@ pub(crate) async fn glob(
                                     })?;
                                 }
                             }
+                            Err(super::Error::NotFound { .. }) => {}
                             Err(e) => {
                                 result_tx.send(Err(e)).await.map_err(|se| {
                                     super::Error::UnableToSendDataOverChannel { source: se.into() }
@@ -302,6 +305,7 @@ pub(crate) async fn glob(
                                 );
                             }
                         }
+                        Err(super::Error::NotFound { .. }) => {}
                         Err(e) => {
                             return Err(e);
                         }
@@ -317,16 +321,22 @@ pub(crate) async fn glob(
                 // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
                 // We need to verify that it exists before returning.
                 if i == glob_fragments.len() - 1 {
-                    // TODO: can we implement a .exists instead? This might have weird behavior with directories
-                    let mut single_file_ls =
-                        source.ls(full_dir_path.as_str(), Some("/"), None).await?;
-                    if single_file_ls.files.len() == 1 {
-                        let fm = single_file_ls.files.drain(..).next().unwrap();
-                        result_tx.send(Ok(fm)).await.map_err(|se| {
+                    let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
+                    return match single_file_ls {
+                        Ok(mut single_file_ls) => {
+                            if single_file_ls.files.len() == 1 {
+                                let fm = single_file_ls.files.drain(..).next().unwrap();
+                                result_tx.send(Ok(fm)).await.map_err(|se| {
+                                    super::Error::UnableToSendDataOverChannel { source: se.into() }
+                                })?;
+                            }
+                            Ok(())
+                        }
+                        Err(super::Error::NotFound { .. }) => Ok(()),
+                        Err(e) => result_tx.send(Err(e)).await.map_err(|se| {
                             super::Error::UnableToSendDataOverChannel { source: se.into() }
-                        })?;
-                    }
-                    return Ok(());
+                        }),
+                    };
                 }
 
                 // RECURSIVE CASE: keep going with the next fragment
