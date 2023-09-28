@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 use tokio::sync::mpsc::Sender;
@@ -52,12 +53,32 @@ impl GetResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FileType {
     File,
     Directory,
 }
-#[derive(Debug)]
+
+impl TryFrom<std::fs::FileType> for FileType {
+    type Error = DaftError;
+
+    fn try_from(value: std::fs::FileType) -> Result<Self, Self::Error> {
+        if value.is_dir() {
+            Ok(Self::Directory)
+        } else if value.is_file() {
+            Ok(Self::File)
+        } else if value.is_symlink() {
+            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {:?}", value)))
+        } else {
+            unreachable!(
+                "Can only be a directory, file, or symlink, but got: {:?}",
+                value
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
