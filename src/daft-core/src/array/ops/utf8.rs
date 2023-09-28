@@ -21,13 +21,9 @@ where
 {
     // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurences in the ith string in arr_iter.
     let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
-    // arr_iter implementing TrustedLen guarantees that the size_hint reports an accurate length. Specifically, we have that either
-    //  (1) size_hint().0 == size_hint().1 == iterator length in the common case, or;
-    //  (2) size_hint().0 == usize::MAX and size_hint().1 == None if the iterator is larger than usize::MAX.
-    //
-    // Since the iterator is guaranteed to be smaller than usize::MAX due to the UTF8Array i64 offset array constraint (no more than i64::MAX,
-    // which we assume to be smaller than usize::MAX), we should have that (1) always holds, so we can reliably unwrap the size hint upper bound
-    // and treat it as the iterator length.
+    // arr_iter implements TrustedLen, so we can always use size_hint().1 as the exact length of the iterator. The only
+    // time this would fail is if the length of the iterator exceeds usize::MAX, which should never happen for an i64
+    // offset array, since the array length can't exceed i64::MAX on 64-bit machines.
     let arr_len = arr_iter.size_hint().1.unwrap();
     let mut offsets = arrow2::offset::Offsets::new();
     let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(arr_len);
