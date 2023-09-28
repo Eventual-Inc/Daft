@@ -210,9 +210,8 @@ pub(crate) async fn glob(
             let (glob_fragments, i) = glob_fragments;
             let current_fragment = glob_fragments[i].as_str();
 
-            // CASE: current_fragment contains a **
-            // We have no choice but to perform a naive recursive ls and filter on the results for only FileType::File results that
-            // match the full glob
+            // BASE CASE: current_fragment contains a **
+            // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.contains("**") {
                 let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
                     .literal_separator(true)
@@ -255,29 +254,27 @@ pub(crate) async fn glob(
                         "Internal multithreading channel is broken: results may be incorrect",
                     ),
                 };
-            // CASE: current_fragment contains a special character (e.g. *)
-            // Perform a directory listing of the just next level and run it against the (partial) glob filter
-            } else if contains_special_character(current_fragment) {
-                let next_level_file_metadata =
-                    source.iter_dir(path.as_str(), Some("/"), None).await;
 
-                match next_level_file_metadata {
-                    Ok(mut next_level_file_metadata) => {
-                        let glob_matcher =
-                            GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
-                                .literal_separator(true)
-                                .build()
-                                .expect("Cannot parse glob")
-                                .compile_matcher();
+            // BASE CASE: current fragment is the last fragment in `glob_fragments`
+            } else if i == glob_fragments.len() - 1 {
+                let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
+                    .literal_separator(true)
+                    .build()
+                    .expect("Cannot parse glob")
+                    .compile_matcher();
 
-                        // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
-                        if i == glob_fragments.len() - 1 {
+                // Last fragment contains a wildcard: we list the last level and match against the full glob
+                if contains_special_character(current_fragment) {
+                    let next_level_file_metadata =
+                        source.iter_dir(path.as_str(), Some("/"), None).await;
+
+                    match next_level_file_metadata {
+                        Ok(mut next_level_file_metadata) => {
                             while let Some(fm) = next_level_file_metadata.next().await {
                                 match fm {
                                     Ok(fm) => {
-                                        if glob_matcher
-                                            .is_match(fm.filepath.as_str().trim_end_matches('/'))
-                                            && matches!(fm.filetype, FileType::File)
+                                        if matches!(fm.filetype, FileType::File)
+                                            && glob_matcher.is_match(fm.filepath.as_str())
                                         {
                                             result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                         }
@@ -289,12 +286,45 @@ pub(crate) async fn glob(
                                 }
                             }
                         }
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
+                    }
+                // Last fragment does not contain wildcard: we just need to check that the full path exists and is a File
+                } else {
+                    let full_dir_path = path.to_string() + current_fragment;
+                    let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
+                    match single_file_ls {
+                        Ok(mut single_file_ls) => {
+                            if single_file_ls.files.len() == 1 {
+                                let fm = single_file_ls.files.drain(..).next().unwrap();
+                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                            }
+                        }
+                        Err(super::Error::NotFound { .. }) => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
+                    };
+                }
 
-                        // RECURSIVE CASE: keep visiting recursively
+            // RECURSIVE CASE: current_fragment contains a special character (e.g. *)
+            } else if contains_special_character(current_fragment) {
+                let partial_glob_matcher =
+                    GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
+                        .literal_separator(true)
+                        .build()
+                        .expect("Cannot parse glob")
+                        .compile_matcher();
+                let next_level_file_metadata =
+                    source.iter_dir(path.as_str(), Some("/"), None).await;
+
+                match next_level_file_metadata {
+                    Ok(mut next_level_file_metadata) => {
                         while let Some(fm) = next_level_file_metadata.next().await {
                             match fm {
                                 Ok(fm) => {
-                                    if matches!(fm.filetype, FileType::Directory) {
+                                    if matches!(fm.filetype, FileType::Directory) && partial_glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/')) {
                                         visit(
                                             result_tx.clone(),
                                             source.clone(),
@@ -313,30 +343,9 @@ pub(crate) async fn glob(
                     ),
                 }
 
-            // CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
-            // We just append it to the current `path` and check whether or not it exists.
+            // RECURSIVE CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
             } else {
                 let full_dir_path = path.to_string() + current_fragment;
-
-                // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
-                // We need to verify that it exists before returning.
-                if i == glob_fragments.len() - 1 {
-                    let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
-                    match single_file_ls {
-                        Ok(mut single_file_ls) => {
-                            if single_file_ls.files.len() == 1 {
-                                let fm = single_file_ls.files.drain(..).next().unwrap();
-                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                            }
-                        }
-                        Err(super::Error::NotFound { .. }) => (),
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
-                    };
-                }
-
-                // RECURSIVE CASE: keep going with the next fragment
                 visit(
                     result_tx.clone(),
                     source.clone(),
