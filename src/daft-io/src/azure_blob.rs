@@ -142,8 +142,10 @@ impl AzureBlobSource {
 
     async fn list_containers_stream(
         &self,
-        protocol: String,
+        protocol: &str,
     ) -> BoxStream<super::Result<FileMetadata>> {
+        let protocol = protocol.to_string();
+
         // Paginated stream of results from Azure API call.
         let responses_stream = self
             .blob_client
@@ -154,20 +156,17 @@ impl AzureBlobSource {
 
         // Flatmap each page of results to a single stream of our standardized FileMetadata.
         responses_stream
-            .flat_map(move |response| match response {
+            .map(move |response| (response, protocol.clone()))
+            .flat_map(move |(response, protocol)| match response {
                 Ok(response) => {
-                    let containers = response
-                        .containers
-                        .iter()
-                        .map(|container| {
-                            Ok(self._container_to_file_metadata(protocol.clone(), container))
-                        })
-                        .collect::<Vec<_>>();
-                    futures::stream::iter(containers)
+                    let containers = response.containers.into_iter().map(move |container| {
+                        Ok(self._container_to_file_metadata(protocol.as_str(), &container))
+                    });
+                    futures::stream::iter(containers).boxed()
                 }
                 Err(error) => {
                     let error = Err(Error::AzureGenericError { source: error }.into());
-                    futures::stream::iter(vec![error])
+                    futures::stream::iter(vec![error]).boxed()
                 }
             })
             .boxed()
@@ -357,7 +356,7 @@ impl AzureBlobSource {
             .boxed()
     }
 
-    fn _container_to_file_metadata(&self, protocol: String, container: &Container) -> FileMetadata {
+    fn _container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
         // NB: Cannot pass through to Azure client's .url() methods here
         // because they return URIs of a very different format (https://.../container/path).
         FileMetadata {
@@ -476,7 +475,7 @@ impl ObjectSource for AzureBlobSource {
 
         match container {
             // List containers.
-            None => Ok(self.list_containers_stream(protocol.to_string()).await),
+            None => Ok(self.list_containers_stream(protocol).await),
             // List a path within a container.
             Some(container_name) => {
                 let prefix = uri.path();
