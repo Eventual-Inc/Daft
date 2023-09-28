@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use async_recursion::async_recursion;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
@@ -195,64 +194,37 @@ pub(crate) async fn glob(
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
 
     /// Dispatches a task to visit the specified `path` (a concrete path on the filesystem to either a File or Directory).
-    #[async_recursion]
-    async fn visit(
+    /// Based on the current glob_fragment being processed (accessible via `glob_fragments[i]`) this task will:
+    ///   1. Perform work to retrieve Files/Directories at (`path` + `glob_fragments[i]`)
+    ///   2. Return results to the provided `result_tx` channel based on the provided glob, if appropriate
+    ///   3. Dispatch additional tasks via `.visit()` to continue visiting them, if appropriate
+    fn visit(
         result_tx: Sender<super::Result<FileMetadata>>,
         source: Arc<dyn ObjectSource>,
         path: &str,
         glob_fragments: (Vec<String>, usize),
-    ) -> super::Result<()> {
-        log::debug!(target: "glob", "Visiting '{path}' with glob_fragments: {glob_fragments:?}");
-        let (glob_fragments, i) = glob_fragments;
-        let current_fragment = glob_fragments[i].as_str();
+    ) {
+        let path = path.to_string();
+        tokio::spawn(async move {
+            log::debug!(target: "glob", "Visiting '{path}' with glob_fragments: {glob_fragments:?}");
+            let (glob_fragments, i) = glob_fragments;
+            let current_fragment = glob_fragments[i].as_str();
 
-        // BASE CASE: current_fragment contains a **
-        // We have no choice but to perform a naive recursive ls and filter on the results for only FileType::File results that
-        // match the full glob
-        if current_fragment.contains("**") {
-            let mut all_file_metadata = recursive_iter(source.clone(), path).await?;
-            let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
-                .literal_separator(true)
-                .build()
-                .expect("Cannot parse glob")
-                .compile_matcher();
+            // BASE CASE: current_fragment contains a **
+            // We have no choice but to perform a naive recursive ls and filter on the results for only FileType::File results that
+            // match the full glob
+            if current_fragment.contains("**") {
+                let mut all_file_metadata = recursive_iter(source.clone(), path.as_str()).await?;
+                let glob_matcher = GlobBuilder::new(glob_fragments.join("/").as_str())
+                    .literal_separator(true)
+                    .build()
+                    .expect("Cannot parse glob")
+                    .compile_matcher();
 
-            while let Some(fm) = all_file_metadata.next().await {
-                match fm {
-                    Ok(fm) => {
-                        if glob_matcher.is_match(fm.filepath.as_str())
-                            && matches!(fm.filetype, FileType::File)
-                        {
-                            result_tx.send(Ok(fm)).await.map_err(|se| {
-                                super::Error::UnableToSendDataOverChannel { source: se.into() }
-                            })?;
-                        }
-                    }
-                    Err(e) => {
-                        result_tx.send(Err(e)).await.map_err(|se| {
-                            super::Error::UnableToSendDataOverChannel { source: se.into() }
-                        })?;
-                    }
-                }
-            }
-            Ok(())
-
-        // CASE: current_fragment contains a special character (e.g. *)
-        // Perform a directory listing of the just next level and run it against the (partial) glob filter
-        } else if contains_special_character(current_fragment) {
-            let mut next_level_file_metadata = source.iter_dir(path, Some("/"), None).await?;
-            let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
-                .literal_separator(true)
-                .build()
-                .expect("Cannot parse glob")
-                .compile_matcher();
-
-            // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
-            if i == glob_fragments.len() - 1 {
-                while let Some(fm) = next_level_file_metadata.next().await {
+                while let Some(fm) = all_file_metadata.next().await {
                     match fm {
                         Ok(fm) => {
-                            if glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/'))
+                            if glob_matcher.is_match(fm.filepath.as_str())
                                 && matches!(fm.filetype, FileType::File)
                             {
                                 result_tx.send(Ok(fm)).await.map_err(|se| {
@@ -267,61 +239,97 @@ pub(crate) async fn glob(
                         }
                     }
                 }
-                return Ok(());
-            }
+                Ok(())
 
-            // RECURSIVE CASE: keep visiting recursively
-            while let Some(fm) = next_level_file_metadata.next().await {
-                match fm {
-                    Ok(fm) => {
-                        if matches!(fm.filetype, FileType::Directory) {
-                            visit(
-                                result_tx.clone(),
-                                source.clone(),
-                                fm.filepath.as_str(),
-                                (glob_fragments.clone(), i + 1),
-                            )
-                            .await?;
+            // CASE: current_fragment contains a special character (e.g. *)
+            // Perform a directory listing of the just next level and run it against the (partial) glob filter
+            } else if contains_special_character(current_fragment) {
+                let mut next_level_file_metadata =
+                    source.iter_dir(path.as_str(), Some("/"), None).await?;
+                let glob_matcher = GlobBuilder::new(glob_fragments[..i + 1].join("/").as_str())
+                    .literal_separator(true)
+                    .build()
+                    .expect("Cannot parse glob")
+                    .compile_matcher();
+
+                // BASE CASE: we've reached the last remaining glob fragment and these glob_matches are the final glob_matches
+                if i == glob_fragments.len() - 1 {
+                    while let Some(fm) = next_level_file_metadata.next().await {
+                        match fm {
+                            Ok(fm) => {
+                                if glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/'))
+                                    && matches!(fm.filetype, FileType::File)
+                                {
+                                    result_tx.send(Ok(fm)).await.map_err(|se| {
+                                        super::Error::UnableToSendDataOverChannel {
+                                            source: se.into(),
+                                        }
+                                    })?;
+                                }
+                            }
+                            Err(e) => {
+                                result_tx.send(Err(e)).await.map_err(|se| {
+                                    super::Error::UnableToSendDataOverChannel { source: se.into() }
+                                })?;
+                            }
                         }
                     }
-                    Err(e) => {
-                        return Err(e);
+                    return Ok(());
+                }
+
+                // RECURSIVE CASE: keep visiting recursively
+                while let Some(fm) = next_level_file_metadata.next().await {
+                    match fm {
+                        Ok(fm) => {
+                            if matches!(fm.filetype, FileType::Directory) {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    fm.filepath.as_str(),
+                                    (glob_fragments.clone(), i + 1),
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            return Err(e);
+                        }
                     }
                 }
-            }
-            Ok(())
+                Ok(())
 
-        // CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
-        // We just append it to the current `path` and check whether or not it exists.
-        } else {
-            let full_dir_path = path.to_string() + current_fragment;
+            // CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
+            // We just append it to the current `path` and check whether or not it exists.
+            } else {
+                let full_dir_path = path.to_string() + current_fragment;
 
-            // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
-            // We need to verify that it exists before returning.
-            if i == glob_fragments.len() - 1 {
-                // TODO: can we implement a .exists instead? This might have weird behavior with directories
-                let mut single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await?;
-                if single_file_ls.files.len() == 1 {
-                    let fm = single_file_ls.files.drain(..).next().unwrap();
-                    result_tx.send(Ok(fm)).await.map_err(|se| {
-                        super::Error::UnableToSendDataOverChannel { source: se.into() }
-                    })?;
+                // BASE CASE: we've reached the last remaining glob fragment and this match is the final match.
+                // We need to verify that it exists before returning.
+                if i == glob_fragments.len() - 1 {
+                    // TODO: can we implement a .exists instead? This might have weird behavior with directories
+                    let mut single_file_ls =
+                        source.ls(full_dir_path.as_str(), Some("/"), None).await?;
+                    if single_file_ls.files.len() == 1 {
+                        let fm = single_file_ls.files.drain(..).next().unwrap();
+                        result_tx.send(Ok(fm)).await.map_err(|se| {
+                            super::Error::UnableToSendDataOverChannel { source: se.into() }
+                        })?;
+                    }
+                    return Ok(());
                 }
-                return Ok(());
-            }
 
-            // RECURSIVE CASE: keep going with the next fragment
-            visit(
-                result_tx.clone(),
-                source.clone(),
-                full_dir_path.as_str(),
-                (glob_fragments.clone(), i + 1),
-            )
-            .await
-        }
+                // RECURSIVE CASE: keep going with the next fragment
+                visit(
+                    result_tx.clone(),
+                    source.clone(),
+                    full_dir_path.as_str(),
+                    (glob_fragments.clone(), i + 1),
+                );
+                Ok(())
+            }
+        });
     }
 
-    visit(to_rtn_tx, source.clone(), "", (glob_fragments, 0)).await?;
+    visit(to_rtn_tx, source.clone(), "", (glob_fragments, 0));
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
