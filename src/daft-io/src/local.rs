@@ -6,17 +6,15 @@ use crate::object_io::{self, FileMetadata, LSResult};
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
-use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use futures::stream::BoxStream;
-use futures::Stream;
 use futures::StreamExt;
+use futures::TryStreamExt;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_stream::StreamExt as TokioStreamExt;
 use url::ParseError;
 pub(crate) struct LocalSource {}
 
@@ -137,12 +135,8 @@ impl ObjectSource for LocalSource {
         _delimiter: Option<&str>,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        let mut s = self.iter_dir(path, None, None).await?;
-        let size = s.size_hint().1.unwrap_or(0);
-        let mut files = Vec::with_capacity(size);
-        while let Some(file_meta) = StreamExt::next(&mut s).await.transpose()? {
-            files.push(file_meta);
-        }
+        let s = self.iter_dir(path, None, None).await?;
+        let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
             continuation_token: None,
@@ -165,51 +159,50 @@ impl ObjectSource for LocalSource {
                 .with_context(|_| UnableToFetchFileMetadataSnafu {
                     path: uri.to_string(),
                 })?;
-        let uri = uri.to_string();
-        let s = stream! {
-            if meta.file_type().is_file() {
-                // Provided uri points to a file, so only return that file.
-                yield Ok(FileMetadata {
-                    filepath: format!("{}{}", LOCAL_PROTOCOL, uri),
-                    size: Some(meta.len()),
-                    filetype: object_io::FileType::File,
-                });
-                return;
+        if meta.file_type().is_file() {
+            // Provided uri points to a file, so only return that file.
+            return Ok(futures::stream::iter([Ok(FileMetadata {
+                filepath: format!("{}{}", LOCAL_PROTOCOL, uri),
+                size: Some(meta.len()),
+                filetype: object_io::FileType::File,
+            })])
+            .boxed());
+        }
+        let dir_entries = tokio::fs::read_dir(uri).await.with_context(|_| {
+            UnableToFetchDirectoryEntriesSnafu {
+                path: uri.to_string(),
             }
-            // NOTE(Clark): read_dir follows symbolic links, so no special handling is needed.
-            let dir_entries =
-                tokio::fs::read_dir(&uri)
-                    .await
-                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu {
-                        path: uri.clone(),
-                    })?;
-            let mut dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
-            while let Some(entry) =
-                TokioStreamExt::next(&mut dir_stream)
-                    .await
-                    .transpose()
-                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu {
-                        path: uri.clone(),
-                    })?
-            {
-                let meta = tokio::fs::metadata(entry.path()).await.with_context(|_|
-                    UnableToFetchDirectoryEntriesSnafu {
+        })?;
+        let dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
+        let uri = Arc::new(uri.to_string());
+        let file_meta_stream = dir_stream.then(move |entry| {
+            let uri = uri.clone();
+            async move {
+                let entry = entry.with_context(|_| UnableToFetchDirectoryEntriesSnafu {
+                    path: uri.to_string(),
+                })?;
+                let meta = tokio::fs::metadata(entry.path()).await.with_context(|_| {
+                    UnableToFetchFileMetadataSnafu {
                         path: entry.path().to_string_lossy().to_string(),
-                    },
-                )?;
-                yield Ok(FileMetadata {
-                    filepath: format!("{}{}{}", LOCAL_PROTOCOL, entry.path().to_string_lossy(), if meta.is_dir() { "/" } else { "" }),
+                    }
+                })?;
+                Ok(FileMetadata {
+                    filepath: format!(
+                        "{}{}{}",
+                        LOCAL_PROTOCOL,
+                        entry.path().to_string_lossy(),
+                        if meta.is_dir() { "/" } else { "" }
+                    ),
                     size: Some(meta.len()),
-                    filetype: meta
-                        .file_type()
-                        .try_into()
-                        .with_context(|_| UnexpectedSymlinkSnafu {
+                    filetype: meta.file_type().try_into().with_context(|_| {
+                        UnexpectedSymlinkSnafu {
                             path: entry.path().to_string_lossy().to_string(),
-                        })?,
-                });
+                        }
+                    })?,
+                })
             }
-        };
-        Ok(s.boxed())
+        });
+        Ok(file_meta_stream.boxed())
     }
 }
 
