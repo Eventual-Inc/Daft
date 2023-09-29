@@ -142,7 +142,7 @@ pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
-    let glob_fragments = to_glob_fragments(glob);
+    let glob_fragments = to_glob_fragments(glob)?;
 
     // Channel to send results back to caller. Note that all results must have FileType::File.
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
@@ -156,7 +156,7 @@ pub(crate) async fn glob(
         result_tx: Sender<super::Result<FileMetadata>>,
         source: Arc<dyn ObjectSource>,
         path: &str,
-        glob_fragments: (Vec<GlobFragment>, usize),
+        glob_fragments: (Arc<Vec<GlobFragment>>, usize),
     ) {
         let path = path.to_string();
         tokio::spawn(async move {
@@ -167,7 +167,7 @@ pub(crate) async fn glob(
             // BASE CASE: current_fragment is a **
             // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.escaped_str() == "**" {
-                let glob_matcher =
+                let full_glob_matcher =
                     GlobBuilder::new(GlobFragment::join(glob_fragments.as_slice(), "/").raw_str())
                         .literal_separator(true)
                         .backslash_escape(true)
@@ -193,7 +193,7 @@ pub(crate) async fn glob(
                                         );
                                     }
                                     // Return any Files that match
-                                    if glob_matcher.is_match(fm.filepath.as_str())
+                                    if full_glob_matcher.is_match(fm.filepath.as_str())
                                         && matches!(fm.filetype, FileType::File)
                                     {
                                         result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
@@ -213,7 +213,7 @@ pub(crate) async fn glob(
 
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
             } else if i == glob_fragments.len() - 1 {
-                let glob_matcher =
+                let full_glob_matcher =
                     GlobBuilder::new(GlobFragment::join(glob_fragments.as_slice(), "/").raw_str())
                         .literal_separator(true)
                         .backslash_escape(true)
@@ -232,7 +232,7 @@ pub(crate) async fn glob(
                                 match fm {
                                     Ok(fm) => {
                                         if matches!(fm.filetype, FileType::File)
-                                            && glob_matcher.is_match(fm.filepath.as_str())
+                                            && full_glob_matcher.is_match(fm.filepath.as_str())
                                         {
                                             result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                         }
@@ -248,13 +248,15 @@ pub(crate) async fn glob(
                             "Internal multithreading channel is broken: results may be incorrect",
                         ),
                     }
-                // Last fragment does not contain wildcard: we just need to check that the full path exists and is a File
+                // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
                 } else {
                     let full_dir_path = path.to_string() + current_fragment.escaped_str().as_str();
                     let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
-                            if single_file_ls.files.len() == 1 {
+                            if single_file_ls.files.len() == 1
+                                && matches!(single_file_ls.files[0].filetype, FileType::File)
+                            {
                                 let fm = single_file_ls.files.drain(..).next().unwrap();
                                 result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
@@ -314,10 +316,12 @@ pub(crate) async fn glob(
         });
     }
 
-    visit(to_rtn_tx, source.clone(), "", (glob_fragments, 0));
+    visit(to_rtn_tx, source.clone(), "", (Arc::new(glob_fragments), 0));
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
+            // Glob only returns FileType::File results
+            assert!(v.as_ref().map_or(true, |v| matches!(v.filetype, FileType::File)));
             yield v
         }
     };

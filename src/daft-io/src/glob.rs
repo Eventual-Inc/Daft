@@ -106,44 +106,43 @@ impl GlobFragment {
 ///   1. Split by delimiter ("/")
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
-pub(crate) fn to_glob_fragments(glob_str: &str) -> Vec<GlobFragment> {
-    let delimiter = "/".to_string();
-    let glob_url = url::Url::parse(glob_str)
-        .unwrap_or_else(|_| panic!("Glob string must be able to be parsed as URL: {glob_str}"));
+pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
+    let delimiter = "/";
+    let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
+        path: glob_str.to_string(),
+        source: e,
+    })?;
     let url_scheme = glob_url.scheme();
 
-    // Parse glob fragments: split by delimiter and join any non-wildcard fragments
-    let mut glob_fragments = glob_url[Position::BeforeUsername..].split(&delimiter).fold(
-        (vec![], vec![]),
-        |(mut acc, mut fragments_so_far), current_fragment| {
-            let current_fragment = GlobFragment::new(current_fragment);
-            if current_fragment.has_special_character() {
-                if !fragments_so_far.is_empty() {
-                    acc.push(GlobFragment::join(
-                        fragments_so_far.as_slice(),
-                        delimiter.as_str(),
-                    ));
-                }
-                acc.push(current_fragment);
-                (acc, vec![])
-            } else {
-                fragments_so_far.push(current_fragment);
-                (acc, fragments_so_far)
+    // Parse glob fragments: split by delimiter and join any non-special fragments
+    let mut coalesced_fragments = vec![];
+    let mut nonspecial_fragments_so_far = vec![];
+    for fragment in glob_url[Position::BeforeUsername..]
+        .split(delimiter)
+        .map(GlobFragment::new)
+    {
+        if fragment.has_special_character() {
+            if !nonspecial_fragments_so_far.is_empty() {
+                coalesced_fragments.push(GlobFragment::join(
+                    nonspecial_fragments_so_far.drain(..).as_slice(),
+                    delimiter,
+                ));
             }
-        },
-    );
-    let mut glob_fragments = if glob_fragments.1.is_empty() {
-        glob_fragments.0
-    } else {
-        let last_fragment = GlobFragment::join(glob_fragments.1.as_slice(), delimiter.as_str());
-        glob_fragments
-            .0
-            .drain(..)
-            .chain(std::iter::once(last_fragment))
-            .collect()
-    };
-    glob_fragments[0] =
-        GlobFragment::new((format!("{url_scheme}://") + glob_fragments[0].raw_str()).as_str());
+            coalesced_fragments.push(fragment);
+        } else {
+            nonspecial_fragments_so_far.push(fragment);
+        }
+    }
+    if !nonspecial_fragments_so_far.is_empty() {
+        coalesced_fragments.push(GlobFragment::join(
+            nonspecial_fragments_so_far.drain(..).as_slice(),
+            delimiter,
+        ));
+    }
 
-    glob_fragments
+    // Ensure that the first fragment has the scheme prefixed
+    coalesced_fragments[0] =
+        GlobFragment::new((format!("{url_scheme}://") + coalesced_fragments[0].raw_str()).as_str());
+
+    Ok(coalesced_fragments)
 }
