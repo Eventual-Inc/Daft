@@ -6,51 +6,67 @@ lazy_static! {
     /// Check if a given char is considered a special glob character
     /// NOTE: we use the `globset` crate which defines the following glob behavior:
     /// https://docs.rs/globset/latest/globset/index.html#syntax
-    static ref GLOB_SPECIAL_CHARACTERS: HashSet<char> = {
-        let mut set = HashSet::new();
-        set.insert('*');
-        set.insert('?');
-        set.insert('{');
-        set.insert('[');
-        set
-    };
+    static ref GLOB_SPECIAL_CHARACTERS: HashSet<char> = HashSet::from(['*', '?', '{', '}', '[', ']']);
 }
+
+const SCHEME_SUFFIX_LEN: usize = "://".len();
 
 #[derive(Debug, Clone)]
 pub(crate) struct GlobFragment {
     data: String,
+    escaped_data: String,
     first_wildcard_idx: Option<usize>,
 }
 
 impl GlobFragment {
     pub fn new(data: &str) -> Self {
-        let first_wildcard_idx = if data.is_empty() {
-            None
-        } else if GLOB_SPECIAL_CHARACTERS.contains(&data.chars().nth(0).unwrap()) {
-            Some(0)
-        } else {
-            // Detect any special characters that are not preceded by an escape \
-            let mut idx = None;
-            for (i, window) in data
-                .chars()
-                .collect::<Vec<char>>()
-                .as_slice()
-                .windows(2)
-                .enumerate()
-            {
-                let &[c1, c2] = window else {
-                    unreachable!("Window contains 2 elements")
-                };
-                if (c1 != '\\') && GLOB_SPECIAL_CHARACTERS.contains(&c2) {
-                    idx = Some(i + 1);
+        let first_wildcard_idx = match data {
+            "" => None,
+            data if GLOB_SPECIAL_CHARACTERS.contains(&data.chars().nth(0).unwrap()) => Some(0),
+            _ => {
+                // Detect any special characters that are not preceded by an escape \
+                let mut idx = None;
+                for (i, window) in data
+                    .chars()
+                    .collect::<Vec<char>>()
+                    .as_slice()
+                    .windows(2)
+                    .enumerate()
+                {
+                    let &[c1, c2] = window else {
+                        unreachable!("Window contains 2 elements")
+                    };
+                    if (c1 != '\\') && GLOB_SPECIAL_CHARACTERS.contains(&c2) {
+                        idx = Some(i + 1);
+                        break;
+                    }
+                }
+                idx
+            }
+        };
+
+        // Sanitize `data`: removing '\' and converting '\\' to '\'
+        let mut escaped_data = String::new();
+        let mut ptr = 0;
+        while ptr < data.len() {
+            let remaining = &data[ptr..];
+            match remaining.find("\\\\") {
+                Some(backslash_idx) => {
+                    escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
+                    escaped_data.extend(std::iter::once('\\'));
+                    ptr += backslash_idx + 2;
+                }
+                None => {
+                    escaped_data.push_str(&remaining.replace('\\', ""));
                     break;
                 }
             }
-            idx
-        };
+        }
+
         GlobFragment {
             data: data.to_string(),
             first_wildcard_idx,
+            escaped_data,
         }
     }
 
@@ -74,24 +90,8 @@ impl GlobFragment {
     /// Returns the fragment as a string with the backslash (\) escapes applied
     /// 1. \\ is cleaned up to just \
     /// 2. \ followed by anything else is just ignored
-    pub fn escaped_str(&self) -> String {
-        let mut result = String::new();
-        let mut ptr = 0;
-        while ptr < self.data.len() {
-            let remaining = &self.data.as_str()[ptr..];
-            match remaining.find("\\\\") {
-                Some(backslash_idx) => {
-                    result.push_str(&remaining[..backslash_idx].replace('\\', ""));
-                    result.extend(std::iter::once('\\'));
-                    ptr += backslash_idx + 2;
-                }
-                None => {
-                    result.push_str(&remaining.replace('\\', ""));
-                    break;
-                }
-            }
-        }
-        result
+    pub fn escaped_str(&self) -> &str {
+        self.escaped_data.as_str()
     }
 
     /// Returns the GlobFragment as a raw unescaped string, suitable for use by the globset crate
@@ -119,7 +119,7 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
     // Parse glob fragments: split by delimiter and join any non-special fragments
     let mut coalesced_fragments = vec![];
     let mut nonspecial_fragments_so_far = vec![];
-    for fragment in glob_str[url_scheme.len() + "://".len()..]
+    for fragment in glob_str[url_scheme.len() + SCHEME_SUFFIX_LEN..]
         .split(delimiter)
         .map(GlobFragment::new)
     {

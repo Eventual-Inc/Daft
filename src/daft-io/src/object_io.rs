@@ -244,7 +244,7 @@ pub(crate) async fn glob(
                     }
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
                 } else {
-                    let full_dir_path = path.to_string() + current_fragment.escaped_str().as_str();
+                    let full_dir_path = path.to_string() + current_fragment.escaped_str();
                     let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
@@ -300,7 +300,7 @@ pub(crate) async fn glob(
 
             // RECURSIVE CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
             } else {
-                let full_dir_path = path.to_string() + current_fragment.escaped_str().as_str();
+                let full_dir_path = path.to_string() + current_fragment.escaped_str();
                 visit(
                     result_tx.clone(),
                     source.clone(),
@@ -322,8 +322,6 @@ pub(crate) async fn glob(
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
-            // Glob only returns FileType::File results
-            assert!(v.as_ref().map_or(true, |v| matches!(v.filetype, FileType::File)));
             yield v
         }
     };
