@@ -258,7 +258,6 @@ impl AzureBlobSource {
                             upper_results_stream
                                 .map_ok(|file_info| (file_info.filepath == full_path_with_trailing_delimiter))
                                 .try_skip_while(|is_match| futures::future::ready(Ok(!is_match)))
-                                .boxed()
                                 .try_next()
                                 .await?
                                 .is_some()
