@@ -174,7 +174,8 @@ def s3fs_recursive_list(fs, path) -> list:
         ),
     ],
 )
-def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair):
+@pytest.mark.parametrize("fanout_limit", [None, 1])
+def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair, fanout_limit):
     globpath, expect = path_expect_pair
     with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
         files = [
@@ -193,7 +194,7 @@ def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair)
 
         if type(expect) == type and issubclass(expect, BaseException):
             with pytest.raises(expect):
-                io_glob(globpath, io_config=minio_io_config)
+                io_glob(globpath, io_config=minio_io_config, fanout_limit=fanout_limit)
         else:
             daft_ls_result = io_glob(globpath, io_config=minio_io_config)
             assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])

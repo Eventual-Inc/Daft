@@ -20,6 +20,7 @@ mod py {
         path: String,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
+        fanout_limit: Option<usize>,
     ) -> PyResult<&PyList> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
@@ -33,7 +34,10 @@ mod py {
 
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
-                let files = glob(source, path.as_ref()).await?.try_collect().await?;
+                let files = glob(source, path.as_ref(), fanout_limit)
+                    .await?
+                    .try_collect()
+                    .await?;
                 Ok(files)
             })
         });

@@ -19,12 +19,16 @@ pub(crate) struct GlobState {
     pub current_path: String,
     pub current_fragment_idx: usize,
 
+    // How large of a fanout this level of iteration is currently experiencing
+    pub current_fanout: usize,
+
     // Whether we have encountered wildcards yet in the process of parsing
     pub wildcard_mode: bool,
 
     // Carry along expensive data as Arcs to avoid recomputation
     pub glob_fragments: Arc<Vec<GlobFragment>>,
     pub full_glob_matcher: Arc<GlobMatcher>,
+    pub fanout_limit: usize,
 }
 
 impl GlobState {
@@ -32,10 +36,11 @@ impl GlobState {
         &self.glob_fragments[self.current_fragment_idx]
     }
 
-    pub fn advance(self, path: String, idx: usize) -> Self {
+    pub fn advance(self, path: String, idx: usize, fanout_factor: usize) -> Self {
         GlobState {
             current_path: path,
             current_fragment_idx: idx,
+            current_fanout: self.current_fanout * fanout_factor,
             ..self.clone()
         }
     }
@@ -87,7 +92,7 @@ impl GlobFragment {
         let mut ptr = 0;
         while ptr < data.len() {
             let remaining = &data[ptr..];
-            match remaining.find("\\\\") {
+            match remaining.find(r"\\") {
                 Some(backslash_idx) => {
                     escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
                     escaped_data.extend(std::iter::once('\\'));

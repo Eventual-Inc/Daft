@@ -112,26 +112,45 @@ pub(crate) trait ObjectSource: Sync + Send {
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult>;
 
+    async fn iter_dir_pages(
+        &self,
+        uri: &str,
+        delimiter: Option<&str>,
+    ) -> super::Result<BoxStream<super::Result<LSResult>>> {
+        let uri = uri.to_string();
+        let delimiter = delimiter.map(String::from);
+        let s = stream! {
+            let lsr = self.ls(&uri, delimiter.as_deref(), None).await?;
+            let mut continuation_token = lsr.continuation_token.clone();
+            yield Ok(lsr);
+
+            while continuation_token.is_some() {
+                let lsr = self.ls(&uri, delimiter.as_deref(), continuation_token.as_deref()).await?;
+                continuation_token = lsr.continuation_token.clone();
+                yield Ok(lsr);
+            }
+        };
+        Ok(s.boxed())
+    }
+
     async fn iter_dir(
         &self,
         uri: &str,
         delimiter: Option<&str>,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let uri = uri.to_string();
-        let delimiter = delimiter.map(String::from);
+        let mut page_stream = self.iter_dir_pages(uri, delimiter).await?;
         let s = stream! {
-            let lsr = self.ls(&uri, delimiter.as_deref(), None).await?;
-            let mut continuation_token = lsr.continuation_token.clone();
-            for file in lsr.files {
-                yield Ok(file);
-            }
-
-            while continuation_token.is_some() {
-                let lsr = self.ls(&uri, delimiter.as_deref(), continuation_token.as_deref()).await?;
-                continuation_token = lsr.continuation_token.clone();
-                for file in lsr.files {
-                    yield Ok(file);
+            while let Some(page) = page_stream.next().await {
+                match page {
+                    Ok(page) => {
+                        for fm in page.files {
+                            yield Ok(fm);
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(e);
+                    }
                 }
             }
         };
@@ -139,9 +158,92 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
+/// Helper method to iterate on a directory with the following behavior
+///
+/// * First attempts to non-recursively list all Files and Directories under the current `uri`
+/// * If during iteration we detect the number of Directories being returned exceeds `max_dirs`, we
+///     fall back onto a prefix list of all Files with the current `uri` as the prefix
+async fn ls_with_prefix_fallback(
+    source: Arc<dyn ObjectSource>,
+    uri: &str,
+    delimiter: &str,
+    max_dirs: usize,
+) -> (BoxStream<'static, super::Result<FileMetadata>>, usize) {
+    // Prefix list function that only returns Files
+    fn prefix_ls(
+        source: Arc<dyn ObjectSource>,
+        path: String,
+    ) -> BoxStream<'static, super::Result<FileMetadata>> {
+        let source = source.clone();
+        let path = path.clone();
+        stream! {
+            match source.iter_dir(&path, None, None).await {
+                Ok(mut result_stream) => {
+                    while let Some(fm) = result_stream.next().await {
+                        match fm {
+                            Ok(fm) => {
+                                if matches!(fm.filetype, FileType::File)
+                                {
+                                    yield Ok(fm)
+                                }
+                            }
+                            Err(e) => yield Err(e),
+                        }
+                    }
+                },
+                Err(e) => yield Err(e),
+            }
+        }
+        .boxed()
+    }
+
+    let mut page_stream = source
+        .iter_dir_pages(uri, Some(delimiter))
+        .await
+        .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
+    let mut results_buffer = vec![];
+    let mut dir_count_so_far = 0;
+    while let Some(page) = page_stream.next().await {
+        match page {
+            Ok(page) => {
+                dir_count_so_far += page
+                    .files
+                    .iter()
+                    .filter(|fm| matches!(fm.filetype, FileType::Directory))
+                    .count();
+                if dir_count_so_far > max_dirs {
+                    // Stop early if the number of directory results are more than max: return and throw away page buffer
+                    return (prefix_ls(source.clone(), uri.to_string()), 0);
+                }
+                results_buffer.push(Ok(page.files));
+            }
+            Err(e) => {
+                results_buffer.push(Err(e));
+            }
+        }
+    }
+
+    let s = stream! {
+        for page_files in results_buffer {
+            match page_files {
+                Ok(page_files) => {
+                    for fm in page_files {
+                        yield Ok(fm)
+                    }
+                }
+                Err(e) => yield Err(e),
+            }
+        }
+    };
+    (s.boxed(), dir_count_so_far)
+}
+
+static DEFAULT_FANOUT_LIMIT: usize = 3200;
+
 pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
+    fanout_limit: Option<usize>,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
@@ -169,6 +271,7 @@ pub(crate) async fn glob(
     };
     let glob = glob.as_str();
 
+    let fanout_limit = fanout_limit.unwrap_or(DEFAULT_FANOUT_LIMIT);
     let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)
@@ -199,10 +302,13 @@ pub(crate) async fn glob(
             // BASE CASE: current_fragment is a **
             // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.escaped_str() == "**" {
-                let mut results = source
-                    .iter_dir(&state.current_path, Some("/"), None)
-                    .await
-                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+                let (mut results, stream_dir_count) = ls_with_prefix_fallback(
+                    source.clone(),
+                    &state.current_path,
+                    "/",
+                    state.fanout_limit / state.current_fanout,
+                )
+                .await;
 
                 while let Some(val) = results.next().await {
                     match val {
@@ -217,6 +323,7 @@ pub(crate) async fn glob(
                                         state.clone().advance(
                                             fm.filepath.clone(),
                                             state.current_fragment_idx,
+                                            stream_dir_count,
                                         ),
                                     );
                                 }
@@ -295,28 +402,42 @@ pub(crate) async fn glob(
                 .build()
                 .expect("Cannot parse glob")
                 .compile_matcher();
-                let mut results = source
-                    .iter_dir(&state.current_path, Some("/"), None)
-                    .await
-                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+
+                let (mut results, stream_dir_count) = ls_with_prefix_fallback(
+                    source.clone(),
+                    &state.current_path,
+                    "/",
+                    state.fanout_limit / state.current_fanout,
+                )
+                .await;
 
                 while let Some(val) = results.next().await {
                     match val {
-                        Ok(fm) => {
-                            if matches!(fm.filetype, FileType::Directory)
-                                && partial_glob_matcher
+                        Ok(fm) => match fm.filetype {
+                            FileType::Directory => {
+                                if partial_glob_matcher
                                     .is_match(fm.filepath.as_str().trim_end_matches('/'))
-                            {
-                                visit(
-                                    result_tx.clone(),
-                                    source.clone(),
-                                    state
-                                        .clone()
-                                        .advance(fm.filepath, state.current_fragment_idx + 1)
-                                        .with_wildcard_mode(),
-                                );
+                                {
+                                    visit(
+                                        result_tx.clone(),
+                                        source.clone(),
+                                        state
+                                            .clone()
+                                            .advance(
+                                                fm.filepath,
+                                                state.current_fragment_idx + 1,
+                                                stream_dir_count,
+                                            )
+                                            .with_wildcard_mode(),
+                                    );
+                                }
                             }
-                        }
+                            FileType::File => {
+                                if state.full_glob_matcher.is_match(fm.filepath.as_str()) {
+                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                }
+                            }
+                        },
                         // Always silence NotFound since we are in wildcard "search" mode here by definition
                         Err(super::Error::NotFound { .. }) => (),
                         Err(e) => result_tx.send(Err(e)).await.expect(
@@ -331,9 +452,7 @@ pub(crate) async fn glob(
                 visit(
                     result_tx.clone(),
                     source.clone(),
-                    state
-                        .clone()
-                        .advance(full_dir_path, state.current_fragment_idx + 1),
+                    state.clone().advance(full_dir_path, state.current_fragment_idx + 1, 1),
                 );
             }
         });
@@ -348,6 +467,8 @@ pub(crate) async fn glob(
             glob_fragments: Arc::new(glob_fragments),
             full_glob_matcher: Arc::new(full_glob_matcher),
             wildcard_mode: false,
+            current_fanout: 1,
+            fanout_limit,
         },
     );
 

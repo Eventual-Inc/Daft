@@ -549,7 +549,7 @@ impl S3LikeSource {
         scheme: &str,
         bucket: &str,
         key: &str,
-        delimiter: String,
+        delimiter: Option<String>,
         continuation_token: Option<String>,
         region: &Region,
     ) -> super::Result<LSResult> {
@@ -559,8 +559,12 @@ impl S3LikeSource {
             .await?
             .list_objects_v2()
             .bucket(bucket)
-            .delimiter(&delimiter)
             .prefix(key);
+        let request = if let Some(delimiter) = delimiter.as_ref() {
+            request.delimiter(delimiter)
+        } else {
+            request
+        };
         let request = if let Some(ref continuation_token) = continuation_token {
             request.continuation_token(continuation_token)
         } else {
@@ -696,6 +700,7 @@ impl ObjectSource for S3LikeSource {
             .context(UnableToGrabSemaphoreSnafu)?;
         self._head_impl(permit, uri, &self.default_region).await
     }
+
     async fn ls(
         &self,
         path: &str,
@@ -704,7 +709,6 @@ impl ObjectSource for S3LikeSource {
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let scheme = parsed.scheme();
-        let delimiter = delimiter.unwrap_or("/");
 
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -714,63 +718,95 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        let key = key
-            .trim_start_matches(delimiter)
-            .trim_end_matches(delimiter);
+        let key = if let Some(delimiter) = delimiter {
+            key.trim_start_matches(delimiter)
+                .trim_end_matches(delimiter)
+        } else {
+            key
+        };
         let key = if key.is_empty() {
             "".to_string()
-        } else {
+        } else if let Some(delimiter) = delimiter {
             format!("{key}{delimiter}")
-        };
-
-        // assume its a directory first
-        let lsr = {
-            let permit = self
-                .connection_pool_sema
-                .acquire()
-                .await
-                .context(UnableToGrabSemaphoreSnafu)?;
-
-            self._list_impl(
-                permit,
-                scheme,
-                bucket,
-                &key,
-                delimiter.into(),
-                continuation_token.map(String::from),
-                &self.default_region,
-            )
-            .await?
-        };
-        if lsr.files.is_empty() && key.contains(delimiter) {
-            let permit = self
-                .connection_pool_sema
-                .acquire()
-                .await
-                .context(UnableToGrabSemaphoreSnafu)?;
-            // Might be a File
-            let key = key.trim_end_matches(delimiter);
-            let mut lsr = self
-                ._list_impl(
-                    permit,
-                    scheme,
-                    bucket,
-                    key,
-                    delimiter.into(),
-                    continuation_token.map(String::from),
-                    &self.default_region,
-                )
-                .await?;
-            let target_path = format!("{scheme}://{bucket}/{key}");
-            lsr.files.retain(|f| f.filepath == target_path);
-
-            if lsr.files.is_empty() {
-                // Isnt a file or a directory
-                return Err(Error::NotFound { path: path.into() }.into());
-            }
-            Ok(lsr)
         } else {
-            Ok(lsr)
+            key.to_string()
+        };
+
+        match delimiter {
+            // Perform a prefix-based list of all entries with this prefix
+            None => {
+                let lsr = {
+                    let permit = self
+                        .connection_pool_sema
+                        .acquire()
+                        .await
+                        .context(UnableToGrabSemaphoreSnafu)?;
+
+                    self._list_impl(
+                        permit,
+                        scheme,
+                        bucket,
+                        &key,
+                        None, // triggers prefix-based list
+                        continuation_token.map(String::from),
+                        &self.default_region,
+                    )
+                    .await?
+                };
+                Ok(lsr)
+            }
+            // Perform a directory-based list of entries in the next level
+            Some(delimiter) => {
+                // assume its a directory first
+                let lsr = {
+                    let permit = self
+                        .connection_pool_sema
+                        .acquire()
+                        .await
+                        .context(UnableToGrabSemaphoreSnafu)?;
+
+                    self._list_impl(
+                        permit,
+                        scheme,
+                        bucket,
+                        &key,
+                        Some(delimiter.into()),
+                        continuation_token.map(String::from),
+                        &self.default_region,
+                    )
+                    .await?
+                };
+                if lsr.files.is_empty() && key.contains(delimiter) {
+                    let permit = self
+                        .connection_pool_sema
+                        .acquire()
+                        .await
+                        .context(UnableToGrabSemaphoreSnafu)?;
+                    // Might be a File
+                    let key = key.trim_end_matches(delimiter);
+                    let mut lsr = self
+                        ._list_impl(
+                            permit,
+                            scheme,
+                            bucket,
+                            key,
+                            Some(delimiter.into()),
+                            continuation_token.map(String::from),
+                            &self.default_region,
+                        )
+                        .await?;
+                    let target_path = format!("{scheme}://{bucket}/{key}");
+                    lsr.files.retain(|f| f.filepath == target_path);
+
+                    if lsr.files.is_empty() {
+                        // Isnt a file or a directory
+                        return Err(Error::NotFound { path: path.into() }.into());
+                    }
+                    Ok(lsr)
+                } else {
+                    Ok(lsr)
+                }
+            }
         }
     }
 }
