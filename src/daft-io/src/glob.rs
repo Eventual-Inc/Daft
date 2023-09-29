@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use lazy_static::lazy_static;
-use url::Position;
 
 lazy_static! {
     /// Check if a given char is considered a special glob character
@@ -108,6 +107,9 @@ impl GlobFragment {
 ///   3. The first fragment is prefixed by "{scheme}://"
 pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
     let delimiter = "/";
+
+    // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
+    // such as ? and {}
     let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
         path: glob_str.to_string(),
         source: e,
@@ -117,7 +119,7 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
     // Parse glob fragments: split by delimiter and join any non-special fragments
     let mut coalesced_fragments = vec![];
     let mut nonspecial_fragments_so_far = vec![];
-    for fragment in glob_url[Position::BeforeUsername..]
+    for fragment in glob_str[url_scheme.len() + "://".len()..]
         .split(delimiter)
         .map(GlobFragment::new)
     {

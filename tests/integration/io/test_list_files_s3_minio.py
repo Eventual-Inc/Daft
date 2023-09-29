@@ -178,6 +178,49 @@ def test_directory_globbing_escape_characters(minio_io_config, path_expect_pair)
 
 
 @pytest.mark.integration()
+@pytest.mark.parametrize(
+    "path_expect_pair",
+    [
+        # Test [] square brackets for matching specified single characters
+        (
+            "s3://bucket/[ab].match",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/b.match", "size": 0},
+            ],
+        ),
+        # Test ? for matching any single characters
+        (
+            "s3://bucket/?.match",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/b.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/c.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/d.match", "size": 0},
+            ],
+        ),
+        # Test {} for matching arbitrary globs
+        (
+            "s3://bucket/{a,[bc]}.match",
+            [
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/b.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/c.match", "size": 0},
+            ],
+        ),
+    ],
+)
+def test_directory_globbing_special_characters(minio_io_config, path_expect_pair):
+    globpath, expect = path_expect_pair
+    with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
+        files = ["a.match", "b.match", "c.match", "d.match"]
+        for name in files:
+            fs.touch(f"bucket/{name}")
+        daft_ls_result = io_glob(globpath, io_config=minio_io_config)
+        assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])
+
+
+@pytest.mark.integration()
 def test_flat_directory_listing(minio_io_config):
     bucket_name = "bucket"
     with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
