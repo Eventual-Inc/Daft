@@ -130,7 +130,6 @@ jobs:
 
   publish:
     name: Publish wheels to PYPI and Anaconda
-    if: ${{ (github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     needs:
     - build-and-test
@@ -166,7 +165,7 @@ jobs:
       run: conda install -q -y anaconda-client "urllib3<2.0"
 
     - name: Upload wheels to anaconda nightly
-      if: ${{ success() && (env.IS_SCHEDULE_DISPATCH == 'true' || env.IS_PUSH == 'true') }}
+      if: ${{ success() && (((env.IS_SCHEDULE_DISPATCH == 'true') && (github.ref == 'refs/heads/main')) || env.IS_PUSH == 'true') }}
       shell: bash -el {0}
       env:
         DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}

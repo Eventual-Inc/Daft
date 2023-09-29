@@ -1,12 +1,14 @@
 mod contains;
 mod endswith;
 mod length;
+mod split;
 mod startswith;
 
 use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
 use length::LengthEvaluator;
 use serde::{Deserialize, Serialize};
+use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
 
 use crate::Expr;
@@ -18,6 +20,7 @@ pub enum Utf8Expr {
     EndsWith,
     StartsWith,
     Contains,
+    Split,
     Length,
 }
 
@@ -29,6 +32,7 @@ impl Utf8Expr {
             EndsWith => &EndswithEvaluator {},
             StartsWith => &StartswithEvaluator {},
             Contains => &ContainsEvaluator {},
+            Split => &SplitEvaluator {},
             Length => &LengthEvaluator {},
         }
     }
@@ -51,6 +55,13 @@ pub fn startswith(data: &Expr, pattern: &Expr) -> Expr {
 pub fn contains(data: &Expr, pattern: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Contains),
+        inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn split(data: &Expr, pattern: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Split),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }

@@ -572,7 +572,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         suffix_expr = Expression._to_expression(suffix)
         return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
 
-    def startswith(self, prefix: str) -> Expression:
+    def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column
 
         Example:
@@ -586,6 +586,22 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         prefix_expr = Expression._to_expression(prefix)
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
+
+    def split(self, pattern: str | Expression) -> Expression:
+        """Splits each string on the given pattern, into one or more strings.
+
+        Example:
+            >>> col("x").str.split(",")
+            >>> col("x").str.split(col("pattern"))
+
+        Args:
+            pattern: The pattern on which each string should be split, or a column to pick such patterns from.
+
+        Returns:
+            Expression: A List[Utf8] expression containing the string splits for each string in the column.
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr))
 
     def concat(self, other: str) -> Expression:
         """Concatenates two string expressions together

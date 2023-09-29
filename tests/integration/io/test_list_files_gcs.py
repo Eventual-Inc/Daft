@@ -3,9 +3,11 @@ from __future__ import annotations
 import gcsfs
 import pytest
 
-from daft.daft import io_list
+from daft.daft import GCSConfig, IOConfig, io_list
 
 BUCKET = "daft-public-data-gs"
+DEFAULT_GCS_CONFIG = GCSConfig(project_id=None, anonymous=None)
+ANON_GCS_CONFIG = GCSConfig(project_id=None, anonymous=True)
 
 
 def gcsfs_recursive_list(fs, path) -> list:
@@ -49,28 +51,32 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
     ],
 )
 @pytest.mark.parametrize("recursive", [False, True])
-def test_gs_flat_directory_listing(path, recursive):
+@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
+def test_gs_flat_directory_listing(path, recursive, gcs_config):
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_list(path, recursive=recursive)
+    daft_ls_result = io_list(path, recursive=recursive, io_config=IOConfig(gcs=gcs_config))
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("recursive", [False, True])
-def test_gs_single_file_listing(recursive):
+@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
+def test_gs_single_file_listing(recursive, gcs_config):
     path = f"gs://{BUCKET}/test_ls/file.txt"
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_list(path, recursive=recursive)
+    daft_ls_result = io_list(path, recursive=recursive, io_config=IOConfig(gcs=gcs_config))
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
-def test_gs_notfound():
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
+def test_gs_notfound(recursive, gcs_config):
     path = f"gs://{BUCKET}/test_ls/MISSING"
     fs = gcsfs.GCSFileSystem()
     with pytest.raises(FileNotFoundError):
         fs.ls(path, detail=True)
     with pytest.raises(FileNotFoundError, match=path):
-        io_list(path)
+        io_list(path, recursive=recursive, io_config=IOConfig(gcs=gcs_config))

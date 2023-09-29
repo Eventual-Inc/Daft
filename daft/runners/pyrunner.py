@@ -148,7 +148,7 @@ class PyRunner(Runner[Table]):
             if entry.value is not None
         }
         # Get executable tasks from planner.
-        tasks = plan_scheduler.to_partition_tasks(psets)
+        tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=False)
 
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
             partitions_gen = self._physical_plan_to_partitions(tasks)
