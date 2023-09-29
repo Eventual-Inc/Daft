@@ -6,7 +6,7 @@ use bytes::Bytes;
 use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
-use globset::GlobBuilder;
+use globset::{GlobBuilder, GlobMatcher};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
@@ -143,6 +143,14 @@ pub(crate) async fn glob(
     glob: &str,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     let glob_fragments = to_glob_fragments(glob)?;
+    let full_glob_matcher = GlobBuilder::new(glob)
+        .literal_separator(true)
+        .backslash_escape(true)
+        .build()
+        .map_err(|err| super::Error::InvalidArgument {
+            msg: format!("Cannot parse provided glob {glob}: {err}"),
+        })?
+        .compile_matcher();
 
     // Channel to send results back to caller. Note that all results must have FileType::File.
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
@@ -157,6 +165,7 @@ pub(crate) async fn glob(
         source: Arc<dyn ObjectSource>,
         path: &str,
         glob_fragments: (Arc<Vec<GlobFragment>>, usize),
+        full_glob_matcher: Arc<GlobMatcher>,
     ) {
         let path = path.to_string();
         tokio::spawn(async move {
@@ -167,14 +176,6 @@ pub(crate) async fn glob(
             // BASE CASE: current_fragment is a **
             // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.escaped_str() == "**" {
-                let full_glob_matcher =
-                    GlobBuilder::new(GlobFragment::join(glob_fragments.as_slice(), "/").raw_str())
-                        .literal_separator(true)
-                        .backslash_escape(true)
-                        .build()
-                        .expect("Cannot parse glob")
-                        .compile_matcher();
-
                 let next_level_file_metadata =
                     source.iter_dir(path.as_str(), Some("/"), None).await;
 
@@ -190,6 +191,7 @@ pub(crate) async fn glob(
                                             source.clone(),
                                             &fm.filepath,
                                             (glob_fragments.clone(), i),
+                                            full_glob_matcher.clone(),
                                         );
                                     }
                                     // Return any Files that match
@@ -213,14 +215,6 @@ pub(crate) async fn glob(
 
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
             } else if i == glob_fragments.len() - 1 {
-                let full_glob_matcher =
-                    GlobBuilder::new(GlobFragment::join(glob_fragments.as_slice(), "/").raw_str())
-                        .literal_separator(true)
-                        .backslash_escape(true)
-                        .build()
-                        .expect("Cannot parse glob")
-                        .compile_matcher();
-
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let next_level_file_metadata =
@@ -290,6 +284,7 @@ pub(crate) async fn glob(
                                             source.clone(),
                                             fm.filepath.as_str(),
                                             (glob_fragments.clone(), i + 1),
+                                            full_glob_matcher.clone(),
                                         );
                                     }
                                 }
@@ -311,12 +306,19 @@ pub(crate) async fn glob(
                     source.clone(),
                     full_dir_path.as_str(),
                     (glob_fragments.clone(), i + 1),
+                    full_glob_matcher.clone(),
                 );
             }
         });
     }
 
-    visit(to_rtn_tx, source.clone(), "", (Arc::new(glob_fragments), 0));
+    visit(
+        to_rtn_tx,
+        source.clone(),
+        "",
+        (Arc::new(glob_fragments), 0),
+        Arc::new(full_glob_matcher),
+    );
 
     let to_rtn_stream = stream! {
         while let Some(v) = to_rtn_rx.recv().await {
