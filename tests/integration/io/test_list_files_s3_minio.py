@@ -156,6 +156,25 @@ def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair)
 
 
 @pytest.mark.integration()
+@pytest.mark.parametrize(
+    "path_expect_pair",
+    [
+        (r"s3://bucket/\*.match", [{"type": "File", "path": "s3://bucket/*.match", "size": 0}]),
+        ("s3://bucket/\\\\.match", [{"type": "File", "path": r"s3://bucket/\.match", "size": 0}]),
+        ("s3://bucket/\\a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
+    ],
+)
+def test_directory_globbing_escape_characters(minio_io_config, path_expect_pair):
+    globpath, expect = path_expect_pair
+    with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
+        files = ["a.match", "*.match", r"\.match"]
+        for name in files:
+            fs.touch(f"bucket/{name}")
+        daft_ls_result = io_glob(globpath, io_config=minio_io_config)
+        assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])
+
+
+@pytest.mark.integration()
 def test_flat_directory_listing(minio_io_config):
     bucket_name = "bucket"
     with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
