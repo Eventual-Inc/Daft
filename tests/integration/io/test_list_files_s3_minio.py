@@ -159,9 +159,12 @@ def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair)
 @pytest.mark.parametrize(
     "path_expect_pair",
     [
+        # A "\*" is escaped to a literal *
         (r"s3://bucket/\*.match", [{"type": "File", "path": "s3://bucket/*.match", "size": 0}]),
-        ("s3://bucket/\\\\.match", [{"type": "File", "path": r"s3://bucket/\.match", "size": 0}]),
-        ("s3://bucket/\\a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
+        # A "\\" is escaped to just a \
+        (r"s3://bucket/\\.match", [{"type": "File", "path": r"s3://bucket/\.match", "size": 0}]),
+        # Ignore \ followed by non-special character
+        (r"s3://bucket/\a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
     ],
 )
 def test_directory_globbing_escape_characters(minio_io_config, path_expect_pair):
