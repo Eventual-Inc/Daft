@@ -142,6 +142,28 @@ pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+    // If no special characters, we fall back to ls behavior
+    let full_fragment = GlobFragment::new(glob);
+    if !full_fragment.has_special_character() {
+        let glob = full_fragment.escaped_str().to_string();
+        return Ok(stream! {
+            let mut results = source.iter_dir(glob.as_str(), Some("/"), None).await?;
+            while let Some(val) = results.next().await {
+                yield val
+            }
+        }
+        .boxed());
+    }
+
+    // If user specifies a trailing / then we understand it as an attempt to list the folder(s) matched
+    // and append a trailing * fragment
+    let glob = if glob.ends_with('/') {
+        glob.to_string() + "*"
+    } else {
+        glob.to_string()
+    };
+    let glob = glob.as_str();
+
     let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)

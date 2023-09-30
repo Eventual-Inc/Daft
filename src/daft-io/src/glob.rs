@@ -123,16 +123,20 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
         .split(delimiter)
         .map(GlobFragment::new)
     {
-        if fragment.has_special_character() {
-            if !nonspecial_fragments_so_far.is_empty() {
-                coalesced_fragments.push(GlobFragment::join(
-                    nonspecial_fragments_so_far.drain(..).as_slice(),
-                    delimiter,
-                ));
+        match fragment {
+            fragment if fragment.data.is_empty() => (),
+            fragment if fragment.has_special_character() => {
+                if !nonspecial_fragments_so_far.is_empty() {
+                    coalesced_fragments.push(GlobFragment::join(
+                        nonspecial_fragments_so_far.drain(..).as_slice(),
+                        delimiter,
+                    ));
+                }
+                coalesced_fragments.push(fragment);
             }
-            coalesced_fragments.push(fragment);
-        } else {
-            nonspecial_fragments_so_far.push(fragment);
+            _ => {
+                nonspecial_fragments_so_far.push(fragment);
+            }
         }
     }
     if !nonspecial_fragments_so_far.is_empty() {
