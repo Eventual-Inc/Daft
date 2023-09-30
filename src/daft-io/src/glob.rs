@@ -13,8 +13,14 @@ lazy_static! {
 const SCHEME_SUFFIX_LEN: usize = "://".len();
 
 pub(crate) struct GlobState {
+    // Current path in dirtree and glob_fragments
     pub current_path: String,
     pub current_fragment_idx: usize,
+
+    // Whether we have encountered wildcards yet in the process of parsing
+    pub wildcard_mode: bool,
+
+    // Carry along expensive data as Arcs to avoid recomputation
     pub glob_fragments: Arc<Vec<GlobFragment>>,
     pub full_glob_matcher: Arc<GlobMatcher>,
 }
@@ -30,6 +36,17 @@ impl GlobState {
             current_fragment_idx: idx,
             glob_fragments: self.glob_fragments.clone(),
             full_glob_matcher: self.full_glob_matcher.clone(),
+            wildcard_mode: self.wildcard_mode,
+        }
+    }
+
+    pub fn set_wildcard_mode(&self) -> Self {
+        GlobState {
+            current_path: self.current_path.clone(),
+            current_fragment_idx: self.current_fragment_idx,
+            glob_fragments: self.glob_fragments.clone(),
+            full_glob_matcher: self.full_glob_matcher.clone(),
+            wildcard_mode: true,
         }
     }
 }

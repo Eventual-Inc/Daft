@@ -127,22 +127,24 @@ def s3fs_recursive_list(fs, path) -> list:
         ###
         # Exact filepath missing:
         (f"s3://bucket/MISSING", FileNotFoundError),
+        # Exact filepath missing before wildcard:
+        (f"s3://bucket/MISSING/*", FileNotFoundError),
+        # Exact filepath missing after wildcard:
+        (f"s3://bucket/*/MISSING", []),
         # Wildcard file no match:
         (f"s3://bucket/*.MISSING", []),
-        # Exact folder missing:
-        (f"s3://bucket/MISSING/*.match", []),
         # Wildcard folder no match:
         (f"s3://bucket/*NOMATCH/*.match", []),
         ###
         # Directories: glob ignores directories and never returns them
         ###
-        # Exact directory: fall back to ls behavior
+        # Exact directory: fall back to ls behavior but ignore Directories
         (
-            f"s3://bucket/nested1",
+            f"s3://bucket",
             [
-                {"type": "File", "path": "s3://bucket/nested1/a.match", "size": 0},
-                {"type": "File", "path": "s3://bucket/nested1/b.nomatch", "size": 0},
-                {"type": "File", "path": "s3://bucket/nested1/c.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3://bucket/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3://bucket/c.match", "size": 0},
             ],
         ),
         # Wildcard folder: we don't select directories with wildcards because we think it's a File

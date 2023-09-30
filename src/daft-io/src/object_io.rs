@@ -150,7 +150,11 @@ pub(crate) async fn glob(
         return Ok(stream! {
             let mut results = source.iter_dir(glob.as_str(), Some("/"), None).await?;
             while let Some(val) = results.next().await {
-                yield val
+                match &val {
+                    // Ignore non-File results
+                    Ok(fm) if !matches!(fm.filetype, FileType::File) => continue,
+                    _ => yield val,
+                }
             }
         }
         .boxed());
@@ -219,9 +223,14 @@ pub(crate) async fn glob(
                                 result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
                         }
-                        Err(super::Error::NotFound { .. }) => {}
                         Err(e) => {
-                            result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                            // Silence NotFound errors when in wildcard "search" mode
+                            if !(matches!(e, super::Error::NotFound { .. }) && state.wildcard_mode)
+                            {
+                                result_tx.send(Err(e)).await.expect(
+                                    "Internal multithreading channel is broken: results may be incorrect",
+                                );
+                            }
                         }
                     }
                 }
@@ -243,9 +252,15 @@ pub(crate) async fn glob(
                                     result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                 }
                             }
-                            Err(super::Error::NotFound { .. }) => (),
                             Err(e) => {
-                                result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                // Silence NotFound errors when in wildcard "search" mode
+                                if !(matches!(e, super::Error::NotFound { .. })
+                                    && state.wildcard_mode)
+                                {
+                                    result_tx.send(Err(e)).await.expect(
+                                        "Internal multithreading channel is broken: results may be incorrect",
+                                    );
+                                }
                             }
                         }
                     }
@@ -262,10 +277,15 @@ pub(crate) async fn glob(
                                 result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
                         }
-                        Err(super::Error::NotFound { .. }) => (),
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
+                        Err(e) => {
+                            // Silence NotFound errors when in wildcard "search" mode
+                            if !(matches!(e, super::Error::NotFound { .. }) && state.wildcard_mode)
+                            {
+                                result_tx.send(Err(e)).await.expect(
+                                    "Internal multithreading channel is broken: results may be incorrect",
+                                );
+                            }
+                        }
                     };
                 }
 
@@ -297,7 +317,9 @@ pub(crate) async fn glob(
                                 visit(
                                     result_tx.clone(),
                                     source.clone(),
-                                    state.advance(fm.filepath, state.current_fragment_idx + 1),
+                                    state
+                                        .advance(fm.filepath, state.current_fragment_idx + 1)
+                                        .set_wildcard_mode(),
                                 );
                             }
                         }
@@ -328,6 +350,7 @@ pub(crate) async fn glob(
             current_fragment_idx: 0,
             glob_fragments: Arc::new(glob_fragments),
             full_glob_matcher: Arc::new(full_glob_matcher),
+            wildcard_mode: false,
         },
     );
 
