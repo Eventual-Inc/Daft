@@ -718,10 +718,7 @@ impl ObjectSource for S3LikeSource {
                 source: ParseError::EmptyHost,
             }),
         }?;
-        let key = parsed.path();
-        let key = key
-            .trim_start_matches(delimiter)
-            .trim_end_matches(delimiter);
+        let key = parsed.path().trim_start_matches(delimiter);
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -729,7 +726,7 @@ impl ObjectSource for S3LikeSource {
             let key = if key.is_empty() {
                 "".to_string()
             } else {
-                format!("{key}{delimiter}")
+                format!("{}{delimiter}", key.trim_end_matches(delimiter))
             };
             let lsr = {
                 let permit = self
