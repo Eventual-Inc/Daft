@@ -207,20 +207,26 @@ pub(crate) async fn glob(
                 while let Some(val) = results.next().await {
                     match val {
                         Ok(fm) => {
-                            // Recursively visit each sub-directory
-                            if matches!(fm.filetype, FileType::Directory) {
-                                visit(
-                                    result_tx.clone(),
-                                    source.clone(),
-                                    // Do not increment `current_fragment_idx` so as to keep visiting the "**" fragmemt
-                                    state.advance(fm.filepath.clone(), state.current_fragment_idx),
-                                );
-                            }
-                            // Return any Files that match
-                            if state.full_glob_matcher.is_match(fm.filepath.as_str())
-                                && matches!(fm.filetype, FileType::File)
-                            {
-                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                            match fm.filetype {
+                                // Recursively visit each sub-directory
+                                FileType::Directory => {
+                                    visit(
+                                        result_tx.clone(),
+                                        source.clone(),
+                                        // Do not increment `current_fragment_idx` so as to keep visiting the "**" fragmemt
+                                        state.advance(
+                                            fm.filepath.clone(),
+                                            state.current_fragment_idx,
+                                        ),
+                                    );
+                                }
+                                // Return any Files that match
+                                FileType::File
+                                    if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
+                                {
+                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                }
+                                _ => (),
                             }
                         }
                         Err(e) => {
