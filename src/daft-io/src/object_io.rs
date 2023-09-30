@@ -176,71 +176,60 @@ pub(crate) async fn glob(
             // BASE CASE: current_fragment is a **
             // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.escaped_str() == "**" {
-                let next_level_file_metadata =
-                    source.iter_dir(path.as_str(), Some("/"), None).await;
+                let mut results = source
+                    .iter_dir(path.as_str(), Some("/"), None)
+                    .await
+                    .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
-                match next_level_file_metadata {
-                    Ok(mut next_level_file_metadata) => {
-                        while let Some(fm) = next_level_file_metadata.next().await {
-                            match fm {
-                                Ok(fm) => {
-                                    // Recursively visit each sub-directory, do not increment `i` so as to keep visiting the "**" fragmemt
-                                    if matches!(fm.filetype, FileType::Directory) {
-                                        visit(
-                                            result_tx.clone(),
-                                            source.clone(),
-                                            &fm.filepath,
-                                            (glob_fragments.clone(), i),
-                                            full_glob_matcher.clone(),
-                                        );
-                                    }
-                                    // Return any Files that match
-                                    if full_glob_matcher.is_match(fm.filepath.as_str())
-                                        && matches!(fm.filetype, FileType::File)
-                                    {
-                                        result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                                    }
-                                }
-                                Err(super::Error::NotFound { .. }) => {}
-                                Err(e) => {
-                                    result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                                }
+                while let Some(val) = results.next().await {
+                    match val {
+                        Ok(fm) => {
+                            // Recursively visit each sub-directory, do not increment `i` so as to keep visiting the "**" fragmemt
+                            if matches!(fm.filetype, FileType::Directory) {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    &fm.filepath,
+                                    (glob_fragments.clone(), i),
+                                    full_glob_matcher.clone(),
+                                );
+                            }
+                            // Return any Files that match
+                            if full_glob_matcher.is_match(fm.filepath.as_str())
+                                && matches!(fm.filetype, FileType::File)
+                            {
+                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
                         }
+                        Err(super::Error::NotFound { .. }) => {}
+                        Err(e) => {
+                            result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                        }
                     }
-                    Err(e) => result_tx.send(Err(e)).await.expect(
-                        "Internal multithreading channel is broken: results may be incorrect",
-                    ),
-                };
-
+                }
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
             } else if i == glob_fragments.len() - 1 {
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
-                    let next_level_file_metadata =
-                        source.iter_dir(path.as_str(), Some("/"), None).await;
+                    let mut results = source
+                        .iter_dir(path.as_str(), Some("/"), None)
+                        .await
+                        .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
-                    match next_level_file_metadata {
-                        Ok(mut next_level_file_metadata) => {
-                            while let Some(fm) = next_level_file_metadata.next().await {
-                                match fm {
-                                    Ok(fm) => {
-                                        if matches!(fm.filetype, FileType::File)
-                                            && full_glob_matcher.is_match(fm.filepath.as_str())
-                                        {
-                                            result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                                        }
-                                    }
-                                    Err(super::Error::NotFound { .. }) => (),
-                                    Err(e) => {
-                                        result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                                    }
+                    while let Some(val) = results.next().await {
+                        match val {
+                            Ok(fm) => {
+                                if matches!(fm.filetype, FileType::File)
+                                    && full_glob_matcher.is_match(fm.filepath.as_str())
+                                {
+                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                 }
                             }
+                            Err(super::Error::NotFound { .. }) => (),
+                            Err(e) => {
+                                result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                            }
                         }
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
                     }
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
                 } else {
@@ -270,32 +259,32 @@ pub(crate) async fn glob(
                         .build()
                         .expect("Cannot parse glob")
                         .compile_matcher();
-                let next_level_file_metadata =
-                    source.iter_dir(path.as_str(), Some("/"), None).await;
+                let mut results = source
+                    .iter_dir(path.as_str(), Some("/"), None)
+                    .await
+                    .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
-                match next_level_file_metadata {
-                    Ok(mut next_level_file_metadata) => {
-                        while let Some(fm) = next_level_file_metadata.next().await {
-                            match fm {
-                                Ok(fm) => {
-                                    if matches!(fm.filetype, FileType::Directory) && partial_glob_matcher.is_match(fm.filepath.as_str().trim_end_matches('/')) {
-                                        visit(
-                                            result_tx.clone(),
-                                            source.clone(),
-                                            fm.filepath.as_str(),
-                                            (glob_fragments.clone(), i + 1),
-                                            full_glob_matcher.clone(),
-                                        );
-                                    }
-                                }
-                                Err(super::Error::NotFound { .. }) => (),
-                                Err(e) => result_tx.send(Err(e)).await.expect("Internal multithreading channel is broken: results may be incorrect"),
+                while let Some(val) = results.next().await {
+                    match val {
+                        Ok(fm) => {
+                            if matches!(fm.filetype, FileType::Directory)
+                                && partial_glob_matcher
+                                    .is_match(fm.filepath.as_str().trim_end_matches('/'))
+                            {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    fm.filepath.as_str(),
+                                    (glob_fragments.clone(), i + 1),
+                                    full_glob_matcher.clone(),
+                                );
                             }
                         }
+                        Err(super::Error::NotFound { .. }) => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
                     }
-                    Err(e) => result_tx.send(Err(e)).await.expect(
-                        "Internal multithreading channel is broken: results may be incorrect",
-                    ),
                 }
 
             // RECURSIVE CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
