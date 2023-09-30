@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
+use globset::GlobMatcher;
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -10,6 +11,28 @@ lazy_static! {
 }
 
 const SCHEME_SUFFIX_LEN: usize = "://".len();
+
+pub(crate) struct GlobState {
+    pub current_path: String,
+    pub current_fragment_idx: usize,
+    pub glob_fragments: Arc<Vec<GlobFragment>>,
+    pub full_glob_matcher: Arc<GlobMatcher>,
+}
+
+impl GlobState {
+    pub fn current_glob_fragment(&self) -> &GlobFragment {
+        &self.glob_fragments[self.current_fragment_idx]
+    }
+
+    pub fn advance(&self, path: String, idx: usize) -> Self {
+        GlobState {
+            current_path: path,
+            current_fragment_idx: idx,
+            glob_fragments: self.glob_fragments.clone(),
+            full_glob_matcher: self.full_glob_matcher.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct GlobFragment {

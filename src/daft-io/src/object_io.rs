@@ -6,10 +6,11 @@ use bytes::Bytes;
 use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
-use globset::{GlobBuilder, GlobMatcher};
+use globset::GlobBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
+use crate::glob::GlobState;
 use crate::{
     glob::{to_glob_fragments, GlobFragment},
     local::{collect_file, LocalFile},
@@ -185,39 +186,34 @@ pub(crate) async fn glob(
     fn visit(
         result_tx: Sender<super::Result<FileMetadata>>,
         source: Arc<dyn ObjectSource>,
-        path: &str,
-        glob_fragments: (Arc<Vec<GlobFragment>>, usize),
-        full_glob_matcher: Arc<GlobMatcher>,
+        state: GlobState,
     ) {
-        let path = path.to_string();
         tokio::spawn(async move {
-            log::debug!(target: "glob", "Visiting '{path}' with glob_fragments: {glob_fragments:?}");
-            let (glob_fragments, i) = glob_fragments;
-            let current_fragment = &glob_fragments[i];
+            log::debug!(target: "glob", "Visiting '{}' with glob_fragments: {:?}", &state.current_path, &state.glob_fragments);
+            let current_fragment = state.current_glob_fragment();
 
             // BASE CASE: current_fragment is a **
             // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
             if current_fragment.escaped_str() == "**" {
                 let mut results = source
-                    .iter_dir(path.as_str(), Some("/"), None)
+                    .iter_dir(&state.current_path, Some("/"), None)
                     .await
                     .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
                 while let Some(val) = results.next().await {
                     match val {
                         Ok(fm) => {
-                            // Recursively visit each sub-directory, do not increment `i` so as to keep visiting the "**" fragmemt
+                            // Recursively visit each sub-directory
                             if matches!(fm.filetype, FileType::Directory) {
                                 visit(
                                     result_tx.clone(),
                                     source.clone(),
-                                    &fm.filepath,
-                                    (glob_fragments.clone(), i),
-                                    full_glob_matcher.clone(),
+                                    // Do not increment `current_fragment_idx` so as to keep visiting the "**" fragmemt
+                                    state.advance(fm.filepath.clone(), state.current_fragment_idx),
                                 );
                             }
                             // Return any Files that match
-                            if full_glob_matcher.is_match(fm.filepath.as_str())
+                            if state.full_glob_matcher.is_match(fm.filepath.as_str())
                                 && matches!(fm.filetype, FileType::File)
                             {
                                 result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
@@ -230,11 +226,11 @@ pub(crate) async fn glob(
                     }
                 }
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
-            } else if i == glob_fragments.len() - 1 {
+            } else if state.current_fragment_idx == state.glob_fragments.len() - 1 {
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let mut results = source
-                        .iter_dir(path.as_str(), Some("/"), None)
+                        .iter_dir(&state.current_path, Some("/"), None)
                         .await
                         .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
@@ -242,7 +238,7 @@ pub(crate) async fn glob(
                         match val {
                             Ok(fm) => {
                                 if matches!(fm.filetype, FileType::File)
-                                    && full_glob_matcher.is_match(fm.filepath.as_str())
+                                    && state.full_glob_matcher.is_match(fm.filepath.as_str())
                                 {
                                     result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                 }
@@ -255,7 +251,7 @@ pub(crate) async fn glob(
                     }
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
                 } else {
-                    let full_dir_path = path.to_string() + current_fragment.escaped_str();
+                    let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
                     let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
@@ -275,14 +271,19 @@ pub(crate) async fn glob(
 
             // RECURSIVE CASE: current_fragment contains a special character (e.g. *)
             } else if current_fragment.has_special_character() {
-                let partial_glob_matcher =
-                    GlobBuilder::new(GlobFragment::join(&glob_fragments[..i + 1], "/").raw_str())
-                        .literal_separator(true)
-                        .build()
-                        .expect("Cannot parse glob")
-                        .compile_matcher();
+                let partial_glob_matcher = GlobBuilder::new(
+                    GlobFragment::join(
+                        &state.glob_fragments[..state.current_fragment_idx + 1],
+                        "/",
+                    )
+                    .raw_str(),
+                )
+                .literal_separator(true)
+                .build()
+                .expect("Cannot parse glob")
+                .compile_matcher();
                 let mut results = source
-                    .iter_dir(path.as_str(), Some("/"), None)
+                    .iter_dir(&state.current_path, Some("/"), None)
                     .await
                     .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
 
@@ -296,9 +297,7 @@ pub(crate) async fn glob(
                                 visit(
                                     result_tx.clone(),
                                     source.clone(),
-                                    fm.filepath.as_str(),
-                                    (glob_fragments.clone(), i + 1),
-                                    full_glob_matcher.clone(),
+                                    state.advance(fm.filepath, state.current_fragment_idx + 1),
                                 );
                             }
                         }
@@ -311,13 +310,11 @@ pub(crate) async fn glob(
 
             // RECURSIVE CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
             } else {
-                let full_dir_path = path.to_string() + current_fragment.escaped_str();
+                let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
                 visit(
                     result_tx.clone(),
                     source.clone(),
-                    full_dir_path.as_str(),
-                    (glob_fragments.clone(), i + 1),
-                    full_glob_matcher.clone(),
+                    state.advance(full_dir_path, state.current_fragment_idx + 1),
                 );
             }
         });
@@ -326,9 +323,12 @@ pub(crate) async fn glob(
     visit(
         to_rtn_tx,
         source.clone(),
-        "",
-        (Arc::new(glob_fragments), 0),
-        Arc::new(full_glob_matcher),
+        GlobState {
+            current_path: "".to_string(),
+            current_fragment_idx: 0,
+            glob_fragments: Arc::new(glob_fragments),
+            full_glob_matcher: Arc::new(full_glob_matcher),
+        },
     );
 
     let to_rtn_stream = stream! {
