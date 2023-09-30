@@ -237,49 +237,53 @@ impl GCSClientWrapper {
     async fn ls(
         &self,
         path: &str,
-        delimiter: Option<&str>,
+        delimiter: &str,
+        posix: bool,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
-        let delimiter = delimiter.unwrap_or("/");
         match self {
             GCSClientWrapper::Native(client) => {
-                // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                let forced_directory_key =
-                    format!("{}{delimiter}", key.trim_end_matches(delimiter));
-                let forced_directory_ls_result = self
-                    ._ls_impl(
-                        client,
-                        bucket,
-                        forced_directory_key.as_str(),
-                        delimiter,
-                        continuation_token,
-                    )
-                    .await?;
-
-                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-                // details as the one-and-only-one entry
-                if forced_directory_ls_result.files.is_empty() {
-                    let file_result = self
-                        ._ls_impl(client, bucket, key, delimiter, continuation_token)
+                if posix {
+                    // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+                    let forced_directory_key =
+                        format!("{}{delimiter}", key.trim_end_matches(delimiter));
+                    let forced_directory_ls_result = self
+                        ._ls_impl(
+                            client,
+                            bucket,
+                            forced_directory_key.as_str(),
+                            delimiter,
+                            continuation_token,
+                        )
                         .await?;
 
-                    // Not dir and not file, so it is missing
-                    if file_result.files.is_empty() {
-                        return Err(Error::NotFound {
-                            path: path.to_string(),
-                        }
-                        .into());
-                    }
+                    // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                    // details as the one-and-only-one entry
+                    if forced_directory_ls_result.files.is_empty() {
+                        let file_result = self
+                            ._ls_impl(client, bucket, key, delimiter, continuation_token)
+                            .await?;
 
-                    Ok(file_result)
+                        // Not dir and not file, so it is missing
+                        if file_result.files.is_empty() {
+                            return Err(Error::NotFound {
+                                path: path.to_string(),
+                            }
+                            .into());
+                        }
+
+                        Ok(file_result)
+                    } else {
+                        Ok(forced_directory_ls_result)
+                    }
                 } else {
-                    Ok(forced_directory_ls_result)
+                    todo!("Need to implement prefix-listing for GCS");
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
-                client.ls(path, Some(delimiter), continuation_token).await
+                client.ls(path, delimiter, posix, continuation_token).await
             }
         }
     }
@@ -340,9 +344,12 @@ impl ObjectSource for GCSSource {
     async fn ls(
         &self,
         path: &str,
-        delimiter: Option<&str>,
+        delimiter: &str,
+        posix: bool,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        self.client.ls(path, delimiter, continuation_token).await
+        self.client
+            .ls(path, delimiter, posix, continuation_token)
+            .await
     }
 }

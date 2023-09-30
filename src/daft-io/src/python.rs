@@ -79,7 +79,7 @@ mod py {
                         .await?
                 } else {
                     source
-                        .iter_dir(&path, None, None)
+                        .iter_dir(&path, "/", true, None)
                         .await?
                         .try_collect::<Vec<_>>()
                         .await?

@@ -225,7 +225,8 @@ impl ObjectSource for HttpSource {
     async fn ls(
         &self,
         path: &str,
-        _delimiter: Option<&str>,
+        _delimiter: &str,
+        _posix: bool,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let request = self.client.get(path);

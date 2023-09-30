@@ -704,7 +704,8 @@ impl ObjectSource for S3LikeSource {
     async fn ls(
         &self,
         path: &str,
-        delimiter: Option<&str>,
+        delimiter: &str,
+        posix: bool,
         continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
@@ -718,95 +719,87 @@ impl ObjectSource for S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        let key = if let Some(delimiter) = delimiter {
-            key.trim_start_matches(delimiter)
-                .trim_end_matches(delimiter)
-        } else {
-            key
-        };
-        let key = if key.is_empty() {
-            "".to_string()
-        } else if let Some(delimiter) = delimiter {
-            format!("{key}{delimiter}")
-        } else {
-            key.to_string()
-        };
+        let key = key
+            .trim_start_matches(delimiter)
+            .trim_end_matches(delimiter);
 
-        match delimiter {
-            // Perform a prefix-based list of all entries with this prefix
-            None => {
-                let lsr = {
-                    let permit = self
-                        .connection_pool_sema
-                        .acquire()
-                        .await
-                        .context(UnableToGrabSemaphoreSnafu)?;
-
-                    self._list_impl(
-                        permit,
-                        scheme,
-                        bucket,
-                        &key,
-                        None, // triggers prefix-based list
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                    )
-                    .await?
-                };
-                Ok(lsr)
-            }
+        if posix {
             // Perform a directory-based list of entries in the next level
-            Some(delimiter) => {
-                // assume its a directory first
-                let lsr = {
-                    let permit = self
-                        .connection_pool_sema
-                        .acquire()
-                        .await
-                        .context(UnableToGrabSemaphoreSnafu)?;
+            // assume its a directory first
+            let key = if key.is_empty() {
+                "".to_string()
+            } else {
+                format!("{key}{delimiter}")
+            };
+            let lsr = {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
 
-                    self._list_impl(
+                self._list_impl(
+                    permit,
+                    scheme,
+                    bucket,
+                    &key,
+                    Some(delimiter.into()),
+                    continuation_token.map(String::from),
+                    &self.default_region,
+                )
+                .await?
+            };
+            if lsr.files.is_empty() && key.contains(delimiter) {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
+                // Might be a File
+                let key = key.trim_end_matches(delimiter);
+                let mut lsr = self
+                    ._list_impl(
                         permit,
                         scheme,
                         bucket,
-                        &key,
+                        key,
                         Some(delimiter.into()),
                         continuation_token.map(String::from),
                         &self.default_region,
                     )
-                    .await?
-                };
-                if lsr.files.is_empty() && key.contains(delimiter) {
-                    let permit = self
-                        .connection_pool_sema
-                        .acquire()
-                        .await
-                        .context(UnableToGrabSemaphoreSnafu)?;
-                    // Might be a File
-                    let key = key.trim_end_matches(delimiter);
-                    let mut lsr = self
-                        ._list_impl(
-                            permit,
-                            scheme,
-                            bucket,
-                            key,
-                            Some(delimiter.into()),
-                            continuation_token.map(String::from),
-                            &self.default_region,
-                        )
-                        .await?;
-                    let target_path = format!("{scheme}://{bucket}/{key}");
-                    lsr.files.retain(|f| f.filepath == target_path);
+                    .await?;
+                let target_path = format!("{scheme}://{bucket}/{key}");
+                lsr.files.retain(|f| f.filepath == target_path);
 
-                    if lsr.files.is_empty() {
-                        // Isnt a file or a directory
-                        return Err(Error::NotFound { path: path.into() }.into());
-                    }
-                    Ok(lsr)
-                } else {
-                    Ok(lsr)
+                if lsr.files.is_empty() {
+                    // Isnt a file or a directory
+                    return Err(Error::NotFound { path: path.into() }.into());
                 }
+                Ok(lsr)
+            } else {
+                Ok(lsr)
             }
+        } else {
+            // Perform a prefix-based list of all entries with this prefix
+            let lsr = {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
+
+                self._list_impl(
+                    permit,
+                    scheme,
+                    bucket,
+                    key,
+                    None, // triggers prefix-based list
+                    continuation_token.map(String::from),
+                    &self.default_region,
+                )
+                .await?
+            };
+            Ok(lsr)
         }
     }
 }
@@ -878,7 +871,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        client.ls(file_path, None, None).await?;
+        client.ls(file_path, "/", true, None).await?;
 
         Ok(())
     }

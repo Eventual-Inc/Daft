@@ -132,10 +132,11 @@ impl ObjectSource for LocalSource {
     async fn ls(
         &self,
         path: &str,
-        _delimiter: Option<&str>,
+        delimiter: &str,
+        posix: bool,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
-        let s = self.iter_dir(path, None, None).await?;
+        let s = self.iter_dir(path, delimiter, posix, None).await?;
         let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
@@ -146,7 +147,8 @@ impl ObjectSource for LocalSource {
     async fn iter_dir(
         &self,
         uri: &str,
-        _delimiter: Option<&str>,
+        _delimiter: &str,
+        _posix: bool,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         const LOCAL_PROTOCOL: &str = "file://";
@@ -324,7 +326,7 @@ mod tests {
         let dir_path = format!("file://{}", dir.path().to_string_lossy());
         let client = LocalSource::get_client().await?;
 
-        let ls_result = client.ls(dir_path.as_ref(), None, None).await?;
+        let ls_result = client.ls(dir_path.as_ref(), "/", true, None).await?;
         let mut files = ls_result.files.clone();
         // Ensure stable sort ordering of file paths before comparing with expected payload.
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));
