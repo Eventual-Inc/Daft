@@ -12,6 +12,7 @@ lazy_static! {
 
 const SCHEME_SUFFIX_LEN: usize = "://".len();
 
+#[derive(Clone)]
 pub(crate) struct GlobState {
     // Current path in dirtree and glob_fragments
     pub current_path: String,
@@ -34,19 +35,14 @@ impl GlobState {
         GlobState {
             current_path: path,
             current_fragment_idx: idx,
-            glob_fragments: self.glob_fragments.clone(),
-            full_glob_matcher: self.full_glob_matcher.clone(),
-            wildcard_mode: self.wildcard_mode,
+            ..self.clone()
         }
     }
 
-    pub fn set_wildcard_mode(&self) -> Self {
+    pub fn with_wildcard_mode(&self) -> Self {
         GlobState {
-            current_path: self.current_path.clone(),
-            current_fragment_idx: self.current_fragment_idx,
-            glob_fragments: self.glob_fragments.clone(),
-            full_glob_matcher: self.full_glob_matcher.clone(),
             wildcard_mode: true,
+            ..self.clone()
         }
     }
 }

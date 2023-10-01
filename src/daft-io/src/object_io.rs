@@ -325,7 +325,7 @@ pub(crate) async fn glob(
                                     source.clone(),
                                     state
                                         .advance(fm.filepath, state.current_fragment_idx + 1)
-                                        .set_wildcard_mode(),
+                                        .with_wildcard_mode(),
                                 );
                             }
                         }
