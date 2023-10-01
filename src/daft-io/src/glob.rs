@@ -40,10 +40,10 @@ impl GlobState {
         }
     }
 
-    pub fn with_wildcard_mode(&self) -> Self {
+    pub fn with_wildcard_mode(self) -> Self {
         GlobState {
             wildcard_mode: true,
-            ..self.clone()
+            ..self
         }
     }
 }
