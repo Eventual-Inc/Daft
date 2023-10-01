@@ -229,15 +229,11 @@ pub(crate) async fn glob(
                                 _ => (),
                             }
                         }
-                        Err(e) => {
-                            // Silence NotFound errors when in wildcard "search" mode
-                            if !(matches!(e, super::Error::NotFound { .. }) && state.wildcard_mode)
-                            {
-                                result_tx.send(Err(e)).await.expect(
-                                    "Internal multithreading channel is broken: results may be incorrect",
-                                );
-                            }
-                        }
+                        // Silence NotFound errors when in wildcard "search" mode
+                        Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
                     }
                 }
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
@@ -258,16 +254,11 @@ pub(crate) async fn glob(
                                     result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                                 }
                             }
-                            Err(e) => {
-                                // Silence NotFound errors when in wildcard "search" mode
-                                if !(matches!(e, super::Error::NotFound { .. })
-                                    && state.wildcard_mode)
-                                {
-                                    result_tx.send(Err(e)).await.expect(
-                                        "Internal multithreading channel is broken: results may be incorrect",
-                                    );
-                                }
-                            }
+                            // Silence NotFound errors when in wildcard "search" mode
+                            Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                            Err(e) => result_tx.send(Err(e)).await.expect(
+                                "Internal multithreading channel is broken: results may be incorrect",
+                            ),
                         }
                     }
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
@@ -283,15 +274,11 @@ pub(crate) async fn glob(
                                 result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
                         }
-                        Err(e) => {
-                            // Silence NotFound errors when in wildcard "search" mode
-                            if !(matches!(e, super::Error::NotFound { .. }) && state.wildcard_mode)
-                            {
-                                result_tx.send(Err(e)).await.expect(
-                                    "Internal multithreading channel is broken: results may be incorrect",
-                                );
-                            }
-                        }
+                        // Silence NotFound errors when in wildcard "search" mode
+                        Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
                     };
                 }
 
@@ -329,6 +316,7 @@ pub(crate) async fn glob(
                                 );
                             }
                         }
+                        // Always silence NotFound since we are in wildcard "search" mode here by definition
                         Err(super::Error::NotFound { .. }) => (),
                         Err(e) => result_tx.send(Err(e)).await.expect(
                             "Internal multithreading channel is broken: results may be incorrect",
