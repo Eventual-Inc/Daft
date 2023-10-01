@@ -5,13 +5,13 @@ import random
 import pytest
 import s3fs
 
-from daft.daft import io_glob
+from daft.daft import io_glob, io_list
 
 from ..conftest import minio_create_bucket
 
 NUM_FILES = 10000
-NUM_LEVELS = 8
-FANOUT_PER_LEVEL = 24
+NUM_LEVELS = 4
+FANOUT_PER_LEVEL = 12
 BUCKET = "bucket"
 
 
@@ -47,12 +47,16 @@ def test_benchmark_glob_s3fs(benchmark, setup_bucket, minio_io_config):
 @pytest.mark.integration()
 @pytest.mark.parametrize("fanout_limit", [8, 64, 512, 4096])
 def test_benchmark_glob_daft(benchmark, setup_bucket, minio_io_config, fanout_limit):
-    fs = s3fs.S3FileSystem(
-        key=minio_io_config.s3.key_id,
-        password=minio_io_config.s3.access_key,
-        client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
-    )
-    results = benchmark(
-        lambda: io_glob(f"s3://{BUCKET}/**/*.parquet", io_config=minio_io_config, fanout_limit=fanout_limit)
+    results = benchmark.pedantic(
+        lambda: io_glob(f"s3://{BUCKET}/**/*.parquet", io_config=minio_io_config, fanout_limit=fanout_limit),
+        rounds=1,
+        iterations=1,
     )
     assert len(results) == setup_bucket
+
+
+@pytest.mark.benchmark(group="glob")
+@pytest.mark.integration()
+def test_benchmark_io_list_recursive_daft(benchmark, setup_bucket, minio_io_config):
+    results = benchmark(lambda: io_list(f"s3://{BUCKET}/", io_config=minio_io_config, recursive=True))
+    assert len([r for r in results if r["type"] == "File"]) == setup_bucket
