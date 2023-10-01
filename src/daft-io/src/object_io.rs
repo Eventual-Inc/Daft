@@ -202,7 +202,7 @@ pub(crate) async fn glob(
                 let mut results = source
                     .iter_dir(&state.current_path, Some("/"), None)
                     .await
-                    .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
+                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
                 while let Some(val) = results.next().await {
                     match val {
@@ -247,7 +247,7 @@ pub(crate) async fn glob(
                     let mut results = source
                         .iter_dir(&state.current_path, Some("/"), None)
                         .await
-                        .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
+                        .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
                     while let Some(val) = results.next().await {
                         match val {
@@ -311,7 +311,7 @@ pub(crate) async fn glob(
                 let mut results = source
                     .iter_dir(&state.current_path, Some("/"), None)
                     .await
-                    .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
+                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
                 while let Some(val) = results.next().await {
                     match val {
