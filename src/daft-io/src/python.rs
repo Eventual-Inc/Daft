@@ -18,12 +18,17 @@ mod py {
     fn io_glob(
         py: Python,
         path: String,
+        multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<&PyList> {
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
-            let io_client = get_io_client(true, io_config.unwrap_or_default().config.into())?;
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )?;
             let (scheme, path) = parse_url(&path)?;
-            let runtime_handle = get_runtime(true)?;
+            let runtime_handle = get_runtime(multithreaded_io)?;
             let _rt_guard = runtime_handle.enter();
 
             runtime_handle.block_on(async move {
