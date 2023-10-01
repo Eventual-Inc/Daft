@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::{collections::HashSet, sync::Arc};
 
 use globset::GlobMatcher;
@@ -117,7 +118,6 @@ impl GlobFragment {
             fragments
                 .iter()
                 .map(|frag: &GlobFragment| frag.data.as_str())
-                .collect::<Vec<&str>>()
                 .join(sep)
                 .as_str(),
         )
