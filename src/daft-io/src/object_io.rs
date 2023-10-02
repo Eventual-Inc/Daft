@@ -214,7 +214,7 @@ pub(crate) async fn glob(
                                         result_tx.clone(),
                                         source.clone(),
                                         // Do not increment `current_fragment_idx` so as to keep visiting the "**" fragmemt
-                                        state.advance(
+                                        state.clone().advance(
                                             fm.filepath.clone(),
                                             state.current_fragment_idx,
                                         ),
@@ -311,6 +311,7 @@ pub(crate) async fn glob(
                                     result_tx.clone(),
                                     source.clone(),
                                     state
+                                        .clone()
                                         .advance(fm.filepath, state.current_fragment_idx + 1)
                                         .with_wildcard_mode(),
                                 );
@@ -330,7 +331,9 @@ pub(crate) async fn glob(
                 visit(
                     result_tx.clone(),
                     source.clone(),
-                    state.advance(full_dir_path, state.current_fragment_idx + 1),
+                    state
+                        .clone()
+                        .advance(full_dir_path, state.current_fragment_idx + 1),
                 );
             }
         });

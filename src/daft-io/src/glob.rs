@@ -32,7 +32,7 @@ impl GlobState {
         &self.glob_fragments[self.current_fragment_idx]
     }
 
-    pub fn advance(&self, path: String, idx: usize) -> Self {
+    pub fn advance(self, path: String, idx: usize) -> Self {
         GlobState {
             current_path: path,
             current_fragment_idx: idx,
