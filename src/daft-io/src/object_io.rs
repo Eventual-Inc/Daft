@@ -205,11 +205,13 @@ async fn ls_with_prefix_fallback(
         .boxed()
     }
 
+    // Buffer (paged) results in memory as we go along
+    let mut results_buffer = vec![];
+
     let mut page_stream = source
         .iter_dir_pages(uri, delimiter, true)
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
-    let mut results_buffer = vec![];
     let mut dir_count_so_far = 0;
     while let Some(page) = page_stream.next().await {
         match page {
@@ -219,8 +221,10 @@ async fn ls_with_prefix_fallback(
                     .iter()
                     .filter(|fm| matches!(fm.filetype, FileType::Directory))
                     .count();
+                // STOP EARLY!!
+                // If the number of directory results are more than `max_dirs`, we terminate the function early,
+                // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
                 if dir_count_so_far > max_dirs {
-                    // Stop early if the number of directory results are more than max: return and throw away page buffer
                     return (
                         prefix_ls(source.clone(), uri.to_string(), delimiter.to_string()),
                         0,
@@ -234,6 +238,7 @@ async fn ls_with_prefix_fallback(
         }
     }
 
+    // No early termination: we unwrap the results in our results buffer and yield data as a stream
     let s = stream! {
         for page_files in results_buffer {
             match page_files {
