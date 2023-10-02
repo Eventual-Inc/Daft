@@ -10,7 +10,7 @@ py-spy==0.3.14
 viztracer==0.15.6
 
 # Testing frameworks
-hypothesis==6.79.2
+hypothesis==6.87.1
 pytest==7.4.1
 pytest-benchmark==4.0.0
 pytest-cov==4.1.0
