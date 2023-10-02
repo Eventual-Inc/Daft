@@ -16,6 +16,9 @@ use crate::{
     local::{collect_file, LocalFile},
 };
 
+/// Default limit before we fallback onto parallel prefix list streams
+static DEFAULT_FANOUT_LIMIT: usize = 128;
+
 pub enum GetResult {
     File(LocalFile),
     Stream(
@@ -166,6 +169,9 @@ pub(crate) trait ObjectSource: Sync + Send {
 /// * First attempts to non-recursively list all Files and Directories under the current `uri`
 /// * If during iteration we detect the number of Directories being returned exceeds `max_dirs`, we
 ///     fall back onto a prefix list of all Files with the current `uri` as the prefix
+///
+/// Returns a tuple `(file_metadata_stream: BoxStream<...>, dir_count: usize)` where the second element
+/// indicates the number of Directory entries contained within the stream
 async fn ls_with_prefix_fallback(
     source: Arc<dyn ObjectSource>,
     uri: &str,
@@ -202,7 +208,7 @@ async fn ls_with_prefix_fallback(
     let mut page_stream = source
         .iter_dir_pages(uri, delimiter, true)
         .await
-        .unwrap_or_else(|e| stream! {yield Err(e)}.boxed());
+        .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
     let mut results_buffer = vec![];
     let mut dir_count_so_far = 0;
     while let Some(page) = page_stream.next().await {
@@ -242,8 +248,6 @@ async fn ls_with_prefix_fallback(
     };
     (s.boxed(), dir_count_so_far)
 }
-
-static DEFAULT_FANOUT_LIMIT: usize = 3200;
 
 pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
