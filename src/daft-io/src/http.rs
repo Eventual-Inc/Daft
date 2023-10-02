@@ -228,6 +228,7 @@ impl ObjectSource for HttpSource {
         _delimiter: &str,
         posix: bool,
         _continuation_token: Option<&str>,
+        _page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         if !posix {
             todo!("Prefix-listing is not implemented for HTTP listing");

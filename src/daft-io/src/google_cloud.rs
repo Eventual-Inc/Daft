@@ -197,6 +197,7 @@ impl GCSClientWrapper {
         key: &str,
         delimiter: &str,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         let req = ListObjectsRequest {
             bucket: bucket.to_string(),
@@ -205,7 +206,7 @@ impl GCSClientWrapper {
             start_offset: None,
             page_token: continuation_token.map(|s| s.to_string()),
             delimiter: Some(delimiter.to_string()), // returns results in "directory mode"
-            max_results: Some(1000),                // Recommended value from API docs
+            max_results: page_size,
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
             versions: None,
@@ -240,6 +241,7 @@ impl GCSClientWrapper {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
@@ -259,6 +261,7 @@ impl GCSClientWrapper {
                         forced_directory_key.as_str(),
                         delimiter,
                         continuation_token,
+                        page_size,
                     )
                     .await?;
 
@@ -266,7 +269,14 @@ impl GCSClientWrapper {
                 // details as the one-and-only-one entry
                 if forced_directory_ls_result.files.is_empty() {
                     let file_result = self
-                        ._ls_impl(client, bucket, key, delimiter, continuation_token)
+                        ._ls_impl(
+                            client,
+                            bucket,
+                            key,
+                            delimiter,
+                            continuation_token,
+                            page_size,
+                        )
                         .await?;
 
                     // Not dir and not file, so it is missing
@@ -283,7 +293,9 @@ impl GCSClientWrapper {
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
-                client.ls(path, delimiter, posix, continuation_token).await
+                client
+                    .ls(path, delimiter, posix, continuation_token, page_size)
+                    .await
             }
         }
     }
@@ -347,9 +359,10 @@ impl ObjectSource for GCSSource {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         self.client
-            .ls(path, delimiter, posix, continuation_token)
+            .ls(path, delimiter, posix, continuation_token, page_size)
             .await
     }
 }

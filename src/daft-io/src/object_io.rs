@@ -114,6 +114,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult>;
 
     async fn iter_dir_pages(
@@ -121,16 +122,17 @@ pub(crate) trait ObjectSource: Sync + Send {
         uri: &str,
         delimiter: &str,
         posix: bool,
+        page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<LSResult>>> {
         let uri = uri.to_string();
         let delimiter = delimiter.to_string();
         let s = stream! {
-            let lsr = self.ls(&uri, delimiter.as_str(), posix, None).await?;
+            let lsr = self.ls(&uri, delimiter.as_str(), posix, None, page_size).await?;
             let mut continuation_token = lsr.continuation_token.clone();
             yield Ok(lsr);
 
             while continuation_token.is_some() {
-                let lsr = self.ls(&uri, delimiter.as_str(), posix, continuation_token.as_deref()).await?;
+                let lsr = self.ls(&uri, delimiter.as_str(), posix, continuation_token.as_deref(), page_size).await?;
                 continuation_token = lsr.continuation_token.clone();
                 yield Ok(lsr);
             }
@@ -143,9 +145,12 @@ pub(crate) trait ObjectSource: Sync + Send {
         uri: &str,
         delimiter: &str,
         posix: bool,
+        page_size: Option<i32>,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let mut page_stream = self.iter_dir_pages(uri, delimiter, posix).await?;
+        let mut page_stream = self
+            .iter_dir_pages(uri, delimiter, posix, page_size)
+            .await?;
         let s = stream! {
             while let Some(page) = page_stream.next().await {
                 match page {
@@ -177,15 +182,17 @@ async fn ls_with_prefix_fallback(
     uri: &str,
     delimiter: &str,
     max_dirs: usize,
+    page_size: Option<i32>,
 ) -> (BoxStream<'static, super::Result<FileMetadata>>, usize) {
     // Prefix list function that only returns Files
     fn prefix_ls(
         source: Arc<dyn ObjectSource>,
         path: String,
         delimiter: String,
+        page_size: Option<i32>,
     ) -> BoxStream<'static, super::Result<FileMetadata>> {
         stream! {
-            match source.iter_dir(&path, delimiter.as_str(), false, None).await {
+            match source.iter_dir(&path, delimiter.as_str(), false, page_size, None).await {
                 Ok(mut result_stream) => {
                     while let Some(fm) = result_stream.next().await {
                         match fm {
@@ -209,7 +216,7 @@ async fn ls_with_prefix_fallback(
     let mut results_buffer = vec![];
 
     let mut page_stream = source
-        .iter_dir_pages(uri, delimiter, true)
+        .iter_dir_pages(uri, delimiter, true, page_size)
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
     let mut dir_count_so_far = 0;
@@ -226,7 +233,12 @@ async fn ls_with_prefix_fallback(
                 // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
                 if dir_count_so_far > max_dirs {
                     return (
-                        prefix_ls(source.clone(), uri.to_string(), delimiter.to_string()),
+                        prefix_ls(
+                            source.clone(),
+                            uri.to_string(),
+                            delimiter.to_string(),
+                            page_size,
+                        ),
                         0,
                     );
                 }
@@ -258,13 +270,14 @@ pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
     fanout_limit: Option<usize>,
+    page_size: Option<i32>,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
         let glob = full_fragment.escaped_str().to_string();
         return Ok(stream! {
-            let mut results = source.iter_dir(glob.as_str(), "/", true, None).await?;
+            let mut results = source.iter_dir(glob.as_str(), "/", true, page_size, None).await?;
             while let Some(val) = results.next().await {
                 match &val {
                     // Ignore non-File results
@@ -321,6 +334,7 @@ pub(crate) async fn glob(
                     &state.current_path,
                     "/",
                     state.fanout_limit / state.current_fanout,
+                    state.page_size,
                 )
                 .await;
 
@@ -362,7 +376,7 @@ pub(crate) async fn glob(
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let mut results = source
-                        .iter_dir(&state.current_path, "/", true, None)
+                        .iter_dir(&state.current_path, "/", true, state.page_size, None)
                         .await
                         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -385,7 +399,9 @@ pub(crate) async fn glob(
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
                 } else {
                     let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
-                    let single_file_ls = source.ls(full_dir_path.as_str(), "/", true, None).await;
+                    let single_file_ls = source
+                        .ls(full_dir_path.as_str(), "/", true, None, state.page_size)
+                        .await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
                             if single_file_ls.files.len() == 1
@@ -422,6 +438,7 @@ pub(crate) async fn glob(
                     &state.current_path,
                     "/",
                     state.fanout_limit / state.current_fanout,
+                    state.page_size,
                 )
                 .await;
 
@@ -485,6 +502,7 @@ pub(crate) async fn glob(
             wildcard_mode: false,
             current_fanout: 1,
             fanout_limit,
+            page_size,
         },
     );
 
@@ -511,7 +529,7 @@ pub(crate) async fn recursive_iter(
         log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
         let source = source.clone();
         tokio::spawn(async move {
-            let s = source.iter_dir(&dir, "/", true, None).await;
+            let s = source.iter_dir(&dir, "/", true, Some(1000), None).await;
             log::debug!(target: "recursive_iter", "started listing task for {dir}");
             let mut s = match s {
                 Ok(s) => s,

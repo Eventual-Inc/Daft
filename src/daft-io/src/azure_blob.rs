@@ -432,6 +432,7 @@ impl ObjectSource for AzureBlobSource {
         uri: &str,
         delimiter: &str,
         posix: bool,
+        _page_size: Option<i32>,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
@@ -480,6 +481,7 @@ impl ObjectSource for AzureBlobSource {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         // It looks like the azure rust library API
         // does not currently allow using the continuation token:
@@ -494,7 +496,7 @@ impl ObjectSource for AzureBlobSource {
         }?;
 
         let files = self
-            .iter_dir(path, delimiter, posix, None)
+            .iter_dir(path, delimiter, posix, page_size, None)
             .await?
             .try_collect::<Vec<_>>()
             .await?;

@@ -552,6 +552,7 @@ impl S3LikeSource {
         delimiter: Option<String>,
         continuation_token: Option<String>,
         region: &Region,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         log::debug!("S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}");
         let request = self
@@ -567,6 +568,11 @@ impl S3LikeSource {
         };
         let request = if let Some(ref continuation_token) = continuation_token {
             request.continuation_token(continuation_token)
+        } else {
+            request
+        };
+        let request = if let Some(page_size) = page_size {
+            request.max_keys(page_size)
         } else {
             request
         };
@@ -664,6 +670,7 @@ impl S3LikeSource {
                             delimiter,
                             continuation_token.clone(),
                             &new_region,
+                            page_size,
                         )
                         .await
                     }
@@ -707,6 +714,7 @@ impl ObjectSource for S3LikeSource {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let scheme = parsed.scheme();
@@ -743,6 +751,7 @@ impl ObjectSource for S3LikeSource {
                     Some(delimiter.into()),
                     continuation_token.map(String::from),
                     &self.default_region,
+                    page_size,
                 )
                 .await?
             };
@@ -763,6 +772,7 @@ impl ObjectSource for S3LikeSource {
                         Some(delimiter.into()),
                         continuation_token.map(String::from),
                         &self.default_region,
+                        page_size,
                     )
                     .await?;
                 let target_path = format!("{scheme}://{bucket}/{key}");
@@ -793,6 +803,7 @@ impl ObjectSource for S3LikeSource {
                     None, // triggers prefix-based list
                     continuation_token.map(String::from),
                     &self.default_region,
+                    page_size,
                 )
                 .await?
             };
@@ -868,7 +879,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        client.ls(file_path, "/", true, None).await?;
+        client.ls(file_path, "/", true, None, None).await?;
 
         Ok(())
     }

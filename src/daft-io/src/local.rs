@@ -135,8 +135,11 @@ impl ObjectSource for LocalSource {
         delimiter: &str,
         posix: bool,
         _continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
-        let s = self.iter_dir(path, delimiter, posix, None).await?;
+        let s = self
+            .iter_dir(path, delimiter, posix, page_size, None)
+            .await?;
         let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
@@ -149,6 +152,7 @@ impl ObjectSource for LocalSource {
         uri: &str,
         _delimiter: &str,
         posix: bool,
+        _page_size: Option<i32>,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         if !posix {
@@ -330,7 +334,7 @@ mod tests {
         let dir_path = format!("file://{}", dir.path().to_string_lossy());
         let client = LocalSource::get_client().await?;
 
-        let ls_result = client.ls(dir_path.as_ref(), "/", true, None).await?;
+        let ls_result = client.ls(dir_path.as_ref(), "/", true, None, None).await?;
         let mut files = ls_result.files.clone();
         // Ensure stable sort ordering of file paths before comparing with expected payload.
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));

@@ -29,6 +29,7 @@ pub(crate) struct GlobState {
     pub glob_fragments: Arc<Vec<GlobFragment>>,
     pub full_glob_matcher: Arc<GlobMatcher>,
     pub fanout_limit: usize,
+    pub page_size: Option<i32>,
 }
 
 impl GlobState {
