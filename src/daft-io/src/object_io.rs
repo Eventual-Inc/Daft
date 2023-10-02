@@ -457,7 +457,9 @@ pub(crate) async fn glob(
                 visit(
                     result_tx.clone(),
                     source.clone(),
-                    state.clone().advance(full_dir_path, state.current_fragment_idx + 1, 1),
+                    state
+                        .clone()
+                        .advance(full_dir_path, state.current_fragment_idx + 1, 1),
                 );
             }
         });

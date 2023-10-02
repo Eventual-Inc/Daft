@@ -226,9 +226,13 @@ impl ObjectSource for HttpSource {
         &self,
         path: &str,
         _delimiter: &str,
-        _posix: bool,
+        posix: bool,
         _continuation_token: Option<&str>,
     ) -> super::Result<LSResult> {
+        if !posix {
+            todo!("Prefix-listing is not implemented for HTTP listing");
+        }
+
         let request = self.client.get(path);
         let response = request
             .send()

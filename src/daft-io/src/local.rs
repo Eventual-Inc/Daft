@@ -148,9 +148,13 @@ impl ObjectSource for LocalSource {
         &self,
         uri: &str,
         _delimiter: &str,
-        _posix: bool,
+        posix: bool,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        if !posix {
+            todo!("Prefix-listing is not implemented for local");
+        }
+
         const LOCAL_PROTOCOL: &str = "file://";
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());

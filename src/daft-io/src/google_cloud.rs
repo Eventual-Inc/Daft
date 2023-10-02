@@ -245,41 +245,41 @@ impl GCSClientWrapper {
         let (bucket, key) = parse_uri(&uri)?;
         match self {
             GCSClientWrapper::Native(client) => {
-                if posix {
-                    // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                    let forced_directory_key =
-                        format!("{}{delimiter}", key.trim_end_matches(delimiter));
-                    let forced_directory_ls_result = self
-                        ._ls_impl(
-                            client,
-                            bucket,
-                            forced_directory_key.as_str(),
-                            delimiter,
-                            continuation_token,
-                        )
+                if !posix {
+                    todo!("Prefix-listing is not yet implemented for GCS");
+                }
+
+                // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+                let forced_directory_key =
+                    format!("{}{delimiter}", key.trim_end_matches(delimiter));
+                let forced_directory_ls_result = self
+                    ._ls_impl(
+                        client,
+                        bucket,
+                        forced_directory_key.as_str(),
+                        delimiter,
+                        continuation_token,
+                    )
+                    .await?;
+
+                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                // details as the one-and-only-one entry
+                if forced_directory_ls_result.files.is_empty() {
+                    let file_result = self
+                        ._ls_impl(client, bucket, key, delimiter, continuation_token)
                         .await?;
 
-                    // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-                    // details as the one-and-only-one entry
-                    if forced_directory_ls_result.files.is_empty() {
-                        let file_result = self
-                            ._ls_impl(client, bucket, key, delimiter, continuation_token)
-                            .await?;
-
-                        // Not dir and not file, so it is missing
-                        if file_result.files.is_empty() {
-                            return Err(Error::NotFound {
-                                path: path.to_string(),
-                            }
-                            .into());
+                    // Not dir and not file, so it is missing
+                    if file_result.files.is_empty() {
+                        return Err(Error::NotFound {
+                            path: path.to_string(),
                         }
-
-                        Ok(file_result)
-                    } else {
-                        Ok(forced_directory_ls_result)
+                        .into());
                     }
+
+                    Ok(file_result)
                 } else {
-                    todo!("Need to implement prefix-listing for GCS");
+                    Ok(forced_directory_ls_result)
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
