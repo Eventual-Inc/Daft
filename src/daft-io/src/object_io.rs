@@ -428,29 +428,29 @@ pub(crate) async fn glob(
                 while let Some(val) = results.next().await {
                     match val {
                         Ok(fm) => match fm.filetype {
-                            FileType::Directory => {
+                            FileType::Directory
                                 if partial_glob_matcher
-                                    .is_match(fm.filepath.as_str().trim_end_matches('/'))
-                                {
-                                    visit(
-                                        result_tx.clone(),
-                                        source.clone(),
-                                        state
-                                            .clone()
-                                            .advance(
-                                                fm.filepath,
-                                                state.current_fragment_idx + 1,
-                                                stream_dir_count,
-                                            )
-                                            .with_wildcard_mode(),
-                                    );
-                                }
+                                    .is_match(fm.filepath.as_str().trim_end_matches('/')) =>
+                            {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    state
+                                        .clone()
+                                        .advance(
+                                            fm.filepath,
+                                            state.current_fragment_idx + 1,
+                                            stream_dir_count,
+                                        )
+                                        .with_wildcard_mode(),
+                                );
                             }
-                            FileType::File => {
-                                if state.full_glob_matcher.is_match(fm.filepath.as_str()) {
-                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
-                                }
+                            FileType::File
+                                if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
+                            {
+                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
                             }
+                            _ => (),
                         },
                         // Always silence NotFound since we are in wildcard "search" mode here by definition
                         Err(super::Error::NotFound { .. }) => (),
