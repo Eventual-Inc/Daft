@@ -6,10 +6,15 @@ use bytes::Bytes;
 use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
+use globset::GlobBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
-use crate::local::{collect_file, LocalFile};
+use crate::glob::GlobState;
+use crate::{
+    glob::{to_glob_fragments, GlobFragment},
+    local::{collect_file, LocalFile},
+};
 
 pub enum GetResult {
     File(LocalFile),
@@ -99,6 +104,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         self.get(uri, Some(range)).await
     }
     async fn get_size(&self, uri: &str) -> super::Result<usize>;
+
     async fn ls(
         &self,
         path: &str,
@@ -133,10 +139,231 @@ pub(crate) trait ObjectSource: Sync + Send {
     }
 }
 
+pub(crate) async fn glob(
+    source: Arc<dyn ObjectSource>,
+    glob: &str,
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+    // If no special characters, we fall back to ls behavior
+    let full_fragment = GlobFragment::new(glob);
+    if !full_fragment.has_special_character() {
+        let glob = full_fragment.escaped_str().to_string();
+        return Ok(stream! {
+            let mut results = source.iter_dir(glob.as_str(), Some("/"), None).await?;
+            while let Some(val) = results.next().await {
+                match &val {
+                    // Ignore non-File results
+                    Ok(fm) if !matches!(fm.filetype, FileType::File) => continue,
+                    _ => yield val,
+                }
+            }
+        }
+        .boxed());
+    }
+
+    // If user specifies a trailing / then we understand it as an attempt to list the folder(s) matched
+    // and append a trailing * fragment
+    let glob = if glob.ends_with('/') {
+        glob.to_string() + "*"
+    } else {
+        glob.to_string()
+    };
+    let glob = glob.as_str();
+
+    let glob_fragments = to_glob_fragments(glob)?;
+    let full_glob_matcher = GlobBuilder::new(glob)
+        .literal_separator(true)
+        .backslash_escape(true)
+        .build()
+        .map_err(|err| super::Error::InvalidArgument {
+            msg: format!("Cannot parse provided glob {glob}: {err}"),
+        })?
+        .compile_matcher();
+
+    // Channel to send results back to caller. Note that all results must have FileType::File.
+    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
+
+    /// Dispatches a task to visit the specified `path` (a concrete path on the filesystem to either a File or Directory).
+    /// Based on the current glob_fragment being processed (accessible via `glob_fragments[i]`) this task will:
+    ///   1. Perform work to retrieve Files/Directories at (`path` + `glob_fragments[i]`)
+    ///   2. Return results to the provided `result_tx` channel based on the provided glob, if appropriate
+    ///   3. Dispatch additional tasks via `.visit()` to continue visiting them, if appropriate
+    fn visit(
+        result_tx: Sender<super::Result<FileMetadata>>,
+        source: Arc<dyn ObjectSource>,
+        state: GlobState,
+    ) {
+        tokio::spawn(async move {
+            log::debug!(target: "glob", "Visiting '{}' with glob_fragments: {:?}", &state.current_path, &state.glob_fragments);
+            let current_fragment = state.current_glob_fragment();
+
+            // BASE CASE: current_fragment is a **
+            // We perform a recursive ls and filter on the results for only FileType::File results that match the full glob
+            if current_fragment.escaped_str() == "**" {
+                let mut results = source
+                    .iter_dir(&state.current_path, Some("/"), None)
+                    .await
+                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+
+                while let Some(val) = results.next().await {
+                    match val {
+                        Ok(fm) => {
+                            match fm.filetype {
+                                // Recursively visit each sub-directory
+                                FileType::Directory => {
+                                    visit(
+                                        result_tx.clone(),
+                                        source.clone(),
+                                        // Do not increment `current_fragment_idx` so as to keep visiting the "**" fragmemt
+                                        state.clone().advance(
+                                            fm.filepath.clone(),
+                                            state.current_fragment_idx,
+                                        ),
+                                    );
+                                }
+                                // Return any Files that match
+                                FileType::File
+                                    if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
+                                {
+                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                }
+                                _ => (),
+                            }
+                        }
+                        // Silence NotFound errors when in wildcard "search" mode
+                        Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
+                    }
+                }
+            // BASE CASE: current fragment is the last fragment in `glob_fragments`
+            } else if state.current_fragment_idx == state.glob_fragments.len() - 1 {
+                // Last fragment contains a wildcard: we list the last level and match against the full glob
+                if current_fragment.has_special_character() {
+                    let mut results = source
+                        .iter_dir(&state.current_path, Some("/"), None)
+                        .await
+                        .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+
+                    while let Some(val) = results.next().await {
+                        match val {
+                            Ok(fm) => {
+                                if matches!(fm.filetype, FileType::File)
+                                    && state.full_glob_matcher.is_match(fm.filepath.as_str())
+                                {
+                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                }
+                            }
+                            // Silence NotFound errors when in wildcard "search" mode
+                            Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                            Err(e) => result_tx.send(Err(e)).await.expect(
+                                "Internal multithreading channel is broken: results may be incorrect",
+                            ),
+                        }
+                    }
+                // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
+                } else {
+                    let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
+                    let single_file_ls = source.ls(full_dir_path.as_str(), Some("/"), None).await;
+                    match single_file_ls {
+                        Ok(mut single_file_ls) => {
+                            if single_file_ls.files.len() == 1
+                                && matches!(single_file_ls.files[0].filetype, FileType::File)
+                            {
+                                let fm = single_file_ls.files.drain(..).next().unwrap();
+                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                            }
+                        }
+                        // Silence NotFound errors when in wildcard "search" mode
+                        Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
+                    };
+                }
+
+            // RECURSIVE CASE: current_fragment contains a special character (e.g. *)
+            } else if current_fragment.has_special_character() {
+                let partial_glob_matcher = GlobBuilder::new(
+                    GlobFragment::join(
+                        &state.glob_fragments[..state.current_fragment_idx + 1],
+                        "/",
+                    )
+                    .raw_str(),
+                )
+                .literal_separator(true)
+                .build()
+                .expect("Cannot parse glob")
+                .compile_matcher();
+                let mut results = source
+                    .iter_dir(&state.current_path, Some("/"), None)
+                    .await
+                    .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+
+                while let Some(val) = results.next().await {
+                    match val {
+                        Ok(fm) => {
+                            if matches!(fm.filetype, FileType::Directory)
+                                && partial_glob_matcher
+                                    .is_match(fm.filepath.as_str().trim_end_matches('/'))
+                            {
+                                visit(
+                                    result_tx.clone(),
+                                    source.clone(),
+                                    state
+                                        .clone()
+                                        .advance(fm.filepath, state.current_fragment_idx + 1)
+                                        .with_wildcard_mode(),
+                                );
+                            }
+                        }
+                        // Always silence NotFound since we are in wildcard "search" mode here by definition
+                        Err(super::Error::NotFound { .. }) => (),
+                        Err(e) => result_tx.send(Err(e)).await.expect(
+                            "Internal multithreading channel is broken: results may be incorrect",
+                        ),
+                    }
+                }
+
+            // RECURSIVE CASE: current_fragment contains no special characters, and is a path to a specific File or Directory
+            } else {
+                let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
+                visit(
+                    result_tx.clone(),
+                    source.clone(),
+                    state
+                        .clone()
+                        .advance(full_dir_path, state.current_fragment_idx + 1),
+                );
+            }
+        });
+    }
+
+    visit(
+        to_rtn_tx,
+        source.clone(),
+        GlobState {
+            current_path: "".to_string(),
+            current_fragment_idx: 0,
+            glob_fragments: Arc::new(glob_fragments),
+            full_glob_matcher: Arc::new(full_glob_matcher),
+            wildcard_mode: false,
+        },
+    );
+
+    let to_rtn_stream = stream! {
+        while let Some(v) = to_rtn_rx.recv().await {
+            yield v
+        }
+    };
+
+    Ok(to_rtn_stream.boxed())
+}
+
 pub(crate) async fn recursive_iter(
     source: Arc<dyn ObjectSource>,
     uri: &str,
-) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     log::debug!(target: "recursive_iter", "starting recursive_iter: with top level of: {uri}");
     let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
     fn add_to_channel(
@@ -145,6 +372,7 @@ pub(crate) async fn recursive_iter(
         dir: String,
     ) {
         log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
+        let source = source.clone();
         tokio::spawn(async move {
             let s = source.iter_dir(&dir, None, None).await;
             log::debug!(target: "recursive_iter", "started listing task for {dir}");
