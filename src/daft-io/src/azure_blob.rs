@@ -427,6 +427,17 @@ impl ObjectSource for AzureBlobSource {
         Ok(metadata.blob.properties.content_length as usize)
     }
 
+    async fn glob(
+        self: Arc<Self>,
+        glob_path: &str,
+        fanout_limit: Option<usize>,
+        page_size: Option<i32>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        use crate::glob::glob;
+
+        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
+    }
+
     async fn iter_dir(
         &self,
         uri: &str,

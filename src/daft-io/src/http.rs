@@ -1,7 +1,7 @@
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -220,6 +220,15 @@ impl ObjectSource for HttpSource {
             }
             None => Err(Error::UnableToDetermineSize { path: uri.into() }.into()),
         }
+    }
+
+    async fn glob(
+        self: Arc<Self>,
+        _glob_path: &str,
+        _fanout_limit: Option<usize>,
+        _page_size: Option<i32>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        todo!("Glob not implemented yet for HTTP ObjectSource");
     }
 
     async fn ls(

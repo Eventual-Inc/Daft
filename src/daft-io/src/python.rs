@@ -2,11 +2,7 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{
-        get_io_client, get_runtime,
-        object_io::{glob, recursive_iter},
-        parse_url,
-    };
+    use crate::{get_io_client, get_runtime, object_io::recursive_iter, parse_url};
     use common_error::DaftResult;
     use futures::TryStreamExt;
     use pyo3::{
@@ -35,7 +31,8 @@ mod py {
 
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
-                let files = glob(source, path.as_ref(), fanout_limit, page_size)
+                let files = source
+                    .glob(path.as_ref(), fanout_limit, page_size)
                     .await?
                     .try_collect()
                     .await?;

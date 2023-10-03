@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use futures::stream::BoxStream;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use google_cloud_storage::client::ClientConfig;
@@ -351,6 +352,17 @@ impl ObjectSource for GCSSource {
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {
         self.client.get_size(uri).await
+    }
+
+    async fn glob(
+        self: Arc<Self>,
+        glob_path: &str,
+        fanout_limit: Option<usize>,
+        page_size: Option<i32>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        use crate::glob::glob;
+
+        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }
 
     async fn ls(

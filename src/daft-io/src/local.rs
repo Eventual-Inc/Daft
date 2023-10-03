@@ -129,6 +129,15 @@ impl ObjectSource for LocalSource {
         Ok(meta.len() as usize)
     }
 
+    async fn glob(
+        self: Arc<Self>,
+        _glob_path: &str,
+        _fanout_limit: Option<usize>,
+        _page_size: Option<i32>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        todo!("Glob not implemented yet for local ObjectSource");
+    }
+
     async fn ls(
         &self,
         path: &str,

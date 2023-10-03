@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use aws_config::retry::RetryMode;
 use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
+use futures::stream::BoxStream;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
@@ -706,6 +707,17 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         self._head_impl(permit, uri, &self.default_region).await
+    }
+
+    async fn glob(
+        self: Arc<Self>,
+        glob_path: &str,
+        fanout_limit: Option<usize>,
+        page_size: Option<i32>,
+    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+        use crate::glob::glob;
+
+        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }
 
     async fn ls(
