@@ -117,29 +117,6 @@ pub(crate) trait ObjectSource: Sync + Send {
         page_size: Option<i32>,
     ) -> super::Result<LSResult>;
 
-    async fn iter_dir_pages(
-        &self,
-        uri: &str,
-        delimiter: &str,
-        posix: bool,
-        page_size: Option<i32>,
-    ) -> super::Result<BoxStream<super::Result<LSResult>>> {
-        let uri = uri.to_string();
-        let delimiter = delimiter.to_string();
-        let s = stream! {
-            let lsr = self.ls(&uri, delimiter.as_str(), posix, None, page_size).await?;
-            let mut continuation_token = lsr.continuation_token.clone();
-            yield Ok(lsr);
-
-            while continuation_token.is_some() {
-                let lsr = self.ls(&uri, delimiter.as_str(), posix, continuation_token.as_deref(), page_size).await?;
-                continuation_token = lsr.continuation_token.clone();
-                yield Ok(lsr);
-            }
-        };
-        Ok(s.boxed())
-    }
-
     async fn iter_dir(
         &self,
         uri: &str,
@@ -148,20 +125,16 @@ pub(crate) trait ObjectSource: Sync + Send {
         page_size: Option<i32>,
         _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let mut page_stream = self
-            .iter_dir_pages(uri, delimiter, posix, page_size)
-            .await?;
+        let uri = uri.to_string();
+        let delimiter = delimiter.to_string();
         let s = stream! {
-            while let Some(page) = page_stream.next().await {
-                match page {
-                    Ok(page) => {
-                        for fm in page.files {
-                            yield Ok(fm);
-                        }
-                    },
-                    Err(e) => {
-                        yield Err(e);
-                    }
+            let lsr = self.ls(&uri, delimiter.as_str(), posix, None, page_size).await?;
+            let mut continuation_token = lsr.continuation_token.clone();
+            while continuation_token.is_some() {
+                let lsr = self.ls(&uri, delimiter.as_str(), posix, continuation_token.as_deref(), page_size).await?;
+                continuation_token = lsr.continuation_token.clone();
+                for fm in lsr.files {
+                    yield Ok(fm);
                 }
             }
         };
@@ -212,22 +185,19 @@ async fn ls_with_prefix_fallback(
         .boxed()
     }
 
-    // Buffer (paged) results in memory as we go along
+    // Buffer results in memory as we go along
     let mut results_buffer = vec![];
-
-    let mut page_stream = source
-        .iter_dir_pages(uri, delimiter, true, page_size)
+    let mut fm_stream = source
+        .iter_dir(uri, delimiter, true, page_size, None)
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
+
+    // Iterate and collect results into the `results_buffer`, but terminate early if too many directories are found
     let mut dir_count_so_far = 0;
-    while let Some(page) = page_stream.next().await {
-        match page {
-            Ok(page) => {
-                dir_count_so_far += page
-                    .files
-                    .iter()
-                    .filter(|fm| matches!(fm.filetype, FileType::Directory))
-                    .count();
+    while let Some(fm) = fm_stream.next().await {
+        if let Ok(fm) = &fm {
+            if matches!(fm.filetype, FileType::Directory) {
+                dir_count_so_far += 1;
                 // STOP EARLY!!
                 // If the number of directory results are more than `max_dirs`, we terminate the function early,
                 // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
@@ -242,27 +212,13 @@ async fn ls_with_prefix_fallback(
                         0,
                     );
                 }
-                results_buffer.push(Ok(page.files));
-            }
-            Err(e) => {
-                results_buffer.push(Err(e));
             }
         }
+        results_buffer.push(fm);
     }
 
     // No early termination: we unwrap the results in our results buffer and yield data as a stream
-    let s = stream! {
-        for page_files in results_buffer {
-            match page_files {
-                Ok(page_files) => {
-                    for fm in page_files {
-                        yield Ok(fm)
-                    }
-                }
-                Err(e) => yield Err(e),
-            }
-        }
-    };
+    let s = futures::stream::iter(results_buffer);
     (s.boxed(), dir_count_so_far)
 }
 
