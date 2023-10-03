@@ -173,6 +173,7 @@ impl AzureBlobSource {
         container_name: &str,
         prefix: &str,
         delimiter: &str,
+        posix: bool,
     ) -> BoxStream<super::Result<FileMetadata>> {
         let container_client = self.blob_client.container_client(container_name);
 
@@ -202,6 +203,7 @@ impl AzureBlobSource {
                 &container_name,
                 &prefix_with_delimiter,
                 &delimiter,
+                &posix,
             )
             .await;
 
@@ -252,6 +254,7 @@ impl AzureBlobSource {
                                 &container_name,
                                 upper_dir,
                                 &delimiter,
+                                &posix,
                             ).await;
 
                             // At this point, we have a stream of Result<FileMetadata>.
@@ -299,6 +302,7 @@ impl AzureBlobSource {
         container_name: &str,
         prefix: &str,
         delimiter: &str,
+        posix: &bool,
     ) -> BoxStream<super::Result<FileMetadata>> {
         // Calls Azure list_blobs with the prefix
         // and returns the result flattened and standardized into FileMetadata.
@@ -309,11 +313,14 @@ impl AzureBlobSource {
         let prefix = prefix.to_string();
 
         // Paginated response stream from Azure API.
-        let responses_stream = container_client
-            .list_blobs()
-            .delimiter(delimiter.to_string())
-            .prefix(prefix.clone())
-            .into_stream();
+        let mut responses_stream = container_client.list_blobs().prefix(prefix.clone());
+
+        // Setting delimiter will trigger "directory-mode" which is a posix-like ls for the current directory
+        if *posix {
+            responses_stream = responses_stream.delimiter(delimiter.to_string());
+        }
+
+        let responses_stream = responses_stream.into_stream();
 
         // Map each page of results to a page of standardized FileMetadata.
         responses_stream
@@ -447,7 +454,7 @@ impl ObjectSource for AzureBlobSource {
         &self,
         uri: &str,
         delimiter: &str,
-        _posix: bool,
+        posix: bool,
         _page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
@@ -480,7 +487,7 @@ impl ObjectSource for AzureBlobSource {
             Some(container_name) => {
                 let prefix = uri.path();
                 Ok(self
-                    .list_directory_stream(protocol, container_name, prefix, delimiter)
+                    .list_directory_stream(protocol, container_name, prefix, delimiter, posix)
                     .await)
             }
         }
