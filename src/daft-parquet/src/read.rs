@@ -54,97 +54,110 @@ async fn read_parquet_single(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
-    row_groups: Option<&[i64]>,
+    row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
-    let builder = builder.set_infer_schema_options(schema_infer_options);
-
-    let builder = if let Some(columns) = columns {
-        builder.prune_columns(columns)?
+    let (source_type, fixed_uri) = parse_url(uri)?;
+    let table = if matches!(source_type, SourceType::File) {
+        crate::stream_reader::local_parquet_read_async(
+            fixed_uri.as_ref(),
+            columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+            start_offset,
+            num_rows,
+            row_groups,
+            schema_infer_options,
+        )
+        .await
     } else {
-        builder
-    };
+        let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
+        let builder = builder.set_infer_schema_options(schema_infer_options);
 
-    if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
-        return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
-    }
-    let builder = builder.limit(start_offset, num_rows)?;
+        let builder = if let Some(columns) = columns {
+            builder.prune_columns(columns)?
+        } else {
+            builder
+        };
 
-    let rows_per_row_groups = builder
-        .metadata()
-        .row_groups
-        .clone()
-        .iter()
-        .map(|m| m.num_rows())
-        .collect::<Vec<_>>();
-    let builder = if let Some(row_groups) = row_groups {
-        builder.set_row_groups(row_groups)?
-    } else {
-        builder
-    };
+        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
+            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
+        }
+        let builder = builder.limit(start_offset, num_rows)?;
 
-    let metadata_num_rows = builder.metadata().num_rows;
-
-    let metadata_num_columns = builder.parquet_schema().fields().len();
-
-    let parquet_reader = builder.build()?;
-    let ranges = parquet_reader.prebuffer_ranges(io_client)?;
-    let table = parquet_reader.read_from_ranges_into_table(ranges).await?;
-
-    if let Some(row_groups) = row_groups {
-        let expected_rows: usize = row_groups
+        let rows_per_row_groups = builder
+            .metadata()
+            .row_groups
+            .clone()
             .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table.len() {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: expected_rows,
-                read_rows: table.len(),
-            }
-            .into());
-        }
-    } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    metadata_num_rows,
-                    read_rows: table.len(),
-                })
-            }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
-                    read_rows: table.len(),
-                })
-            }
-            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: n.min(metadata_num_rows),
-                read_rows: table.len(),
-            }),
-            _ => Ok(()),
-        }?;
-    };
+            .map(|m| m.num_rows())
+            .collect::<Vec<_>>();
+        let builder = if let Some(row_groups) = row_groups {
+            builder.set_row_groups(&row_groups)?
+        } else {
+            builder
+        };
 
-    let expected_num_columns = if let Some(columns) = columns {
-        columns.len()
-    } else {
-        metadata_num_columns
-    };
+        let metadata_num_rows = builder.metadata().num_rows;
 
-    if table.num_columns() != expected_num_columns {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table.num_columns(),
-        }
-        .into());
-    }
+        let metadata_num_columns = builder.parquet_schema().fields().len();
+
+        let parquet_reader = builder.build()?;
+        let ranges = parquet_reader.prebuffer_ranges(io_client)?;
+        parquet_reader.read_from_ranges_into_table(ranges).await
+    }?;
+
+    // if let Some(row_groups) = row_groups {
+    //     let expected_rows: usize = row_groups
+    //         .iter()
+    //         .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+    //         .sum();
+    //     if expected_rows != table.len() {
+    //         return Err(super::Error::ParquetNumRowMismatch {
+    //             path: uri.into(),
+    //             metadata_num_rows: expected_rows,
+    //             read_rows: table.len(),
+    //         }
+    //         .into());
+    //     }
+    // } else {
+    //     match (start_offset, num_rows) {
+    //         (None, None) if metadata_num_rows != table.len() => {
+    //             Err(super::Error::ParquetNumRowMismatch {
+    //                 path: uri.into(),
+    //                 metadata_num_rows,
+    //                 read_rows: table.len(),
+    //             })
+    //         }
+    //         (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+    //             Err(super::Error::ParquetNumRowMismatch {
+    //                 path: uri.into(),
+    //                 metadata_num_rows: metadata_num_rows.saturating_sub(s),
+    //                 read_rows: table.len(),
+    //             })
+    //         }
+    //         (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
+    //             path: uri.into(),
+    //             metadata_num_rows: n.min(metadata_num_rows),
+    //             read_rows: table.len(),
+    //         }),
+    //         _ => Ok(()),
+    //     }?;
+    // };
+
+    // let expected_num_columns = if let Some(columns) = columns {
+    //     columns.len()
+    // } else {
+    //     metadata_num_columns
+    // };
+
+    // if table.num_columns() != expected_num_columns {
+    //     return Err(super::Error::ParquetNumColumnMismatch {
+    //         path: uri.into(),
+    //         metadata_num_columns: expected_num_columns,
+    //         read_columns: table.num_columns(),
+    //     }
+    //     .into());
+    // }
 
     Ok(table)
 }
@@ -160,7 +173,7 @@ async fn read_parquet_single_into_arrow(
 ) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (schema, all_arrays) = if matches!(source_type, SourceType::File) {
-        let (schema, all_arrays) = crate::stream_reader::local_parquet_read_async(
+        let (schema, all_arrays) = crate::stream_reader::local_parquet_read_into_arrow_async(
             fixed_uri.as_ref(),
             columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
             start_offset,
@@ -287,7 +300,7 @@ pub fn read_parquet(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
-    row_groups: Option<&[i64]>,
+    row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
@@ -383,7 +396,7 @@ pub fn read_parquet_bulk(
                             columns.as_deref(),
                             start_offset,
                             num_rows,
-                            owned_row_group.as_deref(),
+                            owned_row_group,
                             io_client,
                             schema_infer_options,
                         )

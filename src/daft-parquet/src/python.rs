@@ -38,7 +38,7 @@ pub mod pylib {
                 columns.as_deref(),
                 start_offset,
                 num_rows,
-                row_groups.as_deref(),
+                row_groups,
                 io_client,
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,

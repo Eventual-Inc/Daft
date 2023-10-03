@@ -1,8 +1,13 @@
 use std::{collections::HashSet, fs::File, sync::Arc, time::SystemTime};
 
 use arrow2::io::parquet::read;
+use common_error::DaftResult;
+use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_table::Table;
 use itertools::Itertools;
-use rayon::prelude::{IntoParallelRefMutIterator, ParallelBridge};
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelBridge,
+};
 use snafu::ResultExt;
 
 use crate::{
@@ -11,7 +16,6 @@ use crate::{
 };
 
 use crate::stream_reader::read::schema::infer_schema_with_options;
-use arrow2::io::parquet::read::ArrayIter;
 use rayon::iter::ParallelIterator;
 
 fn prune_fields_from_schema(
@@ -43,7 +47,7 @@ fn prune_fields_from_schema(
     }
 }
 
-pub(crate) fn local_parquet_read(
+pub(crate) fn local_parquet_read_into_arrow(
     uri: &str,
     columns: Option<&[String]>,
     start_offset: Option<usize>,
@@ -125,11 +129,54 @@ pub(crate) async fn local_parquet_read_async(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+) -> DaftResult<Table> {
+    let (send, recv) = tokio::sync::oneshot::channel();
+    let uri = uri.to_string();
+    rayon::spawn(move || {
+        let final_table = (move || {
+            let v = local_parquet_read_into_arrow(
+                &uri,
+                columns.as_deref(),
+                start_offset,
+                num_rows,
+                row_groups.as_deref(),
+                schema_infer_options,
+            );
+            let (schema, arrays) = v?;
+
+            let converted_arrays = arrays
+                .into_par_iter()
+                .zip(schema.fields)
+                .map(|(v, f)| {
+                    let casted_arrays = v
+                        .into_iter()
+                        .map(move |a| {
+                            Series::try_from((f.name.as_str(), cast_array_for_daft_if_needed(a)))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Table::from_columns(converted_arrays)
+        })();
+        let _ = send.send(final_table);
+    });
+    let v = recv.await.context(super::OneShotRecvSnafu {})?;
+    v
+}
+
+pub(crate) async fn local_parquet_read_into_arrow_async(
+    uri: &str,
+    columns: Option<Vec<String>>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<i64>>,
+    schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(arrow2::datatypes::Schema, Vec<ArrowChunk>)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
-        let v = local_parquet_read(
+        let v = local_parquet_read_into_arrow(
             &uri,
             columns.as_deref(),
             start_offset,
@@ -139,28 +186,6 @@ pub(crate) async fn local_parquet_read_async(
         );
         let _ = send.send(v);
     });
-    let v = recv.await.unwrap();
+    let v = recv.await.context(super::OneShotRecvSnafu {})?;
     v
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::SystemTime;
-
-    use common_error::DaftResult;
-
-    use crate::stream_reader::local_parquet_read;
-
-    #[test]
-    fn test_local_parquet_read() -> DaftResult<()> {
-        let file = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
-        let start = SystemTime::now();
-        let _ = local_parquet_read(file, None, None, None, None, Default::default())?;
-        println!("took: {} ms", start.elapsed().unwrap().as_millis());
-        let start = SystemTime::now();
-        let _ = local_parquet_read(file, None, None, None, None, Default::default())?;
-        println!("took: {} ms", start.elapsed().unwrap().as_millis());
-
-        Ok(())
-    }
 }
