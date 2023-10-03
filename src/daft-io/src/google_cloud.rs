@@ -24,8 +24,9 @@ use crate::s3_like;
 use crate::GetResult;
 use common_io_config::GCSConfig;
 
-static GCS_SCHEME: &str = "gs";
-static DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+const GCS_DELIMITER: &str = "/";
+const GCS_SCHEME: &str = "gs";
+const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -121,7 +122,7 @@ fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
         }),
     }?;
     let key = uri.path();
-    let key = key.strip_prefix('/').unwrap_or(key);
+    let key = key.strip_prefix(GCS_DELIMITER).unwrap_or(key);
     Ok((bucket, key))
 }
 
@@ -242,7 +243,6 @@ impl GCSClientWrapper {
     async fn ls(
         &self,
         path: &str,
-        delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
@@ -256,14 +256,14 @@ impl GCSClientWrapper {
                     let forced_directory_key = if key.is_empty() {
                         "".to_string()
                     } else {
-                        format!("{}{delimiter}", key.trim_end_matches(delimiter))
+                        format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
                     };
                     let forced_directory_ls_result = self
                         ._ls_impl(
                             client,
                             bucket,
                             forced_directory_key.as_str(),
-                            Some(delimiter),
+                            Some(GCS_DELIMITER),
                             continuation_token,
                             page_size,
                         )
@@ -277,7 +277,7 @@ impl GCSClientWrapper {
                                 client,
                                 bucket,
                                 key,
-                                Some(delimiter),
+                                Some(GCS_DELIMITER),
                                 continuation_token,
                                 page_size,
                             )
@@ -312,9 +312,7 @@ impl GCSClientWrapper {
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
-                client
-                    .ls(path, delimiter, posix, continuation_token, page_size)
-                    .await
+                client.ls(path, posix, continuation_token, page_size).await
             }
         }
     }
@@ -364,6 +362,10 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
+    fn delimiter(&self) -> &'static str {
+        GCS_DELIMITER
+    }
+
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         self.client.get(uri, range).await
     }
@@ -389,13 +391,12 @@ impl ObjectSource for GCSSource {
     async fn ls(
         &self,
         path: &str,
-        delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         self.client
-            .ls(path, delimiter, posix, continuation_token, page_size)
+            .ls(path, posix, continuation_token, page_size)
             .await
     }
 }

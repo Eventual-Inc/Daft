@@ -13,6 +13,8 @@ use crate::object_io::{FileMetadata, FileType, LSResult};
 
 use super::object_io::{GetResult, ObjectSource};
 
+const HTTP_DELIMITER: &str = "/";
+
 lazy_static! {
     // Taken from: https://stackoverflow.com/a/15926317/3821154
     static ref HTML_A_TAG_HREF_RE: Regex =
@@ -84,7 +86,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
             let absolute_path = if let Ok(parsed_matched_url) = url::Url::parse(matched_url) {
                 // matched_url is already an absolute path
                 parsed_matched_url
-            } else if matched_url.starts_with('/') {
+            } else if matched_url.starts_with(HTTP_DELIMITER) {
                 // matched_url is a path relative to the origin of `path`
                 let base = url::Url::parse(&path_url[..Position::BeforePath]).unwrap();
                 base.join(matched_url)
@@ -110,7 +112,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
                 _ => (),
             };
 
-            let filetype = if matched_url.ends_with('/') {
+            let filetype = if matched_url.ends_with(HTTP_DELIMITER) {
                 FileType::Directory
             } else {
                 FileType::File
@@ -167,6 +169,10 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
+    fn delimiter(&self) -> &'static str {
+        HTTP_DELIMITER
+    }
+
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let request = self.client.get(uri);
         let request = match range {
@@ -240,13 +246,12 @@ impl ObjectSource for HttpSource {
     async fn ls(
         &self,
         path: &str,
-        _delimiter: &str,
         posix: bool,
         _continuation_token: Option<&str>,
         _page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         if !posix {
-            todo!("Prefix-listing is not implemented for HTTP listing");
+            unimplemented!("Prefix-listing is not implemented for HTTP listing");
         }
 
         let request = self.client.get(path);
@@ -260,8 +265,8 @@ impl ObjectSource for HttpSource {
         // Reconstruct the actual path of the request, which may have been redirected via a 301
         // This is important because downstream URL joining logic relies on proper trailing-slashes/index.html
         let path = response.url().to_string();
-        let path = if path.ends_with('/') {
-            format!("{}/", path.trim_end_matches('/'))
+        let path = if path.ends_with(HTTP_DELIMITER) {
+            format!("{}/", path.trim_end_matches(HTTP_DELIMITER))
         } else {
             path
         };

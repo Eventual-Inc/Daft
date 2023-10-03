@@ -153,9 +153,10 @@ impl GlobFragment {
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
 ///   4. Preserves any leading delimiters
-pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
-    let delimiter = "/";
-
+pub(crate) fn to_glob_fragments(
+    glob_str: &str,
+    delimiter: &str,
+) -> super::Result<Vec<GlobFragment>> {
     // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
     // such as ? and {}
     let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
@@ -224,7 +225,6 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
 async fn ls_with_prefix_fallback(
     source: Arc<dyn ObjectSource>,
     uri: &str,
-    delimiter: &str,
     max_dirs: Option<usize>,
     page_size: Option<i32>,
 ) -> (BoxStream<'static, super::Result<FileMetadata>>, usize) {
@@ -232,11 +232,10 @@ async fn ls_with_prefix_fallback(
     fn prefix_ls(
         source: Arc<dyn ObjectSource>,
         path: String,
-        delimiter: String,
         page_size: Option<i32>,
     ) -> BoxStream<'static, super::Result<FileMetadata>> {
         stream! {
-            match source.iter_dir(&path, delimiter.as_str(), false, page_size).await {
+            match source.iter_dir(&path, false, page_size).await {
                 Ok(mut result_stream) => {
                     while let Some(result) = result_stream.next().await {
                         match result {
@@ -260,7 +259,7 @@ async fn ls_with_prefix_fallback(
     let mut results_buffer = vec![];
 
     let mut fm_stream = source
-        .iter_dir(uri, delimiter, true, page_size)
+        .iter_dir(uri, true, page_size)
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -277,15 +276,7 @@ async fn ls_with_prefix_fallback(
                     .map(|max_dirs| dir_count_so_far > max_dirs)
                     .unwrap_or(false)
                 {
-                    return (
-                        prefix_ls(
-                            source.clone(),
-                            uri.to_string(),
-                            delimiter.to_string(),
-                            page_size,
-                        ),
-                        0,
-                    );
+                    return (prefix_ls(source.clone(), uri.to_string(), page_size), 0);
                 }
             }
         }
@@ -316,12 +307,14 @@ pub(crate) async fn glob(
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
 ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    let delimiter = source.delimiter();
+
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
         let glob = full_fragment.escaped_str().to_string();
         return Ok(stream! {
-            let mut results = source.iter_dir(glob.as_str(), "/", true, page_size).await?;
+            let mut results = source.iter_dir(glob.as_str(), true, page_size).await?;
             while let Some(result) = results.next().await {
                 match result {
                     Ok(fm) => {
@@ -338,14 +331,14 @@ pub(crate) async fn glob(
 
     // If user specifies a trailing / then we understand it as an attempt to list the folder(s) matched
     // and append a trailing * fragment
-    let glob = if glob.ends_with('/') {
+    let glob = if glob.ends_with(source.delimiter()) {
         glob.to_string() + "*"
     } else {
         glob.to_string()
     };
     let glob = glob.as_str();
 
-    let glob_fragments = to_glob_fragments(glob)?;
+    let glob_fragments = to_glob_fragments(glob, delimiter)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)
         .backslash_escape(true)
@@ -382,7 +375,6 @@ pub(crate) async fn glob(
                 let (mut results, stream_dir_count) = ls_with_prefix_fallback(
                     source.clone(),
                     &state.current_path,
-                    "/",
                     state
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
@@ -428,7 +420,7 @@ pub(crate) async fn glob(
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let mut results = source
-                        .iter_dir(&state.current_path, "/", true, state.page_size)
+                        .iter_dir(&state.current_path, true, state.page_size)
                         .await
                         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -452,7 +444,7 @@ pub(crate) async fn glob(
                 } else {
                     let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
                     let single_file_ls = source
-                        .ls(full_dir_path.as_str(), "/", true, None, state.page_size)
+                        .ls(full_dir_path.as_str(), true, None, state.page_size)
                         .await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
@@ -476,7 +468,7 @@ pub(crate) async fn glob(
                 let partial_glob_matcher = GlobBuilder::new(
                     GlobFragment::join(
                         &state.glob_fragments[..state.current_fragment_idx + 1],
-                        "/",
+                        source.delimiter(),
                     )
                     .raw_str(),
                 )
@@ -488,7 +480,6 @@ pub(crate) async fn glob(
                 let (mut results, stream_dir_count) = ls_with_prefix_fallback(
                     source.clone(),
                     &state.current_path,
-                    "/",
                     state
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
@@ -500,8 +491,9 @@ pub(crate) async fn glob(
                     match val {
                         Ok(fm) => match fm.filetype {
                             FileType::Directory
-                                if partial_glob_matcher
-                                    .is_match(fm.filepath.as_str().trim_end_matches('/')) =>
+                                if partial_glob_matcher.is_match(
+                                    fm.filepath.as_str().trim_end_matches(source.delimiter()),
+                                ) =>
                             {
                                 visit(
                                     result_tx.clone(),

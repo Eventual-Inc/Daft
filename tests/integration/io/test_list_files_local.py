@@ -64,7 +64,7 @@ def test_recursive_directory_listing(tmp_path, include_protocol):
         p.touch()
     if include_protocol:
         d = "file://" + str(d)
-    daft_ls_result = io_glob(str(d) + "/**")
+    daft_ls_result = io_glob(str(d / "**"))
     fs = LocalFileSystem()
     fs_result = local_recursive_list(fs, d)
     compare_local_result(daft_ls_result, fs_result)
@@ -91,6 +91,34 @@ def test_single_file_directory_listing(tmp_path, include_protocol):
     daft_ls_result = io_glob(p)
     fs_result = [{"name": f"{d}/c/cc/ccc", "type": "file"}]
     assert len(daft_ls_result) == 1
+    compare_local_result(daft_ls_result, fs_result)
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("include_protocol", [False, True])
+def test_wildcard_listing(tmp_path, include_protocol):
+    d = tmp_path / "dir"
+    d.mkdir()
+    files = ["a/x.txt", "b/y.txt", "c/z.txt"]
+    for name in files:
+        p = d
+        segments = name.split("/")
+        for intermediate_dir in segments[:-1]:
+            p /= intermediate_dir
+            p.mkdir()
+        p /= segments[-1]
+        p.touch()
+    p = f"{d}/*/*.txt"
+    if include_protocol:
+        p = "file://" + p
+
+    daft_ls_result = io_glob(p)
+    fs_result = [
+        {"name": f"{d}/a/x.txt", "type": "file"},
+        {"name": f"{d}/b/y.txt", "type": "file"},
+        {"name": f"{d}/c/z.txt", "type": "file"},
+    ]
+    assert len(daft_ls_result) == 3
     compare_local_result(daft_ls_result, fs_result)
 
 

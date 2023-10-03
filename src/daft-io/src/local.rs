@@ -17,6 +17,8 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use url::ParseError;
 
+const PLATFORM_FS_DELIMITER: &str = std::path::MAIN_SEPARATOR_STR;
+
 pub(crate) struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -105,6 +107,10 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
+    fn delimiter(&self) -> &'static str {
+        PLATFORM_FS_DELIMITER
+    }
+
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
@@ -148,12 +154,11 @@ impl ObjectSource for LocalSource {
     async fn ls(
         &self,
         path: &str,
-        delimiter: &str,
         posix: bool,
         _continuation_token: Option<&str>,
         _page_size: Option<i32>,
     ) -> super::Result<LSResult> {
-        let s = self.iter_dir(path, delimiter, posix, None).await?;
+        let s = self.iter_dir(path, posix, None).await?;
         let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
@@ -164,7 +169,6 @@ impl ObjectSource for LocalSource {
     async fn iter_dir(
         &self,
         uri: &str,
-        _delimiter: &str,
         posix: bool,
         _page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
@@ -214,7 +218,7 @@ impl ObjectSource for LocalSource {
                         "{}{}{}",
                         LOCAL_PROTOCOL,
                         entry.path().to_string_lossy(),
-                        if meta.is_dir() { "/" } else { "" }
+                        if meta.is_dir() { self.delimiter() } else { "" }
                     ),
                     size: Some(meta.len()),
                     filetype: meta.file_type().try_into().with_context(|_| {
@@ -347,7 +351,7 @@ mod tests {
         let dir_path = format!("file://{}", dir.path().to_string_lossy());
         let client = LocalSource::get_client().await?;
 
-        let ls_result = client.ls(dir_path.as_ref(), "/", true, None, None).await?;
+        let ls_result = client.ls(dir_path.as_ref(), true, None, None).await?;
         let mut files = ls_result.files.clone();
         // Ensure stable sort ordering of file paths before comparing with expected payload.
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));

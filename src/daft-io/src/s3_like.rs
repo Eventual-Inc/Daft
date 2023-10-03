@@ -35,7 +35,8 @@ use std::string::FromUtf8Error;
 use std::sync::Arc;
 use std::time::Duration;
 
-static DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+const S3_DELIMITER: &str = "/";
+const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 pub(crate) struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
@@ -365,7 +366,7 @@ impl S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        if let Some(key) = key.strip_prefix('/') {
+        if let Some(key) = key.strip_prefix(S3_DELIMITER) {
             log::debug!("S3 get parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
@@ -477,7 +478,7 @@ impl S3LikeSource {
             }),
         }?;
         let key = parsed.path();
-        if let Some(key) = key.strip_prefix('/') {
+        if let Some(key) = key.strip_prefix(S3_DELIMITER) {
             log::debug!("S3 head parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
@@ -691,6 +692,10 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
+    fn delimiter(&self) -> &'static str {
+        S3_DELIMITER
+    }
+
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let permit = self
             .connection_pool_sema
@@ -728,7 +733,6 @@ impl ObjectSource for S3LikeSource {
     async fn ls(
         &self,
         path: &str,
-        delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
@@ -743,7 +747,7 @@ impl ObjectSource for S3LikeSource {
                 source: ParseError::EmptyHost,
             }),
         }?;
-        let key = parsed.path().trim_start_matches(delimiter);
+        let key = parsed.path().trim_start_matches(S3_DELIMITER);
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -751,7 +755,7 @@ impl ObjectSource for S3LikeSource {
             let key = if key.is_empty() {
                 "".to_string()
             } else {
-                format!("{}{delimiter}", key.trim_end_matches(delimiter))
+                format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
             let lsr = {
                 let permit = self
@@ -765,28 +769,28 @@ impl ObjectSource for S3LikeSource {
                     scheme,
                     bucket,
                     &key,
-                    Some(delimiter.into()),
+                    Some(S3_DELIMITER.into()),
                     continuation_token.map(String::from),
                     &self.default_region,
                     page_size,
                 )
                 .await?
             };
-            if lsr.files.is_empty() && key.contains(delimiter) {
+            if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
                     .await
                     .context(UnableToGrabSemaphoreSnafu)?;
                 // Might be a File
-                let key = key.trim_end_matches(delimiter);
+                let key = key.trim_end_matches(S3_DELIMITER);
                 let mut lsr = self
                     ._list_impl(
                         permit,
                         scheme,
                         bucket,
                         key,
-                        Some(delimiter.into()),
+                        Some(S3_DELIMITER.into()),
                         continuation_token.map(String::from),
                         &self.default_region,
                         page_size,
@@ -896,7 +900,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        client.ls(file_path, "/", true, None, None).await?;
+        client.ls(file_path, true, None, None).await?;
 
         Ok(())
     }
