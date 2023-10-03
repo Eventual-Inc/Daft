@@ -135,11 +135,9 @@ impl ObjectSource for LocalSource {
         delimiter: &str,
         posix: bool,
         _continuation_token: Option<&str>,
-        page_size: Option<i32>,
+        _page_size: Option<i32>,
     ) -> super::Result<LSResult> {
-        let s = self
-            .iter_dir(path, delimiter, posix, page_size, None)
-            .await?;
+        let s = self.iter_dir(path, delimiter, posix, None).await?;
         let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
@@ -151,14 +149,9 @@ impl ObjectSource for LocalSource {
         &self,
         uri: &str,
         _delimiter: &str,
-        posix: bool,
+        _posix: bool,
         _page_size: Option<i32>,
-        _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        if !posix {
-            todo!("Prefix-listing is not implemented for local");
-        }
-
         const LOCAL_PROTOCOL: &str = "file://";
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());

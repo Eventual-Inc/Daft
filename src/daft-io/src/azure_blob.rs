@@ -431,15 +431,10 @@ impl ObjectSource for AzureBlobSource {
         &self,
         uri: &str,
         delimiter: &str,
-        posix: bool,
+        _posix: bool,
         _page_size: Option<i32>,
-        _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-
-        if !posix {
-            todo!("Prefix-listing is not yet implemented for Azure");
-        }
 
         // path can be root (buckets) or path prefix within a bucket.
         let container = {
@@ -496,7 +491,7 @@ impl ObjectSource for AzureBlobSource {
         }?;
 
         let files = self
-            .iter_dir(path, delimiter, posix, page_size, None)
+            .iter_dir(path, delimiter, posix, None)
             .await?
             .try_collect::<Vec<_>>()
             .await?;

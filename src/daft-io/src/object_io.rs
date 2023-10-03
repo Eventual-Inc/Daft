@@ -123,7 +123,6 @@ pub(crate) trait ObjectSource: Sync + Send {
         delimiter: &str,
         posix: bool,
         page_size: Option<i32>,
-        _limit: Option<usize>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = uri.to_string();
         let delimiter = delimiter.to_string();
@@ -169,10 +168,10 @@ async fn ls_with_prefix_fallback(
         page_size: Option<i32>,
     ) -> BoxStream<'static, super::Result<FileMetadata>> {
         stream! {
-            match source.iter_dir(&path, delimiter.as_str(), false, page_size, None).await {
+            match source.iter_dir(&path, delimiter.as_str(), false, page_size).await {
                 Ok(mut result_stream) => {
-                    while let Some(fm) = result_stream.next().await {
-                        match fm {
+                    while let Some(result) = result_stream.next().await {
+                        match result {
                             Ok(fm) => {
                                 if matches!(fm.filetype, FileType::File)
                                 {
@@ -191,8 +190,9 @@ async fn ls_with_prefix_fallback(
 
     // Buffer results in memory as we go along
     let mut results_buffer = vec![];
+
     let mut fm_stream = source
-        .iter_dir(uri, delimiter, true, page_size, None)
+        .iter_dir(uri, delimiter, true, page_size)
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -231,18 +231,21 @@ pub(crate) async fn glob(
     glob: &str,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
-) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
         let glob = full_fragment.escaped_str().to_string();
         return Ok(stream! {
-            let mut results = source.iter_dir(glob.as_str(), "/", true, page_size, None).await?;
-            while let Some(val) = results.next().await {
-                match &val {
-                    // Ignore non-File results
-                    Ok(fm) if !matches!(fm.filetype, FileType::File) => continue,
-                    _ => yield val,
+            let mut results = source.iter_dir(glob.as_str(), "/", true, page_size).await?;
+            while let Some(result) = results.next().await {
+                match result {
+                    Ok(fm) => {
+                        if matches!(fm.filetype, FileType::File) {
+                            yield Ok(fm)
+                        }
+                    },
+                    Err(e) => yield Err(e),
                 }
             }
         }
@@ -336,12 +339,12 @@ pub(crate) async fn glob(
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let mut results = source
-                        .iter_dir(&state.current_path, "/", true, state.page_size, None)
+                        .iter_dir(&state.current_path, "/", true, state.page_size)
                         .await
                         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
-                    while let Some(val) = results.next().await {
-                        match val {
+                    while let Some(result) = results.next().await {
+                        match result {
                             Ok(fm) => {
                                 if matches!(fm.filetype, FileType::File)
                                     && state.full_glob_matcher.is_match(fm.filepath.as_str())
@@ -489,7 +492,7 @@ pub(crate) async fn recursive_iter(
         log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
         let source = source.clone();
         tokio::spawn(async move {
-            let s = source.iter_dir(&dir, "/", true, Some(1000), None).await;
+            let s = source.iter_dir(&dir, "/", true, Some(1000)).await;
             log::debug!(target: "recursive_iter", "started listing task for {dir}");
             let mut s = match s {
                 Ok(s) => s,
@@ -503,12 +506,21 @@ pub(crate) async fn recursive_iter(
             };
             let tx = &tx;
             while let Some(tr) = s.next().await {
-                if let Ok(ref tr) = tr && matches!(tr.filetype, FileType::Directory) {
-                    add_to_channel(source.clone(), tx.clone(), tr.filepath.clone())
+                match tr {
+                    Ok(fm) => {
+                        if matches!(fm.filetype, FileType::Directory) {
+                            add_to_channel(source.clone(), tx.clone(), fm.filepath.clone())
+                        }
+                        tx.send(Ok(fm)).await.map_err(|e| {
+                            super::Error::UnableToSendDataOverChannel { source: e.into() }
+                        })?;
+                    }
+                    Err(e) => {
+                        tx.send(Err(e)).await.map_err(|se| {
+                            super::Error::UnableToSendDataOverChannel { source: se.into() }
+                        })?;
+                    }
                 }
-                tx.send(tr)
-                    .await
-                    .map_err(|e| super::Error::UnableToSendDataOverChannel { source: e.into() })?;
             }
             log::debug!(target: "recursive_iter", "completed listing task for {dir}");
             super::Result::Ok(())

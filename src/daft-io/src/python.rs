@@ -80,10 +80,12 @@ mod py {
                         .await?
                 } else {
                     source
-                        .iter_dir(&path, "/", true, None, None)
+                        .iter_dir(&path, "/", true, None)
                         .await?
                         .try_collect::<Vec<_>>()
                         .await?
+                        .into_iter()
+                        .collect()
                 };
 
                 Ok(files)
