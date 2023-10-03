@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Default limit before we fallback onto parallel prefix list streams
-static DEFAULT_FANOUT_LIMIT: usize = 128;
+static DEFAULT_FANOUT_LIMIT: usize = 1024;
 
 pub enum GetResult {
     File(LocalFile),
