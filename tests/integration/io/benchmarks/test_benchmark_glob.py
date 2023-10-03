@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 
-import boto3
 import pytest
 import s3fs
 
@@ -176,6 +175,8 @@ def test_benchmark_glob_s3fs(benchmark, setup_bucket, minio_io_config):
 @pytest.mark.integration()
 @pytest.mark.parametrize("page_size", [100, 1000])
 def test_benchmark_glob_boto3_list(benchmark, setup_bucket, minio_io_config, page_size):
+    import boto3
+
     s3 = boto3.client(
         "s3",
         aws_access_key_id=minio_io_config.s3.key_id,
