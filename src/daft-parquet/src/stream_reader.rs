@@ -1,6 +1,7 @@
 use std::{fs::File, sync::Arc, time::SystemTime};
 
 use arrow2::io::parquet::read;
+use itertools::Itertools;
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelBridge};
 use snafu::ResultExt;
 
@@ -43,35 +44,42 @@ fn local_parquet_read(
     let chunk_size = 128 * 1024;
     let expected_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
-    let num_expected_arrays = expected_rows / chunk_size;
+    let num_expected_arrays = f32::ceil(expected_rows as f32 / chunk_size as f32) as usize;
 
-    let vals = metadata.row_groups.iter().flat_map(|rg| {
-        read::read_columns_many(
-            &mut reader,
-            rg,
-            schema.fields.clone(),
-            Some(chunk_size),
-            None,
-            None,
-        )
-        .with_context(|_| super::UnableToConvertParquetPagesToArrowSnafu {
-            path: uri.to_string(),
+    let columns_iters_per_rg = metadata
+        .row_groups
+        .iter()
+        .map(|rg| {
+            let single_rg_column_iter = read::read_columns_many(
+                &mut reader,
+                rg,
+                schema.fields.clone(),
+                Some(chunk_size),
+                None,
+                None,
+            );
+
+            let single_rg_column_iter = single_rg_column_iter?;
+            arrow2::error::Result::Ok(single_rg_column_iter.into_iter().enumerate())
         })
-        .unwrap()
-        .into_iter()
-        .enumerate()
-    });
+        .flatten_ok();
 
-    let vals = vals.par_bridge();
-    let vals = vals.map(|(idx, v)| Ok((idx, v.collect::<Result<Vec<_>, _>>()?)));
+    let columns_iters_per_rg = columns_iters_per_rg.par_bridge();
+    let collected_columns = columns_iters_per_rg.map(|payload: Result<_, _>| {
+        let (idx, v) = payload?;
+        Ok((idx, v.collect::<Result<Vec<_>, _>>()?))
+    });
     let mut all_columns = vec![Vec::with_capacity(num_expected_arrays); schema.fields.len()];
-    let all = vals.collect::<Result<Vec<_>, _>>().with_context(|_| {
-        super::UnableToCreateChunkFromStreamingFileReaderSnafu {
+    let all_computed = collected_columns
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|_| super::UnableToCreateChunkFromStreamingFileReaderSnafu {
             path: uri.to_string(),
-        }
-    })?;
-    for (idx, v) in all {
-        all_columns.get_mut(idx).unwrap().extend(v);
+        })?;
+    for (idx, v) in all_computed {
+        all_columns
+            .get_mut(idx)
+            .expect("array index during scatter out of index")
+            .extend(v);
     }
     Ok(all_columns)
 }
