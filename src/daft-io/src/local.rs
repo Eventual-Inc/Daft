@@ -2,11 +2,10 @@ use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use crate::object_io::{self, FileMetadata, FileType, LSResult};
+use crate::object_io::{self, FileMetadata, LSResult};
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
-use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
@@ -49,12 +48,6 @@ enum Error {
     UnableToFetchDirectoryEntries {
         path: String,
         source: std::io::Error,
-    },
-
-    #[snafu(display("Unable to glob path \"{}\"", glob_path))]
-    UnableToGlobPath {
-        glob_path: String,
-        source: glob::GlobError,
     },
 
     #[snafu(display("Unexpected symlink when processing directory {}: {}", path, source))]
@@ -143,32 +136,13 @@ impl ObjectSource for LocalSource {
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        // Globbing in Rust is not included in the stdlib, and there isn't a clear winner in terms of library that should be used
-        // `globset` is what we use for matching globs, and that seems very robust (it is used in ripgrep). However, we have no de-facto
-        // solution for actually iterating over a directory.
-        //
-        // See discussions:
-        // 1. Discussion over deprecating `glob` in favor of `globset` and `globwalk`: https://github.com/rust-lang-nursery/ecosystem-wg/issues/17
-        // 2. Creation of `globwalk` as a result of `globset` no supporting directory walking: https://github.com/BurntSushi/ripgrep/pull/765
-        //
-        // However, it seems that since then `globwalk` hasn't been maintained much, and `glob` was picked up by the rust-lang-nursery.
-        // Thus we use `glob` instead of `globwalk`, but this does mean losing API compatibility (we do not get curly braces {})
-        use glob::glob as _glob;
-        let entries = _glob(glob_path).map_err(|e| super::Error::InvalidArgument {
-            msg: format!("Unable to read glob: {glob_path}: {e}"),
-        })?;
-        Ok(stream!{
-            for entry in entries {
-                let path = entry.with_context(|_| UnableToGlobPathSnafu {glob_path: glob_path.to_string()})?;
-                if path.is_file() {
-                        yield Ok(FileMetadata {
-                        filepath: path.to_str().expect("Path should be UTF-8").to_string(),
-                        filetype: FileType::File,
-                        size: Some(self.get_size(path.to_str().expect("Path should be UTF-8")).await? as u64),
-                    })
-                }
-            }
-        }.boxed())
+        use crate::object_store_glob::glob;
+
+        // Ensure fanout_limit is None because Local ObjectSource does not support prefix listing
+        let fanout_limit = None;
+        let page_size = None;
+
+        glob(self, glob_path, fanout_limit, page_size).await
     }
 
     async fn ls(

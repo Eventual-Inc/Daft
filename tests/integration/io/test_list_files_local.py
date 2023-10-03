@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
-from daft.daft import io_list
+from daft.daft import io_glob
 
 
 def local_recursive_list(fs, path) -> list:
@@ -23,6 +23,10 @@ def local_recursive_list(fs, path) -> list:
 def compare_local_result(daft_ls_result: list, fs_result: list):
     daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
     fs_files = [(f'file://{f["name"]}', f["type"]) for f in fs_result]
+
+    # io_glob does not return directories
+    fs_files = [(p, t) for p, t in fs_files if t == "file"]
+
     assert sorted(daft_files) == sorted(fs_files)
 
 
@@ -35,10 +39,10 @@ def test_flat_directory_listing(tmp_path, include_protocol):
     for name in files:
         p = d / name
         p.touch()
-    d = str(d)
+    d = str(d) + "/"
     if include_protocol:
         d = "file://" + d
-    daft_ls_result = io_list(d)
+    daft_ls_result = io_glob(d)
     fs = LocalFileSystem()
     fs_result = fs.ls(d, detail=True)
     compare_local_result(daft_ls_result, fs_result)
@@ -58,10 +62,9 @@ def test_recursive_directory_listing(tmp_path, include_protocol):
             p.mkdir()
         p /= segments[-1]
         p.touch()
-    d = str(d)
     if include_protocol:
-        d = "file://" + d
-    daft_ls_result = io_list(d, recursive=True)
+        d = "file://" + str(d)
+    daft_ls_result = io_glob(str(d) + "/**")
     fs = LocalFileSystem()
     fs_result = local_recursive_list(fs, d)
     compare_local_result(daft_ls_result, fs_result)
@@ -69,11 +72,7 @@ def test_recursive_directory_listing(tmp_path, include_protocol):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
-@pytest.mark.parametrize(
-    "recursive",
-    [False, True],
-)
-def test_single_file_directory_listing(tmp_path, include_protocol, recursive):
+def test_single_file_directory_listing(tmp_path, include_protocol):
     d = tmp_path / "dir"
     d.mkdir()
     files = ["a", "b/bb", "c/cc/ccc"]
@@ -88,7 +87,8 @@ def test_single_file_directory_listing(tmp_path, include_protocol, recursive):
     p = f"{d}/c/cc/ccc"
     if include_protocol:
         p = "file://" + p
-    daft_ls_result = io_list(p, recursive=recursive)
+
+    daft_ls_result = io_glob(p)
     fs_result = [{"name": f"{d}/c/cc/ccc", "type": "file"}]
     assert len(daft_ls_result) == 1
     compare_local_result(daft_ls_result, fs_result)
@@ -112,4 +112,4 @@ def test_missing_file_path(tmp_path, include_protocol):
     if include_protocol:
         p = "file://" + p
     with pytest.raises(FileNotFoundError, match=f"File: {d}/c/cc/ddd not found"):
-        daft_ls_result = io_list(p, recursive=True)
+        io_glob(p)

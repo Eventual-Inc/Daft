@@ -16,7 +16,6 @@ common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
-glob = "0.3.1"
 globset = "0.4"
 google-cloud-storage = {version = "0.13.0", default-features = false, features = ["default-tls", "auth"]}
 hyper = "0.14.27"

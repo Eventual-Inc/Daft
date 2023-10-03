@@ -152,7 +152,9 @@ impl GlobFragment {
 ///   1. Split by delimiter ("/")
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
+///   4. Preserves any leading delimiters
 pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
+    println!("To glob fragments: {glob_str}");
     let delimiter = "/";
 
     // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
@@ -163,10 +165,20 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
     })?;
     let url_scheme = glob_url.scheme();
 
+    let glob_str_after_scheme = &glob_str[url_scheme.len() + SCHEME_SUFFIX_LEN..];
+
+    // NOTE: Leading delimiter may be important for absolute paths on local directory, and is considered
+    // part of the first fragment
+    let leading_delimiter = if glob_str_after_scheme.starts_with(delimiter) {
+        delimiter
+    } else {
+        ""
+    };
+
     // Parse glob fragments: split by delimiter and join any non-special fragments
     let mut coalesced_fragments = vec![];
     let mut nonspecial_fragments_so_far = vec![];
-    for fragment in glob_str[url_scheme.len() + SCHEME_SUFFIX_LEN..]
+    for fragment in glob_str_after_scheme
         .split(delimiter)
         .map(GlobFragment::new)
     {
@@ -193,9 +205,13 @@ pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragmen
         ));
     }
 
-    // Ensure that the first fragment has the scheme prefixed
-    coalesced_fragments[0] =
-        GlobFragment::new((format!("{url_scheme}://") + coalesced_fragments[0].raw_str()).as_str());
+    // Ensure that the first fragment has the scheme and leading delimiter (if requested) prefixed
+    coalesced_fragments[0] = GlobFragment::new(
+        (format!("{url_scheme}://") + leading_delimiter + coalesced_fragments[0].raw_str())
+            .as_str(),
+    );
+
+    println!("LEADING DELIM: {leading_delimiter}");
 
     Ok(coalesced_fragments)
 }
@@ -356,7 +372,10 @@ pub(crate) async fn glob(
         state: GlobState,
     ) {
         tokio::spawn(async move {
-            log::debug!(target: "glob", "Visiting '{}' with glob_fragments: {:?}", &state.current_path, &state.glob_fragments);
+            println!(
+                "Visiting '{}' with glob_fragments: {:?}",
+                &state.current_path, &state.glob_fragments
+            );
             let current_fragment = state.current_glob_fragment();
 
             // BASE CASE: current_fragment is a **
