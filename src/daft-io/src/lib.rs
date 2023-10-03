@@ -1,11 +1,11 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
 mod azure_blob;
-mod glob;
 mod google_cloud;
 mod http;
 mod local;
 mod object_io;
+mod object_store_glob;
 mod s3_like;
 use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;

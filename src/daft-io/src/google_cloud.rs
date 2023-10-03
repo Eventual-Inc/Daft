@@ -360,7 +360,7 @@ impl ObjectSource for GCSSource {
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        use crate::glob::glob;
+        use crate::object_store_glob::glob;
 
         glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }

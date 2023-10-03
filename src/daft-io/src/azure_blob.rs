@@ -433,7 +433,7 @@ impl ObjectSource for AzureBlobSource {
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        use crate::glob::glob;
+        use crate::object_store_glob::glob;
 
         glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }
@@ -487,7 +487,7 @@ impl ObjectSource for AzureBlobSource {
         delimiter: &str,
         posix: bool,
         continuation_token: Option<&str>,
-        page_size: Option<i32>,
+        _page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         // It looks like the azure rust library API
         // does not currently allow using the continuation token:
