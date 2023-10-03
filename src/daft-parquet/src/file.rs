@@ -91,6 +91,56 @@ where
     }
 }
 
+pub(crate) fn build_row_ranges(
+    num_rows: usize,
+    row_start_offset: usize,
+    row_groups: Option<&[i64]>,
+    metadata: &parquet2::metadata::FileMetaData,
+    uri: &str,
+) -> super::Result<Vec<RowGroupRange>> {
+    let mut row_ranges = vec![];
+    let mut curr_row_index = 0;
+    let mut rows_to_add = num_rows;
+    if let Some(row_groups) = row_groups {
+        for i in row_groups {
+            let i = *i as usize;
+            if !(0..metadata.row_groups.len()).contains(&i) {
+                return Err(super::Error::ParquetRowGroupOutOfIndex {
+                    path: uri.to_string(),
+                    row_group: i as i64,
+                    total_row_groups: metadata.row_groups.len() as i64,
+                });
+            }
+            let rg = metadata.row_groups.get(i).unwrap();
+            let range_to_add = RowGroupRange {
+                row_group_index: i,
+                start: 0,
+                num_rows: rg.num_rows(),
+            };
+            row_ranges.push(range_to_add);
+        }
+    } else {
+        for (i, rg) in metadata.row_groups.iter().enumerate() {
+            if (curr_row_index + rg.num_rows()) < row_start_offset {
+                curr_row_index += rg.num_rows();
+                continue;
+            } else if rows_to_add > 0 {
+                let range_to_add = RowGroupRange {
+                    row_group_index: i,
+                    start: row_start_offset.saturating_sub(curr_row_index),
+                    num_rows: rg.num_rows().min(rows_to_add),
+                };
+                rows_to_add = rows_to_add.saturating_sub(rg.num_rows().min(rows_to_add));
+                row_ranges.push(range_to_add);
+            } else {
+                break;
+            }
+            curr_row_index += rg.num_rows();
+        }
+    }
+    Ok(row_ranges)
+}
+
 impl ParquetReaderBuilder {
     pub async fn from_uri(uri: &str, io_client: Arc<daft_io::IOClient>) -> super::Result<Self> {
         // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
@@ -162,47 +212,14 @@ impl ParquetReaderBuilder {
     }
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
-        let mut row_ranges = vec![];
+        let row_ranges = build_row_ranges(
+            self.num_rows,
+            self.row_start_offset,
+            self.row_groups.as_deref(),
+            &self.metadata,
+            &self.uri,
+        )?;
 
-        let mut curr_row_index = 0;
-        let mut rows_to_add = self.num_rows;
-        if let Some(row_groups) = self.row_groups {
-            for i in row_groups {
-                let i = i as usize;
-                if !(0..self.metadata.row_groups.len()).contains(&i) {
-                    return Err(super::Error::ParquetRowGroupOutOfIndex {
-                        path: self.uri,
-                        row_group: i as i64,
-                        total_row_groups: self.metadata.row_groups.len() as i64,
-                    });
-                }
-                let rg = self.metadata.row_groups.get(i).unwrap();
-                let range_to_add = RowGroupRange {
-                    row_group_index: i,
-                    start: 0,
-                    num_rows: rg.num_rows(),
-                };
-                row_ranges.push(range_to_add);
-            }
-        } else {
-            for (i, rg) in self.metadata.row_groups.iter().enumerate() {
-                if (curr_row_index + rg.num_rows()) < self.row_start_offset {
-                    curr_row_index += rg.num_rows();
-                    continue;
-                } else if rows_to_add > 0 {
-                    let range_to_add = RowGroupRange {
-                        row_group_index: i,
-                        start: self.row_start_offset.saturating_sub(curr_row_index),
-                        num_rows: rg.num_rows().min(rows_to_add),
-                    };
-                    rows_to_add = rows_to_add.saturating_sub(rg.num_rows().min(rows_to_add));
-                    row_ranges.push(range_to_add);
-                } else {
-                    break;
-                }
-                curr_row_index += rg.num_rows();
-            }
-        }
         let mut arrow_schema =
             infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
                 .context(UnableToParseSchemaFromMetadataSnafu::<String> {
@@ -220,10 +237,10 @@ impl ParquetReaderBuilder {
 }
 
 #[derive(Copy, Clone)]
-struct RowGroupRange {
-    row_group_index: usize,
-    start: usize,
-    num_rows: usize,
+pub(crate) struct RowGroupRange {
+    pub row_group_index: usize,
+    pub start: usize,
+    pub num_rows: usize,
 }
 
 pub(crate) struct ParquetFileReader {

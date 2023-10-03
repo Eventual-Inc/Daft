@@ -11,7 +11,7 @@ use rayon::prelude::{
 use snafu::ResultExt;
 
 use crate::{
-    file,
+    file::{self, build_row_ranges},
     read::{ArrowChunk, ParquetSchemaInferenceOptions},
 };
 
@@ -55,7 +55,6 @@ pub(crate) fn local_parquet_read_into_arrow(
     row_groups: Option<&[i64]>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(arrow2::datatypes::Schema, Vec<ArrowChunk>)> {
-    assert!(start_offset.is_none());
     const LOCAL_PROTOCOL: &str = "file://";
 
     let uri = uri.strip_prefix(LOCAL_PROTOCOL).unwrap_or(uri);
@@ -79,16 +78,18 @@ pub(crate) fn local_parquet_read_into_arrow(
     let expected_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(expected_rows as f32 / chunk_size as f32) as usize;
+    let row_ranges = build_row_ranges(
+        expected_rows,
+        start_offset.unwrap_or(0),
+        row_groups,
+        &metadata,
+        uri,
+    )?;
 
-    let row_groups_to_iter = if let Some(row_groups) = row_groups {
-        row_groups.to_vec()
-    } else {
-        (0..metadata.row_groups.len() as i64).collect::<Vec<_>>()
-    };
-    let columns_iters_per_rg = row_groups_to_iter
+    let columns_iters_per_rg = row_ranges
         .iter()
-        .map(|idx| metadata.row_groups.get(*idx as usize).unwrap())
-        .map(|rg| {
+        .map(|rg_range| {
+            let rg = metadata.row_groups.get(rg_range.row_group_index).unwrap();
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
                 rg,
@@ -98,14 +99,38 @@ pub(crate) fn local_parquet_read_into_arrow(
                 None,
             );
             let single_rg_column_iter = single_rg_column_iter?;
-            arrow2::error::Result::Ok(single_rg_column_iter.into_iter().enumerate())
+            arrow2::error::Result::Ok(
+                single_rg_column_iter
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(idx, iter)| (rg_range, idx, iter)),
+            )
         })
         .flatten_ok();
 
     let columns_iters_per_rg = columns_iters_per_rg.par_bridge();
     let collected_columns = columns_iters_per_rg.map(|payload: Result<_, _>| {
-        let (idx, v) = payload?;
-        Ok((idx, v.collect::<Result<Vec<_>, _>>()?))
+        let (row_range, col_idx, arr_iter) = payload?;
+
+        let mut arrays_so_far = vec![];
+        let mut curr_index = 0;
+
+        for arr in arr_iter {
+            let arr = arr?;
+            if (curr_index + arr.len()) < row_range.start {
+                // throw arrays less than what we need
+                curr_index += arr.len();
+                continue;
+            } else if curr_index < row_range.start {
+                let offset = row_range.start.saturating_sub(curr_index);
+                arrays_so_far.push(arr.sliced(offset, arr.len() - offset));
+                curr_index += arr.len();
+            } else {
+                curr_index += arr.len();
+                arrays_so_far.push(arr);
+            }
+        }
+        Ok((col_idx, arrays_so_far))
     });
     let mut all_columns = vec![Vec::with_capacity(num_expected_arrays); schema.fields.len()];
     let all_computed = collected_columns
