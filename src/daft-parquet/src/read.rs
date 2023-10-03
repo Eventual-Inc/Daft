@@ -38,6 +38,16 @@ impl Default for ParquetSchemaInferenceOptions {
     }
 }
 
+impl From<ParquetSchemaInferenceOptions>
+    for arrow2::io::parquet::read::schema::SchemaInferenceOptions
+{
+    fn from(value: ParquetSchemaInferenceOptions) -> Self {
+        arrow2::io::parquet::read::schema::SchemaInferenceOptions {
+            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+        }
+    }
+}
+
 async fn read_parquet_single(
     uri: &str,
     columns: Option<&[&str]>,
@@ -45,7 +55,7 @@ async fn read_parquet_single(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
-    schema_infer_options: &ParquetSchemaInferenceOptions,
+    schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
     let builder = builder.set_infer_schema_options(schema_infer_options);
@@ -146,12 +156,9 @@ async fn read_parquet_single_into_arrow(
     row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-) -> DaftResult<(
-    arrow2::datatypes::SchemaRef,
-    Vec<Vec<Box<dyn arrow2::array::Array>>>,
-)> {
+) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
-    let builder = builder.set_infer_schema_options(schema_infer_options);
+    let builder = builder.set_infer_schema_options(schema_infer_options.clone());
 
     let builder = if let Some(columns) = columns {
         builder.prune_columns(columns)?
@@ -267,7 +274,7 @@ pub fn read_parquet(
     row_groups: Option<&[i64]>,
     io_client: Arc<IOClient>,
     multithreaded_io: bool,
-    schema_infer_options: &ParquetSchemaInferenceOptions,
+    schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
@@ -362,7 +369,7 @@ pub fn read_parquet_bulk(
                             num_rows,
                             owned_row_group.as_deref(),
                             io_client,
-                            &schema_infer_options,
+                            schema_infer_options,
                         )
                         .await?,
                     ))
@@ -448,7 +455,7 @@ pub fn read_parquet_into_pyarrow_bulk(
 pub fn read_parquet_schema(
     uri: &str,
     io_client: Arc<IOClient>,
-    schema_inference_options: &ParquetSchemaInferenceOptions,
+    schema_inference_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
@@ -556,7 +563,7 @@ mod tests {
             None,
             io_client,
             true,
-            &Default::default(),
+            Default::default(),
         )?;
         assert_eq!(table.len(), 100);
 

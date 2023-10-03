@@ -9,18 +9,30 @@ pub mod metadata;
 pub mod python;
 pub mod read;
 mod read_planner;
+mod stream_reader;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    IOError { source: daft_io::Error },
+    DaftIOError { source: daft_io::Error },
+
+    #[snafu(display("Internal IO Error when Opening: {path}:\nDetails:\n{source}"))]
+    InternalIOError {
+        path: String,
+        source: std::io::Error,
+    },
 
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadata {
         path: String,
         source: parquet2::error::Error,
+    },
+    #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
+    UnableToParseMetadataFromLocalFile {
+        path: String,
+        source: arrow2::error::Error,
     },
 
     #[snafu(display(
@@ -38,7 +50,15 @@ pub enum Error {
         path: String,
         source: parquet2::error::Error,
     },
-
+    #[snafu(display(
+        "Unable to create arrow chunk from streaming file reader{}: {}",
+        path,
+        source
+    ))]
+    UnableToCreateChunkFromStreamingFileReader {
+        path: String,
+        source: arrow2::error::Error,
+    },
     #[snafu(display(
         "Unable to parse parquet metadata to arrow schema for file {}: {}",
         path,
@@ -136,7 +156,7 @@ pub enum Error {
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         match err {
-            Error::IOError { source } => source.into(),
+            Error::DaftIOError { source } => source.into(),
             _ => DaftError::External(err.into()),
         }
     }
@@ -144,7 +164,7 @@ impl From<Error> for DaftError {
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Error::DaftIOError { source: err }
     }
 }
 

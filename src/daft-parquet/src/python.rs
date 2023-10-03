@@ -41,7 +41,7 @@ pub mod pylib {
                 row_groups.as_deref(),
                 io_client,
                 multithreaded_io.unwrap_or(true),
-                &schema_infer_options,
+                schema_infer_options,
             )?
             .into())
         })
@@ -211,7 +211,7 @@ pub mod pylib {
             Ok(Arc::new(crate::read::read_parquet_schema(
                 uri,
                 io_client,
-                &schema_infer_options,
+                schema_infer_options,
             )?)
             .into())
         })

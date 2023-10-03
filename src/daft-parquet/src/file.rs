@@ -156,8 +156,8 @@ impl ParquetReaderBuilder {
         Ok(self)
     }
 
-    pub fn set_infer_schema_options(mut self, opts: &ParquetSchemaInferenceOptions) -> Self {
-        self.schema_inference_options = opts.clone();
+    pub fn set_infer_schema_options(mut self, opts: ParquetSchemaInferenceOptions) -> Self {
+        self.schema_inference_options = opts;
         self
     }
 
@@ -203,18 +203,11 @@ impl ParquetReaderBuilder {
                 curr_row_index += rg.num_rows();
             }
         }
-        let mut arrow_schema = infer_schema_with_options(
-            &self.metadata,
-            &Some(arrow2::io::parquet::read::schema::SchemaInferenceOptions {
-                int96_coerce_to_timeunit: self
-                    .schema_inference_options
-                    .coerce_int96_timestamp_unit
-                    .to_arrow(),
-            }),
-        )
-        .context(UnableToParseSchemaFromMetadataSnafu::<String> {
-            path: self.uri.clone(),
-        })?;
+        let mut arrow_schema =
+            infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
+                .context(UnableToParseSchemaFromMetadataSnafu::<String> {
+                    path: self.uri.clone(),
+                })?;
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema
