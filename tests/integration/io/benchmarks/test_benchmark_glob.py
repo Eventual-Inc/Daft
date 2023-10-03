@@ -5,7 +5,7 @@ import itertools
 import pytest
 import s3fs
 
-from daft.daft import io_glob, io_list
+from daft.daft import io_glob
 
 from ..conftest import minio_create_bucket
 
@@ -219,10 +219,3 @@ def test_benchmark_glob_daft(benchmark, setup_bucket, minio_io_config, fanout_li
         )
     )
     assert len(results) == setup_bucket
-
-
-@pytest.mark.benchmark(group="glob")
-@pytest.mark.integration()
-def test_benchmark_io_list_recursive_daft(benchmark, setup_bucket, minio_io_config):
-    results = benchmark(lambda: io_list(f"s3://{BUCKET}/", io_config=minio_io_config, recursive=True))
-    assert len([r for r in results if r["type"] == "File"]) == setup_bucket

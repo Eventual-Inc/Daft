@@ -7,7 +7,6 @@ use common_error::DaftError;
 use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 
-use tokio::sync::mpsc::Sender;
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::local::{collect_file, LocalFile};
@@ -143,64 +142,4 @@ pub(crate) trait ObjectSource: Sync + Send {
         };
         Ok(s.boxed())
     }
-}
-
-pub(crate) async fn recursive_iter(
-    source: Arc<dyn ObjectSource>,
-    uri: &str,
-) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
-    log::debug!(target: "recursive_iter", "starting recursive_iter: with top level of: {uri}");
-    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
-    fn add_to_channel(
-        source: Arc<dyn ObjectSource>,
-        tx: Sender<super::Result<FileMetadata>>,
-        dir: String,
-    ) {
-        log::debug!(target: "recursive_iter", "recursive_iter: spawning task to list: {dir}");
-        let source = source.clone();
-        tokio::spawn(async move {
-            let s = source.iter_dir(&dir, "/", true, Some(1000)).await;
-            log::debug!(target: "recursive_iter", "started listing task for {dir}");
-            let mut s = match s {
-                Ok(s) => s,
-                Err(e) => {
-                    log::debug!(target: "recursive_iter", "Error occurred when listing {dir}\nerror:\n{e}");
-                    tx.send(Err(e)).await.map_err(|se| {
-                        super::Error::UnableToSendDataOverChannel { source: se.into() }
-                    })?;
-                    return super::Result::<_, super::Error>::Ok(());
-                }
-            };
-            let tx = &tx;
-            while let Some(tr) = s.next().await {
-                match tr {
-                    Ok(fm) => {
-                        if matches!(fm.filetype, FileType::Directory) {
-                            add_to_channel(source.clone(), tx.clone(), fm.filepath.clone())
-                        }
-                        tx.send(Ok(fm)).await.map_err(|e| {
-                            super::Error::UnableToSendDataOverChannel { source: e.into() }
-                        })?;
-                    }
-                    Err(e) => {
-                        tx.send(Err(e)).await.map_err(|se| {
-                            super::Error::UnableToSendDataOverChannel { source: se.into() }
-                        })?;
-                    }
-                }
-            }
-            log::debug!(target: "recursive_iter", "completed listing task for {dir}");
-            super::Result::Ok(())
-        });
-    }
-
-    add_to_channel(source, to_rtn_tx, uri.to_string());
-
-    let to_rtn_stream = stream! {
-        while let Some(v) = to_rtn_rx.recv().await {
-            yield v
-        }
-    };
-
-    Ok(to_rtn_stream.boxed())
 }
