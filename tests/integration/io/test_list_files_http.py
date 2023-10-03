@@ -52,7 +52,7 @@ def test_http_flat_directory_listing(path, nginx_http_url):
 
 
 @pytest.mark.integration()
-def test_gs_single_file_listing(nginx_http_url):
+def test_http_single_file_listing(nginx_http_url):
     path = f"{nginx_http_url}/test_ls/file.txt"
     daft_ls_result = io_list(path)
 

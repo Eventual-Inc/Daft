@@ -24,6 +24,7 @@ use crate::s3_like;
 use crate::GetResult;
 use common_io_config::GCSConfig;
 
+static GCS_SCHEME: &str = "gs";
 static DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 
 #[derive(Debug, Snafu)]
@@ -198,7 +199,7 @@ impl GCSClientWrapper {
         client: &Client,
         bucket: &str,
         key: &str,
-        delimiter: &str,
+        delimiter: Option<&str>,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
     ) -> super::Result<LSResult> {
@@ -208,7 +209,7 @@ impl GCSClientWrapper {
             end_offset: None,
             start_offset: None,
             page_token: continuation_token.map(|s| s.to_string()),
-            delimiter: Some(delimiter.to_string()), // returns results in "directory mode"
+            delimiter: delimiter.map(|d| d.to_string()), // returns results in "directory mode" if delimiter is provided
             max_results: page_size,
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
@@ -218,17 +219,17 @@ impl GCSClientWrapper {
             .list_objects(&req)
             .await
             .context(UnableToListObjectsSnafu {
-                path: format!("gs://{}/{}", bucket, key),
+                path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
             })?;
         let response_items = ls_response.items.unwrap_or_default();
         let response_prefixes = ls_response.prefixes.unwrap_or_default();
         let files = response_items.iter().map(|obj| FileMetadata {
-            filepath: format!("gs://{}/{}", bucket, obj.name),
+            filepath: format!("{GCS_SCHEME}://{}/{}", bucket, obj.name),
             size: Some(obj.size as u64),
             filetype: FileType::File,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
-            filepath: format!("gs://{}/{}", bucket, pref),
+            filepath: format!("{GCS_SCHEME}://{}/{}", bucket, pref),
             size: None,
             filetype: FileType::Directory,
         });
@@ -250,49 +251,64 @@ impl GCSClientWrapper {
         let (bucket, key) = parse_uri(&uri)?;
         match self {
             GCSClientWrapper::Native(client) => {
-                if !posix {
-                    todo!("Prefix-listing is not yet implemented for GCS");
-                }
-
-                // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                let forced_directory_key =
-                    format!("{}{delimiter}", key.trim_end_matches(delimiter));
-                let forced_directory_ls_result = self
-                    ._ls_impl(
-                        client,
-                        bucket,
-                        forced_directory_key.as_str(),
-                        delimiter,
-                        continuation_token,
-                        page_size,
-                    )
-                    .await?;
-
-                // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-                // details as the one-and-only-one entry
-                if forced_directory_ls_result.files.is_empty() {
-                    let file_result = self
+                if posix {
+                    // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+                    let forced_directory_key = if key.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!("{}{delimiter}", key.trim_end_matches(delimiter))
+                    };
+                    let forced_directory_ls_result = self
                         ._ls_impl(
                             client,
                             bucket,
-                            key,
-                            delimiter,
+                            forced_directory_key.as_str(),
+                            Some(delimiter),
                             continuation_token,
                             page_size,
                         )
                         .await?;
 
-                    // Not dir and not file, so it is missing
-                    if file_result.files.is_empty() {
-                        return Err(Error::NotFound {
-                            path: path.to_string(),
-                        }
-                        .into());
-                    }
+                    // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+                    // details as the one-and-only-one entry
+                    if forced_directory_ls_result.files.is_empty() {
+                        let mut file_result = self
+                            ._ls_impl(
+                                client,
+                                bucket,
+                                key,
+                                Some(delimiter),
+                                continuation_token,
+                                page_size,
+                            )
+                            .await?;
 
-                    Ok(file_result)
+                        // Only retain exact matches (since the API does prefix lists by default)
+                        let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
+                        file_result.files.retain(|fm| fm.filepath == target_path);
+
+                        // Not dir and not file, so it is missing
+                        if file_result.files.is_empty() {
+                            return Err(Error::NotFound {
+                                path: path.to_string(),
+                            }
+                            .into());
+                        }
+
+                        Ok(file_result)
+                    } else {
+                        Ok(forced_directory_ls_result)
+                    }
                 } else {
-                    Ok(forced_directory_ls_result)
+                    self._ls_impl(
+                        client,
+                        bucket,
+                        key,
+                        None, // Force a prefix-listing
+                        continuation_token,
+                        page_size,
+                    )
+                    .await
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
