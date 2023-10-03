@@ -224,11 +224,17 @@ impl ObjectSource for HttpSource {
 
     async fn glob(
         self: Arc<Self>,
-        _glob_path: &str,
+        glob_path: &str,
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        todo!("Glob not implemented yet for HTTP ObjectSource");
+        use crate::object_store_glob::glob;
+
+        // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
+        let fanout_limit = None;
+        let page_size = None;
+
+        glob(self, glob_path, fanout_limit, page_size).await
     }
 
     async fn ls(

@@ -16,9 +16,6 @@ lazy_static! {
     static ref GLOB_SPECIAL_CHARACTERS: HashSet<char> = HashSet::from(['*', '?', '{', '}', '[', ']']);
 }
 
-/// Default limit before we fallback onto parallel prefix list streams
-static DEFAULT_FANOUT_LIMIT: usize = 1024;
-
 const SCHEME_SUFFIX_LEN: usize = "://".len();
 
 #[derive(Clone)]
@@ -36,7 +33,7 @@ pub(crate) struct GlobState {
     // Carry along expensive data as Arcs to avoid recomputation
     pub glob_fragments: Arc<Vec<GlobFragment>>,
     pub full_glob_matcher: Arc<GlobMatcher>,
-    pub fanout_limit: usize,
+    pub fanout_limit: Option<usize>,
     pub page_size: Option<i32>,
 }
 
@@ -215,7 +212,7 @@ async fn ls_with_prefix_fallback(
     source: Arc<dyn ObjectSource>,
     uri: &str,
     delimiter: &str,
-    max_dirs: usize,
+    max_dirs: Option<usize>,
     page_size: Option<i32>,
 ) -> (BoxStream<'static, super::Result<FileMetadata>>, usize) {
     // Prefix list function that only returns Files
@@ -263,7 +260,10 @@ async fn ls_with_prefix_fallback(
                 // STOP EARLY!!
                 // If the number of directory results are more than `max_dirs`, we terminate the function early,
                 // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
-                if dir_count_so_far > max_dirs {
+                if max_dirs
+                    .map(|max_dirs| dir_count_so_far > max_dirs)
+                    .unwrap_or(false)
+                {
                     return (
                         prefix_ls(
                             source.clone(),
@@ -284,6 +284,19 @@ async fn ls_with_prefix_fallback(
     (s.boxed(), dir_count_so_far)
 }
 
+/// Globs an ObjectSource for Files
+///
+/// Uses the `globset` crate for matching, and thus supports all the syntax enabled by that crate.
+/// See: https://docs.rs/globset/latest/globset/#syntax
+///
+/// Arguments:
+/// * source: the ObjectSource to use for file listing
+/// * glob: the string to glob
+/// * fanout_limit: number of directories at which to fallback onto prefix listing, or None to never fall back.
+///     A reasonable number here for a remote object store is something like 1024, which saturates the number of
+///     parallel connections (usually defaulting to 64).
+/// * page_size: control the returned results page size, or None to use the ObjectSource's defaults. Usually only used for testing
+///     but may yield some performance improvements depending on the workload.
 pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
@@ -319,7 +332,6 @@ pub(crate) async fn glob(
     };
     let glob = glob.as_str();
 
-    let fanout_limit = fanout_limit.unwrap_or(DEFAULT_FANOUT_LIMIT);
     let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)
@@ -354,7 +366,9 @@ pub(crate) async fn glob(
                     source.clone(),
                     &state.current_path,
                     "/",
-                    state.fanout_limit / state.current_fanout,
+                    state
+                        .fanout_limit
+                        .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
                 )
                 .await;
@@ -458,7 +472,9 @@ pub(crate) async fn glob(
                     source.clone(),
                     &state.current_path,
                     "/",
-                    state.fanout_limit / state.current_fanout,
+                    state
+                        .fanout_limit
+                        .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
                 )
                 .await;

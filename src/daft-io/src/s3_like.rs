@@ -34,6 +34,8 @@ use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 use std::time::Duration;
+
+static DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 pub(crate) struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
@@ -716,6 +718,9 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
+
+        // Ensure fanout_limit is not None to prevent runaway concurrency
+        let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
         glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }

@@ -14,6 +14,8 @@ use crate::{
 };
 use common_io_config::AzureConfig;
 
+static DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
+
 #[derive(Debug, Snafu)]
 enum Error {
     // Input errors.
@@ -434,6 +436,9 @@ impl ObjectSource for AzureBlobSource {
         page_size: Option<i32>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
+
+        // Ensure fanout_limit is not None to prevent runaway concurrency
+        let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
         glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
     }
