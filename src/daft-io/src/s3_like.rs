@@ -549,9 +549,10 @@ impl S3LikeSource {
         scheme: &str,
         bucket: &str,
         key: &str,
-        delimiter: String,
+        delimiter: Option<String>,
         continuation_token: Option<String>,
         region: &Region,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         log::debug!("S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}");
         let request = self
@@ -559,10 +560,19 @@ impl S3LikeSource {
             .await?
             .list_objects_v2()
             .bucket(bucket)
-            .delimiter(&delimiter)
             .prefix(key);
+        let request = if let Some(delimiter) = delimiter.as_ref() {
+            request.delimiter(delimiter)
+        } else {
+            request
+        };
         let request = if let Some(ref continuation_token) = continuation_token {
             request.continuation_token(continuation_token)
+        } else {
+            request
+        };
+        let request = if let Some(page_size) = page_size {
+            request.max_keys(page_size)
         } else {
             request
         };
@@ -660,6 +670,7 @@ impl S3LikeSource {
                             delimiter,
                             continuation_token.clone(),
                             &new_region,
+                            page_size,
                         )
                         .await
                     }
@@ -696,15 +707,17 @@ impl ObjectSource for S3LikeSource {
             .context(UnableToGrabSemaphoreSnafu)?;
         self._head_impl(permit, uri, &self.default_region).await
     }
+
     async fn ls(
         &self,
         path: &str,
-        delimiter: Option<&str>,
+        delimiter: &str,
+        posix: bool,
         continuation_token: Option<&str>,
+        page_size: Option<i32>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let scheme = parsed.scheme();
-        let delimiter = delimiter.unwrap_or("/");
 
         let bucket = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -713,63 +726,87 @@ impl ObjectSource for S3LikeSource {
                 source: ParseError::EmptyHost,
             }),
         }?;
-        let key = parsed.path();
-        let key = key
-            .trim_start_matches(delimiter)
-            .trim_end_matches(delimiter);
-        let key = if key.is_empty() {
-            "".to_string()
+        let key = parsed.path().trim_start_matches(delimiter);
+
+        if posix {
+            // Perform a directory-based list of entries in the next level
+            // assume its a directory first
+            let key = if key.is_empty() {
+                "".to_string()
+            } else {
+                format!("{}{delimiter}", key.trim_end_matches(delimiter))
+            };
+            let lsr = {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
+
+                self._list_impl(
+                    permit,
+                    scheme,
+                    bucket,
+                    &key,
+                    Some(delimiter.into()),
+                    continuation_token.map(String::from),
+                    &self.default_region,
+                    page_size,
+                )
+                .await?
+            };
+            if lsr.files.is_empty() && key.contains(delimiter) {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
+                // Might be a File
+                let key = key.trim_end_matches(delimiter);
+                let mut lsr = self
+                    ._list_impl(
+                        permit,
+                        scheme,
+                        bucket,
+                        key,
+                        Some(delimiter.into()),
+                        continuation_token.map(String::from),
+                        &self.default_region,
+                        page_size,
+                    )
+                    .await?;
+                let target_path = format!("{scheme}://{bucket}/{key}");
+                lsr.files.retain(|f| f.filepath == target_path);
+
+                if lsr.files.is_empty() {
+                    // Isnt a file or a directory
+                    return Err(Error::NotFound { path: path.into() }.into());
+                }
+                Ok(lsr)
+            } else {
+                Ok(lsr)
+            }
         } else {
-            format!("{key}{delimiter}")
-        };
+            // Perform a prefix-based list of all entries with this prefix
+            let lsr = {
+                let permit = self
+                    .connection_pool_sema
+                    .acquire()
+                    .await
+                    .context(UnableToGrabSemaphoreSnafu)?;
 
-        // assume its a directory first
-        let lsr = {
-            let permit = self
-                .connection_pool_sema
-                .acquire()
-                .await
-                .context(UnableToGrabSemaphoreSnafu)?;
-
-            self._list_impl(
-                permit,
-                scheme,
-                bucket,
-                &key,
-                delimiter.into(),
-                continuation_token.map(String::from),
-                &self.default_region,
-            )
-            .await?
-        };
-        if lsr.files.is_empty() && key.contains(delimiter) {
-            let permit = self
-                .connection_pool_sema
-                .acquire()
-                .await
-                .context(UnableToGrabSemaphoreSnafu)?;
-            // Might be a File
-            let key = key.trim_end_matches(delimiter);
-            let mut lsr = self
-                ._list_impl(
+                self._list_impl(
                     permit,
                     scheme,
                     bucket,
                     key,
-                    delimiter.into(),
+                    None, // triggers prefix-based list
                     continuation_token.map(String::from),
                     &self.default_region,
+                    page_size,
                 )
-                .await?;
-            let target_path = format!("{scheme}://{bucket}/{key}");
-            lsr.files.retain(|f| f.filepath == target_path);
-
-            if lsr.files.is_empty() {
-                // Isnt a file or a directory
-                return Err(Error::NotFound { path: path.into() }.into());
-            }
-            Ok(lsr)
-        } else {
+                .await?
+            };
             Ok(lsr)
         }
     }
@@ -842,7 +879,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        client.ls(file_path, None, None).await?;
+        client.ls(file_path, "/", true, None, None).await?;
 
         Ok(())
     }

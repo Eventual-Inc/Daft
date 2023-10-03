@@ -174,7 +174,8 @@ def s3fs_recursive_list(fs, path) -> list:
         ),
     ],
 )
-def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair):
+@pytest.mark.parametrize("fanout_limit", [None, 1])
+def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair, fanout_limit):
     globpath, expect = path_expect_pair
     with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
         files = [
@@ -193,9 +194,9 @@ def test_directory_globbing_fragment_wildcard(minio_io_config, path_expect_pair)
 
         if type(expect) == type and issubclass(expect, BaseException):
             with pytest.raises(expect):
-                io_glob(globpath, io_config=minio_io_config)
+                io_glob(globpath, io_config=minio_io_config, fanout_limit=fanout_limit)
         else:
-            daft_ls_result = io_glob(globpath, io_config=minio_io_config)
+            daft_ls_result = io_glob(globpath, io_config=minio_io_config, fanout_limit=fanout_limit)
             assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])
 
 
@@ -262,6 +263,32 @@ def test_directory_globbing_special_characters(minio_io_config, path_expect_pair
             fs.touch(f"bucket/{name}")
         daft_ls_result = io_glob(globpath, io_config=minio_io_config)
         assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(expect, key=lambda d: d["path"])
+
+
+@pytest.mark.integration()
+def test_directory_globbing_common_prefix_cornercase(minio_io_config):
+    with minio_create_bucket(minio_io_config, bucket_name="bucket") as fs:
+        files = [
+            "1/a/file.txt",
+            "1/b/file.txt",
+            # share a prefix with `1` which may cause issues if we drop the trailing / in a prefix list
+            "11/a/file.txt",
+            "11/b/file.txt",
+        ]
+        for name in files:
+            fs.touch(f"bucket/{name}")
+
+        # Force a prefix listing on the second level when the fanout becomes more than 2
+        daft_ls_result = io_glob("s3://bucket/**", io_config=minio_io_config, fanout_limit=2)
+        assert sorted(daft_ls_result, key=lambda d: d["path"]) == sorted(
+            [
+                {"type": "File", "path": "s3://bucket/1/a/file.txt", "size": 0},
+                {"type": "File", "path": "s3://bucket/1/b/file.txt", "size": 0},
+                {"type": "File", "path": "s3://bucket/11/a/file.txt", "size": 0},
+                {"type": "File", "path": "s3://bucket/11/b/file.txt", "size": 0},
+            ],
+            key=lambda d: d["path"],
+        )
 
 
 @pytest.mark.integration()
