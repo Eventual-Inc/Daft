@@ -52,7 +52,11 @@ pub(crate) fn local_parquet_read_into_arrow(
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-) -> super::Result<(arrow2::datatypes::Schema, Vec<ArrowChunk>)> {
+) -> super::Result<(
+    parquet2::metadata::FileMetaData,
+    arrow2::datatypes::Schema,
+    Vec<ArrowChunk>,
+)> {
     const LOCAL_PROTOCOL: &str = "file://";
 
     let uri = uri.strip_prefix(LOCAL_PROTOCOL).unwrap_or(uri);
@@ -142,7 +146,7 @@ pub(crate) fn local_parquet_read_into_arrow(
             .expect("array index during scatter out of index")
             .extend(v);
     }
-    Ok((schema, all_columns))
+    Ok((metadata, schema, all_columns))
 }
 
 pub(crate) async fn local_parquet_read_async(
@@ -152,11 +156,11 @@ pub(crate) async fn local_parquet_read_async(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-) -> DaftResult<Table> {
+) -> DaftResult<(parquet2::metadata::FileMetaData, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
-        let final_table = (move || {
+        let result = (move || {
             let v = local_parquet_read_into_arrow(
                 &uri,
                 columns.as_deref(),
@@ -165,7 +169,7 @@ pub(crate) async fn local_parquet_read_async(
                 row_groups.as_deref(),
                 schema_infer_options,
             );
-            let (schema, arrays) = v?;
+            let (metadata, schema, arrays) = v?;
 
             let converted_arrays = arrays
                 .into_par_iter()
@@ -180,9 +184,9 @@ pub(crate) async fn local_parquet_read_async(
                     Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Table::from_columns(converted_arrays)
+            Ok((metadata, Table::from_columns(converted_arrays)?))
         })();
-        let _ = send.send(final_table);
+        let _ = send.send(result);
     });
 
     recv.await.context(super::OneShotRecvSnafu {})?
@@ -195,7 +199,11 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-) -> super::Result<(arrow2::datatypes::Schema, Vec<ArrowChunk>)> {
+) -> super::Result<(
+    parquet2::metadata::FileMetaData,
+    arrow2::datatypes::Schema,
+    Vec<ArrowChunk>,
+)> {
     let (send, recv) = tokio::sync::oneshot::channel();
     let uri = uri.to_string();
     rayon::spawn(move || {
