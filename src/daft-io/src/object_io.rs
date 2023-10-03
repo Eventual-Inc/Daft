@@ -129,6 +129,10 @@ pub(crate) trait ObjectSource: Sync + Send {
         let delimiter = delimiter.to_string();
         let s = stream! {
             let lsr = self.ls(&uri, delimiter.as_str(), posix, None, page_size).await?;
+            for fm in lsr.files {
+                yield Ok(fm);
+            }
+
             let mut continuation_token = lsr.continuation_token.clone();
             while continuation_token.is_some() {
                 let lsr = self.ls(&uri, delimiter.as_str(), posix, continuation_token.as_deref(), page_size).await?;
