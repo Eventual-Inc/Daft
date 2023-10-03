@@ -98,10 +98,10 @@ pub mod pylib {
                 columns.as_deref(),
                 start_offset,
                 num_rows,
-                row_groups.as_deref(),
+                row_groups,
                 io_client,
                 multithreaded_io.unwrap_or(true),
-                &schema_infer_options,
+                schema_infer_options,
             )
         })?;
         let (schema, all_arrays) = read_parquet_result;
@@ -180,7 +180,7 @@ pub mod pylib {
                 io_client,
                 num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
-                &schema_infer_options,
+                schema_infer_options,
             )
         })?;
         let pyarrow = py.import("pyarrow")?;
