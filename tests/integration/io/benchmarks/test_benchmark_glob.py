@@ -108,6 +108,16 @@ def generate_right_skew_dirs_partitioned_data():
     return other_partition_paths + last_partition_paths
 
 
+def generate_bushy_late_partitioned_data():
+    # Total of 10k files (10^3 * 10)
+    return [f"single/single/part_col={val}" + f"/{i}.parquet" for i in range(10) for val in range(1000)]
+
+
+def generate_bushy_early_partitioned_data():
+    # Total of 10k files (10^3 * 10)
+    return [f"part_col={val}/single/single" + f"/{i}.parquet" for i in range(10) for val in range(1000)]
+
+
 FILE_NAME_GENERATORS = {
     "one-file-per-dir": generate_one_file_per_dir,
     "partitioned-data-balanced": generate_balanced_partitioned_data,
@@ -115,6 +125,8 @@ FILE_NAME_GENERATORS = {
     "partitioned-data-right-skew-files": generate_right_skew_partitioned_data,
     "partitioned-data-left-skew-dirs": generate_left_skew_dirs_partitioned_data,
     "partitioned-data-right-skew-dirs": generate_right_skew_dirs_partitioned_data,
+    "partitioned-data-bushy-early": generate_bushy_early_partitioned_data,
+    "partitioned-data-bushy-late": generate_bushy_late_partitioned_data,
 }
 
 
@@ -127,6 +139,8 @@ FILE_NAME_GENERATORS = {
         "partitioned-data-right-skew-files",
         "partitioned-data-right-skew-dirs",
         "partitioned-data-left-skew-dirs",
+        "partitioned-data-bushy-early",
+        "partitioned-data-bushy-late",
     ],
 )
 def setup_bucket(request, minio_io_config):
@@ -195,7 +209,7 @@ def test_benchmark_glob_boto3_list(benchmark, setup_bucket, minio_io_config, pag
 
 @pytest.mark.benchmark(group="glob")
 @pytest.mark.integration()
-@pytest.mark.parametrize("fanout_limit", [8, 64, 128, 256, 512])
+@pytest.mark.parametrize("fanout_limit", [128, 256])
 @pytest.mark.parametrize("page_size", [100, 1000])
 def test_benchmark_glob_daft(benchmark, setup_bucket, minio_io_config, fanout_limit, page_size):
     results = benchmark(
