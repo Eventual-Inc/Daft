@@ -1,17 +1,15 @@
-use std::{collections::HashSet, fs::File, sync::Arc, time::SystemTime};
+use std::{collections::HashSet, fs::File};
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_table::Table;
 use itertools::Itertools;
-use rayon::prelude::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefMutIterator, ParallelBridge,
-};
+use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
 use snafu::ResultExt;
 
 use crate::{
-    file::{self, build_row_ranges},
+    file::build_row_ranges,
     read::{ArrowChunk, ParquetSchemaInferenceOptions},
 };
 
@@ -43,7 +41,7 @@ fn prune_fields_from_schema(
         }
         Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
     } else {
-        return Ok(schema);
+        Ok(schema)
     }
 }
 
@@ -186,8 +184,8 @@ pub(crate) async fn local_parquet_read_async(
         })();
         let _ = send.send(final_table);
     });
-    let v = recv.await.context(super::OneShotRecvSnafu {})?;
-    v
+
+    recv.await.context(super::OneShotRecvSnafu {})?
 }
 
 pub(crate) async fn local_parquet_read_into_arrow_async(
@@ -211,6 +209,6 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
         );
         let _ = send.send(v);
     });
-    let v = recv.await.context(super::OneShotRecvSnafu {})?;
-    v
+
+    recv.await.context(super::OneShotRecvSnafu {})?
 }

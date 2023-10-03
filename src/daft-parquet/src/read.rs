@@ -84,7 +84,7 @@ async fn read_parquet_single(
         }
         let builder = builder.limit(start_offset, num_rows)?;
 
-        let rows_per_row_groups = builder
+        let _rows_per_row_groups = builder
             .metadata()
             .row_groups
             .clone()
@@ -97,9 +97,9 @@ async fn read_parquet_single(
             builder
         };
 
-        let metadata_num_rows = builder.metadata().num_rows;
+        let _metadata_num_rows = builder.metadata().num_rows;
 
-        let metadata_num_columns = builder.parquet_schema().fields().len();
+        let _metadata_num_columns = builder.parquet_schema().fields().len();
 
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client)?;
@@ -198,7 +198,7 @@ async fn read_parquet_single_into_arrow(
         }
         let builder = builder.limit(start_offset, num_rows)?;
 
-        let rows_per_row_groups = builder
+        let _rows_per_row_groups = builder
             .metadata()
             .row_groups
             .clone()
@@ -211,9 +211,9 @@ async fn read_parquet_single_into_arrow(
             builder
         };
 
-        let metadata_num_rows = builder.metadata().num_rows;
+        let _metadata_num_rows = builder.metadata().num_rows;
 
-        let metadata_num_columns = builder.parquet_schema().fields().len();
+        let _metadata_num_columns = builder.parquet_schema().fields().len();
 
         let parquet_reader = builder.build()?;
 
