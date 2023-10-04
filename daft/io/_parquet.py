@@ -2,8 +2,6 @@
 
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
-import fsspec
-
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -24,9 +22,8 @@ if TYPE_CHECKING:
 def read_parquet(
     path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
-    fs: Optional[fsspec.AbstractFileSystem] = None,
     io_config: Optional["IOConfig"] = None,
-    use_native_downloader: bool = False,
+    use_native_downloader: bool = True,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -40,8 +37,6 @@ def read_parquet(
         path (str): Path to Parquet file (allows for wildcards)
         schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
             disable all schema inference on data being read, and throw an error if data being read is incompatible.
-        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
-            By default, Daft will automatically construct a FileSystem instance internally.
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
@@ -57,7 +52,7 @@ def read_parquet(
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(io_config))
     else:
-        storage_config = StorageConfig.python(PythonStorageConfig(fs))
+        storage_config = StorageConfig.python(PythonStorageConfig(None))
 
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config, fs=fs)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)

@@ -4,8 +4,6 @@ import dataclasses
 import pathlib
 import sys
 import urllib.parse
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -25,7 +23,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.daft import FileFormat, FileInfos, NativeStorageConfig, StorageConfig
+from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -298,56 +296,26 @@ def _path_is_glob(path: str) -> bool:
 def glob_path_with_stats(
     path: str,
     file_format: FileFormat | None,
-    fs: fsspec.AbstractFileSystem,
-    storage_config: StorageConfig | None,
+    io_config: IOConfig | None,
 ) -> FileInfos:
     """Glob a path, returning a list ListingInfo."""
-    protocol = get_protocol_from_path(path)
-
-    filepaths_to_infos: dict[str, dict[str, Any]] = defaultdict(dict)
-
-    if _path_is_glob(path):
-        globbed_data = fs.glob(path, detail=True)
-
-        for path, details in globbed_data.items():
-            path = _ensure_path_protocol(protocol, path)
-            filepaths_to_infos[path]["size"] = details["size"]
-
-    elif fs.isfile(path):
-        file_info = fs.info(path)
-
-        filepaths_to_infos[path]["size"] = file_info["size"]
-
-    elif fs.isdir(path):
-        files_info = fs.ls(path, detail=True)
-
-        for file_info in files_info:
-            path = file_info["name"]
-            path = _ensure_path_protocol(protocol, path)
-            filepaths_to_infos[path]["size"] = file_info["size"]
-
-    else:
-        raise FileNotFoundError(f"File or directory not found: {path}")
+    files = io_glob(path, io_config=io_config)
+    filepaths_to_infos = {f["path"]: {"size": f["size"], "type": f["type"]} for f in files}
 
     # Set number of rows if available.
     if file_format is not None and file_format == FileFormat.Parquet:
-        config = storage_config.config if storage_config is not None else None
-        if config is not None and isinstance(config, NativeStorageConfig):
-            parquet_statistics = Table.read_parquet_statistics(
-                list(filepaths_to_infos.keys()), config.io_config
-            ).to_pydict()
-            for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
-                filepaths_to_infos[path]["rows"] = num_rows
-        else:
-            parquet_metadatas = ThreadPoolExecutor().map(_get_parquet_metadata_single, filepaths_to_infos.keys())
-            for path, parquet_metadata in zip(filepaths_to_infos.keys(), parquet_metadatas):
-                filepaths_to_infos[path]["rows"] = parquet_metadata.num_rows
+        parquet_statistics = Table.read_parquet_statistics(
+            list(filepaths_to_infos.keys()),
+            io_config=io_config,
+        ).to_pydict()
+        for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
+            filepaths_to_infos[path]["rows"] = num_rows
 
     file_paths = []
     file_sizes = []
     num_rows = []
     for path, infos in filepaths_to_infos.items():
-        file_paths.append(_ensure_path_protocol(protocol, path))
+        file_paths.append(path)
         file_sizes.append(infos.get("size"))
         num_rows.append(infos.get("rows"))
 

@@ -5,7 +5,6 @@ import sys
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator, TypeVar, overload
 
-import fsspec
 import pyarrow as pa
 
 from daft import context
@@ -424,9 +423,8 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         self,
         max_connections: int = 32,
         on_error: Literal["raise"] | Literal["null"] = "raise",
-        fs: fsspec.AbstractFileSystem | None = None,
         io_config: IOConfig | None = None,
-        use_native_downloader: bool = False,
+        use_native_downloader: bool = True,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
@@ -442,7 +440,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
-        if fs is None and use_native_downloader:
+        if use_native_downloader:
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True
@@ -463,7 +461,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 Expression._from_pyexpr(self._expr),
                 max_worker_threads=max_connections,
                 on_error=on_error,
-                fs=fs,
             )
 
 

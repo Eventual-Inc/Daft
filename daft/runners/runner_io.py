@@ -8,6 +8,7 @@ from daft.daft import (
     FileFormat,
     FileFormatConfig,
     FileInfos,
+    IOConfig,
     JsonSourceConfig,
     ParquetSourceConfig,
     StorageConfig,
@@ -17,7 +18,7 @@ from daft.runners.partitioning import TableParseCSVOptions
 from daft.table import schema_inference
 
 if TYPE_CHECKING:
-    import fsspec
+    pass
 
 PartitionT = TypeVar("PartitionT")
 
@@ -33,8 +34,7 @@ class RunnerIO:
         self,
         source_path: list[str],
         file_format_config: FileFormatConfig | None = None,
-        fs: fsspec.AbstractFileSystem | None = None,
-        storage_config: StorageConfig | None = None,
+        io_config: IOConfig | None = None,
     ) -> FileInfos:
         """Globs the specified filepath to construct a FileInfos object containing file and dir metadata.
 

@@ -4,8 +4,6 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import fsspec
-
 from daft import filesystem
 from daft.datatype import DataType
 from daft.series import Series
@@ -24,9 +22,7 @@ def _worker_thread_initializer() -> None:
     thread_local.filesystems_cache = {}
 
 
-def _download(
-    path: str | None, on_error: Literal["raise"] | Literal["null"], fs: fsspec.AbstractFileSystem | None
-) -> bytes | None:
+def _download(path: str | None, on_error: Literal["raise"] | Literal["null"]) -> bytes | None:
     from loguru import logger
 
     if path is None:
@@ -34,13 +30,11 @@ def _download(
     protocol = filesystem.get_protocol_from_path(path)
 
     # If no fsspec filesystem provided, first check the cache.
-    if fs is None:
-        fs = thread_local.filesystems_cache.get(protocol, None)
+    # If none in the cache, create one based on the path protocol.
+    fs = thread_local.filesystems_cache.get(protocol, None)
+    fs = filesystem.get_filesystem(protocol)
+    thread_local.filesystems_cache[protocol] = fs
 
-    # If no fsspec filesystem provided and none in the cache, create one based on the path protocol.
-    if fs is None:
-        fs = filesystem.get_filesystem(protocol)
-        thread_local.filesystems_cache[protocol] = fs
     try:
         return fs.cat_file(path)
     except Exception as e:
@@ -72,7 +66,6 @@ def download_udf(
     urls,
     max_worker_threads: int = 8,
     on_error: Literal["raise"] | Literal["null"] = "raise",
-    fs: fsspec.AbstractFileSystem | None = None,
 ):
     """Downloads the contents of the supplied URLs.
 
@@ -91,7 +84,7 @@ def download_udf(
 
     executor = ThreadPoolExecutor(max_workers=max_worker_threads, initializer=_worker_thread_initializer)
     results: list[bytes | None] = [None for _ in range(len(urls))]
-    future_to_idx = {executor.submit(_download, urls_pylist[i], on_error, fs): i for i in range(len(urls))}
+    future_to_idx = {executor.submit(_download, urls_pylist[i], on_error): i for i in range(len(urls))}
     for future in as_completed(future_to_idx):
         results[future_to_idx[future]] = future.result()
 
