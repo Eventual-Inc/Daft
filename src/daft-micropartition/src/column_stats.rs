@@ -18,6 +18,18 @@ enum TruthValue {
     Always,
 }
 
+impl std::fmt::Display for TruthValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::Never => "Never",
+            Self::Sometimes => "Sometimes",
+            Self::Always => "Always",
+        };
+
+        write!(f, "TruthValue: {value}",)
+    }
+}
+
 impl ColumnStatistics {
     fn as_truth_value(&self) -> TruthValue {
         let lower = self.lower.bool().unwrap().get(0).unwrap();
@@ -115,13 +127,13 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
         todo!()
     }
     fn gt(&self, rhs: &ColumnStatistics) -> Self::Output {
-        // lower_bound: some value that can be greater (self.upper > rhs.lower)
-        // upper_bound: always greater (self.lower > rhs.upper)
+        // lower_bound: always greater (self.lower > rhs.upper)
+        // upper_bound: some value that can be greater (self.upper > rhs.lower)
         let sometimes_greater = self.upper.gt(&rhs.lower).unwrap().into_series();
         let always_greater = self.lower.gt(&rhs.upper).unwrap().into_series();
         ColumnStatistics {
-            lower: sometimes_greater,
-            upper: always_greater,
+            lower: always_greater,
+            upper: sometimes_greater,
             count: self.count.max(rhs.count),
             null_count: self.null_count.max(rhs.null_count),
             num_bytes: self.num_bytes.max(rhs.num_bytes),
@@ -131,13 +143,13 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
         todo!()
     }
     fn lt(&self, rhs: &ColumnStatistics) -> Self::Output {
-        // lower_bound: some value that can be less than (self.lower < rhs.upper)
-        // upper_bound: always less than (self.upper < rhs.lower)
+        // lower_bound: always less than (self.upper < rhs.lower)
+        // upper_bound: some value that can be less than (self.lower < rhs.upper)
         let sometimes_lt = self.lower.lt(&self.upper).unwrap().into_series();
         let always_lt = self.upper.lt(&self.lower).unwrap().into_series();
         ColumnStatistics {
-            lower: sometimes_lt,
-            upper: always_lt,
+            lower: always_lt,
+            upper: sometimes_lt,
             count: self.count.max(rhs.count),
             null_count: self.null_count.max(rhs.null_count),
             num_bytes: self.num_bytes.max(rhs.num_bytes),
@@ -177,7 +189,7 @@ mod test {
         };
         println!("{l}");
         println!("{r}");
-        println!("{}", l.equal(&r));
+        println!("{}", l.lt(&r).as_truth_value());
 
         Ok(())
     }
