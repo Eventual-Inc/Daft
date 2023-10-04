@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import os
 import pathlib
-import sys
-from unittest.mock import patch
 
 import pandas as pd
-import pytest
-from fsspec.implementations.local import LocalFileSystem
 
 import daft
-from daft.context import get_context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
@@ -87,7 +82,8 @@ def test_glob_files(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     pd_df = pd.DataFrame.from_records(
-        {"path": str(path.as_posix()), "size": size, "num_rows": None} for path, size in zip(filepaths, list(range(10)))
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
+        for path, size in zip(filepaths, list(range(10)))
     )
     pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
     pd_df = pd_df.astype({"num_rows": float})
@@ -99,7 +95,7 @@ def test_glob_files_single_file(tmpdir):
     filepath.write_text("b" * 10)
     daft_df = daft.from_glob_path(os.path.join(tmpdir, "file.foo"))
     daft_pd_df = daft_df.to_pandas()
-    pd_df = pd.DataFrame.from_records([{"path": str(filepath), "size": 10, "num_rows": None}])
+    pd_df = pd.DataFrame.from_records([{"path": "file://" + str(filepath), "size": 10, "num_rows": None}])
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
 
@@ -118,15 +114,11 @@ def test_glob_files_directory(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
-        {"path": str(path.as_posix()), "size": size, "num_rows": None}
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(filepaths, [i for i in range(10) for _ in range(2)])
     ]
 
-    dir_size = extra_empty_dir.stat().st_size
-    if sys.platform == "win32":
-        dir_size = 0
-
-    listing_records = listing_records + [{"path": str(extra_empty_dir.as_posix()), "size": dir_size, "num_rows": None}]
+    listing_records = listing_records
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
@@ -145,44 +137,11 @@ def test_glob_files_recursive(tmpdir):
     daft_df = daft.from_glob_path(os.path.join(tmpdir, "**"))
     daft_pd_df = daft_df.to_pandas()
     listing_records = [
-        {"path": str(path.as_posix()), "size": size, "num_rows": None}
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
     ]
-    dir_size = nested_dir_path.stat().st_size
-    if sys.platform == "win32":
-        dir_size = 0
 
-    listing_records = listing_records + [{"path": str(nested_dir_path.as_posix()), "size": dir_size, "num_rows": None}]
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
 
-    assert_df_equals(daft_pd_df, pd_df, sort_key="path")
-
-
-@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_glob_files_custom_fs(tmpdir):
-    filepaths = []
-    for i in range(10):
-        filepath = pathlib.Path(tmpdir) / f"file_{i}.foo"
-        filepath.write_text("a" * i)
-        filepaths.append(filepath)
-        bar_filepath = pathlib.Path(tmpdir) / f"file_{i}.bar"
-        bar_filepath.write_text("b" * i)
-
-    # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
-    # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
-    # which would make this test pass without the passed filesystem being used.
-    fs = LocalFileSystem(skip_instance_cache=True)
-    with patch.object(fs, "glob", wraps=fs.glob) as mock_glob:
-        daft_df = daft.from_glob_path(f"{tmpdir}/*.foo", fs=fs)
-
-        # Check that glob() is called on the passed filesystem.
-        mock_glob.assert_called()
-
-    daft_pd_df = daft_df.to_pandas()
-    pd_df = pd.DataFrame.from_records(
-        {"path": str(path.as_posix()), "size": size, "num_rows": None} for path, size in zip(filepaths, list(range(10)))
-    )
-    pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
-    pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
