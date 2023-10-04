@@ -5,13 +5,17 @@ from pathlib import Path
 import pytest
 from fsspec.implementations.http import HTTPFileSystem
 
-from daft.daft import io_list
+from daft.daft import io_glob
 from tests.integration.io.conftest import mount_data_nginx
 
 
 def compare_http_result(daft_ls_result: list, fsspec_result: list):
     daft_files = [(f["path"], f["type"].lower(), f["size"]) for f in daft_ls_result]
     httpfs_files = [(f["name"], f["type"], f["size"]) for f in fsspec_result]
+
+    # io_glob doesn't return directory entries
+    httpfs_files = [(p, t, s) for p, t, s in httpfs_files if t == "file"]
+
     assert len(daft_files) == len(httpfs_files)
     assert sorted(daft_files) == sorted(httpfs_files)
 
@@ -47,14 +51,14 @@ def test_http_flat_directory_listing(path, nginx_http_url):
     http_path = f"{nginx_http_url}{path}"
     fs = HTTPFileSystem()
     fsspec_result = fs.ls(http_path, detail=True)
-    daft_ls_result = io_list(http_path)
+    daft_ls_result = io_glob(http_path)
     compare_http_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
-def test_gs_single_file_listing(nginx_http_url):
+def test_http_single_file_listing(nginx_http_url):
     path = f"{nginx_http_url}/test_ls/file.txt"
-    daft_ls_result = io_list(path)
+    daft_ls_result = io_glob(path)
 
     # NOTE: FSSpec will return size 0 list for this case, but we want to return 1 element to be
     # consistent with behavior of our other file listing utilities
@@ -73,22 +77,15 @@ def test_http_notfound(nginx_http_url):
         fs.ls(path, detail=True)
 
     with pytest.raises(FileNotFoundError, match=path):
-        io_list(path)
+        io_glob(path)
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize(
-    "path",
-    [
-        f"",
-        f"/",
-    ],
-)
-def test_http_flat_directory_listing_recursive(path, nginx_http_url):
-    http_path = f"{nginx_http_url}/{path}"
+def test_http_flat_directory_listing_recursive(nginx_http_url):
+    http_path = f"{nginx_http_url}/**"
     fs = HTTPFileSystem()
-    fsspec_result = list(fs.glob(http_path.rstrip("/") + "/**", detail=True).values())
-    daft_ls_result = io_list(http_path, recursive=True)
+    fsspec_result = list(fs.glob(http_path, detail=True).values())
+    daft_ls_result = io_glob(http_path)
     compare_http_result(daft_ls_result, fsspec_result)
 
 
@@ -107,7 +104,7 @@ def test_http_listing_absolute_urls(nginx_config, tmpdir):
 
     with mount_data_nginx(nginx_config, tmpdir):
         http_path = f"{nginx_http_url}/index.html"
-        daft_ls_result = io_list(http_path, recursive=False)
+        daft_ls_result = io_glob(http_path)
 
         # NOTE: Cannot use fsspec here because they do not correctly find the links
         # fsspec_result = fs.ls(http_path, detail=True)
@@ -115,7 +112,6 @@ def test_http_listing_absolute_urls(nginx_config, tmpdir):
 
         assert daft_ls_result == [
             {"type": "File", "path": f"{nginx_http_url}/other.html", "size": None},
-            {"type": "Directory", "path": f"{nginx_http_url}/dir/", "size": None},
         ]
 
 
@@ -134,7 +130,7 @@ def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
 
     with mount_data_nginx(nginx_config, tmpdir):
         http_path = f"{nginx_http_url}/index.html"
-        daft_ls_result = io_list(http_path, recursive=False)
+        daft_ls_result = io_glob(http_path)
 
         # NOTE: Cannot use fsspec here because they do not correctly find the links
         # fsspec_result = fs.ls(http_path, detail=True)
@@ -142,5 +138,4 @@ def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
 
         assert daft_ls_result == [
             {"type": "File", "path": f"{nginx_http_url}/other.html", "size": None},
-            {"type": "Directory", "path": f"{nginx_http_url}/dir/", "size": None},
         ]
