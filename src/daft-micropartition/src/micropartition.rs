@@ -1,29 +1,18 @@
 use daft_table::Table;
 
-
-
-
-struct DeferredLoadingParams {
-
-}
+struct DeferredLoadingParams {}
 
 enum TableState {
     Unloaded(DeferredLoadingParams),
-    Loaded(Vec<Table>)
+    Loaded(Vec<Table>),
 }
 
-
-
-
-struct TableStatistics {
-
-}
+struct TableStatistics {}
 
 struct MicroPartition {
     state: std::sync::Mutex<TableState>,
-    statistics: TableStatistics
+    statistics: TableStatistics,
 }
-
 
 impl MicroPartition {
     fn tables_or_read(&self) -> &[&Table] {
