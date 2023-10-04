@@ -155,6 +155,13 @@ def test_parquet_read_data_limit_rows(row_group_size, use_native_downloader):
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
+def test_parquet_read_data_multi_row_groups():
+    path = "tests/assets/parquet-data/mvp.parquet"
+    table = Table.read_parquet(path)
+    expected = Table.from_arrow(papq.read_table(path))
+    assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_parquet_read_data_select_columns(use_native_downloader):
     with _parquet_write_helper(
