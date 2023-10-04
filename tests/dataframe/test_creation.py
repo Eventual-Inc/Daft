@@ -553,6 +553,9 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.skip(
+    reason="JSON + HTTP reads currently broken until we have native json reads, since we deprecated fsspec"
+)
 def test_create_dataframe_json_https() -> None:
     df = daft.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
     df.collect()

@@ -3,10 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pyarrow as pa
 import pytest
+from pyarrow import fs as pafs
 from pyarrow import parquet as pq
 
 import daft
-from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
+from daft.filesystem import get_protocol_from_path
 from daft.table import Table
 
 # Taken from our spreadsheet of files that Daft should be able to handle
@@ -158,10 +159,11 @@ DAFT_CAN_READ_FILES = [
         "parquet-benchmarking/mvp",
         "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
     ),
-    (
-        "azure/mvp",
-        "az://public-anonymous/mvp.parquet",
-    ),
+    # Commented out because we don't have fsspec to hit this anymore
+    # (
+    #     "azure/mvp",
+    #     "az://public-anonymous/mvp.parquet",
+    # ),
     (
         "gcs/mvp",
         "gs://daft-public-data-gs/mvp.parquet",
@@ -189,14 +191,14 @@ def parquet_file(request) -> tuple[str, str]:
 
 
 def read_parquet_with_pyarrow(path) -> pa.Table:
-    kwargs = {}
     if get_protocol_from_path(path) == "s3":
-        kwargs["anon"] = True
-    if get_protocol_from_path(path) == "az":
-        kwargs["account_name"] = "dafttestdata"
-        kwargs["anon"] = True
+        fs = pafs.S3FileSystem(anonymous=True)
+    # Requires fsspec until PyArrow builds an azure reader
+    # if get_protocol_from_path(path) == "az":
+    #     fs = pafs.S3FileSystem(anonymous=True)
+    #     kwargs["account_name"] = "dafttestdata"
+    #     kwargs["anon"] = True
 
-    fs = get_filesystem_from_path(path, **kwargs)
     table = pq.read_table(path, filesystem=fs)
     return table
 

@@ -12,16 +12,9 @@ else:
 
 from typing import Any
 
-import fsspec
 import pyarrow as pa
-from fsspec.registry import get_filesystem_class
 from loguru import logger
-from pyarrow.fs import (
-    FileSystem,
-    FSSpecHandler,
-    PyFileSystem,
-    _resolve_filesystem_and_path,
-)
+from pyarrow.fs import FileSystem, _resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.table import Table
@@ -81,22 +74,6 @@ def _get_s3fs_kwargs() -> dict[str, Any]:
     return kwargs
 
 
-def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
-    if protocol == "s3" or protocol == "s3a":
-        kwargs = {**kwargs, **_get_s3fs_kwargs()}
-
-    try:
-        klass = fsspec.get_filesystem_class(protocol)
-    except ImportError:
-        logger.error(
-            f"Error when importing dependencies for accessing data with: {protocol}. Please ensure that getdaft was installed with the appropriate extra dependencies (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
-        )
-        raise
-
-    fs = klass(**kwargs)
-    return fs
-
-
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
     parsed_scheme = parsed_scheme.lower()
@@ -127,15 +104,9 @@ def canonicalize_protocol(protocol: str) -> str:
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
 
 
-def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
-    protocol = get_protocol_from_path(path)
-    fs = get_filesystem(protocol, **kwargs)
-    return fs
-
-
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
-    filesystem: FileSystem | fsspec.AbstractFileSystem | None = None,
+    filesystem: FileSystem | None = None,
 ) -> tuple[list[str], FileSystem]:
     """
     Resolves and normalizes all provided paths, infers a filesystem from the
@@ -175,9 +146,6 @@ def _resolve_paths_and_filesystem(
     if filesystem is None:
         # Try to get filesystem from protocol -> fs cache.
         filesystem = _get_fs_from_cache(protocol)
-    elif isinstance(filesystem, fsspec.AbstractFileSystem):
-        # Wrap fsspec filesystems so they are valid pyarrow filesystems.
-        filesystem = PyFileSystem(FSSpecHandler(filesystem))
 
     # Resolve path and filesystem for the first path.
     # We use this first resolved filesystem for validation on all other paths.
@@ -203,7 +171,7 @@ def _resolve_paths_and_filesystem(
 
 def _resolve_path_and_filesystem(
     path: str,
-    filesystem: FileSystem | fsspec.AbstractFileSystem | None,
+    filesystem: FileSystem | None,
 ) -> tuple[str, FileSystem]:
     """
     Resolves and normalizes the provided path, infers a filesystem from the
@@ -229,47 +197,13 @@ def _resolve_path_and_filesystem(
         resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, filesystem)
     except pa.lib.ArrowInvalid as e:
         if "Unrecognized filesystem type in URI" in str(e):
-            # Fall back to fsspec.
-            protocol = get_protocol_from_path(path)
-            logger.debug(f"pyarrow doesn't support paths with protocol {protocol}, falling back to fsspec.")
-            try:
-                fsspec_fs_cls = get_filesystem_class(protocol)
-            except ValueError:
-                raise ValueError("pyarrow and fsspec don't recognize protocol {protocol} for path {path}.")
-            fsspec_fs = fsspec_fs_cls()
-            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, fsspec_fs)
+            logger.error(f"Daft does not yet support reading natively from url: {path} - please make an issue!")
+            raise
         else:
             raise
 
-    # If filesystem is fsspec HTTPFileSystem, the protocol/scheme of paths
-    # should not be unwrapped/removed, because HTTPFileSystem expects full file
-    # paths including protocol/scheme. This is different behavior compared to
-    # pyarrow filesystems.
-    if not _is_http_fs(resolved_filesystem):
-        resolved_path = _unwrap_protocol(resolved_path)
-
     resolved_path = resolved_filesystem.normalize_path(resolved_path)
     return resolved_path, resolved_filesystem
-
-
-def _is_http_fs(fs: FileSystem) -> bool:
-    """Returns whether the provided pyarrow filesystem is an HTTP filesystem."""
-    from fsspec.implementations.http import HTTPFileSystem
-
-    return (
-        isinstance(fs, PyFileSystem)
-        and isinstance(fs.handler, FSSpecHandler)
-        and isinstance(fs.handler.fs, HTTPFileSystem)
-    )
-
-
-def _unwrap_protocol(path):
-    """
-    Slice off any protocol prefixes on path.
-    """
-    parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
-    query = "?" + parsed.query if parsed.query else ""  # support '?' in path
-    return parsed.netloc + parsed.path + query
 
 
 ###
