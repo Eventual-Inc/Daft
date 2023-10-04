@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use common_error::DaftResult;
 use daft_core::{
     array::ops::{DaftCompare, DaftLogical},
@@ -13,17 +15,17 @@ struct ColumnStatistics {
 }
 
 enum TruthValue {
-    Never,
-    Sometimes,
-    Always,
+    False,
+    Maybe,
+    True,
 }
 
 impl std::fmt::Display for TruthValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            Self::Never => "Never",
-            Self::Sometimes => "Sometimes",
-            Self::Always => "Always",
+            Self::False => "False",
+            Self::Maybe => "Maybe",
+            Self::True => "True",
         };
 
         write!(f, "TruthValue: {value}",)
@@ -35,9 +37,9 @@ impl ColumnStatistics {
         let lower = self.lower.bool().unwrap().get(0).unwrap();
         let upper = self.upper.bool().unwrap().get(0).unwrap();
         match (lower, upper) {
-            (false, false) => TruthValue::Never,
-            (false, true) => TruthValue::Sometimes,
-            (true, true) => TruthValue::Always,
+            (false, false) => TruthValue::False,
+            (false, true) => TruthValue::Maybe,
+            (true, true) => TruthValue::True,
             (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
         }
     }
@@ -85,12 +87,27 @@ impl std::ops::Sub for &ColumnStatistics {
     }
 }
 
+impl std::ops::Not for &ColumnStatistics {
+    type Output = ColumnStatistics;
+    fn not(self) -> Self::Output {
+        let lower = (&self.upper).not().unwrap();
+        let upper = (&self.lower).not().unwrap();
+
+        ColumnStatistics {
+            lower: lower,
+            upper: upper,
+            count: self.count,
+            null_count: self.null_count,
+            num_bytes: self.num_bytes,
+        }
+    }
+}
+
 impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
     type Output = ColumnStatistics;
     fn equal(&self, rhs: &ColumnStatistics) -> Self::Output {
         // lower_bound: do they exactly overlap
         // upper_bound: is there any overlap
-
         let exactly_overlap = self
             .lower
             .equal(&rhs.lower)
@@ -124,39 +141,59 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
     }
     fn not_equal(&self, rhs: &ColumnStatistics) -> Self::Output {
         // invert of equal
-        todo!()
+        self.equal(rhs).not()
     }
+
     fn gt(&self, rhs: &ColumnStatistics) -> Self::Output {
-        // lower_bound: always greater (self.lower > rhs.upper)
+        // lower_bound: True greater (self.lower > rhs.upper)
         // upper_bound: some value that can be greater (self.upper > rhs.lower)
-        let sometimes_greater = self.upper.gt(&rhs.lower).unwrap().into_series();
+        let maybe_greater = self.upper.gt(&rhs.lower).unwrap().into_series();
         let always_greater = self.lower.gt(&rhs.upper).unwrap().into_series();
         ColumnStatistics {
             lower: always_greater,
-            upper: sometimes_greater,
+            upper: maybe_greater,
             count: self.count.max(rhs.count),
             null_count: self.null_count.max(rhs.null_count),
             num_bytes: self.num_bytes.max(rhs.num_bytes),
         }
     }
+
     fn gte(&self, rhs: &ColumnStatistics) -> Self::Output {
-        todo!()
+        let maybe_gte = self.upper.gte(&rhs.lower).unwrap().into_series();
+        let always_gte = self.lower.gte(&rhs.upper).unwrap().into_series();
+        ColumnStatistics {
+            lower: always_gte,
+            upper: maybe_gte,
+            count: self.count.max(rhs.count),
+            null_count: self.null_count.max(rhs.null_count),
+            num_bytes: self.num_bytes.max(rhs.num_bytes),
+        }
     }
+
     fn lt(&self, rhs: &ColumnStatistics) -> Self::Output {
-        // lower_bound: always less than (self.upper < rhs.lower)
+        // lower_bound: True less than (self.upper < rhs.lower)
         // upper_bound: some value that can be less than (self.lower < rhs.upper)
-        let sometimes_lt = self.lower.lt(&self.upper).unwrap().into_series();
+        let maybe_lt = self.lower.lt(&self.upper).unwrap().into_series();
         let always_lt = self.upper.lt(&self.lower).unwrap().into_series();
         ColumnStatistics {
             lower: always_lt,
-            upper: sometimes_lt,
+            upper: maybe_lt,
             count: self.count.max(rhs.count),
             null_count: self.null_count.max(rhs.null_count),
             num_bytes: self.num_bytes.max(rhs.num_bytes),
         }
     }
+
     fn lte(&self, rhs: &ColumnStatistics) -> Self::Output {
-        todo!()
+        let maybe_lte = self.lower.lte(&self.upper).unwrap().into_series();
+        let always_lte = self.upper.lte(&self.lower).unwrap().into_series();
+        ColumnStatistics {
+            lower: always_lte,
+            upper: maybe_lte,
+            count: self.count.max(rhs.count),
+            null_count: self.null_count.max(rhs.null_count),
+            num_bytes: self.num_bytes.max(rhs.num_bytes),
+        }
     }
 }
 
@@ -166,7 +203,7 @@ mod test {
     use daft_core::{
         array::ops::DaftCompare,
         datatypes::{Int32Array, Int64Array},
-        IntoSeries, Series,
+        IntoSeries,
     };
 
     use super::ColumnStatistics;
