@@ -85,6 +85,12 @@ async fn read_parquet_single(
         let builder = builder.limit(start_offset, num_rows)?;
         let metadata = builder.metadata().clone();
 
+        let builder = if let Some(ref row_groups) = row_groups {
+            builder.set_row_groups(row_groups)?
+        } else {
+            builder
+        };
+
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client)?;
         Ok((

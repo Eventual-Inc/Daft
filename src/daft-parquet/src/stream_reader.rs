@@ -90,7 +90,8 @@ pub(crate) fn local_parquet_read_into_arrow(
 
     let columns_iters_per_rg = row_ranges
         .iter()
-        .map(|rg_range| {
+        .enumerate()
+        .map(|(req_idx, rg_range)| {
             let rg = metadata.row_groups.get(rg_range.row_group_index).unwrap();
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
@@ -105,14 +106,14 @@ pub(crate) fn local_parquet_read_into_arrow(
                 single_rg_column_iter
                     .into_iter()
                     .enumerate()
-                    .map(move |(idx, iter)| (rg_range, idx, iter)),
+                    .map(move |(idx, iter)| (req_idx, rg_range, idx, iter)),
             )
         })
         .flatten_ok();
 
     let columns_iters_per_rg = columns_iters_per_rg.par_bridge();
     let collected_columns = columns_iters_per_rg.map(|payload: Result<_, _>| {
-        let (row_range, col_idx, arr_iter) = payload?;
+        let (req_idx, row_range, col_idx, arr_iter) = payload?;
 
         let mut arrays_so_far = vec![];
         let mut curr_index = 0;
@@ -132,17 +133,20 @@ pub(crate) fn local_parquet_read_into_arrow(
                 arrays_so_far.push(arr);
             }
         }
-        Ok((col_idx, arrays_so_far))
+        Ok((req_idx, col_idx, arrays_so_far))
     });
     let mut all_columns = vec![Vec::with_capacity(num_expected_arrays); schema.fields.len()];
-    let all_computed = collected_columns
+    let mut all_computed = collected_columns
         .collect::<Result<Vec<_>, _>>()
         .with_context(|_| super::UnableToCreateChunkFromStreamingFileReaderSnafu {
             path: uri.to_string(),
         })?;
-    for (idx, v) in all_computed {
+
+    // sort by row groups that were requested
+    all_computed.sort_by_key(|(req_idx, _, _)| *req_idx);
+    for (_, col_idx, v) in all_computed {
         all_columns
-            .get_mut(idx)
+            .get_mut(col_idx)
             .expect("array index during scatter out of index")
             .extend(v);
     }
