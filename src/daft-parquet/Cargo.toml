@@ -8,6 +8,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
+itertools = {workspace = true}
 log = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}

@@ -1124,6 +1124,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
+ "itertools",
  "log",
  "parquet2",
  "pyo3",

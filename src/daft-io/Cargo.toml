@@ -20,7 +20,7 @@ globset = "0.4"
 google-cloud-storage = {version = "0.13.0", default-features = false, features = ["default-tls", "auth"]}
 hyper = "0.14.27"
 hyper-tls = "0.5.0"
-itertools = "0.11"
+itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 openssl-sys = {version = "0.9.93", features = ["vendored"]}

@@ -494,7 +494,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
-    use daft_dsl::{binary_op, col, lit, Operator};
+    use daft_dsl::{col, lit};
 
     use crate::{
         optimization::{

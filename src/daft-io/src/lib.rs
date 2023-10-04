@@ -231,7 +231,7 @@ impl std::fmt::Display for SourceType {
     }
 }
 
-fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
+pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
 
     let url = match url::Url::parse(input) {
