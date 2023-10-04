@@ -10,7 +10,6 @@ if sys.version_info < (3, 8):
 else:
     from typing import Literal
 
-from typing import Any
 
 import pyarrow as pa
 from loguru import logger
@@ -46,32 +45,6 @@ class ListingInfo:
     size: int
     type: Literal["file"] | Literal["directory"]
     rows: int | None = None
-
-
-def _get_s3fs_kwargs() -> dict[str, Any]:
-    """Get keyword arguments to forward to s3fs during construction"""
-
-    try:
-        import botocore.session
-    except ImportError:
-        logger.error(
-            "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
-        )
-        raise
-
-    kwargs = {}
-
-    # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
-    credentials_available = botocore.session.get_session().get_credentials() is not None
-    if not credentials_available:
-        logger.warning(
-            "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
-        )
-        kwargs["anon"] = True
-
-    # kwargs["default_fill_cache"] = False
-
-    return kwargs
 
 
 def get_protocol_from_path(path: str) -> str:
