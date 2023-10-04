@@ -23,7 +23,7 @@ from pyarrow.fs import (
     _resolve_filesystem_and_path,
 )
 
-from daft.daft import FileFormat, FileInfos, IOConfig
+from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.table import Table
 
 _CACHED_FSES: dict[str, FileSystem] = {}
@@ -284,15 +284,14 @@ def glob_path_with_stats(
 ) -> FileInfos:
     """Glob a path, returning a list ListingInfo."""
 
-    # TODO: REPLACE WITH NATIVE GLOB IMPL
-    raise NotImplementedError("REPLACE WITH NATIVE GLOB IMPL")
-    filepaths_to_infos: list[dict] = []
+    files = io_glob(path, io_config=io_config)
+    filepaths_to_infos = {f["path"]: {"size": f["size"], "type": f["type"]} for f in files}
 
     # Set number of rows if available.
     if file_format is not None and file_format == FileFormat.Parquet:
-        config = io_config.config if io_config is not None else None
         parquet_statistics = Table.read_parquet_statistics(
-            list(filepaths_to_infos.keys()), config.io_config
+            list(filepaths_to_infos.keys()),
+            io_config=io_config,
         ).to_pydict()
         for path, num_rows in zip(parquet_statistics["uris"], parquet_statistics["row_count"]):
             filepaths_to_infos[path]["rows"] = num_rows

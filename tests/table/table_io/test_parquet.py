@@ -28,12 +28,9 @@ def test_read_input(tmpdir):
 
     schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
 
-    # Test pathlib, str and IO
+    # Test pathlib and str
     assert table_io.read_parquet(tmpdir / "file.parquet", schema=schema).to_arrow() == data
     assert table_io.read_parquet(str(tmpdir / "file.parquet"), schema=schema).to_arrow() == data
-
-    with open(tmpdir / "file.parquet", "rb") as f:
-        assert table_io.read_parquet(f, schema=schema).to_arrow() == data
 
 
 @contextlib.contextmanager

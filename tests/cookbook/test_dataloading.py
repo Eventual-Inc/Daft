@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import sys
 
 import pandas as pd
 
@@ -83,7 +82,8 @@ def test_glob_files(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     pd_df = pd.DataFrame.from_records(
-        {"path": str(path.as_posix()), "size": size, "num_rows": None} for path, size in zip(filepaths, list(range(10)))
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
+        for path, size in zip(filepaths, list(range(10)))
     )
     pd_df = pd_df[~pd_df["path"].str.endswith(".bar")]
     pd_df = pd_df.astype({"num_rows": float})
@@ -95,7 +95,7 @@ def test_glob_files_single_file(tmpdir):
     filepath.write_text("b" * 10)
     daft_df = daft.from_glob_path(os.path.join(tmpdir, "file.foo"))
     daft_pd_df = daft_df.to_pandas()
-    pd_df = pd.DataFrame.from_records([{"path": str(filepath), "size": 10, "num_rows": None}])
+    pd_df = pd.DataFrame.from_records([{"path": "file://" + str(filepath), "size": 10, "num_rows": None}])
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
 
@@ -114,15 +114,11 @@ def test_glob_files_directory(tmpdir):
     daft_pd_df = daft_df.to_pandas()
 
     listing_records = [
-        {"path": str(path.as_posix()), "size": size, "num_rows": None}
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(filepaths, [i for i in range(10) for _ in range(2)])
     ]
 
-    dir_size = extra_empty_dir.stat().st_size
-    if sys.platform == "win32":
-        dir_size = 0
-
-    listing_records = listing_records + [{"path": str(extra_empty_dir.as_posix()), "size": dir_size, "num_rows": None}]
+    listing_records = listing_records
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
@@ -141,14 +137,10 @@ def test_glob_files_recursive(tmpdir):
     daft_df = daft.from_glob_path(os.path.join(tmpdir, "**"))
     daft_pd_df = daft_df.to_pandas()
     listing_records = [
-        {"path": str(path.as_posix()), "size": size, "num_rows": None}
+        {"path": "file://" + str(path.as_posix()), "size": size, "num_rows": None}
         for path, size in zip(paths, [i for i in range(10) for _ in range(2)])
     ]
-    dir_size = nested_dir_path.stat().st_size
-    if sys.platform == "win32":
-        dir_size = 0
 
-    listing_records = listing_records + [{"path": str(nested_dir_path.as_posix()), "size": dir_size, "num_rows": None}]
     pd_df = pd.DataFrame.from_records(listing_records)
     pd_df = pd_df.astype({"num_rows": float})
 

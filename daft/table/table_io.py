@@ -31,6 +31,11 @@ def _open_stream(
 ) -> Generator[pa.NativeFile, None, None]:
     """Opens the provided file for reading, yield a pyarrow file handle."""
     if isinstance(file, (pathlib.Path, str)):
+
+        # PyArrow really doesn't like the file:// prefix on URLs so we have to strip it before passing into PyArrow
+        # NOTE: This can go away once we deprecate our PyArrow reads.
+        file = file[7:] if isinstance(file, str) and file.startswith("file://") else file
+
         paths, fs = _resolve_paths_and_filesystem(file, None)
         assert len(paths) == 1
         path = paths[0]
