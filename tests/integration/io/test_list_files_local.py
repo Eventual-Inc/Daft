@@ -30,7 +30,6 @@ def compare_local_result(daft_ls_result: list, fs_result: list):
     assert sorted(daft_files) == sorted(fs_files)
 
 
-@pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
 def test_flat_directory_listing(tmp_path, include_protocol):
     d = tmp_path / "dir"
@@ -48,7 +47,6 @@ def test_flat_directory_listing(tmp_path, include_protocol):
     compare_local_result(daft_ls_result, fs_result)
 
 
-@pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
 def test_recursive_directory_listing(tmp_path, include_protocol):
     d = tmp_path / "dir"
@@ -64,13 +62,12 @@ def test_recursive_directory_listing(tmp_path, include_protocol):
         p.touch()
     if include_protocol:
         d = "file://" + str(d)
-    daft_ls_result = io_glob(str(d / "**"))
+    daft_ls_result = io_glob(str(d) + "/**")
     fs = LocalFileSystem()
     fs_result = local_recursive_list(fs, d)
     compare_local_result(daft_ls_result, fs_result)
 
 
-@pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
 def test_single_file_directory_listing(tmp_path, include_protocol):
     d = tmp_path / "dir"
@@ -94,7 +91,6 @@ def test_single_file_directory_listing(tmp_path, include_protocol):
     compare_local_result(daft_ls_result, fs_result)
 
 
-@pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
 def test_wildcard_listing(tmp_path, include_protocol):
     d = tmp_path / "dir"
@@ -122,7 +118,6 @@ def test_wildcard_listing(tmp_path, include_protocol):
     compare_local_result(daft_ls_result, fs_result)
 
 
-@pytest.mark.integration()
 @pytest.mark.parametrize("include_protocol", [False, True])
 def test_missing_file_path(tmp_path, include_protocol):
     d = tmp_path / "dir"
