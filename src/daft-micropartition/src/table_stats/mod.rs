@@ -7,6 +7,8 @@ use indexmap::IndexMap;
 use crate::column_stats::ColumnStatistics;
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
+
+#[derive(Clone)]
 pub struct TableStatistics {
     columns: IndexMap<String, ColumnStatistics>,
 }
@@ -23,15 +25,15 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    fn eval_expression(&self, expr: &Expr) -> ColumnStatistics {
+    pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::Column(col) => self.columns.get(col.as_ref()).unwrap().clone(),
-            Expr::Literal(lit_value) => lit_value.into(),
-            Expr::Not(col) => self.eval_expression(col).not(),
+            Expr::Column(col) => Ok(self.columns.get(col.as_ref()).unwrap().clone()),
+            Expr::Literal(lit_value) => lit_value.try_into(),
+            Expr::Not(col) => self.eval_expression(col)?.not(),
             Expr::BinaryOp { op, left, right } => {
-                let lhs = self.eval_expression(left);
-                let rhs = self.eval_expression(right);
+                let lhs = self.eval_expression(left)?;
+                let rhs = self.eval_expression(right)?;
                 use daft_dsl::Operator::*;
                 match op {
                     Lt => lhs.lt(&rhs),
@@ -66,28 +68,29 @@ mod test {
     use super::{ColumnStatistics, TableStatistics};
 
     #[test]
-    fn test_equal() -> DaftResult<()> {
+    fn test_equal() -> crate::Result<()> {
         let table =
-            Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])?;
+            Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
+                .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
         let expr = col("a").eq(&lit(0));
-        let result = table_stats.eval_expression(&expr);
+        let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::False);
 
         // Maybe case
         let expr = col("a").eq(&lit(3));
-        let result = table_stats.eval_expression(&expr);
+        let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         // True case
-        let table =
-            Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])?;
+        let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
+            .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         let expr = col("a").eq(&lit(0));
-        let result = table_stats.eval_expression(&expr);
+        let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::True);
 
         Ok(())

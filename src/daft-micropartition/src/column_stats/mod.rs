@@ -1,7 +1,8 @@
 mod arithmetic;
 mod comparison;
+mod logical;
 
-use daft_core::Series;
+use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
 #[derive(Clone)]
 pub struct ColumnStatistics {
     lower: Series,
@@ -39,6 +40,29 @@ impl ColumnStatistics {
             (false, true) => TruthValue::Maybe,
             (true, true) => TruthValue::True,
             (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
+        }
+    }
+
+    pub fn from_truth_value(
+        tv: TruthValue,
+        count: usize,
+        null_count: usize,
+        num_bytes: usize,
+    ) -> Self {
+        let (lower, upper) = match tv {
+            TruthValue::False => (false, false),
+            TruthValue::Maybe => (false, true),
+            TruthValue::True => (true, true),
+        };
+
+        let lower = BooleanArray::from(("lower", [lower].as_slice())).into_series();
+        let upper = BooleanArray::from(("upper", [upper].as_slice())).into_series();
+        ColumnStatistics {
+            lower,
+            upper,
+            count,
+            null_count,
+            num_bytes,
         }
     }
 
@@ -86,17 +110,18 @@ num_bytes: {}
     }
 }
 
-impl From<&daft_dsl::LiteralValue> for ColumnStatistics {
-    fn from(value: &daft_dsl::LiteralValue) -> Self {
+impl TryFrom<&daft_dsl::LiteralValue> for ColumnStatistics {
+    type Error = crate::Error;
+    fn try_from(value: &daft_dsl::LiteralValue) -> Result<Self, Self::Error> {
         let ser = value.to_series();
         assert_eq!(ser.len(), 1);
-        ColumnStatistics {
+        Ok(ColumnStatistics {
             lower: ser.clone(),
             upper: ser.clone(),
             count: ser.len(),
             null_count: 0,
             num_bytes: ser.size_bytes().unwrap(),
-        }
+        })
     }
 }
 
@@ -112,7 +137,7 @@ mod test {
     use super::ColumnStatistics;
 
     #[test]
-    fn test_equal() -> DaftResult<()> {
+    fn test_equal() -> crate::Result<()> {
         let l = ColumnStatistics {
             lower: Int64Array::from(("l", vec![1])).into_series(),
             upper: Int64Array::from(("l", vec![5])).into_series(),
@@ -129,7 +154,7 @@ mod test {
         };
         println!("{l}");
         println!("{r}");
-        println!("{}", l.lt(&r).to_truth_value());
+        println!("{}", l.lt(&r)?.to_truth_value());
 
         Ok(())
     }
