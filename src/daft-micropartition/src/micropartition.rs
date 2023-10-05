@@ -1,13 +1,13 @@
 use daft_table::Table;
 
+use crate::table_stats::TableStatistics;
+
 struct DeferredLoadingParams {}
 
 enum TableState {
     Unloaded(DeferredLoadingParams),
     Loaded(Vec<Table>),
 }
-
-struct TableStatistics {}
 
 struct MicroPartition {
     state: std::sync::Mutex<TableState>,

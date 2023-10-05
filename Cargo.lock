@@ -1155,6 +1155,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
+ "indexmap 2.0.0",
  "pyo3",
  "pyo3-log",
 ]
