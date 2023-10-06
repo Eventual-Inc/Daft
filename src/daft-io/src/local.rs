@@ -152,7 +152,7 @@ impl ObjectSource for LocalSource {
         // We sanitize our filepaths here but note that on-return we will be received POSIX-style paths as well
         #[cfg(target_env = "msvc")]
         {
-            glob_path = glob_path.replace("\\", "/");
+            let glob_path = glob_path.replace("\\", "/");
             return glob(self, glob_path.as_str(), fanout_limit, page_size).await;
         }
 
