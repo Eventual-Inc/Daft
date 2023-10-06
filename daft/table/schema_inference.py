@@ -40,7 +40,7 @@ def from_csv(
     else:
         fs = None
     with _open_stream(file, fs) as f:
-        table = pacsv.read_csv(
+        reader = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
@@ -50,7 +50,7 @@ def from_csv(
             ),
         )
 
-    return Table.from_arrow(table).schema()
+    return Schema.from_pyarrow_schema(reader.schema)
 
 
 def from_json(
