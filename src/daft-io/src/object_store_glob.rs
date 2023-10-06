@@ -312,7 +312,7 @@ pub(crate) async fn glob(
     glob: &str,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
-) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
