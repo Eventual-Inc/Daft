@@ -27,6 +27,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     """Generate a default set of headers `f0, f1, ... f{n}` when loading a CSV that has no headers"""
     csv = tmp_path / "headerless_iris.csv"
     csv.write_text("\n".join(pathlib.Path(COOKBOOK_DATA_CSV).read_text().split("\n")[1:]))
+    raise ValueError(str(csv))
     daft_df = daft.read_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None, keep_default_na=False)
     pd_df.columns = [f"f{i}" for i in range(52)]
