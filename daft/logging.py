@@ -1,4 +1,5 @@
 from __future__ import annotations
+from logging import LogRecord
 
 import sys
 
@@ -6,7 +7,6 @@ import sys
 def setup_logger() -> None:
     import inspect
     import logging
-
     from loguru import logger
     from loguru._defaults import env
 
@@ -15,6 +15,10 @@ def setup_logger() -> None:
     logger.add(sys.stderr, level=LOGURU_LEVEL)
 
     class InterceptHandler(logging.Handler):
+        def filter(self, record: LogRecord) -> bool:
+            parent = super().filter(record)
+            return parent or record.pathname.startswith("src/")
+
         def emit(self, record: logging.LogRecord) -> None:
             # Get corresponding Loguru level if it exists.
             level: str | int
@@ -31,10 +35,6 @@ def setup_logger() -> None:
 
             logger.opt(depth=depth - 1, exception=record.exc_info).log(level, record.getMessage())
 
-    # Clear out any existing standard loggers.
-    root = logging.root
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-        h.close()
-    # Add handler that redirects logs to loguru.
-    logging.basicConfig(handlers=[InterceptHandler()], level=0)
+    logging.getLogger().setLevel(logger.level(LOGURU_LEVEL).no)
+    logging.getLogger().addHandler(InterceptHandler())
+
