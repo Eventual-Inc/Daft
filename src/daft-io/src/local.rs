@@ -378,17 +378,29 @@ mod tests {
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));
         let mut expected = vec![
             FileMetadata {
-                filepath: format!("file://{}", file1.path().to_string_lossy()),
+                filepath: format!(
+                    "file://{}/{}",
+                    dir.path().to_string_lossy().replace("\\", "/"),
+                    file1.file_name().to_string_lossy()
+                ),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: format!("file://{}", file2.path().to_string_lossy()),
+                filepath: format!(
+                    "file://{}/{}",
+                    dir.path().to_string_lossy().replace("\\", "/"),
+                    file2.file_name().to_string_lossy()
+                ),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
             FileMetadata {
-                filepath: format!("file://{}", file3.path().to_string_lossy()),
+                filepath: format!(
+                    "file://{}/{}",
+                    dir.path().to_string_lossy().replace("\\", "/"),
+                    file3.file_name().to_string_lossy()
+                ),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
             },
