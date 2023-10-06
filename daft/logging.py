@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from logging import LogRecord
 
 
 def setup_logger() -> None:
@@ -16,7 +15,7 @@ def setup_logger() -> None:
     logger.add(sys.stderr, level=LOGURU_LEVEL)
 
     class InterceptHandler(logging.Handler):
-        def filter(self, record: LogRecord) -> bool:
+        def filter(self, record: logging.LogRecord) -> bool:
             parent = super().filter(record)
             return parent or record.pathname.startswith("src/")
 
