@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -148,14 +147,16 @@ impl ObjectSource for LocalSource {
         // Ensure fanout_limit is None because Local ObjectSource does not support prefix listing
         let fanout_limit = None;
         let page_size = None;
-        let glob_path = Cow::Borrowed(glob_path);
 
         // If on Windows, the delimiter provided may be "\" which is treated as an escape character by `glob`
         // We sanitize our filepaths here but note that on-return we will be received POSIX-style paths as well
         #[cfg(target_env = "msvc")]
-        let glob_path = Cow::Owned(glob_path.replace("\\", "/"));
+        {
+            glob_path = glob_path.replace("\\", "/");
+            return glob(self, glob_path.as_str(), fanout_limit, page_size).await;
+        }
 
-        glob(self, glob_path.as_ref(), fanout_limit, page_size).await
+        glob(self, glob_path, fanout_limit, page_size).await
     }
 
     async fn ls(
