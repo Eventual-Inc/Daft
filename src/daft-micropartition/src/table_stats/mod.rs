@@ -8,9 +8,9 @@ use crate::column_stats::ColumnStatistics;
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 
-#[derive(Clone)]
-pub struct TableStatistics {
-    columns: IndexMap<String, ColumnStatistics>,
+#[derive(Clone, Debug)]
+pub(crate) struct TableStatistics {
+    pub columns: IndexMap<String, ColumnStatistics>,
 }
 impl TableStatistics {
     fn from_table(table: &Table) -> Self {
@@ -25,7 +25,7 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnStatistics> {
+    pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col) => Ok(self.columns.get(col.as_ref()).unwrap().clone()),

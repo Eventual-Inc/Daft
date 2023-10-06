@@ -4,12 +4,12 @@ mod logical;
 
 use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
 #[derive(Clone)]
-pub struct ColumnStatistics {
-    lower: Series,
-    upper: Series,
-    count: usize,
-    null_count: usize,
-    num_bytes: usize,
+pub(crate) struct ColumnStatistics {
+    pub lower: Series,
+    pub upper: Series,
+    pub count: usize,
+    pub null_count: usize,
+    pub num_bytes: usize,
 }
 
 #[derive(PartialEq, Debug)]
@@ -109,6 +109,13 @@ num_bytes: {}
         )
     }
 }
+
+impl std::fmt::Debug for ColumnStatistics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 
 impl TryFrom<&daft_dsl::LiteralValue> for ColumnStatistics {
     type Error = crate::Error;

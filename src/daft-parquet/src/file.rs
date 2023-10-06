@@ -23,8 +23,8 @@ use crate::{
 use arrow2::io::parquet::read::column_iter_to_arrays;
 
 pub(crate) struct ParquetReaderBuilder {
-    uri: String,
-    metadata: parquet2::metadata::FileMetaData,
+    pub uri: String,
+    pub metadata: parquet2::metadata::FileMetaData,
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     num_rows: usize,
