@@ -17,7 +17,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use url::ParseError;
 
-const PLATFORM_FS_DELIMITER: &str = std::path::MAIN_SEPARATOR_STR;
+/// NOTE: We hardcode this even for Windows
+///
+/// For the most part, Windows machines work quite well with POSIX-style paths
+/// as long as there is no "mix" of "\" and "/".
+const PATH_SEGMENT_DELIMITER: &str = "/";
 
 pub(crate) struct LocalSource {}
 
@@ -107,10 +111,6 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
-    fn delimiter(&self) -> &'static str {
-        PLATFORM_FS_DELIMITER
-    }
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
@@ -147,6 +147,11 @@ impl ObjectSource for LocalSource {
         // Ensure fanout_limit is None because Local ObjectSource does not support prefix listing
         let fanout_limit = None;
         let page_size = None;
+
+        // If on Windows, the delimiter provided may be "\" which is treated as an escape character by `glob`
+        // We sanitize our filepaths here but note that on-return we will be received POSIX-style paths as well
+        #[cfg(target_env = "msvc")]
+        let glob_path = &glob_path.replace("\\", "/");
 
         glob(self, glob_path, fanout_limit, page_size).await
     }
@@ -208,6 +213,15 @@ impl ObjectSource for LocalSource {
                 let entry = entry.with_context(|_| UnableToFetchDirectoryEntriesSnafu {
                     path: uri.to_string(),
                 })?;
+
+                // NOTE: `entry` returned by ReadDirStream can potentially mix posix-delimiters ("/") and windows-delimiter ("\")
+                // on Windows machines if we naively use `entry.path()`. Manually concatting the entries to the uri is safer.
+                let path = format!(
+                    "{}{PATH_SEGMENT_DELIMITER}{}",
+                    uri.trim_end_matches(PATH_SEGMENT_DELIMITER),
+                    entry.file_name().to_string_lossy()
+                );
+
                 let meta = tokio::fs::metadata(entry.path()).await.with_context(|_| {
                     UnableToFetchFileMetadataSnafu {
                         path: entry.path().to_string_lossy().to_string(),
@@ -217,8 +231,12 @@ impl ObjectSource for LocalSource {
                     filepath: format!(
                         "{}{}{}",
                         LOCAL_PROTOCOL,
-                        entry.path().to_string_lossy(),
-                        if meta.is_dir() { self.delimiter() } else { "" }
+                        path,
+                        if meta.is_dir() {
+                            PATH_SEGMENT_DELIMITER
+                        } else {
+                            ""
+                        }
                     ),
                     size: Some(meta.len()),
                     filetype: meta.file_type().try_into().with_context(|_| {

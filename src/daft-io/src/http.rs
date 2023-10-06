@@ -169,10 +169,6 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    fn delimiter(&self) -> &'static str {
-        HTTP_DELIMITER
-    }
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let request = self.client.get(uri);
         let request = match range {

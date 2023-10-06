@@ -94,9 +94,6 @@ use async_stream::stream;
 
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
-    /// Returns the delimiter for the platform (S3 vs GCS vs Azure vs local-unix vs Windows etc)
-    fn delimiter(&self) -> &'static str;
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult>;
     async fn get_range(&self, uri: &str, range: Range<usize>) -> super::Result<GetResult> {
         self.get(uri, Some(range)).await

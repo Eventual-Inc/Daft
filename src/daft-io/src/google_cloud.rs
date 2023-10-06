@@ -362,10 +362,6 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
-    fn delimiter(&self) -> &'static str {
-        GCS_DELIMITER
-    }
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         self.client.get(uri, range).await
     }

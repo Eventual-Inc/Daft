@@ -381,10 +381,6 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
-    fn delimiter(&self) -> &'static str {
-        AZURE_DELIMITER
-    }
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let container = match parsed.host_str() {
