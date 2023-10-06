@@ -101,8 +101,8 @@ impl LocalSource {
 }
 
 pub struct LocalFile {
-    path: PathBuf,
-    range: Option<Range<usize>>,
+    pub path: PathBuf,
+    pub range: Option<Range<usize>>,
 }
 
 #[async_trait]

@@ -1,0 +1,28 @@
+[dependencies]
+arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
+async-compat = "0.2.1"
+async-stream = "0.3.5"
+bytes = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+csv-async = "1.2.6"
+daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-table = {path = "../daft-table", default-features = false}
+futures = {workspace = true}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+pyo3-log = {workspace = true, optional = true}
+rayon = "1.7.0"
+snafu = {workspace = true}
+tokio = {workspace = true}
+tokio-stream = "0.1.14"
+tokio-util = "0.7.8"
+
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python"]
+
+[package]
+edition = {workspace = true}
+name = "daft-csv"
+version = {workspace = true}

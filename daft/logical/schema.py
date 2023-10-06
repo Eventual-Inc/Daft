@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
+from daft.daft import read_csv_schema as _read_csv_schema
 from daft.daft import read_parquet_schema as _read_parquet_schema
 from daft.datatype import DataType, TimeUnit
 
@@ -151,5 +152,24 @@ class Schema:
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
                 coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+            )
+        )
+
+    @classmethod
+    def from_csv(
+        cls,
+        path: str,
+        has_header: bool | None = None,
+        delimiter: str | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> Schema:
+        return Schema._from_pyschema(
+            _read_csv_schema(
+                uri=path,
+                has_header=has_header,
+                delimiter=delimiter,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
             )
         )

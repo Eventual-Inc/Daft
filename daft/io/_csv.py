@@ -8,6 +8,8 @@ from daft.api_annotations import PublicAPI
 from daft.daft import (
     CsvSourceConfig,
     FileFormatConfig,
+    IOConfig,
+    NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
 )
@@ -24,6 +26,8 @@ def read_csv(
     has_headers: bool = True,
     column_names: Optional[List[str]] = None,
     delimiter: str = ",",
+    io_config: Optional["IOConfig"] = None,
+    use_native_downloader: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s)
 
@@ -41,6 +45,9 @@ def read_csv(
             By default, Daft will automatically construct a FileSystem instance internally.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         delimiter (Str): Delimiter used in the CSV, defaults to ","
+        io_config (IOConfig): Config to be used with the native downloader
+        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
+            is currently experimental.
 
     returns:
         DataFrame: parsed DataFrame
@@ -57,6 +64,9 @@ def read_csv(
 
     csv_config = CsvSourceConfig(delimiter=delimiter, has_headers=has_headers)
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
-    storage_config = StorageConfig.python(PythonStorageConfig(fs))
+    if use_native_downloader:
+        storage_config = StorageConfig.native(NativeStorageConfig(io_config))
+    else:
+        storage_config = StorageConfig.python(PythonStorageConfig(fs))
     builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)
