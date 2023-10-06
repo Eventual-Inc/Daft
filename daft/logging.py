@@ -1,12 +1,13 @@
 from __future__ import annotations
-from logging import LogRecord
 
 import sys
+from logging import LogRecord
 
 
 def setup_logger() -> None:
     import inspect
     import logging
+
     from loguru import logger
     from loguru._defaults import env
 
@@ -37,4 +38,3 @@ def setup_logger() -> None:
 
     logging.getLogger().setLevel(logger.level(LOGURU_LEVEL).no)
     logging.getLogger().addHandler(InterceptHandler())
-
