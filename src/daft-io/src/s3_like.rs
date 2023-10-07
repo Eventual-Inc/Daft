@@ -692,10 +692,6 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    fn delimiter(&self) -> &'static str {
-        S3_DELIMITER
-    }
-
     async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
         let permit = self
             .connection_pool_sema

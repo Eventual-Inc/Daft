@@ -27,6 +27,9 @@ def compare_local_result(daft_ls_result: list, fs_result: list):
     # io_glob does not return directories
     fs_files = [(p, t) for p, t in fs_files if t == "file"]
 
+    # io_glob returns posix-style paths
+    fs_files = [(p.replace("\\", "/"), t) for p, t in fs_files]
+
     assert sorted(daft_files) == sorted(fs_files)
 
 
@@ -134,5 +137,5 @@ def test_missing_file_path(tmp_path, include_protocol):
     p = f"{d}/c/cc/ddd"
     if include_protocol:
         p = "file://" + p
-    with pytest.raises(FileNotFoundError, match=f"File: {d}/c/cc/ddd not found"):
+    with pytest.raises(FileNotFoundError, match=f"/c/cc/ddd not found"):
         io_glob(p)

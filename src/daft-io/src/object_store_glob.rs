@@ -18,6 +18,11 @@ lazy_static! {
 
 const SCHEME_SUFFIX_LEN: usize = "://".len();
 
+/// NOTE: Our globbing logic makes very strong assumptions about the delimiter being used to denote
+/// directories. The concept of a "glob" is a Unix concept anyways, and so even for Windows machines
+/// the `glob` utility can only be used with POSIX-style paths.
+const GLOB_DELIMITER: &str = "/";
+
 #[derive(Clone)]
 pub(crate) struct GlobState {
     // Current path in dirtree and glob_fragments
@@ -153,10 +158,7 @@ impl GlobFragment {
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
 ///   4. Preserves any leading delimiters
-pub(crate) fn to_glob_fragments(
-    glob_str: &str,
-    delimiter: &str,
-) -> super::Result<Vec<GlobFragment>> {
+pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
     // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
     // such as ? and {}
     let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
@@ -169,8 +171,8 @@ pub(crate) fn to_glob_fragments(
 
     // NOTE: Leading delimiter may be important for absolute paths on local directory, and is considered
     // part of the first fragment
-    let leading_delimiter = if glob_str_after_scheme.starts_with(delimiter) {
-        delimiter
+    let leading_delimiter = if glob_str_after_scheme.starts_with(GLOB_DELIMITER) {
+        GLOB_DELIMITER
     } else {
         ""
     };
@@ -179,7 +181,7 @@ pub(crate) fn to_glob_fragments(
     let mut coalesced_fragments = vec![];
     let mut nonspecial_fragments_so_far = vec![];
     for fragment in glob_str_after_scheme
-        .split(delimiter)
+        .split(GLOB_DELIMITER)
         .map(GlobFragment::new)
     {
         match fragment {
@@ -188,7 +190,7 @@ pub(crate) fn to_glob_fragments(
                 if !nonspecial_fragments_so_far.is_empty() {
                     coalesced_fragments.push(GlobFragment::join(
                         nonspecial_fragments_so_far.drain(..).as_slice(),
-                        delimiter,
+                        GLOB_DELIMITER,
                     ));
                 }
                 coalesced_fragments.push(fragment);
@@ -201,7 +203,7 @@ pub(crate) fn to_glob_fragments(
     if !nonspecial_fragments_so_far.is_empty() {
         coalesced_fragments.push(GlobFragment::join(
             nonspecial_fragments_so_far.drain(..).as_slice(),
-            delimiter,
+            GLOB_DELIMITER,
         ));
     }
 
@@ -293,6 +295,10 @@ async fn ls_with_prefix_fallback(
 /// Uses the `globset` crate for matching, and thus supports all the syntax enabled by that crate.
 /// See: https://docs.rs/globset/latest/globset/#syntax
 ///
+/// NOTE: Users of this function are responsible for sanitizing their paths and delimiters to follow the `globset` crate's expectations
+/// in terms of delimiters. E.g. on Windows machines, callers of [`glob`] must convert all Windows-style "\" delimiters to "/" because
+/// `globset` treats "\" as escape characters.
+///
 /// Arguments:
 /// * source: the ObjectSource to use for file listing
 /// * glob: the string to glob
@@ -306,9 +312,7 @@ pub(crate) async fn glob(
     glob: &str,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
-) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-    let delimiter = source.delimiter();
-
+) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
@@ -331,14 +335,14 @@ pub(crate) async fn glob(
 
     // If user specifies a trailing / then we understand it as an attempt to list the folder(s) matched
     // and append a trailing * fragment
-    let glob = if glob.ends_with(source.delimiter()) {
+    let glob = if glob.ends_with(GLOB_DELIMITER) {
         glob.to_string() + "*"
     } else {
         glob.to_string()
     };
     let glob = glob.as_str();
 
-    let glob_fragments = to_glob_fragments(glob, delimiter)?;
+    let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)
         .backslash_escape(true)
@@ -468,7 +472,7 @@ pub(crate) async fn glob(
                 let partial_glob_matcher = GlobBuilder::new(
                     GlobFragment::join(
                         &state.glob_fragments[..state.current_fragment_idx + 1],
-                        source.delimiter(),
+                        GLOB_DELIMITER,
                     )
                     .raw_str(),
                 )
@@ -492,7 +496,7 @@ pub(crate) async fn glob(
                         Ok(fm) => match fm.filetype {
                             FileType::Directory
                                 if partial_glob_matcher.is_match(
-                                    fm.filepath.as_str().trim_end_matches(source.delimiter()),
+                                    fm.filepath.as_str().trim_end_matches(GLOB_DELIMITER),
                                 ) =>
                             {
                                 visit(
