@@ -369,7 +369,7 @@ mod tests {
         write_remote_parquet_to_local_file(&mut file2).await?;
         let mut file3 = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         write_remote_parquet_to_local_file(&mut file3).await?;
-        let dir_path = format!("file://{}", dir.path().to_string_lossy());
+        let dir_path = format!("file://{}", dir.path().to_string_lossy().replace("\\", "/"));
         let client = LocalSource::get_client().await?;
 
         let ls_result = client.ls(dir_path.as_ref(), true, None, None).await?;
