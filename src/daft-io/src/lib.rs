@@ -17,8 +17,9 @@ pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use tokio::sync::Mutex;
 
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::{HashMap, HashSet}, hash::Hash, ops::Range, sync::Arc};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -113,6 +114,32 @@ impl From<Error> for std::io::Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+
+pub struct IOStatsContext {
+    bytes_read: u64,
+    requests_made: usize,
+    files_touched: HashSet<String>,
+}
+
+impl IOStatsContext {
+    pub fn log_bytes(&mut self, bytes: u64) -> &Self {
+        self.bytes_read += bytes;
+        self
+    }
+    pub fn log_file(&mut self, uri: &str) -> &Self {
+        // Insert string into hashset, allocating only if necessary.
+        self.files_touched.get(uri).map_or_else(
+            || self.files_touched.insert(uri.to_string()),
+            |_| false,
+        );
+        self
+    }
+    pub fn log_request(&mut self) -> &Self {
+        self.requests_made += 1;
+        self
+    }
+}
+
 #[derive(Default)]
 pub struct IOClient {
     source_type_to_store: tokio::sync::RwLock<HashMap<SourceType, Arc<dyn ObjectSource>>>,
@@ -164,10 +191,11 @@ impl IOClient {
         &self,
         input: String,
         range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
     ) -> Result<GetResult> {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
-        source.get(path.as_ref(), range).await
+        source.get(path.as_ref(), range, stats_ctx).await
     }
 
     pub async fn single_url_get_size(&self, input: String) -> Result<usize> {

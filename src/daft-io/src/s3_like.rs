@@ -5,10 +5,10 @@ use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit, Mutex};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::{InvalidArgumentSnafu, SourceType};
+use crate::{InvalidArgumentSnafu, SourceType, IOStatsContext};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
@@ -351,6 +351,7 @@ impl S3LikeSource {
         uri: &str,
         range: Option<Range<usize>>,
         region: &Region,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
@@ -370,6 +371,12 @@ impl S3LikeSource {
                 .get_object()
                 .bucket(bucket)
                 .key(key);
+
+            if let Some(stats_ctx) = stats_ctx {
+                // Log the URI access.
+                let stats_ctx = stats_ctx.lock_owned().await;
+                stats_ctx.log_file(uri);
+            }
 
             let request = match &range {
                 None => request,
@@ -442,7 +449,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
-                            self._get_impl(permit, uri, range, &new_region).await
+                            self._get_impl(permit, uri, range, &new_region, stats_ctx).await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -677,14 +684,14 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(&self, uri: &str, range: Option<Range<usize>>, stats_ctx: Option<Arc<Mutex<IOStatsContext>>>) -> super::Result<GetResult> {
         let permit = self
             .connection_pool_sema
             .clone()
             .acquire_owned()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        self._get_impl(permit, uri, range, &self.default_region)
+        self._get_impl(permit, uri, range, &self.default_region, stats_ctx)
             .await
     }
 
