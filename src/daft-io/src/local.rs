@@ -381,7 +381,7 @@ mod tests {
                 filepath: format!(
                     "file://{}/{}",
                     dir.path().to_string_lossy().replace("\\", "/"),
-                    file1.file_name().to_string_lossy()
+                    file1.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
@@ -390,7 +390,7 @@ mod tests {
                 filepath: format!(
                     "file://{}/{}",
                     dir.path().to_string_lossy().replace("\\", "/"),
-                    file2.file_name().to_string_lossy()
+                    file2.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
@@ -399,7 +399,7 @@ mod tests {
                 filepath: format!(
                     "file://{}/{}",
                     dir.path().to_string_lossy().replace("\\", "/"),
-                    file3.file_name().to_string_lossy()
+                    file3.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
