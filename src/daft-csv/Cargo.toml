@@ -1,16 +1,15 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
+arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+csv-async = "1.2.6"
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
-itertools = {workspace = true}
 log = {workspace = true}
-parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rayon = {workspace = true}
@@ -25,5 +24,5 @@ python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python",
 
 [package]
 edition = {workspace = true}
-name = "daft-parquet"
+name = "daft-csv"
 version = {workspace = true}

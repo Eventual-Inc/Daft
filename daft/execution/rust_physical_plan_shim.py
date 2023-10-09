@@ -23,7 +23,7 @@ PartitionT = TypeVar("PartitionT")
 
 def tabular_scan(
     schema: PySchema,
-    columns_to_read: list[str],
+    columns_to_read: list[str] | None,
     file_info_table: PyTable,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,

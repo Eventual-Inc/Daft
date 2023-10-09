@@ -197,6 +197,22 @@ def read_csv(
     """
     if storage_config is not None:
         config = storage_config.config
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(
+                file, (str, pathlib.Path)
+            ), "Native downloader only works on string inputs to read_parquet"
+            has_header = csv_options.header_index is not None
+            tbl = Table.read_csv(
+                str(file),
+                column_names=schema.column_names() if not has_header else None,
+                include_columns=read_options.column_names,
+                num_rows=read_options.num_rows,
+                has_header=has_header,
+                delimiter=csv_options.delimiter,
+                io_config=config.io_config,
+            )
+            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+
         assert isinstance(config, PythonStorageConfig)
         fs = config.fs
     else:

@@ -35,6 +35,16 @@ def from_csv(
 
     if storage_config is not None:
         config = storage_config.config
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_csv"
+            io_config = config.io_config
+            return Schema.from_csv(
+                str(file),
+                has_header=csv_options.header_index is not None,
+                delimiter=csv_options.delimiter,
+                io_config=io_config,
+            )
+
         assert isinstance(config, PythonStorageConfig)
         fs = config.fs
     else:

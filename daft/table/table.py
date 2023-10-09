@@ -9,6 +9,7 @@ from loguru import logger
 from daft.arrow_utils import ensure_table
 from daft.daft import JoinType
 from daft.daft import PyTable as _PyTable
+from daft.daft import read_csv as _read_csv
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
@@ -426,6 +427,31 @@ class Table:
         return Table._from_pytable(
             _read_parquet_statistics(
                 uris=paths._series,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )
+
+    @classmethod
+    def read_csv(
+        cls,
+        path: str,
+        column_names: list[str] | None = None,
+        include_columns: list[str] | None = None,
+        num_rows: int | None = None,
+        has_header: bool | None = None,
+        delimiter: str | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> Table:
+        return Table._from_pytable(
+            _read_csv(
+                uri=path,
+                column_names=column_names,
+                include_columns=include_columns,
+                num_rows=num_rows,
+                has_header=has_header,
+                delimiter=delimiter,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
             )

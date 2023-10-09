@@ -115,12 +115,18 @@ fn tabular_scan(
     limit: &Option<usize>,
     is_ray_runner: bool,
 ) -> PyResult<PyObject> {
-    let columns_to_read = projection_schema
-        .fields
-        .iter()
-        .map(|(name, _)| name)
-        .cloned()
-        .collect::<Vec<_>>();
+    let columns_to_read = if projection_schema.names() != source_schema.names() {
+        Some(
+            projection_schema
+                .fields
+                .iter()
+                .map(|(name, _)| name)
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "tabular_scan"))?

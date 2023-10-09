@@ -356,7 +356,8 @@ def create_temp_filename() -> str:
         yield os.path.join(dir, "tempfile")
 
 
-def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -365,7 +366,7 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        df = daft.read_csv(fname)
+        df = daft.read_csv(fname, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -373,7 +374,8 @@ def test_create_dataframe_csv(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as f1name, create_temp_filename() as f2name:
         with open(f1name, "w") as f1, open(f2name, "w") as f2:
             for f in (f1, f2):
@@ -383,7 +385,7 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]]) -> N
                 writer.writerows([[item[col] for col in header] for item in valid_data])
                 f.flush()
 
-        df = daft.read_csv([f1name, f2name])
+        df = daft.read_csv([f1name, f2name], use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -426,7 +428,8 @@ def test_create_dataframe_csv_custom_fs(valid_data: list[dict[str, float]]) -> N
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -434,8 +437,8 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        cnames = [f"f{i}" for i in range(5)]
-        df = daft.read_csv(fname, has_headers=False)
+        cnames = [f"column_{i}" for i in range(1, 6)] if use_native_downloader else [f"f{i}" for i in range(5)]
+        df = daft.read_csv(fname, has_headers=False, use_native_downloader=use_native_downloader)
         assert df.column_names == cnames
 
         pd_df = df.to_pandas()
@@ -443,7 +446,8 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -463,7 +467,8 @@ def test_create_dataframe_csv_column_projection(valid_data: list[dict[str, float
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -472,7 +477,7 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        df = daft.read_csv(fname, delimiter="\t")
+        df = daft.read_csv(fname, delimiter="\t", use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -480,7 +485,8 @@ def test_create_dataframe_csv_custom_delimiter(valid_data: list[dict[str, float]
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -499,6 +505,7 @@ def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]])
                 "petal_width": DataType.float32(),
                 "variety": DataType.string(),
             },
+            use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
 
@@ -507,7 +514,10 @@ def test_create_dataframe_csv_specify_schema(valid_data: list[dict[str, float]])
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_specify_schema_no_headers(
+    valid_data: list[dict[str, float]], use_native_downloader
+) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -526,6 +536,7 @@ def test_create_dataframe_csv_specify_schema_no_headers(valid_data: list[dict[st
                 "variety": DataType.string(),
             },
             has_headers=False,
+            use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
 

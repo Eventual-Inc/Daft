@@ -411,6 +411,23 @@ def read_parquet_schema(
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ): ...
+def read_csv(
+    uri: str,
+    column_names: list[str] | None = None,
+    include_columns: list[str] | None = None,
+    num_rows: int | None = None,
+    has_header: bool | None = None,
+    delimiter: str | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+): ...
+def read_csv_schema(
+    uri: str,
+    has_header: bool | None = None,
+    delimiter: str | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+): ...
 
 class PyTimeUnit:
     @staticmethod
