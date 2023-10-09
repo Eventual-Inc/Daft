@@ -434,10 +434,6 @@ class Scheduler:
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
 
-        # Note: For autoscaling clusters, we will probably want to query cores dynamically.
-        # Keep in mind this call takes about 0.3ms.
-        cores = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
-
         max_inflight_tasks = cores + self.max_task_backlog
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
@@ -453,6 +449,9 @@ class Scheduler:
                 next_step = next(tasks)
 
                 while True:  # Loop: Dispatch -> await.
+                    # This call takes about 0.3ms and hits a locally in-memory cached record of cluster resources
+                    cores: int = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
+
                     while True:  # Loop: Dispatch (get tasks -> batch dispatch).
                         tasks_to_dispatch: list[PartitionTask] = []
 
