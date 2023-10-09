@@ -175,6 +175,17 @@ def read_parquet(
     return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
 
 
+class PACSVStreamHelper:
+    def __init__(self, stream: pa.CSVStreamReader) -> None:
+        self.stream = stream
+
+    def __next__(self) -> pa.RecordBatch:
+        return self.stream.read_next_batch()
+
+    def __iter__(self) -> PACSVStreamHelper:
+        return self
+
+
 def read_csv(
     file: FileInput,
     schema: Schema,
@@ -219,7 +230,7 @@ def read_csv(
         fs = None
 
     with _open_stream(file, fs) as f:
-        table = pacsv.read_csv(
+        pacsv_stream = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
@@ -238,11 +249,34 @@ def read_csv(
             ),
         )
 
-    # TODO(jay): Can't limit number of rows with current PyArrow filesystem so we have to shave it off after the read
-    if read_options.num_rows is not None:
-        table = table[: read_options.num_rows]
+        if read_options.num_rows is not None:
+            rows_left = read_options.num_rows
+            pa_batches = []
+            pa_schema = None
+            for record_batch in PACSVStreamHelper(pacsv_stream):
+                if pa_schema is None:
+                    pa_schema = record_batch.schema
+                if record_batch.num_rows > rows_left:
+                    record_batch = record_batch.slice(0, rows_left)
+                pa_batches.append(record_batch)
+                rows_left -= record_batch.num_rows
 
-    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
+                # Break needs to be here; always need to process at least one record batch
+                if rows_left <= 0:
+                    break
+
+            # If source schema isn't determined, then the file was truly empty; set an empty source schema
+            if pa_schema is None:
+                pa_schema = pa.schema([])
+
+            daft_table = Table.from_arrow_record_batches(pa_batches, pa_schema)
+            assert len(daft_table) <= read_options.num_rows
+
+        else:
+            pa_table = pacsv_stream.read_all()
+            daft_table = Table.from_arrow(pa_table)
+
+    return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
 
 
 def write_csv(

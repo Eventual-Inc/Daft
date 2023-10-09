@@ -113,6 +113,12 @@ class Table:
             return Table._from_pytable(pyt)
 
     @staticmethod
+    def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> Table:
+        schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
+        pyt = _PyTable.from_arrow_record_batches(rbs, schema._schema)
+        return Table._from_pytable(pyt)
+
+    @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> Table:
         if not _PANDAS_AVAILABLE:
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
