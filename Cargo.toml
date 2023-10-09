@@ -72,6 +72,8 @@ members = [
 ]
 
 [workspace.dependencies]
+async-compat = "0.2.1"
+async-stream = "0.3.5"
 bytes = "1.4.0"
 futures = "0.3.28"
 html-escape = "0.2.13"
@@ -81,10 +83,12 @@ num-derive = "0.3.3"
 num-traits = "0.2"
 prettytable-rs = "0.10"
 rand = "^0.8"
+rayon = "1.7.0"
 serde_json = "1.0.104"
 snafu = "0.7.4"
 tokio = {version = "1.32.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
+tokio-util = "0.7.8"
 
 [workspace.dependencies.arrow2]
 git = "https://github.com/Eventual-Inc/arrow2"
