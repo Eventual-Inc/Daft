@@ -1,9 +1,9 @@
 use common_error::DaftError;
 use snafu::Snafu;
-
 mod column_stats;
 mod micropartition;
 mod table_stats;
+mod utils;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
