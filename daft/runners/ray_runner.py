@@ -447,13 +447,12 @@ class Scheduler:
                 next_step = next(tasks)
 
                 while True:  # Loop: Dispatch -> await.
-                    # This call takes about 0.3ms and hits a locally in-memory cached record of cluster resources
-                    cores: int = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
-                    max_inflight_tasks = cores + self.max_task_backlog
-
                     while True:  # Loop: Dispatch (get tasks -> batch dispatch).
                         tasks_to_dispatch: list[PartitionTask] = []
 
+                        # This call takes about 0.3ms and hits a locally in-memory cached record of cluster resources
+                        cores: int = int(ray.cluster_resources()["CPU"]) - self.reserved_cores
+                        max_inflight_tasks = cores + self.max_task_backlog
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
                         dispatches_allowed = min(cores, dispatches_allowed)
 
