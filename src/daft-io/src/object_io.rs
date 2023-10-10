@@ -8,10 +8,10 @@ use futures::stream::{BoxStream, Stream};
 use futures::StreamExt;
 use globset::GlobBuilder;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{OwnedSemaphorePermit, Mutex};
+use tokio::sync::{Mutex, OwnedSemaphorePermit};
 
-use crate::IOStatsContext;
 use crate::glob::GlobState;
+use crate::IOStatsContext;
 use crate::{
     glob::{to_glob_fragments, GlobFragment},
     local::{collect_file, LocalFile},
@@ -50,7 +50,10 @@ where
 }
 
 impl GetResult {
-    pub async fn bytes(self, stats_ctx: Option<Arc<Mutex<IOStatsContext>>>) -> super::Result<Bytes> {
+    pub async fn bytes(
+        self,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<Bytes> {
         use GetResult::*;
         let bytes = match self {
             File(f) => collect_file(f).await,
@@ -106,8 +109,18 @@ use async_stream::stream;
 
 #[async_trait]
 pub(crate) trait ObjectSource: Sync + Send {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>, stats_ctx: Option<Arc<Mutex<IOStatsContext>>>) -> super::Result<GetResult>;
-    async fn get_range(&self, uri: &str, range: Range<usize>, stats_ctx: Option<Arc<Mutex<IOStatsContext>>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult>;
+    async fn get_range(
+        &self,
+        uri: &str,
+        range: Range<usize>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
         self.get(uri, Some(range), stats_ctx).await
     }
     async fn get_size(&self, uri: &str) -> super::Result<usize>;

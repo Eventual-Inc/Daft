@@ -14,6 +14,7 @@ use google_cloud_storage::http::Error as GError;
 use snafu::IntoError;
 use snafu::ResultExt;
 use snafu::Snafu;
+use tokio::sync::Mutex;
 
 use crate::object_io::FileMetadata;
 use crate::object_io::FileType;
@@ -21,6 +22,7 @@ use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
 use crate::GetResult;
+use crate::IOStatsContext;
 use common_io_config::GCSConfig;
 
 #[derive(Debug, Snafu)]
@@ -122,7 +124,15 @@ fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
 }
 
 impl GCSClientWrapper {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
+        if stats_ctx.is_some() {
+            todo!()
+        }
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
         match self {
@@ -159,7 +169,7 @@ impl GCSClientWrapper {
             }
             GCSClientWrapper::S3Compat(client) => {
                 let uri = format!("s3://{}/{}", bucket, key);
-                client.get(&uri, range).await
+                client.get(&uri, range, stats_ctx).await
             }
         }
     }
@@ -329,8 +339,13 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
-        self.client.get(uri, range).await
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
+        self.client.get(uri, range, stats_ctx).await
     }
 
     async fn get_size(&self, uri: &str) -> super::Result<usize> {

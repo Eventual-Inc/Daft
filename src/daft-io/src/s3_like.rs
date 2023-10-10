@@ -5,10 +5,10 @@ use aws_smithy_async::rt::sleep::TokioSleep;
 use reqwest::StatusCode;
 use s3::operation::head_object::HeadObjectError;
 use s3::operation::list_objects_v2::ListObjectsV2Error;
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit, Mutex};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::{InvalidArgumentSnafu, SourceType, IOStatsContext};
+use crate::{IOStatsContext, InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
 use aws_credential_types::cache::ProvideCachedCredentials;
 use aws_credential_types::provider::error::CredentialsError;
@@ -372,9 +372,9 @@ impl S3LikeSource {
                 .bucket(bucket)
                 .key(key);
 
-            if let Some(stats_ctx) = stats_ctx {
+            if let Some(stats_ctx) = stats_ctx.clone() {
                 // Log the URI access.
-                let stats_ctx = stats_ctx.lock_owned().await;
+                let mut stats_ctx = stats_ctx.lock_owned().await;
                 stats_ctx.log_file(uri);
             }
 
@@ -449,7 +449,8 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting GET in that region with new client", new_region, region);
-                            self._get_impl(permit, uri, range, &new_region, stats_ctx).await
+                            self._get_impl(permit, uri, range, &new_region, stats_ctx)
+                                .await
                         }
                         _ => Err(UnableToOpenFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -684,7 +685,12 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>, stats_ctx: Option<Arc<Mutex<IOStatsContext>>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
         let permit = self
             .connection_pool_sema
             .clone()
@@ -800,24 +806,24 @@ mod tests {
             ..Default::default()
         };
         let client = S3LikeSource::get_client(&config).await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
-        let bytes = parquet_file.bytes().await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
+        let bytes = parquet_file.bytes(None).await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10)
+            .get_range(parquet_file_path, 0..10, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 10);
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100)
+            .get_range(parquet_file_path, 10..100, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 90);
         assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
@@ -826,9 +832,10 @@ mod tests {
             .get_range(
                 parquet_file_path,
                 (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                None,
             )
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);

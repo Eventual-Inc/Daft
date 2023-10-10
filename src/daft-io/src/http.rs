@@ -7,9 +7,13 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
+use tokio::sync::Mutex;
 use url::Position;
 
-use crate::object_io::{FileMetadata, FileType, LSResult};
+use crate::{
+    object_io::{FileMetadata, FileType, LSResult},
+    IOStatsContext,
+};
 
 use super::object_io::{GetResult, ObjectSource};
 
@@ -167,7 +171,15 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
+        if stats_ctx.is_some() {
+            todo!()
+        }
         let request = self.client.get(uri);
         let request = match range {
             None => request,
@@ -286,24 +298,24 @@ mod tests {
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
         let client = HttpSource::get_client().await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
-        let bytes = parquet_file.bytes().await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
+        let bytes = parquet_file.bytes(None).await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10)
+            .get_range(parquet_file_path, 0..10, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 10);
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100)
+            .get_range(parquet_file_path, 10..100, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 90);
         assert_eq!(first_bytes.as_ref(), &all_bytes[10..100]);
@@ -312,9 +324,10 @@ mod tests {
             .get_range(
                 parquet_file_path,
                 (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                None,
             )
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);

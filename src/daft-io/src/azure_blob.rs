@@ -7,10 +7,11 @@ use azure_storage_blobs::{
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
 use std::{ops::Range, sync::Arc};
+use tokio::sync::Mutex;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
-    GetResult,
+    GetResult, IOStatsContext,
 };
 use common_io_config::AzureConfig;
 
@@ -373,7 +374,15 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
+        if stats_ctx.is_some() {
+            todo!()
+        }
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let container = match parsed.host_str() {
             Some(s) => Ok(s),

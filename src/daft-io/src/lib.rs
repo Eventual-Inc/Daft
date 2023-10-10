@@ -19,7 +19,13 @@ pub use object_io::GetResult;
 pub use python::register_modules;
 use tokio::sync::Mutex;
 
-use std::{borrow::Cow, collections::{HashMap, HashSet}, hash::Hash, ops::Range, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    ops::Range,
+    sync::Arc,
+};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -114,7 +120,7 @@ impl From<Error> for std::io::Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-
+#[derive(Debug)]
 pub struct IOStatsContext {
     bytes_read: u64,
     requests_made: usize,
@@ -122,16 +128,22 @@ pub struct IOStatsContext {
 }
 
 impl IOStatsContext {
+    pub fn empty() -> Self {
+        Self {
+            bytes_read: 0,
+            requests_made: 0,
+            files_touched: HashSet::new(),
+        }
+    }
     pub fn log_bytes(&mut self, bytes: u64) -> &Self {
         self.bytes_read += bytes;
         self
     }
     pub fn log_file(&mut self, uri: &str) -> &Self {
         // Insert string into hashset, allocating only if necessary.
-        self.files_touched.get(uri).map_or_else(
-            || self.files_touched.insert(uri.to_string()),
-            |_| false,
-        );
+        if self.files_touched.get(uri).is_none() {
+            self.files_touched.insert(uri.to_string());
+        }
         self
     }
     pub fn log_request(&mut self) -> &Self {
@@ -209,11 +221,12 @@ impl IOClient {
         index: usize,
         input: Option<String>,
         raise_error_on_failure: bool,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
     ) -> Result<Option<bytes::Bytes>> {
         let value = if let Some(input) = input {
-            let response = self.single_url_get(input, None).await;
+            let response = self.single_url_get(input, None, stats_ctx.clone()).await;
             let res = match response {
-                Ok(res) => res.bytes().await,
+                Ok(res) => res.bytes(stats_ctx).await,
                 Err(err) => Err(err),
             };
             Some(res)
@@ -391,7 +404,7 @@ pub fn _url_download(
             (
                 i,
                 owned_client
-                    .single_url_download(i, owned_url, raise_error_on_failure)
+                    .single_url_download(i, owned_url, raise_error_on_failure, None)
                     .await,
             )
         })

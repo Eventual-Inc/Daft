@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use crate::object_io::{self, FileMetadata, LSResult};
+use crate::IOStatsContext;
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
@@ -15,6 +16,7 @@ use futures::TryStreamExt;
 use snafu::{ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::Mutex;
 use url::ParseError;
 pub(crate) struct LocalSource {}
 
@@ -104,7 +106,15 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        stats_ctx: Option<Arc<Mutex<IOStatsContext>>>,
+    ) -> super::Result<GetResult> {
+        if stats_ctx.is_some() {
+            todo!()
+        }
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
             Ok(GetResult::File(LocalFile {
@@ -260,8 +270,8 @@ mod tests {
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
         let client = HttpSource::get_client().await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
-        let bytes = parquet_file.bytes().await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
+        let bytes = parquet_file.bytes(None).await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
@@ -278,30 +288,38 @@ mod tests {
         let parquet_file_path = format!("file://{}", file1.path().to_str().unwrap());
         let client = LocalSource::get_client().await?;
 
-        let try_all_bytes = client.get(&parquet_file_path, None).await?.bytes().await?;
+        let try_all_bytes = client
+            .get(&parquet_file_path, None, None)
+            .await?
+            .bytes(None)
+            .await?;
         assert_eq!(try_all_bytes.len(), bytes.len());
         assert_eq!(try_all_bytes, bytes);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 0..10)
+            .get_range(&parquet_file_path, 0..10, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 10);
         assert_eq!(first_bytes.as_ref(), &bytes[..10]);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 10..100)
+            .get_range(&parquet_file_path, 10..100, None)
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(first_bytes.len(), 90);
         assert_eq!(first_bytes.as_ref(), &bytes[10..100]);
 
         let last_bytes = client
-            .get_range(&parquet_file_path, (bytes.len() - 10)..(bytes.len() + 10))
+            .get_range(
+                &parquet_file_path,
+                (bytes.len() - 10)..(bytes.len() + 10),
+                None,
+            )
             .await?
-            .bytes()
+            .bytes(None)
             .await?;
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &bytes[(bytes.len() - 10)..]);
