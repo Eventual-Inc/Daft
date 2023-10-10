@@ -500,11 +500,13 @@ pub fn read_parquet_schema(
     Schema::try_from(builder.build()?.arrow_schema().as_ref())
 }
 
-pub async fn read_parquet_metadata(uri: &str, io_client: Arc<IOClient>) -> DaftResult<parquet2::metadata::FileMetaData> {
+pub async fn read_parquet_metadata(
+    uri: &str,
+    io_client: Arc<IOClient>,
+) -> DaftResult<parquet2::metadata::FileMetaData> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client).await?;
     Ok(builder.metadata)
 }
-
 
 pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;

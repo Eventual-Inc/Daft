@@ -3,21 +3,20 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
-use daft_core::{IntoSeries, Series};
-use daft_core::datatypes::{BooleanArray, DataArray, DaftPhysicalType, DaftNumericType, Utf8Array};
+use daft_core::datatypes::{BooleanArray, DaftNumericType, DaftPhysicalType, DataArray, Utf8Array};
 use daft_core::schema::{Schema, SchemaRef};
+use daft_core::{IntoSeries, Series};
 use daft_dsl::Expr;
 use daft_parquet::read::read_parquet_metadata;
 use daft_table::Table;
 use indexmap::IndexMap;
-use parquet2::statistics::{BooleanStatistics, PrimitiveStatistics, Statistics, BinaryStatistics};
+use parquet2::statistics::{BinaryStatistics, BooleanStatistics, PrimitiveStatistics, Statistics};
 use snafu::ResultExt;
 
+use crate::column_stats::ColumnRangeStatistics;
 use crate::DaftCoreComputeSnafu;
-use crate::column_stats::ColumnStatistics;
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
 use daft_io::IOConfig;
-
 
 struct DeferredLoadingParams {
     filters: Vec<Expr>,
@@ -104,48 +103,44 @@ impl MicroPartition {
     }
 }
 
-
-
-impl From<(&BooleanStatistics)> for ColumnStatistics {
+impl From<(&BooleanStatistics)> for ColumnRangeStatistics {
     fn from(value: &BooleanStatistics) -> Self {
         let lower = value.min_value.unwrap();
         let upper = value.max_value.unwrap();
         let null_count = value.null_count.unwrap();
         // TODO: FIX THESE STATS
 
-        ColumnStatistics {
+        ColumnRangeStatistics {
             lower: BooleanArray::from(("lower", [lower].as_slice())).into_series(),
             upper: BooleanArray::from(("upper", [upper].as_slice())).into_series(),
-            count: 1,
-            null_count: null_count as usize,
-            num_bytes: 1
         }
-
     }
 }
 
-impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative> From<(&PrimitiveStatistics<T>)> for ColumnStatistics{
+impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
+    From<(&PrimitiveStatistics<T>)> for ColumnRangeStatistics
+{
     fn from(value: &PrimitiveStatistics<T>) -> Self {
         let lower = value.min_value.unwrap();
         let upper = value.max_value.unwrap();
         let null_count = value.null_count.unwrap();
         // TODO: FIX THESE STATS
-        let lower = Series::try_from(("lower", Box::new(PrimitiveArray::<T>::from_vec(vec![lower])) as Box<dyn arrow2::array::Array>)).unwrap();
-        let upper = Series::try_from(("upper", Box::new(PrimitiveArray::<T>::from_vec(vec![upper])) as Box<dyn arrow2::array::Array>)).unwrap();
+        let lower = Series::try_from((
+            "lower",
+            Box::new(PrimitiveArray::<T>::from_vec(vec![lower])) as Box<dyn arrow2::array::Array>,
+        ))
+        .unwrap();
+        let upper = Series::try_from((
+            "upper",
+            Box::new(PrimitiveArray::<T>::from_vec(vec![upper])) as Box<dyn arrow2::array::Array>,
+        ))
+        .unwrap();
 
-        ColumnStatistics {
-            lower,
-            upper,
-            count: 1,
-            null_count: null_count as usize,
-            num_bytes: 1
-        }
-
+        ColumnRangeStatistics { lower, upper }
     }
 }
 
-
-impl From<(&BinaryStatistics)> for ColumnStatistics {
+impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
     fn from(value: &BinaryStatistics) -> Self {
         let lower = value.min_value.as_ref().unwrap();
         let upper = value.max_value.as_ref().unwrap();
@@ -159,29 +154,34 @@ impl From<(&BinaryStatistics)> for ColumnStatistics {
         let lower = Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
         let upper = Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-        ColumnStatistics {
-            lower,
-            upper,
-            count: 1,
-            null_count: null_count as usize,
-            num_bytes: 1
-        }
-
+        ColumnRangeStatistics { lower, upper }
     }
 }
 
-impl From<&dyn Statistics> for ColumnStatistics {
+impl From<&dyn Statistics> for ColumnRangeStatistics {
     fn from(value: &dyn Statistics) -> Self {
         let ptype = value.physical_type();
         let stats = value.as_any();
         use parquet2::schema::types::PhysicalType;
         match ptype {
             PhysicalType::Boolean => stats.downcast_ref::<BooleanStatistics>().unwrap().into(),
-            PhysicalType::Int32 => stats.downcast_ref::<PrimitiveStatistics<i32>>().unwrap().into(),
-            PhysicalType::Int64 => stats.downcast_ref::<PrimitiveStatistics<i64>>().unwrap().into(),
+            PhysicalType::Int32 => stats
+                .downcast_ref::<PrimitiveStatistics<i32>>()
+                .unwrap()
+                .into(),
+            PhysicalType::Int64 => stats
+                .downcast_ref::<PrimitiveStatistics<i64>>()
+                .unwrap()
+                .into(),
             PhysicalType::Int96 => todo!(),
-            PhysicalType::Float => stats.downcast_ref::<PrimitiveStatistics<f32>>().unwrap().into(),
-            PhysicalType::Double => stats.downcast_ref::<PrimitiveStatistics<f64>>().unwrap().into(),
+            PhysicalType::Float => stats
+                .downcast_ref::<PrimitiveStatistics<f32>>()
+                .unwrap()
+                .into(),
+            PhysicalType::Double => stats
+                .downcast_ref::<PrimitiveStatistics<f64>>()
+                .unwrap()
+                .into(),
             PhysicalType::ByteArray => stats.downcast_ref::<BinaryStatistics>().unwrap().into(),
             PhysicalType::FixedLenByteArray(size) => {
                 todo!()
@@ -190,31 +190,28 @@ impl From<&dyn Statistics> for ColumnStatistics {
     }
 }
 
-
-
 impl From<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
     fn from(value: &daft_parquet::metadata::RowGroupMetaData) -> Self {
         let num_rows = value.num_rows();
         let mut columns = IndexMap::new();
         for col in value.columns() {
             let stats = col.statistics().unwrap().unwrap();
-            let col_stats: ColumnStatistics = stats.as_ref().into();
-            columns.insert(col.descriptor().path_in_schema.get(0).unwrap().clone(), col_stats);
+            let col_stats: ColumnRangeStatistics = stats.as_ref().into();
+            columns.insert(
+                col.descriptor().path_in_schema.get(0).unwrap().clone(),
+                col_stats,
+            );
         }
 
-        TableStatistics {
-            columns
-        }
+        TableStatistics { columns }
     }
 }
-
 
 fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
     let runtime_handle = daft_io::get_runtime(true)?;
     let io_client = daft_io::get_io_client(true, io_config)?;
-    let metadata = runtime_handle.block_on(async move {
-        read_parquet_metadata(uri, io_client).await
-    })?;
+    let metadata =
+        runtime_handle.block_on(async move { read_parquet_metadata(uri, io_client).await })?;
 
     for rg in &metadata.row_groups {
         let table_stats: TableStatistics = rg.into();
@@ -222,7 +219,6 @@ fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod test {
@@ -238,14 +234,12 @@ mod test {
 
     use crate::column_stats::TruthValue;
 
-    use super::{ColumnStatistics, TableStatistics};
+    use super::{ColumnRangeStatistics, TableStatistics};
 
     #[test]
     fn test_pq() -> crate::Result<()> {
-
         let url = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
         super::read_parquet(&url, IOConfig::default().into());
-
 
         Ok(())
     }

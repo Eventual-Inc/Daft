@@ -1,27 +1,24 @@
 use snafu::ResultExt;
 
-use super::{ColumnStatistics, TruthValue};
+use super::{ColumnRangeStatistics, TruthValue};
 
 use crate::DaftCoreComputeSnafu;
 
-impl std::ops::Not for &ColumnStatistics {
-    type Output = crate::Result<ColumnStatistics>;
+impl std::ops::Not for &ColumnRangeStatistics {
+    type Output = crate::Result<ColumnRangeStatistics>;
     fn not(self) -> Self::Output {
         let lower = (&self.upper).not().context(DaftCoreComputeSnafu)?;
         let upper = (&self.lower).not().context(DaftCoreComputeSnafu)?;
 
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: lower,
             upper: upper,
-            count: self.count,
-            null_count: self.null_count,
-            num_bytes: self.num_bytes,
         })
     }
 }
 
-impl std::ops::BitAnd for &ColumnStatistics {
-    type Output = crate::Result<ColumnStatistics>;
+impl std::ops::BitAnd for &ColumnRangeStatistics {
+    type Output = crate::Result<ColumnRangeStatistics>;
     fn bitand(self, rhs: Self) -> Self::Output {
         // +-------+-------+-------+-------+
         // | Value | False | Maybe | True  |
@@ -41,18 +38,12 @@ impl std::ops::BitAnd for &ColumnStatistics {
             (_, Maybe) => Maybe,
             (True, True) => True,
         };
-        Ok(ColumnStatistics::from_truth_value(
-            nv,
-            self.count.max(rhs.count),
-            self.null_count.max(rhs.null_count),
-            self.num_bytes.max(rhs.num_bytes),
-        ))
+        Ok(ColumnRangeStatistics::from_truth_value(nv))
     }
 }
 
-
-impl std::ops::BitOr for &ColumnStatistics {
-    type Output = crate::Result<ColumnStatistics>;
+impl std::ops::BitOr for &ColumnRangeStatistics {
+    type Output = crate::Result<ColumnRangeStatistics>;
     fn bitor(self, rhs: Self) -> Self::Output {
         // +-------+-------+-------+------+
         // | Value | False | Maybe | True |
@@ -71,11 +62,6 @@ impl std::ops::BitOr for &ColumnStatistics {
             (Maybe, _) => Maybe,
             (_, Maybe) => Maybe,
         };
-        Ok(ColumnStatistics::from_truth_value(
-            nv,
-            self.count.max(rhs.count),
-            self.null_count.max(rhs.null_count),
-            self.num_bytes.max(rhs.num_bytes),
-        ))
+        Ok(ColumnRangeStatistics::from_truth_value(nv))
     }
 }

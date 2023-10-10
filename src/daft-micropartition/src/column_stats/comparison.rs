@@ -7,11 +7,11 @@ use daft_core::{
 };
 use snafu::ResultExt;
 
-use super::ColumnStatistics;
+use super::ColumnRangeStatistics;
 
-impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
-    type Output = crate::Result<ColumnStatistics>;
-    fn equal(&self, rhs: &ColumnStatistics) -> Self::Output {
+impl DaftCompare<&ColumnRangeStatistics> for ColumnRangeStatistics {
+    type Output = crate::Result<ColumnRangeStatistics>;
+    fn equal(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: do they exactly overlap
         // upper_bound: is there any overlap
         let exactly_overlap = self
@@ -37,20 +37,17 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
             .or(&rhs_lower_in_self_bounds)
             .context(DaftCoreComputeSnafu)?
             .into_series();
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: exactly_overlap,
             upper: any_overlap,
-            count: self.count.max(rhs.count),
-            null_count: self.null_count.max(rhs.null_count),
-            num_bytes: self.num_bytes.max(rhs.num_bytes),
         })
     }
-    fn not_equal(&self, rhs: &ColumnStatistics) -> Self::Output {
+    fn not_equal(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // invert of equal
         self.equal(rhs)?.not()
     }
 
-    fn gt(&self, rhs: &ColumnStatistics) -> Self::Output {
+    fn gt(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: True greater (self.lower > rhs.upper)
         // upper_bound: some value that can be greater (self.upper > rhs.lower)
         let maybe_greater = self
@@ -63,16 +60,13 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
             .gt(&rhs.upper)
             .context(DaftCoreComputeSnafu)?
             .into_series();
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: always_greater,
             upper: maybe_greater,
-            count: self.count.max(rhs.count),
-            null_count: self.null_count.max(rhs.null_count),
-            num_bytes: self.num_bytes.max(rhs.num_bytes),
         })
     }
 
-    fn gte(&self, rhs: &ColumnStatistics) -> Self::Output {
+    fn gte(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         let maybe_gte = self
             .upper
             .gte(&rhs.lower)
@@ -83,16 +77,13 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
             .gte(&rhs.upper)
             .context(DaftCoreComputeSnafu)?
             .into_series();
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: always_gte,
             upper: maybe_gte,
-            count: self.count.max(rhs.count),
-            null_count: self.null_count.max(rhs.null_count),
-            num_bytes: self.num_bytes.max(rhs.num_bytes),
         })
     }
 
-    fn lt(&self, rhs: &ColumnStatistics) -> Self::Output {
+    fn lt(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: True less than (self.upper < rhs.lower)
         // upper_bound: some value that can be less than (self.lower < rhs.upper)
         let maybe_lt = self
@@ -105,16 +96,13 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
             .lt(&self.lower)
             .context(DaftCoreComputeSnafu)?
             .into_series();
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: always_lt,
             upper: maybe_lt,
-            count: self.count.max(rhs.count),
-            null_count: self.null_count.max(rhs.null_count),
-            num_bytes: self.num_bytes.max(rhs.num_bytes),
         })
     }
 
-    fn lte(&self, rhs: &ColumnStatistics) -> Self::Output {
+    fn lte(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         let maybe_lte = self
             .lower
             .lte(&self.upper)
@@ -125,12 +113,9 @@ impl DaftCompare<&ColumnStatistics> for ColumnStatistics {
             .lte(&self.lower)
             .context(DaftCoreComputeSnafu)?
             .into_series();
-        Ok(ColumnStatistics {
+        Ok(ColumnRangeStatistics {
             lower: always_lte,
             upper: maybe_lte,
-            count: self.count.max(rhs.count),
-            null_count: self.null_count.max(rhs.null_count),
-            num_bytes: self.num_bytes.max(rhs.num_bytes),
         })
     }
 }

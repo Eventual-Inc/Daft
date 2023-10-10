@@ -1157,7 +1157,7 @@ dependencies = [
  "daft-io",
  "daft-parquet",
  "daft-table",
- "indexmap 2.0.0",
+ "indexmap 2.0.2",
  "parquet2",
  "pyo3",
  "pyo3-log",

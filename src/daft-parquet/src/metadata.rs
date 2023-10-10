@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use daft_io::IOClient;
 
-use parquet2::read::deserialize_metadata;
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
+use parquet2::read::deserialize_metadata;
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};

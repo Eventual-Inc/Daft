@@ -4,20 +4,20 @@ use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
 
-use crate::column_stats::ColumnStatistics;
+use crate::column_stats::ColumnRangeStatistics;
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
-    pub columns: IndexMap<String, ColumnStatistics>,
+    pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
 impl TableStatistics {
     fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
-            let stats = ColumnStatistics::from_series(col);
+            let stats = ColumnRangeStatistics::from_series(col);
             columns.insert(name, stats);
         }
         TableStatistics { columns: columns }
@@ -25,7 +25,7 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnStatistics> {
+    pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col) => Ok(self.columns.get(col.as_ref()).unwrap().clone()),
@@ -65,7 +65,7 @@ mod test {
 
     use crate::column_stats::TruthValue;
 
-    use super::{ColumnStatistics, TableStatistics};
+    use super::{ColumnRangeStatistics, TableStatistics};
 
     #[test]
     fn test_equal() -> crate::Result<()> {
