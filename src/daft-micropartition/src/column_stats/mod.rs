@@ -153,6 +153,8 @@ mod test {
 
     use daft_core::{array::ops::DaftCompare, datatypes::Int32Array, IntoSeries};
 
+    use crate::column_stats::TruthValue;
+
     use super::ColumnRangeStatistics;
 
     #[test]
@@ -165,9 +167,7 @@ mod test {
             Some(Int32Array::from(("r", vec![4])).into_series()),
             Some(Int32Array::from(("r", vec![4])).into_series()),
         )?;
-        println!("{l}");
-        println!("{r}");
-        println!("{}", l.lt(&r)?.to_truth_value());
+        assert_eq!(l.lt(&r)?.to_truth_value(), TruthValue::Maybe);
 
         Ok(())
     }
