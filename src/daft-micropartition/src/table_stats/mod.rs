@@ -3,7 +3,7 @@ use std::ops::Not;
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use crate::column_stats::{self, ColumnRangeStatistics};
 

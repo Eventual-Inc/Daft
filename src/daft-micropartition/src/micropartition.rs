@@ -7,7 +7,7 @@ use daft_dsl::Expr;
 use daft_parquet::read::read_parquet_metadata;
 use daft_table::Table;
 
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
 

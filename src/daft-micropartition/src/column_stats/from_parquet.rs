@@ -224,19 +224,7 @@ impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
 
         if let Some(ltype) = ptype.logical_type {
             use parquet2::schema::types::PrimitiveLogicalType;
-            match ltype {
-                PrimitiveLogicalType::Decimal(p, s) => {
-                    return make_decimal_column_range_statistics(
-                        p,
-                        s,
-                        lower.as_slice(),
-                        upper.as_slice(),
-                    )
-                }
-                _ => {} // fall back
-            }
-        } else if let Some(ctype) = ptype.converted_type {
-            if let PrimitiveConvertedType::Decimal(p, s) = ctype {
+            if let PrimitiveLogicalType::Decimal(p, s) = ltype {
                 return make_decimal_column_range_statistics(
                     p,
                     s,
@@ -244,6 +232,8 @@ impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
                     upper.as_slice(),
                 );
             }
+        } else if let Some(PrimitiveConvertedType::Decimal(p, s)) = ptype.converted_type {
+            return make_decimal_column_range_statistics(p, s, lower.as_slice(), upper.as_slice());
         }
 
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
@@ -363,21 +353,14 @@ fn convert_int96_column_range_statistics(
 
     if let Some(ltype) = prim_type.logical_type {
         use parquet2::schema::types::PrimitiveLogicalType;
-        match ltype {
-            PrimitiveLogicalType::Timestamp {
-                unit,
-                is_adjusted_to_utc,
-            } => {
-                let lower = convert_i96_to_i64_timestamp(lower, unit);
-                let upper = convert_i96_to_i64_timestamp(upper, unit);
-                return make_timestamp_column_range_statistics(
-                    unit,
-                    is_adjusted_to_utc,
-                    lower,
-                    upper,
-                );
-            }
-            _ => {}
+        if let PrimitiveLogicalType::Timestamp {
+            unit,
+            is_adjusted_to_utc,
+        } = ltype
+        {
+            let lower = convert_i96_to_i64_timestamp(lower, unit);
+            let upper = convert_i96_to_i64_timestamp(upper, unit);
+            return make_timestamp_column_range_statistics(unit, is_adjusted_to_utc, lower, upper);
         }
     } else if let Some(ctype) = prim_type.converted_type {
         match ctype {
