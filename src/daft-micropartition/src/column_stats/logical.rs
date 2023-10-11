@@ -7,13 +7,15 @@ use crate::DaftCoreComputeSnafu;
 impl std::ops::Not for &ColumnRangeStatistics {
     type Output = crate::Result<ColumnRangeStatistics>;
     fn not(self) -> Self::Output {
-        let lower = (&self.upper).not().context(DaftCoreComputeSnafu)?;
-        let upper = (&self.lower).not().context(DaftCoreComputeSnafu)?;
+        match self {
+            ColumnRangeStatistics::Missing => Ok(ColumnRangeStatistics::Missing),
+            ColumnRangeStatistics::Loaded(lower, upper) => {
+                let new_lower = upper.not().context(DaftCoreComputeSnafu)?;
+                let new_upper = lower.not().context(DaftCoreComputeSnafu)?;
 
-        Ok(ColumnRangeStatistics {
-            lower: lower,
-            upper: upper,
-        })
+                Ok(ColumnRangeStatistics::Loaded(new_lower, new_upper))
+            }
+        }
     }
 }
 

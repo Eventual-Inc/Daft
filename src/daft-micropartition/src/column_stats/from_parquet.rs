@@ -25,8 +25,8 @@ impl TryFrom<&BooleanStatistics> for ColumnRangeStatistics {
             .context(MissingParquetColumnStatisticsSnafu)?;
 
         ColumnRangeStatistics::new(
-            BooleanArray::from(("lower", [lower].as_slice())).into_series(),
-            BooleanArray::from(("upper", [upper].as_slice())).into_series(),
+            Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
+            Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
         )
     }
 }
@@ -62,7 +62,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
                 PrimitiveLogicalType::Decimal(p, s) => {
                     assert!(lower.len() <= 16);
@@ -84,7 +84,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                     )
                     .into_series();
 
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
                 _ => todo!("HANDLE BAD LOGICAL TYPE"),
             }
@@ -104,7 +104,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
                 PrimitiveConvertedType::Decimal(p, s) => {
                     assert!(lower.len() <= 16);
@@ -125,7 +125,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                         upper,
                     )
                     .into_series();
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
                 _ => todo!("HANDLE BAD CONVERTED TYPE"),
             }
@@ -134,7 +134,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        return ColumnRangeStatistics::new(lower, upper);
+        return ColumnRangeStatistics::new(Some(lower), Some(upper));
     }
 }
 
@@ -174,7 +174,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                     let upper =
                         DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper)
                             .into_series();
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
                 (
                     PhysicalType::Int64,
@@ -214,7 +214,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         upper,
                     )
                     .into_series();
-                    return ColumnRangeStatistics::new(lower, upper);
+                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
                 }
 
                 _ => {}
@@ -233,7 +233,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         ))
         .unwrap();
 
-        return ColumnRangeStatistics::new(lower, upper);
+        return ColumnRangeStatistics::new(Some(lower), Some(upper));
     }
 }
 

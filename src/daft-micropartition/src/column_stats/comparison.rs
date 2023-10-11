@@ -14,33 +14,38 @@ impl DaftCompare<&ColumnRangeStatistics> for ColumnRangeStatistics {
     fn equal(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: do they exactly overlap
         // upper_bound: is there any overlap
-        let exactly_overlap = self
-            .lower
-            .equal(&rhs.lower)
-            .context(DaftCoreComputeSnafu)?
-            .and(&self.upper.equal(&rhs.upper).context(DaftCoreComputeSnafu)?)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        let self_lower_in_rhs_bounds = self
-            .lower
-            .gte(&rhs.lower)
-            .context(DaftCoreComputeSnafu)?
-            .and(&self.lower.lte(&rhs.upper).context(DaftCoreComputeSnafu)?)
-            .context(DaftCoreComputeSnafu)?;
-        let rhs_lower_in_self_bounds = rhs
-            .lower
-            .gte(&self.lower)
-            .context(DaftCoreComputeSnafu)?
-            .and(&rhs.lower.lte(&self.upper).context(DaftCoreComputeSnafu)?)
-            .context(DaftCoreComputeSnafu)?;
-        let any_overlap = self_lower_in_rhs_bounds
-            .or(&rhs_lower_in_self_bounds)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        Ok(ColumnRangeStatistics {
-            lower: exactly_overlap,
-            upper: any_overlap,
-        })
+
+        match (self, rhs) {
+            (ColumnRangeStatistics::Missing, _) | (_, ColumnRangeStatistics::Missing) => {
+                Ok(ColumnRangeStatistics::Missing)
+            }
+            (
+                ColumnRangeStatistics::Loaded(s_lower, s_upper),
+                ColumnRangeStatistics::Loaded(r_lower, r_upper),
+            ) => {
+                let exactly_overlap = (s_lower.equal(r_lower).context(DaftCoreComputeSnafu)?)
+                    .and(&s_upper.equal(r_upper).context(DaftCoreComputeSnafu)?)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+
+                let self_lower_in_rhs_bounds = s_lower
+                    .gte(r_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .and(&s_lower.lte(r_upper).context(DaftCoreComputeSnafu)?)
+                    .context(DaftCoreComputeSnafu)?;
+                let rhs_lower_in_self_bounds = r_lower
+                    .gte(s_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .and(&r_lower.lte(s_upper).context(DaftCoreComputeSnafu)?)
+                    .context(DaftCoreComputeSnafu)?;
+
+                let any_overlap = self_lower_in_rhs_bounds
+                    .or(&rhs_lower_in_self_bounds)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                Ok(ColumnRangeStatistics::Loaded(exactly_overlap, any_overlap))
+            }
+        }
     }
     fn not_equal(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // invert of equal
@@ -50,72 +55,94 @@ impl DaftCompare<&ColumnRangeStatistics> for ColumnRangeStatistics {
     fn gt(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: True greater (self.lower > rhs.upper)
         // upper_bound: some value that can be greater (self.upper > rhs.lower)
-        let maybe_greater = self
-            .upper
-            .gt(&rhs.lower)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        let always_greater = self
-            .lower
-            .gt(&rhs.upper)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        Ok(ColumnRangeStatistics {
-            lower: always_greater,
-            upper: maybe_greater,
-        })
+
+        match (self, rhs) {
+            (ColumnRangeStatistics::Missing, _) | (_, ColumnRangeStatistics::Missing) => {
+                Ok(ColumnRangeStatistics::Missing)
+            }
+            (
+                ColumnRangeStatistics::Loaded(s_lower, s_upper),
+                ColumnRangeStatistics::Loaded(r_lower, r_upper),
+            ) => {
+                let maybe_greater = s_upper
+                    .gt(r_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                let always_greater = s_lower
+                    .gt(r_upper)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                Ok(ColumnRangeStatistics::Loaded(always_greater, maybe_greater))
+            }
+        }
     }
 
     fn gte(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
-        let maybe_gte = self
-            .upper
-            .gte(&rhs.lower)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        let always_gte = self
-            .lower
-            .gte(&rhs.upper)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        Ok(ColumnRangeStatistics {
-            lower: always_gte,
-            upper: maybe_gte,
-        })
+        match (self, rhs) {
+            (ColumnRangeStatistics::Missing, _) | (_, ColumnRangeStatistics::Missing) => {
+                Ok(ColumnRangeStatistics::Missing)
+            }
+            (
+                ColumnRangeStatistics::Loaded(s_lower, s_upper),
+                ColumnRangeStatistics::Loaded(r_lower, r_upper),
+            ) => {
+                let maybe_gte = s_upper
+                    .gte(r_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                let always_gte = s_lower
+                    .gte(r_upper)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                Ok(ColumnRangeStatistics::Loaded(always_gte, maybe_gte))
+            }
+        }
     }
 
     fn lt(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
         // lower_bound: True less than (self.upper < rhs.lower)
         // upper_bound: some value that can be less than (self.lower < rhs.upper)
-        let maybe_lt = self
-            .lower
-            .lt(&self.upper)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        let always_lt = self
-            .upper
-            .lt(&self.lower)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        Ok(ColumnRangeStatistics {
-            lower: always_lt,
-            upper: maybe_lt,
-        })
+
+        match (self, rhs) {
+            (ColumnRangeStatistics::Missing, _) | (_, ColumnRangeStatistics::Missing) => {
+                Ok(ColumnRangeStatistics::Missing)
+            }
+            (
+                ColumnRangeStatistics::Loaded(s_lower, s_upper),
+                ColumnRangeStatistics::Loaded(r_lower, r_upper),
+            ) => {
+                let maybe_lt = s_lower
+                    .lt(r_upper)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                let always_lt = s_upper
+                    .lt(r_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                Ok(ColumnRangeStatistics::Loaded(always_lt, maybe_lt))
+            }
+        }
     }
 
     fn lte(&self, rhs: &ColumnRangeStatistics) -> Self::Output {
-        let maybe_lte = self
-            .lower
-            .lte(&self.upper)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        let always_lte = self
-            .upper
-            .lte(&self.lower)
-            .context(DaftCoreComputeSnafu)?
-            .into_series();
-        Ok(ColumnRangeStatistics {
-            lower: always_lte,
-            upper: maybe_lte,
-        })
+        match (self, rhs) {
+            (ColumnRangeStatistics::Missing, _) | (_, ColumnRangeStatistics::Missing) => {
+                Ok(ColumnRangeStatistics::Missing)
+            }
+            (
+                ColumnRangeStatistics::Loaded(s_lower, s_upper),
+                ColumnRangeStatistics::Loaded(r_lower, r_upper),
+            ) => {
+                let maybe_lte = s_lower
+                    .lte(r_upper)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                let always_lte = s_upper
+                    .lte(r_lower)
+                    .context(DaftCoreComputeSnafu)?
+                    .into_series();
+                Ok(ColumnRangeStatistics::Loaded(always_lte, maybe_lte))
+            }
+        }
     }
 }

@@ -11,7 +11,7 @@ use daft_core::array::ops::{DaftCompare, DaftLogical};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
-    pub columns: IndexMap<String, Option<ColumnRangeStatistics>>,
+    pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
 impl TableStatistics {
     fn from_table(table: &Table) -> Self {
@@ -19,7 +19,7 @@ impl TableStatistics {
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
             let stats = ColumnRangeStatistics::from_series(col);
-            columns.insert(name, Some(stats));
+            columns.insert(name, stats);
         }
         TableStatistics { columns: columns }
     }
@@ -31,7 +31,7 @@ impl TableStatistics {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col) => {
                 let col = self.columns.get(col.as_ref()).unwrap();
-                Ok(col.clone().unwrap())
+                Ok(col.clone())
             }
             Expr::Literal(lit_value) => lit_value.try_into(),
             Expr::Not(col) => self.eval_expression(col)?.not(),
@@ -69,6 +69,7 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
                 .context(column_stats::ParquetColumnStatisticsParsingSnafu)?;
             let col_stats =
                 stats.and_then(|v| v.as_ref().try_into().context(MissingStatisticsSnafu).ok());
+            let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing);
             columns.insert(
                 col.descriptor().path_in_schema.get(0).unwrap().clone(),
                 col_stats,

@@ -8,9 +8,9 @@ use std::string::FromUtf8Error;
 use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
 use snafu::Snafu;
 #[derive(Clone)]
-pub(crate) struct ColumnRangeStatistics {
-    pub lower: Series,
-    pub upper: Series,
+pub(crate) enum ColumnRangeStatistics {
+    Missing,
+    Loaded(Series, Series),
 }
 
 struct ColumnMetadata {
@@ -40,18 +40,27 @@ impl std::fmt::Display for TruthValue {
 }
 
 impl ColumnRangeStatistics {
-    pub fn new(lower: Series, upper: Series) -> Result<Self> {
-        Ok(ColumnRangeStatistics { lower, upper })
+    pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
+        match (lower, upper) {
+            //TODO: also need to check dtype and length
+            (Some(l), Some(u)) => Ok(ColumnRangeStatistics::Loaded(l, u)),
+            _ => Ok(ColumnRangeStatistics::Missing),
+        }
     }
 
     pub fn to_truth_value(&self) -> TruthValue {
-        let lower = self.lower.bool().unwrap().get(0).unwrap();
-        let upper = self.upper.bool().unwrap().get(0).unwrap();
-        match (lower, upper) {
-            (false, false) => TruthValue::False,
-            (false, true) => TruthValue::Maybe,
-            (true, true) => TruthValue::True,
-            (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
+        match self {
+            Self::Missing => TruthValue::Maybe,
+            Self::Loaded(lower, upper) => {
+                let lower = lower.bool().unwrap().get(0).unwrap();
+                let upper = upper.bool().unwrap().get(0).unwrap();
+                match (lower, upper) {
+                    (false, false) => TruthValue::False,
+                    (false, true) => TruthValue::Maybe,
+                    (true, true) => TruthValue::True,
+                    (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
+                }
+            }
         }
     }
 
@@ -64,7 +73,7 @@ impl ColumnRangeStatistics {
 
         let lower = BooleanArray::from(("lower", [lower].as_slice())).into_series();
         let upper = BooleanArray::from(("upper", [upper].as_slice())).into_series();
-        Self { lower, upper }
+        Self::Loaded(lower, upper)
     }
 
     pub fn from_series(series: &Series) -> Self {
@@ -85,20 +94,23 @@ impl ColumnRangeStatistics {
             .get(0)
             .unwrap() as usize;
         let num_bytes = series.size_bytes().unwrap();
-        Self { lower, upper }
+        Self::Loaded(lower, upper)
     }
 }
 
 impl std::fmt::Display for ColumnRangeStatistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ColumnRangeStatistics:
+        match self {
+            Self::Missing => write!(f, "ColumnRangeStatistics: Missing"),
+            Self::Loaded(lower, upper) => write!(
+                f,
+                "ColumnRangeStatistics:
 lower:\n{}
 upper:\n{}
-",
-            self.lower, self.upper
-        )
+    ",
+                lower, upper
+            ),
+        }
     }
 }
 
@@ -113,10 +125,7 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     fn try_from(value: &daft_dsl::LiteralValue) -> Result<Self, Self::Error> {
         let ser = value.to_series();
         assert_eq!(ser.len(), 1);
-        Ok(Self {
-            lower: ser.clone(),
-            upper: ser.clone(),
-        })
+        Ok(Self::new(Some(ser.clone()), Some(ser.clone()))?)
     }
 }
 
@@ -154,14 +163,14 @@ mod test {
 
     #[test]
     fn test_equal() -> crate::Result<()> {
-        let l = ColumnRangeStatistics {
-            lower: Int64Array::from(("l", vec![1])).into_series(),
-            upper: Int64Array::from(("l", vec![5])).into_series(),
-        };
-        let r = ColumnRangeStatistics {
-            lower: Int32Array::from(("r", vec![4])).into_series(),
-            upper: Int32Array::from(("r", vec![6])).into_series(),
-        };
+        let l = ColumnRangeStatistics::new(
+            Some(Int32Array::from(("l", vec![1])).into_series()),
+            Some(Int32Array::from(("l", vec![5])).into_series()),
+        )?;
+        let r = ColumnRangeStatistics::new(
+            Some(Int32Array::from(("r", vec![4])).into_series()),
+            Some(Int32Array::from(("r", vec![4])).into_series()),
+        )?;
         println!("{l}");
         println!("{r}");
         println!("{}", l.lt(&r)?.to_truth_value());
