@@ -148,7 +148,7 @@ impl DateArray {
                 let date = if v.is_positive() {
                     epoch_date + chrono::naive::Days::new(v as u64)
                 } else {
-                    epoch_date - chrono::naive::Days::new(v.abs() as u64)
+                    epoch_date - chrono::naive::Days::new(v.unsigned_abs() as u64)
                 };
 
                 Ok(format!("{date}"))

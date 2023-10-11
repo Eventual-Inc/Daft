@@ -66,7 +66,7 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
             let stats = col
                 .statistics()
                 .transpose()
-                .context(column_stats::ParquetColumnStatisticsParsingSnafu)?;
+                .context(column_stats::UnableToParseParquetColumnStatisticsSnafu)?;
             let col_stats =
                 stats.and_then(|v| v.as_ref().try_into().context(MissingStatisticsSnafu).ok());
             let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing);

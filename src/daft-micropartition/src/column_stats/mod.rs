@@ -42,7 +42,7 @@ impl std::fmt::Display for TruthValue {
 impl ColumnRangeStatistics {
     pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
         match (lower, upper) {
-            //TODO: also need to check dtype and length
+            //TODO: also need to check dtype and length==1, and upper > lower.
             (Some(l), Some(u)) => Ok(ColumnRangeStatistics::Loaded(l, u)),
             _ => Ok(ColumnRangeStatistics::Missing),
         }
@@ -134,8 +134,8 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
 pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
-    #[snafu(display("ParquetColumnStatisticsParsingError: {source}"))]
-    ParquetColumnStatisticsParsingError { source: parquet2::error::Error },
+    #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
+    UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
 }
@@ -144,9 +144,7 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {
-        match value {
-            _ => crate::Error::MissingStatistics { source: value },
-        }
+        crate::Error::MissingStatistics { source: value }
     }
 }
 

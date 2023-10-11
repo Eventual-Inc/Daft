@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![allow(dead_code)]
 
 use common_error::DaftError;
 use snafu::Snafu;
