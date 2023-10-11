@@ -143,7 +143,16 @@ impl DateArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => Ok(format!("{v}")),
+            Some(v) => {
+                let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+                let date = if v.is_positive() {
+                    epoch_date + chrono::naive::Days::new(v as u64)
+                } else {
+                    epoch_date - chrono::naive::Days::new(v.abs() as u64)
+                };
+                
+                Ok(format!("{date}"))
+            }
         }
     }
 }
