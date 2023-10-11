@@ -150,12 +150,8 @@ impl From<Error> for crate::Error {
 
 #[cfg(test)]
 mod test {
-    
-    use daft_core::{
-        array::ops::DaftCompare,
-        datatypes::{Int32Array},
-        IntoSeries,
-    };
+
+    use daft_core::{array::ops::DaftCompare, datatypes::Int32Array, IntoSeries};
 
     use super::ColumnRangeStatistics;
 

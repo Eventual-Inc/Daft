@@ -9,7 +9,6 @@ use daft_table::Table;
 
 use snafu::{OptionExt, ResultExt};
 
-
 use crate::DaftCoreComputeSnafu;
 
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
@@ -114,22 +113,15 @@ fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
 
 #[cfg(test)]
 mod test {
-    
-    
-    
+
     use daft_io::IOConfig;
-    
-
-    
-
-    
 
     #[test]
     fn test_pq() -> crate::Result<()> {
         // let url = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
         // let url = "/Users/sammy/mvp.parquet";
         let url = "/Users/sammy/yellow_tripdata_2022-06.parquet";
-        let _  = super::read_parquet(url, IOConfig::default().into());
+        let _ = super::read_parquet(url, IOConfig::default().into());
 
         Ok(())
     }

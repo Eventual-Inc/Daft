@@ -7,7 +7,7 @@ use snafu::{OptionExt, ResultExt};
 
 use crate::column_stats::{self, ColumnRangeStatistics};
 
-use daft_core::array::ops::{DaftCompare};
+use daft_core::array::ops::DaftCompare;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
@@ -82,17 +82,14 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
 
 #[cfg(test)]
 mod test {
-    
-    use daft_core::{
-        datatypes::{Int64Array},
-        IntoSeries,
-    };
+
+    use daft_core::{datatypes::Int64Array, IntoSeries};
     use daft_dsl::{col, lit};
     use daft_table::Table;
 
     use crate::column_stats::TruthValue;
 
-    use super::{TableStatistics};
+    use super::TableStatistics;
 
     #[test]
     fn test_equal() -> crate::Result<()> {
