@@ -150,7 +150,7 @@ impl DateArray {
                 } else {
                     epoch_date - chrono::naive::Days::new(v.abs() as u64)
                 };
-                
+
                 Ok(format!("{date}"))
             }
         }

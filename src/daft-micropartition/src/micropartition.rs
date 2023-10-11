@@ -3,9 +3,10 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
-use daft_core::datatypes::logical::{Decimal128Array, DateArray};
+use daft_core::datatypes::logical::{DateArray, Decimal128Array};
 use daft_core::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataArray, Int128Array, Utf8Array, Int32Array,
+    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataArray, Int128Array,
+    Int32Array, Utf8Array,
 };
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::{IntoSeries, Series};
@@ -110,8 +111,6 @@ impl From<(&BooleanStatistics)> for ColumnRangeStatistics {
     fn from(value: &BooleanStatistics) -> Self {
         let lower = value.min_value.unwrap();
         let upper = value.max_value.unwrap();
-        let null_count = value.null_count.unwrap();
-        // TODO: FIX THESE STATS
 
         ColumnRangeStatistics {
             lower: BooleanArray::from(("lower", [lower].as_slice())).into_series(),
@@ -128,38 +127,33 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         let lower = value.min_value.unwrap();
         let upper = value.max_value.unwrap();
 
+        let prim_type = &value.primitive_type;
+        let ptype = prim_type.physical_type;
 
-
-        let ptype = &value.primitive_type;
-        if let Some(ltype) = ptype.logical_type {
+        if let Some(ltype) = prim_type.logical_type {
+            use parquet2::schema::types::PhysicalType;
             use parquet2::schema::types::PrimitiveLogicalType;
-            match ltype {
-                PrimitiveLogicalType::Date => {
+
+            match (ptype, ltype) {
+                (PhysicalType::Int32, PrimitiveLogicalType::Date) => {
                     let lower = Int32Array::from(("lower", [lower.to_i32().unwrap()].as_slice()));
                     let upper = Int32Array::from(("upper", [upper.to_i32().unwrap()].as_slice()));
 
                     let dtype = daft_core::datatypes::DataType::Date;
-                    
+
                     let lower = DateArray::new(
-                        daft_core::datatypes::Field::new(
-                          "lower",
-                          dtype.clone()
-                        ),
-                        lower
-                    ).into_series();
-                    let upper = DateArray::new(
-                        daft_core::datatypes::Field::new(
-                          "upper",
-                          dtype  
-                        ),
-                        upper
-                    ).into_series();
+                        daft_core::datatypes::Field::new("lower", dtype.clone()),
+                        lower,
+                    )
+                    .into_series();
+                    let upper =
+                        DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper)
+                            .into_series();
                     return ColumnRangeStatistics { lower, upper };
                 }
-                _ => todo!("rest of prim logical types")
+                _ => {}
             }
         }
-
 
         // TODO: FIX THESE STATS
         let lower = Series::try_from((
