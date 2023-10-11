@@ -311,7 +311,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
         connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
-            (config.max_connections as usize)
+            (config.max_connections_per_io_thread as usize)
                 * get_io_pool_num_threads()
                     .await
                     .expect("Should be running in tokio pool"),
