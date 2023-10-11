@@ -312,7 +312,9 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
         connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
             (config.max_connections as usize)
-                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
+                * get_io_pool_num_threads()
+                    .await
+                    .expect("Should be running in tokio pool"),
         )),
         s3_config: config.clone(),
         default_region,

@@ -334,13 +334,18 @@ pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
     true
 }
 
-pub fn get_io_pool_num_threads() -> Option<usize> {
-    tokio::runtime::Handle::try_current().map_or(None, |handle| match handle.runtime_flavor() {
-        RuntimeFlavor::CurrentThread => Some(1),
-        RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.blocking_read().1),
-        // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
-        _ => Some(1),
-    })
+pub async fn get_io_pool_num_threads() -> Option<usize> {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            match handle.runtime_flavor() {
+                RuntimeFlavor::CurrentThread => Some(1),
+                RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.read().await.1),
+                // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
+                _ => Some(1),
+            }
+        }
+        Err(_) => None,
+    }
 }
 
 pub fn _url_download(
