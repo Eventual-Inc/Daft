@@ -401,6 +401,7 @@ class ReadFile(SingleOutputInstruction):
                         schema=self.schema,
                         storage_config=self.storage_config,
                         read_options=read_options,
+                        multithreaded_io=format_config.multithreaded_io,
                     )
                     for fp in filepaths
                 ]

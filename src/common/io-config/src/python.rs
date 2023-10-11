@@ -211,7 +211,7 @@ impl S3Config {
         Ok(self.config.access_key.clone())
     }
 
-    /// AWS max connections
+    /// AWS max connections per IO thread
     #[getter]
     pub fn max_connections(&self) -> PyResult<u32> {
         Ok(self.config.max_connections)
