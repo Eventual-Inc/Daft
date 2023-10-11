@@ -113,7 +113,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        return ColumnRangeStatistics::new(Some(lower), Some(upper));
+        ColumnRangeStatistics::new(Some(lower), Some(upper))
     }
 }
 
@@ -140,7 +140,7 @@ fn make_decimal_column_range_statistics(
     let upper = Decimal128Array::new(daft_core::datatypes::Field::new("upper", daft_type), upper)
         .into_series();
 
-    return ColumnRangeStatistics::new(Some(lower), Some(upper));
+    ColumnRangeStatistics::new(Some(lower), Some(upper))
 }
 
 fn make_date_column_range_statistics(
@@ -159,7 +159,7 @@ fn make_date_column_range_statistics(
     .into_series();
     let upper =
         DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    return ColumnRangeStatistics::new(Some(lower), Some(upper));
+    ColumnRangeStatistics::new(Some(lower), Some(upper))
 }
 
 fn make_timestamp_column_range_statistics(
@@ -196,7 +196,7 @@ fn make_timestamp_column_range_statistics(
     .into_series();
     let upper =
         TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    return ColumnRangeStatistics::new(Some(lower), Some(upper));
+    ColumnRangeStatistics::new(Some(lower), Some(upper))
 }
 
 impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
@@ -249,7 +249,7 @@ impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        return ColumnRangeStatistics::new(Some(lower), Some(upper));
+        ColumnRangeStatistics::new(Some(lower), Some(upper))
     }
 }
 
@@ -341,7 +341,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         ))
         .unwrap();
 
-        return ColumnRangeStatistics::new(Some(lower), Some(upper));
+        ColumnRangeStatistics::new(Some(lower), Some(upper))
     }
 }
 

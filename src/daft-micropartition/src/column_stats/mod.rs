@@ -79,21 +79,21 @@ impl ColumnRangeStatistics {
     pub fn from_series(series: &Series) -> Self {
         let lower = series.min(None).unwrap();
         let upper = series.max(None).unwrap();
-        let count = series
+        let _count = series
             .count(None, daft_core::CountMode::All)
             .unwrap()
             .u64()
             .unwrap()
             .get(0)
             .unwrap() as usize;
-        let null_count = series
+        let _null_count = series
             .count(None, daft_core::CountMode::Null)
             .unwrap()
             .u64()
             .unwrap()
             .get(0)
             .unwrap() as usize;
-        let num_bytes = series.size_bytes().unwrap();
+        let _num_bytes = series.size_bytes().unwrap();
         Self::Loaded(lower, upper)
     }
 }
@@ -150,10 +150,10 @@ impl From<Error> for crate::Error {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    
     use daft_core::{
         array::ops::DaftCompare,
-        datatypes::{Int32Array, Int64Array},
+        datatypes::{Int32Array},
         IntoSeries,
     };
 

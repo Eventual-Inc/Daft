@@ -7,7 +7,7 @@ use snafu::{OptionExt, ResultExt};
 
 use crate::column_stats::{self, ColumnRangeStatistics};
 
-use daft_core::array::ops::{DaftCompare, DaftLogical};
+use daft_core::array::ops::{DaftCompare};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
@@ -21,7 +21,7 @@ impl TableStatistics {
             let stats = ColumnRangeStatistics::from_series(col);
             columns.insert(name, stats);
         }
-        TableStatistics { columns: columns }
+        TableStatistics { columns }
     }
 }
 
@@ -60,7 +60,7 @@ use crate::MissingStatisticsSnafu;
 impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
     type Error = crate::Error;
     fn try_from(value: &daft_parquet::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
-        let num_rows = value.num_rows();
+        let _num_rows = value.num_rows();
         let mut columns = IndexMap::new();
         for col in value.columns() {
             let stats = col
@@ -82,18 +82,17 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
+    
     use daft_core::{
-        array::ops::DaftCompare,
-        datatypes::{Int32Array, Int64Array},
-        IntoSeries, Series,
+        datatypes::{Int64Array},
+        IntoSeries,
     };
     use daft_dsl::{col, lit};
     use daft_table::Table;
 
     use crate::column_stats::TruthValue;
 
-    use super::{ColumnRangeStatistics, TableStatistics};
+    use super::{TableStatistics};
 
     #[test]
     fn test_equal() -> crate::Result<()> {

@@ -6,12 +6,12 @@ use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
 use daft_parquet::read::read_parquet_metadata;
 use daft_table::Table;
-use indexmap::IndexMap;
+
 use snafu::{OptionExt, ResultExt};
 
-use crate::column_stats::{self, ColumnRangeStatistics};
+
 use crate::DaftCoreComputeSnafu;
-use crate::MissingStatisticsSnafu;
+
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
 use daft_io::IOConfig;
 struct DeferredLoadingParams {
@@ -34,7 +34,7 @@ impl MicroPartition {
         MicroPartition {
             schema,
             state: Mutex::new(state),
-            statistics: statistics,
+            statistics,
         }
     }
 
@@ -114,26 +114,22 @@ fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
-    use daft_core::{
-        array::ops::DaftCompare,
-        datatypes::{Int32Array, Int64Array},
-        IntoSeries, Series,
-    };
-    use daft_dsl::{col, lit};
+    
+    
+    
     use daft_io::IOConfig;
-    use daft_table::Table;
+    
 
-    use crate::column_stats::TruthValue;
+    
 
-    use super::{ColumnRangeStatistics, TableStatistics};
+    
 
     #[test]
     fn test_pq() -> crate::Result<()> {
         // let url = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
         // let url = "/Users/sammy/mvp.parquet";
         let url = "/Users/sammy/yellow_tripdata_2022-06.parquet";
-        let _  = super::read_parquet(&url, IOConfig::default().into());
+        let _  = super::read_parquet(url, IOConfig::default().into());
 
         Ok(())
     }
