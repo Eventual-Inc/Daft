@@ -7,25 +7,42 @@ use daft_core::{
     IntoSeries, Series,
 };
 use parquet2::statistics::{BinaryStatistics, BooleanStatistics, PrimitiveStatistics, Statistics};
+use snafu::{OptionExt, ResultExt};
 
 use super::ColumnRangeStatistics;
+use crate::column_stats::MissingParquetColumnStatisticsSnafu;
 
-impl From<(&BooleanStatistics)> for ColumnRangeStatistics {
-    fn from(value: &BooleanStatistics) -> Self {
-        let lower = value.min_value.unwrap();
-        let upper = value.max_value.unwrap();
+use crate::column_stats::UnableToParseUtf8FromBinarySnafu;
 
-        ColumnRangeStatistics {
-            lower: BooleanArray::from(("lower", [lower].as_slice())).into_series(),
-            upper: BooleanArray::from(("upper", [upper].as_slice())).into_series(),
-        }
+impl TryFrom<&BooleanStatistics> for ColumnRangeStatistics {
+    type Error = super::Error;
+    fn try_from(value: &BooleanStatistics) -> Result<Self, Self::Error> {
+        let lower = value
+            .min_value
+            .context(MissingParquetColumnStatisticsSnafu)?;
+        let upper = value
+            .max_value
+            .context(MissingParquetColumnStatisticsSnafu)?;
+
+        ColumnRangeStatistics::new(
+            BooleanArray::from(("lower", [lower].as_slice())).into_series(),
+            BooleanArray::from(("upper", [upper].as_slice())).into_series(),
+        )
     }
 }
 
-impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
-    fn from(value: &BinaryStatistics) -> Self {
-        let lower = value.min_value.as_ref().unwrap();
-        let upper = value.max_value.as_ref().unwrap();
+impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
+    type Error = super::Error;
+
+    fn try_from(value: &BinaryStatistics) -> Result<Self, Self::Error> {
+        let lower = value
+            .min_value
+            .as_ref()
+            .context(MissingParquetColumnStatisticsSnafu)?;
+        let upper = value
+            .max_value
+            .as_ref()
+            .context(MissingParquetColumnStatisticsSnafu)?;
         let ptype = &value.primitive_type;
 
         if let Some(ltype) = ptype.logical_type {
@@ -35,15 +52,17 @@ impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
                 | PrimitiveLogicalType::Enum
                 | PrimitiveLogicalType::Uuid
                 | PrimitiveLogicalType::Json => {
-                    let lower = String::from_utf8(lower.clone()).unwrap();
-                    let upper = String::from_utf8(upper.clone()).unwrap();
+                    let lower = String::from_utf8(lower.clone())
+                        .context(UnableToParseUtf8FromBinarySnafu)?;
+                    let upper = String::from_utf8(upper.clone())
+                        .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
                         Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
                 PrimitiveLogicalType::Decimal(p, s) => {
                     assert!(lower.len() <= 16);
@@ -65,7 +84,7 @@ impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
                     )
                     .into_series();
 
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
                 _ => todo!("HANDLE BAD LOGICAL TYPE"),
             }
@@ -75,15 +94,17 @@ impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
                 PrimitiveConvertedType::Utf8
                 | PrimitiveConvertedType::Enum
                 | PrimitiveConvertedType::Json => {
-                    let lower = String::from_utf8(lower.clone()).unwrap();
-                    let upper = String::from_utf8(upper.clone()).unwrap();
+                    let lower = String::from_utf8(lower.clone())
+                        .context(UnableToParseUtf8FromBinarySnafu)?;
+                    let upper = String::from_utf8(upper.clone())
+                        .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
                         Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
                 PrimitiveConvertedType::Decimal(p, s) => {
                     assert!(lower.len() <= 16);
@@ -104,7 +125,7 @@ impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
                         upper,
                     )
                     .into_series();
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
                 _ => todo!("HANDLE BAD CONVERTED TYPE"),
             }
@@ -113,17 +134,22 @@ impl From<(&BinaryStatistics)> for ColumnRangeStatistics {
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        return ColumnRangeStatistics { lower, upper };
+        return ColumnRangeStatistics::new(lower, upper);
     }
 }
 
 impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
-    From<(&PrimitiveStatistics<T>)> for ColumnRangeStatistics
+    TryFrom<&PrimitiveStatistics<T>> for ColumnRangeStatistics
 {
-    fn from(value: &PrimitiveStatistics<T>) -> Self {
-        // TODO: dont unwrap
-        let lower = value.min_value.unwrap();
-        let upper = value.max_value.unwrap();
+    type Error = super::Error;
+
+    fn try_from(value: &PrimitiveStatistics<T>) -> Result<Self, Self::Error> {
+        let lower = value
+            .min_value
+            .context(MissingParquetColumnStatisticsSnafu)?;
+        let upper = value
+            .max_value
+            .context(MissingParquetColumnStatisticsSnafu)?;
 
         let prim_type = &value.primitive_type;
         let ptype = prim_type.physical_type;
@@ -148,7 +174,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                     let upper =
                         DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper)
                             .into_series();
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
                 (
                     PhysicalType::Int64,
@@ -188,7 +214,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         upper,
                     )
                     .into_series();
-                    return ColumnRangeStatistics { lower, upper };
+                    return ColumnRangeStatistics::new(lower, upper);
                 }
 
                 _ => {}
@@ -207,35 +233,40 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         ))
         .unwrap();
 
-        ColumnRangeStatistics { lower, upper }
+        return ColumnRangeStatistics::new(lower, upper);
     }
 }
 
-impl From<&dyn Statistics> for ColumnRangeStatistics {
-    fn from(value: &dyn Statistics) -> Self {
+impl TryFrom<&dyn Statistics> for ColumnRangeStatistics {
+    type Error = super::Error;
+
+    fn try_from(value: &dyn Statistics) -> Result<Self, Self::Error> {
         let ptype = value.physical_type();
         let stats = value.as_any();
         use parquet2::schema::types::PhysicalType;
         match ptype {
-            PhysicalType::Boolean => stats.downcast_ref::<BooleanStatistics>().unwrap().into(),
+            PhysicalType::Boolean => stats
+                .downcast_ref::<BooleanStatistics>()
+                .unwrap()
+                .try_into(),
             PhysicalType::Int32 => stats
                 .downcast_ref::<PrimitiveStatistics<i32>>()
                 .unwrap()
-                .into(),
+                .try_into(),
             PhysicalType::Int64 => stats
                 .downcast_ref::<PrimitiveStatistics<i64>>()
                 .unwrap()
-                .into(),
+                .try_into(),
             PhysicalType::Int96 => todo!(),
             PhysicalType::Float => stats
                 .downcast_ref::<PrimitiveStatistics<f32>>()
                 .unwrap()
-                .into(),
+                .try_into(),
             PhysicalType::Double => stats
                 .downcast_ref::<PrimitiveStatistics<f64>>()
                 .unwrap()
-                .into(),
-            PhysicalType::ByteArray => stats.downcast_ref::<BinaryStatistics>().unwrap().into(),
+                .try_into(),
+            PhysicalType::ByteArray => stats.downcast_ref::<BinaryStatistics>().unwrap().try_into(),
             PhysicalType::FixedLenByteArray(size) => {
                 todo!()
             }

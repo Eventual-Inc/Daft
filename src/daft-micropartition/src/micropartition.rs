@@ -1,27 +1,19 @@
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
-use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
-use daft_core::datatypes::logical::{DateArray, Decimal128Array, TimestampArray};
-use daft_core::datatypes::{
-    BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataArray, Int128Array,
-    Int32Array, Int64Array, Utf8Array,
-};
 use daft_core::schema::{Schema, SchemaRef};
-use daft_core::{IntoSeries, Series};
 use daft_dsl::Expr;
 use daft_parquet::read::read_parquet_metadata;
 use daft_table::Table;
 use indexmap::IndexMap;
-use parquet2::statistics::{BinaryStatistics, BooleanStatistics, PrimitiveStatistics, Statistics};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
-use crate::column_stats::ColumnRangeStatistics;
+use crate::column_stats::{self, ColumnRangeStatistics};
 use crate::DaftCoreComputeSnafu;
+use crate::MissingStatisticsSnafu;
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
 use daft_io::IOConfig;
-
 struct DeferredLoadingParams {
     filters: Vec<Expr>,
 }
@@ -107,23 +99,6 @@ impl MicroPartition {
     }
 }
 
-impl From<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
-    fn from(value: &daft_parquet::metadata::RowGroupMetaData) -> Self {
-        let num_rows = value.num_rows();
-        let mut columns = IndexMap::new();
-        for col in value.columns() {
-            let stats = col.statistics().unwrap().unwrap();
-            let col_stats: ColumnRangeStatistics = stats.as_ref().into();
-            columns.insert(
-                col.descriptor().path_in_schema.get(0).unwrap().clone(),
-                col_stats,
-            );
-        }
-
-        TableStatistics { columns }
-    }
-}
-
 fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
     let runtime_handle = daft_io::get_runtime(true)?;
     let io_client = daft_io::get_io_client(true, io_config)?;
@@ -131,7 +106,7 @@ fn read_parquet(uri: &str, io_config: Arc<IOConfig>) -> DaftResult<()> {
         runtime_handle.block_on(async move { read_parquet_metadata(uri, io_client).await })?;
 
     for rg in &metadata.row_groups {
-        let table_stats: TableStatistics = rg.into();
+        let table_stats: TableStatistics = rg.try_into()?;
         println!("{table_stats:?}");
     }
     Ok(())

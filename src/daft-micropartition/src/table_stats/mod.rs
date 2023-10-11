@@ -3,14 +3,15 @@ use std::ops::Not;
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
+use snafu::{OptionExt, ResultExt};
 
-use crate::column_stats::ColumnRangeStatistics;
+use crate::column_stats::{self, ColumnRangeStatistics};
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
-    pub columns: IndexMap<String, ColumnRangeStatistics>,
+    pub columns: IndexMap<String, Option<ColumnRangeStatistics>>,
 }
 impl TableStatistics {
     fn from_table(table: &Table) -> Self {
@@ -18,7 +19,7 @@ impl TableStatistics {
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
             let stats = ColumnRangeStatistics::from_series(col);
-            columns.insert(name, stats);
+            columns.insert(name, Some(stats));
         }
         TableStatistics { columns: columns }
     }
@@ -28,7 +29,10 @@ impl TableStatistics {
     pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::Column(col) => Ok(self.columns.get(col.as_ref()).unwrap().clone()),
+            Expr::Column(col) => {
+                let col = self.columns.get(col.as_ref()).unwrap();
+                Ok(col.clone().unwrap())
+            }
             Expr::Literal(lit_value) => lit_value.try_into(),
             Expr::Not(col) => self.eval_expression(col)?.not(),
             Expr::BinaryOp { op, left, right } => {
@@ -49,6 +53,29 @@ impl TableStatistics {
             }
             _ => todo!(),
         }
+    }
+}
+use crate::MissingStatisticsSnafu;
+
+impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
+    type Error = crate::Error;
+    fn try_from(value: &daft_parquet::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
+        let num_rows = value.num_rows();
+        let mut columns = IndexMap::new();
+        for col in value.columns() {
+            let stats = col
+                .statistics()
+                .transpose()
+                .context(column_stats::ParquetColumnStatisticsParsingSnafu)?;
+            let col_stats =
+                stats.and_then(|v| v.as_ref().try_into().context(MissingStatisticsSnafu).ok());
+            columns.insert(
+                col.descriptor().path_in_schema.get(0).unwrap().clone(),
+                col_stats,
+            );
+        }
+
+        Ok(TableStatistics { columns })
     }
 }
 

@@ -3,7 +3,10 @@ mod comparison;
 mod from_parquet;
 mod logical;
 
+use std::string::FromUtf8Error;
+
 use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
+use snafu::Snafu;
 #[derive(Clone)]
 pub(crate) struct ColumnRangeStatistics {
     pub lower: Series,
@@ -37,6 +40,10 @@ impl std::fmt::Display for TruthValue {
 }
 
 impl ColumnRangeStatistics {
+    pub fn new(lower: Series, upper: Series) -> Result<Self> {
+        Ok(ColumnRangeStatistics { lower, upper })
+    }
+
     pub fn to_truth_value(&self) -> TruthValue {
         let lower = self.lower.bool().unwrap().get(0).unwrap();
         let upper = self.upper.bool().unwrap().get(0).unwrap();
@@ -110,6 +117,27 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
             lower: ser.clone(),
             upper: ser.clone(),
         })
+    }
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub(crate)))]
+pub enum Error {
+    #[snafu(display("MissingParquetColumnStatistics"))]
+    MissingParquetColumnStatistics {},
+    #[snafu(display("ParquetColumnStatisticsParsingError: {source}"))]
+    ParquetColumnStatisticsParsingError { source: parquet2::error::Error },
+    #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
+    UnableToParseUtf8FromBinary { source: FromUtf8Error },
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl From<Error> for crate::Error {
+    fn from(value: Error) -> Self {
+        match value {
+            _ => crate::Error::MissingStatistics { source: value },
+        }
     }
 }
 
