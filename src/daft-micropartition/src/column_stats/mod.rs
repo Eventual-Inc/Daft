@@ -1,5 +1,6 @@
 mod arithmetic;
 mod comparison;
+mod from_parquet;
 mod logical;
 
 use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
