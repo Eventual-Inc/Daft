@@ -26,6 +26,7 @@ def read_parquet(
     fs: Optional[fsspec.AbstractFileSystem] = None,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = False,
+    multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -44,6 +45,9 @@ def read_parquet(
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
+        multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
+            the amount of system resources (number of connections and thread contention) when running in the Ray runner.
+            Defaults to None, which will let Daft decide based on the runner it is currently using.
 
     returns:
         DataFrame: parsed DataFrame
@@ -54,7 +58,7 @@ def read_parquet(
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not context.get_context().is_ray_runner
+    multithreaded_io = not context.get_context().is_ray_runner if multithreaded_io is None else multithreaded_io
 
     file_format_config = FileFormatConfig.from_parquet_config(
         ParquetSourceConfig(
