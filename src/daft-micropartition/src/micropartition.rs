@@ -3,10 +3,10 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
-use daft_core::datatypes::logical::{DateArray, Decimal128Array};
+use daft_core::datatypes::logical::{DateArray, Decimal128Array, TimestampArray};
 use daft_core::datatypes::{
     BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataArray, Int128Array,
-    Int32Array, Utf8Array,
+    Int32Array, Int64Array, Utf8Array,
 };
 use daft_core::schema::{Schema, SchemaRef};
 use daft_core::{IntoSeries, Series};
@@ -131,6 +131,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         let ptype = prim_type.physical_type;
 
         if let Some(ltype) = prim_type.logical_type {
+            /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
             use parquet2::schema::types::PhysicalType;
             use parquet2::schema::types::PrimitiveLogicalType;
 
@@ -151,6 +152,47 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                             .into_series();
                     return ColumnRangeStatistics { lower, upper };
                 }
+                (
+                    PhysicalType::Int64,
+                    PrimitiveLogicalType::Timestamp {
+                        unit,
+                        is_adjusted_to_utc,
+                    },
+                ) => {
+                    let lower = Int64Array::from(("lower", [lower.to_i64().unwrap()].as_slice()));
+                    let upper = Int64Array::from(("upper", [upper.to_i64().unwrap()].as_slice()));
+                    let tu = match unit {
+                        parquet2::schema::types::TimeUnit::Nanoseconds => {
+                            daft_core::datatypes::TimeUnit::Nanoseconds
+                        }
+                        parquet2::schema::types::TimeUnit::Microseconds => {
+                            daft_core::datatypes::TimeUnit::Microseconds
+                        }
+                        parquet2::schema::types::TimeUnit::Milliseconds => {
+                            daft_core::datatypes::TimeUnit::Milliseconds
+                        }
+                    };
+                    let tz = if is_adjusted_to_utc {
+                        Some("+00:00".to_string())
+                    } else {
+                        None
+                    };
+
+                    let dtype = daft_core::datatypes::DataType::Timestamp(tu, tz);
+
+                    let lower = TimestampArray::new(
+                        daft_core::datatypes::Field::new("lower", dtype.clone()),
+                        lower,
+                    )
+                    .into_series();
+                    let upper = TimestampArray::new(
+                        daft_core::datatypes::Field::new("upper", dtype),
+                        upper,
+                    )
+                    .into_series();
+                    return ColumnRangeStatistics { lower, upper };
+                }
+
                 _ => {}
             }
         }
