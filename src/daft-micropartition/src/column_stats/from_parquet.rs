@@ -17,17 +17,14 @@ use crate::column_stats::UnableToParseUtf8FromBinarySnafu;
 impl TryFrom<&BooleanStatistics> for ColumnRangeStatistics {
     type Error = super::Error;
     fn try_from(value: &BooleanStatistics) -> Result<Self, Self::Error> {
-        let lower = value
-            .min_value
-            .context(MissingParquetColumnStatisticsSnafu)?;
-        let upper = value
-            .max_value
-            .context(MissingParquetColumnStatisticsSnafu)?;
-
-        ColumnRangeStatistics::new(
-            Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
-            Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
-        )
+        if let Some(lower) = value.min_value && let Some(upper) = value.max_value {
+            ColumnRangeStatistics::new(
+                Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
+                Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
+            )
+        } else {
+            Ok(ColumnRangeStatistics::Missing)
+        }
     }
 }
 
@@ -35,6 +32,10 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
     type Error = super::Error;
 
     fn try_from(value: &BinaryStatistics) -> Result<Self, Self::Error> {
+        if value.min_value.is_none() || value.max_value.is_none() {
+            return Ok(ColumnRangeStatistics::Missing);
+        }
+
         let lower = value
             .min_value
             .as_ref()
@@ -144,6 +145,10 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
     type Error = super::Error;
 
     fn try_from(value: &PrimitiveStatistics<T>) -> Result<Self, Self::Error> {
+        if value.min_value.is_none() || value.max_value.is_none() {
+            return Ok(ColumnRangeStatistics::Missing);
+        }
+
         let lower = value
             .min_value
             .context(MissingParquetColumnStatisticsSnafu)?;
