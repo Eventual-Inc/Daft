@@ -106,6 +106,7 @@ def read_parquet(
     storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
+    multithreaded_io: bool | None = None,
 ) -> Table:
     """Reads a Table from a Parquet file
 
@@ -130,6 +131,7 @@ def read_parquet(
                 num_rows=read_options.num_rows,
                 io_config=config.io_config,
                 coerce_int96_timestamp_unit=parquet_options.coerce_int96_timestamp_unit,
+                multithreaded_io=multithreaded_io,
             )
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 

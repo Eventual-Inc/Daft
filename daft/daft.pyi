@@ -178,6 +178,11 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
+    # Whether or not to use a multithreaded tokio runtime for processing I/O
+    multithreaded_io: bool
+
+    def __init__(self, multithreaded_io: bool): ...
+
 class CsvSourceConfig:
     """
     Configuration of a CSV data source.

@@ -17,6 +17,7 @@ pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use tokio::runtime::RuntimeFlavor;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
@@ -261,16 +262,17 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 type CacheKey = (bool, Arc<IOConfig>);
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+    static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
     static ref THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
         tokio::sync::RwLock::new((
             Arc::new(
                 tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(8.min(*NUM_CPUS))
+                    .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
                     .enable_all()
                     .build()
                     .unwrap()
             ),
-            8.min(*NUM_CPUS)
+            *THREADED_RUNTIME_NUM_WORKER_THREADS,
         ));
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
@@ -330,6 +332,15 @@ pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
             .unwrap(),
     );
     true
+}
+
+pub fn get_io_pool_num_threads() -> Option<usize> {
+    tokio::runtime::Handle::try_current().map_or(None, |handle| match handle.runtime_flavor() {
+        RuntimeFlavor::CurrentThread => Some(1),
+        RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.blocking_read().1),
+        // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
+        _ => Some(1),
+    })
 }
 
 pub fn _url_download(

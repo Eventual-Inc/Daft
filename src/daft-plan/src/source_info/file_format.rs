@@ -52,15 +52,22 @@ impl FileFormatConfig {
 /// Configuration for a Parquet data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
-pub struct ParquetSourceConfig;
+pub struct ParquetSourceConfig {
+    multithreaded_io: bool,
+}
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    fn new() -> Self {
-        Self {}
+    fn new(multithreaded_io: bool) -> Self {
+        Self { multithreaded_io }
+    }
+
+    #[getter]
+    fn multithreaded_io(&self) -> PyResult<bool> {
+        Ok(self.multithreaded_io)
     }
 }
 
