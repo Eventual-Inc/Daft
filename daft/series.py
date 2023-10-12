@@ -33,6 +33,8 @@ except ImportError:
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
+_ARROW_TABLE_NAME_SERIAL_NAME = "ITEM"
+
 
 class Series:
     """
@@ -491,7 +493,15 @@ class Series:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
-            return (Series.from_arrow, (self.to_arrow(), self.name()))
+            return (
+                Series._from_arrow_table_to_series,
+                (pa.table({_ARROW_TABLE_NAME_SERIAL_NAME: self.to_arrow()}), self.name()),
+            )
+
+    @classmethod
+    def _from_arrow_table_to_series(cls, table: pa.Table, name: str) -> Series:
+        array = table[_ARROW_TABLE_NAME_SERIAL_NAME]
+        return cls.from_arrow(array, name)
 
 
 SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
