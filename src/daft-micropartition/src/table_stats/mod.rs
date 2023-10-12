@@ -1,4 +1,4 @@
-use std::ops::Not;
+use std::{collections::HashSet, ops::Not};
 
 use daft_dsl::Expr;
 use daft_table::Table;
@@ -26,6 +26,25 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
+    pub(crate) fn union(&self, other: &Self) -> crate::Result<Self> {
+        let unioned_columns = self
+            .columns
+            .keys()
+            .chain(other.columns.keys())
+            .collect::<HashSet<_>>();
+        let mut columns = IndexMap::with_capacity(unioned_columns.len());
+        for col in unioned_columns {
+            let res_col = match (self.columns.get(col), other.columns.get(col)) {
+                (None, None) => panic!("Key missing from both tables; invalid state"),
+                (Some(_l), None) => Ok(ColumnRangeStatistics::Missing),
+                (None, Some(_r)) => Ok(ColumnRangeStatistics::Missing),
+                (Some(l), Some(r)) => l.union(r),
+            }?;
+            columns.insert(col.clone(), res_col);
+        }
+        Ok(TableStatistics { columns })
+    }
+
     pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),

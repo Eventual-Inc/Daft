@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![allow(dead_code)]
+#![feature(iterator_try_reduce)]
 
 use common_error::DaftError;
 use snafu::Snafu;

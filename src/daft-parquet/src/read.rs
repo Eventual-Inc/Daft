@@ -9,13 +9,16 @@ use daft_core::{
 };
 use daft_io::{get_runtime, parse_url, IOClient, SourceType};
 use daft_table::Table;
-use futures::{future::join_all, StreamExt, TryStreamExt};
+use futures::{
+    future::{join_all, try_join_all},
+    StreamExt, TryStreamExt,
+};
 use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
 }
@@ -506,6 +509,20 @@ pub async fn read_parquet_metadata(
 ) -> DaftResult<parquet2::metadata::FileMetaData> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client).await?;
     Ok(builder.metadata)
+}
+pub async fn read_parquet_metadata_bulk(
+    uris: &[&str],
+    io_client: Arc<IOClient>,
+) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
+    let handles_iter = uris.iter().map(|uri| {
+        let owned_string = uri.to_string();
+        let owned_client = io_client.clone();
+        tokio::spawn(async move { read_parquet_metadata(&owned_string, owned_client).await })
+    });
+    let all_metadatas = try_join_all(handles_iter)
+        .await
+        .context(JoinSnafu { path: "BULK READ" })?;
+    all_metadatas.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
 pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {

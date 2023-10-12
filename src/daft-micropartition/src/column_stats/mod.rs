@@ -6,7 +6,7 @@ mod logical;
 use std::string::FromUtf8Error;
 
 use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 #[derive(Clone)]
 pub(crate) enum ColumnRangeStatistics {
     Missing,
@@ -38,7 +38,8 @@ impl std::fmt::Display for TruthValue {
         write!(f, "TruthValue: {value}",)
     }
 }
-
+use crate::DaftCoreComputeSnafu;
+use daft_core::array::ops::DaftCompare;
 impl ColumnRangeStatistics {
     pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
         match (lower, upper) {
