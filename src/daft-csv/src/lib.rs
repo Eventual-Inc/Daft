@@ -16,6 +16,17 @@ pub enum Error {
     IOError { source: daft_io::Error },
     #[snafu(display("{source}"))]
     CSVError { source: csv_async::Error },
+    #[snafu(display("{source}"))]
+    ArrowError { source: arrow2::error::Error },
+    #[snafu(display("Error joining spawned task: {}", source))]
+    JoinError { source: tokio::task::JoinError },
+    #[snafu(display(
+        "Sender of OneShot Channel Dropped before sending data over: {}",
+        source
+    ))]
+    OneShotRecvError {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
 }
 
 impl From<Error> for DaftError {

@@ -190,8 +190,18 @@ class CsvSourceConfig:
 
     delimiter: str
     has_headers: bool
+    buffer_size: int | None
+    chunk_size: int | None
+    max_chunks_in_flight: int | None
 
-    def __init__(self, delimiter: str, has_headers: bool): ...
+    def __init__(
+        self,
+        delimiter: str,
+        has_headers: bool,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+        max_chunks_in_flight: int | None = None,
+    ): ...
 
 class JsonSourceConfig:
     """
@@ -425,6 +435,10 @@ def read_csv(
     delimiter: str | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
+    schema: PySchema | None = None,
+    buffer_size: int | None = None,
+    chunk_size: int | None = None,
+    max_chunks_in_flight: int | None = None,
 ): ...
 def read_csv_schema(
     uri: str,

@@ -32,6 +32,10 @@ pub mod pylib {
         delimiter: Option<&str>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
+        schema: Option<PySchema>,
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
+        max_chunks_in_flight: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
@@ -50,6 +54,10 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
+                schema.map(|s| s.schema),
+                buffer_size,
+                chunk_size,
+                max_chunks_in_flight,
             )?
             .into())
         })
@@ -61,6 +69,7 @@ pub mod pylib {
         uri: &str,
         has_header: Option<bool>,
         delimiter: Option<&str>,
+        max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
     ) -> PyResult<PySchema> {
@@ -75,6 +84,7 @@ pub mod pylib {
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
+                max_bytes,
                 io_client,
                 Some(io_stats),
             )?)

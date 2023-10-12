@@ -12,11 +12,22 @@ use arrow2::{
 };
 use async_compat::CompatExt;
 use common_error::DaftResult;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    schema::{Schema, SchemaRef},
+    utils::arrow::cast_array_for_daft_if_needed,
+    Series,
+};
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{io::Cursor, AsyncRead, AsyncSeek};
+use futures::{AsyncRead, AsyncSeek};
+use rayon::prelude::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
+use snafu::ResultExt;
 use tokio::fs::File;
+use tokio_util::io::StreamReader;
+
+use crate::metadata::read_csv_schema_single;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
@@ -29,6 +40,10 @@ pub fn read_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
+    schema: Option<SchemaRef>,
+    buffer_size: Option<usize>,
+    chunk_size: Option<usize>,
+    max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
@@ -42,6 +57,10 @@ pub fn read_csv(
             delimiter,
             io_client,
             io_stats,
+            schema,
+            buffer_size,
+            chunk_size,
+            max_chunks_in_flight,
         )
         .await
     })
@@ -57,7 +76,26 @@ async fn read_csv_single(
     delimiter: Option<u8>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    schema: Option<SchemaRef>,
+    buffer_size: Option<usize>,
+    chunk_size: Option<usize>,
+    max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
+    let (schema, infer_record_count, infer_total_bytes) = match schema {
+        Some(schema) => (schema.to_arrow()?, None, None),
+        None => {
+            let (schema, record_count, total_bytes) = read_csv_schema_single(
+                uri,
+                has_header,
+                delimiter,
+                Some(1 << 20),
+                io_client.clone(),
+                io_stats.clone(),
+            )
+            .await?;
+            (schema.to_arrow()?, Some(record_count), Some(total_bytes))
+        }
+    };
     match io_client
         .single_url_get(uri.to_string(), None, io_stats)
         .await?
@@ -73,18 +111,151 @@ async fn read_csv_single(
             )
             .await
         }
-        result @ GetResult::Stream(..) => {
-            // TODO(Clark): Enable streaming remote reads by wrapping the BoxStream in a buffered stream that's
-            // (1) sync and (2) seekable.
-            read_csv_single_from_reader(
-                Cursor::new(result.bytes().await?),
-                column_names,
-                include_columns,
-                num_rows,
-                has_header,
-                delimiter,
-            )
-            .await
+        GetResult::Stream(stream, _, _) => {
+            let stream_reader = StreamReader::new(stream).compat();
+            let mut reader = AsyncReaderBuilder::new()
+                .has_headers(has_header)
+                .delimiter(delimiter.unwrap_or(b','))
+                .buffer_capacity(buffer_size.unwrap_or(1 << 20))
+                .create_reader(stream_reader);
+            let mut fields = schema.fields;
+            if let Some(column_names) = column_names {
+                fields = fields
+                    .into_iter()
+                    .zip(column_names.iter())
+                    .map(|(field, name)| {
+                        Field::new(*name, field.data_type, field.is_nullable)
+                            .with_metadata(field.metadata)
+                    })
+                    .collect();
+            }
+            let field_name_to_idx = fields
+                .iter()
+                .enumerate()
+                .map(|(idx, f)| (f.name.as_ref(), idx))
+                .collect::<HashMap<&str, usize>>();
+            let projection_indices = Arc::new(include_columns.as_ref().map_or_else(
+                || (0..fields.len()).collect(),
+                |cols| {
+                    cols.iter()
+                        .map(|c| field_name_to_idx[c])
+                        .collect::<Vec<_>>()
+                },
+            ));
+            let num_projected_fields = projection_indices.len();
+            let unpruned_fields = Arc::new(fields.clone());
+            let num_rows = num_rows.unwrap_or(usize::MAX);
+            let estimated_average_row_size = match (infer_record_count, infer_total_bytes) {
+                (Some(infer_record_count), Some(infer_total_bytes)) => {
+                    Some(((infer_total_bytes as f64) / (infer_record_count as f64)).ceil() as usize)
+                }
+                _ => None,
+            };
+            let chunk_size = {
+                // 8 MiB per chunk.
+                let desired_chunk_size_bytes = chunk_size.unwrap_or(8 * (1 << 20));
+                // If no estimated row size information from schema inference, we assume 200 bytes per row.
+                // With an 8 MiB targeted chunk size, this would result in a chunk size of ~42k rows.
+                let estimated_rows_per_desired_chunk =
+                    desired_chunk_size_bytes / estimated_average_row_size.unwrap_or(200);
+                // Process at least 8 rows in a chunk, even if the rows are pretty large.
+                estimated_rows_per_desired_chunk.max(8).min(num_rows)
+            };
+            // Number of rows read in last read.
+            let mut rows_read = 1;
+            // Total number of rows read across all reads.
+            let mut total_rows_read = 0;
+            let mut chunk_idx = 0;
+            let max_chunks_in_flight = max_chunks_in_flight.unwrap_or(100);
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(max_chunks_in_flight));
+            let mut handles = vec![];
+            while rows_read > 0 && total_rows_read < num_rows {
+                let mut buffer = vec![
+                    ByteRecord::with_capacity(
+                        estimated_average_row_size.unwrap_or(0),
+                        fields.len()
+                    );
+                    chunk_size
+                ];
+                let mut rows = buffer.as_mut_slice();
+                if rows.len() > num_rows - total_rows_read {
+                    // If we need to read less than the entire row buffer, truncate the buffer to the number
+                    // of rows that we actually want to read.
+                    rows = &mut rows[..num_rows - total_rows_read + 1]
+                }
+                let permit = semaphore.clone().acquire_owned().await.unwrap();
+                rows_read = read_rows(&mut reader, 0, rows).await?;
+                total_rows_read += rows_read;
+                let async_closure = {
+                    let (unpruned_fields, projection_indices, chunk_idx) = (
+                        unpruned_fields.clone(),
+                        projection_indices.clone(),
+                        chunk_idx,
+                    );
+                    async move {
+                        let (send, recv) = tokio::sync::oneshot::channel();
+                        rayon::spawn(move || {
+                            let result = (move || {
+                                let chunk = projection_indices
+                                    .par_iter()
+                                    .map(|idx| {
+                                        let column = *idx;
+                                        deserialize_column(
+                                            &buffer.as_slice()[..rows_read],
+                                            column,
+                                            unpruned_fields[column].data_type().clone(),
+                                            0,
+                                        )
+                                    })
+                                    .collect::<arrow2::error::Result<Vec<Box<dyn arrow2::array::Array>>>>()?;
+                                DaftResult::Ok((chunk_idx, chunk))
+                            })();
+                            let _ = send.send(result);
+                        });
+                        let result = recv.await.context(super::OneShotRecvSnafu {})?;
+                        drop(permit);
+                        result
+                    }
+                };
+                let handle = tokio::spawn(async_closure);
+                handles.push(handle);
+                chunk_idx += 1;
+            }
+            let mut chunks = futures::future::try_join_all(handles)
+                .await
+                .context(super::JoinSnafu {})?
+                .into_iter()
+                .collect::<DaftResult<Vec<_>>>()?;
+            chunks.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            let mut column_arrays = vec![vec![]; num_projected_fields];
+            for chunk in chunks.into_iter() {
+                for (idx, col) in chunk.1.into_iter().enumerate() {
+                    column_arrays[idx].push(col);
+                }
+            }
+            if let Some(include_columns) = include_columns {
+                // Truncate fields to only contain projected columns.
+                let include_columns: HashSet<&str> = include_columns.into_iter().collect();
+                fields.retain(|f| include_columns.contains(f.name.as_str()))
+            }
+            let columns_series = column_arrays
+                .into_par_iter()
+                .zip(fields.clone())
+                .map(|(mut arrays, field)| {
+                    let array = if arrays.len() > 1 {
+                        // Concatenate all array chunks.
+                        let unboxed_arrays = arrays.iter().map(Box::as_ref).collect::<Vec<_>>();
+                        arrow2::compute::concatenate::concatenate(unboxed_arrays.as_slice())?
+                    } else {
+                        // Return single array chunk directly.
+                        arrays.pop().unwrap()
+                    };
+                    Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
+                })
+                .collect::<DaftResult<Vec<Series>>>()?;
+            let schema: arrow2::datatypes::Schema = fields.into();
+            let daft_schema = Schema::try_from(&schema)?;
+            Table::new(daft_schema, columns_series)
         }
     }
 }
@@ -215,7 +386,9 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(file, None, None, None, true, None, io_client, None, true)?;
+        let table = read_csv(
+            file, None, None, None, true, None, io_client, None, true, None, None, None, None,
+        )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
@@ -238,7 +411,9 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(file, None, None, None, true, None, io_client, None, true)?;
+        let table = read_csv(
+            file, None, None, None, true, None, io_client, None, true, None, None, None, None,
+        )?;
         assert_eq!(table.len(), 5000);
 
         Ok(())
@@ -263,6 +438,10 @@ mod tests {
             io_client,
             None,
             true,
+            None,
+            None,
+            None,
+            None,
         )?;
         assert_eq!(table.len(), 10);
         assert_eq!(
@@ -296,6 +475,10 @@ mod tests {
             io_client,
             None,
             true,
+            None,
+            None,
+            None,
+            None,
         )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
