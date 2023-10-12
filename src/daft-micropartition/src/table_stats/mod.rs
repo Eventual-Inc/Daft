@@ -27,6 +27,8 @@ impl TableStatistics {
 
 impl TableStatistics {
     pub(crate) fn union(&self, other: &Self) -> crate::Result<Self> {
+
+        // maybe use the schema from micropartition instead
         let unioned_columns = self
             .columns
             .keys()

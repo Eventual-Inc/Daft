@@ -165,6 +165,8 @@ fn read_parquet_into_micropartition(
     uris: &[&str],
     io_config: Arc<IOConfig>,
 ) -> DaftResult<MicroPartition> {
+
+    // thread in columns and limit
     let runtime_handle = daft_io::get_runtime(true)?;
     let io_client = daft_io::get_io_client(true, io_config.clone())?;
     let metadata = runtime_handle
