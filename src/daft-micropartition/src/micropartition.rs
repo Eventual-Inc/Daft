@@ -5,9 +5,7 @@ use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
-use daft_parquet::read::{
-    read_parquet, read_parquet_metadata, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
-};
+use daft_parquet::read::{read_parquet_metadata_bulk, ParquetSchemaInferenceOptions};
 use daft_table::Table;
 
 use snafu::ResultExt;
@@ -74,10 +72,10 @@ impl MicroPartition {
                             params.io_config.clone(),
                         )
                         .unwrap();
-                        let column_names = match &params.columns {
-                            None => None,
-                            Some(v) => Some(v.iter().map(|s| s.as_ref()).collect::<Vec<_>>()),
-                        };
+                        let column_names = params
+                            .columns
+                            .as_ref()
+                            .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
                         let urls = params.urls.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                         daft_parquet::read::read_parquet_bulk(
                             urls.as_slice(),
@@ -107,7 +105,7 @@ impl MicroPartition {
 
                 let table_values = Arc::new(table_values);
                 *guard = TableState::Loaded(table_values.clone());
-                return Ok(table_values);
+                Ok(table_values)
             }
         }
     }

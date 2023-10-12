@@ -391,7 +391,7 @@ pub fn read_parquet_bulk(
                 };
 
                 let io_client = io_client.clone();
-                let schema_infer_options = schema_infer_options.clone();
+                let schema_infer_options = *schema_infer_options;
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -452,14 +452,14 @@ pub fn read_parquet_into_pyarrow_bulk(
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
-                let schema_infer_options = schema_infer_options.clone();
+                let schema_infer_options = schema_infer_options;
                 let owned_row_group = match &row_groups {
                     None => None,
                     Some(v) => v.get(i).cloned(),
                 };
 
                 let io_client = io_client.clone();
-                let schema_infer_options = schema_infer_options.clone();
+                let schema_infer_options = schema_infer_options;
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
