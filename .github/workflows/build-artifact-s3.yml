@@ -67,12 +67,11 @@ jobs:
         container: messense/manylinux_2_24-cross:aarch64
         args: --profile ${{ inputs.rust-profile }} --out dist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
-
     - name: Copy all files as zip for Glue
-      run: for foo in dist/*.whl; do cp $foo dist/`basename $foo .whl`.zip; done
+      run: for file in dist/*.whl; do cp $file dist/`basename $file .whl`.zip; done
+    - name: Upload files to s3
+      run: for file in dist/*; do aws s3 cp $file s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/ --no-progress; done
 
-    - name: Upload wheels to s3
-      run: aws s3 cp dist/* s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/ --no-progress
 
 
   list-wheels:
