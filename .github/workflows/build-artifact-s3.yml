@@ -1,0 +1,61 @@
+name: daft-build-artifact-s3
+
+on:
+  workflow_dispatch:
+env:
+  PACKAGE_NAME: getdaft
+  PYTHON_VERSION: 3.8
+
+jobs:
+  build:
+    name: platform wheels for ${{ matrix.os }}-${{ matrix.compile_arch }}
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu]
+        compile_arch: [x86_64, aarch64]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        architecture: x64
+    - run: pip install -U twine toml
+    - run: python tools/patch_package_version.py
+    - name: Build wheels - Linux x86
+      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
+      uses: messense/maturin-action@v1
+      with:
+        target: x86_64
+        manylinux: auto
+        args: --profile release --out dist # CHANGE TO LTO
+        before-script-linux: yum -y install perl-IPC-Cmd
+      env:
+        RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+    - name: Build wheels - Linux aarch64
+      if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'aarch64') }}
+      uses: messense/maturin-action@v1
+      with:
+        target: aarch64-unknown-linux-gnu
+        manylinux: auto
+        # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
+        container: messense/manylinux_2_24-cross:aarch64
+        args: --profile release --out dist # CHANGE TO LTO
+        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+
+    - name: Copy all files as Zip
+      run: for foo in dist/*.whl; do cp $foo `basename $foo .whl`.zip; done
+
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: SomeSessionName
+
+    - name: Upload wheels to s3
+      run: aws s3 cp dist/* s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/
