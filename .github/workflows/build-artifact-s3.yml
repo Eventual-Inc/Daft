@@ -23,11 +23,12 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        architecture: x64
-    - run: pip install -U twine toml
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+        role-session-name: DaftPythonPackageGitHubWorkflow
     - run: python tools/patch_package_version.py
     - name: Build wheels - Linux x86
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
@@ -53,12 +54,7 @@ jobs:
     - name: Copy all files as Zip
       run: for foo in dist/*.whl; do cp $foo `basename $foo .whl`.zip; done
 
-    - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: SomeSessionName
+
 
     - name: Upload wheels to s3
       run: aws s3 cp dist/* s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/
