@@ -498,6 +498,9 @@ class Series:
 
     def _to_arrow_table_for_serdes(self) -> tuple[pa.Table, pa.ExtensionType | None]:
         array = self.to_arrow()
+        if len(array) == 0:
+            array = pa.array([], type=array.type)
+
         if isinstance(array.type, pa.BaseExtensionType):
             stype = array.type.storage_type
             ltype = array.type
