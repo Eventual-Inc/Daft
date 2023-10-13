@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use futures::io;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use futures::TryStreamExt;
@@ -21,6 +22,8 @@ use crate::object_io::FileType;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
 use crate::s3_like;
+use crate::stats::IOStatsRef;
+use crate::stream_utils::io_stats_on_bytestream;
 use crate::GetResult;
 use common_io_config::GCSConfig;
 
@@ -127,7 +130,12 @@ fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
 }
 
 impl GCSClientWrapper {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
         match self {
@@ -160,16 +168,21 @@ impl GCSClientWrapper {
                     .into_error(e)
                     .into()
                 });
-                Ok(GetResult::Stream(response.boxed(), size, None))
+                io_stats.as_ref().map(|is| is.mark_get_requests(1));
+                Ok(GetResult::Stream(
+                    io_stats_on_bytestream(response, io_stats),
+                    size,
+                    None,
+                ))
             }
             GCSClientWrapper::S3Compat(client) => {
                 let uri = format!("s3://{}/{}", bucket, key);
-                client.get(&uri, range).await
+                client.get(&uri, range, io_stats).await
             }
         }
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
         match self {
@@ -186,11 +199,12 @@ impl GCSClientWrapper {
                     .context(UnableToOpenFileSnafu {
                         path: uri.to_string(),
                     })?;
+                io_stats.as_ref().map(|is| is.mark_head_requests(1));
                 Ok(response.size as usize)
             }
             GCSClientWrapper::S3Compat(client) => {
                 let uri = format!("s3://{}/{}", bucket, key);
-                client.get_size(&uri).await
+                client.get_size(&uri, io_stats).await
             }
         }
     }
@@ -203,6 +217,7 @@ impl GCSClientWrapper {
         delimiter: Option<&str>,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
+        io_stats: Option<&IOStatsRef>,
     ) -> super::Result<LSResult> {
         let req = ListObjectsRequest {
             bucket: bucket.to_string(),
@@ -222,6 +237,8 @@ impl GCSClientWrapper {
             .context(UnableToListObjectsSnafu {
                 path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
             })?;
+        io_stats.map(|is| is.mark_list_requests(1));
+
         let response_items = ls_response.items.unwrap_or_default();
         let response_prefixes = ls_response.prefixes.unwrap_or_default();
         let files = response_items.iter().map(|obj| FileMetadata {
@@ -246,6 +263,7 @@ impl GCSClientWrapper {
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
@@ -266,6 +284,7 @@ impl GCSClientWrapper {
                             Some(GCS_DELIMITER),
                             continuation_token,
                             page_size,
+                            io_stats.as_ref(),
                         )
                         .await?;
 
@@ -280,6 +299,7 @@ impl GCSClientWrapper {
                                 Some(GCS_DELIMITER),
                                 continuation_token,
                                 page_size,
+                                io_stats.as_ref(),
                             )
                             .await?;
 
@@ -307,12 +327,15 @@ impl GCSClientWrapper {
                         None, // Force a prefix-listing
                         continuation_token,
                         page_size,
+                        io_stats.as_ref(),
                     )
                     .await
                 }
             }
             GCSClientWrapper::S3Compat(client) => {
-                client.ls(path, posix, continuation_token, page_size).await
+                client
+                    .ls(path, posix, continuation_token, page_size, io_stats)
+                    .await
             }
         }
     }
@@ -362,12 +385,17 @@ impl GCSSource {
 
 #[async_trait]
 impl ObjectSource for GCSSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
-        self.client.get(uri, range).await
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
+        self.client.get(uri, range, io_stats).await
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
-        self.client.get_size(uri).await
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+        self.client.get_size(uri, io_stats).await
     }
 
     async fn glob(
@@ -375,13 +403,21 @@ impl ObjectSource for GCSSource {
         glob_path: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is not None to prevent runaway concurrency
         let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
-        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
+        glob(
+            self,
+            glob_path,
+            fanout_limit,
+            page_size.or(Some(1000)),
+            io_stats,
+        )
+        .await
     }
 
     async fn ls(
@@ -390,9 +426,10 @@ impl ObjectSource for GCSSource {
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         self.client
-            .ls(path, posix, continuation_token, page_size)
+            .ls(path, posix, continuation_token, page_size, io_stats)
             .await
     }
 }

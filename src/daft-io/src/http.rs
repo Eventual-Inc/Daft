@@ -9,7 +9,11 @@ use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
-use crate::object_io::{FileMetadata, FileType, LSResult};
+use crate::{
+    object_io::{FileMetadata, FileType, LSResult},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+};
 
 use super::object_io::{GetResult, ObjectSource};
 
@@ -169,7 +173,12 @@ impl HttpSource {
 
 #[async_trait]
 impl ObjectSource for HttpSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
         let request = self.client.get(uri);
         let request = match range {
             None => request,
@@ -186,6 +195,7 @@ impl ObjectSource for HttpSource {
         let response = response
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+        io_stats.map(|is| is.mark_get_requests(1));
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
         let owned_string = uri.to_owned();
@@ -196,10 +206,14 @@ impl ObjectSource for HttpSource {
             .into_error(e)
             .into()
         });
-        Ok(GetResult::Stream(stream.boxed(), size_bytes, None))
+        Ok(GetResult::Stream(
+            io_stats_on_bytestream(stream, io_stats),
+            size_bytes,
+            None,
+        ))
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let request = self.client.head(uri);
         let response = request
             .send()
@@ -208,6 +222,8 @@ impl ObjectSource for HttpSource {
         let response = response
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+
+        io_stats.map(|is| is.mark_head_requests(1));
 
         let headers = response.headers();
         match headers.get(CONTENT_LENGTH) {
@@ -229,6 +245,7 @@ impl ObjectSource for HttpSource {
         glob_path: &str,
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
@@ -236,7 +253,7 @@ impl ObjectSource for HttpSource {
         let fanout_limit = None;
         let page_size = None;
 
-        glob(self, glob_path, fanout_limit, page_size).await
+        glob(self, glob_path, fanout_limit, page_size, io_stats).await
     }
 
     async fn ls(
@@ -245,6 +262,7 @@ impl ObjectSource for HttpSource {
         posix: bool,
         _continuation_token: Option<&str>,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
@@ -257,6 +275,7 @@ impl ObjectSource for HttpSource {
             .context(UnableToConnectSnafu::<String> { path: path.into() })?
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
+        io_stats.map(|is| is.mark_list_requests(1));
 
         // Reconstruct the actual path of the request, which may have been redirected via a 301
         // This is important because downstream URL joining logic relies on proper trailing-slashes/index.html
@@ -308,14 +327,14 @@ mod tests {
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
         let client = HttpSource::get_client().await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10)
+            .get_range(parquet_file_path, 0..10, None)
             .await?
             .bytes()
             .await?;
@@ -323,7 +342,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100)
+            .get_range(parquet_file_path, 10..100, None)
             .await?
             .bytes()
             .await?;
@@ -334,6 +353,7 @@ mod tests {
             .get_range(
                 parquet_file_path,
                 (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                None,
             )
             .await?
             .bytes()
@@ -341,7 +361,7 @@ mod tests {
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
 
-        let size_from_get_size = client.get_size(parquet_file_path).await?;
+        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
         assert_eq!(size_from_get_size, all_bytes.len());
         Ok(())
     }

@@ -10,6 +10,8 @@ use std::{ops::Range, sync::Arc};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
     GetResult,
 };
 use common_io_config::AzureConfig;
@@ -139,6 +141,7 @@ impl AzureBlobSource {
     async fn list_containers_stream(
         &self,
         protocol: &str,
+        io_stats: Option<IOStatsRef>,
     ) -> BoxStream<super::Result<FileMetadata>> {
         let protocol = protocol.to_string();
 
@@ -152,7 +155,10 @@ impl AzureBlobSource {
 
         // Flatmap each page of results to a single stream of our standardized FileMetadata.
         responses_stream
-            .map(move |response| (response, protocol.clone()))
+            .map(move |response| {
+                io_stats.clone().map(|is| is.load_list_requests(1));
+                (response, protocol.clone())
+            })
             .flat_map(move |(response, protocol)| match response {
                 Ok(response) => {
                     let containers = response.containers.into_iter().map(move |container| {
@@ -174,6 +180,7 @@ impl AzureBlobSource {
         container_name: &str,
         prefix: &str,
         posix: bool,
+        io_stats: Option<IOStatsRef>,
     ) -> BoxStream<super::Result<FileMetadata>> {
         let container_client = self.blob_client.container_client(container_name);
 
@@ -205,6 +212,7 @@ impl AzureBlobSource {
                 &container_name,
                 &prefix_with_delimiter,
                 &posix,
+                io_stats.clone(),
             )
             .await;
 
@@ -255,6 +263,7 @@ impl AzureBlobSource {
                                 &container_name,
                                 upper_dir,
                                 &posix,
+                                io_stats.clone()
                             ).await;
 
                             // At this point, we have a stream of Result<FileMetadata>.
@@ -302,6 +311,7 @@ impl AzureBlobSource {
         container_name: &str,
         prefix: &str,
         posix: &bool,
+        io_stats: Option<IOStatsRef>,
     ) -> BoxStream<super::Result<FileMetadata>> {
         // Calls Azure list_blobs with the prefix
         // and returns the result flattened and standardized into FileMetadata.
@@ -323,7 +333,10 @@ impl AzureBlobSource {
 
         // Map each page of results to a page of standardized FileMetadata.
         responses_stream
-            .map(move |response| (response, protocol.clone(), container_name.clone()))
+            .map(move |response| {
+                io_stats.clone().map(|is| is.mark_list_requests(1));
+                (response, protocol.clone(), container_name.clone())
+            })
             .flat_map(move |(response, protocol, container_name)| match response {
                 Ok(response) => {
                     let paths_data =
@@ -381,7 +394,12 @@ impl AzureBlobSource {
 
 #[async_trait]
 impl ObjectSource for AzureBlobSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let container = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -412,10 +430,16 @@ impl ObjectSource for AzureBlobSource {
                 .into_error(e)
                 .into()
             });
-        Ok(GetResult::Stream(stream.boxed(), None, None))
+        tokio::pin!(stream);
+        io_stats.map(|is| is.mark_get_requests(1));
+        Ok(GetResult::Stream(
+            io_stats_on_bytestream(stream, io_stats),
+            None,
+            None,
+        ))
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let container = match parsed.host_str() {
             Some(s) => Ok(s),
@@ -432,6 +456,8 @@ impl ObjectSource for AzureBlobSource {
             .get_properties()
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+        io_stats.map(|is| is.mark_head_requests(1));
+
         Ok(metadata.blob.properties.content_length as usize)
     }
 
@@ -440,13 +466,21 @@ impl ObjectSource for AzureBlobSource {
         glob_path: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is not None to prevent runaway concurrency
         let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
-        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
+        glob(
+            self,
+            glob_path,
+            fanout_limit,
+            page_size.or(Some(1000)),
+            io_stats,
+        )
+        .await
     }
 
     async fn iter_dir(
@@ -454,6 +488,7 @@ impl ObjectSource for AzureBlobSource {
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
@@ -480,12 +515,12 @@ impl ObjectSource for AzureBlobSource {
 
         match container {
             // List containers.
-            None => Ok(self.list_containers_stream(protocol).await),
+            None => Ok(self.list_containers_stream(protocol, io_stats).await),
             // List a path within a container.
             Some(container_name) => {
                 let prefix = uri.path();
                 Ok(self
-                    .list_directory_stream(protocol, container_name, prefix, posix)
+                    .list_directory_stream(protocol, container_name, prefix, posix, io_stats)
                     .await)
             }
         }
@@ -497,6 +532,7 @@ impl ObjectSource for AzureBlobSource {
         posix: bool,
         continuation_token: Option<&str>,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         // It looks like the azure rust library API
         // does not currently allow using the continuation token:
@@ -511,7 +547,7 @@ impl ObjectSource for AzureBlobSource {
         }?;
 
         let files = self
-            .iter_dir(path, posix, None)
+            .iter_dir(path, posix, None, io_stats)
             .await?
             .try_collect::<Vec<_>>()
             .await?;

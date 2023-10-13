@@ -8,6 +8,8 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod s3_like;
+mod stats;
+mod stream_utils;
 use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;
 use lazy_static::lazy_static;
