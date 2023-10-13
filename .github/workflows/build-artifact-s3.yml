@@ -61,7 +61,7 @@ jobs:
         args: --profile release --out dist # CHANGE TO LTO
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
 
-    - name: Copy all files as Zip
+    - name: Copy all files as zip for Glue
       run: for foo in dist/*.whl; do cp $foo dist/`basename $foo .whl`.zip; done
 
     - name: Upload wheels to s3
@@ -69,7 +69,7 @@ jobs:
 
 
   list-wheels:
-    name: Publish wheels to PYPI and Anaconda
+    name: List Wheels and Zip files Published to S3
     runs-on: ubuntu-latest
     needs:
     - build-and-push
