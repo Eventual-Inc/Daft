@@ -13,12 +13,11 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 
 from __future__ import annotations
 
+import logging
 import math
 import pathlib
 from collections import deque
 from typing import Generator, Iterator, TypeVar, Union
-
-from loguru import logger
 
 from daft.daft import (
     FileFormat,
@@ -39,6 +38,8 @@ from daft.execution.execution_step import (
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartialPartitionMetadata
+
+logger = logging.getLogger(__name__)
 
 PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
@@ -123,7 +124,7 @@ def file_read(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug("file_read blocked on completion of first source in: {sources}", sources=materializations)
+                logger.debug(f"file_read blocked on completion of first source in: {materializations}")
                 yield None
             else:
                 return
@@ -231,10 +232,8 @@ def join(
             if len(left_requests) + len(right_requests) > 0:
                 logger.debug(
                     "join blocked on completion of sources.\n"
-                    "Left sources: {left_requests}\n"
-                    "Right sources: {right_requests}",
-                    left_requests=left_requests,
-                    right_requests=right_requests,
+                    f"Left sources: {left_requests}\n"
+                    f"Right sources: {right_requests}",
                 )
                 yield None
 
@@ -339,7 +338,7 @@ def global_limit(
 
         # (Optimization. If we are doing limit(0) and already have a partition executing to use for it, just wait.)
         if remaining_rows == 0 and len(materializations) > 0:
-            logger.debug("global_limit blocked on completion of: {source}", source=materializations[0])
+            logger.debug(f"global_limit blocked on completion of: {materializations[0]}")
             yield None
             continue
 
@@ -364,9 +363,7 @@ def global_limit(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(
-                    "global_limit blocked on completion of first source in: {sources}", sources=materializations
-                )
+                logger.debug(f"global_limit blocked on completion of first source in: {materializations}")
                 yield None
             else:
                 return
@@ -396,9 +393,7 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(
-                    "flatten_plan blocked on completion of first source in: {sources}", sources=materializations
-                )
+                logger.debug(f"flatten_plan blocked on completion of first source in: {materializations}")
                 yield None
             else:
                 return
@@ -427,7 +422,7 @@ def split(
         yield step
 
     while any(not _.done() for _ in materializations):
-        logger.debug("split_to blocked on completion of all sources: {sources}", sources=materializations)
+        logger.debug(f"split_to blocked on completion of all sources: {materializations}")
         yield None
 
     splits_per_partition = deque([1 for _ in materializations])
@@ -517,7 +512,7 @@ def coalesce(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug("coalesce blocked on completion of a task in: {sources}", sources=materializations)
+                logger.debug(f"coalesce blocked on completion of a task in: {materializations}")
                 yield None
             else:
                 return
@@ -547,7 +542,7 @@ def reduce(
     # All fanouts dispatched. Wait for all of them to materialize
     # (since we need all of them to emit even a single reduce).
     while any(not _.done() for _ in materializations):
-        logger.debug("reduce blocked on completion of all sources in: {sources}", sources=materializations)
+        logger.debug(f"reduce blocked on completion of all sources in: {materializations}")
         yield None
 
     inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
@@ -587,7 +582,7 @@ def sort(
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for source in source_materializations:
         while not source.done():
-            logger.debug("sort blocked on completion of source: {source}", source=source)
+            logger.debug(f"sort blocked on completion of source: {source}")
             yield None
 
         sample = (
@@ -606,7 +601,7 @@ def sort(
 
     # Wait for samples to materialize.
     while any(not _.done() for _ in sample_materializations):
-        logger.debug("sort blocked on completion of all samples: {samples}", samples=sample_materializations)
+        logger.debug(f"sort blocked on completion of all samples: {sample_materializations}")
         yield None
 
     # Reduce the samples to get sort boundaries.
@@ -628,7 +623,7 @@ def sort(
 
     # Wait for boundaries to materialize.
     while not boundaries.done():
-        logger.debug("sort blocked on completion of boundary partition: {boundaries}", boundaries=boundaries)
+        logger.debug(f"sort blocked on completion of boundary partition: {boundaries}")
         yield None
 
     # Create a range fanout plan.
@@ -699,7 +694,7 @@ def materialize(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug("materialize blocked on completion of all sources: {sources}", sources=materializations)
+                logger.debug(f"materialize blocked on completion of all sources: {materializations}")
                 yield None
             else:
                 return

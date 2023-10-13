@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sys
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
-from loguru import logger
 
 from daft.arrow_utils import ensure_table
 from daft.daft import JoinType
@@ -19,11 +18,6 @@ from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-
-if sys.version_info < (3, 8):
-    pass
-else:
-    pass
 
 _NUMPY_AVAILABLE = True
 try:
@@ -43,6 +37,9 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from daft.io import IOConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class Table:

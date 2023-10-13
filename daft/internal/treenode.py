@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import typing
 from typing import TYPE_CHECKING, Generic, List, TypeVar, cast
 
-from loguru import logger
-
 if TYPE_CHECKING:
     from daft.internal.rule import Rule
+
+logger = logging.getLogger(__name__)
 
 TreeNodeType = TypeVar("TreeNodeType", bound="TreeNode")
 

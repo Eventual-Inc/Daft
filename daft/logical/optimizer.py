@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from loguru import logger
+import logging
 
 from daft.daft import PartitionScheme, ResourceRequest
 from daft.expressions import ExpressionsProjection, col
@@ -20,6 +20,8 @@ from daft.logical.logical_plan import (
     TabularFilesScan,
     UnaryNode,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PushDownPredicates(Rule[LogicalPlan]):

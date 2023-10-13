@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from loguru import logger
-
 from daft.internal.rule import Rule
 from daft.internal.treenode import TreeNode
+
+logger = logging.getLogger(__name__)
 
 TreeNodeType = TypeVar("TreeNodeType", bound="TreeNode")
 

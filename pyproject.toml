@@ -7,7 +7,6 @@ authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
   "pyarrow >= 6.0.1",
   "fsspec[http]",
-  "loguru",
   "psutil",
   "typing-extensions >= 4.0.0; python_version < '3.8'",
   "pickle5 >= 0.0.12; python_version < '3.8'"

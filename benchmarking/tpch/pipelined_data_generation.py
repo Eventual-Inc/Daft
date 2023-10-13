@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import logging
 import os
 import pathlib
 import shlex
@@ -22,9 +23,9 @@ import shutil
 import subprocess
 from multiprocessing import Pool
 
-from loguru import logger
-
 from benchmarking.tpch.data_generation import gen_parquet
+
+logger = logging.getLogger(__name__)
 
 STATIC_TABLES = ["nation", "region"]
 

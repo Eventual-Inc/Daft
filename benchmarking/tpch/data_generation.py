@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import os
 import shlex
@@ -8,9 +9,9 @@ import sqlite3
 import subprocess
 from glob import glob
 
-from loguru import logger
-
 import daft
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = {
     "part": [

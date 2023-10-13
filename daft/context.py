@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
-from loguru import logger
-
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner import Runner
+
+logger = logging.getLogger(__name__)
 
 
 class _RunnerConfig:
