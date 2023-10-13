@@ -11,8 +11,6 @@ on:
         options:
         - release-lto
         - release
-  pull_request:
-    branches: [main]
 
 env:
   PACKAGE_NAME: getdaft
