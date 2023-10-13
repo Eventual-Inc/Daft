@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TypeVar
 
 import pyarrow as pa
@@ -490,7 +491,11 @@ class Series:
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
+        elif sys.platform == "win32":
+            return (Series.from_arrow, (self.to_arrow(), self.name()))
         else:
+            # Ray Special CloudPickling fast path.
+            # Only run for Linux and Mac, since windows runs slower for some reason
             return (
                 Series._from_arrow_table_to_series,
                 self._to_arrow_table_for_serdes(),
