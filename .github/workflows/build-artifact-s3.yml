@@ -40,7 +40,6 @@ jobs:
         architecture: x64
     - run: pip install -U toml
     - run: python tools/patch_package_version.py
-    - run: python tools/patch_package_version.py
     - name: Build wheels - Linux x86
       if: ${{ (matrix.os == 'ubuntu') && (matrix.compile_arch == 'x86_64') }}
       uses: messense/maturin-action@v1
