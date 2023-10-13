@@ -491,18 +491,29 @@ class Series:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
         else:
-            table = pa.table({self.name(): self.to_arrow()})
             return (
                 Series._from_arrow_table_to_series,
-                (table,),
+                self._to_arrow_table_for_serdes(),
             )
 
+    def _to_arrow_table_for_serdes(self) -> tuple[pa.Table, pa.ExtensionType | None]:
+        array = self.to_arrow()
+        if isinstance(array.type, pa.BaseExtensionType):
+            stype = array.type.storage_type
+            ltype = array.type
+            storage_array = array.cast(stype)
+            return (pa.table({self.name(): storage_array}), ltype)
+        else:
+            return (pa.table({self.name(): array}), None)
+
     @classmethod
-    def _from_arrow_table_to_series(cls, table: pa.Table) -> Series:
+    def _from_arrow_table_to_series(cls, table: pa.Table, extension_type: pa.ExtensionType | None) -> Series:
         # So we can exploit ray's special pickling for arrow tables which doesn't work on pyarrow arrays
         assert table.num_columns == 1
         [name] = table.column_names
         [array] = table.columns
+        if extension_type is not None:
+            array = extension_type.wrap_array(array)
         return cls.from_arrow(array, name)
 
 
