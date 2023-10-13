@@ -364,11 +364,9 @@ impl S3LikeSource {
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
 
-        let creds_cache = if let Some(current_client) = w_handle.get(&self.default_region) {
-            Some(current_client.conf().credentials_cache())
-        } else {
-            None
-        };
+        let creds_cache = w_handle
+            .get(&self.default_region)
+            .map(|current_client| current_client.conf().credentials_cache());
 
         let (_, new_client) = build_s3_client(&new_config, creds_cache).await?;
 
