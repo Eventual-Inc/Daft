@@ -499,6 +499,9 @@ class Series:
     def _to_arrow_table_for_serdes(self) -> tuple[pa.Table, pa.ExtensionType | None]:
         array = self.to_arrow()
         if len(array) == 0:
+            # This is a workaround for:
+            # pyarrow.lib.ArrowIndexError: buffer slice would exceed buffer length
+            # when we have 0 length arrays
             array = pa.array([], type=array.type)
 
         if isinstance(array.type, pa.BaseExtensionType):
