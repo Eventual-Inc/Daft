@@ -156,7 +156,7 @@ impl AzureBlobSource {
         // Flatmap each page of results to a single stream of our standardized FileMetadata.
         responses_stream
             .map(move |response| {
-                io_stats.clone().map(|is| is.load_list_requests(1));
+                io_stats.clone().map(|is| is.mark_list_requests(1));
                 (response, protocol.clone())
             })
             .flat_map(move |(response, protocol)| match response {
@@ -430,10 +430,9 @@ impl ObjectSource for AzureBlobSource {
                 .into_error(e)
                 .into()
             });
-        tokio::pin!(stream);
-        io_stats.map(|is| is.mark_get_requests(1));
+        io_stats.as_ref().map(|is| is.mark_get_requests(1));
         Ok(GetResult::Stream(
-            io_stats_on_bytestream(stream, io_stats),
+            io_stats_on_bytestream(Box::pin(stream), io_stats),
             None,
             None,
         ))
@@ -456,7 +455,7 @@ impl ObjectSource for AzureBlobSource {
             .get_properties()
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
-        io_stats.map(|is| is.mark_head_requests(1));
+        io_stats.as_ref().map(|is| is.mark_head_requests(1));
 
         Ok(metadata.blob.properties.content_length as usize)
     }

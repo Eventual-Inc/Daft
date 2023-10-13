@@ -1,13 +1,34 @@
-use std::sync::{atomic, Arc};
+use std::sync::{
+    atomic::{self},
+    Arc,
+};
 
 pub type IOStatsRef = Arc<IOStatsContext>;
 
 #[derive(Default, Debug)]
 pub struct IOStatsContext {
+    name: String,
     num_get_requests: atomic::AtomicUsize,
     num_head_requests: atomic::AtomicUsize,
     num_list_requests: atomic::AtomicUsize,
     bytes_read: atomic::AtomicUsize,
+}
+
+impl Drop for IOStatsContext {
+    fn drop(&mut self) {
+        let bytes_read = self.load_bytes_read();
+        let num_gets = self.load_get_requests();
+        let mean_size = (bytes_read as f64) / (num_gets as f64);
+        log::warn!(
+            "IOStatsContext: {}, Gets: {}, Heads: {}, Lists: {}, BytesReads: {}, AvgGetSize: {}",
+            self.name,
+            num_gets,
+            self.load_head_requests(),
+            self.load_list_requests(),
+            bytes_read,
+            mean_size as i64
+        );
+    }
 }
 
 pub(crate) struct IOStatsByteStreamContextHandle {
@@ -17,8 +38,14 @@ pub(crate) struct IOStatsByteStreamContextHandle {
 }
 
 impl IOStatsContext {
-    pub fn new() -> IOStatsRef {
-        Arc::new(Default::default())
+    pub fn new(name: String) -> IOStatsRef {
+        Arc::new(IOStatsContext {
+            name,
+            num_get_requests: atomic::AtomicUsize::new(0),
+            num_head_requests: atomic::AtomicUsize::new(0),
+            num_list_requests: atomic::AtomicUsize::new(0),
+            bytes_read: atomic::AtomicUsize::new(0),
+        })
     }
 
     #[inline]
@@ -40,18 +67,18 @@ impl IOStatsContext {
     }
 
     #[inline]
-    pub fn load_get_requests(&self, num_requests: usize) {
-        self.num_get_requests.load(atomic::Ordering::Acquire);
+    pub fn load_get_requests(&self) -> usize {
+        self.num_get_requests.load(atomic::Ordering::Acquire)
     }
 
     #[inline]
-    pub fn load_head_requests(&self, num_requests: usize) {
-        self.num_head_requests.load(atomic::Ordering::Acquire);
+    pub fn load_head_requests(&self) -> usize {
+        self.num_head_requests.load(atomic::Ordering::Acquire)
     }
 
     #[inline]
-    pub fn load_list_requests(&self, num_requests: usize) {
-        self.num_list_requests.load(atomic::Ordering::Acquire);
+    pub fn load_list_requests(&self) -> usize {
+        self.num_list_requests.load(atomic::Ordering::Acquire)
     }
 
     #[inline]
@@ -83,7 +110,5 @@ impl IOStatsByteStreamContextHandle {
 impl Drop for IOStatsByteStreamContextHandle {
     fn drop(&mut self) {
         self.inner.mark_bytes_read(self.bytes_read);
-
-        log::warn!("Finished IOStats: {}", self.inner.load_bytes_read());
     }
 }

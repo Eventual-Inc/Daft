@@ -13,7 +13,7 @@ use arrow2::{
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_io::{get_runtime, GetResult, IOClient};
+use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{io::Cursor, AsyncRead, AsyncSeek};
 use tokio::fs::File;
@@ -27,6 +27,7 @@ pub fn read_csv(
     has_header: bool,
     delimiter: Option<u8>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
@@ -40,6 +41,7 @@ pub fn read_csv(
             has_header,
             delimiter,
             io_client,
+            io_stats,
         )
         .await
     })
@@ -53,8 +55,12 @@ async fn read_csv_single(
     has_header: bool,
     delimiter: Option<u8>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Table> {
-    match io_client.single_url_get(uri.to_string(), None).await? {
+    match io_client
+        .single_url_get(uri.to_string(), None, io_stats)
+        .await?
+    {
         GetResult::File(file) => {
             read_csv_single_from_reader(
                 File::open(file.path).await?.compat(),
@@ -208,7 +214,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(file, None, None, None, true, None, io_client, true)?;
+        let table = read_csv(file, None, None, None, true, None, io_client, None, true)?;
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
@@ -231,7 +237,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(file, None, None, None, true, None, io_client, true)?;
+        let table = read_csv(file, None, None, None, true, None, io_client, None, true)?;
         assert_eq!(table.len(), 5000);
 
         Ok(())
@@ -246,7 +252,17 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(file, None, None, Some(10), true, None, io_client, true)?;
+        let table = read_csv(
+            file,
+            None,
+            None,
+            Some(10),
+            true,
+            None,
+            io_client,
+            None,
+            true,
+        )?;
         assert_eq!(table.len(), 10);
         assert_eq!(
             table.schema,
@@ -277,6 +293,7 @@ mod tests {
             true,
             None,
             io_client,
+            None,
             true,
         )?;
         assert_eq!(table.len(), 100);

@@ -4,7 +4,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
-    use daft_io::{get_io_client, python::IOConfig};
+    use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult, Python};
 
@@ -34,6 +34,8 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -46,6 +48,7 @@ pub mod pylib {
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 io_client,
+                Some(io_stats),
                 multithreaded_io.unwrap_or(true),
             )?
             .into())
@@ -71,6 +74,7 @@ pub mod pylib {
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 io_client,
+                None, // PRINT HERE TOO
             )?)
             .into())
         })

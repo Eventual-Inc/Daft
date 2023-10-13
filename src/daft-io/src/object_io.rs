@@ -137,14 +137,14 @@ pub(crate) trait ObjectSource: Sync + Send {
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let uri = uri.to_string();
         let s = stream! {
-            let lsr = self.ls(&uri, posix, None, page_size, io_stats).await?;
+            let lsr = self.ls(&uri, posix, None, page_size, io_stats.clone()).await?;
             for fm in lsr.files {
                 yield Ok(fm);
             }
 
             let mut continuation_token = lsr.continuation_token.clone();
             while continuation_token.is_some() {
-                let lsr = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats).await?;
+                let lsr = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await?;
                 continuation_token = lsr.continuation_token.clone();
                 for fm in lsr.files {
                     yield Ok(fm);

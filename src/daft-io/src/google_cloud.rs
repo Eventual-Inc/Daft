@@ -237,7 +237,7 @@ impl GCSClientWrapper {
             .context(UnableToListObjectsSnafu {
                 path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
             })?;
-        io_stats.map(|is| is.mark_list_requests(1));
+        io_stats.as_ref().map(|is| is.mark_list_requests(1));
 
         let response_items = ls_response.items.unwrap_or_default();
         let response_prefixes = ls_response.prefixes.unwrap_or_default();

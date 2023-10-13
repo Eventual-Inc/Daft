@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_io::IOClient;
+use daft_io::{IOClient, IOStatsRef};
 
 use parquet2::{metadata::FileMetaData, read::deserialize_metadata};
 use snafu::ResultExt;
@@ -15,6 +15,7 @@ pub async fn read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
 ) -> super::Result<FileMetaData> {
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
@@ -25,7 +26,7 @@ pub async fn read_parquet_metadata(
 
     let start = size.saturating_sub(default_end_len);
     let mut data = io_client
-        .single_url_get(uri.into(), Some(start..size))
+        .single_url_get(uri.into(), Some(start..size), io_stats.clone())
         .await?
         .bytes()
         .await?;
@@ -57,7 +58,7 @@ pub async fn read_parquet_metadata(
 
         let start = size.saturating_sub(footer_len);
         data = io_client
-            .single_url_get(uri.into(), Some(start..size))
+            .single_url_get(uri.into(), Some(start..size), io_stats)
             .await?
             .bytes()
             .await?;
@@ -103,7 +104,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let metadata = read_parquet_metadata(file, size, io_client.clone()).await?;
+        let metadata = read_parquet_metadata(file, size, io_client.clone(), None).await?;
         assert_eq!(metadata.num_rows, 100);
 
         Ok(())

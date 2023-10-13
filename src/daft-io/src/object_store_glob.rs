@@ -393,7 +393,7 @@ pub(crate) async fn glob(
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
-                    io_stats,
+                    io_stats.clone(),
                 )
                 .await;
 
@@ -412,7 +412,7 @@ pub(crate) async fn glob(
                                             state.current_fragment_idx,
                                             stream_dir_count,
                                         ),
-                                        io_stats,
+                                        io_stats.clone(),
                                     );
                                 }
                                 // Return any Files that match
@@ -506,7 +506,7 @@ pub(crate) async fn glob(
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
-                    io_stats,
+                    io_stats.clone(),
                 )
                 .await;
 
@@ -529,7 +529,7 @@ pub(crate) async fn glob(
                                             stream_dir_count,
                                         )
                                         .with_wildcard_mode(),
-                                    io_stats,
+                                    io_stats.clone(),
                                 );
                             }
                             FileType::File

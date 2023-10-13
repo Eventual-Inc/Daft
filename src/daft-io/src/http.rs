@@ -195,7 +195,7 @@ impl ObjectSource for HttpSource {
         let response = response
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
-        io_stats.map(|is| is.mark_get_requests(1));
+        io_stats.as_ref().map(|is| is.mark_get_requests(1));
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
         let owned_string = uri.to_owned();
@@ -223,7 +223,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
 
-        io_stats.map(|is| is.mark_head_requests(1));
+        io_stats.as_ref().map(|is| is.mark_head_requests(1));
 
         let headers = response.headers();
         match headers.get(CONTENT_LENGTH) {
@@ -275,7 +275,7 @@ impl ObjectSource for HttpSource {
             .context(UnableToConnectSnafu::<String> { path: path.into() })?
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
-        io_stats.map(|is| is.mark_list_requests(1));
+        io_stats.as_ref().map(|is| is.mark_list_requests(1));
 
         // Reconstruct the actual path of the request, which may have been redirected via a 301
         // This is important because downstream URL joining logic relies on proper trailing-slashes/index.html

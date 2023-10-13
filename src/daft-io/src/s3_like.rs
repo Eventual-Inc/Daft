@@ -737,9 +737,18 @@ impl ObjectSource for S3LikeSource {
         let get_result = self
             ._get_impl(permit, uri, range, &self.default_region)
             .await?;
-        if let GetResult::Stream(stream, num_bytes , permit) = get_result && io_stats.is_some() {
-            io_stats.map(|is| is.mark_get_requests(1));
-            Ok(GetResult::Stream(io_stats_on_bytestream(stream, io_stats), num_bytes, permit))
+
+        if io_stats.is_some() {
+            if let GetResult::Stream(stream, num_bytes, permit) = get_result {
+                io_stats.as_ref().map(|is| is.mark_get_requests(1));
+                Ok(GetResult::Stream(
+                    io_stats_on_bytestream(stream, io_stats),
+                    num_bytes,
+                    permit,
+                ))
+            } else {
+                panic!("This should always be a stream");
+            }
         } else {
             Ok(get_result)
         }
@@ -752,7 +761,7 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         let head_result = self._head_impl(permit, uri, &self.default_region).await?;
-        io_stats.map(|is| is.mark_head_requests(1));
+        io_stats.as_ref().map(|is| is.mark_head_requests(1));
         Ok(head_result)
     }
 
@@ -825,7 +834,7 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
-            io_stats.map(|is| is.mark_list_requests(1));
+            io_stats.as_ref().map(|is| is.mark_list_requests(1));
 
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
                 let permit = self
@@ -847,7 +856,7 @@ impl ObjectSource for S3LikeSource {
                         page_size,
                     )
                     .await?;
-                io_stats.map(|is| is.mark_list_requests(1));
+                io_stats.as_ref().map(|is| is.mark_list_requests(1));
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
 
@@ -880,7 +889,7 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
-            io_stats.map(|is| is.mark_list_requests(1));
+            io_stats.as_ref().map(|is| is.mark_list_requests(1));
 
             Ok(lsr)
         }
