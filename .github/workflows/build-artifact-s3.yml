@@ -2,7 +2,7 @@ name: daft-build-artifact-s3
 
 on:
   workflow_dispatch:
-  pull_request:
+  pull_request:  # REMOVE THIS
     branches: [main]
 
 env:
