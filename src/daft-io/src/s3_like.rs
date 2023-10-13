@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use aws_config::meta::credentials::CredentialsProviderChain;
 use aws_config::retry::RetryMode;
 use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
@@ -277,7 +278,10 @@ async fn build_s3_client(
     };
 
     let builder = if let Some(cached_creds) = cached_creds {
-        builder.credentials_provider(cached_creds)
+        let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
+            .or_default_provider()
+            .await;
+        builder.credentials_provider(provider)
     } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
@@ -316,7 +320,6 @@ async fn build_s3_client(
     } else {
         s3_conf
     };
-
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 
