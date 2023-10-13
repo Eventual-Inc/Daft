@@ -19,7 +19,7 @@ def from_csv(
     file: FileInput,
     storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
-) -> Schema:
+) -> tuple[Schema, int | None]:
     """Infers a Schema from a CSV file
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -60,13 +60,13 @@ def from_csv(
             ),
         )
 
-    return Schema.from_pyarrow_schema(reader.schema)
+    return Schema.from_pyarrow_schema(reader.schema), None
 
 
 def from_json(
     file: FileInput,
     storage_config: StorageConfig | None = None,
-) -> Schema:
+) -> tuple[Schema, int | None]:
     """Reads a Schema from a JSON file
 
     Args:
@@ -85,13 +85,13 @@ def from_json(
     with _open_stream(file, fs) as f:
         table = pajson.read_json(f)
 
-    return Table.from_arrow(table).schema()
+    return Table.from_arrow(table).schema(), None
 
 
 def from_parquet(
     file: FileInput,
     storage_config: StorageConfig | None = None,
-) -> Schema:
+) -> tuple[Schema, int | None]:
     """Infers a Schema from a Parquet file"""
     if storage_config is not None:
         config = storage_config.config
@@ -100,7 +100,7 @@ def from_parquet(
                 file, (str, pathlib.Path)
             ), "Native downloader only works on string inputs to read_parquet"
             io_config = config.io_config
-            return Schema.from_parquet(str(file), io_config=io_config)
+            return Schema.from_parquet(str(file), io_config=io_config), None
 
         assert isinstance(config, PythonStorageConfig)
         fs = config.fs
@@ -119,4 +119,7 @@ def from_parquet(
     pqf = papq.ParquetFile(f)
     arrow_schema = pqf.metadata.schema.to_arrow_schema()
 
-    return Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
+    return (
+        Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema]),
+        None,
+    )

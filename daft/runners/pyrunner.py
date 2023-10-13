@@ -110,7 +110,7 @@ class PyRunnerIO(runner_io.RunnerIO):
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
-    ) -> Schema:
+    ) -> tuple[Schema, int | None]:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
         # Naively retrieve the first filepath in the PartitionSet

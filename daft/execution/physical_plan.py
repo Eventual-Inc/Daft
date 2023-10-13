@@ -91,6 +91,7 @@ def file_read(
             file_infos = vpartition.to_pydict()
             file_sizes_bytes = file_infos["size"]
             file_rows = file_infos["num_rows"]
+            estimated_mean_row_sizes = file_infos["estimated_mean_row_size"]
 
             # Emit one partition for each file (NOTE: hardcoded for now).
             for i in range(len(vpartition)):
@@ -106,6 +107,7 @@ def file_read(
                         storage_config=storage_config,
                         columns_to_read=columns_to_read,
                         file_format_config=file_format_config,
+                        estimated_mean_row_size=estimated_mean_row_sizes[i],
                     ),
                     # Set the filesize as the memory request.
                     # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)

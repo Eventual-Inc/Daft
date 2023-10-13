@@ -163,13 +163,12 @@ class Schema:
         delimiter: str | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-    ) -> Schema:
-        return Schema._from_pyschema(
-            _read_csv_schema(
-                uri=path,
-                has_header=has_header,
-                delimiter=delimiter,
-                io_config=io_config,
-                multithreaded_io=multithreaded_io,
-            )
+    ) -> tuple[Schema, int | None]:
+        schema, mean_sampled_row_size = _read_csv_schema(
+            uri=path,
+            has_header=has_header,
+            delimiter=delimiter,
+            io_config=io_config,
+            multithreaded_io=multithreaded_io,
         )
+        return Schema._from_pyschema(schema), mean_sampled_row_size

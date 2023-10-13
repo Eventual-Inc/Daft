@@ -139,7 +139,7 @@ def sample_schema_from_filepath(
     first_file_path: str,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
-) -> Schema:
+) -> tuple[Schema, int | None]:
     """Ray remote function to run schema sampling on top of a Table containing a single filepath"""
     # Currently just samples the Schema from the first file
     return runner_io.sample_schema(first_file_path, file_format_config, storage_config)
@@ -239,7 +239,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
-    ) -> Schema:
+    ) -> tuple[Schema, int | None]:
         if len(file_infos) == 0:
             raise ValueError("No files to get schema from")
         # Naively retrieve the first filepath in the file info table.

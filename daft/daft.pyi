@@ -258,13 +258,24 @@ class FileInfos:
     file_paths: list[str]
     file_sizes: list[int | None]
     num_rows: list[int | None]
+    estimated_mean_row_size: list[int | None]
 
     @staticmethod
-    def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
+    def from_infos(
+        file_paths: list[str],
+        file_sizes: list[int | None],
+        num_rows: list[int | None],
+        estimated_mean_row_sizes: list[int | None],
+    ) -> FileInfos: ...
     @staticmethod
     def from_table(table: PyTable) -> FileInfos:
         """
-        Create from a Daft table with "path", "size", and "num_rows" columns.
+        Create from a Daft table with "path", "size", "num_rows", and "estimated_mean_row_sizes" columns.
+        """
+        ...
+    def set_estimated_mean_row_size(self, idx: int, value: int):
+        """
+        Sets the estimated mean row size for file at idx.
         """
         ...
     def extend(self, new_infos: FileInfos) -> FileInfos:
@@ -275,7 +286,7 @@ class FileInfos:
     def __getitem__(self, idx: int) -> FileInfo: ...
     def to_table(self) -> PyTable:
         """
-        Convert to a Daft table with "path", "size", and "num_rows" columns.
+        Convert to a Daft table with "path", "size", "num_rows", and "estimated_mean_row_sizes" columns.
         """
     def __len__(self) -> int: ...
 
@@ -439,6 +450,7 @@ def read_csv(
     buffer_size: int | None = None,
     chunk_size: int | None = None,
     max_chunks_in_flight: int | None = None,
+    estimated_mean_row_size: int | None = None,
 ): ...
 def read_csv_schema(
     uri: str,

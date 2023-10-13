@@ -17,11 +17,11 @@ pub fn read_csv_schema(
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<Schema> {
+) -> DaftResult<(Schema, usize)> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        let (schema, _, _) = read_csv_schema_single(
+        read_csv_schema_single(
             uri,
             has_header,
             delimiter,
@@ -30,8 +30,7 @@ pub fn read_csv_schema(
             io_client,
             io_stats,
         )
-        .await?;
-        Ok(schema)
+        .await
     })
 }
 
@@ -42,7 +41,7 @@ pub(crate) async fn read_csv_schema_single(
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(Schema, usize, usize)> {
+) -> DaftResult<(Schema, usize)> {
     match io_client
         .single_url_get(uri.to_string(), None, io_stats)
         .await?
@@ -75,13 +74,13 @@ async fn read_csv_schema_from_reader<R>(
     has_header: bool,
     delimiter: Option<u8>,
     max_bytes: Option<usize>,
-) -> DaftResult<(Schema, usize, usize)>
+) -> DaftResult<(Schema, usize)>
 where
     R: AsyncRead + Unpin + Send,
 {
-    let (schema, records_count, total_bytes) =
+    let (schema, mean_sampled_row_size) =
         read_csv_arrow_schema_from_reader(reader, has_header, delimiter, max_bytes).await?;
-    Ok((Schema::try_from(&schema)?, records_count, total_bytes))
+    Ok((Schema::try_from(&schema)?, mean_sampled_row_size))
 }
 
 pub(crate) async fn read_csv_arrow_schema_from_reader<R>(
@@ -89,7 +88,7 @@ pub(crate) async fn read_csv_arrow_schema_from_reader<R>(
     has_header: bool,
     delimiter: Option<u8>,
     max_bytes: Option<usize>,
-) -> DaftResult<(arrow2::datatypes::Schema, usize, usize)>
+) -> DaftResult<(arrow2::datatypes::Schema, usize)>
 where
     R: AsyncRead + Unpin + Send,
 {
@@ -98,9 +97,9 @@ where
         .delimiter(delimiter.unwrap_or(b','))
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
         .create_reader(reader);
-    let (fields, records_count, total_bytes) =
+    let (fields, mean_sampled_row_size) =
         infer_schema(&mut reader, None, max_bytes, has_header, &infer).await?;
-    Ok((fields.into(), records_count, total_bytes))
+    Ok((fields.into(), mean_sampled_row_size))
 }
 
 pub async fn infer_schema<R, F>(
@@ -109,7 +108,7 @@ pub async fn infer_schema<R, F>(
     max_bytes: Option<usize>,
     has_header: bool,
     infer: &F,
-) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, usize, usize)>
+) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, usize)>
 where
     R: AsyncRead + Unpin + Send,
     F: Fn(&[u8]) -> arrow2::datatypes::DataType,
@@ -130,7 +129,7 @@ where
     } else {
         // Save the csv reader position before reading headers
         if !reader.read_byte_record(&mut record).await? {
-            return Ok((vec![], 0, 0));
+            return Ok((vec![], 0));
         }
         let first_record_count = record.len();
         (
@@ -169,7 +168,10 @@ where
         }
     }
     let fields = merge_schema(&headers, &mut column_types);
-    Ok((fields, records_count, total_bytes))
+    Ok((
+        fields,
+        ((total_bytes as f64) / (records_count as f64)).ceil() as usize,
+    ))
 }
 
 fn merge_fields(
@@ -231,7 +233,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_csv_schema(file, true, None, None, io_client.clone(), None)?;
+        let (schema, _) = read_csv_schema(file, true, None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

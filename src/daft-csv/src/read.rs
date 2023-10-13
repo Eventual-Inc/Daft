@@ -44,6 +44,7 @@ pub fn read_csv(
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
+    estimated_mean_row_size: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
@@ -61,6 +62,7 @@ pub fn read_csv(
             buffer_size,
             chunk_size,
             max_chunks_in_flight,
+            estimated_mean_row_size,
         )
         .await
     })
@@ -80,11 +82,12 @@ async fn read_csv_single(
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
+    estimated_mean_row_size: Option<usize>,
 ) -> DaftResult<Table> {
-    let (schema, infer_record_count, infer_total_bytes) = match schema {
-        Some(schema) => (schema.to_arrow()?, None, None),
+    let (schema, estimated_mean_row_size) = match schema {
+        Some(schema) => (schema.to_arrow()?, estimated_mean_row_size),
         None => {
-            let (schema, record_count, total_bytes) = read_csv_schema_single(
+            let (schema, estimated_mean_row_size) = read_csv_schema_single(
                 uri,
                 has_header,
                 delimiter,
@@ -93,7 +96,7 @@ async fn read_csv_single(
                 io_stats.clone(),
             )
             .await?;
-            (schema.to_arrow()?, Some(record_count), Some(total_bytes))
+            (schema.to_arrow()?, Some(estimated_mean_row_size))
         }
     };
     match io_client
@@ -116,7 +119,8 @@ async fn read_csv_single(
             let mut reader = AsyncReaderBuilder::new()
                 .has_headers(has_header)
                 .delimiter(delimiter.unwrap_or(b','))
-                .buffer_capacity(buffer_size.unwrap_or(1 << 20))
+                // Default buffer capacity of 512 KiB.
+                .buffer_capacity(buffer_size.unwrap_or(512 * 1024))
                 .create_reader(stream_reader);
             let mut fields = schema.fields;
             if let Some(column_names) = column_names {
@@ -145,37 +149,32 @@ async fn read_csv_single(
             let num_projected_fields = projection_indices.len();
             let unpruned_fields = Arc::new(fields.clone());
             let num_rows = num_rows.unwrap_or(usize::MAX);
-            let estimated_average_row_size = match (infer_record_count, infer_total_bytes) {
-                (Some(infer_record_count), Some(infer_total_bytes)) => {
-                    Some(((infer_total_bytes as f64) / (infer_record_count as f64)).ceil() as usize)
-                }
-                _ => None,
-            };
-            let chunk_size = {
-                // 8 MiB per chunk.
-                let desired_chunk_size_bytes = chunk_size.unwrap_or(8 * (1 << 20));
+            // Default of 64 KiB per chunk.
+            let chunk_size = chunk_size.unwrap_or(64 * 1024);
+            let chunk_size_rows = {
                 // If no estimated row size information from schema inference, we assume 200 bytes per row.
-                // With an 8 MiB targeted chunk size, this would result in a chunk size of ~42k rows.
+                // With an 64 KiB targeted chunk size, this would result in a chunk size of ~328 rows.
                 let estimated_rows_per_desired_chunk =
-                    desired_chunk_size_bytes / estimated_average_row_size.unwrap_or(200);
+                    chunk_size / estimated_mean_row_size.unwrap_or(200);
                 // Process at least 8 rows in a chunk, even if the rows are pretty large.
                 estimated_rows_per_desired_chunk.max(8).min(num_rows)
             };
+            // Default max chunks in flight would result in 2 * 8 * 1024 * chunk_size bytes, or 1 GiB with the default chunk size.
+            let max_chunks_in_flight = max_chunks_in_flight.unwrap_or(8 * 1024);
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(max_chunks_in_flight));
             // Number of rows read in last read.
             let mut rows_read = 1;
             // Total number of rows read across all reads.
             let mut total_rows_read = 0;
             let mut chunk_idx = 0;
-            let max_chunks_in_flight = max_chunks_in_flight.unwrap_or(100);
-            let semaphore = Arc::new(tokio::sync::Semaphore::new(max_chunks_in_flight));
             let mut handles = vec![];
             while rows_read > 0 && total_rows_read < num_rows {
                 let mut buffer = vec![
                     ByteRecord::with_capacity(
-                        estimated_average_row_size.unwrap_or(0),
+                        estimated_mean_row_size.unwrap_or(0),
                         fields.len()
                     );
-                    chunk_size
+                    chunk_size_rows
                 ];
                 let mut rows = buffer.as_mut_slice();
                 if rows.len() > num_rows - total_rows_read {
@@ -387,7 +386,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_csv(
-            file, None, None, None, true, None, io_client, None, true, None, None, None, None,
+            file, None, None, None, true, None, io_client, None, true, None, None, None, None, None,
         )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
@@ -412,7 +411,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_csv(
-            file, None, None, None, true, None, io_client, None, true, None, None, None, None,
+            file, None, None, None, true, None, io_client, None, true, None, None, None, None, None,
         )?;
         assert_eq!(table.len(), 5000);
 
@@ -438,6 +437,7 @@ mod tests {
             io_client,
             None,
             true,
+            None,
             None,
             None,
             None,
@@ -475,6 +475,7 @@ mod tests {
             io_client,
             None,
             true,
+            None,
             None,
             None,
             None,

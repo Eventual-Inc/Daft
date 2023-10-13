@@ -36,6 +36,7 @@ pub mod pylib {
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
         max_chunks_in_flight: Option<usize>,
+        estimated_mean_row_size: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
@@ -58,6 +59,7 @@ pub mod pylib {
                 buffer_size,
                 chunk_size,
                 max_chunks_in_flight,
+                estimated_mean_row_size,
             )?
             .into())
         })
@@ -72,7 +74,7 @@ pub mod pylib {
         max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-    ) -> PyResult<PySchema> {
+    ) -> PyResult<(PySchema, usize)> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv_schema: for uri {uri}"));
 
@@ -80,15 +82,15 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(crate::metadata::read_csv_schema(
+            let (schema, mean_sampled_row_size) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 max_bytes,
                 io_client,
                 Some(io_stats),
-            )?)
-            .into())
+            )?;
+            Ok((Arc::new(schema).into(), mean_sampled_row_size))
         })
     }
 }

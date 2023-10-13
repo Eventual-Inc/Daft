@@ -52,7 +52,7 @@ class RunnerIO:
         file_infos: FileInfos,
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
-    ) -> Schema:
+    ) -> tuple[Schema, int | None]:
         raise NotImplementedError()
 
 
@@ -60,7 +60,7 @@ def sample_schema(
     filepath: str,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
-) -> Schema:
+) -> tuple[Schema, int | None]:
     """Helper method that samples a schema from the specified source"""
     file_format = file_format_config.file_format()
     config = file_format_config.config

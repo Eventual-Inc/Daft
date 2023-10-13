@@ -84,7 +84,7 @@ def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
             }
         )
     ) as f:
-        schema = schema_inference.from_parquet(f, storage_config=storage_config)
+        schema, _ = schema_inference.from_parquet(f, storage_config=storage_config)
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
