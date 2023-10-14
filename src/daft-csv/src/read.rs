@@ -47,6 +47,7 @@ pub fn read_csv(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_single(
     uri: &str,
     column_names: Option<Vec<&str>>,

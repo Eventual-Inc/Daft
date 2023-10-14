@@ -10,7 +10,7 @@ use s3::operation::list_objects_v2::ListObjectsV2Error;
 use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::stats::{IOStatsContext, IOStatsRef};
+use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::{get_io_pool_num_threads, InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
@@ -740,7 +740,9 @@ impl ObjectSource for S3LikeSource {
 
         if io_stats.is_some() {
             if let GetResult::Stream(stream, num_bytes, permit) = get_result {
-                io_stats.as_ref().map(|is| is.mark_get_requests(1));
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_get_requests(1)
+                }
                 Ok(GetResult::Stream(
                     io_stats_on_bytestream(stream, io_stats),
                     num_bytes,
@@ -761,7 +763,9 @@ impl ObjectSource for S3LikeSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         let head_result = self._head_impl(permit, uri, &self.default_region).await?;
-        io_stats.as_ref().map(|is| is.mark_head_requests(1));
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1)
+        }
         Ok(head_result)
     }
 
@@ -834,7 +838,9 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
-            io_stats.as_ref().map(|is| is.mark_list_requests(1));
+            if let Some(is) = io_stats.as_ref() {
+                is.mark_list_requests(1)
+            }
 
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
                 let permit = self
@@ -856,7 +862,9 @@ impl ObjectSource for S3LikeSource {
                         page_size,
                     )
                     .await?;
-                io_stats.as_ref().map(|is| is.mark_list_requests(1));
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_list_requests(1)
+                }
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
 
@@ -889,7 +897,9 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
-            io_stats.as_ref().map(|is| is.mark_list_requests(1));
+            if let Some(is) = io_stats.as_ref() {
+                is.mark_list_requests(1)
+            }
 
             Ok(lsr)
         }

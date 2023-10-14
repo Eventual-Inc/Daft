@@ -1,9 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use futures::io;
 use futures::stream::BoxStream;
-use futures::StreamExt;
 use futures::TryStreamExt;
 use google_cloud_storage::client::ClientConfig;
 
@@ -168,7 +166,9 @@ impl GCSClientWrapper {
                     .into_error(e)
                     .into()
                 });
-                io_stats.as_ref().map(|is| is.mark_get_requests(1));
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_get_requests(1)
+                }
                 Ok(GetResult::Stream(
                     io_stats_on_bytestream(response, io_stats),
                     size,
@@ -199,7 +199,9 @@ impl GCSClientWrapper {
                     .context(UnableToOpenFileSnafu {
                         path: uri.to_string(),
                     })?;
-                io_stats.as_ref().map(|is| is.mark_head_requests(1));
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_head_requests(1)
+                }
                 Ok(response.size as usize)
             }
             GCSClientWrapper::S3Compat(client) => {
@@ -208,7 +210,7 @@ impl GCSClientWrapper {
             }
         }
     }
-
+    #[allow(clippy::too_many_arguments)]
     async fn _ls_impl(
         &self,
         client: &Client,
@@ -237,7 +239,9 @@ impl GCSClientWrapper {
             .context(UnableToListObjectsSnafu {
                 path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
             })?;
-        io_stats.as_ref().map(|is| is.mark_list_requests(1));
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_list_requests(1)
+        }
 
         let response_items = ls_response.items.unwrap_or_default();
         let response_prefixes = ls_response.prefixes.unwrap_or_default();

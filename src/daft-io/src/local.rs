@@ -116,7 +116,7 @@ impl ObjectSource for LocalSource {
         &self,
         uri: &str,
         range: Option<Range<usize>>,
-        io_stats: Option<IOStatsRef>,
+        _io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
@@ -129,7 +129,7 @@ impl ObjectSource for LocalSource {
         }
     }
 
-    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         const LOCAL_PROTOCOL: &str = "file://";
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
@@ -187,7 +187,7 @@ impl ObjectSource for LocalSource {
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
-        io_stats: Option<IOStatsRef>,
+        _io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for local.");
@@ -386,7 +386,7 @@ mod tests {
         write_remote_parquet_to_local_file(&mut file2).await?;
         let mut file3 = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
         write_remote_parquet_to_local_file(&mut file3).await?;
-        let dir_path = format!("file://{}", dir.path().to_string_lossy().replace("\\", "/"));
+        let dir_path = format!("file://{}", dir.path().to_string_lossy().replace('\\', "/"));
         let client = LocalSource::get_client().await?;
 
         let ls_result = client.ls(dir_path.as_ref(), true, None, None, None).await?;
@@ -397,7 +397,7 @@ mod tests {
             FileMetadata {
                 filepath: format!(
                     "file://{}/{}",
-                    dir.path().to_string_lossy().replace("\\", "/"),
+                    dir.path().to_string_lossy().replace('\\', "/"),
                     file1.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file1.as_file().metadata().unwrap().len()),
@@ -406,7 +406,7 @@ mod tests {
             FileMetadata {
                 filepath: format!(
                     "file://{}/{}",
-                    dir.path().to_string_lossy().replace("\\", "/"),
+                    dir.path().to_string_lossy().replace('\\', "/"),
                     file2.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file2.as_file().metadata().unwrap().len()),
@@ -415,7 +415,7 @@ mod tests {
             FileMetadata {
                 filepath: format!(
                     "file://{}/{}",
-                    dir.path().to_string_lossy().replace("\\", "/"),
+                    dir.path().to_string_lossy().replace('\\', "/"),
                     file3.path().file_name().unwrap().to_string_lossy(),
                 ),
                 size: Some(file3.as_file().metadata().unwrap().len()),

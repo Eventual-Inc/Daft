@@ -49,6 +49,7 @@ impl From<ParquetSchemaInferenceOptions>
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
     columns: Option<&[&str]>,
@@ -167,6 +168,7 @@ async fn read_parquet_single(
     Ok(table)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_parquet_single_into_arrow(
     uri: &str,
     columns: Option<&[&str]>,
