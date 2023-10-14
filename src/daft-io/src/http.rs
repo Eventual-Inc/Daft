@@ -1,7 +1,7 @@
 use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 
 use async_trait::async_trait;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, TryStreamExt};
 
 use lazy_static::lazy_static;
 use regex::Regex;
