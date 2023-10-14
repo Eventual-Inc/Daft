@@ -160,7 +160,7 @@ impl ObjectSource for LocalSource {
         #[cfg(target_env = "msvc")]
         {
             let glob_path = glob_path.replace("\\", "/");
-            return glob(self, glob_path.as_str(), fanout_limit, page_size).await;
+            return glob(self, glob_path.as_str(), fanout_limit, page_size, io_stats).await;
         }
 
         glob(self, glob_path, fanout_limit, page_size, io_stats).await
