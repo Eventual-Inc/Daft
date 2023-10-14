@@ -65,6 +65,8 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_csv_schema: for uri {uri}"));
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -74,7 +76,7 @@ pub mod pylib {
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 io_client,
-                None, // PRINT HERE TOO
+                Some(io_stats),
             )?)
             .into())
         })

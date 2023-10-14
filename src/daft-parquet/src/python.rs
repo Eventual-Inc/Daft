@@ -210,6 +210,8 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
+
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
@@ -220,7 +222,7 @@ pub mod pylib {
             Ok(Arc::new(crate::read::read_parquet_schema(
                 uri,
                 io_client,
-                None,
+                Some(io_stats),
                 schema_infer_options,
             )?)
             .into())
@@ -235,11 +237,16 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet_statistics"));
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(crate::read::read_parquet_statistics(&uris.series, io_client, None)?.into())
+            Ok(
+                crate::read::read_parquet_statistics(&uris.series, io_client, Some(io_stats))?
+                    .into(),
+            )
         })
     }
 }
