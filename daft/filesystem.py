@@ -12,12 +12,12 @@ if sys.version_info < (3, 8):
 else:
     from typing import Literal
 
+import logging
 from typing import Any
 
 import fsspec
 import pyarrow as pa
 from fsspec.registry import get_filesystem_class
-from loguru import logger
 from pyarrow.fs import (
     FileSystem,
     FSSpecHandler,
@@ -27,6 +27,8 @@ from pyarrow.fs import (
 
 from daft.daft import FileFormat, FileInfos, NativeStorageConfig, StorageConfig
 from daft.table import Table
+
+logger = logging.getLogger(__name__)
 
 _CACHED_FSES: dict[str, FileSystem] = {}
 

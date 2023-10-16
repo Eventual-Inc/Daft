@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -10,10 +11,11 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
-from loguru import logger
 
 from daft.logical.builder import LogicalPlanBuilder
 from daft.planner import PhysicalPlanScheduler
+
+logger = logging.getLogger(__name__)
 
 try:
     import ray
@@ -452,8 +454,6 @@ class Scheduler:
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
-        from loguru import logger
-
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
 
@@ -495,9 +495,7 @@ class Scheduler:
 
                             # If it is a no-op task, just run it locally immediately.
                             elif len(next_step.instructions) == 0:
-                                logger.debug(
-                                    "Running task synchronously in main thread: {next_step}", next_step=next_step
-                                )
+                                logger.debug(f"Running task synchronously in main thread: {next_step}")
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 next_step.set_result(
                                     [RayMaterializedResult(partition) for partition in next_step.inputs]

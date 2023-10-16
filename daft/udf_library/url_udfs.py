@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +20,9 @@ else:
 thread_local = threading.local()
 
 
+logger = logging.getLogger(__name__)
+
+
 def _worker_thread_initializer() -> None:
     """Initializes per-thread local state"""
     thread_local.filesystems_cache = {}
@@ -27,8 +31,6 @@ def _worker_thread_initializer() -> None:
 def _download(
     path: str | None, on_error: Literal["raise"] | Literal["null"], fs: fsspec.AbstractFileSystem | None
 ) -> bytes | None:
-    from loguru import logger
-
     if path is None:
         return None
     protocol = filesystem.get_protocol_from_path(path)

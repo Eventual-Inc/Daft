@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+import logging
 import math
 import os
 import platform
@@ -13,13 +14,14 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 import ray
-from loguru import logger
 
 import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.context import get_context
 from daft.runners.profiler import profiler
+
+logger = logging.getLogger(__name__)
 
 ALL_TABLES = [
     "part",
