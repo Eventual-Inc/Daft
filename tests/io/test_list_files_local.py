@@ -62,13 +62,18 @@ def test_recursive_curr_dir_listing(tmp_path, include_protocol):
         p.touch()
     d = str(d) + "/"
 
+    pwd = os.getcwd()
     os.chdir(str(d))
-    path = "file://**" if include_protocol else "**"
 
-    daft_ls_result = io_glob(path)
-    fs = LocalFileSystem()
-    fs_result = fs.ls(d, detail=True)
-    compare_local_result(daft_ls_result, fs_result)
+    try:
+        path = "file://**" if include_protocol else "**"
+
+        daft_ls_result = io_glob(path)
+        fs = LocalFileSystem()
+        fs_result = fs.ls(d, detail=True)
+        compare_local_result(daft_ls_result, fs_result)
+    finally:
+        os.chdir(pwd)
 
 
 @pytest.mark.parametrize("include_protocol", [False, True])
