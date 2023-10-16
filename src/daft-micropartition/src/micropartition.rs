@@ -1,3 +1,4 @@
+use std::fmt::{write, Display};
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
@@ -13,7 +14,7 @@ use snafu::ResultExt;
 use crate::DaftCoreComputeSnafu;
 
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
-use daft_io::{IOConfig, IOStatsRef};
+use daft_io::{IOClient, IOConfig, IOStatsRef};
 
 #[derive(Clone)]
 enum FormatParams {
@@ -21,7 +22,7 @@ enum FormatParams {
 }
 
 #[derive(Clone)]
-struct DeferredLoadingParams {
+pub(crate) struct DeferredLoadingParams {
     format_params: FormatParams,
     urls: Vec<String>,
     io_config: Arc<IOConfig>,
@@ -30,13 +31,29 @@ struct DeferredLoadingParams {
     limit: Option<usize>,
     columns: Option<Vec<String>>,
 }
-
-enum TableState {
+pub(crate) enum TableState {
     Unloaded(DeferredLoadingParams),
     Loaded(Arc<Vec<Table>>),
 }
 
-struct MicroPartition {
+impl Display for TableState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TableState::Unloaded(params) => {
+                write!(f, "TableState: Unloaded. To load from: {:?}", params.urls)
+            }
+            TableState::Loaded(tables) => {
+                writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
+                for tab in tables.iter() {
+                    writeln!(f, "{}", tab)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+pub(crate) struct MicroPartition {
     schema: SchemaRef,
     state: Mutex<TableState>,
     statistics: Option<TableStatistics>,
@@ -162,14 +179,15 @@ impl MicroPartition {
     }
 }
 
-fn read_parquet_into_micropartition(
+pub(crate) fn read_parquet_into_micropartition(
     uris: &[&str],
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
+    multithreaded_io: bool,
 ) -> DaftResult<MicroPartition> {
     // thread in columns and limit
-    let runtime_handle = daft_io::get_runtime(true)?;
-    let io_client = daft_io::get_io_client(true, io_config.clone())?;
+    let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
     let metadata = runtime_handle
         .block_on(async move { read_parquet_metadata_bulk(uris, io_client, io_stats).await })?;
 
@@ -202,5 +220,11 @@ fn read_parquet_into_micropartition(
     ))
 }
 
+impl Display for MicroPartition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let guard = self.state.lock().unwrap();
+        writeln!(f, "{}", guard)
+    }
+}
 #[cfg(test)]
 mod test {}

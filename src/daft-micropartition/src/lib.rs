@@ -9,6 +9,11 @@ mod micropartition;
 mod table_stats;
 mod utils;
 
+#[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
