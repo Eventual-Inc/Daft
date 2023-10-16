@@ -24,7 +24,7 @@ use s3::config::{Credentials, Region};
 use s3::error::{DisplayErrorContext, SdkError};
 use s3::operation::get_object::GetObjectError;
 use snafu::{ensure, IntoError, ResultExt, Snafu};
-use url::ParseError;
+use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
 use async_recursion::async_recursion;
@@ -183,6 +183,28 @@ impl From<Error> for super::Error {
             },
         }
     }
+}
+
+/// Helper to parse S3 URLs, returning (scheme, bucket, key)
+fn parse_url(uri: &str) -> super::Result<(String, String, String)> {
+    let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+    let bucket = match parsed.host_str() {
+        Some(s) => Ok(s),
+        None => Err(Error::InvalidUrl {
+            path: uri.into(),
+            source: ParseError::EmptyHost,
+        }),
+    }?;
+
+    // Use raw `uri` for object key: URI special character escaping might mangle key
+    let bucket_scheme_prefix_len = parsed[..Position::AfterHost].len();
+    let key = uri[bucket_scheme_prefix_len..].trim_start_matches(S3_DELIMITER);
+
+    Ok((
+        parsed.scheme().to_string(),
+        bucket.to_string(),
+        key.to_string(),
+    ))
 }
 
 fn handle_https_client_settings(
@@ -387,16 +409,11 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-        let bucket = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
-        if let Some(key) = key.strip_prefix(S3_DELIMITER) {
+        let (_scheme, bucket, key) = parse_url(uri)?;
+
+        if key.is_empty() {
+            Err(Error::NotAFile { path: uri.into() }.into())
+        } else {
             log::debug!("S3 get parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
@@ -485,8 +502,6 @@ impl S3LikeSource {
                 }
                 Err(err) => Err(UnableToOpenFileSnafu { path: uri }.into_error(err).into()),
             }
-        } else {
-            Err(Error::NotAFile { path: uri.into() }.into())
         }
     }
 
@@ -498,17 +513,11 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<usize> {
         log::debug!("S3 head at {uri} in region: {region}");
-        let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
+        let (_scheme, bucket, key) = parse_url(uri)?;
 
-        let bucket = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: uri.into(),
-                source: ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path();
-        if let Some(key) = key.strip_prefix(S3_DELIMITER) {
+        if key.is_empty() {
+            Err(Error::NotAFile { path: uri.into() }.into())
+        } else {
             log::debug!("S3 head parsed uri: {uri} into Bucket: {bucket}, Key: {key}");
             let request = self
                 .get_s3_client(region)
@@ -570,8 +579,6 @@ impl S3LikeSource {
                 }
                 Err(err) => Err(UnableToHeadFileSnafu { path: uri }.into_error(err).into()),
             }
-        } else {
-            Err(Error::NotAFile { path: uri.into() }.into())
         }
     }
 
@@ -799,17 +806,7 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
-        let scheme = parsed.scheme();
-
-        let bucket = match parsed.host_str() {
-            Some(s) => Ok(s),
-            None => Err(Error::InvalidUrl {
-                path: path.into(),
-                source: ParseError::EmptyHost,
-            }),
-        }?;
-        let key = parsed.path().trim_start_matches(S3_DELIMITER);
+        let (scheme, bucket, key) = parse_url(path)?;
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -828,8 +825,8 @@ impl ObjectSource for S3LikeSource {
 
                 self._list_impl(
                     permit,
-                    scheme,
-                    bucket,
+                    scheme.as_str(),
+                    bucket.as_str(),
                     &key,
                     Some(S3_DELIMITER.into()),
                     continuation_token.map(String::from),
@@ -853,8 +850,8 @@ impl ObjectSource for S3LikeSource {
                 let mut lsr = self
                     ._list_impl(
                         permit,
-                        scheme,
-                        bucket,
+                        scheme.as_str(),
+                        bucket.as_str(),
                         key,
                         Some(S3_DELIMITER.into()),
                         continuation_token.map(String::from),
@@ -887,9 +884,9 @@ impl ObjectSource for S3LikeSource {
 
                 self._list_impl(
                     permit,
-                    scheme,
-                    bucket,
-                    key,
+                    scheme.as_str(),
+                    bucket.as_str(),
+                    key.as_str(),
                     None, // triggers prefix-based list
                     continuation_token.map(String::from),
                     &self.default_region,
