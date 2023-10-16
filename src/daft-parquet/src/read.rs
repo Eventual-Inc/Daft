@@ -7,7 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
-use daft_io::{get_runtime, parse_url, IOClient, SourceType};
+use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{future::join_all, StreamExt, TryStreamExt};
 use itertools::Itertools;
@@ -49,6 +49,7 @@ impl From<ParquetSchemaInferenceOptions>
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
     columns: Option<&[&str]>,
@@ -56,6 +57,7 @@ async fn read_parquet_single(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let (source_type, fixed_uri) = parse_url(uri)?;
@@ -70,7 +72,8 @@ async fn read_parquet_single(
         )
         .await
     } else {
-        let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
+        let builder =
+            ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = columns {
@@ -92,7 +95,7 @@ async fn read_parquet_single(
         };
 
         let parquet_reader = builder.build()?;
-        let ranges = parquet_reader.prebuffer_ranges(io_client)?;
+        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
             metadata,
             parquet_reader.read_from_ranges_into_table(ranges).await?,
@@ -165,6 +168,7 @@ async fn read_parquet_single(
     Ok(table)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_parquet_single_into_arrow(
     uri: &str,
     columns: Option<&[&str]>,
@@ -172,6 +176,7 @@ async fn read_parquet_single_into_arrow(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
     let (source_type, fixed_uri) = parse_url(uri)?;
@@ -188,7 +193,8 @@ async fn read_parquet_single_into_arrow(
             .await?;
         (metadata, Arc::new(schema), all_arrays)
     } else {
-        let builder = ParquetReaderBuilder::from_uri(uri, io_client.clone()).await?;
+        let builder =
+            ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = columns {
@@ -212,7 +218,7 @@ async fn read_parquet_single_into_arrow(
         let parquet_reader = builder.build()?;
 
         let schema = parquet_reader.arrow_schema().clone();
-        let ranges = parquet_reader.prebuffer_ranges(io_client)?;
+        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         let all_arrays = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
             .await?;
@@ -306,6 +312,7 @@ pub fn read_parquet(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
@@ -319,6 +326,7 @@ pub fn read_parquet(
             num_rows,
             row_groups,
             io_client,
+            io_stats,
             schema_infer_options,
         )
         .await
@@ -334,6 +342,7 @@ pub fn read_parquet_into_pyarrow(
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<ParquetPyarrowChunk> {
@@ -347,6 +356,7 @@ pub fn read_parquet_into_pyarrow(
             num_rows,
             row_groups,
             io_client,
+            io_stats,
             schema_infer_options,
         )
         .await
@@ -361,6 +371,7 @@ pub fn read_parquet_bulk(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
@@ -388,6 +399,8 @@ pub fn read_parquet_bulk(
                 };
 
                 let io_client = io_client.clone();
+                let io_stats = io_stats.clone();
+
                 let schema_infer_options = schema_infer_options.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
@@ -402,6 +415,7 @@ pub fn read_parquet_bulk(
                             num_rows,
                             owned_row_group,
                             io_client,
+                            io_stats,
                             schema_infer_options,
                         )
                         .await?,
@@ -428,6 +442,7 @@ pub fn read_parquet_into_pyarrow_bulk(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
@@ -456,6 +471,8 @@ pub fn read_parquet_into_pyarrow_bulk(
                 };
 
                 let io_client = io_client.clone();
+                let io_stats = io_stats.clone();
+
                 let schema_infer_options = schema_infer_options.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
@@ -470,6 +487,7 @@ pub fn read_parquet_into_pyarrow_bulk(
                             num_rows,
                             owned_row_group,
                             io_client,
+                            io_stats,
                             schema_infer_options,
                         )
                         .await?,
@@ -489,18 +507,24 @@ pub fn read_parquet_into_pyarrow_bulk(
 pub fn read_parquet_schema(
     uri: &str,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
-    let builder = runtime_handle
-        .block_on(async { ParquetReaderBuilder::from_uri(uri, io_client.clone()).await })?;
+    let builder = runtime_handle.block_on(async {
+        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats).await
+    })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     Schema::try_from(builder.build()?.arrow_schema().as_ref())
 }
 
-pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftResult<Table> {
+pub fn read_parquet_statistics(
+    uris: &Series,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
 
@@ -518,9 +542,12 @@ pub fn read_parquet_statistics(uris: &Series, io_client: Arc<IOClient>) -> DaftR
     let handles_iter = values.iter().map(|uri| {
         let owned_string = uri.map(|v| v.to_string());
         let owned_client = io_client.clone();
+        let io_stats = io_stats.clone();
+
         tokio::spawn(async move {
             if let Some(owned_string) = owned_string {
-                let builder = ParquetReaderBuilder::from_uri(&owned_string, owned_client).await?;
+                let builder =
+                    ParquetReaderBuilder::from_uri(&owned_string, owned_client, io_stats).await?;
                 let num_rows = builder.metadata().num_rows;
                 let num_row_groups = builder.metadata().row_groups.len();
                 let version_num = builder.metadata().version;
@@ -596,6 +623,7 @@ mod tests {
             None,
             None,
             io_client,
+            None,
             true,
             Default::default(),
         )?;

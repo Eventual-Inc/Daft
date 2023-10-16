@@ -4,7 +4,7 @@ use arrow2::io::csv::read_async::{infer, infer_schema, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use daft_core::schema::Schema;
-use daft_io::{get_runtime, GetResult, IOClient};
+use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{io::Cursor, AsyncRead, AsyncSeek};
 use tokio::fs::File;
 
@@ -13,11 +13,13 @@ pub fn read_csv_schema(
     has_header: bool,
     delimiter: Option<u8>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
-    runtime_handle
-        .block_on(async { read_csv_schema_single(uri, has_header, delimiter, io_client).await })
+    runtime_handle.block_on(async {
+        read_csv_schema_single(uri, has_header, delimiter, io_client, io_stats).await
+    })
 }
 
 async fn read_csv_schema_single(
@@ -25,8 +27,12 @@ async fn read_csv_schema_single(
     has_header: bool,
     delimiter: Option<u8>,
     io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Schema> {
-    match io_client.single_url_get(uri.to_string(), None).await? {
+    match io_client
+        .single_url_get(uri.to_string(), None, io_stats)
+        .await?
+    {
         GetResult::File(file) => {
             read_csv_schema_from_reader(
                 File::open(file.path).await?.compat(),
@@ -77,7 +83,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_csv_schema(file, true, None, io_client.clone())?;
+        let schema = read_csv_schema(file, true, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

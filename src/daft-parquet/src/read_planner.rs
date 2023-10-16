@@ -2,7 +2,7 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_error::DaftResult;
-use daft_io::IOClient;
+use daft_io::{IOClient, IOStatsRef};
 use futures::StreamExt;
 use tokio::task::JoinHandle;
 
@@ -148,16 +148,22 @@ impl ReadPlanner {
         Ok(())
     }
 
-    pub fn collect(self, io_client: Arc<IOClient>) -> DaftResult<Arc<RangesContainer>> {
+    pub fn collect(
+        self,
+        io_client: Arc<IOClient>,
+        io_stats: Option<IOStatsRef>,
+    ) -> DaftResult<Arc<RangesContainer>> {
         let mut entries = Vec::with_capacity(self.ranges.len());
         for range in self.ranges {
             let owned_io_client = io_client.clone();
             let owned_url = self.source.clone();
+            let owned_io_stats = io_stats.clone();
+
             let start = range.start;
             let end = range.end;
             let join_handle = tokio::spawn(async move {
                 let get_result = owned_io_client
-                    .single_url_get(owned_url, Some(range.clone()))
+                    .single_url_get(owned_url, Some(range.clone()), owned_io_stats)
                     .await?;
                 get_result.bytes().await
             });
