@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use daft_io::{IOClient, IOStatsRef};
 
-use parquet2::{metadata::FileMetaData, read::deserialize_metadata};
+pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
+use parquet2::read::deserialize_metadata;
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -11,7 +12,7 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
-pub async fn read_parquet_metadata(
+pub(crate) async fn read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,

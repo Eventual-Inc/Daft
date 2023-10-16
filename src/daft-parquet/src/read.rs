@@ -9,13 +9,16 @@ use daft_core::{
 };
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
-use futures::{future::join_all, StreamExt, TryStreamExt};
+use futures::{
+    future::{join_all, try_join_all},
+    StreamExt, TryStreamExt,
+};
 use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
 }
@@ -400,8 +403,7 @@ pub fn read_parquet_bulk(
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
-
-                let schema_infer_options = schema_infer_options.clone();
+                let schema_infer_options = *schema_infer_options;
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -464,7 +466,7 @@ pub fn read_parquet_into_pyarrow_bulk(
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
-                let schema_infer_options = schema_infer_options.clone();
+                let schema_infer_options = schema_infer_options;
                 let owned_row_group = match &row_groups {
                     None => None,
                     Some(v) => v.get(i).cloned(),
@@ -473,7 +475,6 @@ pub fn read_parquet_into_pyarrow_bulk(
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
 
-                let schema_infer_options = schema_infer_options.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -520,6 +521,33 @@ pub fn read_parquet_schema(
     Schema::try_from(builder.build()?.arrow_schema().as_ref())
 }
 
+pub async fn read_parquet_metadata(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<parquet2::metadata::FileMetaData> {
+    let builder = ParquetReaderBuilder::from_uri(uri, io_client, io_stats).await?;
+    Ok(builder.metadata)
+}
+pub async fn read_parquet_metadata_bulk(
+    uris: &[&str],
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
+    let handles_iter = uris.iter().map(|uri| {
+        let owned_string = uri.to_string();
+        let owned_client = io_client.clone();
+        let owned_io_stats = io_stats.clone();
+        tokio::spawn(async move {
+            read_parquet_metadata(&owned_string, owned_client, owned_io_stats).await
+        })
+    });
+    let all_metadatas = try_join_all(handles_iter)
+        .await
+        .context(JoinSnafu { path: "BULK READ" })?;
+    all_metadatas.into_iter().collect::<DaftResult<Vec<_>>>()
+}
+
 pub fn read_parquet_statistics(
     uris: &Series,
     io_client: Arc<IOClient>,
@@ -546,11 +574,10 @@ pub fn read_parquet_statistics(
 
         tokio::spawn(async move {
             if let Some(owned_string) = owned_string {
-                let builder =
-                    ParquetReaderBuilder::from_uri(&owned_string, owned_client, io_stats).await?;
-                let num_rows = builder.metadata().num_rows;
-                let num_row_groups = builder.metadata().row_groups.len();
-                let version_num = builder.metadata().version;
+                let metadata = read_parquet_metadata(&owned_string, owned_client, io_stats).await?;
+                let num_rows = metadata.num_rows;
+                let num_row_groups = metadata.row_groups.len();
+                let version_num = metadata.version;
 
                 Ok((Some(num_rows), Some(num_row_groups), Some(version_num)))
             } else {
