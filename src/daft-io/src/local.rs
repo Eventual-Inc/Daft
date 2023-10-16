@@ -185,15 +185,24 @@ impl ObjectSource for LocalSource {
         }
 
         const LOCAL_PROTOCOL: &str = "file://";
-        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+        let uri = if uri.is_empty() {
+            std::borrow::Cow::Owned(
+                std::env::current_dir()
+                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu { path: uri })?
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            std::borrow::Cow::Borrowed(uri)
+        } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
-        let meta =
-            tokio::fs::metadata(uri)
-                .await
-                .with_context(|_| UnableToFetchFileMetadataSnafu {
-                    path: uri.to_string(),
-                })?;
+
+        let meta = tokio::fs::metadata(uri.as_ref()).await.with_context(|_| {
+            UnableToFetchFileMetadataSnafu {
+                path: uri.to_string(),
+            }
+        })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
@@ -203,7 +212,7 @@ impl ObjectSource for LocalSource {
             })])
             .boxed());
         }
-        let dir_entries = tokio::fs::read_dir(uri).await.with_context(|_| {
+        let dir_entries = tokio::fs::read_dir(uri.as_ref()).await.with_context(|_| {
             UnableToFetchDirectoryEntriesSnafu {
                 path: uri.to_string(),
             }
