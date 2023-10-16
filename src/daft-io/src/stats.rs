@@ -19,7 +19,7 @@ impl Drop for IOStatsContext {
         let bytes_read = self.load_bytes_read();
         let num_gets = self.load_get_requests();
         let mean_size = (bytes_read as f64) / (num_gets as f64);
-        log::debug!(
+        log::info!(
             "IOStatsContext: {}, Gets: {}, Heads: {}, Lists: {}, BytesRead: {}, AvgGetSize: {}",
             self.name,
             num_gets,
