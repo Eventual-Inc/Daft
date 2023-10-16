@@ -42,8 +42,12 @@ impl std::fmt::Display for TruthValue {
 impl ColumnRangeStatistics {
     pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
         match (lower, upper) {
-            //TODO: also need to check dtype and length==1, and upper > lower.
-            (Some(l), Some(u)) => Ok(ColumnRangeStatistics::Loaded(l, u)),
+            (Some(l), Some(u)) => {
+                assert_eq!(l.len(), 1);
+                assert_eq!(u.len(), 1);
+                assert_eq!(l.data_type(), u.data_type());
+                Ok(ColumnRangeStatistics::Loaded(l, u))
+            }
             _ => Ok(ColumnRangeStatistics::Missing),
         }
     }

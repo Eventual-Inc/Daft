@@ -68,10 +68,10 @@ impl TableStatistics {
                     Gt => lhs.gt(&rhs),
                     Plus => &lhs + &rhs,
                     Minus => &lhs - &rhs,
-                    _ => todo!(),
+                    _ => Ok(ColumnRangeStatistics::Missing),
                 }
             }
-            _ => todo!(),
+            _ => Ok(ColumnRangeStatistics::Missing),
         }
     }
 }

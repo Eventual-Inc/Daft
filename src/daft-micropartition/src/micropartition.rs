@@ -203,21 +203,4 @@ fn read_parquet_into_micropartition(
 }
 
 #[cfg(test)]
-mod test {
-
-    use daft_io::IOConfig;
-
-    #[test]
-    fn test_pq() -> crate::Result<()> {
-        // let url = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
-        // let url = "/Users/sammy/mvp.parquet";
-        let url = "/Users/sammy/yellow_tripdata_2022-06.parquet";
-        let _ = super::read_parquet_into_micropartition(
-            [url].as_slice(),
-            IOConfig::default().into(),
-            None,
-        );
-
-        Ok(())
-    }
-}
+mod test {}
