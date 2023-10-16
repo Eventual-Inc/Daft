@@ -5,7 +5,7 @@ pub mod pylib {
         ffi::field_to_py,
         python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
     };
-    use daft_io::{get_io_client, python::IOConfig};
+    use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, types::PyModule, PyResult, Python};
     use std::{collections::BTreeMap, sync::Arc};
@@ -26,6 +26,8 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -33,17 +35,19 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
-            Ok(crate::read::read_parquet(
+            let result = crate::read::read_parquet(
                 uri,
                 columns.as_deref(),
                 start_offset,
                 num_rows,
                 row_groups,
                 io_client,
+                Some(io_stats.clone()),
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
             )?
-            .into())
+            .into();
+            Ok(result)
         })
     }
     type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
@@ -100,6 +104,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                None,
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
             )
@@ -123,6 +128,8 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new("read_parquet_bulk".to_string());
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
@@ -138,6 +145,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
@@ -178,6 +186,7 @@ pub mod pylib {
                 num_rows,
                 row_groups,
                 io_client,
+                None,
                 num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
@@ -201,6 +210,8 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
+
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
@@ -211,6 +222,7 @@ pub mod pylib {
             Ok(Arc::new(crate::read::read_parquet_schema(
                 uri,
                 io_client,
+                Some(io_stats),
                 schema_infer_options,
             )?)
             .into())
@@ -225,11 +237,16 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
+            let io_stats = IOStatsContext::new("read_parquet_statistics".to_string());
+
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(crate::read::read_parquet_statistics(&uris.series, io_client)?.into())
+            Ok(
+                crate::read::read_parquet_statistics(&uris.series, io_client, Some(io_stats))?
+                    .into(),
+            )
         })
     }
 }

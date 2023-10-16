@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_io::IOClient;
+use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
@@ -142,10 +142,16 @@ pub(crate) fn build_row_ranges(
 }
 
 impl ParquetReaderBuilder {
-    pub async fn from_uri(uri: &str, io_client: Arc<daft_io::IOClient>) -> super::Result<Self> {
+    pub async fn from_uri(
+        uri: &str,
+        io_client: Arc<daft_io::IOClient>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<Self> {
         // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
-        let size = io_client.single_url_get_size(uri.into()).await?;
-        let metadata = read_parquet_metadata(uri, size, io_client).await?;
+        let size = io_client
+            .single_url_get_size(uri.into(), io_stats.clone())
+            .await?;
+        let metadata = read_parquet_metadata(uri, size, io_client, io_stats).await?;
         let num_rows = metadata.num_rows;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
@@ -301,7 +307,11 @@ impl ParquetFileReader {
         Ok(read_planner)
     }
 
-    pub fn prebuffer_ranges(&self, io_client: Arc<IOClient>) -> DaftResult<Arc<RangesContainer>> {
+    pub fn prebuffer_ranges(
+        &self,
+        io_client: Arc<IOClient>,
+        io_stats: Option<IOStatsRef>,
+    ) -> DaftResult<Arc<RangesContainer>> {
         let mut read_planner = self.naive_read_plan()?;
         // TODO(sammy) these values should be populated by io_client
         read_planner.add_pass(Box::new(SplitLargeRequestPass {
@@ -315,7 +325,7 @@ impl ParquetFileReader {
         }));
 
         read_planner.run_passes()?;
-        read_planner.collect(io_client)
+        read_planner.collect(io_client, io_stats)
     }
 
     pub async fn read_from_ranges_into_table(

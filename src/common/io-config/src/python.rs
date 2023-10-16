@@ -163,7 +163,8 @@ impl S3Config {
                 key_id: key_id.or(def.key_id),
                 session_token: session_token.or(def.session_token),
                 access_key: access_key.or(def.access_key),
-                max_connections: max_connections.unwrap_or(def.max_connections),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
                 retry_initial_backoff_ms: retry_initial_backoff_ms
                     .unwrap_or(def.retry_initial_backoff_ms),
                 connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
@@ -211,10 +212,10 @@ impl S3Config {
         Ok(self.config.access_key.clone())
     }
 
-    /// AWS max connections
+    /// AWS max connections per IO thread
     #[getter]
     pub fn max_connections(&self) -> PyResult<u32> {
-        Ok(self.config.max_connections)
+        Ok(self.config.max_connections_per_io_thread)
     }
 
     /// AWS Retry Initial Backoff Time in Milliseconds

@@ -7,7 +7,10 @@ use tokio::sync::mpsc::Sender;
 use globset::{GlobBuilder, GlobMatcher};
 use lazy_static::lazy_static;
 
-use crate::object_io::{FileMetadata, FileType, ObjectSource};
+use crate::{
+    object_io::{FileMetadata, FileType, ObjectSource},
+    stats::IOStatsRef,
+};
 
 lazy_static! {
     /// Check if a given char is considered a special glob character
@@ -229,15 +232,17 @@ async fn ls_with_prefix_fallback(
     uri: &str,
     max_dirs: Option<usize>,
     page_size: Option<i32>,
+    io_stats: Option<IOStatsRef>,
 ) -> (BoxStream<'static, super::Result<FileMetadata>>, usize) {
     // Prefix list function that only returns Files
     fn prefix_ls(
         source: Arc<dyn ObjectSource>,
         path: String,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'static, super::Result<FileMetadata>> {
         stream! {
-            match source.iter_dir(&path, false, page_size).await {
+            match source.iter_dir(&path, false, page_size, io_stats).await {
                 Ok(mut result_stream) => {
                     while let Some(result) = result_stream.next().await {
                         match result {
@@ -261,7 +266,7 @@ async fn ls_with_prefix_fallback(
     let mut results_buffer = vec![];
 
     let mut fm_stream = source
-        .iter_dir(uri, true, page_size)
+        .iter_dir(uri, true, page_size, io_stats.clone())
         .await
         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -278,7 +283,10 @@ async fn ls_with_prefix_fallback(
                     .map(|max_dirs| dir_count_so_far > max_dirs)
                     .unwrap_or(false)
                 {
-                    return (prefix_ls(source.clone(), uri.to_string(), page_size), 0);
+                    return (
+                        prefix_ls(source.clone(), uri.to_string(), page_size, io_stats),
+                        0,
+                    );
                 }
             }
         }
@@ -312,13 +320,14 @@ pub(crate) async fn glob(
     glob: &str,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
+    io_stats: Option<IOStatsRef>,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
         let glob = full_fragment.escaped_str().to_string();
         return Ok(stream! {
-            let mut results = source.iter_dir(glob.as_str(), true, page_size).await?;
+            let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
             while let Some(result) = results.next().await {
                 match result {
                     Ok(fm) => {
@@ -364,6 +373,7 @@ pub(crate) async fn glob(
         result_tx: Sender<super::Result<FileMetadata>>,
         source: Arc<dyn ObjectSource>,
         state: GlobState,
+        io_stats: Option<IOStatsRef>,
     ) {
         tokio::spawn(async move {
             log::debug!(
@@ -383,6 +393,7 @@ pub(crate) async fn glob(
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
+                    io_stats.clone(),
                 )
                 .await;
 
@@ -401,6 +412,7 @@ pub(crate) async fn glob(
                                             state.current_fragment_idx,
                                             stream_dir_count,
                                         ),
+                                        io_stats.clone(),
                                     );
                                 }
                                 // Return any Files that match
@@ -424,7 +436,7 @@ pub(crate) async fn glob(
                 // Last fragment contains a wildcard: we list the last level and match against the full glob
                 if current_fragment.has_special_character() {
                     let mut results = source
-                        .iter_dir(&state.current_path, true, state.page_size)
+                        .iter_dir(&state.current_path, true, state.page_size, io_stats)
                         .await
                         .unwrap_or_else(|e| futures::stream::iter([Err(e)]).boxed());
 
@@ -448,7 +460,13 @@ pub(crate) async fn glob(
                 } else {
                     let full_dir_path = state.current_path.clone() + current_fragment.escaped_str();
                     let single_file_ls = source
-                        .ls(full_dir_path.as_str(), true, None, state.page_size)
+                        .ls(
+                            full_dir_path.as_str(),
+                            true,
+                            None,
+                            state.page_size,
+                            io_stats,
+                        )
                         .await;
                     match single_file_ls {
                         Ok(mut single_file_ls) => {
@@ -488,6 +506,7 @@ pub(crate) async fn glob(
                         .fanout_limit
                         .map(|fanout_limit| fanout_limit / state.current_fanout),
                     state.page_size,
+                    io_stats.clone(),
                 )
                 .await;
 
@@ -510,6 +529,7 @@ pub(crate) async fn glob(
                                             stream_dir_count,
                                         )
                                         .with_wildcard_mode(),
+                                    io_stats.clone(),
                                 );
                             }
                             FileType::File
@@ -536,6 +556,7 @@ pub(crate) async fn glob(
                     state
                         .clone()
                         .advance(full_dir_path, state.current_fragment_idx + 1, 1),
+                    io_stats,
                 );
             }
         });
@@ -554,6 +575,7 @@ pub(crate) async fn glob(
             fanout_limit,
             page_size,
         },
+        io_stats,
     );
 
     let to_rtn_stream = stream! {

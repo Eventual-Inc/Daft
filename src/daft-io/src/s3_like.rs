@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use aws_config::meta::credentials::CredentialsProviderChain;
 use aws_config::retry::RetryMode;
 use aws_config::timeout::TimeoutConfig;
 use aws_smithy_async::rt::sleep::TokioSleep;
@@ -9,9 +10,11 @@ use s3::operation::list_objects_v2::ListObjectsV2Error;
 use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 
 use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::{InvalidArgumentSnafu, SourceType};
+use crate::stats::IOStatsRef;
+use crate::stream_utils::io_stats_on_bytestream;
+use crate::{get_io_pool_num_threads, InvalidArgumentSnafu, SourceType};
 use aws_config::SdkConfig;
-use aws_credential_types::cache::ProvideCachedCredentials;
+use aws_credential_types::cache::{ProvideCachedCredentials, SharedCredentialsCache};
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sig_auth::signer::SigningRequirements;
 use common_io_config::S3Config;
@@ -211,7 +214,10 @@ fn handle_https_client_settings(
     Ok(builder)
 }
 
-async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)> {
+async fn build_s3_client(
+    config: &S3Config,
+    credentials_cache: Option<SharedCredentialsCache>,
+) -> super::Result<(bool, s3::Client)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
@@ -228,8 +234,6 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
     };
     let builder = if let Some(region) = &config.region_name {
         builder.region(Region::new(region.to_owned()))
-    } else if conf.region().is_none() && config.region_name.is_none() {
-        builder.region(DEFAULT_REGION)
     } else {
         builder
     };
@@ -268,7 +272,19 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
         .build();
     let builder = builder.timeout_config(timeout_config);
 
-    let builder = if config.access_key.is_some() && config.key_id.is_some() {
+    let cached_creds = if let Some(credentials_cache) = credentials_cache {
+        let creds = credentials_cache.provide_cached_credentials().await;
+        creds.ok()
+    } else {
+        None
+    };
+
+    let builder = if let Some(cached_creds) = cached_creds {
+        let provider = CredentialsProviderChain::first_try("different_region_cache", cached_creds)
+            .or_default_provider()
+            .await;
+        builder.credentials_provider(provider)
+    } else if config.access_key.is_some() && config.key_id.is_some() {
         let creds = Credentials::from_keys(
             config.key_id.clone().unwrap(),
             config.access_key.clone().unwrap(),
@@ -283,6 +299,7 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
         builder
     };
 
+    let builder_copy = builder.clone();
     let s3_conf = builder.build();
     if !config.anonymous {
         use CredentialsError::*;
@@ -300,18 +317,26 @@ async fn build_s3_client(config: &S3Config) -> super::Result<(bool, s3::Client)>
         }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
     };
 
+    let s3_conf = if s3_conf.region().is_none() {
+        builder_copy.region(DEFAULT_REGION).build()
+    } else {
+        s3_conf
+    };
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 
 async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
-    let (anonymous, client) = build_s3_client(config).await?;
+    let (anonymous, client) = build_s3_client(config, None).await?;
     let mut client_map = HashMap::new();
     let default_region = client.conf().region().unwrap().clone();
     client_map.insert(default_region.clone(), client.into());
     Ok(S3LikeSource {
         region_to_client_map: tokio::sync::RwLock::new(client_map),
         connection_pool_sema: Arc::new(tokio::sync::Semaphore::new(
-            config.max_connections as usize,
+            (config.max_connections_per_io_thread as usize)
+                * get_io_pool_num_threads()
+                    .await
+                    .expect("Should be running in tokio pool"),
         )),
         s3_config: config.clone(),
         default_region,
@@ -340,7 +365,12 @@ impl S3LikeSource {
 
         let mut new_config = self.s3_config.clone();
         new_config.region_name = Some(region.to_string());
-        let (_, new_client) = build_s3_client(&new_config).await?;
+
+        let creds_cache = w_handle
+            .get(&self.default_region)
+            .map(|current_client| current_client.conf().credentials_cache());
+
+        let (_, new_client) = build_s3_client(&new_config, creds_cache).await?;
 
         if w_handle.get(region).is_none() {
             w_handle.insert(region.clone(), new_client.into());
@@ -692,24 +722,51 @@ impl S3LikeSource {
 
 #[async_trait]
 impl ObjectSource for S3LikeSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
         let permit = self
             .connection_pool_sema
             .clone()
             .acquire_owned()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        self._get_impl(permit, uri, range, &self.default_region)
-            .await
+        let get_result = self
+            ._get_impl(permit, uri, range, &self.default_region)
+            .await?;
+
+        if io_stats.is_some() {
+            if let GetResult::Stream(stream, num_bytes, permit) = get_result {
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_get_requests(1)
+                }
+                Ok(GetResult::Stream(
+                    io_stats_on_bytestream(stream, io_stats),
+                    num_bytes,
+                    permit,
+                ))
+            } else {
+                panic!("This should always be a stream");
+            }
+        } else {
+            Ok(get_result)
+        }
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let permit = self
             .connection_pool_sema
             .acquire()
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
-        self._head_impl(permit, uri, &self.default_region).await
+        let head_result = self._head_impl(permit, uri, &self.default_region).await?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1)
+        }
+        Ok(head_result)
     }
 
     async fn glob(
@@ -717,13 +774,21 @@ impl ObjectSource for S3LikeSource {
         glob_path: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is not None to prevent runaway concurrency
         let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
-        glob(self, glob_path, fanout_limit, page_size.or(Some(1000))).await
+        glob(
+            self,
+            glob_path,
+            fanout_limit,
+            page_size.or(Some(1000)),
+            io_stats,
+        )
+        .await
     }
 
     async fn ls(
@@ -732,6 +797,7 @@ impl ObjectSource for S3LikeSource {
         posix: bool,
         continuation_token: Option<&str>,
         page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
         let parsed = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let scheme = parsed.scheme();
@@ -772,6 +838,10 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
+            if let Some(is) = io_stats.as_ref() {
+                is.mark_list_requests(1)
+            }
+
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
                 let permit = self
                     .connection_pool_sema
@@ -792,6 +862,9 @@ impl ObjectSource for S3LikeSource {
                         page_size,
                     )
                     .await?;
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_list_requests(1)
+                }
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
 
@@ -824,6 +897,10 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
+            if let Some(is) = io_stats.as_ref() {
+                is.mark_list_requests(1)
+            }
+
             Ok(lsr)
         }
     }
@@ -847,14 +924,14 @@ mod tests {
             ..Default::default()
         };
         let client = S3LikeSource::get_client(&config).await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 0..10)
+            .get_range(parquet_file_path, 0..10, None)
             .await?
             .bytes()
             .await?;
@@ -862,7 +939,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &all_bytes[..10]);
 
         let first_bytes = client
-            .get_range(parquet_file_path, 10..100)
+            .get_range(parquet_file_path, 10..100, None)
             .await?
             .bytes()
             .await?;
@@ -873,6 +950,7 @@ mod tests {
             .get_range(
                 parquet_file_path,
                 (all_bytes.len() - 10)..(all_bytes.len() + 10),
+                None,
             )
             .await?
             .bytes()
@@ -880,7 +958,7 @@ mod tests {
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &all_bytes[(all_bytes.len() - 10)..]);
 
-        let size_from_get_size = client.get_size(parquet_file_path).await?;
+        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
         assert_eq!(size_from_get_size, all_bytes.len());
 
         Ok(())
@@ -896,7 +974,7 @@ mod tests {
         };
         let client = S3LikeSource::get_client(&config).await?;
 
-        client.ls(file_path, true, None, None).await?;
+        client.ls(file_path, true, None, None, None).await?;
 
         Ok(())
     }

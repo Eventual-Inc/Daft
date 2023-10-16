@@ -2,7 +2,7 @@ pub use common_io_config::python::{AzureConfig, GCSConfig, IOConfig};
 pub use py::register_modules;
 
 mod py {
-    use crate::{get_io_client, get_runtime, parse_url};
+    use crate::{get_io_client, get_runtime, parse_url, stats::IOStatsContext};
     use common_error::DaftResult;
     use futures::TryStreamExt;
     use pyo3::{
@@ -20,6 +20,9 @@ mod py {
         page_size: Option<i32>,
     ) -> PyResult<&PyList> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
+        let io_stats_handle = io_stats.clone();
+
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io,
@@ -32,7 +35,12 @@ mod py {
             runtime_handle.block_on(async move {
                 let source = io_client.get_source(&scheme).await?;
                 let files = source
-                    .glob(path.as_ref(), fanout_limit, page_size)
+                    .glob(
+                        path.as_ref(),
+                        fanout_limit,
+                        page_size,
+                        Some(io_stats_handle),
+                    )
                     .await?
                     .try_collect()
                     .await?;

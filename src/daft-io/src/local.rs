@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use crate::object_io::{self, FileMetadata, LSResult};
+use crate::stats::IOStatsRef;
 
 use super::object_io::{GetResult, ObjectSource};
 use super::Result;
@@ -111,7 +112,12 @@ pub struct LocalFile {
 
 #[async_trait]
 impl ObjectSource for LocalSource {
-    async fn get(&self, uri: &str, range: Option<Range<usize>>) -> super::Result<GetResult> {
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<Range<usize>>,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
             Ok(GetResult::File(LocalFile {
@@ -123,7 +129,7 @@ impl ObjectSource for LocalSource {
         }
     }
 
-    async fn get_size(&self, uri: &str) -> super::Result<usize> {
+    async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         const LOCAL_PROTOCOL: &str = "file://";
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
@@ -141,6 +147,7 @@ impl ObjectSource for LocalSource {
         glob_path: &str,
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
@@ -153,10 +160,10 @@ impl ObjectSource for LocalSource {
         #[cfg(target_env = "msvc")]
         {
             let glob_path = glob_path.replace("\\", "/");
-            return glob(self, glob_path.as_str(), fanout_limit, page_size).await;
+            return glob(self, glob_path.as_str(), fanout_limit, page_size, io_stats).await;
         }
 
-        glob(self, glob_path, fanout_limit, page_size).await
+        glob(self, glob_path, fanout_limit, page_size, io_stats).await
     }
 
     async fn ls(
@@ -165,8 +172,9 @@ impl ObjectSource for LocalSource {
         posix: bool,
         _continuation_token: Option<&str>,
         _page_size: Option<i32>,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let s = self.iter_dir(path, posix, None).await?;
+        let s = self.iter_dir(path, posix, None, io_stats).await?;
         let files = s.try_collect::<Vec<_>>().await?;
         Ok(LSResult {
             files,
@@ -179,21 +187,31 @@ impl ObjectSource for LocalSource {
         uri: &str,
         posix: bool,
         _page_size: Option<i32>,
+        _io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for local.");
         }
 
         const LOCAL_PROTOCOL: &str = "file://";
-        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+        let uri = if uri.is_empty() {
+            std::borrow::Cow::Owned(
+                std::env::current_dir()
+                    .with_context(|_| UnableToFetchDirectoryEntriesSnafu { path: uri })?
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            std::borrow::Cow::Borrowed(uri)
+        } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
-        let meta =
-            tokio::fs::metadata(uri)
-                .await
-                .with_context(|_| UnableToFetchFileMetadataSnafu {
-                    path: uri.to_string(),
-                })?;
+
+        let meta = tokio::fs::metadata(uri.as_ref()).await.with_context(|_| {
+            UnableToFetchFileMetadataSnafu {
+                path: uri.to_string(),
+            }
+        })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
@@ -203,7 +221,7 @@ impl ObjectSource for LocalSource {
             })])
             .boxed());
         }
-        let dir_entries = tokio::fs::read_dir(uri).await.with_context(|_| {
+        let dir_entries = tokio::fs::read_dir(uri.as_ref()).await.with_context(|_| {
             UnableToFetchDirectoryEntriesSnafu {
                 path: uri.to_string(),
             }
@@ -308,7 +326,7 @@ mod tests {
         let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
 
         let client = HttpSource::get_client().await?;
-        let parquet_file = client.get(parquet_file_path, None).await?;
+        let parquet_file = client.get(parquet_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
@@ -326,12 +344,16 @@ mod tests {
         let parquet_file_path = format!("file://{}", file1.path().to_str().unwrap());
         let client = LocalSource::get_client().await?;
 
-        let try_all_bytes = client.get(&parquet_file_path, None).await?.bytes().await?;
+        let try_all_bytes = client
+            .get(&parquet_file_path, None, None)
+            .await?
+            .bytes()
+            .await?;
         assert_eq!(try_all_bytes.len(), bytes.len());
         assert_eq!(try_all_bytes, bytes);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 0..10)
+            .get_range(&parquet_file_path, 0..10, None)
             .await?
             .bytes()
             .await?;
@@ -339,7 +361,7 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &bytes[..10]);
 
         let first_bytes = client
-            .get_range(&parquet_file_path, 10..100)
+            .get_range(&parquet_file_path, 10..100, None)
             .await?
             .bytes()
             .await?;
@@ -347,14 +369,18 @@ mod tests {
         assert_eq!(first_bytes.as_ref(), &bytes[10..100]);
 
         let last_bytes = client
-            .get_range(&parquet_file_path, (bytes.len() - 10)..(bytes.len() + 10))
+            .get_range(
+                &parquet_file_path,
+                (bytes.len() - 10)..(bytes.len() + 10),
+                None,
+            )
             .await?
             .bytes()
             .await?;
         assert_eq!(last_bytes.len(), 10);
         assert_eq!(last_bytes.as_ref(), &bytes[(bytes.len() - 10)..]);
 
-        let size_from_get_size = client.get_size(parquet_file_path.as_str()).await?;
+        let size_from_get_size = client.get_size(parquet_file_path.as_str(), None).await?;
         assert_eq!(size_from_get_size, bytes.len());
 
         Ok(())
@@ -372,7 +398,7 @@ mod tests {
         let dir_path = format!("file://{}", dir.path().to_string_lossy().replace('\\', "/"));
         let client = LocalSource::get_client().await?;
 
-        let ls_result = client.ls(dir_path.as_ref(), true, None, None).await?;
+        let ls_result = client.ls(dir_path.as_ref(), true, None, None, None).await?;
         let mut files = ls_result.files.clone();
         // Ensure stable sort ordering of file paths before comparing with expected payload.
         files.sort_by(|a, b| a.filepath.cmp(&b.filepath));

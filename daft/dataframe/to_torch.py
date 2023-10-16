@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable, Iterator
 
-from loguru import logger
+logger = logging.getLogger(__name__)
 
 try:
     # When available, subclass from the newer torchdata DataPipes instead of torch Datasets.

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 
-from daft.logging import setup_logger
-
 ###
 # Set up code coverage for when running code coverage with ray
 ###
@@ -20,12 +18,6 @@ if "COV_CORE_SOURCE" in os.environ:
             "Environ: {!r} "
             "Exception: {!r}\n".format({k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc)
         )
-###
-# Setup logging
-###
-
-
-setup_logger()
 
 ###
 # Get build constants from Rust .so

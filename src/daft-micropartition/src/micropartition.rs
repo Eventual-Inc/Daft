@@ -13,7 +13,7 @@ use snafu::ResultExt;
 use crate::DaftCoreComputeSnafu;
 
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
-use daft_io::IOConfig;
+use daft_io::{IOConfig, IOStatsRef};
 
 #[derive(Clone)]
 enum FormatParams {
@@ -59,7 +59,7 @@ impl MicroPartition {
         )
     }
 
-    fn tables_or_read(&self) -> crate::Result<Arc<Vec<Table>>> {
+    fn tables_or_read(&self, io_stats: Option<IOStatsRef>) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
 
         match guard.deref() {
@@ -84,6 +84,7 @@ impl MicroPartition {
                             params.limit,
                             None,
                             io_client.clone(),
+                            io_stats,
                             8,
                             params.multithreaded_io,
                             parquet_schema_inference,
@@ -164,13 +165,13 @@ impl MicroPartition {
 fn read_parquet_into_micropartition(
     uris: &[&str],
     io_config: Arc<IOConfig>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<MicroPartition> {
-
     // thread in columns and limit
     let runtime_handle = daft_io::get_runtime(true)?;
     let io_client = daft_io::get_io_client(true, io_config.clone())?;
     let metadata = runtime_handle
-        .block_on(async move { read_parquet_metadata_bulk(uris, io_client).await })?;
+        .block_on(async move { read_parquet_metadata_bulk(uris, io_client, io_stats).await })?;
 
     let vals = metadata
         .iter()
@@ -211,8 +212,11 @@ mod test {
         // let url = "/Users/sammy/daft_200MB_lineitem_chunk.RG-2.parquet";
         // let url = "/Users/sammy/mvp.parquet";
         let url = "/Users/sammy/yellow_tripdata_2022-06.parquet";
-        let _ =
-            super::read_parquet_into_micropartition([url].as_slice(), IOConfig::default().into());
+        let _ = super::read_parquet_into_micropartition(
+            [url].as_slice(),
+            IOConfig::default().into(),
+            None,
+        );
 
         Ok(())
     }

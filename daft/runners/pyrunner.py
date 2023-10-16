@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import logging
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, Iterator
 
 import psutil
-from loguru import logger
 
 from daft.daft import (
     FileFormatConfig,
@@ -34,6 +34,9 @@ from daft.table import Table
 
 if TYPE_CHECKING:
     import fsspec
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -200,15 +203,13 @@ class PyRunner(Runner[Table]):
                                     and next_step.resource_request.num_gpus > 0
                                 )
                             ):
-                                logger.debug(
-                                    "Running task synchronously in main thread: {next_step}", next_step=next_step
-                                )
+                                logger.debug(f"Running task synchronously in main thread: {next_step}")
                                 partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
                                 next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                             else:
                                 # Submit the task for execution.
-                                logger.debug("Submitting task for execution: {next_step}", next_step=next_step)
+                                logger.debug(f"Submitting task for execution: {next_step}")
                                 future = thread_pool.submit(
                                     self.build_partitions, next_step.instructions, *next_step.inputs
                                 )
@@ -230,9 +231,7 @@ class PyRunner(Runner[Table]):
                         done_task = inflight_tasks.pop(done_id)
                         partitions = done_future.result()
 
-                        logger.debug(
-                            "Task completed: {done_id} -> {partitions}", done_id=done_id, partitions=partitions
-                        )
+                        logger.debug(f"Task completed: {done_id} -> {partitions}")
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                     if next_step is None:

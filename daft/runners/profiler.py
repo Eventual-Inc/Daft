@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
-
-from loguru import logger
 
 if TYPE_CHECKING:
     from viztracer import VizTracer
 
 ACTIVE = False
+
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager

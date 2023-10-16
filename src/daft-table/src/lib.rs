@@ -498,7 +498,14 @@ impl Table {
                     let mut str_val = s.str_value(i).unwrap();
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width {
-                            str_val = format!("{}...", &str_val[..max_col_width - 3]);
+                            str_val = format!(
+                                "{}...",
+                                &str_val
+                                    .char_indices()
+                                    .take(max_col_width - 3)
+                                    .map(|(_, c)| c)
+                                    .collect::<String>()
+                            );
                         }
                     }
                     str_val

@@ -64,6 +64,7 @@ impl FunctionEvaluator for DownloadEvaluator {
                 *raise_error_on_failure,
                 *multi_thread,
                 config.clone(),
+                None,
             ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
-from loguru import logger
-
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner import Runner
+
+logger = logging.getLogger(__name__)
 
 
 class _RunnerConfig:
@@ -75,7 +76,6 @@ class DaftContext:
         if self.runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
-            logger.info("Using RayRunner")
             assert isinstance(self.runner_config, _RayRunnerConfig)
             _RUNNER = RayRunner(
                 address=self.runner_config.address,
@@ -84,7 +84,19 @@ class DaftContext:
         elif self.runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
 
-            logger.info("Using PyRunner")
+            try:
+                import ray
+
+                if ray.is_initialized():
+                    logger.warning(
+                        "WARNING: Daft is NOT using Ray for execution!\n"
+                        "Daft is using the PyRunner but we detected an active Ray connection. "
+                        "If you intended to use the Daft RayRunner, please first run `daft.context.set_runner_ray()` "
+                        "before executing Daft queries."
+                    )
+            except ImportError:
+                pass
+
             assert isinstance(self.runner_config, _PyRunnerConfig)
             _RUNNER = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
 

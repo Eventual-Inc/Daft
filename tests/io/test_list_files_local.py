@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
@@ -48,6 +50,30 @@ def test_flat_directory_listing(tmp_path, include_protocol):
     fs = LocalFileSystem()
     fs_result = fs.ls(d, detail=True)
     compare_local_result(daft_ls_result, fs_result)
+
+
+@pytest.mark.parametrize("include_protocol", [False, True])
+def test_recursive_curr_dir_listing(tmp_path, include_protocol):
+    d = tmp_path / "dir"
+    d.mkdir()
+    files = ["a", "b", "c"]
+    for name in files:
+        p = d / name
+        p.touch()
+    d = str(d) + "/"
+
+    pwd = os.getcwd()
+    os.chdir(str(d))
+
+    try:
+        path = "file://**" if include_protocol else "**"
+
+        daft_ls_result = io_glob(path)
+        fs = LocalFileSystem()
+        fs_result = fs.ls(d, detail=True)
+        compare_local_result(daft_ls_result, fs_result)
+    finally:
+        os.chdir(pwd)
 
 
 @pytest.mark.parametrize("include_protocol", [False, True])

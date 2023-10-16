@@ -1,5 +1,6 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
+
 mod azure_blob;
 mod google_cloud;
 mod http;
@@ -7,6 +8,8 @@ mod local;
 mod object_io;
 mod object_store_glob;
 mod s3_like;
+mod stats;
+mod stream_utils;
 use azure_blob::AzureBlobSource;
 use google_cloud::GCSSource;
 use lazy_static::lazy_static;
@@ -17,6 +20,8 @@ pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+pub use stats::{IOStatsContext, IOStatsRef};
+use tokio::runtime::RuntimeFlavor;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
@@ -164,16 +169,21 @@ impl IOClient {
         &self,
         input: String,
         range: Option<Range<usize>>,
+        io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
-        source.get(path.as_ref(), range).await
+        source.get(path.as_ref(), range, io_stats).await
     }
 
-    pub async fn single_url_get_size(&self, input: String) -> Result<usize> {
+    pub async fn single_url_get_size(
+        &self,
+        input: String,
+        io_stats: Option<IOStatsRef>,
+    ) -> Result<usize> {
         let (scheme, path) = parse_url(&input)?;
         let source = self.get_source(&scheme).await?;
-        source.get_size(path.as_ref()).await
+        source.get_size(path.as_ref(), io_stats).await
     }
 
     async fn single_url_download(
@@ -181,9 +191,10 @@ impl IOClient {
         index: usize,
         input: Option<String>,
         raise_error_on_failure: bool,
+        io_stats: Option<IOStatsRef>,
     ) -> Result<Option<bytes::Bytes>> {
         let value = if let Some(input) = input {
-            let response = self.single_url_get(input, None).await;
+            let response = self.single_url_get(input, None, io_stats).await;
             let res = match response {
                 Ok(res) => res.bytes().await,
                 Err(err) => Err(err),
@@ -261,16 +272,17 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 type CacheKey = (bool, Arc<IOConfig>);
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+    static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
     static ref THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
         tokio::sync::RwLock::new((
             Arc::new(
                 tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(8.min(*NUM_CPUS))
+                    .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
                     .enable_all()
                     .build()
                     .unwrap()
             ),
-            8.min(*NUM_CPUS)
+            *THREADED_RUNTIME_NUM_WORKER_THREADS,
         ));
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
@@ -332,12 +344,27 @@ pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
     true
 }
 
+pub async fn get_io_pool_num_threads() -> Option<usize> {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            match handle.runtime_flavor() {
+                RuntimeFlavor::CurrentThread => Some(1),
+                RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.read().await.1),
+                // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
+                _ => Some(1),
+            }
+        }
+        Err(_) => None,
+    }
+}
+
 pub fn _url_download(
     array: &Utf8Array,
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
     config: Arc<IOConfig>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<BinaryArray> {
     let urls = array.as_arrow().iter();
     let name = array.name();
@@ -359,11 +386,12 @@ pub fn _url_download(
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         let owned_client = io_client.clone();
+        let owned_io_stats = io_stats.clone();
         tokio::spawn(async move {
             (
                 i,
                 owned_client
-                    .single_url_download(i, owned_url, raise_error_on_failure)
+                    .single_url_download(i, owned_url, raise_error_on_failure, owned_io_stats)
                     .await,
             )
         })
@@ -415,6 +443,7 @@ pub fn url_download(
     raise_error_on_failure: bool,
     multi_thread: bool,
     config: Arc<IOConfig>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Series> {
     match series.data_type() {
         DataType::Utf8 => Ok(_url_download(
@@ -423,6 +452,7 @@ pub fn url_download(
             raise_error_on_failure,
             multi_thread,
             config,
+            io_stats,
         )?
         .into_series()),
         dt => Err(DaftError::TypeError(format!(
