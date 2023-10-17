@@ -19,13 +19,6 @@ pub(crate) enum ColumnRangeStatistics {
     Loaded(Series, Series),
 }
 
-struct ColumnMetadata {
-    pub range_statistics: ColumnRangeStatistics,
-    pub count: usize,
-    pub null_count: usize,
-    pub num_bytes: usize,
-}
-
 #[derive(PartialEq, Debug)]
 pub enum TruthValue {
     False,

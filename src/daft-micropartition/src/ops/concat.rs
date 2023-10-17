@@ -7,6 +7,7 @@ use snafu::ResultExt;
 use crate::{
     column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
+    table_metadata::TableMetadata,
     DaftCoreComputeSnafu,
 };
 
@@ -47,10 +48,12 @@ impl MicroPartition {
                 all_stats = Some(curr_stats.union(stats)?);
             }
         }
+        let new_len = all_tables.iter().map(|t| t.len()).sum();
 
         Ok(MicroPartition {
             schema: mps.first().unwrap().schema.clone(),
             state: Mutex::new(TableState::Loaded(all_tables.into())),
+            metadata: TableMetadata { length: new_len },
             statistics: all_stats,
         })
     }

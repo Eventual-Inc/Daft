@@ -42,7 +42,7 @@ impl PyMicroPartition {
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
-        todo!("[MICROPARTITION_INT]")
+        Ok(self.inner.len())
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
