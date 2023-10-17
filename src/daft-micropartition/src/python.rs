@@ -104,8 +104,9 @@ impl PyMicroPartition {
     // Compute Methods
 
     #[staticmethod]
-    pub fn concat(py: Python, to_concat: PyObject) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+    pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
+        let mps: Vec<_> = to_concat.iter().map(|t| t.inner.as_ref()).collect();
+        py.allow_threads(|| Ok(MicroPartition::concat(mps.as_slice())?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
