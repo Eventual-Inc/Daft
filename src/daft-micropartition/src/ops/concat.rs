@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
@@ -12,6 +12,24 @@ use crate::{
 
 impl MicroPartition {
     pub fn concat(mps: &[&Self]) -> DaftResult<Self> {
+        if mps.is_empty() {
+            return Err(DaftError::ValueError(
+                "Need at least 1 MicroPartition to perform concat".to_string(),
+            ));
+        }
+
+        let first_table = mps.first().unwrap();
+
+        let first_schema = first_table.schema.as_ref();
+        for tab in mps.iter().skip(1) {
+            if tab.schema.as_ref() != first_schema {
+                return Err(DaftError::SchemaMismatch(format!(
+                    "MicroPartition concat requires all schemas to match, {} vs {}",
+                    first_schema, tab.schema
+                )));
+            }
+        }
+
         let mut all_tables = vec![];
 
         for m in mps.iter() {
@@ -29,7 +47,6 @@ impl MicroPartition {
                 all_stats = Some(curr_stats.union(stats)?);
             }
         }
-        // check all the schemas
 
         Ok(MicroPartition {
             schema: mps.first().unwrap().schema.clone(),
