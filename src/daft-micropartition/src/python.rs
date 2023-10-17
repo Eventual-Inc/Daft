@@ -18,14 +18,15 @@ use crate::micropartition::MicroPartition;
 // Do not enable clone
 #[pyclass(module = "daft.daft")]
 struct PyMicroPartition {
-    inner: MicroPartition,
+    inner: Arc<Mutex<MicroPartition>>,
 }
 
 #[pymethods]
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
+        let g = self.inner.lock().unwrap();
         Ok(PySchema {
-            schema: self.inner.schema.clone(),
+            schema: g.schema.clone(),
         })
     }
 
@@ -46,7 +47,8 @@ impl PyMicroPartition {
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        let g = self.inner.lock().unwrap();
+        Ok(format!("{}", g))
     }
 
     pub fn __repr_html__(&self) -> PyResult<String> {
@@ -109,7 +111,11 @@ impl PyMicroPartition {
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        
+        py.allow_threads(|| {
+            let mut g = self.inner.lock().unwrap();
+            Ok(g.slice(start as usize, end as usize)?.into())
+        })
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
@@ -126,7 +132,10 @@ impl PyMicroPartition {
 
     pub fn filter(&mut self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
-        py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
+        py.allow_threads(|| {
+            let mut g = self.inner.lock().unwrap();
+            Ok(g.filter(converted_exprs.as_slice())?.into())
+        })
     }
 
     pub fn sort(
@@ -230,21 +239,17 @@ impl PyMicroPartition {
                 multithreaded_io.unwrap_or(true),
             )
         })?;
-        Ok(PyMicroPartition { inner: mp })
+        Ok(PyMicroPartition { inner: Arc::new(Mutex::new(mp)) })
     }
 }
 
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
-        PyMicroPartition { inner: value }
+        PyMicroPartition { inner: Arc::new(Mutex::new(value)) }
     }
 }
 
-impl From<PyMicroPartition> for MicroPartition {
-    fn from(item: PyMicroPartition) -> Self {
-        item.inner
-    }
-}
+
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     Ok(())
