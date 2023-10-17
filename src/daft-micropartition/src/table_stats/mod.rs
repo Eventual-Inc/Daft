@@ -1,8 +1,8 @@
-use std::{collections::HashSet, ops::Not};
+use std::{collections::HashSet, ops::Not, fmt::Display};
 
 use daft_dsl::Expr;
 use daft_table::Table;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use snafu::ResultExt;
 
 use crate::column_stats::{self, ColumnRangeStatistics};
@@ -32,7 +32,7 @@ impl TableStatistics {
             .columns
             .keys()
             .chain(other.columns.keys())
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         let mut columns = IndexMap::with_capacity(unioned_columns.len());
         for col in unioned_columns {
             let res_col = match (self.columns.get(col), other.columns.get(col)) {
@@ -97,6 +97,17 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
         }
 
         Ok(TableStatistics { columns })
+    }
+}
+
+impl Display for TableStatistics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let columns = self.columns.iter().map(|(s, c)| {
+            c.combined_series().unwrap().rename(s)
+        }).collect::<Vec<_>>();
+
+        let tab = Table::from_columns(columns).unwrap();
+        write!(f, "{tab}")
     }
 }
 

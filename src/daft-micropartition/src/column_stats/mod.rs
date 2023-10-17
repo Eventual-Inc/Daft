@@ -5,8 +5,10 @@ mod logical;
 
 use std::string::FromUtf8Error;
 
-use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
-use snafu::Snafu;
+use daft_core::{datatypes::{BooleanArray, NullArray}, IntoSeries, Series, array::ops::full::FullNull};
+use snafu::{Snafu, ResultExt};
+
+use crate::DaftCoreComputeSnafu;
 #[derive(Clone)]
 pub(crate) enum ColumnRangeStatistics {
     Missing,
@@ -78,6 +80,13 @@ impl ColumnRangeStatistics {
         let lower = BooleanArray::from(("lower", [lower].as_slice())).into_series();
         let upper = BooleanArray::from(("upper", [upper].as_slice())).into_series();
         Self::Loaded(lower, upper)
+    }
+
+    pub(crate) fn combined_series(&self) -> super::Result<Series> {
+        match self {
+            Self::Missing => Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series()),
+            Self::Loaded(l,u) => Series::concat([l, u].as_slice()).context(DaftCoreComputeSnafu),
+        }
     }
 
     pub fn from_series(series: &Series) -> Self {
