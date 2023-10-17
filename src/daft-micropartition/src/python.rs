@@ -176,8 +176,9 @@ impl PyMicroPartition {
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        py.allow_threads(|| Ok(self.inner.head(num as usize)?.into()))
     }
+    
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
         todo!("[MICROPARTITION_INT]")
     }
