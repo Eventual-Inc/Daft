@@ -175,7 +175,7 @@ class DataFrame:
         # Iteratively retrieve partitions until enough data has been materialized
         tables = []
         seen = 0
-        for table in get_context().runner().run_iter_tables(df._builder):
+        for table in get_context().runner().run_iter_tables(df._builder, results_buffer_size=1):
             tables.append(table)
             seen += len(table)
             if seen >= n:

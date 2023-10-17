@@ -34,11 +34,11 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[PartitionT]:
+    def run_iter(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[PartitionT]:
         """Similar to run(), but yield the individual partitions as they are completed."""
         ...
 
     @abstractmethod
-    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
+    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
         """Similar to run_iter(), but always dereference and yield Table objects."""
         ...

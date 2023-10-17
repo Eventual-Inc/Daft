@@ -4,7 +4,6 @@ import logging
 import threading
 import time
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from queue import Queue
@@ -412,7 +411,7 @@ class Scheduler:
         self.reserved_cores = 0
 
         self.threads_by_df: dict[str, threading.Thread] = dict()
-        self.results_by_df: dict[str, Queue] = defaultdict(Queue)
+        self.results_by_df: dict[str, Queue] = {}
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -435,6 +434,7 @@ class Scheduler:
         plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
+        results_buffer_size: int | None = None,
     ) -> None:
         t = threading.Thread(
             target=self._run_plan,
@@ -443,6 +443,7 @@ class Scheduler:
                 "plan_scheduler": plan_scheduler,
                 "psets": psets,
                 "result_uuid": result_uuid,
+                "results_buffer_size": results_buffer_size,
             },
         )
         t.start()
@@ -453,7 +454,10 @@ class Scheduler:
         plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
+        results_buffer_size: int | None = None,
     ) -> None:
+        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
 
@@ -624,7 +628,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
             )
 
-    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[ray.ObjectRef]:
+    def run_iter(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[ray.ObjectRef]:
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
@@ -643,6 +647,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     plan_scheduler=plan_scheduler,
                     psets=psets,
                     result_uuid=result_uuid,
+                    results_buffer_size=results_buffer_size,
                 )
             )
 
@@ -651,6 +656,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 plan_scheduler=plan_scheduler,
                 psets=psets,
                 result_uuid=result_uuid,
+                results_buffer_size=results_buffer_size,
             )
 
         while True:
@@ -663,8 +669,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 return
             yield result
 
-    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
-        for ref in self.run_iter(builder):
+    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
+        for ref in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(ref)
 
     def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
