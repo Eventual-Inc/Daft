@@ -5,8 +5,12 @@ mod logical;
 
 use std::string::FromUtf8Error;
 
-use daft_core::{datatypes::{BooleanArray, NullArray}, IntoSeries, Series, array::ops::full::FullNull};
-use snafu::{Snafu, ResultExt};
+use daft_core::{
+    array::ops::full::FullNull,
+    datatypes::{BooleanArray, NullArray},
+    IntoSeries, Series,
+};
+use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
 #[derive(Clone)]
@@ -84,8 +88,10 @@ impl ColumnRangeStatistics {
 
     pub(crate) fn combined_series(&self) -> super::Result<Series> {
         match self {
-            Self::Missing => Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series()),
-            Self::Loaded(l,u) => Series::concat([l, u].as_slice()).context(DaftCoreComputeSnafu),
+            Self::Missing => {
+                Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series())
+            }
+            Self::Loaded(l, u) => Series::concat([l, u].as_slice()).context(DaftCoreComputeSnafu),
         }
     }
 
