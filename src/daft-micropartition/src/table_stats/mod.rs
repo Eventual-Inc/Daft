@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Not, fmt::Display};
+use std::{collections::HashSet, fmt::Display, ops::Not};
 
 use daft_dsl::Expr;
 use daft_table::Table;
@@ -102,9 +102,11 @@ impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
 
 impl Display for TableStatistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let columns = self.columns.iter().map(|(s, c)| {
-            c.combined_series().unwrap().rename(s)
-        }).collect::<Vec<_>>();
+        let columns = self
+            .columns
+            .iter()
+            .map(|(s, c)| c.combined_series().unwrap().rename(s))
+            .collect::<Vec<_>>();
 
         let tab = Table::from_columns(columns).unwrap();
         write!(f, "{tab}")

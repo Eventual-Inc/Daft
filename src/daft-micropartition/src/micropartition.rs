@@ -227,7 +227,7 @@ impl Display for MicroPartition {
         writeln!(f, "{}", self.schema)?;
         match &self.statistics {
             Some(t) => writeln!(f, "Statistics\n{}", t)?,
-            None =>writeln!(f, "Statistics: missing")?
+            None => writeln!(f, "Statistics: missing")?,
         }
         Ok(())
     }
