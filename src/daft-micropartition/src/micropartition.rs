@@ -13,6 +13,7 @@ use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
 
+use crate::table_metadata::TableMetadata;
 use crate::{column_stats::TruthValue, table_stats::TableStatistics};
 use daft_io::{IOClient, IOConfig, IOStatsRef};
 
@@ -54,14 +55,21 @@ impl Display for TableState {
 pub(crate) struct MicroPartition {
     pub(crate) schema: SchemaRef,
     pub(crate) state: Mutex<TableState>,
+    pub(crate) metadata: TableMetadata,
     pub(crate) statistics: Option<TableStatistics>,
 }
 
 impl MicroPartition {
-    pub fn new(schema: SchemaRef, state: TableState, statistics: Option<TableStatistics>) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        state: TableState,
+        metadata: TableMetadata,
+        statistics: Option<TableStatistics>,
+    ) -> Self {
         MicroPartition {
             schema,
             state: Mutex::new(state),
+            metadata,
             statistics,
         }
     }
@@ -70,8 +78,13 @@ impl MicroPartition {
         Self::new(
             Schema::empty().into(),
             TableState::Loaded(Arc::new(vec![])),
+            TableMetadata { length: 0 },
             None,
         )
+    }
+
+    pub fn len(&self) -> usize {
+        self.metadata.length
     }
 
     pub(crate) fn tables_or_read(
@@ -161,6 +174,9 @@ pub(crate) fn read_parquet_into_micropartition(
 
     let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
     let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+    let num_rows = metadata.iter().map(|m| m.num_rows).sum();
+
     let params = DeferredLoadingParams {
         format_params: FormatParams::Parquet(ParquetSchemaInferenceOptions::default()),
         urls: owned_urls,
@@ -173,6 +189,7 @@ pub(crate) fn read_parquet_into_micropartition(
     Ok(MicroPartition::new(
         Arc::new(daft_schema),
         TableState::Unloaded(params),
+        TableMetadata { length: num_rows },
         folded_stats,
     ))
 }

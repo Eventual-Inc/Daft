@@ -5,6 +5,7 @@ use snafu::ResultExt;
 use crate::{
     column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
+    table_metadata::TableMetadata,
     DaftCoreComputeSnafu,
 };
 
@@ -14,6 +15,7 @@ impl MicroPartition {
             return Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(vec![].into()),
+                TableMetadata { length: 0 },
                 None,
             ));
         }
@@ -30,6 +32,7 @@ impl MicroPartition {
                 return Ok(Self::new(
                     self.schema.clone(),
                     TableState::Loaded(vec![].into()),
+                    TableMetadata { length: 0 },
                     None,
                 ));
             }
@@ -42,9 +45,12 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()
             .context(DaftCoreComputeSnafu)?;
 
+        let new_len = tables.iter().map(|t| t.len()).sum();
+
         Ok(Self::new(
             self.schema.clone(),
             TableState::Loaded(tables.into()),
+            TableMetadata { length: new_len },
             self.statistics.clone(), // update these values based off the filter we just ran
         ))
     }
