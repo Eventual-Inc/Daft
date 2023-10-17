@@ -8,13 +8,13 @@ use crate::{
 };
 
 impl MicroPartition {
-    pub fn slice(&mut self, start: usize, end: usize) -> DaftResult<Self> {
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
         let tables = self.tables_or_read(None)?;
         let mut slices_tables = vec![];
         let mut rows_needed = (end - start).max(0);
         let mut offset_so_far = start;
 
-        for tab in tables {
+        for tab in tables.iter() {
             if rows_needed == 0 {
                 break;
             }
@@ -39,7 +39,7 @@ impl MicroPartition {
 
         Ok(MicroPartition {
             schema: self.schema.clone(),
-            state: TableState::Loaded(slices_tables),
+            state: TableState::Loaded(slices_tables.into()).into(),
             statistics: self.statistics.clone(),
         })
     }

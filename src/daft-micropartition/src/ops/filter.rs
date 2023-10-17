@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl MicroPartition {
-    pub fn filter(&mut self, predicate: &[Expr]) -> DaftResult<Self> {
+    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             return Ok(Self::new(
                 self.schema.clone(),
@@ -44,7 +44,7 @@ impl MicroPartition {
 
         Ok(Self::new(
             self.schema.clone(),
-            TableState::Loaded(tables),
+            TableState::Loaded(tables.into()),
             self.statistics.clone(), // update these values based off the filter we just ran
         ))
     }
