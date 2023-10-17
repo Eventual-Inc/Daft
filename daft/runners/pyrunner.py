@@ -231,7 +231,7 @@ class PyRunner(Runner[Table]):
                         done_task = inflight_tasks.pop(done_id)
                         partitions = done_future.result()
 
-                        logger.debug(f"Task completed: {done_id} -> {partitions}")
+                        logger.debug(f"Task completed: {done_id} -> <{len(partitions)} partitions>")
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                     if next_step is None:
