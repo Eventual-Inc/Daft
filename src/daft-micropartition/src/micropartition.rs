@@ -53,9 +53,9 @@ impl Display for TableState {
 }
 
 pub(crate) struct MicroPartition {
-    pub schema: SchemaRef,
-    state: TableState,
-    statistics: Option<TableStatistics>,
+    pub(crate) schema: SchemaRef,
+    pub(crate) state: TableState,
+    pub(crate) statistics: Option<TableStatistics>,
 }
 
 impl MicroPartition {
@@ -71,7 +71,10 @@ impl MicroPartition {
         Self::new(Schema::empty().into(), TableState::Loaded(vec![]), None)
     }
 
-    fn tables_or_read(&mut self, io_stats: Option<IOStatsRef>) -> crate::Result<&[Table]> {
+    pub(crate) fn tables_or_read(
+        &mut self,
+        io_stats: Option<IOStatsRef>,
+    ) -> crate::Result<&[Table]> {
         if let TableState::Unloaded(params) = &self.state {
             let table_values: Vec<_> = match &params.format_params {
                 FormatParams::Parquet(parquet_schema_inference) => {
@@ -108,44 +111,24 @@ impl MicroPartition {
         }
     }
 
-    pub fn filter(&mut self, predicate: &[Expr]) -> DaftResult<Self> {
-        if predicate.is_empty() {
-            return Ok(Self::new(
-                self.schema.clone(),
-                TableState::Loaded(vec![].into()),
-                None,
-            ));
-        }
-        if let Some(statistics) = &self.statistics {
-            let folded_expr = predicate
-                .iter()
-                .cloned()
-                .reduce(|a, b| a.and(&b))
-                .expect("should have at least 1 expr");
-            let eval_result = statistics.eval_expression(&folded_expr)?;
-            let tv = eval_result.to_truth_value();
+    pub(crate) fn concat_or_get(&mut self) -> crate::Result<Option<&Table>> {
+        let tables = self.tables_or_read(None)?;
 
-            if matches!(tv, TruthValue::False) {
-                return Ok(Self::new(
-                    self.schema.clone(),
-                    TableState::Loaded(vec![].into()),
-                    None,
-                ));
-            }
+        if tables.is_empty() {
+            return Ok(None);
         }
-        // TODO figure out defered IOStats
-        let tables = self
-            .tables_or_read(None)?
-            .iter()
-            .map(|t| t.filter(predicate))
-            .collect::<DaftResult<Vec<_>>>()
-            .context(DaftCoreComputeSnafu)?;
 
-        Ok(Self::new(
-            self.schema.clone(),
-            TableState::Loaded(tables),
-            self.statistics.clone(), // update these values based off the filter we just ran
-        ))
+        if tables.len() > 1 {
+            let new_table = Table::concat(tables.iter().collect::<Vec<_>>().as_slice())
+                .context(DaftCoreComputeSnafu)?;
+            self.state = TableState::Loaded(vec![new_table]);
+        };
+        if let TableState::Loaded(tables) = &self.state {
+            assert_eq!(tables.len(), 1);
+            return Ok(tables.get(0));
+        } else {
+            unreachable!()
+        }
     }
 }
 
@@ -191,7 +174,6 @@ pub(crate) fn read_parquet_into_micropartition(
 
 impl Display for MicroPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // let guard = self.state.lock().unwrap();
         writeln!(f, "MicroPartition:")?;
 
         match &self.state {

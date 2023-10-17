@@ -6,6 +6,7 @@ use common_error::DaftError;
 use snafu::Snafu;
 pub(crate) mod column_stats;
 mod micropartition;
+mod ops;
 mod table_stats;
 mod utils;
 
