@@ -51,7 +51,6 @@ impl Display for TableState {
         }
     }
 }
-
 pub(crate) struct MicroPartition {
     pub(crate) schema: SchemaRef,
     pub(crate) state: Mutex<TableState>,
