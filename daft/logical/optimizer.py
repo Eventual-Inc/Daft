@@ -457,7 +457,7 @@ class PushDownLimit(Rule[LogicalPlan]):
         """
         logger.debug(f"pushing {parent} into {child}")
         grandchild = child._children()[0]
-        return child.copy_with_new_children([GlobalLimit(grandchild, num=parent._num)])
+        return child.copy_with_new_children([GlobalLimit(grandchild, num=parent._num, eager=parent._eager)])
 
     @property
     def _supported_unary_nodes(self) -> set[type[LogicalPlan]]:

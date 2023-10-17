@@ -150,9 +150,9 @@ class PyLogicalPlanBuilder(LogicalPlanBuilder):
     def filter(self, predicate: Expression):
         return Filter(self._plan, ExpressionsProjection([predicate])).to_builder()
 
-    def limit(self, num_rows: int) -> LogicalPlanBuilder:
+    def limit(self, num_rows: int, eager: bool) -> LogicalPlanBuilder:
         local_limit = LocalLimit(self._plan, num=num_rows)
-        plan = GlobalLimit(local_limit, num=num_rows)
+        plan = GlobalLimit(local_limit, num=num_rows, eager=eager)
         return plan.to_builder()
 
     def explode(self, explode_expressions: list[Expression]) -> PyLogicalPlanBuilder:
@@ -828,17 +828,18 @@ class LocalLimit(UnaryNode):
 
 
 class GlobalLimit(UnaryNode):
-    def __init__(self, input: LogicalPlan, num: int) -> None:
+    def __init__(self, input: LogicalPlan, num: int, eager: bool) -> None:
         super().__init__(input.schema(), partition_spec=input.partition_spec(), op_level=OpLevel.GLOBAL)
         self._register_child(input)
         self._num = num
+        self._eager = eager
 
     def __repr__(self) -> str:
         return self._repr_helper(num=self._num)
 
     def copy_with_new_children(self, new_children: list[LogicalPlan]) -> LogicalPlan:
         assert len(new_children) == 1
-        return GlobalLimit(new_children[0], self._num)
+        return GlobalLimit(new_children[0], self._num, self._eager)
 
     def required_columns(self) -> list[set[str]]:
         return [set()]
@@ -850,7 +851,7 @@ class GlobalLimit(UnaryNode):
         return isinstance(other, GlobalLimit) and self.schema() == other.schema() and self._num == other._num
 
     def rebuild(self) -> LogicalPlan:
-        return GlobalLimit(input=self._children()[0].rebuild(), num=self._num)
+        return GlobalLimit(input=self._children()[0].rebuild(), num=self._num, eager=self._eager)
 
 
 class LocalCount(UnaryNode):

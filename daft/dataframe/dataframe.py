@@ -170,7 +170,7 @@ class DataFrame:
             DataFrameDisplay: object that has a rich tabular display
         """
         df = self
-        df = df.limit(n)
+        df = df.limit(n, eager=True)
         df.collect(num_preview_rows=None)
         collected_preview = df._preview
         assert collected_preview is not None
@@ -578,7 +578,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def limit(self, num: int) -> "DataFrame":
+    def limit(self, num: int, eager: bool = False) -> "DataFrame":
         """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
 
         Example:
@@ -586,11 +586,13 @@ class DataFrame:
 
         Args:
             num (int): maximum rows to allow.
+            eager (bool): whether to maximize for latency (time to first result) by eagerly executing
+                only one partition at a time, or throughput by executing multiple limits at a time
 
         Returns:
             DataFrame: Limited DataFrame
         """
-        builder = self._builder.limit(num)
+        builder = self._builder.limit(num, eager=eager)
         return DataFrame(builder)
 
     @DataframePublicAPI

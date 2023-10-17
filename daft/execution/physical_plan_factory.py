@@ -104,6 +104,7 @@ def _get_physical_plan(node: LogicalPlan, psets: dict[str, list[PartitionT]]) ->
             return physical_plan.global_limit(
                 child_plan=child_plan,
                 limit_rows=node._num,
+                eager=node._eager,
                 num_partitions=node.num_partitions(),
             )
 

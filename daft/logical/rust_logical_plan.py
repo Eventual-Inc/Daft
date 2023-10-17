@@ -82,8 +82,8 @@ class RustLogicalPlanBuilder(LogicalPlanBuilder):
         builder = self._builder.filter(predicate._expr)
         return RustLogicalPlanBuilder(builder)
 
-    def limit(self, num_rows: int) -> RustLogicalPlanBuilder:
-        builder = self._builder.limit(num_rows)
+    def limit(self, num_rows: int, eager: bool) -> RustLogicalPlanBuilder:
+        builder = self._builder.limit(num_rows, eager)
         return RustLogicalPlanBuilder(builder)
 
     def explode(self, explode_expressions: list[Expression]) -> RustLogicalPlanBuilder:

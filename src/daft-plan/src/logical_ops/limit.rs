@@ -8,10 +8,17 @@ pub struct Limit {
     pub input: Arc<LogicalPlan>,
     // Limit on number of rows.
     pub limit: i64,
+    // Whether to send tasks in waves (maximize throughput) or
+    // eagerly one-at-a-time (maximize time-to-first-result)
+    pub eager: bool,
 }
 
 impl Limit {
-    pub(crate) fn new(input: Arc<LogicalPlan>, limit: i64) -> Self {
-        Self { input, limit }
+    pub(crate) fn new(input: Arc<LogicalPlan>, limit: i64, eager: bool) -> Self {
+        Self {
+            input,
+            limit,
+            eager,
+        }
     }
 }

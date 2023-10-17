@@ -102,11 +102,16 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 predicate.clone(),
             )))
         }
-        LogicalPlan::Limit(LogicalLimit { input, limit }) => {
+        LogicalPlan::Limit(LogicalLimit {
+            input,
+            limit,
+            eager,
+        }) => {
             let input_physical = plan(input)?;
             Ok(PhysicalPlan::Limit(Limit::new(
                 input_physical.into(),
                 *limit,
+                *eager,
                 logical_plan.partition_spec().num_partitions,
             )))
         }

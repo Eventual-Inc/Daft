@@ -23,7 +23,7 @@ impl OptimizerRule for PushDownLimit {
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
-            LogicalPlan::Limit(LogicalLimit { input, limit }) => {
+            LogicalPlan::Limit(LogicalLimit { input, limit, .. }) => {
                 let limit = *limit as usize;
                 match input.as_ref() {
                     // Naive commuting with unary ops.
@@ -120,7 +120,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
@@ -140,7 +140,7 @@ mod tests {
             ],
             Some(3),
         )
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 3";
@@ -160,7 +160,7 @@ mod tests {
             ],
             Some(10),
         )
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
@@ -177,7 +177,7 @@ mod tests {
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let plan = LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default())?
-            .limit(5)?
+            .limit(5, false)?
             .build();
         let expected = "\
         Limit: 5\
@@ -196,7 +196,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .repartition(1, vec![col("a")], PartitionScheme::Hash)?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
@@ -215,7 +215,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .coalesce(1)?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Coalesce: To = 1\
@@ -234,7 +234,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .project(vec![col("a")], Default::default())?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Project: col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\

@@ -119,8 +119,9 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn limit(&self, limit: i64) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = logical_ops::Limit::new(self.plan.clone(), limit).into();
+    pub fn limit(&self, limit: i64, eager: bool) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            logical_ops::Limit::new(self.plan.clone(), limit, eager).into();
         Ok(logical_plan.into())
     }
 
@@ -317,8 +318,8 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    pub fn limit(&self, limit: i64) -> PyResult<Self> {
-        Ok(self.builder.limit(limit)?.into())
+    pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
+        Ok(self.builder.limit(limit, eager)?.into())
     }
 
     pub fn explode(&self, to_explode: Vec<PyExpr>) -> PyResult<Self> {
