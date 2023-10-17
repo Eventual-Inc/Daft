@@ -1,7 +1,8 @@
 #![allow(unused)] // MAKE SURE TO REMOVE THIS
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use common_error::DaftResult;
 use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
@@ -14,10 +15,10 @@ use pyo3::{
 
 use crate::micropartition::MicroPartition;
 
+// Do not enable clone
 #[pyclass(module = "daft.daft")]
-#[derive(Clone)]
 struct PyMicroPartition {
-    inner: Arc<MicroPartition>,
+    inner: MicroPartition,
 }
 
 #[pymethods]
@@ -103,7 +104,7 @@ impl PyMicroPartition {
     // Compute Methods
 
     #[staticmethod]
-    pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
+    pub fn concat(py: Python, to_concat: PyObject) -> PyResult<Self> {
         todo!("[MICROPARTITION_INT]")
     }
 
@@ -123,8 +124,9 @@ impl PyMicroPartition {
         todo!("[MICROPARTITION_INT]")
     }
 
-    pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+    pub fn filter(&mut self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
     pub fn sort(
@@ -228,12 +230,21 @@ impl PyMicroPartition {
                 multithreaded_io.unwrap_or(true),
             )
         })?;
-        Ok(PyMicroPartition {
-            inner: Arc::new(mp),
-        })
+        Ok(PyMicroPartition { inner: mp })
     }
 }
 
+impl From<MicroPartition> for PyMicroPartition {
+    fn from(value: MicroPartition) -> Self {
+        PyMicroPartition { inner: value }
+    }
+}
+
+impl From<PyMicroPartition> for MicroPartition {
+    fn from(item: PyMicroPartition) -> Self {
+        item.inner
+    }
+}
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     Ok(())

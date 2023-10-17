@@ -27,13 +27,12 @@ pub(crate) struct DeferredLoadingParams {
     urls: Vec<String>,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
-    filters: Vec<Expr>,
     limit: Option<usize>,
     columns: Option<Vec<String>>,
 }
 pub(crate) enum TableState {
     Unloaded(DeferredLoadingParams),
-    Loaded(Arc<Vec<Table>>),
+    Loaded(Vec<Table>),
 }
 
 impl Display for TableState {
@@ -55,7 +54,7 @@ impl Display for TableState {
 
 pub(crate) struct MicroPartition {
     pub schema: SchemaRef,
-    state: Mutex<TableState>,
+    state: TableState,
     statistics: Option<TableStatistics>,
 }
 
@@ -63,72 +62,53 @@ impl MicroPartition {
     pub fn new(schema: SchemaRef, state: TableState, statistics: Option<TableStatistics>) -> Self {
         MicroPartition {
             schema,
-            state: Mutex::new(state),
+            state: state,
             statistics,
         }
     }
 
     pub fn empty() -> Self {
-        Self::new(
-            Schema::empty().into(),
-            TableState::Loaded(Arc::new(vec![])),
-            None,
-        )
+        Self::new(Schema::empty().into(), TableState::Loaded(vec![]), None)
     }
 
-    fn tables_or_read(&self, io_stats: Option<IOStatsRef>) -> crate::Result<Arc<Vec<Table>>> {
-        let mut guard = self.state.lock().unwrap();
+    fn tables_or_read(&mut self, io_stats: Option<IOStatsRef>) -> crate::Result<&[Table]> {
+        if let TableState::Unloaded(params) = &self.state {
+            let table_values: Vec<_> = match &params.format_params {
+                FormatParams::Parquet(parquet_schema_inference) => {
+                    let io_client =
+                        daft_io::get_io_client(params.multithreaded_io, params.io_config.clone())
+                            .unwrap();
+                    let column_names = params
+                        .columns
+                        .as_ref()
+                        .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
+                    let urls = params.urls.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    daft_parquet::read::read_parquet_bulk(
+                        urls.as_slice(),
+                        column_names.as_deref(),
+                        None,
+                        params.limit,
+                        None,
+                        io_client.clone(),
+                        io_stats,
+                        8,
+                        params.multithreaded_io,
+                        parquet_schema_inference,
+                    )
+                    .context(DaftCoreComputeSnafu)?
+                }
+            };
+            self.state = TableState::Loaded(table_values);
+        };
 
-        match guard.deref() {
-            TableState::Loaded(tables) => Ok(tables.clone()),
-            TableState::Unloaded(params) => {
-                let table_values: Vec<_> = match &params.format_params {
-                    FormatParams::Parquet(parquet_schema_inference) => {
-                        let io_client = daft_io::get_io_client(
-                            params.multithreaded_io,
-                            params.io_config.clone(),
-                        )
-                        .unwrap();
-                        let column_names = params
-                            .columns
-                            .as_ref()
-                            .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
-                        let urls = params.urls.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-                        daft_parquet::read::read_parquet_bulk(
-                            urls.as_slice(),
-                            column_names.as_deref(),
-                            None,
-                            params.limit,
-                            None,
-                            io_client.clone(),
-                            io_stats,
-                            8,
-                            params.multithreaded_io,
-                            parquet_schema_inference,
-                        )
-                        .context(DaftCoreComputeSnafu)?
-                    }
-                };
-
-                let filter_preds = &params.filters;
-                let table_values = if !filter_preds.is_empty() {
-                    table_values
-                        .into_iter()
-                        .map(|t| t.filter(filter_preds.as_slice()))
-                        .collect::<Result<Vec<Table>, _>>()
-                        .context(DaftCoreComputeSnafu)?
-                } else {
-                    table_values
-                };
-
-                let table_values = Arc::new(table_values);
-                *guard = TableState::Loaded(table_values.clone());
-                Ok(table_values)
-            }
+        if let TableState::Loaded(tables) = &self.state {
+            return Ok(tables.as_slice());
+        } else {
+            unreachable!()
         }
     }
 
-    pub fn filter(&self, predicate: &[Expr]) -> super::Result<Self> {
+    pub fn filter(&mut self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
             return Ok(Self::new(
                 self.schema.clone(),
@@ -153,28 +133,18 @@ impl MicroPartition {
                 ));
             }
         }
+        // TODO figure out defered IOStats
+        let tables = self
+            .tables_or_read(None)?
+            .iter()
+            .map(|t| t.filter(predicate))
+            .collect::<DaftResult<Vec<_>>>()
+            .context(DaftCoreComputeSnafu)?;
 
-        let guard = self.state.lock().unwrap();
-        let new_state = match guard.deref() {
-            TableState::Unloaded(params) => {
-                let mut params = params.clone();
-                params.filters.extend(predicate.iter().cloned());
-                TableState::Unloaded(params)
-            }
-            TableState::Loaded(tables) => TableState::Loaded(Arc::new(
-                tables
-                    .iter()
-                    .map(|t| t.filter(predicate))
-                    .collect::<DaftResult<Vec<_>>>()
-                    .context(DaftCoreComputeSnafu)?,
-            )),
-        };
-
-        // TODO: We should also "filter" the TableStatistics so it's more accurate for downstream tasks
         Ok(Self::new(
             self.schema.clone(),
-            new_state,
-            self.statistics.clone(),
+            TableState::Loaded(tables),
+            self.statistics.clone(), // update these values based off the filter we just ran
         ))
     }
 }
@@ -208,7 +178,6 @@ pub(crate) fn read_parquet_into_micropartition(
         urls: owned_urls,
         io_config: io_config.clone(),
         multithreaded_io: true,
-        filters: vec![],
         limit: None,
         columns: None,
     };
@@ -224,11 +193,22 @@ impl Display for MicroPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // let guard = self.state.lock().unwrap();
         writeln!(f, "MicroPartition:")?;
-        writeln!(f, "{}", self.schema)?;
+
+        match &self.state {
+            TableState::Unloaded(..) => {
+                writeln!(f, "{}\n{}", self.schema, self.state)?;
+            }
+            TableState::Loaded(..) => {
+                writeln!(f, "{}", self.state)?;
+            }
+        };
+
         match &self.statistics {
             Some(t) => writeln!(f, "Statistics\n{}", t)?,
             None => writeln!(f, "Statistics: missing")?,
         }
+
+        writeln!(f, "Table Data:")?;
         Ok(())
     }
 }
