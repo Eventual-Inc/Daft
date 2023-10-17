@@ -171,17 +171,23 @@ class DataFrame:
         """
         df = self
         df = df.limit(n, eager=True)
-        df.collect(num_preview_rows=None)
-        collected_preview = df._preview
-        assert collected_preview is not None
 
+        # Iteratively retrieve partitions until enough data has been materialized
+        tables = []
+        seen = 0
+        for table in get_context().runner().run_iter_tables(df._builder):
+            tables.append(table)
+            seen += len(table)
+            if seen >= n:
+                break
+
+        preview_partition = Table.concat(tables)
+        preview_partition = preview_partition if len(preview_partition) <= n else preview_partition.slice(0, n)
         preview = DataFramePreview(
-            preview_partition=collected_preview.preview_partition,
-            # Override dataframe_num_rows=None, because we do not know
-            # the size of the entire (un-limited) dataframe when showing
+            preview_partition=preview_partition,
+            # We do not know the size of the entire (un-limited) dataframe when showing
             dataframe_num_rows=None,
         )
-
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
 
     @DataframePublicAPI
