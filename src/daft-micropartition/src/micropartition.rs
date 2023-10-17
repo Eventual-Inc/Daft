@@ -32,7 +32,7 @@ pub(crate) struct DeferredLoadingParams {
 }
 pub(crate) enum TableState {
     Unloaded(DeferredLoadingParams),
-    Loaded(Vec<Table>),
+    Loaded(Arc<Vec<Table>>),
 }
 
 impl Display for TableState {
@@ -54,7 +54,7 @@ impl Display for TableState {
 
 pub(crate) struct MicroPartition {
     pub(crate) schema: SchemaRef,
-    pub(crate) state: TableState,
+    pub(crate) state: Mutex<TableState>,
     pub(crate) statistics: Option<TableStatistics>,
 }
 
@@ -62,20 +62,25 @@ impl MicroPartition {
     pub fn new(schema: SchemaRef, state: TableState, statistics: Option<TableStatistics>) -> Self {
         MicroPartition {
             schema,
-            state: state,
+            state: Mutex::new(state),
             statistics,
         }
     }
 
     pub fn empty() -> Self {
-        Self::new(Schema::empty().into(), TableState::Loaded(vec![]), None)
+        Self::new(
+            Schema::empty().into(),
+            TableState::Loaded(Arc::new(vec![])),
+            None,
+        )
     }
 
     pub(crate) fn tables_or_read(
-        &mut self,
+        &self,
         io_stats: Option<IOStatsRef>,
-    ) -> crate::Result<&[Table]> {
-        if let TableState::Unloaded(params) = &self.state {
+    ) -> crate::Result<Arc<Vec<Table>>> {
+        let mut guard = self.state.lock().unwrap();
+        if let TableState::Unloaded(params) = guard.deref() {
             let table_values: Vec<_> = match &params.format_params {
                 FormatParams::Parquet(parquet_schema_inference) => {
                     let io_client =
@@ -101,31 +106,32 @@ impl MicroPartition {
                     .context(DaftCoreComputeSnafu)?
                 }
             };
-            self.state = TableState::Loaded(table_values);
+            *guard = TableState::Loaded(Arc::new(table_values));
         };
 
-        if let TableState::Loaded(tables) = &self.state {
-            return Ok(tables.as_slice());
+        if let TableState::Loaded(tables) = guard.deref() {
+            return Ok(tables.clone());
         } else {
             unreachable!()
         }
     }
 
-    pub(crate) fn concat_or_get(&mut self) -> crate::Result<Option<&Table>> {
+    pub(crate) fn concat_or_get(&self) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(None)?;
-
-        if tables.is_empty() {
-            return Ok(None);
+        if tables.len() <= 1 {
+            return Ok(tables);
         }
+
+        let mut guard = self.state.lock().unwrap();
 
         if tables.len() > 1 {
             let new_table = Table::concat(tables.iter().collect::<Vec<_>>().as_slice())
                 .context(DaftCoreComputeSnafu)?;
-            self.state = TableState::Loaded(vec![new_table]);
+            *guard = TableState::Loaded(Arc::new(vec![new_table]));
         };
-        if let TableState::Loaded(tables) = &self.state {
+        if let TableState::Loaded(tables) = guard.deref() {
             assert_eq!(tables.len(), 1);
-            return Ok(tables.get(0));
+            return Ok(tables.clone());
         } else {
             unreachable!()
         }
@@ -174,14 +180,16 @@ pub(crate) fn read_parquet_into_micropartition(
 
 impl Display for MicroPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let guard = self.state.lock().unwrap();
+
         writeln!(f, "MicroPartition:")?;
 
-        match &self.state {
+        match guard.deref() {
             TableState::Unloaded(..) => {
-                writeln!(f, "{}\n{}", self.schema, self.state)?;
+                writeln!(f, "{}\n{}", self.schema, guard)?;
             }
             TableState::Loaded(..) => {
-                writeln!(f, "{}", self.state)?;
+                writeln!(f, "{}", guard)?;
             }
         };
 

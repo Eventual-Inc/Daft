@@ -18,15 +18,14 @@ use crate::micropartition::MicroPartition;
 #[pyclass(module = "daft.daft")]
 #[derive(Clone)]
 struct PyMicroPartition {
-    inner: Arc<Mutex<MicroPartition>>,
+    inner: Arc<MicroPartition>,
 }
 
 #[pymethods]
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
-        let g = self.inner.lock().unwrap();
         Ok(PySchema {
-            schema: g.schema.clone(),
+            schema: self.inner.schema.clone(),
         })
     }
 
@@ -47,8 +46,7 @@ impl PyMicroPartition {
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
-        let g = self.inner.lock().unwrap();
-        Ok(format!("{}", g))
+        Ok(format!("{}", self.inner))
     }
 
     pub fn __repr_html__(&self) -> PyResult<String> {
@@ -111,10 +109,7 @@ impl PyMicroPartition {
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
-        py.allow_threads(|| {
-            let mut g = self.inner.lock().unwrap();
-            Ok(g.slice(start as usize, end as usize)?.into())
-        })
+        py.allow_threads(|| Ok(self.inner.slice(start as usize, end as usize)?.into()))
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
@@ -131,10 +126,7 @@ impl PyMicroPartition {
 
     pub fn filter(&mut self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
-        py.allow_threads(|| {
-            let mut g = self.inner.lock().unwrap();
-            Ok(g.filter(converted_exprs.as_slice())?.into())
-        })
+        py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
 
     pub fn sort(
@@ -239,7 +231,7 @@ impl PyMicroPartition {
             )
         })?;
         Ok(PyMicroPartition {
-            inner: Arc::new(Mutex::new(mp)),
+            inner: Arc::new(mp),
         })
     }
 }
@@ -247,7 +239,7 @@ impl PyMicroPartition {
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
         PyMicroPartition {
-            inner: Arc::new(Mutex::new(value)),
+            inner: Arc::new(value),
         }
     }
 }
