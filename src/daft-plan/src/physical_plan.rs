@@ -309,12 +309,9 @@ impl PhysicalPlan {
                 let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let py_physical_plan =
                     py.import(pyo3::intern!(py, "daft.execution.physical_plan"))?;
-                let local_limit_iter = py_physical_plan
-                    .getattr(pyo3::intern!(py, "local_limit"))?
-                    .call1((upstream_iter, *limit))?;
                 let global_limit_iter = py_physical_plan
                     .getattr(pyo3::intern!(py, "global_limit"))?
-                    .call1((local_limit_iter, *limit, *eager, *num_partitions))?;
+                    .call1((upstream_iter, *limit, *eager, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
             PhysicalPlan::Explode(Explode { input, to_explode }) => {
