@@ -15,8 +15,8 @@ use pyo3::{
 
 use crate::micropartition::MicroPartition;
 
-// Do not enable clone
 #[pyclass(module = "daft.daft")]
+#[derive(Clone)]
 struct PyMicroPartition {
     inner: Arc<Mutex<MicroPartition>>,
 }
@@ -111,7 +111,6 @@ impl PyMicroPartition {
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
-        
         py.allow_threads(|| {
             let mut g = self.inner.lock().unwrap();
             Ok(g.slice(start as usize, end as usize)?.into())
@@ -239,16 +238,19 @@ impl PyMicroPartition {
                 multithreaded_io.unwrap_or(true),
             )
         })?;
-        Ok(PyMicroPartition { inner: Arc::new(Mutex::new(mp)) })
+        Ok(PyMicroPartition {
+            inner: Arc::new(Mutex::new(mp)),
+        })
     }
 }
 
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
-        PyMicroPartition { inner: Arc::new(Mutex::new(value)) }
+        PyMicroPartition {
+            inner: Arc::new(Mutex::new(value)),
+        }
     }
 }
-
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
