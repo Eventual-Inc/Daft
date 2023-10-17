@@ -436,6 +436,8 @@ class Scheduler:
         result_uuid: str,
         results_buffer_size: int | None = None,
     ) -> None:
+        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+
         t = threading.Thread(
             target=self._run_plan,
             name=result_uuid,
@@ -456,8 +458,6 @@ class Scheduler:
         result_uuid: str,
         results_buffer_size: int | None = None,
     ) -> None:
-        self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
-
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
 
