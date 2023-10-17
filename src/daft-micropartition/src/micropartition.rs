@@ -222,8 +222,14 @@ pub(crate) fn read_parquet_into_micropartition(
 
 impl Display for MicroPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let guard = self.state.lock().unwrap();
-        writeln!(f, "{}", guard)
+        // let guard = self.state.lock().unwrap();
+        writeln!(f, "MicroPartition:")?;
+        writeln!(f, "{}", self.schema)?;
+        match &self.statistics {
+            Some(t) => writeln!(f, "Statistics\n{}", t)?,
+            None =>writeln!(f, "Statistics: missing")?
+        }
+        Ok(())
     }
 }
 #[cfg(test)]
