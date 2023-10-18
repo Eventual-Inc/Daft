@@ -203,7 +203,14 @@ impl PyMicroPartition {
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.head(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not head MicroPartition with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.head(num as usize)?.into())
+        })
     }
 
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
