@@ -3,13 +3,12 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft.table import MicroPartition, Table
+from daft.table import Table
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_head(TableCls) -> None:
+def test_table_head() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 

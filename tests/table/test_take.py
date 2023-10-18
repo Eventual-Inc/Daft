@@ -7,12 +7,12 @@ import pytest
 
 from daft import col
 from daft.series import Series
-from daft.table import MicroPartition, Table
+from daft.table import Table
 from tests.table import daft_int_types, daft_numeric_types
 
 
 def test_micropartitions_take_empty() -> None:
-    mp = MicroPartition.from_pydict({"a": []})
+    mp = Table.from_pydict({"a": []})
     assert len(mp) == 0
 
     indices = Series.from_arrow(pa.array([], type=pa.int64()))
@@ -31,13 +31,11 @@ def test_micropartitions_take_empty() -> None:
 @pytest.mark.parametrize(
     "mp",
     [
-        MicroPartition.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
-        MicroPartition.concat(
-            [MicroPartition.from_pydict({"a": [1]}), MicroPartition.from_pydict({"a": [2, 3, 4]})]
-        ),  # 2 tables
+        Table.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
+        Table.concat([Table.from_pydict({"a": [1]}), Table.from_pydict({"a": [2, 3, 4]})]),  # 2 tables
     ],
 )
-def test_micropartitions_take(mp: MicroPartition) -> None:
+def test_micropartitions_take(mp: Table) -> None:
     assert mp.column_names() == ["a"]
     assert len(mp) == 4
 
@@ -61,10 +59,9 @@ def test_micropartitions_take(mp: MicroPartition) -> None:
 
 
 @pytest.mark.parametrize("data_dtype, idx_dtype", itertools.product(daft_numeric_types, daft_int_types))
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_numeric(TableCls, data_dtype, idx_dtype) -> None:
+def test_table_take_numeric(data_dtype, idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     daft_table = daft_table.eval_expression_list([col("a").cast(data_dtype), col("b")])
 
     assert len(daft_table) == 4
@@ -96,10 +93,9 @@ def test_table_take_numeric(TableCls, data_dtype, idx_dtype) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_str(TableCls, idx_dtype) -> None:
+def test_table_take_str(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": ["1", "2", "3", "4"], "b": ["5", "6", "7", "8"]})
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -129,10 +125,9 @@ def test_table_take_str(TableCls, idx_dtype) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_bool(TableCls, idx_dtype) -> None:
+def test_table_take_bool(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [False, True, False, True], "b": [True, False, True, False]})
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -162,10 +157,9 @@ def test_table_take_bool(TableCls, idx_dtype) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_null(TableCls, idx_dtype) -> None:
+def test_table_take_null(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [None, None, None, None], "b": [None, None, None, None]})
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -178,10 +172,9 @@ def test_table_take_null(TableCls, idx_dtype) -> None:
     assert taken.to_pydict() == {"a": [None, None], "b": [None, None]}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_pyobject(TableCls) -> None:
+def test_table_take_pyobject() -> None:
     objects = [object(), None, object(), object()]
-    daft_table = TableCls.from_pydict({"objs": objects})
+    daft_table = Table.from_pydict({"objs": objects})
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["objs"]
 
@@ -211,15 +204,14 @@ def test_table_take_pyobject(TableCls) -> None:
 
 
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_take_fixed_size_list(TableCls, idx_dtype) -> None:
+def test_table_take_fixed_size_list(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict(
         {
             "a": pa.array([[1, 2], [3, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
             "b": pa.array([[4, 5], [6, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
         }
     )
-    daft_table = TableCls.from_arrow(pa_table)
+    daft_table = Table.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 

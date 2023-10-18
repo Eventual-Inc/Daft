@@ -8,7 +8,7 @@ import pytest
 
 from daft import DataType, col, utils
 from daft.series import Series
-from daft.table import MicroPartition, Table
+from daft.table import Table
 from tests.table import (
     daft_comparable_types,
     daft_floating_types,
@@ -28,7 +28,7 @@ test_table_count_cases = [
 
 
 def test_multipartition_count_empty():
-    mp = MicroPartition.from_pydict({"a": [], "b": []})
+    mp = Table.from_pydict({"a": [], "b": []})
 
     counted = mp.agg([col("a")._count()])
     assert len(counted) == 1
@@ -42,11 +42,11 @@ def test_multipartition_count_empty():
 @pytest.mark.parametrize(
     "mp",
     [
-        MicroPartition.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
-        MicroPartition.concat(
+        Table.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
+        Table.concat(
             [
-                MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
-                MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+                Table.from_pydict({"a": [1], "b": ["a"]}),
+                Table.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
             ]
         ),  # 2 tables
     ],
@@ -63,12 +63,11 @@ def test_multipartition_count(mp):
 
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
 @pytest.mark.parametrize("case", test_table_count_cases, ids=[f"{_}" for _ in test_table_count_cases])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_count(TableCls, idx_dtype, case) -> None:
+def test_table_count(idx_dtype, case) -> None:
     input, expected = case
     if idx_dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
 
@@ -77,9 +76,8 @@ def test_table_count(TableCls, idx_dtype, case) -> None:
 
 
 @pytest.mark.parametrize("length", [0, 1, 10])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_count_nulltype(TableCls, length) -> None:
-    daft_table = TableCls.from_pydict({"input": [None] * length})
+def test_table_count_nulltype(length) -> None:
+    daft_table = Table.from_pydict({"input": [None] * length})
     daft_table = daft_table.eval_expression_list([col("input").cast(DataType.null())])
     daft_table = daft_table.eval_expression_list([col("input").alias("count")._count()])
 
@@ -87,9 +85,8 @@ def test_table_count_nulltype(TableCls, length) -> None:
     assert res == [0]
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_count_pyobject(TableCls) -> None:
-    daft_table = TableCls.from_pydict({"objs": [object(), object(), None, object(), None]})
+def test_table_count_pyobject() -> None:
+    daft_table = Table.from_pydict({"objs": [object(), object(), None, object(), None]})
     daft_table = daft_table.eval_expression_list([col("objs").alias("count")._count()])
 
     res = daft_table.to_pydict()["count"]
@@ -110,10 +107,9 @@ test_table_minmax_numerics_cases = [
 @pytest.mark.parametrize(
     "case", test_table_minmax_numerics_cases, ids=[f"{_}" for _ in test_table_minmax_numerics_cases]
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_minmax_numerics(TableCls, idx_dtype, case) -> None:
+def test_table_minmax_numerics(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list(
         [
@@ -138,10 +134,9 @@ test_table_minmax_string_cases = [
 
 @pytest.mark.parametrize("idx_dtype", daft_string_types)
 @pytest.mark.parametrize("case", test_table_minmax_string_cases, ids=[f"{_}" for _ in test_table_minmax_string_cases])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_minmax_string(TableCls, idx_dtype, case) -> None:
+def test_table_minmax_string(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list(
         [
@@ -164,10 +159,9 @@ test_table_minmax_bool_cases = [
 
 
 @pytest.mark.parametrize("case", test_table_minmax_bool_cases, ids=[f"{_}" for _ in test_table_minmax_bool_cases])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_minmax_bool(TableCls, case) -> None:
+def test_table_minmax_bool(case) -> None:
     input, expected = case
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(DataType.bool())])
     daft_table = daft_table.eval_expression_list(
         [
@@ -192,10 +186,9 @@ test_table_sum_mean_cases = [
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
 @pytest.mark.parametrize("case", test_table_sum_mean_cases, ids=[f"{_}" for _ in test_table_sum_mean_cases])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_sum_mean(TableCls, idx_dtype, case) -> None:
+def test_table_sum_mean(idx_dtype, case) -> None:
     input, expected = case
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(idx_dtype)])
     daft_table = daft_table.eval_expression_list(
         [
@@ -209,10 +202,9 @@ def test_table_sum_mean(TableCls, idx_dtype, case) -> None:
 
 
 @pytest.mark.parametrize("nptype", [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_sum_upcast(TableCls, nptype) -> None:
+def test_table_sum_upcast(nptype) -> None:
     """Tests correctness, including type upcasting, of sum aggregations."""
-    daft_table = TableCls.from_pydict(
+    daft_table = Table.from_pydict(
         {
             "maxes": np.full(128, fill_value=np.iinfo(nptype).max, dtype=nptype),
             "mins": np.full(128, fill_value=np.iinfo(nptype).min, dtype=nptype),
@@ -224,9 +216,8 @@ def test_table_sum_upcast(TableCls, nptype) -> None:
     assert pydict["mins"] == [128 * np.iinfo(nptype).min]
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_sum_badtype(TableCls) -> None:
-    daft_table = TableCls.from_pydict({"a": ["str1", "str2"]})
+def test_table_sum_badtype() -> None:
+    daft_table = Table.from_pydict({"a": ["str1", "str2"]})
     with pytest.raises(ValueError):
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
 
@@ -259,11 +250,10 @@ test_table_agg_global_cases = [
 
 
 @pytest.mark.parametrize("case", test_table_agg_global_cases, ids=[f"{_}" for _ in test_table_agg_global_cases])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_agg_global(TableCls, case) -> None:
+def test_table_agg_global(case) -> None:
     """Test that global aggregation works at the API layer."""
     input, expected = case
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.agg(
         [
             col("input").cast(DataType.int32()).alias("count")._count(),
@@ -287,10 +277,9 @@ def test_table_agg_global(TableCls, case) -> None:
         (["col_A", "col_B"], []),
     ],
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_agg_groupby_empty(TableCls, groups_and_aggs) -> None:
+def test_table_agg_groupby_empty(groups_and_aggs) -> None:
     groups, aggs = groups_and_aggs
-    daft_table = TableCls.from_pydict({"col_A": [], "col_B": []})
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
         [col(a)._count() for a in aggs],
         [col(g).cast(DataType.int32()) for g in groups],
@@ -338,8 +327,7 @@ test_table_agg_groupby_cases = [
 @pytest.mark.parametrize(
     "case", test_table_agg_groupby_cases, ids=[f"{case['groups']}" for case in test_table_agg_groupby_cases]
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_agg_groupby(TableCls, case) -> None:
+def test_table_agg_groupby(case) -> None:
     values = [
         ("Bob", None),
         ("Bob", None),
@@ -354,7 +342,7 @@ def test_table_agg_groupby(TableCls, case) -> None:
         ("Alice", None),
         ("Alice", None),
     ]
-    daft_table = TableCls.from_pydict(
+    daft_table = Table.from_pydict(
         {
             "name": [_[0] for _ in values],
             "cookies": [_[1] for _ in values],
@@ -370,9 +358,8 @@ def test_table_agg_groupby(TableCls, case) -> None:
 
 
 @pytest.mark.parametrize("dtype", daft_comparable_types, ids=[f"{_}" for _ in daft_comparable_types])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_groupby_all_nulls(TableCls, dtype) -> None:
-    daft_table = TableCls.from_pydict(
+def test_groupby_all_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
         {
             "group": Series.from_pylist([None, None, None]).cast(dtype),
             "cookies": [1, 2, 3],
@@ -387,16 +374,15 @@ def test_groupby_all_nulls(TableCls, dtype) -> None:
     daft_numeric_types + daft_string_types + [DataType.bool()],
     ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_groupby_numeric_string_bool_some_nulls(TableCls, dtype) -> None:
-    daft_table = TableCls.from_pydict(
+def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
         {
             "group": Series.from_pylist([1, 1, None]).cast(dtype),
             "cookies": [2, 2, 3],
         }
     )
     result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
-    expected_table = TableCls.from_pydict(
+    expected_table = Table.from_pydict(
         {
             "group": Series.from_pylist([1, None]).cast(dtype),
             "cookies": [4, 3],
@@ -413,16 +399,15 @@ def test_groupby_numeric_string_bool_some_nulls(TableCls, dtype) -> None:
     daft_numeric_types + daft_string_types + [DataType.bool()],
     ids=[f"{_}" for _ in daft_numeric_types + daft_string_types + [DataType.bool()]],
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_groupby_numeric_string_bool_no_nulls(TableCls, dtype) -> None:
-    daft_table = TableCls.from_pydict(
+def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
+    daft_table = Table.from_pydict(
         {
             "group": Series.from_pylist([1, 0, 1, 0]).cast(dtype),
             "cookies": [1, 2, 2, 3],
         }
     )
     result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
-    expected_table = TableCls.from_pydict(
+    expected_table = Table.from_pydict(
         {
             "group": Series.from_pylist([0, 1]).cast(dtype),
             "cookies": [5, 3],
@@ -439,12 +424,11 @@ def test_groupby_numeric_string_bool_no_nulls(TableCls, dtype) -> None:
     daft_floating_types,
     ids=[f"{_}" for _ in daft_floating_types],
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_groupby_floats_nan(TableCls, dtype) -> None:
+def test_groupby_floats_nan(dtype) -> None:
     NAN = float("nan")
     INF = float("inf")
 
-    daft_table = TableCls.from_pydict(
+    daft_table = Table.from_pydict(
         {
             "group": Series.from_pylist([None, 1.0, NAN, 5 * NAN, -1 * NAN, -NAN, 1.0, None, INF, -INF, INF]).cast(
                 dtype
@@ -453,7 +437,7 @@ def test_groupby_floats_nan(TableCls, dtype) -> None:
         }
     )
     result_table = daft_table.agg([col("cookies")._count()], group_by=[col("group")])
-    expected_table = TableCls.from_pydict(
+    expected_table = Table.from_pydict(
         {
             "group": Series.from_pylist([None, 1.0, NAN, -INF, INF]).cast(dtype),
             "cookies": [2, 2, 4, 1, 2],
@@ -470,22 +454,20 @@ def test_groupby_floats_nan(TableCls, dtype) -> None:
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_global_list_aggs(TableCls, dtype) -> None:
+def test_global_list_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4]
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = TableCls.from_pydict({"input": input})
+    daft_table = Table.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").cast(dtype)])
     result = daft_table.eval_expression_list([col("input").alias("list")._agg_list()])
     assert result.get_column("list").datatype() == DataType.list(dtype)
     assert result.to_pydict() == {"list": [daft_table.to_pydict()["input"]]}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_global_pyobj_list_aggs(TableCls) -> None:
+def test_global_pyobj_list_aggs() -> None:
     input = [object(), object(), object()]
-    table = TableCls.from_pydict({"input": input})
+    table = Table.from_pydict({"input": input})
     result = table.eval_expression_list([col("input").alias("list")._agg_list()])
     assert result.get_column("list").datatype() == DataType.python()
     assert result.to_pydict()["list"][0] == input
@@ -494,15 +476,14 @@ def test_global_pyobj_list_aggs(TableCls) -> None:
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_grouped_list_aggs(TableCls, dtype) -> None:
+def test_grouped_list_aggs(dtype) -> None:
     groups = [None, 1, None, 1, 2, 2]
     input = [None, 0, 1, 2, None, 4]
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
     if dtype == DataType.date():
         input = [datetime.date(2020 + x, 1 + x, 1 + x) if x is not None else None for x in input]
-    daft_table = TableCls.from_pydict({"groups": groups, "input": input})
+    daft_table = Table.from_pydict({"groups": groups, "input": input})
     daft_table = daft_table.eval_expression_list([col("groups"), col("input").cast(dtype)])
     result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
     assert result.get_column("list").datatype() == DataType.list(dtype)
@@ -513,22 +494,20 @@ def test_grouped_list_aggs(TableCls, dtype) -> None:
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_grouped_pyobj_list_aggs(TableCls) -> None:
+def test_grouped_pyobj_list_aggs() -> None:
     groups = [None, 1, None, 1, 2, 2]
     input = [None, object(), object(), object(), None, object()]
     expected_idx = [[1, 3], [4, 5], [0, 2]]
 
-    daft_table = TableCls.from_pydict({"groups": groups, "input": input})
+    daft_table = Table.from_pydict({"groups": groups, "input": input})
     result = daft_table.agg([col("input").alias("list")._agg_list()], group_by=[col("groups")]).sort([col("groups")])
     expected_groups = [[input[i] for i in group] for group in expected_idx]
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_list_aggs_empty(TableCls) -> None:
+def test_list_aggs_empty() -> None:
 
-    daft_table = TableCls.from_pydict({"col_A": [], "col_B": []})
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
         [col("col_A").cast(DataType.int32()).alias("list")._agg_list()],
         group_by=[col("col_B")],
@@ -543,8 +522,7 @@ def test_list_aggs_empty(TableCls) -> None:
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
 @pytest.mark.parametrize("with_null", [False, True])
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_global_concat_aggs(TableCls, dtype, with_null) -> None:
+def test_global_concat_aggs(dtype, with_null) -> None:
     input = [None, 0, 1, 2, None, 4]
 
     if dtype == DataType.date():
@@ -554,7 +532,7 @@ def test_global_concat_aggs(TableCls, dtype, with_null) -> None:
     if with_null:
         input += [None]
 
-    daft_table = TableCls.from_pydict({"input": input}).eval_expression_list([col("input").cast(DataType.list(dtype))])
+    daft_table = Table.from_pydict({"input": input}).eval_expression_list([col("input").cast(DataType.list(dtype))])
     concated = daft_table.agg([col("input").alias("concat")._agg_concat()])
     assert concated.get_column("concat").datatype() == DataType.list(dtype)
 
@@ -564,8 +542,7 @@ def test_global_concat_aggs(TableCls, dtype, with_null) -> None:
     assert concated.to_pydict() == {"concat": expected}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_global_concat_aggs_pyobj(TableCls) -> None:
+def test_global_concat_aggs_pyobj() -> None:
     expected = [object(), object(), None, None, object()]
     input = [
         [expected[0], expected[1]],
@@ -574,7 +551,7 @@ def test_global_concat_aggs_pyobj(TableCls) -> None:
         [expected[3], expected[4]],
     ]
 
-    table = TableCls.from_pydict({"input": input})
+    table = Table.from_pydict({"input": input})
     concatted = table.agg([col("input").alias("concat")._agg_concat()])
     assert concatted.get_column("concat").datatype() == DataType.python()
     assert concatted.to_pydict()["concat"] == [expected]
@@ -583,8 +560,7 @@ def test_global_concat_aggs_pyobj(TableCls) -> None:
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_grouped_concat_aggs(TableCls, dtype) -> None:
+def test_grouped_concat_aggs(dtype) -> None:
     input = [None, 0, 1, 2, None, 4]
 
     if dtype == DataType.date():
@@ -592,7 +568,7 @@ def test_grouped_concat_aggs(TableCls, dtype) -> None:
 
     input = [[x] for x in input] + [None]
     groups = [1, 2, 3, 4, 5, 6, 7]
-    daft_table = TableCls.from_pydict({"groups": groups, "input": input}).eval_expression_list(
+    daft_table = Table.from_pydict({"groups": groups, "input": input}).eval_expression_list(
         [col("groups"), col("input").cast(DataType.list(dtype))]
     )
     concat_grouped = daft_table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups") % 2]).sort(
@@ -608,8 +584,7 @@ def test_grouped_concat_aggs(TableCls, dtype) -> None:
     assert concat_grouped.to_pydict() == {"groups": [0, 1], "concat": expected_groups}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_grouped_concat_aggs_pyobj(TableCls) -> None:
+def test_grouped_concat_aggs_pyobj() -> None:
     objects = [object(), object(), object(), object()]
     input = [
         [objects[0], objects[1]],
@@ -619,7 +594,7 @@ def test_grouped_concat_aggs_pyobj(TableCls) -> None:
         [None, objects[3]],
     ]
 
-    table = TableCls.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
+    table = Table.from_pydict({"input": input, "groups": [1, 2, 3, 3, 4]})
     concatted = table.agg([col("input").alias("concat")._agg_concat()], group_by=[col("groups")]).sort([col("groups")])
     assert concatted.get_column("concat").datatype() == DataType.python()
     assert concatted.to_pydict() == {
@@ -633,10 +608,9 @@ def test_grouped_concat_aggs_pyobj(TableCls) -> None:
     }
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_concat_aggs_empty(TableCls) -> None:
+def test_concat_aggs_empty() -> None:
 
-    daft_table = TableCls.from_pydict({"col_A": [], "col_B": []})
+    daft_table = Table.from_pydict({"col_A": [], "col_B": []})
     daft_table = daft_table.agg(
         [col("col_A").cast(DataType.list(DataType.int32())).alias("concat")._agg_concat()],
         group_by=[col("col_B")],
