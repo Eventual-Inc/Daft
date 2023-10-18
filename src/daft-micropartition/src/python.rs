@@ -32,7 +32,7 @@ impl PyMicroPartition {
     }
 
     pub fn column_names(&self) -> PyResult<Vec<String>> {
-        todo!("[MICROPARTITION_INT]")
+        Ok(self.inner.column_names())
     }
 
     pub fn get_column(&self) -> PyResult<PySeries> {

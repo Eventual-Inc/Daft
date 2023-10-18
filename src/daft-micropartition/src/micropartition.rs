@@ -83,6 +83,10 @@ impl MicroPartition {
         )
     }
 
+    pub fn column_names(&self) -> Vec<String> {
+        self.schema.names()
+    }
+
     pub fn len(&self) -> usize {
         self.metadata.length
     }
