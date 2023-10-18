@@ -67,6 +67,15 @@ impl TableStatistics {
         })
     }
 
+    pub(crate) fn estimate_row_size(&self) -> super::Result<usize> {
+        let mut sum_so_far = 0;
+
+        for elem_size in self.columns.values().map(|c| c.element_size()) {
+            sum_so_far += elem_size?;
+        }
+        Ok(sum_so_far)
+    }
+
     pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),

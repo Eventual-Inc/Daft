@@ -93,6 +93,29 @@ impl MicroPartition {
         self.metadata.length
     }
 
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        {
+            let guard = self.state.lock().unwrap();
+            if let TableState::Loaded(tables) = guard.deref() {
+                let total_size: usize = tables
+                    .iter()
+                    .map(|t| t.size_bytes())
+                    .collect::<DaftResult<Vec<_>>>()?
+                    .iter()
+                    .sum();
+                return Ok(total_size);
+            }
+        }
+        if let Some(stats) = &self.statistics {
+            let row_size = stats.estimate_row_size()?;
+            Ok(row_size * self.len())
+        } else {
+            // if the table is not loaded and we dont have stats, just return 0.
+            // not sure if we should pull the table in for this
+            Ok(0)
+        }
+    }
+
     pub(crate) fn tables_or_read(
         &self,
         io_stats: Option<IOStatsRef>,

@@ -88,6 +88,15 @@ impl ColumnRangeStatistics {
         }
     }
 
+    pub(crate) fn element_size(&self) -> super::Result<usize> {
+        match self {
+            Self::Missing => Ok(0),
+            Self::Loaded(l, u) => Ok((l.size_bytes().context(DaftCoreComputeSnafu)?
+                + u.size_bytes().context(DaftCoreComputeSnafu)?)
+                / 2),
+        }
+    }
+
     pub fn from_series(series: &Series) -> Self {
         let lower = series.min(None).unwrap();
         let upper = series.max(None).unwrap();
