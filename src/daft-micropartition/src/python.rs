@@ -133,7 +133,13 @@ impl PyMicroPartition {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .eval_expression_list(converted_exprs.as_slice())?
+                .into())
+        })
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
