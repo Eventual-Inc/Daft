@@ -3,7 +3,10 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
-use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
+use daft_core::{
+    python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
+    Series,
+};
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -39,9 +42,13 @@ impl PyMicroPartition {
         Ok(self.inner.column_names())
     }
 
-    pub fn get_column(&self) -> PyResult<PySeries> {
-        /// We can prob skip this one since we only use it for tests
-        todo!("[MICROPARTITION_INT]")
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
+        let tables = self.inner.tables_or_read(None)?;
+        let columns = tables
+            .iter()
+            .map(|t| t.get_column(name))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Series::concat(columns.as_slice())?.into())
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {

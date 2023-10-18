@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 
 from daft.expressions import col
-from daft.table import Micropartition, Table
+from daft.table import MicroPartition, Table
 
 
-@pytest.mark.parametrize("TableCls", [Table, Micropartition])
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
 def test_pyobjects_blackbox_kernels(TableCls) -> None:
     objects = [object(), None, object()]
     table = TableCls.from_pydict({"keys": [0, 1, 2], "objs": objects})
@@ -16,7 +16,7 @@ def test_pyobjects_blackbox_kernels(TableCls) -> None:
     assert table.filter([col("keys") > 0]).to_pydict()["objs"] == objects[1:]
 
 
-@pytest.mark.parametrize("TableCls", [Table, Micropartition])
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
 def test_nested_blackbox_kernels(TableCls) -> None:
     structs = [{"a": 1, "b": 2}, None, {"a": 3}]
     lists = [[1, 2], None, [3]]

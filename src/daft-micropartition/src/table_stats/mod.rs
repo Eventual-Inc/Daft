@@ -1,20 +1,13 @@
-use std::{collections::HashSet, fmt::Display, ops::Not};
+use std::{fmt::Display, ops::Not};
 
-use common_error::DaftError;
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
 use snafu::ResultExt;
 
-use crate::{
-    column_stats::{self, ColumnRangeStatistics},
-    DaftCoreComputeSnafu,
-};
+use crate::column_stats::{self, ColumnRangeStatistics};
 
-use daft_core::{
-    array::ops::DaftCompare,
-    schema::{Schema, SchemaRef},
-};
+use daft_core::{array::ops::DaftCompare, schema::Schema};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {

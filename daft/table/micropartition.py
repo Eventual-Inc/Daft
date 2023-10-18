@@ -27,11 +27,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class Micropartition:
+class MicroPartition:
     _micropartition: _PyMicroPartition
 
     def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating a Micropartition via __init__ ")
+        raise NotImplementedError("We do not support creating a MicroPartition via __init__ ")
 
     def schema(self) -> Schema:
         return Schema._from_pyschema(self._micropartition.schema())
@@ -59,57 +59,57 @@ class Micropartition:
     ###
 
     @staticmethod
-    def empty(schema: Schema | None = None) -> Micropartition:
+    def empty(schema: Schema | None = None) -> MicroPartition:
         pyt = _PyMicroPartition.empty(None) if schema is None else _PyMicroPartition.empty(schema._schema)
-        return Micropartition._from_pymicropartition(pyt)
+        return MicroPartition._from_pymicropartition(pyt)
 
     @staticmethod
-    def _from_pymicropartition(pym: _PyMicroPartition) -> Micropartition:
+    def _from_pymicropartition(pym: _PyMicroPartition) -> MicroPartition:
         assert isinstance(pym, _PyMicroPartition)
-        tab = Micropartition.__new__(Micropartition)
+        tab = MicroPartition.__new__(MicroPartition)
         tab._micropartition = pym
         return tab
 
     @staticmethod
-    def _from_tables(tables: list[Table]) -> Micropartition:
-        return Micropartition._from_pymicropartition(_PyMicroPartition.from_tables([t._table for t in tables]))
+    def _from_tables(tables: list[Table]) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_tables([t._table for t in tables]))
 
     @staticmethod
-    def from_arrow(arrow_table: pa.Table) -> Micropartition:
+    def from_arrow(arrow_table: pa.Table) -> MicroPartition:
         table = Table.from_arrow(arrow_table)
-        return Micropartition._from_tables([table])
+        return MicroPartition._from_tables([table])
 
     @staticmethod
-    def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> Micropartition:
+    def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> MicroPartition:
         schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
         pyt = _PyMicroPartition.from_arrow_record_batches(rbs, schema._schema)
-        return Micropartition._from_pymicropartition(pyt)
+        return MicroPartition._from_pymicropartition(pyt)
 
     @staticmethod
-    def from_pandas(pd_df: pd.DataFrame) -> Micropartition:
+    def from_pandas(pd_df: pd.DataFrame) -> MicroPartition:
         table = Table.from_pandas(pd_df)
-        return Micropartition._from_tables([table])
+        return MicroPartition._from_tables([table])
 
     @staticmethod
-    def from_pydict(data: dict) -> Micropartition:
+    def from_pydict(data: dict) -> MicroPartition:
         table = Table.from_pydict(data)
-        return Micropartition._from_tables([table])
+        return MicroPartition._from_tables([table])
 
     @classmethod
-    def concat(cls, to_merge: list[Micropartition]) -> Micropartition:
+    def concat(cls, to_merge: list[MicroPartition]) -> MicroPartition:
         micropartitions = []
         for t in to_merge:
-            if not isinstance(t, Micropartition):
-                raise TypeError(f"Expected a Micropartition for concat, got {type(t)}")
+            if not isinstance(t, MicroPartition):
+                raise TypeError(f"Expected a MicroPartition for concat, got {type(t)}")
             micropartitions.append(t._micropartition)
-        return Micropartition._from_pymicropartition(_PyMicroPartition.concat(micropartitions))
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.concat(micropartitions))
 
-    def slice(self, start: int, end: int) -> Micropartition:
+    def slice(self, start: int, end: int) -> MicroPartition:
         if not isinstance(start, int):
             raise TypeError(f"expected int for start but got {type(start)}")
         if not isinstance(end, int):
             raise TypeError(f"expected int for end but got {type(end)}")
-        return Micropartition._from_pymicropartition(self._micropartition.slice(start, end))
+        return MicroPartition._from_pymicropartition(self._micropartition.slice(start, end))
 
     ###
     # Exporting methods
@@ -133,31 +133,31 @@ class Micropartition:
         )
 
     ###
-    # Compute methods (Micropartition -> Micropartition)
+    # Compute methods (MicroPartition -> MicroPartition)
     ###
 
-    def cast_to_schema(self, schema: Schema) -> Micropartition:
-        """Casts a Micropartition into the provided schema"""
-        return Micropartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
+    def cast_to_schema(self, schema: Schema) -> MicroPartition:
+        """Casts a MicroPartition into the provided schema"""
+        return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
 
-    def eval_expression_list(self, exprs: ExpressionsProjection) -> Micropartition:
+    def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return Micropartition._from_pymicropartition(self._micropartition.eval_expression_list(pyexprs))
+        return MicroPartition._from_pymicropartition(self._micropartition.eval_expression_list(pyexprs))
 
-    def head(self, num: int) -> Micropartition:
-        return Micropartition._from_pymicropartition(self._micropartition.head(num))
+    def head(self, num: int) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(self._micropartition.head(num))
 
-    def take(self, indices: Series) -> Micropartition:
+    def take(self, indices: Series) -> MicroPartition:
         assert isinstance(indices, Series)
-        return Micropartition._from_pymicropartition(self._micropartition.take(indices._series))
+        return MicroPartition._from_pymicropartition(self._micropartition.take(indices._series))
 
-    def filter(self, exprs: ExpressionsProjection) -> Micropartition:
+    def filter(self, exprs: ExpressionsProjection) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in exprs)
         pyexprs = [e._expr for e in exprs]
-        return Micropartition._from_pymicropartition(self._micropartition.filter(pyexprs))
+        return MicroPartition._from_pymicropartition(self._micropartition.filter(pyexprs))
 
-    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Micropartition:
+    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -172,31 +172,31 @@ class Micropartition:
                 )
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return Micropartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
+        return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
 
-    def sample(self, num: int) -> Micropartition:
-        return Micropartition._from_pymicropartition(self._micropartition.sample(num))
+    def sample(self, num: int) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(self._micropartition.sample(num))
 
-    def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> Micropartition:
+    def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> MicroPartition:
         to_agg_pyexprs = [e._expr for e in to_agg]
         group_by_pyexprs = [e._expr for e in group_by] if group_by is not None else []
-        return Micropartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
+        return MicroPartition._from_pymicropartition(self._micropartition.agg(to_agg_pyexprs, group_by_pyexprs))
 
-    def quantiles(self, num: int) -> Micropartition:
-        return Micropartition._from_pymicropartition(self._micropartition.quantiles(num))
+    def quantiles(self, num: int) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(self._micropartition.quantiles(num))
 
-    def explode(self, columns: ExpressionsProjection) -> Micropartition:
+    def explode(self, columns: ExpressionsProjection) -> MicroPartition:
         """NOTE: Expressions here must be Explode expressions (Expression._explode())"""
         to_explode_pyexprs = [e._expr for e in columns]
-        return Micropartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
+        return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
 
     def join(
         self,
-        right: Micropartition,
+        right: MicroPartition,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
         how: JoinType = JoinType.Inner,
-    ) -> Micropartition:
+    ) -> MicroPartition:
         if how != JoinType.Inner:
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
@@ -204,41 +204,41 @@ class Micropartition:
                 f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
             )
 
-        if not isinstance(right, Micropartition):
-            raise TypeError(f"Expected a Micropartition for `right` in join but got {type(right)}")
+        if not isinstance(right, MicroPartition):
+            raise TypeError(f"Expected a MicroPartition for `right` in join but got {type(right)}")
 
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Micropartition._from_pymicropartition(
+        return MicroPartition._from_pymicropartition(
             self._micropartition.join(right._micropartition, left_on=left_exprs, right_on=right_exprs)
         )
 
-    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Micropartition]:
+    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[MicroPartition]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
         pyexprs = [e._expr for e in exprs]
         return [
-            Micropartition._from_pymicropartition(t)
+            MicroPartition._from_pymicropartition(t)
             for t in self._micropartition.partition_by_hash(pyexprs, num_partitions)
         ]
 
     def partition_by_range(
         self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
-    ) -> list[Micropartition]:
-        if not isinstance(boundaries, Micropartition):
+    ) -> list[MicroPartition]:
+        if not isinstance(boundaries, MicroPartition):
             raise TypeError(
-                f"Expected a Micropartition for `boundaries` in partition_by_range but got {type(boundaries)}"
+                f"Expected a MicroPartition for `boundaries` in partition_by_range but got {type(boundaries)}"
             )
 
         exprs = [e._expr for e in partition_keys]
         return [
-            Micropartition._from_pymicropartition(t)
+            MicroPartition._from_pymicropartition(t)
             for t in self._micropartition.partition_by_range(exprs, boundaries._table, descending)
         ]
 
-    def partition_by_random(self, num_partitions: int, seed: int) -> list[Micropartition]:
+    def partition_by_random(self, num_partitions: int, seed: int) -> list[MicroPartition]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 
@@ -246,12 +246,12 @@ class Micropartition:
             raise TypeError(f"Expected a seed to be int, got {type(seed)}")
 
         return [
-            Micropartition._from_pymicropartition(t)
+            MicroPartition._from_pymicropartition(t)
             for t in self._micropartition.partition_by_random(num_partitions, seed)
         ]
 
     ###
-    # Compute methods (Micropartition -> Series)
+    # Compute methods (MicroPartition -> Series)
     ###
 
     def argsort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Series:
@@ -273,7 +273,7 @@ class Micropartition:
 
     def __reduce__(self) -> tuple:
         names = self.column_names()
-        return Micropartition.from_pydict, ({name: self.get_column(name) for name in names},)
+        return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
 
     @classmethod
     def read_parquet(
@@ -286,8 +286,8 @@ class Micropartition:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    ) -> Micropartition:
-        return Micropartition._from_pymicropartition(
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
             _PyMicroPartition.read_parquet(
                 path,
                 columns,
