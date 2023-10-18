@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    num::NonZeroUsize,
     sync::Arc,
 };
 
@@ -121,8 +122,16 @@ async fn read_csv_single(
                 buffer_size.unwrap_or(512 * 1024),
                 // Default chunk size of 64 KiB.
                 chunk_size.unwrap_or(64 * 1024),
-                // Default max chunks in flight would result in 2 * 8 * 1024 * chunk_size bytes, or 1 GiB with the default chunk size.
-                max_chunks_in_flight.unwrap_or(8 * 1024),
+                // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+                // with the parsing of chunks on the rayon threadpool.
+                max_chunks_in_flight.unwrap_or(
+                    std::thread::available_parallelism()
+                        .unwrap_or(NonZeroUsize::new(2).unwrap())
+                        .checked_mul(2.try_into().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
                 // If no estimated row size information from schema inference, we assume 200 bytes per row.
                 estimated_mean_row_size.unwrap_or(200),
             )
@@ -142,8 +151,16 @@ async fn read_csv_single(
                 buffer_size.unwrap_or(512 * 1024),
                 // Default chunk size of 64 KiB.
                 chunk_size.unwrap_or(64 * 1024),
-                // Default max chunks in flight would result in 2 * 8 * 1024 * chunk_size bytes, or 1 GiB with the default chunk size.
-                max_chunks_in_flight.unwrap_or(8 * 1024),
+                // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+                // with the parsing of chunks on the rayon threadpool.
+                max_chunks_in_flight.unwrap_or(
+                    std::thread::available_parallelism()
+                        .unwrap_or(NonZeroUsize::new(2).unwrap())
+                        .checked_mul(2.try_into().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
                 // If no estimated row size information from schema inference, we assume 200 bytes per row.
                 estimated_mean_row_size.unwrap_or(200),
             )
