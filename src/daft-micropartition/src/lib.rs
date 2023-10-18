@@ -20,6 +20,10 @@ pub use python::register_modules;
 pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
+
+    #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
+    DuplicatedField { name: String },
+
     #[snafu(display("MissingStatistics: {}", source))]
     MissingStatistics { source: column_stats::Error },
 }

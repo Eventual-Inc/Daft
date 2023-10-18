@@ -1,13 +1,20 @@
-use std::{fmt::Display, ops::Not};
+use std::{collections::HashSet, fmt::Display, ops::Not};
 
+use common_error::DaftError;
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
 use snafu::ResultExt;
 
-use crate::column_stats::{self, ColumnRangeStatistics};
+use crate::{
+    column_stats::{self, ColumnRangeStatistics},
+    DaftCoreComputeSnafu,
+};
 
-use daft_core::array::ops::DaftCompare;
+use daft_core::{
+    array::ops::DaftCompare,
+    schema::{Schema, SchemaRef},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TableStatistics {
@@ -44,6 +51,43 @@ impl TableStatistics {
             columns.insert(col.clone(), res_col);
         }
         Ok(TableStatistics { columns })
+    }
+
+    pub(crate) fn eval_expression_list(
+        &self,
+        exprs: &[Expr],
+        schema: &Schema,
+    ) -> crate::Result<Self> {
+        let result_cols = exprs
+            .iter()
+            .map(|e| self.eval_expression(e))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let fields = exprs
+            .iter()
+            .map(|e| e.to_field(schema).context(DaftCoreComputeSnafu))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let mut seen: HashSet<String> = HashSet::new();
+        for field in fields.iter() {
+            let name = &field.name;
+            if seen.contains(name) {
+                return Err(crate::Error::DuplicatedField {
+                    name: name.to_string(),
+                });
+            }
+            seen.insert(name.clone());
+        }
+
+        let new_col_stats = result_cols
+            .into_iter()
+            .zip(fields.into_iter())
+            .map(|(c, f)| (f.name, c))
+            .collect::<IndexMap<_, _>>();
+
+        Ok(Self {
+            columns: new_col_stats,
+        })
     }
 
     pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
