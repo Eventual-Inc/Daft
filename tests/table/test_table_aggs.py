@@ -27,6 +27,40 @@ test_table_count_cases = [
 ]
 
 
+def test_multipartition_count_empty():
+    mp = MicroPartition.from_pydict({"a": [], "b": []})
+
+    counted = mp.agg([col("a")._count()])
+    assert len(counted) == 1
+    assert counted.to_pydict() == {"a": [0]}
+
+    counted = mp.agg([col("a")._count()], group_by=[col("b")])
+    assert len(counted) == 0
+    assert counted.to_pydict() == {"b": [], "a": []}
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        MicroPartition.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
+        MicroPartition.concat(
+            [
+                MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
+                MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+            ]
+        ),  # 2 tables
+    ],
+)
+def test_multipartition_count(mp):
+    counted = mp.agg([col("a")._count()])
+    assert len(counted) == 1
+    assert counted.to_pydict() == {"a": [2]}
+
+    counted = mp.agg([col("a")._count()], group_by=[col("b")])
+    assert len(counted) == 2
+    assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 1]}
+
+
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
 @pytest.mark.parametrize("case", test_table_count_cases, ids=[f"{_}" for _ in test_table_count_cases])
 @pytest.mark.parametrize("TableCls", [Table, MicroPartition])
