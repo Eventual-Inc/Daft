@@ -227,10 +227,8 @@ class MicroPartition:
     def partition_by_range(
         self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
     ) -> list[MicroPartition]:
-        if not isinstance(boundaries, MicroPartition):
-            raise TypeError(
-                f"Expected a MicroPartition for `boundaries` in partition_by_range but got {type(boundaries)}"
-            )
+        if not isinstance(boundaries, Table):
+            raise TypeError(f"Expected a Table for `boundaries` in partition_by_range but got {type(boundaries)}")
 
         exprs = [e._expr for e in partition_keys]
         return [
