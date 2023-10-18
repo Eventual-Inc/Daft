@@ -66,6 +66,23 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: Option<TableStatistics>,
     ) -> Self {
+        if let TableState::Unloaded(..) = state && statistics.is_none() {
+            panic!("MicroPartition does not allow the Table without Statistics")
+        }
+        if let Some(stats) = &statistics {
+            if stats.columns.len() != schema.fields.len() {
+                panic!("MicroPartition: TableStatistics and Schema have differing lengths")
+            }
+            if !stats
+                .columns
+                .keys()
+                .zip(schema.fields.keys())
+                .all(|(l, r)| l == r)
+            {
+                panic!("MicroPartition: TableStatistics and Schema have different column names\nTableStats:\n{},\nSchema\n{}", stats, schema);
+            }
+        }
+
         MicroPartition {
             schema,
             state: Mutex::new(state),
