@@ -28,12 +28,11 @@ impl MicroPartition {
         let tables = self.concat_or_get()?;
         if let [single] = tables.as_slice() {
             let taken = single.sample(num)?;
+            let taken_len = taken.len();
             Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata {
-                    length: num.min(self.len()),
-                },
+                TableMetadata { length: taken_len },
                 self.statistics.clone(),
             ))
         } else {
@@ -45,12 +44,11 @@ impl MicroPartition {
         let tables = self.concat_or_get()?;
         if let [single] = tables.as_slice() {
             let taken = single.quantiles(num)?;
+            let taken_len = taken.len();
             Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata {
-                    length: (num - 1).max(0),
-                },
+                TableMetadata { length: taken_len },
                 self.statistics.clone(),
             ))
         } else {
