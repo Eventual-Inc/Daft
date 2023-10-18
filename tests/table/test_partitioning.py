@@ -7,7 +7,7 @@ import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.table import MicroPartition, Table
+from daft.table import LegacyTable, Table
 
 daft_int_types = [
     DataType.int8(),
@@ -27,9 +27,8 @@ daft_string_types = [DataType.string()]
 @pytest.mark.parametrize(
     "size, k, dtype", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], daft_numeric_types + daft_string_types)
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_hash_single_col(TableCls, size, k, dtype) -> None:
-    table = TableCls.from_pydict(
+def test_table_partition_by_hash_single_col(size, k, dtype) -> None:
+    table = Table.from_pydict(
         {"x": [i % k for i in range(size)], "x_ind": [i for i in range(size)]}
     ).eval_expression_list([col("x").cast(dtype), col("x_ind")])
     split_tables = table.partition_by_hash([col("x")], k)
@@ -47,11 +46,8 @@ def test_table_partition_by_hash_single_col(TableCls, size, k, dtype) -> None:
 @pytest.mark.parametrize(
     "size, k, dtype", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], daft_numeric_types + daft_string_types)
 )
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_hash_two_col(TableCls, size, k, dtype) -> None:
-    table = TableCls.from_pydict(
-        {"x": [i for i in range(size)], "x_ind": [i for i in range(size)]}
-    ).eval_expression_list(
+def test_table_partition_by_hash_two_col(size, k, dtype) -> None:
+    table = Table.from_pydict({"x": [i for i in range(size)], "x_ind": [i for i in range(size)]}).eval_expression_list(
         [
             (col("x").cast(DataType.int8()) % k).cast(dtype),
             (col("x").cast(DataType.int8()) % (k + 1)).alias("y"),
@@ -73,9 +69,8 @@ def test_table_partition_by_hash_two_col(TableCls, size, k, dtype) -> None:
 
 
 @pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40]))
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_random(TableCls, size, k) -> None:
-    table = TableCls.from_pydict({"x": [i for i in range(size)]})
+def test_table_partition_by_random(size, k) -> None:
+    table = Table.from_pydict({"x": [i for i in range(size)]})
     split_tables = table.partition_by_random(k, 0)
     seen_so_far = set()
 
@@ -97,9 +92,8 @@ def test_table_partition_by_random(TableCls, size, k) -> None:
         assert [t.to_pydict() for t in split_tables] != [t.to_pydict() for t in diff_split_tables]
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_hash_bad_input(TableCls) -> None:
-    table = TableCls.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
+def test_table_partition_by_hash_bad_input() -> None:
+    table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
 
     with pytest.raises(ValueError, match="negative number"):
         table.partition_by_hash([col("x")], -1)
@@ -108,9 +102,8 @@ def test_table_partition_by_hash_bad_input(TableCls) -> None:
         table.partition_by_hash([col("x")], 0)
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_random_bad_input(TableCls) -> None:
-    table = TableCls.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
+def test_table_partition_by_random_bad_input() -> None:
+    table = Table.from_pydict({"x": [1, 2, 3], "b": [0, 1, 2]})
 
     with pytest.raises(ValueError, match="negative number"):
         table.partition_by_random(10, -1)
@@ -123,9 +116,8 @@ def test_table_partition_by_random_bad_input(TableCls) -> None:
 
 
 @pytest.mark.parametrize("size, k, desc", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], [False, True]))
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_range_single_column(TableCls, size, k, desc) -> None:
-    table = TableCls.from_pydict({"x": np.arange(size, dtype=np.float64()), "x_ind": list(range(size))})
+def test_table_partition_by_range_single_column(size, k, desc) -> None:
+    table = Table.from_pydict({"x": np.arange(size, dtype=np.float64()), "x_ind": list(range(size))})
 
     original_boundaries = np.linspace(0, size, k)
 
@@ -134,7 +126,7 @@ def test_table_partition_by_range_single_column(TableCls, size, k, desc) -> None
     if desc:
         input_boundaries = input_boundaries[::-1]
 
-    boundaries = Table.from_pydict({"x": input_boundaries}).eval_expression_list(
+    boundaries = LegacyTable.from_pydict({"x": input_boundaries}).eval_expression_list(
         [col("x").cast(table.get_column("x").datatype())]
     )
 
@@ -157,12 +149,11 @@ def test_table_partition_by_range_single_column(TableCls, size, k, desc) -> None
 
 
 @pytest.mark.parametrize("size, k, desc", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], [False, True]))
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_range_multi_column(TableCls, size, k, desc) -> None:
+def test_table_partition_by_range_multi_column(size, k, desc) -> None:
     x = np.ones(size)
     y = np.arange(size, dtype=np.float64())
 
-    table = TableCls.from_pydict({"x": x, "y": y})
+    table = Table.from_pydict({"x": x, "y": y})
 
     original_boundaries = np.linspace(0, size, k)
 
@@ -170,7 +161,7 @@ def test_table_partition_by_range_multi_column(TableCls, size, k, desc) -> None:
     if desc:
         input_boundaries = input_boundaries[::-1]
 
-    boundaries = Table.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
+    boundaries = LegacyTable.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
         [col("x").cast(table.get_column("x").datatype()), col("y").cast(table.get_column("y").datatype())]
     )
 
@@ -192,10 +183,9 @@ def test_table_partition_by_range_multi_column(TableCls, size, k, desc) -> None:
             seen_idx.add(y)
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_range_multi_column_string(TableCls) -> None:
-    table = TableCls.from_pydict({"x": ["a", "c", "a", "c"], "y": ["1", "2", "3", "4"]})
-    boundaries = Table.from_pydict({"x": ["b"], "y": ["1"]})
+def test_table_partition_by_range_multi_column_string() -> None:
+    table = Table.from_pydict({"x": ["a", "c", "a", "c"], "y": ["1", "2", "3", "4"]})
+    boundaries = LegacyTable.from_pydict({"x": ["b"], "y": ["1"]})
     split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [False, False])
     assert len(split_tables) == 2
 
@@ -208,11 +198,10 @@ def test_table_partition_by_range_multi_column_string(TableCls) -> None:
     assert split_tables[0].to_pydict() == {"x": ["c", "c"], "y": ["2", "4"]}
 
 
-@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
-def test_table_partition_by_range_input(TableCls) -> None:
+def test_table_partition_by_range_input() -> None:
     data = {"x": [1, 2, 3], "b": [0, 1, 2]}
-    table_cls = TableCls.from_pydict(data)
-    boundaries = Table.from_pydict(data)
+    table_cls = Table.from_pydict(data)
+    boundaries = LegacyTable.from_pydict(data)
 
     with pytest.raises(ValueError, match="Schema Mismatch"):
         table_cls.partition_by_range([col("x")], boundaries, [False])
