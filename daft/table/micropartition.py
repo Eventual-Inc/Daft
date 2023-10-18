@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 
 from daft.daft import IOConfig, JoinType
-from daft.daft import PyMicropartition as _PyMicropartition
+from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class Micropartition:
-    _micropartition: _PyMicropartition
+    _micropartition: _PyMicroPartition
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Micropartition via __init__ ")
@@ -60,40 +60,40 @@ class Micropartition:
 
     @staticmethod
     def empty(schema: Schema | None = None) -> Micropartition:
-        pyt = _PyMicropartition.empty(None) if schema is None else _PyMicropartition.empty(schema._schema)
+        pyt = _PyMicroPartition.empty(None) if schema is None else _PyMicroPartition.empty(schema._schema)
         return Micropartition._from_pymicropartition(pyt)
 
     @staticmethod
-    def _from_pymicropartition(pym: _PyMicropartition) -> Micropartition:
-        assert isinstance(pym, _PyMicropartition)
+    def _from_pymicropartition(pym: _PyMicroPartition) -> Micropartition:
+        assert isinstance(pym, _PyMicroPartition)
         tab = Micropartition.__new__(Micropartition)
         tab._micropartition = pym
         return tab
 
     @staticmethod
-    def from_tables(tables: list[Table]) -> Micropartition:
-        return _PyMicropartition.from_tables([t._table for t in tables])
+    def _from_tables(tables: list[Table]) -> Micropartition:
+        return _PyMicroPartition.from_tables([t._table for t in tables])
 
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> Micropartition:
         table = Table.from_arrow(arrow_table)
-        return Micropartition.from_tables([table])
+        return Micropartition._from_tables([table])
 
     @staticmethod
     def from_arrow_record_batches(rbs: list[pa.RecordBatch], arrow_schema: pa.Schema) -> Micropartition:
         schema = Schema._from_field_name_and_types([(f.name, DataType.from_arrow_type(f.type)) for f in arrow_schema])
-        pyt = _PyMicropartition.from_arrow_record_batches(rbs, schema._schema)
+        pyt = _PyMicroPartition.from_arrow_record_batches(rbs, schema._schema)
         return Micropartition._from_pymicropartition(pyt)
 
     @staticmethod
     def from_pandas(pd_df: pd.DataFrame) -> Micropartition:
         table = Table.from_pandas(pd_df)
-        return Micropartition.from_tables([table])
+        return Micropartition._from_tables([table])
 
     @staticmethod
     def from_pydict(data: dict) -> Micropartition:
         table = Table.from_pydict(data)
-        return Micropartition.from_tables([table])
+        return Micropartition._from_tables([table])
 
     @classmethod
     def concat(cls, to_merge: list[Micropartition]) -> Micropartition:
@@ -102,7 +102,7 @@ class Micropartition:
             if not isinstance(t, Micropartition):
                 raise TypeError(f"Expected a Micropartition for concat, got {type(t)}")
             micropartitions.append(t._micropartition)
-        return Micropartition._from_pymicropartition(_PyMicropartition.concat(micropartitions))
+        return Micropartition._from_pymicropartition(_PyMicroPartition.concat(micropartitions))
 
     def slice(self, start: int, end: int) -> Micropartition:
         if not isinstance(start, int):
@@ -302,7 +302,7 @@ class Micropartition:
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
     ) -> Micropartition:
         return Micropartition._from_pymicropartition(
-            _PyMicropartition.read_parquet(
+            _PyMicroPartition.read_parquet(
                 path,
                 columns,
                 start_offset,

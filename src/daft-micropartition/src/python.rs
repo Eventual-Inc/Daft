@@ -58,61 +58,21 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
-    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Ok(Self::empty(match schema {
-            Some(s) => Some(s.schema.into()),
-            None => None,
-        })?
-        .into())
+    pub fn from_tables(record_batches: Vec<PyTable>) -> PyResult<Self> {
+        todo!("[MICROPARTITION_INT]")
     }
 
     #[staticmethod]
-    pub fn from_arrow(arrow_table: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
+    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
+        Self::empty(match schema {
+            Some(s) => Some(s.schema.into()),
+            None => None,
+        })
     }
 
     #[staticmethod]
     pub fn from_arrow_record_batches(record_batches: PyObject) -> PyResult<Self> {
         // this can probably be smarter since we don't have to concat anymore
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    #[staticmethod]
-    pub fn from_pandas(pd_df: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    #[staticmethod]
-    pub fn from_pydict(data: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    // Exporting Methods
-
-    pub fn to_arrow(
-        &self,
-        cast_tensors_to_ray_tensor_dtype: Option<bool>,
-        convert_large_arrays: Option<bool>,
-    ) -> PyResult<PyObject> {
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pydict(&self) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
-
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pylist(&self) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pandas(&self, cast_tensors_to_ray_tensor_dtype: Option<bool>) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
         todo!("[MICROPARTITION_INT]")
     }
 
@@ -283,6 +243,7 @@ impl PyMicroPartition {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[staticmethod]
     pub fn read_parquet(
         py: Python,
