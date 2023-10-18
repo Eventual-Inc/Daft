@@ -445,7 +445,6 @@ class Scheduler:
                 "plan_scheduler": plan_scheduler,
                 "psets": psets,
                 "result_uuid": result_uuid,
-                "results_buffer_size": results_buffer_size,
             },
         )
         t.start()
@@ -456,7 +455,6 @@ class Scheduler:
         plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
-        results_buffer_size: int | None = None,
     ) -> None:
         # Get executable tasks from plan scheduler.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
