@@ -52,7 +52,7 @@ impl PyMicroPartition {
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {
-        todo!("[MICROPARTITION_INT]")
+        todo!("[MICROPARTITION_INT] size_bytes")
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
@@ -64,7 +64,7 @@ impl PyMicroPartition {
     }
 
     pub fn __repr_html__(&self) -> PyResult<String> {
-        todo!("[MICROPARTITION_INT]")
+        todo!("[MICROPARTITION_INT] __repr_html__")
     }
 
     // Creation Methods
@@ -99,7 +99,7 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn from_arrow_record_batches(record_batches: PyObject) -> PyResult<Self> {
         // this can probably be smarter since we don't have to concat anymore
-        todo!("[MICROPARTITION_INT]")
+        todo!("[MICROPARTITION_INT] from_arrow_record_batches")
     }
 
     // Export Methods
@@ -127,7 +127,7 @@ impl PyMicroPartition {
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        todo!("[MICROPARTITION_INT] cast_to_schema")
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
