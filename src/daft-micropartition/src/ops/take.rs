@@ -11,48 +11,55 @@ use crate::{
 impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let tables = self.concat_or_get()?;
-        if let [single] = tables.as_slice() {
-            let taken = single.take(idx)?;
-            Ok(Self::new(
-                self.schema.clone(),
-                TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata { length: idx.len() },
-                self.statistics.clone(),
-            ))
-        } else {
-            unreachable!()
+        match tables.as_slice() {
+            [] => Ok(Self::empty(Some(self.schema.clone()))),
+            [single] => {
+                let taken = single.take(idx)?;
+                Ok(Self::new(
+                    self.schema.clone(),
+                    TableState::Loaded(Arc::new(vec![taken])),
+                    TableMetadata { length: idx.len() },
+                    self.statistics.clone(),
+                ))
+            }
+            _ => unreachable!(),
         }
     }
 
     pub fn sample(&self, num: usize) -> DaftResult<Self> {
         let tables = self.concat_or_get()?;
-        if let [single] = tables.as_slice() {
-            let taken = single.sample(num)?;
-            let taken_len = taken.len();
-            Ok(Self::new(
-                self.schema.clone(),
-                TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata { length: taken_len },
-                self.statistics.clone(),
-            ))
-        } else {
-            unreachable!()
+
+        match tables.as_slice() {
+            [] => Ok(Self::empty(Some(self.schema.clone()))),
+            [single] => {
+                let taken = single.sample(num)?;
+                let taken_len = taken.len();
+                Ok(Self::new(
+                    self.schema.clone(),
+                    TableState::Loaded(Arc::new(vec![taken])),
+                    TableMetadata { length: taken_len },
+                    self.statistics.clone(),
+                ))
+            }
+            _ => unreachable!(),
         }
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
         let tables = self.concat_or_get()?;
-        if let [single] = tables.as_slice() {
-            let taken = single.quantiles(num)?;
-            let taken_len = taken.len();
-            Ok(Self::new(
-                self.schema.clone(),
-                TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata { length: taken_len },
-                self.statistics.clone(),
-            ))
-        } else {
-            unreachable!()
+        match tables.as_slice() {
+            [] => Ok(Self::empty(Some(self.schema.clone()))),
+            [single] => {
+                let taken = single.quantiles(num)?;
+                let taken_len = taken.len();
+                Ok(Self::new(
+                    self.schema.clone(),
+                    TableState::Loaded(Arc::new(vec![taken])),
+                    TableMetadata { length: taken_len },
+                    self.statistics.clone(),
+                ))
+            }
+            _ => unreachable!(),
         }
     }
 }
