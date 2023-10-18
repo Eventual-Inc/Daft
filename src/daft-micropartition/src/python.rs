@@ -59,7 +59,11 @@ impl PyMicroPartition {
     // Creation Methods
     #[staticmethod]
     pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        Ok(Self::empty(match schema {
+            Some(s) => Some(s.schema.into()),
+            None => None,
+        })?
+        .into())
     }
 
     #[staticmethod]

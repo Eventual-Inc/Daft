@@ -12,12 +12,7 @@ use crate::{
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
         if predicate.is_empty() {
-            return Ok(Self::new(
-                self.schema.clone(),
-                TableState::Loaded(vec![].into()),
-                TableMetadata { length: 0 },
-                None,
-            ));
+            return Ok(Self::empty(Some(self.schema.clone())));
         }
         if let Some(statistics) = &self.statistics {
             let folded_expr = predicate
@@ -29,12 +24,7 @@ impl MicroPartition {
             let tv = eval_result.to_truth_value();
 
             if matches!(tv, TruthValue::False) {
-                return Ok(Self::new(
-                    self.schema.clone(),
-                    TableState::Loaded(vec![].into()),
-                    TableMetadata { length: 0 },
-                    None,
-                ));
+                return Ok(Self::empty(Some(self.schema.clone())));
             }
         }
         // TODO figure out defered IOStats

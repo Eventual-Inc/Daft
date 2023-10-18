@@ -74,9 +74,11 @@ impl MicroPartition {
         }
     }
 
-    pub fn empty() -> Self {
+    pub fn empty(schema: Option<SchemaRef>) -> Self {
+        let schema = schema.unwrap_or(Schema::empty().into());
+
         Self::new(
-            Schema::empty().into(),
+            schema,
             TableState::Loaded(Arc::new(vec![])),
             TableMetadata { length: 0 },
             None,
