@@ -76,6 +76,7 @@ members = [
 
 [workspace.dependencies]
 async-compat = "0.2.1"
+async-compression = {version = "0.4.4", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.4.0"
 futures = "0.3.28"
@@ -92,11 +93,12 @@ snafu = "0.7.4"
 tokio = {version = "1.32.0", features = ["net", "time", "bytes", "process", "signal", "macros", "rt", "rt-multi-thread"]}
 tokio-stream = {version = "0.1.14", features = ["fs"]}
 tokio-util = "0.7.8"
+url = "2.4.0"
 
 [workspace.dependencies.arrow2]
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "23b85eee13c9986b85d6d1f2c7dcd2d8d8ea72e0"
+rev = "0a6f79e0da7e32cc30381f4cc8cf5a8483909f78"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"

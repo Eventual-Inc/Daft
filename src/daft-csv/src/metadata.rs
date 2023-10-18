@@ -6,9 +6,13 @@ use common_error::DaftResult;
 use csv_async::ByteRecord;
 use daft_core::schema::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
-use futures::AsyncRead;
-use tokio::fs::File;
+use tokio::{
+    fs::File,
+    io::{AsyncBufRead, AsyncRead, BufReader},
+};
 use tokio_util::io::StreamReader;
+
+use crate::compression::CompressionCodec;
 
 pub fn read_csv_schema(
     uri: &str,
@@ -42,13 +46,15 @@ pub(crate) async fn read_csv_schema_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(Schema, usize)> {
+    let compression_codec = CompressionCodec::from_uri(uri);
     match io_client
         .single_url_get(uri.to_string(), None, io_stats)
         .await?
     {
         GetResult::File(file) => {
-            read_csv_schema_from_reader(
-                File::open(file.path).await?.compat(),
+            read_csv_schema_from_compressed_reader(
+                BufReader::new(File::open(file.path).await?),
+                compression_codec,
                 has_header,
                 delimiter,
                 max_bytes,
@@ -56,9 +62,9 @@ pub(crate) async fn read_csv_schema_single(
             .await
         }
         GetResult::Stream(stream, size, _) => {
-            let stream_reader = StreamReader::new(stream).compat();
-            read_csv_schema_from_reader(
-                stream_reader,
+            read_csv_schema_from_compressed_reader(
+                StreamReader::new(stream),
+                compression_codec,
                 has_header,
                 delimiter,
                 // Truncate max_bytes to size if both are set.
@@ -69,7 +75,33 @@ pub(crate) async fn read_csv_schema_single(
     }
 }
 
-async fn read_csv_schema_from_reader<R>(
+async fn read_csv_schema_from_compressed_reader<R>(
+    reader: R,
+    compression_codec: Option<CompressionCodec>,
+    has_header: bool,
+    delimiter: Option<u8>,
+    max_bytes: Option<usize>,
+) -> DaftResult<(Schema, usize)>
+where
+    R: AsyncBufRead + Unpin + Send + 'static,
+{
+    match compression_codec {
+        Some(compression) => {
+            read_csv_schema_from_uncompressed_reader(
+                compression.to_decoder(reader),
+                has_header,
+                delimiter,
+                max_bytes,
+            )
+            .await
+        }
+        None => {
+            read_csv_schema_from_uncompressed_reader(reader, has_header, delimiter, max_bytes).await
+        }
+    }
+}
+
+async fn read_csv_schema_from_uncompressed_reader<R>(
     reader: R,
     has_header: bool,
     delimiter: Option<u8>,
@@ -96,7 +128,7 @@ where
         .has_headers(has_header)
         .delimiter(delimiter.unwrap_or(b','))
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
-        .create_reader(reader);
+        .create_reader(reader.compat());
     let (fields, mean_sampled_row_size) =
         infer_schema(&mut reader, None, max_bytes, has_header, &infer).await?;
     Ok((fields.into(), mean_sampled_row_size))
@@ -110,7 +142,7 @@ pub async fn infer_schema<R, F>(
     infer: &F,
 ) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, usize)>
 where
-    R: AsyncRead + Unpin + Send,
+    R: futures::AsyncRead + Unpin + Send,
     F: Fn(&[u8]) -> arrow2::datatypes::DataType,
 {
     let mut record = ByteRecord::new();
