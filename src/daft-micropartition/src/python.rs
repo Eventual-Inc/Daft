@@ -184,7 +184,7 @@ impl PyMicroPartition {
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        py.allow_threads(|| Ok(self.inner.quantiles(num as usize)?.into()))
     }
 
     pub fn partition_by_hash(
