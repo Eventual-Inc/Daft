@@ -11,6 +11,55 @@ from daft.table import MicroPartition, Table
 from tests.table import daft_int_types, daft_numeric_types
 
 
+def test_micropartitions_take_empty() -> None:
+    mp = MicroPartition.from_pydict({"a": []})
+    assert len(mp) == 0
+
+    indices = Series.from_arrow(pa.array([], type=pa.int64()))
+    taken = mp.take(indices)
+    assert len(taken) == 0
+    assert taken.column_names() == ["a"]
+    assert taken.to_pydict() == {"a": []}
+
+    indices = Series.from_arrow(pa.array([1], type=pa.int64()))
+    taken = mp.take(indices)
+    assert len(taken) == 1
+    assert taken.column_names() == ["a"]
+    assert taken.to_pydict() == {"a": [None]}
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        MicroPartition.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
+        MicroPartition.concat(
+            [MicroPartition.from_pydict({"a": [1]}), MicroPartition.from_pydict({"a": [2, 3, 4]})]
+        ),  # 2 tables
+    ],
+)
+def test_micropartitions_take(mp: MicroPartition) -> None:
+    assert mp.column_names() == ["a"]
+    assert len(mp) == 4
+
+    indices = Series.from_pylist([0, 1])
+    taken = mp.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a"]
+    assert taken.to_pydict() == {"a": [1, 2]}
+
+    indices = Series.from_pylist([3, 2])
+    taken = mp.take(indices)
+    assert len(taken) == 2
+    assert taken.column_names() == ["a"]
+    assert taken.to_pydict() == {"a": [4, 3]}
+
+    indices = Series.from_pylist([3, 2, 2, 2, 3])
+    taken = mp.take(indices)
+    assert len(taken) == 5
+    assert taken.column_names() == ["a"]
+    assert taken.to_pydict() == {"a": [4, 3, 3, 3, 4]}
+
+
 @pytest.mark.parametrize("data_dtype, idx_dtype", itertools.product(daft_numeric_types, daft_int_types))
 @pytest.mark.parametrize("TableCls", [Table, MicroPartition])
 def test_table_take_numeric(TableCls, data_dtype, idx_dtype) -> None:
