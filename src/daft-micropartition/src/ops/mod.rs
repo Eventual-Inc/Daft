@@ -1,3 +1,4 @@
+mod agg;
 mod concat;
 mod eval_expressions;
 mod filter;

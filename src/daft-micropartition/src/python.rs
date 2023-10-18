@@ -182,7 +182,15 @@ impl PyMicroPartition {
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        let converted_to_agg: Vec<daft_dsl::Expr> = to_agg.into_iter().map(|e| e.into()).collect();
+        let converted_group_by: Vec<daft_dsl::Expr> =
+            group_by.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .agg(converted_to_agg.as_slice(), converted_group_by.as_slice())?
+                .into())
+        })
     }
 
     pub fn join(
