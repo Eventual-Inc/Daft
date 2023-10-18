@@ -213,7 +213,7 @@ impl Display for MicroPartition {
             TableState::Loaded(tables) => {
                 if tables.len() == 0 {
                     writeln!(f, "{}", self.schema)?;
-                } 
+                }
                 writeln!(f, "{}", guard)?;
             }
         };

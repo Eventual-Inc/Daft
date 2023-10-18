@@ -198,7 +198,10 @@ impl PyMicroPartition {
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        let converted_to_explode: Vec<daft_dsl::Expr> =
+            to_explode.into_iter().map(|e| e.expr).collect();
+
+        py.allow_threads(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {

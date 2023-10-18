@@ -6,13 +6,14 @@ use daft_dsl::Expr;
 use snafu::ResultExt;
 
 use crate::{
-    column_stats::TruthValue,
+    column_stats::{ColumnRangeStatistics, TruthValue},
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
+    table_stats::TableStatistics,
     DaftCoreComputeSnafu,
 };
 
-fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<SchemaRef> {
+fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs
         .iter()
         .map(|e| e.to_field(schema).context(DaftCoreComputeSnafu))
@@ -28,7 +29,7 @@ fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<SchemaRef> {
         }
         seen.insert(name.clone());
     }
-    Ok(Schema::new(fields)?.into())
+    Ok(Schema::new(fields)?)
 }
 
 impl MicroPartition {
@@ -43,13 +44,54 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .and_then(|s| Some(s.eval_expression_list(exprs, expected_schema.as_ref())))
+            .and_then(|s| Some(s.eval_expression_list(exprs, &expected_schema)))
             .transpose()?;
 
         Ok(MicroPartition::new(
-            expected_schema,
+            expected_schema.into(),
             TableState::Loaded(Arc::new(evaluated_tables)),
             TableMetadata { length: self.len() },
+            eval_stats,
+        ))
+    }
+
+    pub fn explode(&self, exprs: &[Expr]) -> DaftResult<Self> {
+        let tables = self.tables_or_read(None)?;
+        let evaluated_tables = tables
+            .iter()
+            .map(|t| t.explode(exprs))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let expected_new_columns = infer_schema(exprs, &self.schema)?;
+        let eval_stats = if let Some(stats) = &self.statistics {
+            let mut new_stats = stats.columns.clone();
+            for (name, _) in expected_new_columns.fields.iter() {
+                if let Some(v) = new_stats.get_mut(name) {
+                    *v = ColumnRangeStatistics::Missing;
+                } else {
+                    new_stats.insert(name.to_string(), ColumnRangeStatistics::Missing);
+                }
+            }
+            Some(TableStatistics { columns: new_stats })
+        } else {
+            None
+        };
+
+        let mut expected_schema =
+            Schema::new(self.schema.fields.values().cloned().collect::<Vec<_>>())?;
+        for (name, field) in expected_new_columns.fields.into_iter() {
+            if let Some(v) = expected_schema.fields.get_mut(&name) {
+                *v = field;
+            } else {
+                expected_schema.fields.insert(name.to_string(), field);
+            }
+        }
+
+        let new_len = evaluated_tables.iter().map(|t| t.len()).sum();
+
+        Ok(MicroPartition::new(
+            Arc::new(expected_schema),
+            TableState::Loaded(Arc::new(evaluated_tables)),
+            TableMetadata { length: new_len },
             eval_stats,
         ))
     }
