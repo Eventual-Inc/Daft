@@ -212,8 +212,8 @@ impl Display for MicroPartition {
             }
             TableState::Loaded(tables) => {
                 if tables.len() == 0 {
-                    writeln!(f, "{}\nNo Tables Loaded", self.schema)?;
-                }
+                    writeln!(f, "{}", self.schema)?;
+                } 
                 writeln!(f, "{}", guard)?;
             }
         };
