@@ -131,7 +131,7 @@ impl PyMicroPartition {
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        py.allow_threads(|| Ok(self.inner.take(&idx.series)?.into()))
     }
 
     pub fn filter(&mut self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
@@ -178,7 +178,7 @@ impl PyMicroPartition {
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
         py.allow_threads(|| Ok(self.inner.head(num as usize)?.into()))
     }
-    
+
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
         todo!("[MICROPARTITION_INT]")
     }
@@ -186,6 +186,7 @@ impl PyMicroPartition {
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
         todo!("[MICROPARTITION_INT]")
     }
+
     pub fn partition_by_hash(
         &self,
         py: Python,

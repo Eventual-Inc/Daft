@@ -48,7 +48,6 @@ impl MicroPartition {
         })
     }
 
-
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         self.slice(0, num)
     }
