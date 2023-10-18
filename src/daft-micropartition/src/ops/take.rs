@@ -19,7 +19,22 @@ impl MicroPartition {
             Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(Arc::new(vec![taken])),
-                self.metadata.clone(),
+                TableMetadata { length: idx.len() },
+                self.statistics.clone(),
+            ))
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn sample(&self, num: usize) -> DaftResult<Self> {
+        let tables = self.concat_or_get()?;
+        if let [single] = tables.as_slice() {
+            let taken = single.sample(num)?;
+            Ok(Self::new(
+                self.schema.clone(),
+                TableState::Loaded(Arc::new(vec![taken])),
+                TableMetadata { length: num },
                 self.statistics.clone(),
             ))
         } else {

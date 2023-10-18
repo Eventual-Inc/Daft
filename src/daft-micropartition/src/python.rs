@@ -180,7 +180,7 @@ impl PyMicroPartition {
     }
 
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        py.allow_threads(|| Ok(self.inner.sample(num as usize)?.into()))
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
