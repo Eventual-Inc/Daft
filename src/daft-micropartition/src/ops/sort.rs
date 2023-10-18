@@ -3,14 +3,8 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::Series;
 use daft_dsl::Expr;
-use snafu::ResultExt;
 
-use crate::{
-    column_stats::TruthValue,
-    micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
-    DaftCoreComputeSnafu,
-};
+use crate::micropartition::{MicroPartition, TableState};
 
 impl MicroPartition {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
