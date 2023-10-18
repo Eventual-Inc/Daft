@@ -9,7 +9,7 @@ from daft.daft import JoinType
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.series import Series
-from daft.table import Table
+from daft.table import MicroPartition, Table
 
 daft_int_types = [
     DataType.int8(),
@@ -40,12 +40,13 @@ daft_string_types = [DataType.string()]
         ],
     ),
 )
-def test_table_join_single_column(dtype, data) -> None:
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column(TableCls, dtype, data) -> None:
     l, r, expected_pairs = data
-    left_table = Table.from_pydict({"x": l, "x_ind": list(range(len(l)))}).eval_expression_list(
+    left_table = TableCls.from_pydict({"x": l, "x_ind": list(range(len(l)))}).eval_expression_list(
         [col("x").cast(dtype), col("x_ind")]
     )
-    right_table = Table.from_pydict({"y": r, "y_ind": list(range(len(r)))})
+    right_table = TableCls.from_pydict({"y": r, "y_ind": list(range(len(r)))})
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")], how=JoinType.Inner)
 
     assert result_table.column_names() == ["x", "x_ind", "y", "y_ind"]
@@ -76,9 +77,10 @@ def test_table_join_single_column(dtype, data) -> None:
     assert result_table.get_column("y").to_pylist() == result_r
 
 
-def test_table_join_mismatch_column() -> None:
-    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
-    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_mismatch_column(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
+    right_table = TableCls.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
 
     with pytest.raises(ValueError, match="Mismatch of number of join keys"):
         left_table.join(right_table, left_on=[col("x"), col("y")], right_on=[col("a")])
@@ -98,12 +100,13 @@ def test_table_join_mismatch_column() -> None:
         {"x": ["banana", "apple"], "y": [3, 4]},
     ],
 )
-def test_table_join_multicolumn_empty_result(left, right) -> None:
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_multicolumn_empty_result(TableCls, left, right) -> None:
     """Various multicol joins that should all produce an empty result."""
-    left_table = Table.from_pydict(left).eval_expression_list(
+    left_table = TableCls.from_pydict(left).eval_expression_list(
         [col("a").cast(DataType.string()), col("b").cast(DataType.int32())]
     )
-    right_table = Table.from_pydict(right).eval_expression_list(
+    right_table = TableCls.from_pydict(right).eval_expression_list(
         [col("x").cast(DataType.string()), col("y").cast(DataType.int32())]
     )
 
@@ -111,20 +114,21 @@ def test_table_join_multicolumn_empty_result(left, right) -> None:
     assert result.to_pydict() == {"a": [], "b": [], "x": [], "y": []}
 
 
-def test_table_join_multicolumn_nocross() -> None:
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_multicolumn_nocross(TableCls) -> None:
     """A multicol join that should produce two rows and no cross product results.
 
     Input has duplicate join values and overlapping single-column values,
     but there should only be two correct matches, both not cross.
     """
-    left_table = Table.from_pydict(
+    left_table = TableCls.from_pydict(
         {
             "a": ["apple", "apple", "banana", "banana", "carrot"],
             "b": [1, 2, 2, 2, 3],
             "c": [1, 2, 3, 4, 5],
         }
     )
-    right_table = Table.from_pydict(
+    right_table = TableCls.from_pydict(
         {
             "x": ["banana", "carrot", "apple", "banana", "apple", "durian"],
             "y": [1, 3, 2, 1, 3, 6],
@@ -143,17 +147,18 @@ def test_table_join_multicolumn_nocross() -> None:
     )
 
 
-def test_table_join_multicolumn_cross() -> None:
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_multicolumn_cross(TableCls) -> None:
     """A multicol join that should produce a cross product and a non-cross product."""
 
-    left_table = Table.from_pydict(
+    left_table = TableCls.from_pydict(
         {
             "a": ["apple", "apple", "banana", "banana", "banana"],
             "b": [1, 0, 1, 1, 1],
             "c": [1, 2, 3, 4, 5],
         }
     )
-    right_table = Table.from_pydict(
+    right_table = TableCls.from_pydict(
         {
             "x": ["apple", "apple", "banana", "banana", "banana"],
             "y": [1, 0, 1, 1, 0],
@@ -178,15 +183,16 @@ def test_table_join_multicolumn_cross() -> None:
     )
 
 
-def test_table_join_multicolumn_all_nulls() -> None:
-    left_table = Table.from_pydict(
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_multicolumn_all_nulls(TableCls) -> None:
+    left_table = TableCls.from_pydict(
         {
             "a": Series.from_pylist([None, None, None]).cast(DataType.int64()),
             "b": Series.from_pylist([None, None, None]).cast(DataType.string()),
             "c": [1, 2, 3],
         }
     )
-    right_table = Table.from_pydict(
+    right_table = TableCls.from_pydict(
         {
             "x": Series.from_pylist([None, None, None]).cast(DataType.int64()),
             "y": Series.from_pylist([None, None, None]).cast(DataType.string()),
@@ -198,17 +204,19 @@ def test_table_join_multicolumn_all_nulls() -> None:
     assert set(utils.freeze(utils.pydict_to_rows(result.to_pydict()))) == set(utils.freeze([]))
 
 
-def test_table_join_no_columns() -> None:
-    left_table = Table.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
-    right_table = Table.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_no_columns(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [1, 2, 3, 4], "y": [2, 3, 4, 5]})
+    right_table = TableCls.from_pydict({"a": [1, 2, 3, 4], "b": [2, 3, 4, 5]})
 
     with pytest.raises(ValueError, match="No columns were passed in to join on"):
         left_table.join(right_table, left_on=[], right_on=[])
 
 
-def test_table_join_single_column_name_conflicts() -> None:
-    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
-    right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [6, 7, 8, 9]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column_name_conflicts(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
+    right_table = TableCls.from_pydict({"x": [3, 2, 1, 0], "y": [6, 7, 8, 9]})
 
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]
@@ -218,9 +226,10 @@ def test_table_join_single_column_name_conflicts() -> None:
     assert result_sorted.get_column("right.y").to_pylist() == [9, 8, 7, 6]
 
 
-def test_table_join_single_column_name_conflicts_different_named_join() -> None:
-    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
-    right_table = Table.from_pydict({"y": [3, 2, 1, 0], "x": [6, 7, 8, 9]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column_name_conflicts_different_named_join(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5]})
+    right_table = TableCls.from_pydict({"y": [3, 2, 1, 0], "x": [6, 7, 8, 9]})
 
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("y")])
 
@@ -233,9 +242,10 @@ def test_table_join_single_column_name_conflicts_different_named_join() -> None:
     assert result_sorted.get_column("right.x").to_pylist() == [9, 8, 7, 6]
 
 
-def test_table_join_single_column_name_multiple_conflicts() -> None:
-    left_table = Table.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
-    right_table = Table.from_pydict({"x": [3, 2, 1, 0], "y": [10, 11, 12, 13]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column_name_multiple_conflicts(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [0, 1, 2, 3], "y": [2, 3, 4, 5], "right.y": [6, 7, 8, 9]})
+    right_table = TableCls.from_pydict({"x": [3, 2, 1, 0], "y": [10, 11, 12, 13]})
 
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y", "right.right.y"]
@@ -246,9 +256,10 @@ def test_table_join_single_column_name_multiple_conflicts() -> None:
     assert result_sorted.get_column("right.right.y").to_pylist() == [13, 12, 11, 10]
 
 
-def test_table_join_single_column_name_boolean() -> None:
-    left_table = Table.from_pydict({"x": [False, True, None], "y": [0, 1, 2]})
-    right_table = Table.from_pydict({"x": [None, True, False, None], "y": [0, 1, 2, 3]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column_name_boolean(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [False, True, None], "y": [0, 1, 2]})
+    right_table = TableCls.from_pydict({"x": [None, True, False, None], "y": [0, 1, 2, 3]})
 
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]
@@ -257,9 +268,10 @@ def test_table_join_single_column_name_boolean() -> None:
     assert result_sorted.get_column("right.y").to_pylist() == [2, 1]
 
 
-def test_table_join_single_column_name_null() -> None:
-    left_table = Table.from_pydict({"x": [None, None, None], "y": [0, 1, 2]})
-    right_table = Table.from_pydict({"x": [None, None, None, None], "y": [0, 1, 2, 3]})
+@pytest.mark.parametrize("TableCls", [Table, MicroPartition])
+def test_table_join_single_column_name_null(TableCls) -> None:
+    left_table = TableCls.from_pydict({"x": [None, None, None], "y": [0, 1, 2]})
+    right_table = TableCls.from_pydict({"x": [None, None, None, None], "y": [0, 1, 2, 3]})
 
     result_table = left_table.join(right_table, left_on=[col("x")], right_on=[col("x")])
     assert result_table.column_names() == ["x", "y", "right.y"]

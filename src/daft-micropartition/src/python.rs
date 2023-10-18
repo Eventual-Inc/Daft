@@ -3,7 +3,10 @@
 use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
-use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
+use daft_core::{
+    python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
+    Series,
+};
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -15,7 +18,11 @@ use pyo3::{
     Python,
 };
 
-use crate::micropartition::MicroPartition;
+use crate::{
+    micropartition::{MicroPartition, TableState},
+    table_metadata::TableMetadata,
+    table_stats::TableStatistics,
+};
 
 #[pyclass(module = "daft.daft")]
 #[derive(Clone)]
@@ -35,9 +42,13 @@ impl PyMicroPartition {
         Ok(self.inner.column_names())
     }
 
-    pub fn get_column(&self) -> PyResult<PySeries> {
-        /// We can prob skip this one since we only use it for tests
-        todo!("[MICROPARTITION_INT]")
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
+        let tables = self.inner.tables_or_read(None)?;
+        let columns = tables
+            .iter()
+            .map(|t| t.get_column(name))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Series::concat(columns.as_slice())?.into())
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {
@@ -58,18 +69,31 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
-    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Ok(Self::empty(match schema {
-            Some(s) => Some(s.schema.into()),
-            None => None,
-        })?
-        .into())
+    pub fn from_tables(tables: Vec<PyTable>) -> PyResult<Self> {
+        match &tables[..] {
+            [] => Ok(MicroPartition::empty(None).into()),
+            [first, ..] => {
+                let tables = Arc::new(tables.iter().map(|t| t.table.clone()).collect::<Vec<_>>());
+                Ok(MicroPartition::new(
+                    first.table.schema.clone(),
+                    TableState::Loaded(tables.clone()),
+                    TableMetadata {
+                        length: tables.iter().map(|t| t.len()).sum(),
+                    },
+                    // Don't compute statistics if data is already materialized
+                    None,
+                )
+                .into())
+            }
+        }
     }
 
     #[staticmethod]
-    pub fn from_arrow(arrow_table: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
+    pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
+        Self::empty(match schema {
+            Some(s) => Some(s.schema.into()),
+            None => None,
+        })
     }
 
     #[staticmethod]
@@ -78,42 +102,16 @@ impl PyMicroPartition {
         todo!("[MICROPARTITION_INT]")
     }
 
-    #[staticmethod]
-    pub fn from_pandas(pd_df: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    #[staticmethod]
-    pub fn from_pydict(data: PyObject) -> PyResult<Self> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    // Exporting Methods
-
-    pub fn to_arrow(
-        &self,
-        cast_tensors_to_ray_tensor_dtype: Option<bool>,
-        convert_large_arrays: Option<bool>,
-    ) -> PyResult<PyObject> {
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pydict(&self) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
-
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pylist(&self) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
-    }
-
-    pub fn to_pandas(&self, cast_tensors_to_ray_tensor_dtype: Option<bool>) -> PyResult<PyObject> {
-        // maybe should be in python side: micropartition.py
-        todo!("[MICROPARTITION_INT]")
+    // Export Methods
+    pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
+        let concatted = self.inner.concat_or_get()?;
+        match &concatted.as_ref()[..] {
+            [] => PyTable::empty(Some(self.schema()?)),
+            [table] => Ok(PyTable {
+                table: table.clone(),
+            }),
+            [..] => unreachable!("concat_or_get should return one or none"),
+        }
     }
 
     // Compute Methods
@@ -205,15 +203,36 @@ impl PyMicroPartition {
     }
 
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.head(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not head MicroPartition with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.head(num as usize)?.into())
+        })
     }
 
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.sample(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not sample table with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.sample(num as usize)?.into())
+        })
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.quantiles(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not fetch quantile from table with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.quantiles(num as usize)?.into())
+        })
     }
 
     pub fn partition_by_hash(
@@ -283,6 +302,7 @@ impl PyMicroPartition {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[staticmethod]
     pub fn read_parquet(
         py: Python,
