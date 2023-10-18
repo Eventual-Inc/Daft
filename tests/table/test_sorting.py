@@ -12,6 +12,27 @@ from daft.table import Table
 from tests.table import daft_numeric_types, daft_string_types
 
 
+def test_micropartitions_sort_empty() -> None:
+    mp = Table.from_pydict({"a": []})
+    sorted_table = mp.sort([col("a")])
+    assert len(mp) == len(sorted_table) == 0
+    assert mp.schema() == sorted_table.schema()
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
+        Table.concat([Table.from_pydict({"a": [1]}), Table.from_pydict({"a": [3, 2, 4]})]),  # 2 tables
+    ],
+)
+def test_micropartitions_sort(mp) -> None:
+    sorted_table = mp.sort([col("a")])
+    assert len(mp) == len(sorted_table) == 4
+    assert mp.schema() == sorted_table.schema()
+    assert sorted_table.to_pydict()["a"] == sorted(mp.to_pydict()["a"])
+
+
 @pytest.mark.parametrize(
     "sort_dtype, value_dtype, first_col",
     itertools.product(daft_numeric_types + daft_string_types, daft_numeric_types + daft_string_types, [False, True]),
