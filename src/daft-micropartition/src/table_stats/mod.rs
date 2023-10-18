@@ -56,33 +56,17 @@ impl TableStatistics {
     pub(crate) fn eval_expression_list(
         &self,
         exprs: &[Expr],
-        schema: &Schema,
+        expected_schema: &Schema,
     ) -> crate::Result<Self> {
         let result_cols = exprs
             .iter()
             .map(|e| self.eval_expression(e))
             .collect::<crate::Result<Vec<_>>>()?;
 
-        let fields = exprs
-            .iter()
-            .map(|e| e.to_field(schema).context(DaftCoreComputeSnafu))
-            .collect::<crate::Result<Vec<_>>>()?;
-
-        let mut seen: HashSet<String> = HashSet::new();
-        for field in fields.iter() {
-            let name = &field.name;
-            if seen.contains(name) {
-                return Err(crate::Error::DuplicatedField {
-                    name: name.to_string(),
-                });
-            }
-            seen.insert(name.clone());
-        }
-
         let new_col_stats = result_cols
             .into_iter()
-            .zip(fields.into_iter())
-            .map(|(c, f)| (f.name, c))
+            .zip(expected_schema.fields.keys())
+            .map(|(c, f)| (f.clone(), c))
             .collect::<IndexMap<_, _>>();
 
         Ok(Self {
