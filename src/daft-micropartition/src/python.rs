@@ -192,7 +192,14 @@ impl PyMicroPartition {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
     ) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        let left_exprs: Vec<daft_dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
+        let right_exprs: Vec<daft_dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .join(&right.inner, left_exprs.as_slice(), right_exprs.as_slice())?
+                .into())
+        })
     }
 
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
