@@ -43,7 +43,7 @@ impl PyMicroPartition {
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        let tables = self.inner.tables_or_read(None)?;
+        let tables = self.inner.concat_or_get()?;
         let columns = tables
             .iter()
             .map(|t| t.get_column(name))
@@ -52,7 +52,7 @@ impl PyMicroPartition {
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {
-        todo!("[MICROPARTITION_INT] size_bytes")
+        Ok(self.inner.size_bytes()?)
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
