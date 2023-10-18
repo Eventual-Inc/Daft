@@ -49,13 +49,13 @@ impl MicroPartition {
             Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata { length: (num - 1).max(0)},
+                TableMetadata {
+                    length: (num - 1).max(0),
+                },
                 self.statistics.clone(),
             ))
         } else {
             unreachable!()
         }
     }
-
-
 }

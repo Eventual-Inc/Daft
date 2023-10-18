@@ -1,5 +1,6 @@
 mod concat;
 mod filter;
+mod partition;
 mod slice;
-mod take;
 mod sort;
+mod take;
