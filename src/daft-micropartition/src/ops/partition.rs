@@ -1,15 +1,12 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_table::Table;
-use snafu::ResultExt;
 
 use crate::{
-    column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
-    DaftCoreComputeSnafu,
 };
 
 fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {

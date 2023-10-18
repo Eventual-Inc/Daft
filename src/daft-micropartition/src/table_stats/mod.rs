@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display, ops::Not};
+use std::{fmt::Display, ops::Not};
 
 use daft_dsl::Expr;
 use daft_table::Table;

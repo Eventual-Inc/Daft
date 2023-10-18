@@ -1,14 +1,10 @@
 use std::sync::Mutex;
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::Expr;
-use snafu::ResultExt;
 
 use crate::{
-    column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
-    DaftCoreComputeSnafu,
 };
 
 impl MicroPartition {

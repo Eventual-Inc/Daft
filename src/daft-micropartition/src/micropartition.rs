@@ -1,11 +1,11 @@
-use std::fmt::{write, Display};
+use std::fmt::Display;
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::Expr;
+
 use daft_parquet::read::{read_parquet_metadata_bulk, ParquetSchemaInferenceOptions};
 use daft_table::Table;
 
@@ -14,8 +14,8 @@ use snafu::ResultExt;
 use crate::DaftCoreComputeSnafu;
 
 use crate::table_metadata::TableMetadata;
-use crate::{column_stats::TruthValue, table_stats::TableStatistics};
-use daft_io::{IOClient, IOConfig, IOStatsRef};
+use crate::table_stats::TableStatistics;
+use daft_io::{IOConfig, IOStatsRef};
 
 #[derive(Clone)]
 enum FormatParams {
@@ -126,7 +126,7 @@ impl MicroPartition {
         };
 
         if let TableState::Loaded(tables) = guard.deref() {
-            return Ok(tables.clone());
+            Ok(tables.clone())
         } else {
             unreachable!()
         }
@@ -147,7 +147,7 @@ impl MicroPartition {
         };
         if let TableState::Loaded(tables) = guard.deref() {
             assert_eq!(tables.len(), 1);
-            return Ok(tables.clone());
+            Ok(tables.clone())
         } else {
             unreachable!()
         }
