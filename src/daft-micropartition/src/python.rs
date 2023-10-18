@@ -145,7 +145,14 @@ impl PyMicroPartition {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+        let converted_exprs: Vec<daft_dsl::Expr> =
+            sort_keys.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .sort(converted_exprs.as_slice(), descending.as_slice())?
+                .into())
+        })
     }
 
     pub fn argsort(
@@ -154,7 +161,14 @@ impl PyMicroPartition {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<PySeries> {
-        todo!("[MICROPARTITION_INT]")
+        let converted_exprs: Vec<daft_dsl::Expr> =
+            sort_keys.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .into())
+        })
     }
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
