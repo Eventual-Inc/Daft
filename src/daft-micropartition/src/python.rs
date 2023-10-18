@@ -214,11 +214,25 @@ impl PyMicroPartition {
     }
 
     pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.sample(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not sample table with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.sample(num as usize)?.into())
+        })
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.inner.quantiles(num as usize)?.into()))
+        py.allow_threads(|| {
+            if num < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not fetch quantile from table with negative number: {num}"
+                )));
+            }
+            Ok(self.inner.quantiles(num as usize)?.into())
+        })
     }
 
     pub fn partition_by_hash(

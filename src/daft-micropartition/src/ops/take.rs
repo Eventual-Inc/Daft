@@ -31,7 +31,9 @@ impl MicroPartition {
             Ok(Self::new(
                 self.schema.clone(),
                 TableState::Loaded(Arc::new(vec![taken])),
-                TableMetadata { length: num },
+                TableMetadata {
+                    length: num.min(self.len()),
+                },
                 self.statistics.clone(),
             ))
         } else {

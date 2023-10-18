@@ -1,12 +1,12 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::{Schema, SchemaRef};
+use daft_core::schema::Schema;
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
 use crate::{
-    column_stats::{ColumnRangeStatistics, TruthValue},
+    column_stats::ColumnRangeStatistics,
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
     table_stats::TableStatistics,
@@ -29,7 +29,7 @@ fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
         }
         seen.insert(name.clone());
     }
-    Ok(Schema::new(fields)?)
+    Schema::new(fields)
 }
 
 impl MicroPartition {
@@ -44,7 +44,7 @@ impl MicroPartition {
         let eval_stats = self
             .statistics
             .as_ref()
-            .and_then(|s| Some(s.eval_expression_list(exprs, &expected_schema)))
+            .map(|s| s.eval_expression_list(exprs, &expected_schema))
             .transpose()?;
 
         Ok(MicroPartition::new(
