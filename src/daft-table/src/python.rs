@@ -130,7 +130,7 @@ impl PyTable {
     pub fn head(&self, py: Python, num: i64) -> PyResult<Self> {
         if num < 0 {
             return Err(PyValueError::new_err(format!(
-                "Can not head table with negative number: {num}"
+                "Can not head Table with negative number: {num}"
             )));
         }
         let num = num as usize;

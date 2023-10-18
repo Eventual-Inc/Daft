@@ -38,3 +38,11 @@ impl From<Error> for DaftError {
         }
     }
 }
+
+#[cfg(feature = "python")]
+impl From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
+    }
+}
