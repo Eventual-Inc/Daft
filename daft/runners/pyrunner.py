@@ -139,7 +139,12 @@ class PyRunner(Runner[Table]):
         pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
 
-    def run_iter(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
+    def run_iter(
+        self,
+        builder: LogicalPlanBuilder,
+        # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
+        results_buffer_size: int | None = None,
+    ) -> Iterator[Table]:
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
@@ -157,8 +162,8 @@ class PyRunner(Runner[Table]):
             partitions_gen = self._physical_plan_to_partitions(tasks)
             yield from partitions_gen
 
-    def run_iter_tables(self, builder: LogicalPlanBuilder) -> Iterator[Table]:
-        return self.run_iter(builder)
+    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
+        return self.run_iter(builder, results_buffer_size=results_buffer_size)
 
     def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
         inflight_tasks: dict[str, PartitionTask] = dict()

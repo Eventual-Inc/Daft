@@ -277,6 +277,7 @@ def local_limit(
 def global_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit_rows: int,
+    eager: bool,
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Return the first n rows from the `child_plan`."""
@@ -339,6 +340,12 @@ def global_limit(
         # (Optimization. If we are doing limit(0) and already have a partition executing to use for it, just wait.)
         if remaining_rows == 0 and len(materializations) > 0:
             logger.debug(f"global_limit blocked on completion of: {materializations[0]}")
+            yield None
+            continue
+
+        # If running in eager mode, only allow one task in flight
+        if eager and len(materializations) > 0:
+            logger.debug(f"global_limit blocking on eager execution of: {materializations[0]}")
             yield None
             continue
 

@@ -100,7 +100,7 @@ class LogicalPlanBuilder(ABC):
         pass
 
     @abstractmethod
-    def limit(self, num_rows: int) -> LogicalPlanBuilder:
+    def limit(self, num_rows: int, eager: bool) -> LogicalPlanBuilder:
         pass
 
     @abstractmethod

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use crate::{source_info::SourceInfo, LogicalPlan};
+use crate::{logical_ops::Limit as LogicalLimit, source_info::SourceInfo, LogicalPlan};
 
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
@@ -22,44 +22,48 @@ impl OptimizerRule for PushDownLimit {
     }
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        let limit = match plan.as_ref() {
-            LogicalPlan::Limit(limit) => limit,
-            _ => return Ok(Transformed::No(plan)),
-        };
-        let child_plan = limit.input.as_ref();
-        let new_plan = match child_plan {
-            LogicalPlan::Repartition(_) | LogicalPlan::Coalesce(_) | LogicalPlan::Project(_) => {
-                // Naive commuting with unary ops.
-                //
-                // Limit-UnaryOp -> UnaryOp-Limit
-                let new_limit = plan.with_new_children(&[child_plan.children()[0].clone()]);
-                child_plan.with_new_children(&[new_limit])
-            }
-            LogicalPlan::Source(source) => {
-                // Push limit into source.
-                //
-                // Limit-Source -> Source[with_limit]
-
-                // Limit pushdown is only supported for external sources.
-                if !matches!(source.source_info.as_ref(), SourceInfo::ExternalInfo(_)) {
-                    return Ok(Transformed::No(plan));
+        match plan.as_ref() {
+            LogicalPlan::Limit(LogicalLimit { input, limit, .. }) => {
+                let limit = *limit as usize;
+                match input.as_ref() {
+                    // Naive commuting with unary ops.
+                    //
+                    // Limit-UnaryOp -> UnaryOp-Limit
+                    LogicalPlan::Repartition(_)
+                    | LogicalPlan::Coalesce(_)
+                    | LogicalPlan::Project(_) => {
+                        let new_limit = plan.with_new_children(&[input.children()[0].clone()]);
+                        Ok(Transformed::Yes(input.with_new_children(&[new_limit])))
+                    }
+                    // Push limit into source as a "local" limit.
+                    //
+                    // Limit-Source -> Limit-Source[with_limit]
+                    LogicalPlan::Source(source) => {
+                        match (source.source_info.as_ref(), source.limit) {
+                            // Limit pushdown is not supported for in-memory sources.
+                            #[cfg(feature = "python")]
+                            (SourceInfo::InMemoryInfo(_), _) => Ok(Transformed::No(plan)),
+                            // Do not pushdown if Source node is already more limited than `limit`
+                            (SourceInfo::ExternalInfo(_), Some(existing_source_limit))
+                                if (existing_source_limit <= limit) =>
+                            {
+                                Ok(Transformed::No(plan))
+                            }
+                            // Pushdown limit into the Source node as a "local" limit
+                            (SourceInfo::ExternalInfo(_), _) => {
+                                let new_source =
+                                    LogicalPlan::Source(source.with_limit(Some(limit))).into();
+                                let limit_with_local_limited_source =
+                                    plan.with_new_children(&[new_source]);
+                                Ok(Transformed::Yes(limit_with_local_limited_source))
+                            }
+                        }
+                    }
+                    _ => Ok(Transformed::No(plan)),
                 }
-                let row_limit = limit.limit as usize;
-                // If source already has limit and the existing limit is less than the new limit, unlink the
-                // Limit node from the plan and leave the Source node untouched.
-                if let Some(existing_source_limit) = source.limit && existing_source_limit <= row_limit {
-                    // We directly clone the Limit child rather than creating a new Arc on child_plan to elide
-                    // an extra Arc.
-                    limit.input.clone()
-                } else {
-                    // Push limit into Source.
-                    let new_source: LogicalPlan = source.with_limit(Some(row_limit)).into();
-                    new_source.into()
-                }
             }
-            _ => return Ok(Transformed::No(plan)),
-        };
-        Ok(Transformed::Yes(new_plan))
+            _ => Ok(Transformed::No(plan)),
+        }
     }
 }
 
@@ -116,10 +120,11 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
-        Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        Limit: 5\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -136,10 +141,11 @@ mod tests {
             ],
             Some(3),
         )
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
-        Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 3";
+        Limit: 5\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 3";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -156,10 +162,11 @@ mod tests {
             ],
             Some(10),
         )
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
-        Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        Limit: 5\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -173,7 +180,7 @@ mod tests {
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let plan = LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default())?
-            .limit(5)?
+            .limit(5, false)?
             .build();
         let expected = "\
         Limit: 5\
@@ -192,11 +199,12 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .repartition(1, vec![col("a")], PartitionScheme::Hash)?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n  Limit: 5\
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -211,11 +219,12 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .coalesce(1)?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Coalesce: To = 1\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n  Limit: 5\
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -230,11 +239,12 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ])
         .project(vec![col("a")], Default::default())?
-        .limit(5)?
+        .limit(5, false)?
         .build();
         let expected = "\
         Project: col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n  Limit: 5\
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
