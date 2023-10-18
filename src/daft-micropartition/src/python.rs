@@ -15,7 +15,11 @@ use pyo3::{
     Python,
 };
 
-use crate::micropartition::MicroPartition;
+use crate::{
+    micropartition::{MicroPartition, TableState},
+    table_metadata::TableMetadata,
+    table_stats::TableStatistics,
+};
 
 #[pyclass(module = "daft.daft")]
 #[derive(Clone)]
@@ -58,8 +62,23 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
-    pub fn from_tables(record_batches: Vec<PyTable>) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT]")
+    pub fn from_tables(tables: Vec<PyTable>) -> PyResult<Self> {
+        match &tables[..] {
+            [] => Ok(MicroPartition::empty(None).into()),
+            [first, ..] => {
+                let tables = Arc::new(tables.iter().map(|t| t.table.clone()).collect::<Vec<_>>());
+                Ok(MicroPartition::new(
+                    first.table.schema.clone(),
+                    TableState::Loaded(tables.clone()),
+                    TableMetadata {
+                        length: tables.iter().map(|t| t.len()).sum(),
+                    },
+                    // Don't compute statistics if data is already materialized
+                    None,
+                )
+                .into())
+            }
+        }
     }
 
     #[staticmethod]
@@ -74,6 +93,18 @@ impl PyMicroPartition {
     pub fn from_arrow_record_batches(record_batches: PyObject) -> PyResult<Self> {
         // this can probably be smarter since we don't have to concat anymore
         todo!("[MICROPARTITION_INT]")
+    }
+
+    // Export Methods
+    pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
+        let concatted = self.inner.concat_or_get()?;
+        match &concatted.as_ref()[..] {
+            [] => PyTable::empty(Some(self.schema()?)),
+            [table] => Ok(PyTable {
+                table: table.clone(),
+            }),
+            [..] => unreachable!("concat_or_get should return one or none"),
+        }
     }
 
     // Compute Methods

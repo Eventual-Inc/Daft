@@ -72,7 +72,7 @@ class Micropartition:
 
     @staticmethod
     def _from_tables(tables: list[Table]) -> Micropartition:
-        return _PyMicroPartition.from_tables([t._table for t in tables])
+        return Micropartition._from_pymicropartition(_PyMicroPartition.from_tables([t._table for t in tables]))
 
     @staticmethod
     def from_arrow(arrow_table: pa.Table) -> Micropartition:
@@ -115,35 +115,21 @@ class Micropartition:
     # Exporting methods
     ###
 
-    def to_tables(self) -> list[Table]:
-        return [Table._from_pytable(t) for t in self._micropartition.to_tables()]
+    def to_table(self) -> Table:
+        return Table._from_pytable(self._micropartition.to_table())
 
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False, convert_large_arrays: bool = False) -> pa.Table:
-        return pa.Table.concat(
-            [
-                t.to_arrow(
-                    cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
-                    convert_large_arrays=convert_large_arrays,
-                )
-                for t in self.to_tables()
-            ]
-        )
+        return self.to_table().to_arrow()
 
     def to_pydict(self) -> dict[str, list]:
-        dicts = [t.to_pydict() for t in self.to_tables()]
-        return {field.name(): [val for d in dicts for val in d[field.name()]] for field in self.schema()}
+        return self.to_table().to_pydict()
 
     def to_pylist(self) -> list[dict[str, Any]]:
-        return [val for t in self.to_tables() for val in t.to_pylist()]
+        return self.to_table().to_pylist()
 
     def to_pandas(self, schema: Schema | None = None, cast_tensors_to_ray_tensor_dtype: bool = False) -> pd.DataFrame:
-        if not _PANDAS_AVAILABLE:
-            raise ImportError("Unable to import Pandas - please ensure that it is installed.")
-        return pd.DataFrame.concat(
-            [
-                t.to_pandas(schema=schema, cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype)
-                for t in self.to_tables()
-            ]
+        return self.to_table().to_pandas(
+            schema=schema, cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype
         )
 
     ###
@@ -239,7 +225,7 @@ class Micropartition:
         ]
 
     def partition_by_range(
-        self, partition_keys: ExpressionsProjection, boundaries: Micropartition, descending: list[bool]
+        self, partition_keys: ExpressionsProjection, boundaries: Table, descending: list[bool]
     ) -> list[Micropartition]:
         if not isinstance(boundaries, Micropartition):
             raise TypeError(
@@ -249,7 +235,7 @@ class Micropartition:
         exprs = [e._expr for e in partition_keys]
         return [
             Micropartition._from_pymicropartition(t)
-            for t in self._micropartition.partition_by_range(exprs, boundaries._micropartition, descending)
+            for t in self._micropartition.partition_by_range(exprs, boundaries._table, descending)
         ]
 
     def partition_by_random(self, num_partitions: int, seed: int) -> list[Micropartition]:
@@ -310,6 +296,6 @@ class Micropartition:
                 row_groups,
                 io_config,
                 multithreaded_io,
-                coerce_int96_timestamp_unit,
+                coerce_int96_timestamp_unit._timeunit,
             )
         )
