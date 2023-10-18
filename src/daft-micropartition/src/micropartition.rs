@@ -210,7 +210,10 @@ impl Display for MicroPartition {
             TableState::Unloaded(..) => {
                 writeln!(f, "{}\n{}", self.schema, guard)?;
             }
-            TableState::Loaded(..) => {
+            TableState::Loaded(tables) => {
+                if tables.len() == 0 {
+                    writeln!(f, "{}\nNo Tables Loaded", self.schema)?;
+                }
                 writeln!(f, "{}", guard)?;
             }
         };
@@ -220,7 +223,6 @@ impl Display for MicroPartition {
             None => writeln!(f, "Statistics: missing")?,
         }
 
-        writeln!(f, "Table Data:")?;
         Ok(())
     }
 }
