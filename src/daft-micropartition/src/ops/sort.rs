@@ -13,7 +13,6 @@ use crate::{
 };
 
 impl MicroPartition {
-
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
         let tables = self.concat_or_get()?;
         if let [single] = tables.as_slice() {
@@ -36,7 +35,5 @@ impl MicroPartition {
         } else {
             unreachable!()
         }
-
     }
-
 }

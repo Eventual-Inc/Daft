@@ -7,7 +7,9 @@ use daft_core::python::{datatype::PyTimeUnit, schema::PySchema, PySeries};
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_table::python::PyTable;
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList},
     Python,
@@ -207,7 +209,20 @@ impl PyMicroPartition {
         exprs: Vec<PyExpr>,
         num_partitions: i64,
     ) -> PyResult<Vec<Self>> {
-        todo!("[MICROPARTITION_INT]")
+        if num_partitions < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not partition into negative number of partitions: {num_partitions}"
+            )));
+        }
+        let exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<Self>>())
+        })
     }
 
     pub fn partition_by_random(
@@ -216,17 +231,43 @@ impl PyMicroPartition {
         num_partitions: i64,
         seed: i64,
     ) -> PyResult<Vec<Self>> {
-        todo!("[MICROPARTITION_INT]")
+        if num_partitions < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not partition into negative number of partitions: {num_partitions}"
+            )));
+        }
+
+        if seed < 0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not have seed has negative number: {seed}"
+            )));
+        }
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .partition_by_random(num_partitions as usize, seed as u64)?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<Self>>())
+        })
     }
 
     pub fn partition_by_range(
         &self,
         py: Python,
         partition_keys: Vec<PyExpr>,
-        boundaries: &Self,
+        boundaries: &PyTable,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        todo!("[MICROPARTITION_INT]")
+        let exprs: Vec<daft_dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<Self>>())
+        })
     }
 
     #[staticmethod]
