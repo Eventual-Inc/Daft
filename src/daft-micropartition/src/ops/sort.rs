@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{array::ops::full::FullNull, datatypes::UInt64Array, Series};
+use daft_core::Series;
 use daft_dsl::Expr;
 use daft_table::Table;
 

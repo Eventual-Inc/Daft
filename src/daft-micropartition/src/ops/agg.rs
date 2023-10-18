@@ -1,13 +1,10 @@
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_table::Table;
-use snafu::ResultExt;
 
 use crate::{
-    column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
-    DaftCoreComputeSnafu,
 };
 
 impl MicroPartition {
