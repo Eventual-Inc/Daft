@@ -8,6 +8,7 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, col, utils
+from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import Table
 from tests.table import (
@@ -28,9 +29,14 @@ test_table_count_cases = [
 ]
 
 
-def test_multipartition_count_empty():
-    mp = Table.from_pydict({"a": [], "b": []})
-
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64()), "b": pa.array([], type=pa.string())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64(), "b": pa.string()}))),  # No tables
+    ],
+)
+def test_multipartition_count_empty(mp):
     counted = mp.agg([col("a")._count()])
     assert len(counted) == 1
     assert counted.to_pydict() == {"a": [0]}

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft import DataType, col
+from daft.logical.schema import Schema
 from daft.table import Table
 
 
-def test_micropartitions_size_bytes_empty() -> None:
-    mp = Table.from_pydict({"a": []})
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_micropartitions_size_bytes_empty(mp) -> None:
     assert mp.size_bytes() == 0
 
 

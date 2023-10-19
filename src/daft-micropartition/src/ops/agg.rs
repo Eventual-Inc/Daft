@@ -15,7 +15,13 @@ impl MicroPartition {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
                 let agged = empty_table.agg(to_agg, group_by)?;
-                Ok(MicroPartition::empty(Some(agged.schema)))
+                let agged_len = agged.len();
+                Ok(MicroPartition::new(
+                    agged.schema.clone(),
+                    TableState::Loaded(vec![agged].into()),
+                    TableMetadata { length: agged_len },
+                    None,
+                ))
             }
             [t] => {
                 let agged = t.agg(to_agg, group_by)?;
