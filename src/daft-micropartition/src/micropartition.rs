@@ -178,7 +178,12 @@ impl MicroPartition {
                         .context(DaftCoreComputeSnafu)?
                 }
             };
-            *guard = TableState::Loaded(Arc::new(table_values));
+            let casted_table_values = table_values
+                .iter()
+                .map(|tbl| tbl.cast_to_schema(self.schema.as_ref()))
+                .collect::<DaftResult<Vec<_>>>()
+                .context(DaftCoreComputeSnafu)?;
+            *guard = TableState::Loaded(Arc::new(casted_table_values));
         };
 
         if let TableState::Loaded(tables) = guard.deref() {
