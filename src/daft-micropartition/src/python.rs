@@ -319,6 +319,49 @@ impl PyMicroPartition {
 
     #[allow(clippy::too_many_arguments)]
     #[staticmethod]
+    pub fn read_csv(
+        py: Python,
+        uri: &str,
+        column_names: Option<Vec<&str>>,
+        include_columns: Option<Vec<&str>>,
+        num_rows: Option<usize>,
+        has_header: Option<bool>,
+        delimiter: Option<&str>,
+        io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
+    ) -> PyResult<Self> {
+        let delimiter = delimiter
+            .map(|delimiter| match delimiter.as_bytes() {
+                [c] => Ok(*c),
+                _ => Err(PyValueError::new_err(
+                    "Provided CSV delimiter must be a 1-byte character",
+                )),
+            })
+            .transpose()?;
+
+        let mp = py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
+            let io_config = io_config.unwrap_or_default().config.into();
+
+            crate::micropartition::read_csv_into_micropartition(
+                [uri].as_ref(),
+                column_names,
+                include_columns,
+                num_rows,
+                has_header.unwrap_or(true),
+                delimiter,
+                io_config,
+                multithreaded_io.unwrap_or(true),
+                Some(io_stats),
+            )
+        })?;
+        Ok(PyMicroPartition {
+            inner: Arc::new(mp),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[staticmethod]
     pub fn read_parquet(
         py: Python,
         uri: &str,
