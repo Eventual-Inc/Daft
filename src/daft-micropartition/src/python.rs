@@ -49,7 +49,10 @@ impl PyMicroPartition {
             .iter()
             .map(|t| t.get_column(name))
             .collect::<DaftResult<Vec<_>>>()?;
-        Ok(Series::concat(columns.as_slice())?.into())
+        match columns.as_slice() {
+            [] => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
+            columns => Ok(Series::concat(columns)?.into()),
+        }
     }
 
     pub fn size_bytes(&self) -> PyResult<usize> {
