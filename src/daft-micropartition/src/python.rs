@@ -91,10 +91,11 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn empty(schema: Option<PySchema>) -> PyResult<Self> {
-        Self::empty(match schema {
-            Some(s) => Some(s.schema.into()),
+        Ok(MicroPartition::empty(match schema {
+            Some(s) => Some(s.schema),
             None => None,
         })
+        .into())
     }
 
     #[staticmethod]
@@ -110,14 +111,13 @@ impl PyMicroPartition {
             .collect::<PyResult<Vec<_>>>()?;
 
         let total_len = tables.iter().map(|tbl| tbl.len()).sum();
-        Ok(PyMicroPartition {
-            inner: Arc::new(MicroPartition::new(
-                schema.schema.clone(),
-                TableState::Loaded(Arc::new(tables)),
-                TableMetadata { length: total_len },
-                None,
-            )),
-        })
+        Ok(MicroPartition::new(
+            schema.schema.clone(),
+            TableState::Loaded(Arc::new(tables)),
+            TableMetadata { length: total_len },
+            None,
+        )
+        .into())
     }
 
     // Export Methods
@@ -373,9 +373,7 @@ impl PyMicroPartition {
                 Some(io_stats),
             )
         })?;
-        Ok(PyMicroPartition {
-            inner: Arc::new(mp),
-        })
+        Ok(mp.into())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -412,9 +410,7 @@ impl PyMicroPartition {
                 &schema_infer_options,
             )
         })?;
-        Ok(PyMicroPartition {
-            inner: Arc::new(mp),
-        })
+        Ok(mp.into())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -452,9 +448,7 @@ impl PyMicroPartition {
                 &schema_infer_options,
             )
         })?;
-        Ok(PyMicroPartition {
-            inner: Arc::new(mp),
-        })
+        Ok(mp.into())
     }
 }
 
