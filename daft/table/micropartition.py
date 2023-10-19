@@ -282,6 +282,15 @@ class MicroPartition:
         return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
 
     @classmethod
+    def read_parquet_statistics(
+        cls,
+        paths: Series | list[str],
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> Table:
+        return Table.read_parquet_statistics(paths=paths, io_config=io_config, multithreaded_io=multithreaded_io)
+
+    @classmethod
     def read_parquet(
         cls,
         path: str,
