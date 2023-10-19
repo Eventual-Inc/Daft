@@ -75,6 +75,14 @@ impl MicroPartition {
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
         let tables = self.tables_or_read(None)?;
+        if tables.is_empty() {
+            let mut empty_parts = Vec::with_capacity(boundaries.len() + 1);
+            for _ in 0..(boundaries.len() + 1) {
+                empty_parts.push(Self::empty(Some(self.schema.clone())));
+            }
+            return Ok(empty_parts);
+        }
+
         let part_tables = tables
             .iter()
             .map(|t| t.partition_by_range(partition_keys, boundaries, descending))
