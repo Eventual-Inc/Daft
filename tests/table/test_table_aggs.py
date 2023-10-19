@@ -4,6 +4,7 @@ import datetime
 import math
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft import DataType, col, utils
@@ -45,10 +46,11 @@ def test_multipartition_count_empty():
         Table.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
         Table.concat(
             [
+                Table.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
                 Table.from_pydict({"a": [1], "b": ["a"]}),
                 Table.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
             ]
-        ),  # 2 tables
+        ),  # 3 tables
     ],
 )
 def test_multipartition_count(mp):
