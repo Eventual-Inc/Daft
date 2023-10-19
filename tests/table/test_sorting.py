@@ -7,13 +7,20 @@ import pyarrow as pa
 import pytest
 
 from daft import col
+from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import Table
 from tests.table import daft_numeric_types, daft_string_types
 
 
-def test_micropartitions_sort_empty() -> None:
-    mp = Table.from_pydict({"a": []})
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_micropartitions_sort_empty(mp) -> None:
     sorted_table = mp.sort([col("a")])
     assert len(mp) == len(sorted_table) == 0
     assert mp.schema() == sorted_table.schema()

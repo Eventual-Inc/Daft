@@ -3,10 +3,12 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft.datatype import DataType
 from daft.expressions import col
+from daft.logical.schema import Schema
 from daft.table import LegacyTable, Table
 
 daft_int_types = [
@@ -24,8 +26,14 @@ daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
 daft_string_types = [DataType.string()]
 
 
-def test_partitioning_micropartitions_hash_empty() -> None:
-    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_partitioning_micropartitions_hash_empty(mp) -> None:
     split_tables = mp.partition_by_hash([col("a")], 3)
     assert len(split_tables) == 3
     assert sum([len(st) for st in split_tables]) == 0
@@ -51,14 +59,34 @@ def test_partitioning_micropartitions_hash(mp) -> None:
     assert sorted([val for st in split_tables for val in st.to_pydict()["a"]]) == [1, 2, 3, 4]
 
 
-def test_partitioning_micropartitions_range_empty() -> None:
-    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_partitioning_micropartitions_range_empty(mp) -> None:
     boundaries = LegacyTable.from_pydict({"a": np.linspace(0, 10, 3)[1:]}).eval_expression_list(
         [col("a").cast(DataType.int64())]
     )
     split_tables = mp.partition_by_range([col("a")], boundaries, [True])
     assert len(split_tables) == 3
     assert sum([len(st) for st in split_tables]) == 0
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64()), "b": pa.array([], type=pa.string())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64(), "b": pa.string()}))),  # No tables
+    ],
+)
+def test_partitioning_micropartitions_range_boundaries_empty(mp) -> None:
+    boundaries = LegacyTable.from_pydict({"a": [], "b": []}).eval_expression_list([col("a").cast(DataType.int64())])
+    split_tables = mp.partition_by_range([col("a"), col("b")], boundaries, [False, False])
+    assert len(split_tables) == 1
+    assert split_tables[0].to_pydict() == {"a": [], "b": []}
 
 
 @pytest.mark.parametrize(
@@ -84,8 +112,14 @@ def test_partitioning_micropartitions_range(mp) -> None:
     assert sorted([val for st in split_tables for val in st.to_pydict()["a"]]) == [1, 2, 3, 4]
 
 
-def test_partitioning_micropartitions_random_empty() -> None:
-    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_partitioning_micropartitions_random_empty(mp) -> None:
     split_tables = mp.partition_by_random(3, seed=1)
     assert len(split_tables) == 3
     assert sum([len(st) for st in split_tables]) == 0

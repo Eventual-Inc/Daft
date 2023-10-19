@@ -51,6 +51,15 @@ impl MicroPartition {
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
         let tables = self.tables_or_read(None)?;
+
+        if tables.is_empty() {
+            return Ok(
+                std::iter::repeat_with(|| Self::empty(Some(self.schema.clone())))
+                    .take(num_partitions)
+                    .collect(),
+            );
+        }
+
         let part_tables = tables
             .iter()
             .map(|t| t.partition_by_hash(exprs, num_partitions))
@@ -60,6 +69,15 @@ impl MicroPartition {
 
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
         let tables = self.tables_or_read(None)?;
+
+        if tables.is_empty() {
+            return Ok(
+                std::iter::repeat_with(|| Self::empty(Some(self.schema.clone())))
+                    .take(num_partitions)
+                    .collect(),
+            );
+        }
+
         let part_tables = tables
             .iter()
             .enumerate()
@@ -75,12 +93,14 @@ impl MicroPartition {
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
         let tables = self.tables_or_read(None)?;
+
         if tables.is_empty() {
-            let mut empty_parts = Vec::with_capacity(boundaries.len() + 1);
-            for _ in 0..(boundaries.len() + 1) {
-                empty_parts.push(Self::empty(Some(self.schema.clone())));
-            }
-            return Ok(empty_parts);
+            let num_partitions = boundaries.len() + 1;
+            return Ok(
+                std::iter::repeat_with(|| Self::empty(Some(self.schema.clone())))
+                    .take(num_partitions)
+                    .collect(),
+            );
         }
 
         let part_tables = tables
