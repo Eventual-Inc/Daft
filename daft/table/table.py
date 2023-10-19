@@ -169,6 +169,10 @@ class Table:
     # Exporting methods
     ###
 
+    def to_table(self) -> Table:
+        """For compatibility with MicroPartition"""
+        return self
+
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False, convert_large_arrays: bool = False) -> pa.Table:
         python_fields = set()
         tensor_fields = set()
