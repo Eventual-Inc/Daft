@@ -13,7 +13,7 @@ use daft_parquet::read::{
 };
 use daft_table::Table;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
