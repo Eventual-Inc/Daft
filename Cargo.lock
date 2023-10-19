@@ -1162,6 +1162,8 @@ dependencies = [
  "parquet2",
  "pyo3",
  "pyo3-log",
+ "serde",
+ "serde_json",
  "snafu",
 ]
 

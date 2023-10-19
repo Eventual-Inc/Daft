@@ -56,6 +56,32 @@ class MicroPartition:
         return self._micropartition._repr_html_()
 
     ###
+    # Serialization/Pickling
+    ###
+
+    def __reduce__(self) -> tuple:
+        cs = self._micropartition.column_statistics()
+        return (
+            MicroPartition._from_state,
+            (
+                self._micropartition.is_loaded(),
+                [Table._from_pytable(t) for t in self._micropartition.tables()],
+                self.metadata(),
+                cs and {name: val and (Series._from_pyseries(val[0]), Series._from_pyseries(val[1])) for name, val in cs.items()},
+            )
+        )
+
+    @staticmethod
+    def _from_state(state: tuple[bool, list[Table], str, dict[str, tuple[Series, Series] | None]]) -> MicroPartition:
+        loaded, tables, metadata, column_statistics = state
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_state(
+            loaded,
+            [t._table for t in tables],
+            metadata,
+            {c: (s1._series, s2._series) for c, (s1, s2) in column_statistics.items()},
+        ))
+
+    ###
     # Creation methods
     ###
 
@@ -276,10 +302,6 @@ class MicroPartition:
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending))
-
-    def __reduce__(self) -> tuple:
-        names = self.column_names()
-        return MicroPartition.from_pydict, ({name: self.get_column(name) for name in names},)
 
     @classmethod
     def read_parquet_statistics(

@@ -1,6 +1,6 @@
 #![allow(unused)] // MAKE SURE TO REMOVE THIS
 
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, ops::Deref};
 
 use common_error::DaftResult;
 use daft_core::{
@@ -22,7 +22,7 @@ use pyo3::{
 use crate::{
     micropartition::{MicroPartition, TableState},
     table_metadata::TableMetadata,
-    table_stats::TableStatistics,
+    table_stats::TableStatistics, column_stats::ColumnRangeStatistics,
 };
 
 #[pyclass(module = "daft.daft", frozen)]
@@ -37,6 +37,43 @@ impl PyMicroPartition {
         Ok(PySchema {
             schema: self.inner.schema.clone(),
         })
+    }
+
+    pub fn is_loaded(&self) -> PyResult<bool> {
+        let guard = self.inner.state.lock().unwrap();
+        Ok(matches!(guard.deref(), TableState::Loaded(..)))
+    }
+
+    pub fn tables(&self) -> PyResult<Vec<PyTable>> {
+        let guard = self.inner.state.lock().unwrap();
+        match guard.deref() {
+            TableState::Loaded(tables) => Ok(tables.iter().map(|t| PyTable{table: t.clone()}).collect()),
+            TableState::Unloaded(_) => Ok(vec![]),
+        }
+    }
+
+    pub fn metadata(&self) -> PyResult<String> {
+        Ok(serde_json::to_string(&self.inner.metadata).unwrap())
+    }
+
+    pub fn column_statistics<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
+        match self.inner.statistics.as_ref() {
+            None => Ok(None),
+            Some(stats) => {
+                let mut d = PyDict::new(py);
+                for (name, cs) in &stats.columns {
+                    match cs {
+                        ColumnRangeStatistics::Missing => {
+                            d.set_item(name, py.None());
+                        }
+                        ColumnRangeStatistics::Loaded(s1, s2) => {
+                            d.set_item(name, (PySeries{series: s1.clone()}.into_py(py), PySeries{series: s2.clone()}.into_py(py)));
+                        }
+                    }
+                }
+                Ok(Some(d))
+            }
+        }
     }
 
     pub fn column_names(&self) -> PyResult<Vec<String>> {
@@ -72,6 +109,26 @@ impl PyMicroPartition {
     }
 
     // Creation Methods
+    #[staticmethod]
+    pub fn from_state(is_loaded: bool, schema: PySchema, tables: Vec<PyTable>, metadata: String, column_statistics: Option<&PyDict>) -> PyResult<Self> {
+        if is_loaded {
+            let tables = tables.into_iter().map(|t| t.table).collect::<Vec<_>>();
+            Ok(MicroPartition::new(
+                schema.schema,
+                TableState::Loaded(Arc::new(tables)),
+                metadata,
+                statistics,
+            ))
+        } else {
+            Ok(MicroPartition::new(
+                schema.schema,
+                TableState::Unloaded(params),
+                metadata,
+                statistics,
+            ))
+        }
+    }
+
     #[staticmethod]
     pub fn from_tables(tables: Vec<PyTable>) -> PyResult<Self> {
         match &tables[..] {
