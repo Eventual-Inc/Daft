@@ -165,7 +165,7 @@ impl PyMicroPartition {
         py.allow_threads(|| Ok(self.inner.take(&idx.series)?.into()))
     }
 
-    pub fn filter(&mut self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::Expr> = exprs.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| Ok(self.inner.filter(converted_exprs.as_slice())?.into()))
     }
