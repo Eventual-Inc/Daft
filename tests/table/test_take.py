@@ -32,7 +32,13 @@ def test_micropartitions_take_empty() -> None:
     "mp",
     [
         Table.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
-        Table.concat([Table.from_pydict({"a": [1]}), Table.from_pydict({"a": [2, 3, 4]})]),  # 2 tables
+        Table.concat(
+            [
+                Table.from_pydict({"a": pa.array([], type=pa.int64())}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [2, 3, 4]}),
+            ]
+        ),  # 3 tables
     ],
 )
 def test_micropartitions_take(mp: Table) -> None:

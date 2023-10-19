@@ -24,6 +24,93 @@ daft_numeric_types = daft_int_types + [DataType.float32(), DataType.float64()]
 daft_string_types = [DataType.string()]
 
 
+def test_partitioning_micropartitions_hash_empty() -> None:
+    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+    split_tables = mp.partition_by_hash([col("a")], 3)
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 0
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64)}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [3, 2, 4]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_partitioning_micropartitions_hash(mp) -> None:
+    split_tables = mp.partition_by_hash([col("a")], 3)
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 4
+    assert sorted([val for st in split_tables for val in st.to_pydict()["a"]]) == [1, 2, 3, 4]
+
+
+def test_partitioning_micropartitions_range_empty() -> None:
+    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+    boundaries = LegacyTable.from_pydict({"a": np.linspace(0, 10, 3)[1:]}).eval_expression_list(
+        [col("a").cast(DataType.int64())]
+    )
+    split_tables = mp.partition_by_range([col("a")], boundaries, [True])
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 0
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64)}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [3, 2, 4]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_partitioning_micropartitions_range(mp) -> None:
+    boundaries = LegacyTable.from_pydict({"a": np.linspace(0, 5, 3)[1:]}).eval_expression_list(
+        [col("a").cast(DataType.int64())]
+    )
+    split_tables = mp.partition_by_range([col("a")], boundaries, [True])
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 4
+    assert sorted([val for st in split_tables for val in st.to_pydict()["a"]]) == [1, 2, 3, 4]
+
+
+def test_partitioning_micropartitions_random_empty() -> None:
+    mp = Table.from_pydict({"a": np.array([]).astype(np.int64)})
+    split_tables = mp.partition_by_random(3, seed=1)
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 0
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64)}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [3, 2, 4]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_partitioning_micropartitions_random(mp) -> None:
+    split_tables = mp.partition_by_random(3, seed=1)
+    assert len(split_tables) == 3
+    assert sum([len(st) for st in split_tables]) == 4
+    assert sorted([val for st in split_tables for val in st.to_pydict()["a"]]) == [1, 2, 3, 4]
+
+
 @pytest.mark.parametrize(
     "size, k, dtype", itertools.product([0, 1, 10, 33, 100], [1, 2, 3, 10, 40], daft_numeric_types + daft_string_types)
 )

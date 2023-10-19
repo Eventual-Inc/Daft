@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from daft import DataType, col
@@ -15,7 +16,13 @@ def test_micropartitions_size_bytes_empty() -> None:
     "mp",
     [
         Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
-        Table.concat([Table.from_pydict({"a": [1]}), Table.from_pydict({"a": [3, 2, 4]})]),  # 2 tables
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64)}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [3, 2, 4]}),
+            ]
+        ),  # 3 tables
     ],
 )
 def test_micropartitions_size_bytes(mp) -> None:
