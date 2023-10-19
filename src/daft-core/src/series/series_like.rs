@@ -7,7 +7,7 @@ use crate::{
 use common_error::DaftResult;
 
 use super::Series;
-pub trait SeriesLike: Send + Sync + Any {
+pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     #[allow(clippy::wrong_self_convention)]
     fn into_series(&self) -> Series;
     fn to_arrow(&self) -> Box<dyn arrow2::array::Array>;

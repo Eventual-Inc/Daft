@@ -7,7 +7,7 @@ use crate::datatypes::{DaftArrayType, Field};
 use crate::series::Series;
 use crate::DataType;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StructArray {
     pub field: Arc<Field>,
     pub children: Vec<Series>,

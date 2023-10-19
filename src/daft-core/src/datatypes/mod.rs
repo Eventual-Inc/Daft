@@ -57,7 +57,7 @@ pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
 
 macro_rules! impl_daft_arrow_datatype {
     ($ca:ident, $variant:ident) => {
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -76,7 +76,7 @@ macro_rules! impl_daft_arrow_datatype {
 
 macro_rules! impl_daft_non_arrow_datatype {
     ($ca:ident, $variant:ident) => {
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -93,7 +93,7 @@ macro_rules! impl_daft_non_arrow_datatype {
 
 macro_rules! impl_daft_logical_data_array_datatype {
     ($ca:ident, $variant:ident, $physical_type:ident) => {
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -113,7 +113,7 @@ macro_rules! impl_daft_logical_data_array_datatype {
 
 macro_rules! impl_daft_logical_fixed_size_list_datatype {
     ($ca:ident, $variant:ident) => {
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {
@@ -133,7 +133,7 @@ macro_rules! impl_daft_logical_fixed_size_list_datatype {
 
 macro_rules! impl_nested_datatype {
     ($ca:ident, $array_type:ident) => {
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct $ca {}
 
         impl DaftDataType for $ca {

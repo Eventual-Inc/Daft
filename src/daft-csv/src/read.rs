@@ -405,7 +405,7 @@ fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
 
     use arrow2::io::csv::read::{
         deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
@@ -427,11 +427,15 @@ mod tests {
         path: &str,
         out: &Table,
         has_header: bool,
+        delimiter: Option<u8>,
         column_names: Option<Vec<&str>>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
-        let mut reader = ReaderBuilder::new().from_path(path).unwrap();
+        let mut reader = ReaderBuilder::new()
+            .delimiter(delimiter.unwrap_or(b','))
+            .from_path(path)
+            .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
         if !has_header && let Some(column_names) = column_names {
             fields = fields.into_iter().zip(column_names.into_iter()).map(|(field, name)| arrow2::datatypes::Field::new(name, field.data_type, true).with_metadata(field.metadata)).collect::<Vec<_>>();
@@ -532,7 +536,7 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None);
+            check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
         }
 
         Ok(())
@@ -584,7 +588,59 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, false, Some(column_names), None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            false,
+            None,
+            Some(column_names),
+            None,
+            None,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_delimiter() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_bar_delimiter.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            Some(5),
+            true,
+            Some(b'|'),
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 5);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        check_equal_local_arrow2(file.as_ref(), &table, true, Some(b'|'), None, None, Some(5));
 
         Ok(())
     }
@@ -625,7 +681,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, Some(5));
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, Some(5));
 
         Ok(())
     }
@@ -663,7 +719,15 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, Some(vec![2, 3]), None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            None,
+            Some(vec![2, 3]),
+            None,
+        );
 
         Ok(())
     }
@@ -715,6 +779,7 @@ mod tests {
             file.as_ref(),
             &table,
             false,
+            None,
             Some(column_names),
             Some(vec![2, 3]),
             None,
@@ -759,7 +824,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
 
         Ok(())
     }
@@ -800,7 +865,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
 
         Ok(())
     }
@@ -841,7 +906,172 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_nulls() -> DaftResult<()> {
+        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 6);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_empty_lines_dropped() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_empty_lines.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 3);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_invalid_cols_header_mismatch() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_header_cols_mismatch.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let err = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(
+            err.to_string()
+                .contains("found record with 4 fields, but the previous record has 5 fields"),
+            "{}",
+            err
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_invalid_no_header_variable_num_cols() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let err = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            false,
+            None,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(
+            err.to_string()
+                .contains("found record with 5 fields, but the previous record has 4 fields"),
+            "{}",
+            err
+        );
 
         Ok(())
     }

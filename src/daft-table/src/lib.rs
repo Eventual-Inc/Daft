@@ -23,7 +23,7 @@ pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Table {
     pub schema: SchemaRef,
     columns: Vec<Series>,

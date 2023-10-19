@@ -19,7 +19,7 @@ pub use array_impl::IntoSeries;
 
 pub(crate) use self::series_like::SeriesLike;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Series {
     pub inner: Arc<dyn SeriesLike>,
 }
