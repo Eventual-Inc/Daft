@@ -90,17 +90,20 @@ async fn read_csv_single(
     let (schema, estimated_mean_row_size) = match schema {
         Some(schema) => (schema.to_arrow()?, estimated_mean_row_size),
         None => {
-            let (schema, estimated_mean_row_size) = read_csv_schema_single(
+            let (schema, total_bytes_read, num_records_read) = read_csv_schema_single(
                 uri,
                 has_header,
                 Some(delimiter),
                 // Read at most 1 MiB when doing schema inference.
-                Some(1 << 20),
+                Some(1024 * 1024),
                 io_client.clone(),
                 io_stats.clone(),
             )
             .await?;
-            (schema.to_arrow()?, Some(estimated_mean_row_size))
+            (
+                schema.to_arrow()?,
+                Some(((total_bytes_read as f64) / (num_records_read as f64)).ceil() as usize),
+            )
         }
     };
     let compression_codec = CompressionCodec::from_uri(uri);

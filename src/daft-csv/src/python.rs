@@ -82,7 +82,7 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (schema, mean_sampled_row_size) = crate::metadata::read_csv_schema(
+            let (schema, total_bytes_read, num_records_read) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
@@ -90,7 +90,10 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
             )?;
-            Ok((Arc::new(schema).into(), mean_sampled_row_size))
+            Ok((
+                Arc::new(schema).into(),
+                (((total_bytes_read as f64) / (num_records_read as f64)).ceil() as usize),
+            ))
         })
     }
 }
