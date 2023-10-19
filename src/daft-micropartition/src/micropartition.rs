@@ -13,6 +13,7 @@ use daft_parquet::read::{
 };
 use daft_table::Table;
 
+use serde::{Serialize, Deserialize};
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
@@ -21,7 +22,7 @@ use crate::table_metadata::TableMetadata;
 use crate::table_stats::TableStatistics;
 use daft_io::{IOConfig, IOStatsRef};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 enum FormatParams {
     Parquet {
         row_groups: Option<Vec<Vec<i64>>>,
@@ -29,7 +30,7 @@ enum FormatParams {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DeferredLoadingParams {
     format_params: FormatParams,
     urls: Vec<String>,

@@ -110,7 +110,7 @@ pub mod pylib {
             )
         })?;
         let (schema, all_arrays) = read_parquet_result;
-        let pyarrow = py.import("pyarrow")?;
+        let pyarrow = py.import(pyo3::intern!(py,"pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
@@ -192,7 +192,7 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import("pyarrow")?;
+        let pyarrow = py.import(pyo3::intern!(py,"pyarrow"))?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays)| {
