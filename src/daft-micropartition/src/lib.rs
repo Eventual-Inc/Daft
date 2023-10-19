@@ -26,6 +26,16 @@ pub enum Error {
 
     #[snafu(display("MissingStatistics: {}", source))]
     MissingStatistics { source: column_stats::Error },
+
+    #[snafu(display(
+        "Field: {} not found in Parquet File:  Available Fields: {:?}",
+        field,
+        available_fields
+    ))]
+    FieldNotFound {
+        field: String,
+        available_fields: Vec<String>,
+    },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
