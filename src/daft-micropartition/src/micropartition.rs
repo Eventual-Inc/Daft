@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_parquet::read::{
@@ -12,7 +12,6 @@ use daft_parquet::read::{
 };
 use daft_table::Table;
 
-use indexmap::IndexMap;
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
@@ -241,6 +240,7 @@ fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftRes
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_parquet_into_micropartition(
     uris: &[&str],
     columns: Option<&[&str]>,
@@ -303,17 +303,16 @@ pub(crate) fn read_parquet_into_micropartition(
 
     if let Some(stats) = stats {
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let owned_columns =
-            columns.and_then(|c| Some(c.iter().map(|s| s.to_string()).collect::<Vec<_>>()));
+        let owned_columns = columns.map(|c| c.iter().map(|s| s.to_string()).collect::<Vec<_>>());
 
         let params = DeferredLoadingParams {
             format_params: FormatParams::Parquet {
-                row_groups: row_groups,
+                row_groups,
                 inference_options: *schema_infer_options,
             },
             urls: owned_urls,
             io_config: io_config.clone(),
-            multithreaded_io: multithreaded_io,
+            multithreaded_io,
             limit: num_rows,
             columns: owned_columns,
         };

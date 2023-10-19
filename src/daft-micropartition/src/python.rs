@@ -343,7 +343,7 @@ impl PyMicroPartition {
                 columns.as_deref(),
                 start_offset,
                 num_rows,
-                row_groups.and_then(|rg| Some(vec![rg])),
+                row_groups.map(|rg| vec![rg]),
                 io_config,
                 Some(io_stats),
                 1,
