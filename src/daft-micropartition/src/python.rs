@@ -25,7 +25,7 @@ use crate::{
     table_stats::TableStatistics,
 };
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone)]
 struct PyMicroPartition {
     inner: Arc<MicroPartition>,
