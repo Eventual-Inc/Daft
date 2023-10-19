@@ -1196,6 +1196,7 @@ dependencies = [
  "arrow2",
  "common-error",
  "daft-core",
+ "daft-csv",
  "daft-dsl",
  "daft-io",
  "daft-parquet",

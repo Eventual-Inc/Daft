@@ -750,6 +750,18 @@ class PyMicroPartition:
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: PyTimeUnit = PyTimeUnit.nanoseconds(),
     ): ...
+    @classmethod
+    def read_csv(
+        cls,
+        uri: str,
+        column_names: list[str] | None = None,
+        include_columns: list[str] | None = None,
+        num_rows: int | None = None,
+        has_header: bool | None = None,
+        delimiter: str | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ): ...
 
 class PhysicalPlanScheduler:
     """

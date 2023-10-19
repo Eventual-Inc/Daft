@@ -297,3 +297,28 @@ class MicroPartition:
                 coerce_int96_timestamp_unit._timeunit,
             )
         )
+
+    @classmethod
+    def read_csv(
+        cls,
+        path: str,
+        column_names: list[str] | None = None,
+        include_columns: list[str] | None = None,
+        num_rows: int | None = None,
+        has_header: bool | None = None,
+        delimiter: str | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            _PyMicroPartition.read_csv(
+                uri=path,
+                column_names=column_names,
+                include_columns=include_columns,
+                num_rows=num_rows,
+                has_header=has_header,
+                delimiter=delimiter,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )

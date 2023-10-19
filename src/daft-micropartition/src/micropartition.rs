@@ -7,6 +7,7 @@ use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
+use daft_csv::read::read_csv;
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
@@ -242,6 +243,69 @@ fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftRes
         Schema::new(filtered_columns)
     } else {
         Ok(schema)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_csv_into_micropartition(
+    uris: &[&str],
+    column_names: Option<Vec<&str>>,
+    include_columns: Option<Vec<&str>>,
+    num_rows: Option<usize>,
+    has_header: bool,
+    delimiter: Option<u8>,
+    io_config: Arc<IOConfig>,
+    multithreaded_io: bool,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<MicroPartition> {
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let mut remaining_rows = num_rows;
+
+    match uris {
+        [] => Ok(MicroPartition::empty(None)),
+        uris => {
+            // Naively load CSVs from URIs
+            let mut tables = vec![];
+            for uri in uris {
+                // Terminate early if we have read enough rows already
+                if remaining_rows.map(|rr| rr == 0).unwrap_or(false) {
+                    break;
+                }
+                let table = read_csv(
+                    uri,
+                    column_names.clone(),
+                    include_columns.clone(),
+                    remaining_rows,
+                    has_header,
+                    delimiter,
+                    io_client.clone(),
+                    io_stats.clone(),
+                    multithreaded_io,
+                )?;
+                remaining_rows = remaining_rows.map(|rr| rr - table.len());
+                tables.push(table);
+            }
+
+            // Union all schemas and cast all tables to the same schema
+            let unioned_schema = tables
+                .iter()
+                .map(|tbl| tbl.schema.clone())
+                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .unwrap();
+            let tables = tables
+                .into_iter()
+                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            // Construct MicroPartition from tables and unioned schema
+            let total_len = tables.iter().map(|t| t.len()).sum();
+            Ok(MicroPartition::new(
+                unioned_schema.clone(),
+                TableState::Loaded(Arc::new(tables)),
+                TableMetadata { length: total_len },
+                None,
+            ))
+        }
     }
 }
 
