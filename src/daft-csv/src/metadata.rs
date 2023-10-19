@@ -14,6 +14,8 @@ use tokio_util::io::StreamReader;
 
 use crate::compression::CompressionCodec;
 
+const DEFAULT_COLUMN_PREFIX: &str = "column_";
+
 pub fn read_csv_schema(
     uri: &str,
     has_header: bool,
@@ -171,7 +173,7 @@ where
         let first_record_count = record.len();
         (
             (0..first_record_count)
-                .map(|i| format!("column_{}", i + 1))
+                .map(|i| format!("{}{}", DEFAULT_COLUMN_PREFIX, i + 1))
                 .collect(),
             true,
         )
