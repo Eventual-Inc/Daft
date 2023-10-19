@@ -47,7 +47,6 @@ pub fn read_csv(
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
-    estimated_mean_row_size: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
@@ -65,7 +64,6 @@ pub fn read_csv(
             buffer_size,
             chunk_size,
             max_chunks_in_flight,
-            estimated_mean_row_size,
         )
         .await
     })
@@ -85,10 +83,9 @@ async fn read_csv_single(
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
-    estimated_mean_row_size: Option<usize>,
 ) -> DaftResult<Table> {
     let (schema, estimated_mean_row_size) = match schema {
-        Some(schema) => (schema.to_arrow()?, estimated_mean_row_size),
+        Some(schema) => (schema.to_arrow()?, None),
         None => {
             let (schema, total_bytes_read, num_records_read) = read_csv_schema_single(
                 uri,
@@ -521,7 +518,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
@@ -575,7 +571,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
@@ -617,7 +612,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 5);
         assert_eq!(
@@ -655,7 +649,6 @@ mod tests {
             io_client,
             None,
             true,
-            None,
             None,
             None,
             None,
@@ -708,7 +701,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
@@ -754,7 +746,6 @@ mod tests {
             Some(128),
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
@@ -795,7 +786,6 @@ mod tests {
             None,
             None,
             Some(100),
-            None,
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -838,7 +828,6 @@ mod tests {
             None,
             None,
             Some(5),
-            None,
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
@@ -905,7 +894,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
@@ -940,7 +928,6 @@ mod tests {
             io_client,
             None,
             true,
-            None,
             None,
             None,
             None,
@@ -983,7 +970,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
@@ -1013,7 +999,6 @@ mod tests {
             io_client,
             None,
             true,
-            None,
             None,
             None,
             None,
@@ -1055,7 +1040,6 @@ mod tests {
             None,
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 100);
         assert_eq!(
@@ -1089,7 +1073,6 @@ mod tests {
             Some(100),
             None,
             None,
-            None,
         )?;
         assert_eq!(table.len(), 5000);
 
@@ -1118,7 +1101,6 @@ mod tests {
             None,
             None,
             Some(100),
-            None,
             None,
         )?;
         assert_eq!(table.len(), 5000);
@@ -1149,7 +1131,6 @@ mod tests {
             None,
             None,
             Some(5),
-            None,
         )?;
         assert_eq!(table.len(), 5000);
 

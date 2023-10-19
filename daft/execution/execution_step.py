@@ -317,7 +317,6 @@ class ReadFile(SingleOutputInstruction):
     storage_config: StorageConfig
     columns_to_read: list[str] | None
     file_format_config: FileFormatConfig
-    estimated_mean_row_size: int | None
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._read_file(inputs)
@@ -377,7 +376,6 @@ class ReadFile(SingleOutputInstruction):
                             buffer_size=format_config.buffer_size,
                             chunk_size=format_config.chunk_size,
                             max_chunks_in_flight=format_config.max_chunks_in_flight,
-                            estimated_mean_row_size=self.estimated_mean_row_size,
                         ),
                         read_options=read_options,
                     )

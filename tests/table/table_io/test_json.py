@@ -70,7 +70,7 @@ def test_json_infer_schema(data, expected_dtype):
         }
     )
 
-    schema, _ = schema_inference.from_json(f)
+    schema = schema_inference.from_json(f)
     assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 

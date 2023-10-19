@@ -19,35 +19,23 @@ pub struct FileInfo {
     pub file_path: String,
     pub file_size: Option<i64>,
     pub num_rows: Option<i64>,
-    pub estimated_mean_row_size: Option<i64>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl FileInfo {
     #[new]
-    pub fn new(
-        file_path: String,
-        file_size: Option<i64>,
-        num_rows: Option<i64>,
-        estimated_mean_row_size: Option<i64>,
-    ) -> Self {
-        Self::new_internal(file_path, file_size, num_rows, estimated_mean_row_size)
+    pub fn new(file_path: String, file_size: Option<i64>, num_rows: Option<i64>) -> Self {
+        Self::new_internal(file_path, file_size, num_rows)
     }
 }
 
 impl FileInfo {
-    pub fn new_internal(
-        file_path: String,
-        file_size: Option<i64>,
-        num_rows: Option<i64>,
-        estimated_mean_row_size: Option<i64>,
-    ) -> Self {
+    pub fn new_internal(file_path: String, file_size: Option<i64>, num_rows: Option<i64>) -> Self {
         Self {
             file_path,
             file_size,
             num_rows,
-            estimated_mean_row_size,
         }
     }
 }
@@ -59,7 +47,6 @@ pub struct FileInfos {
     pub file_paths: Vec<String>,
     pub file_sizes: Vec<Option<i64>>,
     pub num_rows: Vec<Option<i64>>,
-    pub estimated_mean_row_sizes: Vec<Option<i64>>,
 }
 
 #[cfg(feature = "python")]
@@ -75,9 +62,8 @@ impl FileInfos {
         file_paths: Vec<String>,
         file_sizes: Vec<Option<i64>>,
         num_rows: Vec<Option<i64>>,
-        estimated_mean_row_sizes: Vec<Option<i64>>,
     ) -> Self {
-        Self::new_internal(file_paths, file_sizes, num_rows, estimated_mean_row_sizes)
+        Self::new_internal(file_paths, file_sizes, num_rows)
     }
 
     /// Create from a Daft table with "path", "size", and "num_rows" columns.
@@ -86,29 +72,21 @@ impl FileInfos {
         Ok(Self::from_table_internal(table.table)?)
     }
 
-    pub fn set_estimated_mean_row_size(&mut self, idx: i64, value: i64) {
-        self.estimated_mean_row_sizes[idx as usize] = Some(value);
-    }
-
     /// Concatenate two FileInfos together.
     pub fn extend(&mut self, new_infos: Self) {
         self.file_paths.extend(new_infos.file_paths);
         self.file_sizes.extend(new_infos.file_sizes);
         self.num_rows.extend(new_infos.num_rows);
-        self.estimated_mean_row_sizes
-            .extend(new_infos.estimated_mean_row_sizes);
     }
 
     pub fn __getitem__(&self, idx: isize) -> PyResult<FileInfo> {
-        if idx as usize >= self.len() || idx < 0 {
+        if idx as usize >= self.len() {
             return Err(PyKeyError::new_err(idx));
         }
-        let idx = idx as usize;
         Ok(FileInfo::new_internal(
-            self.file_paths[idx].clone(),
-            self.file_sizes[idx],
-            self.num_rows[idx],
-            self.estimated_mean_row_sizes[idx],
+            self.file_paths[0].clone(),
+            self.file_sizes[0],
+            self.num_rows[0],
         ))
     }
 
@@ -129,13 +107,11 @@ impl FileInfos {
         file_paths: Vec<String>,
         file_sizes: Vec<Option<i64>>,
         num_rows: Vec<Option<i64>>,
-        estimated_mean_row_sizes: Vec<Option<i64>>,
     ) -> Self {
         Self {
             file_paths,
             file_sizes,
             num_rows,
-            estimated_mean_row_sizes,
         }
     }
 
@@ -170,22 +146,7 @@ impl FileInfos {
             .iter()
             .map(|n| n.cloned())
             .collect::<Vec<_>>();
-        let estimated_mean_row_sizes = table
-            .get_column("estimated_mean_row_size")?
-            .i64()?
-            .data()
-            .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
-            .unwrap()
-            .iter()
-            .map(|n| n.cloned())
-            .collect::<Vec<_>>();
-        Ok(Self::new_internal(
-            file_paths,
-            file_sizes,
-            num_rows,
-            estimated_mean_row_sizes,
-        ))
+        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
     }
 
     pub fn len(&self) -> usize {
@@ -211,11 +172,6 @@ impl FileInfos {
                 "num_rows",
                 arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
             ))?,
-            Series::try_from((
-                "estimated_mean_row_size",
-                arrow2::array::PrimitiveArray::<i64>::from(&self.estimated_mean_row_sizes)
-                    .to_boxed(),
-            ))?,
         ];
         Table::new(
             Schema::new(columns.iter().map(|s| s.field().clone()).collect())?,
@@ -226,6 +182,6 @@ impl FileInfos {
 
 impl Default for FileInfos {
     fn default() -> Self {
-        Self::new_internal(vec![], vec![], vec![], vec![])
+        Self::new_internal(vec![], vec![], vec![])
     }
 }

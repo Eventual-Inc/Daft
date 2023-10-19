@@ -450,7 +450,6 @@ class Table:
         buffer_size: int | None = None,
         chunk_size: int | None = None,
         max_chunks_in_flight: int | None = None,
-        estimated_mean_row_size: int | None = None,
     ) -> Table:
         return Table._from_pytable(
             _read_csv(
@@ -466,7 +465,6 @@ class Table:
                 buffer_size=buffer_size,
                 chunk_size=chunk_size,
                 max_chunks_in_flight=max_chunks_in_flight,
-                estimated_mean_row_size=estimated_mean_row_size,
             )
         )
 

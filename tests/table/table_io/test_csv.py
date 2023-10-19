@@ -74,7 +74,7 @@ def test_csv_infer_schema(data, expected_dtype, use_native_downloader):
         ],
     ) as f:
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        schema, _ = schema_inference.from_csv(f, storage_config=storage_config)
+        schema = schema_inference.from_csv(f, storage_config=storage_config)
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
@@ -90,7 +90,7 @@ def test_csv_infer_schema_custom_delimiter(use_native_downloader):
         delimiter="|",
     ) as f:
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        schema, _ = schema_inference.from_csv(
+        schema = schema_inference.from_csv(
             f, storage_config=storage_config, csv_options=TableParseCSVOptions(delimiter="|")
         )
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
@@ -107,7 +107,7 @@ def test_csv_infer_schema_no_header(use_native_downloader):
         ],
     ) as f:
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
-        schema, _ = schema_inference.from_csv(
+        schema = schema_inference.from_csv(
             f, storage_config=storage_config, csv_options=TableParseCSVOptions(header_index=None)
         )
         fields = (

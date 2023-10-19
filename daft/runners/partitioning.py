@@ -47,7 +47,6 @@ class TableParseCSVOptions:
         buffer_size: Size of the buffer (in bytes) used by the streaming reader.
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
         max_chunks_in_flight: Maximum number of chunks deserialized concurrently by the streaming reader.
-        estimated_mean_row_size: The estimated mean row size, determined via upstream file sampling (e.g. when inferring the schema for the file).
     """
 
     delimiter: str = ","
@@ -55,7 +54,6 @@ class TableParseCSVOptions:
     buffer_size: int | None = None
     chunk_size: int | None = None
     max_chunks_in_flight: int | None = None
-    estimated_mean_row_size: int | None = None
 
 
 @dataclass(frozen=True)

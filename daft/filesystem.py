@@ -353,9 +353,7 @@ def glob_path_with_stats(
         file_sizes.append(infos.get("size"))
         num_rows.append(infos.get("rows"))
 
-    return FileInfos.from_infos(
-        file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows, estimated_mean_row_sizes=[None] * len(num_rows)
-    )
+    return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
 
 
 def _get_parquet_metadata_single(path: str) -> pa.parquet.FileMetadata:

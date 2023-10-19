@@ -34,14 +34,11 @@ def _get_tabular_files_scan(
     file_infos = runner_io.glob_paths_details(paths, file_format_config, fs=fs, storage_config=storage_config)
 
     # Infer schema if no hints provided
-    if schema_hint is None:
-        inferred_or_provided_schema, estimated_mean_row_size = runner_io.get_schema_from_first_filepath(
-            file_infos, file_format_config, storage_config
-        )
-        if estimated_mean_row_size is not None:
-            file_infos.set_estimated_mean_row_size(0, estimated_mean_row_size)
-    else:
-        inferred_or_provided_schema = schema_hint
+    inferred_or_provided_schema = (
+        schema_hint
+        if schema_hint is not None
+        else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
+    )
     # Construct plan
     builder_cls = get_context().logical_plan_builder_class()
     builder = builder_cls.from_tabular_scan(
