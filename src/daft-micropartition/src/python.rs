@@ -127,7 +127,7 @@ impl PyMicroPartition {
     }
 
     pub fn cast_to_schema(&self, py: Python, schema: PySchema) -> PyResult<Self> {
-        todo!("[MICROPARTITION_INT] cast_to_schema")
+        py.allow_threads(|| Ok(self.inner.cast_to_schema(schema.schema)?.into()))
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
