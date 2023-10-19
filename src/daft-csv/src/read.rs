@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_csv_read_local_compression(
+    fn test_csv_read_local(
         #[values(
             // Uncompressed
             None,
@@ -992,6 +992,49 @@ mod tests {
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = Schema::new(vec![
+            // Conversion to all of these types should fail, resulting in nulls.
+            Field::new("sepal.length", DataType::Boolean),
+            Field::new("sepal.width", DataType::Boolean),
+            Field::new("petal.length", DataType::Boolean),
+            Field::new("petal.width", DataType::Boolean),
+            Field::new("variety", DataType::Int64),
+        ])?;
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            Some(schema.into()),
+            None,
+            None,
+            None,
+        )?;
+        let num_rows = table.len();
+        assert_eq!(num_rows, 20);
+        // Check that all columns are all null.
+        for idx in 0..table.num_columns() {
+            let column = table.get_column_by_index(idx)?;
+            assert_eq!(column.to_arrow().null_count(), num_rows);
+        }
 
         Ok(())
     }

@@ -255,15 +255,42 @@ fn merge_schema(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
     use daft_core::{datatypes::Field, schema::Schema, DataType};
     use daft_io::{IOClient, IOConfig};
+    use rstest::rstest;
 
     use super::read_csv_schema;
 
-    #[test]
-    fn test_csv_schema_local() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+    #[rstest]
+    fn test_csv_schema_local(
+        #[values(
+            // Uncompressed
+            None,
+            // brotli
+            Some("br"),
+            // bzip2
+            Some("bz2"),
+            // deflate
+            Some("deflate"),
+            // gzip
+            Some("gz"),
+            // lzma
+            Some("lzma"),
+            // xz
+            Some("xz"),
+            // zlib
+            Some("zl"),
+            // zstd
+            Some("zst"),
+        )]
+        compression: Option<&str>,
+    ) -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny.csv{}",
+            env!("CARGO_MANIFEST_DIR"),
+            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+        );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -371,6 +398,94 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_schema_local_empty_lines_skipped() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_empty_lines.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let (schema, total_bytes_read, num_records_read) =
+            read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        assert_eq!(total_bytes_read, 49);
+        assert_eq!(num_records_read, 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_schema_local_nulls() -> DaftResult<()> {
+        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let (schema, total_bytes_read, num_records_read) =
+            read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        assert_eq!(total_bytes_read, 82);
+        assert_eq!(num_records_read, 6);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_schema_local_conflicting_types_utf8_fallback() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_conflicting_dtypes.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let (schema, total_bytes_read, num_records_read) =
+            read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                // All conflicting dtypes fall back to UTF8.
+                Field::new("sepal.length", DataType::Utf8),
+                Field::new("sepal.width", DataType::Utf8),
+                Field::new("petal.length", DataType::Utf8),
+                Field::new("petal.width", DataType::Utf8),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        assert_eq!(total_bytes_read, 33);
+        assert_eq!(num_records_read, 2);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_csv_schema_local_max_bytes() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
 
@@ -405,14 +520,90 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_schema_from_s3() -> DaftResult<()> {
-        let file = "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv";
+    fn test_csv_schema_local_invalid_column_header_mismatch() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_header_cols_mismatch.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, _, _) = read_csv_schema(file, true, None, None, io_client.clone(), None)?;
+        let err = read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(
+            err.to_string()
+                .contains("found record with 4 fields, but the previous record has 5 fields"),
+            "{}",
+            err
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_schema_local_invalid_no_header_variable_num_cols() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_invalid_no_header_variable_num_cols.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let err = read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(
+            err.to_string()
+                .contains("found record with 5 fields, but the previous record has 4 fields"),
+            "{}",
+            err
+        );
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_csv_schema_s3(
+        #[values(
+            // Uncompressed
+            None,
+            // brotli
+            Some("br"),
+            // bzip2
+            Some("bz2"),
+            // deflate
+            Some("deflate"),
+            // gzip
+            Some("gz"),
+            // lzma
+            Some("lzma"),
+            // xz
+            Some("xz"),
+            // zlib
+            Some("zl"),
+            // zstd
+            Some("zst"),
+        )]
+        compression: Option<&str>,
+    ) -> DaftResult<()> {
+        let file = format!(
+            "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv{}",
+            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let (schema, _, _) =
+            read_csv_schema(file.as_ref(), true, None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
