@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use common_error::DaftResult;
 use daft_core::{
+    ffi,
     python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
     Series,
 };
@@ -97,9 +98,26 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
-    pub fn from_arrow_record_batches(record_batches: PyObject) -> PyResult<Self> {
-        // this can probably be smarter since we don't have to concat anymore
-        todo!("[MICROPARTITION_INT] from_arrow_record_batches")
+    pub fn from_arrow_record_batches(
+        py: Python,
+        record_batches: Vec<&PyAny>,
+        schema: &PySchema,
+    ) -> PyResult<Self> {
+        // TODO: Cleanup and refactor code for sharing with Table
+        let tables = record_batches
+            .iter()
+            .map(|rb| daft_table::ffi::record_batches_to_table(py, &[rb], schema.schema.clone()))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        let total_len = tables.iter().map(|tbl| tbl.len()).sum();
+        Ok(PyMicroPartition {
+            inner: Arc::new(MicroPartition::new(
+                schema.schema.clone(),
+                TableState::Loaded(Arc::new(tables)),
+                TableMetadata { length: total_len },
+                None,
+            )),
+        })
     }
 
     // Export Methods
