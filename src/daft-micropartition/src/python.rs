@@ -337,12 +337,58 @@ impl PyMicroPartition {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
-            // TODO: [MICROPARTITION_INT] PASS THE REST OF THE OPTIONS IN
+
             crate::micropartition::read_parquet_into_micropartition(
-                [uri].as_slice(),
+                [uri].as_ref(),
+                columns.as_deref(),
+                start_offset,
+                num_rows,
+                row_groups.and_then(|rg| Some(vec![rg])),
                 io_config,
                 Some(io_stats),
+                1,
                 multithreaded_io.unwrap_or(true),
+                &schema_infer_options,
+            )
+        })?;
+        Ok(PyMicroPartition {
+            inner: Arc::new(mp),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[staticmethod]
+    pub fn read_parquet_bulk(
+        py: Python,
+        uris: Vec<&str>,
+        columns: Option<Vec<&str>>,
+        start_offset: Option<usize>,
+        num_rows: Option<usize>,
+        row_groups: Option<Vec<Vec<i64>>>,
+        io_config: Option<IOConfig>,
+        num_parallel_tasks: Option<i64>,
+        multithreaded_io: Option<bool>,
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+    ) -> PyResult<Self> {
+        let mp = py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uris:?}"));
+
+            let io_config = io_config.unwrap_or_default().config.into();
+            let schema_infer_options = ParquetSchemaInferenceOptions::new(
+                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
+            );
+
+            crate::micropartition::read_parquet_into_micropartition(
+                uris.as_ref(),
+                columns.as_deref(),
+                start_offset,
+                num_rows,
+                row_groups,
+                io_config,
+                Some(io_stats),
+                num_parallel_tasks.unwrap_or(128) as usize,
+                multithreaded_io.unwrap_or(true),
+                &schema_infer_options,
             )
         })?;
         Ok(PyMicroPartition {
