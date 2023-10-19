@@ -125,7 +125,9 @@ class MicroPartition:
         return Table._from_pytable(self._micropartition.to_table())
 
     def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False, convert_large_arrays: bool = False) -> pa.Table:
-        return self.to_table().to_arrow()
+        return self.to_table().to_arrow(
+            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype, convert_large_arrays=convert_large_arrays
+        )
 
     def to_pydict(self) -> dict[str, list]:
         return self.to_table().to_pydict()
