@@ -1151,6 +1151,7 @@ name = "daft-micropartition"
 version = "0.1.10"
 dependencies = [
  "arrow2",
+ "bincode",
  "common-error",
  "daft-core",
  "daft-csv",
@@ -1162,6 +1163,7 @@ dependencies = [
  "parquet2",
  "pyo3",
  "pyo3-log",
+ "serde",
  "snafu",
 ]
 
@@ -1184,6 +1186,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "rayon",
+ "serde",
  "snafu",
  "tokio",
  "tokio-stream",
