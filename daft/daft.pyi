@@ -244,6 +244,60 @@ class FileFormatConfig:
     def __eq__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
 
+class CsvConvertOptions:
+    """
+    Options for converting CSV data to Daft data.
+    """
+
+    limit: int | None
+    include_columns: list[str] | None
+    column_names: list[str] | None
+    schema: PySchema | None
+
+    def __init__(
+        self,
+        limit: int | None = None,
+        include_columns: list[str] | None = None,
+        column_names: list[str] | None = None,
+        schema: PySchema | None = None,
+    ): ...
+
+class CsvParseOptions:
+    """
+    Options for parsing CSV files.
+    """
+
+    has_header: bool
+    delimiter: str
+    double_quote: bool
+    quote: str | None
+    escape_char: str | None
+    comment: str | None
+
+    def __init__(
+        self,
+        has_header: bool = True,
+        delimiter: str = ",",
+        double_quote: bool = True,
+        quote: str | None = None,
+        escape_char: str | None = None,
+        comment: str | None = None,
+    ): ...
+
+class CsvReadOptions:
+    """
+    Options for reading CSV files.
+    """
+
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+    ): ...
+
 class FileInfo:
     """
     Metadata for a single file.
@@ -521,29 +575,15 @@ def read_parquet_schema(
 ): ...
 def read_csv(
     uri: str,
-    column_names: list[str] | None = None,
-    include_columns: list[str] | None = None,
-    num_rows: int | None = None,
-    has_header: bool | None = None,
-    delimiter: str | None = None,
-    double_quote: bool | None = None,
-    quote: str | None = None,
-    escape_char: str | None = None,
-    comment: str | None = None,
+    convert_options: CsvConvertOptions | None = None,
+    parse_options: CsvParseOptions | None = None,
+    read_options: CsvReadOptions | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
-    schema: PySchema | None = None,
-    buffer_size: int | None = None,
-    chunk_size: int | None = None,
 ): ...
 def read_csv_schema(
     uri: str,
-    has_header: bool | None = None,
-    delimiter: str | None = None,
-    double_quote: bool | None = None,
-    quote: str | None = None,
-    escape_char: str | None = None,
-    comment: str | None = None,
+    parse_options: CsvParseOptions | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
 ): ...

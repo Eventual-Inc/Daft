@@ -2,6 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
+use daft_csv::CsvParseOptions;
 use daft_io::{
     get_io_client, get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef,
 };
@@ -180,12 +181,14 @@ impl GlobScanOperator {
                     }) => {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath.as_str(),
-                            *has_headers,
-                            *delimiter,
-                            *double_quote,
-                            *quote,
-                            *escape_char,
-                            *comment,
+                            Some(CsvParseOptions::new_with_defaults(
+                                *has_headers,
+                                *delimiter,
+                                *double_quote,
+                                *quote,
+                                *escape_char,
+                                *comment,
+                            )?),
                             None,
                             io_client,
                             Some(io_stats),

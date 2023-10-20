@@ -12,7 +12,15 @@ from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
-from daft.daft import IOConfig, NativeStorageConfig, PythonStorageConfig, StorageConfig
+from daft.daft import (
+    CsvConvertOptions,
+    CsvParseOptions,
+    CsvReadOptions,
+    IOConfig,
+    NativeStorageConfig,
+    PythonStorageConfig,
+    StorageConfig,
+)
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -219,21 +227,22 @@ def read_csv(
                 file, (str, pathlib.Path)
             ), "Native downloader only works on string inputs to read_parquet"
             has_header = csv_options.header_index is not None
+            csv_convert_options = CsvConvertOptions(
+                limit=read_options.num_rows,
+                include_columns=read_options.column_names,
+                column_names=schema.column_names() if not has_header else None,
+                schema=schema._schema if schema is not None else None,
+            )
+            csv_parse_options = CsvParseOptions(
+                has_header=has_header, delimiter=csv_options.delimiter, double_quote=csv_options.double_quote
+            )
+            csv_read_options = CsvReadOptions(buffer_size=csv_options.buffer_size, chunk_size=csv_options.chunk_size)
             tbl = Table.read_csv(
                 str(file),
-                column_names=schema.column_names() if not has_header else None,
-                include_columns=read_options.column_names,
-                num_rows=read_options.num_rows,
-                has_header=has_header,
-                delimiter=csv_options.delimiter,
-                double_quote=csv_options.double_quote,
-                quote=csv_options.quote,
-                escape_char=csv_options.escape_char,
-                comment=csv_options.comment,
+                convert_options=csv_convert_options,
+                parse_options=csv_parse_options,
+                read_options=csv_read_options,
                 io_config=config.io_config,
-                schema=schema,
-                buffer_size=csv_options.buffer_size,
-                chunk_size=csv_options.chunk_size,
             )
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
         else:
@@ -241,7 +250,6 @@ def read_csv(
             io_config = config.io_config
 
     with _open_stream(file, io_config) as f:
-
         from daft.utils import ARROW_VERSION
 
         if csv_options.comment is not None and ARROW_VERSION < (7, 0, 0):

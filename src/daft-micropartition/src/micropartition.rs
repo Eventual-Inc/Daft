@@ -8,6 +8,7 @@ use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::read::read_csv;
+use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
@@ -18,9 +19,9 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::DaftCoreComputeSnafu;
 #[cfg(feature = "python")]
 use crate::PyIOSnafu;
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{IOConfig, IOStatsRef};
 use daft_stats::TableMetadata;
@@ -146,21 +147,34 @@ fn materialize_scan_task(
                     urls.map(|url| {
                         daft_csv::read::read_csv(
                             url,
-                            col_names.clone(),
-                            column_names.clone(),
-                            scan_task.pushdowns.limit,
-                            cfg.has_headers,
-                            cfg.delimiter,
-                            cfg.double_quote,
-                            cfg.quote,
-                            cfg.escape_char,
-                            cfg.comment,
+                            Some(CsvConvertOptions::new_internal(
+                                scan_task.pushdowns.limit,
+                                column_names
+                                    .as_ref()
+                                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                                col_names
+                                    .as_ref()
+                                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                                None,
+                            )),
+                            Some(
+                                CsvParseOptions::new_with_defaults(
+                                    cfg.has_headers,
+                                    cfg.delimiter,
+                                    cfg.double_quote,
+                                    cfg.quote,
+                                    cfg.escape_char,
+                                    cfg.comment,
+                                )
+                                .context(DaftCSVSnafu)?,
+                            ),
+                            Some(CsvReadOptions::new_internal(
+                                cfg.buffer_size,
+                                cfg.chunk_size,
+                            )),
                             io_client.clone(),
                             io_stats.clone(),
                             native_storage_config.multithreaded_io,
-                            None, // Allow read_csv to perform its own schema inference
-                            cfg.buffer_size,
-                            cfg.chunk_size,
                             None, // max_chunks_in_flight
                         )
                         .context(DaftCoreComputeSnafu)
@@ -569,21 +583,28 @@ pub(crate) fn read_csv_into_micropartition(
                 }
                 let table = read_csv(
                     uri,
-                    column_names.clone(),
-                    include_columns.clone(),
-                    remaining_rows,
-                    has_header,
-                    delimiter,
-                    double_quote,
-                    quote,
-                    escape_char,
-                    comment,
+                    Some(CsvConvertOptions::new_internal(
+                        remaining_rows,
+                        include_columns
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        schema.clone(),
+                    )),
+                    Some(CsvParseOptions::new_with_defaults(
+                        has_header,
+                        delimiter,
+                        double_quote,
+                        quote,
+                        escape_char,
+                        comment,
+                    )?),
+                    Some(CsvReadOptions::new_internal(buffer_size, chunk_size)),
                     io_client.clone(),
                     io_stats.clone(),
                     multithreaded_io,
-                    schema.clone(),
-                    buffer_size,
-                    chunk_size,
                     None,
                 )?;
                 remaining_rows = remaining_rows.map(|rr| rr - table.len());

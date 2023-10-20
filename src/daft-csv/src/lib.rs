@@ -5,12 +5,15 @@ use snafu::Snafu;
 
 mod compression;
 pub mod metadata;
+pub mod options;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
 mod schema;
+
+pub use options::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 #[cfg(feature = "python")]
-pub use python::register_modules;
+use pyo3::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -49,4 +52,22 @@ impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
         Error::IOError { source: err }
     }
+}
+
+#[cfg(feature = "python")]
+impl From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
+    }
+}
+
+type Result<T, E = Error> = std::result::Result<T, E>;
+
+#[cfg(feature = "python")]
+pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<CsvConvertOptions>()?;
+    parent.add_class::<CsvParseOptions>()?;
+    parent.add_class::<CsvReadOptions>()?;
+    Ok(())
 }
