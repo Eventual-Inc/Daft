@@ -192,7 +192,6 @@ class CsvSourceConfig:
     has_headers: bool
     buffer_size: int | None
     chunk_size: int | None
-    max_chunks_in_flight: int | None
 
     def __init__(
         self,
@@ -200,7 +199,6 @@ class CsvSourceConfig:
         has_headers: bool,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
-        max_chunks_in_flight: int | None = None,
     ): ...
 
 class JsonSourceConfig:
@@ -438,7 +436,6 @@ def read_csv(
     schema: PySchema | None = None,
     buffer_size: int | None = None,
     chunk_size: int | None = None,
-    max_chunks_in_flight: int | None = None,
 ): ...
 def read_csv_schema(
     uri: str,

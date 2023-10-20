@@ -375,7 +375,6 @@ class ReadFile(SingleOutputInstruction):
                             header_index=0 if format_config.has_headers else None,
                             buffer_size=format_config.buffer_size,
                             chunk_size=format_config.chunk_size,
-                            max_chunks_in_flight=format_config.max_chunks_in_flight,
                         ),
                         read_options=read_options,
                     )

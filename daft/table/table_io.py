@@ -226,7 +226,6 @@ def read_csv(
                 schema=schema,
                 buffer_size=csv_options.buffer_size,
                 chunk_size=csv_options.chunk_size,
-                max_chunks_in_flight=csv_options.max_chunks_in_flight,
             )
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 

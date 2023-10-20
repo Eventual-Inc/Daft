@@ -449,7 +449,6 @@ class Table:
         schema: Schema | None = None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
-        max_chunks_in_flight: int | None = None,
     ) -> Table:
         return Table._from_pytable(
             _read_csv(
@@ -464,7 +463,6 @@ class Table:
                 schema=schema._schema if schema is not None else None,
                 buffer_size=buffer_size,
                 chunk_size=chunk_size,
-                max_chunks_in_flight=max_chunks_in_flight,
             )
         )
 

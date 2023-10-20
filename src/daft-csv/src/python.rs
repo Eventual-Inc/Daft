@@ -35,7 +35,6 @@ pub mod pylib {
         schema: Option<PySchema>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
-        max_chunks_in_flight: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
@@ -57,7 +56,7 @@ pub mod pylib {
                 schema.map(|s| s.schema),
                 buffer_size,
                 chunk_size,
-                max_chunks_in_flight,
+                None,
             )?
             .into())
         })

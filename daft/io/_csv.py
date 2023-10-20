@@ -30,7 +30,6 @@ def read_csv(
     use_native_downloader: bool = False,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
-    _max_chunks_in_flight: Optional[int] = None,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s)
 
@@ -70,7 +69,6 @@ def read_csv(
         has_headers=has_headers,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
-        max_chunks_in_flight=_max_chunks_in_flight,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     if use_native_downloader:

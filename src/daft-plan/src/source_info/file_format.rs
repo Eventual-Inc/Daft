@@ -81,7 +81,6 @@ pub struct CsvSourceConfig {
     pub has_headers: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
-    pub max_chunks_in_flight: Option<usize>,
 }
 
 #[cfg(feature = "python")]
@@ -95,21 +94,18 @@ impl CsvSourceConfig {
     /// * `has_headers` - Whether the CSV has a header row; if so, it will be skipped during data parsing.
     /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
-    /// * `max_chunks_in_flight` - Maximum number of chunks deserialized concurrently by the streaming reader.
     #[new]
     fn new(
         delimiter: String,
         has_headers: bool,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
-        max_chunks_in_flight: Option<usize>,
     ) -> Self {
         Self {
             delimiter,
             has_headers,
             buffer_size,
             chunk_size,
-            max_chunks_in_flight,
         }
     }
 }

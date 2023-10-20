@@ -46,14 +46,12 @@ class TableParseCSVOptions:
         header_index: Index of the header row, or None if no header
         buffer_size: Size of the buffer (in bytes) used by the streaming reader.
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
-        max_chunks_in_flight: Maximum number of chunks deserialized concurrently by the streaming reader.
     """
 
     delimiter: str = ","
     header_index: int | None = 0
     buffer_size: int | None = None
     chunk_size: int | None = None
-    max_chunks_in_flight: int | None = None
 
 
 @dataclass(frozen=True)
