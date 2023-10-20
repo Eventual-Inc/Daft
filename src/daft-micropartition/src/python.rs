@@ -1,29 +1,36 @@
 #![allow(unused)] // MAKE SURE TO REMOVE THIS
 
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
 use daft_core::{
     ffi,
     python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
+    schema::Schema,
     Series,
 };
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_table::python::PyTable;
+use daft_table::{python::PyTable, Table};
+use indexmap::IndexMap;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
-    types::{PyDict, PyList},
+    types::{PyBytes, PyDict, PyList, PyTuple},
     Python,
 };
 
 use crate::{
-    micropartition::{MicroPartition, TableState},
+    column_stats::ColumnRangeStatistics,
+    micropartition::{DeferredLoadingParams, MicroPartition, TableState},
     table_metadata::TableMetadata,
     table_stats::TableStatistics,
 };
+use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone)]
@@ -453,6 +460,121 @@ impl PyMicroPartition {
         })?;
         Ok(mp.into())
     }
+
+    pub fn _ser_column_statistics<'py>(&self, py: Python<'py>) -> PyResult<Option<&'py PyDict>> {
+        match self.inner.statistics.as_ref() {
+            None => Ok(None),
+            Some(stats) => {
+                let mut d = PyDict::new(py);
+                let _from_pyseries = py
+                    .import(pyo3::intern!(py, "daft.series"))?
+                    .getattr(pyo3::intern!(py, "Series"))?
+                    .getattr(pyo3::intern!(py, "_from_pyseries"))?;
+
+                for (name, cs) in &stats.columns {
+                    match cs {
+                        ColumnRangeStatistics::Missing => {
+                            d.set_item(name, py.None());
+                        }
+                        ColumnRangeStatistics::Loaded(s1, s2) => {
+                            let l = _from_pyseries
+                                .call1((PySeries { series: s1.clone() }.into_py(py),))?;
+                            let r = _from_pyseries
+                                .call1((PySeries { series: s2.clone() }.into_py(py),))?;
+                            d.set_item(name, (l, r));
+                        }
+                    }
+                }
+                Ok(Some(d))
+            }
+        }
+    }
+
+    #[staticmethod]
+    pub fn _from_unloaded_table_state(
+        py: Python,
+        schema_bytes: &PyBytes,
+        loading_params_bytes: &PyBytes,
+        metadata_bytes: &PyBytes,
+        statistics: Option<&PyDict>,
+    ) -> PyResult<Self> {
+        let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
+        let params =
+            bincode::deserialize::<DeferredLoadingParams>(loading_params_bytes.as_bytes()).unwrap();
+        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
+
+        Ok(MicroPartition::new(
+            schema.into(),
+            TableState::Unloaded(params),
+            metadata,
+            _from_pydict_column_statistics(py, statistics)?,
+        )
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn _from_loaded_table_state(
+        py: Python,
+        schema_bytes: &PyBytes,
+        table_objs: Vec<PyObject>,
+        metadata_bytes: &PyBytes,
+        statistics: Option<&PyDict>,
+    ) -> PyResult<Self> {
+        let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
+        let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
+        let tables = table_objs
+            .into_iter()
+            .map(|p| {
+                Ok(p.getattr(py, pyo3::intern!(py, "_table"))?
+                    .extract::<PyTable>(py)?
+                    .table)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+
+        Ok(MicroPartition::new(
+            schema.into(),
+            TableState::Loaded(tables.into()),
+            metadata,
+            _from_pydict_column_statistics(py, statistics)?,
+        )
+        .into())
+    }
+
+    pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, PyObject)> {
+        let schema_bytes = PyBytes::new(py, &bincode::serialize(&self.inner.schema).unwrap());
+
+        let py_metadata_bytes =
+            PyBytes::new(py, &bincode::serialize(&self.inner.metadata).unwrap());
+        let py_stats = self._ser_column_statistics(py)?;
+        let guard = self.inner.state.lock().unwrap();
+        if let TableState::Loaded(tables) = guard.deref() {
+            let _from_pytable = py
+                .import(pyo3::intern!(py, "daft.table"))?
+                .getattr(pyo3::intern!(py, "Table"))?
+                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+
+            let pytables = tables.iter().map(|t| PyTable { table: t.clone() });
+            let pyobjs = pytables
+                .map(|pt| _from_pytable.call1((pt,)))
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok((
+                Self::type_object(py)
+                    .getattr(pyo3::intern!(py, "_from_loaded_table_state"))?
+                    .to_object(py),
+                (schema_bytes, pyobjs, py_metadata_bytes, py_stats).to_object(py),
+            ))
+        } else if let TableState::Unloaded(params) = guard.deref() {
+            let py_params_bytes = PyBytes::new(py, &bincode::serialize(params).unwrap());
+            Ok((
+                Self::type_object(py)
+                    .getattr(pyo3::intern!(py, "_from_unloaded_table_state"))?
+                    .to_object(py),
+                (schema_bytes, py_params_bytes, py_metadata_bytes, py_stats).to_object(py),
+            ))
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 impl From<MicroPartition> for PyMicroPartition {
@@ -466,4 +588,33 @@ impl From<MicroPartition> for PyMicroPartition {
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     Ok(())
+}
+
+fn _from_pydict_column_statistics(
+    py: Python,
+    data: Option<&PyDict>,
+) -> PyResult<Option<TableStatistics>> {
+    if let Some(data) = data {
+        let mut columns = IndexMap::<String, ColumnRangeStatistics>::new();
+        for (k, v) in data.into_iter() {
+            if v.is_none() {
+                columns.insert(k.extract::<String>()?, ColumnRangeStatistics::Missing);
+            } else {
+                let tup = v.extract::<&PyTuple>()?;
+                let lower = tup
+                    .get_item(0)?
+                    .getattr(pyo3::intern!(py, "_series"))?
+                    .extract::<PySeries>()?;
+                let upper = tup
+                    .get_item(1)?
+                    .getattr(pyo3::intern!(py, "_series"))?
+                    .extract::<PySeries>()?;
+                let crs = ColumnRangeStatistics::Loaded(lower.series, upper.series);
+                columns.insert(k.extract::<String>()?, crs);
+            }
+        }
+        Ok(Some(TableStatistics { columns }))
+    } else {
+        Ok(None)
+    }
 }

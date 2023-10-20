@@ -1,5 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true}
+bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}
@@ -11,6 +12,7 @@ indexmap = {workspace = true, features = ["serde"]}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true}
+serde = {workspace = true}
 snafu = {workspace = true}
 
 [features]
