@@ -1,6 +1,7 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 async-compat = {workspace = true}
+async-compression = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
@@ -17,6 +18,10 @@ snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+url = {workspace = true}
+
+[dev-dependencies]
+rstest = "0.18.2"
 
 [features]
 default = ["python"]

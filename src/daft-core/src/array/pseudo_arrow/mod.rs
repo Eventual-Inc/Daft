@@ -214,7 +214,7 @@ pub mod compute;
 #[cfg(feature = "python")]
 pub mod python;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PseudoArrowArray<T> {
     values: Buffer<T>,
     validity: Option<Bitmap>,

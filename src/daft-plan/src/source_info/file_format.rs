@@ -79,6 +79,8 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 pub struct CsvSourceConfig {
     pub delimiter: String,
     pub has_headers: bool,
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
 }
 
 #[cfg(feature = "python")]
@@ -90,11 +92,20 @@ impl CsvSourceConfig {
     ///
     /// * `delimiter` - The character delmiting individual cells in the CSV data.
     /// * `has_headers` - Whether the CSV has a header row; if so, it will be skipped during data parsing.
+    /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
+    /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
-    fn new(delimiter: String, has_headers: bool) -> Self {
+    fn new(
+        delimiter: String,
+        has_headers: bool,
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
+    ) -> Self {
         Self {
             delimiter,
             has_headers,
+            buffer_size,
+            chunk_size,
         }
     }
 }

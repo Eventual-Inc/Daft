@@ -373,6 +373,8 @@ class ReadFile(SingleOutputInstruction):
                         csv_options=TableParseCSVOptions(
                             delimiter=format_config.delimiter,
                             header_index=0 if format_config.has_headers else None,
+                            buffer_size=format_config.buffer_size,
+                            chunk_size=format_config.chunk_size,
                         ),
                         read_options=read_options,
                     )

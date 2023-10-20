@@ -5,6 +5,7 @@ pub mod nested_array;
 
 use super::Series;
 
+#[derive(Debug)]
 pub struct ArrayWrapper<T>(pub T);
 
 pub trait IntoSeries {

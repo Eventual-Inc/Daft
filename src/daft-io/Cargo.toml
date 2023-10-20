@@ -32,7 +32,7 @@ serde_json = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
-url = "2.4.0"
+url = {workspace = true}
 
 [dependencies.reqwest]
 default-features = false

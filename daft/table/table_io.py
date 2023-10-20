@@ -223,6 +223,9 @@ def read_csv(
                 has_header=has_header,
                 delimiter=csv_options.delimiter,
                 io_config=config.io_config,
+                schema=schema,
+                buffer_size=csv_options.buffer_size,
+                chunk_size=csv_options.chunk_size,
             )
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 

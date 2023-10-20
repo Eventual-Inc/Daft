@@ -28,6 +28,8 @@ def read_csv(
     delimiter: str = ",",
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = False,
+    _buffer_size: Optional[int] = None,
+    _chunk_size: Optional[int] = None,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s)
 
@@ -62,7 +64,12 @@ def read_csv(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of CSV filepaths")
 
-    csv_config = CsvSourceConfig(delimiter=delimiter, has_headers=has_headers)
+    csv_config = CsvSourceConfig(
+        delimiter=delimiter,
+        has_headers=has_headers,
+        buffer_size=_buffer_size,
+        chunk_size=_chunk_size,
+    )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(io_config))
