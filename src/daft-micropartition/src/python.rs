@@ -468,7 +468,7 @@ impl PyMicroPartition {
                 let mut d = PyDict::new(py);
                 let _from_pyseries = py
                     .import(pyo3::intern!(py, "daft.series"))?
-                    .getattr("Series")?
+                    .getattr(pyo3::intern!(py, "Series"))?
                     .getattr(pyo3::intern!(py, "_from_pyseries"))?;
 
                 for (name, cs) in &stats.columns {
@@ -524,7 +524,11 @@ impl PyMicroPartition {
         let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
         let tables = table_objs
             .into_iter()
-            .map(|p| Ok(p.getattr(py, "_table")?.extract::<PyTable>(py)?.table))
+            .map(|p| {
+                Ok(p.getattr(py, pyo3::intern!(py, "_table"))?
+                    .extract::<PyTable>(py)?
+                    .table)
+            })
             .collect::<PyResult<Vec<_>>>()?;
 
         Ok(MicroPartition::new(
@@ -555,7 +559,7 @@ impl PyMicroPartition {
                 .collect::<PyResult<Vec<_>>>()?;
             Ok((
                 Self::type_object(py)
-                    .getattr("_from_loaded_table_state")?
+                    .getattr(pyo3::intern!(py, "_from_loaded_table_state"))?
                     .to_object(py),
                 (schema_bytes, pyobjs, py_metadata_bytes, py_stats).to_object(py),
             ))
@@ -563,7 +567,7 @@ impl PyMicroPartition {
             let py_params_bytes = PyBytes::new(py, &bincode::serialize(params).unwrap());
             Ok((
                 Self::type_object(py)
-                    .getattr("_from_unloaded_table_state")?
+                    .getattr(pyo3::intern!(py, "_from_unloaded_table_state"))?
                     .to_object(py),
                 (schema_bytes, py_params_bytes, py_metadata_bytes, py_stats).to_object(py),
             ))
@@ -597,8 +601,14 @@ fn _from_pydict_column_statistics(
                 columns.insert(k.extract::<String>()?, ColumnRangeStatistics::Missing);
             } else {
                 let tup = v.extract::<&PyTuple>()?;
-                let lower = tup.get_item(0)?.getattr("_series")?.extract::<PySeries>()?;
-                let upper = tup.get_item(1)?.getattr("_series")?.extract::<PySeries>()?;
+                let lower = tup
+                    .get_item(0)?
+                    .getattr(pyo3::intern!(py, "_series"))?
+                    .extract::<PySeries>()?;
+                let upper = tup
+                    .get_item(1)?
+                    .getattr(pyo3::intern!(py, "_series"))?
+                    .extract::<PySeries>()?;
                 let crs = ColumnRangeStatistics::Loaded(lower.series, upper.series);
                 columns.insert(k.extract::<String>()?, crs);
             }
