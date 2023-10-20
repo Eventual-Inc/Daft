@@ -80,7 +80,7 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (schema, _, _) = crate::metadata::read_csv_schema(
+            let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,

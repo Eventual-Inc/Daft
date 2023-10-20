@@ -84,10 +84,10 @@ async fn read_csv_single(
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let (schema, estimated_mean_row_size) = match schema {
-        Some(schema) => (schema.to_arrow()?, None),
+    let (schema, estimated_mean_row_size, estimated_std_row_size) = match schema {
+        Some(schema) => (schema.to_arrow()?, None, None),
         None => {
-            let (schema, total_bytes_read, num_records_read) = read_csv_schema_single(
+            let (schema, _, _, mean, std) = read_csv_schema_single(
                 uri,
                 has_header,
                 Some(delimiter),
@@ -97,10 +97,7 @@ async fn read_csv_single(
                 io_stats.clone(),
             )
             .await?;
-            (
-                schema.to_arrow()?,
-                Some(((total_bytes_read as f64) / (num_records_read as f64)).ceil() as usize),
-            )
+            (schema.to_arrow()?, Some(mean), Some(std))
         }
     };
     let compression_codec = CompressionCodec::from_uri(uri);
@@ -132,8 +129,8 @@ async fn read_csv_single(
                         .try_into()
                         .unwrap(),
                 ),
-                // If no estimated row size information from schema inference, we assume 200 bytes per row.
-                estimated_mean_row_size.unwrap_or(200),
+                estimated_mean_row_size,
+                estimated_std_row_size,
             )
             .await
         }
@@ -161,8 +158,8 @@ async fn read_csv_single(
                         .try_into()
                         .unwrap(),
                 ),
-                // If no estimated row size information from schema inference, we assume 200 bytes per row.
-                estimated_mean_row_size.unwrap_or(200),
+                estimated_mean_row_size,
+                estimated_std_row_size,
             )
             .await
         }
@@ -182,7 +179,8 @@ async fn read_csv_from_compressed_reader<R>(
     buffer_size: usize,
     chunk_size: usize,
     max_chunks_in_flight: usize,
-    estimated_mean_row_size: usize,
+    estimated_mean_row_size: Option<f64>,
+    estimated_std_row_size: Option<f64>,
 ) -> DaftResult<Table>
 where
     R: AsyncBufRead + Unpin + Send + 'static,
@@ -201,6 +199,7 @@ where
                 chunk_size,
                 max_chunks_in_flight,
                 estimated_mean_row_size,
+                estimated_std_row_size,
             )
             .await
         }
@@ -217,6 +216,7 @@ where
                 chunk_size,
                 max_chunks_in_flight,
                 estimated_mean_row_size,
+                estimated_std_row_size,
             )
             .await
         }
@@ -235,7 +235,8 @@ async fn read_csv_from_uncompressed_reader<R>(
     buffer_size: usize,
     chunk_size: usize,
     max_chunks_in_flight: usize,
-    estimated_mean_row_size: usize,
+    estimated_mean_row_size: Option<f64>,
+    estimated_std_row_size: Option<f64>,
 ) -> DaftResult<Table>
 where
     R: AsyncRead + Unpin + Send,
@@ -263,8 +264,9 @@ where
         fields_to_projection_indices(&fields, &include_columns),
         num_rows,
         chunk_size,
-        estimated_mean_row_size,
         max_chunks_in_flight,
+        estimated_mean_row_size,
+        estimated_std_row_size,
     )
     .await?;
     // Truncate fields to only contain projected columns.
@@ -295,42 +297,64 @@ where
     Table::new(daft_schema, columns_series)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_into_column_chunks<R>(
     mut reader: AsyncReader<Compat<R>>,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
     num_rows: Option<usize>,
     chunk_size: usize,
-    estimated_mean_row_size: usize,
     max_chunks_in_flight: usize,
+    estimated_mean_row_size: Option<f64>,
+    estimated_std_row_size: Option<f64>,
 ) -> DaftResult<Vec<Vec<Box<dyn arrow2::array::Array>>>>
 where
     R: AsyncRead + Unpin + Send,
 {
     let num_fields = fields.len();
     let num_rows = num_rows.unwrap_or(usize::MAX);
-    let chunk_size_rows = {
-        // With a default chunk size of 64 KiB and estimated bytes per row of 200 bytes,
-        // this would result in a chunk size of ~328 rows.
-        let estimated_rows_per_desired_chunk = chunk_size / estimated_mean_row_size;
-        // Process at least 8 rows in a chunk, even if the rows are pretty large.
-        estimated_rows_per_desired_chunk.max(8).min(num_rows)
-    };
+    let mut estimated_mean_row_size = estimated_mean_row_size.unwrap_or(200f64);
+    let mut estimated_std_row_size = estimated_std_row_size.unwrap_or(20f64);
     // Stream of unparsed CSV byte record chunks.
     let read_stream = async_stream::try_stream! {
         // Number of rows read in last read.
         let mut rows_read = 1;
         // Total number of rows read across all reads.
         let mut total_rows_read = 0;
+        let mut mean = 0f64;
+        let mut m2 = 0f64;
         while rows_read > 0 && total_rows_read < num_rows {
-            let mut buffer = vec![
-                ByteRecord::with_capacity(estimated_mean_row_size, num_fields);
-                chunk_size_rows.min(num_rows - total_rows_read)
+            // Allocate a record buffer of size 1 standard above the observed mean record size.
+            // If the record sizes are normally distributed, this should result in ~85% of the records not requiring
+            // reallocation during reading.
+            let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
+            // Get chunk size in # of rows, using the estimated mean row size in bytes.
+            let chunk_size_rows = {
+                let estimated_rows_per_desired_chunk = chunk_size / (estimated_mean_row_size.ceil() as usize);
+                // Process at least 8 rows in a chunk, even if the rows are pretty large.
+                // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
+                estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
+            };
+            let mut chunk_buffer = vec![
+                ByteRecord::with_capacity(record_buffer_size, num_fields);
+                chunk_size_rows
             ];
-            rows_read = read_rows(&mut reader, 0, buffer.as_mut_slice()).await.context(ArrowSnafu {})?;
-            buffer.truncate(rows_read);
+
+            let byte_pos_before = reader.position().byte();
+            rows_read = read_rows(&mut reader, 0, chunk_buffer.as_mut_slice()).await.context(ArrowSnafu {})?;
+            let bytes_read = reader.position().byte() - byte_pos_before;
+
+            // Update stats.
             total_rows_read += rows_read;
-            yield buffer
+            let delta = (bytes_read as f64) - mean;
+            mean += delta / (total_rows_read as f64);
+            let delta2 = (bytes_read as f64) - mean;
+            m2 += delta * delta2;
+            estimated_mean_row_size = mean;
+            estimated_std_row_size = (m2 / ((total_rows_read - 1) as f64)).sqrt();
+
+            chunk_buffer.truncate(rows_read);
+            yield chunk_buffer
         }
     };
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
