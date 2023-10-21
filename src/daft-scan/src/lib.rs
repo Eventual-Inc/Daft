@@ -14,21 +14,27 @@ enum FileType {
 }
 
 #[derive(Serialize, Deserialize)]
+struct PartitionSpec {}
+
+#[derive(Serialize, Deserialize)]
 enum ScanTask {
     AnonymousDataFile {
         path: String,
+        metadata: Option<TableMetadata>,
+        partition_spec: Option<PartitionSpec>,
     },
     CatalogDataFile {
         file_type: FileType,
         path: String,
         metadata: TableMetadata,
-        //statistics: Option<TableStatistics> // Need to figure out better serialization story for series
+        partition_spec: PartitionSpec, //statistics: Option<TableStatistics> // Need to figure out better serialization story for series
     },
 }
 
 trait ScanOperator {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[Field];
+    fn partition_spec(&self) -> Option<&PartitionSpec>;
     fn num_partitions(&self) -> DaftResult<usize>;
     fn filter(self: Box<Self>, predicate: &Expr) -> DaftResult<Box<Self>>;
     fn limit(self: Box<Self>, num: usize) -> DaftResult<Box<Self>>;
