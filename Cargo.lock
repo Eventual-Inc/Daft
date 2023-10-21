@@ -1026,6 +1026,7 @@ dependencies = [
  "daft-micropartition",
  "daft-parquet",
  "daft-plan",
+ "daft-scan",
  "daft-table",
  "libc",
  "pyo3",
@@ -1158,6 +1159,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-parquet",
+ "daft-scan",
  "daft-table",
  "indexmap 2.0.2",
  "parquet2",
@@ -1210,6 +1212,19 @@ dependencies = [
  "pyo3-log",
  "serde",
  "serde_json",
+ "snafu",
+]
+
+[[package]]
+name = "daft-scan"
+version = "0.1.10"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "pyo3",
+ "pyo3-log",
+ "serde",
  "snafu",
 ]
 

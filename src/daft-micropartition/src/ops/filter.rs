@@ -5,9 +5,10 @@ use snafu::ResultExt;
 use crate::{
     column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
     DaftCoreComputeSnafu,
 };
+
+use daft_scan::TableMetadata;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {

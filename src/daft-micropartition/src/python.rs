@@ -27,9 +27,10 @@ use pyo3::{
 use crate::{
     column_stats::ColumnRangeStatistics,
     micropartition::{DeferredLoadingParams, MicroPartition, TableState},
-    table_metadata::TableMetadata,
     table_stats::TableStatistics,
 };
+
+use daft_scan::TableMetadata;
 use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]

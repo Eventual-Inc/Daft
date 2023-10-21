@@ -2,10 +2,9 @@ use std::sync::Mutex;
 
 use common_error::{DaftError, DaftResult};
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
-};
+use crate::micropartition::{MicroPartition, TableState};
+
+use daft_scan::TableMetadata;
 
 impl MicroPartition {
     pub fn concat(mps: &[&Self]) -> DaftResult<Self> {
