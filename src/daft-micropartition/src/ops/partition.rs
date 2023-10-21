@@ -4,10 +4,9 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_table::Table;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
-};
+use crate::micropartition::{MicroPartition, TableState};
+
+use daft_scan::TableMetadata;
 
 fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
     if v.is_empty() {

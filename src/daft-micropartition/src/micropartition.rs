@@ -18,9 +18,9 @@ use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
 
-use crate::table_metadata::TableMetadata;
 use crate::table_stats::TableStatistics;
 use daft_io::{IOConfig, IOStatsRef};
+use daft_scan::TableMetadata;
 
 #[derive(Clone, Serialize, Deserialize)]
 enum FormatParams {

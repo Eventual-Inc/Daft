@@ -2,10 +2,9 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_table::Table;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
-};
+use crate::micropartition::{MicroPartition, TableState};
+
+use daft_scan::TableMetadata;
 
 impl MicroPartition {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Self> {

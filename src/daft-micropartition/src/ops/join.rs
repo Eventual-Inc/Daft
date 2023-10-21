@@ -6,8 +6,9 @@ use daft_table::infer_join_schema;
 use crate::{
     column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
 };
+
+use daft_scan::TableMetadata;
 
 impl MicroPartition {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
