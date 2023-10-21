@@ -6,7 +6,7 @@ mod table_metadata;
 pub use table_metadata::TableMetadata;
 
 #[derive(Serialize, Deserialize)]
-enum FileType {
+pub enum FileType {
     Parquet,
     Avro,
     Orc,
@@ -14,10 +14,10 @@ enum FileType {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PartitionSpec {}
+pub struct PartitionSpec {}
 
 #[derive(Serialize, Deserialize)]
-enum ScanTask {
+pub enum ScanTask {
     AnonymousDataFile {
         path: String,
         metadata: Option<TableMetadata>,
@@ -31,7 +31,7 @@ enum ScanTask {
     },
 }
 
-trait ScanOperator {
+pub trait ScanOperator {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[Field];
     fn partition_spec(&self) -> Option<&PartitionSpec>;
@@ -41,3 +41,5 @@ trait ScanOperator {
     fn to_scan_tasks(self: Box<Self>)
         -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
 }
+
+pub type ScanOperatorRef = Box<dyn ScanOperator>;
