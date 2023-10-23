@@ -326,6 +326,9 @@ class MicroPartition:
         delimiter: str | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
+        schema: Schema | None = None,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
     ) -> MicroPartition:
         return MicroPartition._from_pymicropartition(
             _PyMicroPartition.read_csv(
@@ -337,5 +340,8 @@ class MicroPartition:
                 delimiter=delimiter,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
+                schema=schema._schema if schema is not None else None,
+                buffer_size=buffer_size,
+                chunk_size=chunk_size,
             )
         )

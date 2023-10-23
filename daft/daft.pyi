@@ -761,6 +761,9 @@ class PyMicroPartition:
         delimiter: str | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
+        schema: PySchema | None = None,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
     ): ...
 
 class PhysicalPlanScheduler:

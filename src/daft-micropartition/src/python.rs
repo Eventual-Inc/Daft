@@ -357,6 +357,9 @@ impl PyMicroPartition {
         delimiter: Option<&str>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
+        schema: Option<PySchema>,
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
     ) -> PyResult<Self> {
         let delimiter = delimiter
             .map(|delimiter| match delimiter.as_bytes() {
@@ -381,6 +384,9 @@ impl PyMicroPartition {
                 io_config,
                 multithreaded_io.unwrap_or(true),
                 Some(io_stats),
+                schema.map(|s| s.schema),
+                buffer_size,
+                chunk_size,
             )
         })?;
         Ok(mp.into())

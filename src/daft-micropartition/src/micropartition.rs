@@ -258,6 +258,9 @@ pub(crate) fn read_csv_into_micropartition(
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
+    schema: Option<SchemaRef>,
+    buffer_size: Option<usize>,
+    chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
     let mut remaining_rows = num_rows;
@@ -282,9 +285,9 @@ pub(crate) fn read_csv_into_micropartition(
                     io_client.clone(),
                     io_stats.clone(),
                     multithreaded_io,
-                    None,
-                    None,
-                    None,
+                    schema.clone(),
+                    buffer_size,
+                    chunk_size,
                     None,
                 )?;
                 remaining_rows = remaining_rows.map(|rr| rr - table.len());
