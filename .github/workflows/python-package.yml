@@ -22,6 +22,7 @@ jobs:
         daft-runner: [py, ray]
         pyarrow-version: [6.0.1, 12.0]
         os: [ubuntu, windows]
+        micropartitions: [1, 0]
         exclude:
         - daft-runner: ray
           pyarrow-version: 6.0.1
@@ -91,6 +92,7 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Build library and Test with pytest (windows)
       if: ${{ (matrix.os == 'windows') }}
       run: |
@@ -180,6 +182,7 @@ jobs:
       matrix:
         python-version: ['3.7']
         daft-runner: [py, ray]
+        micropartitions: [1, 0]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -219,6 +222,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -251,6 +255,7 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        micropartitions: [1, 0]
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -312,6 +317,7 @@ jobs:
         pytest tests/integration/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
