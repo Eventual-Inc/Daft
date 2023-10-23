@@ -24,7 +24,7 @@ def read_csv(
     column_names: Optional[List[str]] = None,
     delimiter: str = ",",
     io_config: Optional["IOConfig"] = None,
-    use_native_downloader: bool = False,
+    use_native_downloader: bool = True,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
