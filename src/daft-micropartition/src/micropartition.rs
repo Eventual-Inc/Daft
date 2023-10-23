@@ -282,6 +282,10 @@ pub(crate) fn read_csv_into_micropartition(
                     io_client.clone(),
                     io_stats.clone(),
                     multithreaded_io,
+                    None,
+                    None,
+                    None,
+                    None,
                 )?;
                 remaining_rows = remaining_rows.map(|rr| rr - table.len());
                 tables.push(table);
