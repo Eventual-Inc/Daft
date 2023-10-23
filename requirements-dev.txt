@@ -37,7 +37,7 @@ pydantic<2  # pin pydantic because Ray uses broken APIs
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
-s3fs==2023.6.0; python_version >= '3.8'
+s3fs==2023.10.0; python_version >= '3.8'
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 urllib3<2; python_version < '3.8'
