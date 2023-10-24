@@ -1,8 +1,8 @@
 mod array_impl;
 mod from;
 mod ops;
+mod serdes;
 mod series_like;
-
 use std::{
     fmt::{Display, Formatter, Result},
     sync::Arc,

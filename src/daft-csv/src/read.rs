@@ -462,19 +462,13 @@ mod tests {
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
         if !has_header && let Some(column_names) = column_names {
-            fields = fields.into_iter().zip(column_names.into_iter()).map(|(field, name)| arrow2::datatypes::Field::new(name, field.data_type, true).with_metadata(field.metadata)).collect::<Vec<_>>();
+            fields = fields.into_iter().zip(column_names).map(|(field, name)| arrow2::datatypes::Field::new(name, field.data_type, true).with_metadata(field.metadata)).collect::<Vec<_>>();
         }
         let mut rows = vec![ByteRecord::default(); limit.unwrap_or(100)];
         let rows_read = read_rows(&mut reader, 0, &mut rows).unwrap();
         let rows = &rows[..rows_read];
-        let chunk = deserialize_batch(
-            rows,
-            &fields,
-            projection.as_ref().map(|p| p.as_slice()),
-            0,
-            deserialize_column,
-        )
-        .unwrap();
+        let chunk =
+            deserialize_batch(rows, &fields, projection.as_deref(), 0, deserialize_column).unwrap();
         if let Some(projection) = projection {
             fields = projection
                 .into_iter()
@@ -1216,7 +1210,7 @@ mod tests {
 
         let column_names = vec!["a", "b"];
         let table = read_csv(
-            file.as_ref(),
+            file,
             Some(column_names.clone()),
             None,
             None,
@@ -1254,7 +1248,7 @@ mod tests {
 
         let column_names = vec!["a", "b"];
         let table = read_csv(
-            file.as_ref(),
+            file,
             Some(column_names.clone()),
             Some(vec!["b"]),
             None,

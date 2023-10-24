@@ -1,15 +1,18 @@
+mod fixed_size_list_array;
 pub mod from;
 pub mod growable;
 pub mod iterator;
+mod list_array;
 pub mod ops;
 pub mod pseudo_arrow;
-
-mod fixed_size_list_array;
-mod list_array;
+mod serdes;
 mod struct_array;
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
+
 pub use struct_array::StructArray;
+mod boolean;
+mod from_iter;
 
 use std::{marker::PhantomData, sync::Arc};
 

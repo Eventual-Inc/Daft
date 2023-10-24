@@ -1,6 +1,11 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyList};
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyBytes, PyList},
+};
 
 use crate::{
     array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
@@ -315,6 +320,17 @@ impl PySeries {
 
     pub fn is_null(&self) -> PyResult<Self> {
         Ok(self.series.is_null()?.into())
+    }
+
+    pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<PyObject> {
+        let values = bincode::serialize(&self.series).unwrap();
+        Ok(PyBytes::new(py, &values).to_object(py))
+    }
+
+    #[staticmethod]
+    pub fn _debug_bincode_deserialize(bytes: &PyBytes) -> PyResult<Self> {
+        let values = bincode::deserialize::<Series>(bytes.as_bytes()).unwrap();
+        Ok(Self { series: values })
     }
 }
 
