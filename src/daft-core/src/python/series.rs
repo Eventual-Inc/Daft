@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    ops::{Add, Div, Mul, Rem, Sub},
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use pyo3::{
     exceptions::PyValueError,

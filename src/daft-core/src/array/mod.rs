@@ -9,21 +9,16 @@ mod serdes;
 mod struct_array;
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
-use serde::ser::SerializeStruct;
+
 pub use struct_array::StructArray;
 mod boolean;
 mod from_iter;
 
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    datatypes::{DaftArrayType, DaftArrowBackedType, DaftPhysicalType, DataType, Field},
-    with_match_physical_daft_types,
-};
+use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
 use common_error::{DaftError, DaftResult};
-
-use self::ops::as_arrow::AsArrow;
 
 #[derive(Debug)]
 pub struct DataArray<T: DaftPhysicalType> {

@@ -1,5 +1,3 @@
-use arrow2::datatypes;
-
 use crate::datatypes::{BinaryArray, DaftNumericType, Field, Utf8Array};
 
 use super::DataArray;

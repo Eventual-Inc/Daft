@@ -63,7 +63,10 @@ impl<'d> serde::Deserialize<'d> for Series {
                         }
                     }
                 }
-                let field = field.unwrap();
+                if !values_set {
+                    return Err(serde::de::Error::missing_field("values"));
+                }
+                let field = field.ok_or_else(|| serde::de::Error::missing_field("name"))?;
                 use crate::datatypes::*;
                 use DataType::*;
                 match &field.dtype {

@@ -19,7 +19,7 @@ pub use field::FieldID;
 pub use image_format::ImageFormat;
 pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 pub use time_unit::TimeUnit;
 

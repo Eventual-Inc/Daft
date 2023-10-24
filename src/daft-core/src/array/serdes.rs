@@ -1,12 +1,15 @@
-use serde::ser::{SerializeMap, SerializeStruct};
+use serde::ser::SerializeMap;
 
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, Int64Array, NullArray, PythonArray, Utf8Array,
+        ExtensionArray, Int64Array, NullArray, Utf8Array,
     },
     IntoSeries, Series,
 };
+
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 
 use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 
@@ -109,7 +112,7 @@ impl serde::Serialize for StructArray {
             .validity()
             .map(|b| BooleanArray::from(("validity", b.clone())).into_series());
         values.push(validity.as_ref());
-        values.extend(self.children.iter().map(|c| Some(c)));
+        values.extend(self.children.iter().map(Some));
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &values)?;
         s.end()
