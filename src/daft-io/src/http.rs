@@ -164,6 +164,7 @@ impl HttpSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
         Ok(HttpSource {
             client: reqwest::ClientBuilder::default()
+                .pool_max_idle_per_host(70)
                 .build()
                 .context(UnableToCreateClientSnafu)?,
         }
