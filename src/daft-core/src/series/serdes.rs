@@ -49,7 +49,7 @@ impl<'d> serde::Deserialize<'d> for Series {
             {
                 let mut field: Option<Field> = None;
                 let mut values_set = false;
-                while let Some(key) = map.next_key::<Cow<str>>().unwrap() {
+                while let Some(key) = map.next_key::<Cow<str>>()? {
                     match key.as_ref() {
                         "field" => {
                             field = Some(map.next_value()?);
@@ -147,7 +147,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     )
                     .into_series()),
                     Extension(..) => {
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow();
                         let ext_array = physical.to_type(field.dtype.to_arrow().unwrap());
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
@@ -156,7 +156,9 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Struct(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series.pop().unwrap();
+                        let validity = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
                         let children = all_series
                             .into_iter()
                             .map(|s| s.unwrap())
@@ -167,28 +169,41 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     List(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series.pop().unwrap();
+                        let validity = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
-                        let offsets_series = all_series.pop().unwrap().unwrap();
+                        let offsets_series = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
+                            .unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
                         let offsets = OffsetsBuffer::<i64>::try_from(
                             offsets_array.as_arrow().values().clone(),
                         )
                         .unwrap();
-                        let flat_child = all_series.pop().unwrap().unwrap();
+                        let flat_child = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
+                            .unwrap();
                         Ok(ListArray::new(field, flat_child, offsets, validity).into_series())
                     }
                     FixedSizeList(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series.pop().unwrap();
-                        let flat_child = all_series.pop().unwrap().unwrap();
+                        let validity = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
+                        let flat_child = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
+                            .unwrap();
 
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
                         Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
                     }
                     Decimal128(..) => {
                         type PType = <<Decimal128Type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(Decimal128Array::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
@@ -197,7 +212,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Timestamp(..) => {
                         type PType = <<TimestampType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(TimestampArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
@@ -206,7 +221,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Date => {
                         type PType = <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(
                             DateArray::new(field, physical.downcast::<PType>().unwrap().clone())
                                 .into_series(),
@@ -215,7 +230,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     Time(..) => panic!("Time Deserialization not implemented"),
                     Duration(..) => {
                         type PType = <<DurationType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(
                             DurationArray::new(
                                 field,
@@ -226,7 +241,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(EmbeddingArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
@@ -235,7 +250,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Image(..) => {
                         type PType = <<ImageType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(
                             ImageArray::new(field, physical.downcast::<PType>().unwrap().clone())
                                 .into_series(),
@@ -243,7 +258,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     FixedShapeImage(..) => {
                         type PType = <<FixedShapeImageType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(FixedShapeImageArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
@@ -252,7 +267,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     FixedShapeTensor(..) => {
                         type PType = <<FixedShapeTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(FixedShapeTensorArray::new(
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
@@ -261,7 +276,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     Tensor(..) => {
                         type PType = <<TensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = map.next_value::<Series>()?;
                         Ok(
                             TensorArray::new(field, physical.downcast::<PType>().unwrap().clone())
                                 .into_series(),
