@@ -4,10 +4,8 @@ use common_error::DaftResult;
 use daft_core::Series;
 use daft_table::Table;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
-};
+use crate::micropartition::{MicroPartition, TableState};
+use daft_scan::TableMetadata;
 
 impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {

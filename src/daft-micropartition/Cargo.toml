@@ -7,6 +7,7 @@ daft-csv = {path = "../daft-csv", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true, features = ["serde"]}
 parquet2 = {workspace = true}
@@ -17,7 +18,7 @@ snafu = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python"]
 
 [package]
 edition = {workspace = true}

@@ -8,10 +8,11 @@ use snafu::ResultExt;
 use crate::{
     column_stats::ColumnRangeStatistics,
     micropartition::{MicroPartition, TableState},
-    table_metadata::TableMetadata,
     table_stats::TableStatistics,
     DaftCoreComputeSnafu,
 };
+
+use daft_scan::TableMetadata;
 
 fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs

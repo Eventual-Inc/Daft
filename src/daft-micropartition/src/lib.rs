@@ -7,7 +7,6 @@ use snafu::Snafu;
 pub(crate) mod column_stats;
 mod micropartition;
 mod ops;
-mod table_metadata;
 mod table_stats;
 mod utils;
 
