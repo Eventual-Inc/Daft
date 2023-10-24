@@ -9,10 +9,11 @@ use crate::column_stats::{self, ColumnRangeStatistics};
 
 use daft_core::{array::ops::DaftCompare, schema::Schema};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
+
 impl TableStatistics {
     fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
