@@ -527,6 +527,13 @@ class Series:
             array = extension_type.wrap_array(array)
         return cls.from_arrow(array, name)
 
+    def _debug_bincode_serialize(self) -> bytes:
+        return self._series._debug_bincode_serialize()
+
+    @classmethod
+    def _debug_bincode_deserialize(cls, b: bytes) -> Series:
+        return Series._from_pyseries(PySeries._debug_bincode_deserialize(b))
+
 
 SomeSeriesNamespace = TypeVar("SomeSeriesNamespace", bound="SeriesNamespace")
 

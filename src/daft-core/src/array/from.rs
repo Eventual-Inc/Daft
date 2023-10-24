@@ -6,6 +6,7 @@ use crate::datatypes::{
 };
 
 use crate::array::DataArray;
+use arrow2::bitmap::Bitmap;
 use common_error::{DaftError, DaftResult};
 
 impl<T: DaftNumericType> From<(&str, Box<arrow2::array::PrimitiveArray<T::Native>>)>
@@ -63,12 +64,37 @@ impl From<(&str, &[bool])> for BooleanArray {
     }
 }
 
+impl From<(&str, &[Option<bool>])> for BooleanArray {
+    fn from(item: (&str, &[Option<bool>])) -> Self {
+        let (name, slice) = item;
+        let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(
+            slice.iter().cloned(),
+        ));
+        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+    }
+}
+
 impl From<(&str, arrow2::array::BooleanArray)> for BooleanArray {
     fn from(item: (&str, arrow2::array::BooleanArray)) -> Self {
         let (name, arrow_array) = item;
         DataArray::new(
             Field::new(name, DataType::Boolean).into(),
             Box::new(arrow_array),
+        )
+        .unwrap()
+    }
+}
+
+impl From<(&str, arrow2::bitmap::Bitmap)> for BooleanArray {
+    fn from(item: (&str, arrow2::bitmap::Bitmap)) -> Self {
+        let (name, bitmap) = item;
+        DataArray::new(
+            Field::new(name, DataType::Boolean).into(),
+            Box::new(arrow2::array::BooleanArray::new(
+                arrow2::datatypes::DataType::Boolean,
+                bitmap,
+                None,
+            )),
         )
         .unwrap()
     }

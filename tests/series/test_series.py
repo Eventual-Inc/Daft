@@ -128,3 +128,14 @@ def test_series_pickling(dtype) -> None:
     copied_s = copy.deepcopy(s)
     assert s.datatype() == copied_s.datatype()
     assert s.to_pylist() == copied_s.to_pylist()
+
+
+@pytest.mark.parametrize("dtype", ARROW_FLOAT_TYPES + ARROW_INT_TYPES + ARROW_STRING_TYPES)
+def test_series_bincode_serdes(dtype) -> None:
+    s = Series.from_pylist([1, 2, 3, None]).cast(DataType.from_arrow_type(dtype))
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
