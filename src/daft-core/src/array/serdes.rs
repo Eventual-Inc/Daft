@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use serde::ser::SerializeMap;
 
 use crate::{
@@ -13,6 +15,44 @@ use crate::datatypes::PythonArray;
 
 use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 
+// adapted from Polars Serdes iterator
+pub struct IterSer<I>
+where
+    I: IntoIterator,
+    <I as IntoIterator>::Item: serde::Serialize,
+{
+    iter: RefCell<Option<I>>,
+}
+
+impl<I> IterSer<I>
+where
+    I: IntoIterator,
+    <I as IntoIterator>::Item: serde::Serialize,
+{
+    fn new(iter: I) -> Self {
+        IterSer {
+            iter: RefCell::new(Some(iter)),
+        }
+    }
+}
+
+impl<I> serde::Serialize for IterSer<I>
+where
+    I: IntoIterator,
+    <I as IntoIterator>::Item: serde::Serialize,
+{
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<<S as serde::Serializer>::Ok, <S as serde::Serializer>::Error>
+    where
+        S: serde::Serializer,
+    {
+        let iter: I = self.iter.borrow_mut().take().unwrap();
+        serializer.collect_seq(iter)
+    }
+}
+
 impl<T: DaftNumericType> serde::Serialize for DataArray<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -20,7 +60,7 @@ impl<T: DaftNumericType> serde::Serialize for DataArray<T> {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &self.as_arrow().iter().collect::<Vec<_>>())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
     }
 }
@@ -32,7 +72,7 @@ impl serde::Serialize for Utf8Array {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &self.as_arrow().iter().collect::<Vec<_>>())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
     }
 }
@@ -44,7 +84,7 @@ impl serde::Serialize for BooleanArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &self.as_arrow().iter().collect::<Vec<_>>())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
     }
 }
@@ -56,7 +96,7 @@ impl serde::Serialize for BinaryArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &self.as_arrow().iter().collect::<Vec<_>>())?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
         s.end()
     }
 }
