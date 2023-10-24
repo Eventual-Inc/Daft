@@ -182,3 +182,13 @@ def test_series_bincode_serdes_on_complex_types() -> None:
     assert s.name() == copied_s.name()
     assert s.datatype() == copied_s.datatype()
     assert all(np.all(l == r) for l, r in zip(s.to_pylist(), copied_s.to_pylist()))
+
+
+def test_series_bincode_serdes_on_null_types() -> None:
+    s = Series.from_pylist([None, None, None])
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
