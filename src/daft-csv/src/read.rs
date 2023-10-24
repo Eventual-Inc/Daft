@@ -6,7 +6,7 @@ use std::{
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read_async::{deserialize_column, read_rows, AsyncReaderBuilder, ByteRecord},
+    io::csv::read_async::{read_rows, AsyncReaderBuilder, ByteRecord},
 };
 use async_compat::{Compat, CompatExt};
 use common_error::DaftResult;
@@ -29,6 +29,7 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
+use crate::deserialize::deserialize_column;
 use crate::metadata::read_csv_schema_single;
 use crate::{compression::CompressionCodec, ArrowSnafu};
 
@@ -972,6 +973,121 @@ mod tests {
             .into(),
         );
         check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_all_null_column() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_all_null_column.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 6);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                // All null column parsed as null dtype.
+                Field::new("petal.length", DataType::Null),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        let null_column = table.get_column("petal.length")?;
+        assert_eq!(null_column.data_type(), &DataType::Null);
+        assert_eq!(null_column.len(), 6);
+        assert_eq!(
+            null_column.to_arrow(),
+            Box::new(arrow2::array::NullArray::new(
+                arrow2::datatypes::DataType::Null,
+                6
+            )) as Box<dyn arrow2::array::Array>
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_all_null_column_with_schema() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_all_null_column.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let schema = Schema::new(vec![
+            Field::new("sepal.length", DataType::Float64),
+            Field::new("sepal.width", DataType::Float64),
+            Field::new("petal.length", DataType::Null),
+            Field::new("petal.width", DataType::Float64),
+            Field::new("variety", DataType::Utf8),
+        ])?;
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            io_client,
+            None,
+            true,
+            Some(schema.into()),
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 6);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("sepal.length", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                // All null column parsed as null dtype.
+                Field::new("petal.length", DataType::Null),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        let null_column = table.get_column("petal.length")?;
+        assert_eq!(null_column.data_type(), &DataType::Null);
+        assert_eq!(null_column.len(), 6);
+        assert_eq!(
+            null_column.to_arrow(),
+            Box::new(arrow2::array::NullArray::new(
+                arrow2::datatypes::DataType::Null,
+                6
+            )) as Box<dyn arrow2::array::Array>
+        );
 
         Ok(())
     }

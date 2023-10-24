@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use arrow2::io::csv::read_async::{infer, AsyncReader, AsyncReaderBuilder};
+use arrow2::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::ByteRecord;
@@ -12,7 +12,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::compression::CompressionCodec;
+use crate::inference::merge_schema;
+use crate::{compression::CompressionCodec, inference::infer};
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
@@ -139,7 +140,7 @@ where
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
         .create_reader(reader.compat());
     let (fields, total_bytes_read, num_records_read, mean_size, std_size) =
-        infer_schema(&mut reader, None, max_bytes, has_header, &infer).await?;
+        infer_schema(&mut reader, None, max_bytes, has_header).await?;
     Ok((
         fields.into(),
         total_bytes_read,
@@ -149,16 +150,14 @@ where
     ))
 }
 
-async fn infer_schema<R, F>(
+async fn infer_schema<R>(
     reader: &mut AsyncReader<R>,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     has_header: bool,
-    infer: &F,
 ) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, usize, usize, f64, f64)>
 where
     R: futures::AsyncRead + Unpin + Send,
-    F: Fn(&[u8]) -> arrow2::datatypes::DataType,
 {
     let mut record = ByteRecord::new();
     // get or create header names
@@ -229,47 +228,6 @@ where
     let fields = merge_schema(&headers, &mut column_types);
     let std = (m2 / ((records_count - 1) as f64)).sqrt();
     Ok((fields, total_bytes, records_count, mean, std))
-}
-
-fn merge_fields(
-    field_name: &str,
-    possibilities: &mut HashSet<arrow2::datatypes::DataType>,
-) -> arrow2::datatypes::Field {
-    use arrow2::datatypes::DataType;
-
-    if possibilities.len() > 1 {
-        // Drop nulls from possibilities.
-        possibilities.remove(&DataType::Null);
-    }
-    // determine data type based on possible types
-    // if there are incompatible types, use DataType::Utf8
-    let data_type = match possibilities.len() {
-        1 => possibilities.drain().next().unwrap(),
-        2 => {
-            if possibilities.contains(&DataType::Int64)
-                && possibilities.contains(&DataType::Float64)
-            {
-                // we have an integer and double, fall down to double
-                DataType::Float64
-            } else {
-                // default to Utf8 for conflicting datatypes (e.g bool and int)
-                DataType::Utf8
-            }
-        }
-        _ => DataType::Utf8,
-    };
-    arrow2::datatypes::Field::new(field_name, data_type, true)
-}
-
-fn merge_schema(
-    headers: &[String],
-    column_types: &mut [HashSet<arrow2::datatypes::DataType>],
-) -> Vec<arrow2::datatypes::Field> {
-    headers
-        .iter()
-        .zip(column_types.iter_mut())
-        .map(|(field_name, possibilities)| merge_fields(field_name, possibilities))
-        .collect()
 }
 
 #[cfg(test)]

@@ -4,6 +4,8 @@ use common_error::DaftError;
 use snafu::Snafu;
 
 mod compression;
+mod deserialize;
+mod inference;
 pub mod metadata;
 #[cfg(feature = "python")]
 pub mod python;
