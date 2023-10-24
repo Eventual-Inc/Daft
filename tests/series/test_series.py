@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 from collections import Counter
+from datetime import date, datetime
 
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -139,3 +141,44 @@ def test_series_bincode_serdes(dtype) -> None:
     assert s.name() == copied_s.name()
     assert s.datatype() == copied_s.datatype()
     assert s.to_pylist() == copied_s.to_pylist()
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [{"a": "foo", "b": "bar"}, None, {"b": "baz", "c": "quux"}],
+        [[1, 2, 3], None, [4, 5]],
+        [datetime.now(), None, datetime.now()],
+        [date.today(), date.today(), None],
+    ],
+)
+def test_series_bincode_serdes_on_data(data) -> None:
+    s = Series.from_arrow(pa.array(data))
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
+
+
+def test_series_bincode_serdes_on_ext_type(uuid_ext_type) -> None:
+    arr = pa.array(f"{i}".encode() for i in range(5))
+    data = pa.ExtensionArray.from_storage(uuid_ext_type, arr)
+    s = Series.from_arrow(data)
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert s.to_pylist() == copied_s.to_pylist()
+
+
+def test_series_bincode_serdes_on_complex_types() -> None:
+    s = Series.from_pylist([np.ones((4, 5)), np.ones((2, 10))])
+    serialized = s._debug_bincode_serialize()
+    copied_s = Series._debug_bincode_deserialize(serialized)
+
+    assert s.name() == copied_s.name()
+    assert s.datatype() == copied_s.datatype()
+    assert all(np.all(l == r) for l, r in zip(s.to_pylist(), copied_s.to_pylist()))

@@ -147,8 +147,10 @@ impl<'d> serde::Deserialize<'d> for Series {
                     )
                     .into_series()),
                     Extension(..) => {
-                        let physical = map.next_value::<Series>().unwrap().to_arrow();
-                        Ok(ExtensionArray::new(Arc::new(field), physical)
+                        let physical = map.next_value::<Series>().unwrap();
+                        let physical = physical.to_arrow();
+                        let ext_array = physical.to_type(field.dtype.to_arrow().unwrap());
+                        Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
                     }
@@ -164,15 +166,16 @@ impl<'d> serde::Deserialize<'d> for Series {
                         Ok(StructArray::new(Arc::new(field), children, validity).into_series())
                     }
                     List(..) => {
-                        let mut all_series = map.next_value::<Vec<Series>>()?;
-                        let offsets_series = all_series.pop().unwrap();
+                        let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
+                        let validity = all_series.pop().unwrap();
+                        let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
+                        let offsets_series = all_series.pop().unwrap().unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
-                        let validity = offsets_array.data().validity().cloned();
                         let offsets = OffsetsBuffer::<i64>::try_from(
                             offsets_array.as_arrow().values().clone(),
                         )
                         .unwrap();
-                        let flat_child = all_series.pop().unwrap();
+                        let flat_child = all_series.pop().unwrap().unwrap();
                         Ok(ListArray::new(field, flat_child, offsets, validity).into_series())
                     }
                     FixedSizeList(..) => {

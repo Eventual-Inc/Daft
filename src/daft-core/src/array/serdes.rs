@@ -5,7 +5,7 @@ use crate::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
         ExtensionArray, Int64Array, NullArray, Utf8Array,
     },
-    IntoSeries, Series,
+    DataType, IntoSeries, Series,
 };
 
 #[cfg(feature = "python")]
@@ -80,11 +80,11 @@ impl serde::Serialize for ExtensionArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-
-        let values = Series::try_from(("values", self.data.clone()))
-            .unwrap()
-            .as_physical()
-            .unwrap();
+        let values = if let DataType::Extension(_, inner, _) = self.data_type() {
+            Series::try_from(("physical", self.data.to_type(inner.to_arrow().unwrap()))).unwrap()
+        } else {
+            panic!("Expected Extension Type!")
+        };
         s.serialize_entry("values", &values)?;
         s.end()
     }
@@ -108,11 +108,13 @@ impl serde::Serialize for StructArray {
         let mut s = serializer.serialize_map(Some(2))?;
 
         let mut values = Vec::with_capacity(self.children.len() + 1);
+        values.extend(self.children.iter().map(Some));
+
         let validity = self
             .validity()
             .map(|b| BooleanArray::from(("validity", b.clone())).into_series());
         values.push(validity.as_ref());
-        values.extend(self.children.iter().map(Some));
+
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &values)?;
         s.end()
@@ -125,14 +127,23 @@ impl serde::Serialize for ListArray {
         S: serde::Serializer,
     {
         let mut s = serializer.serialize_map(Some(2))?;
+        let mut values = Vec::with_capacity(3);
+
+        values.push(Some(&self.flat_child));
 
         let arrow2_offsets = arrow2::array::Int64Array::new(
             arrow2::datatypes::DataType::Int64,
             self.offsets().buffer().clone(),
-            self.validity().cloned(),
+            None,
         );
-        let offsets = &Int64Array::from(("validity", Box::new(arrow2_offsets))).into_series();
-        let values = vec![offsets, &self.flat_child];
+        let offsets = Int64Array::from(("offsets", Box::new(arrow2_offsets))).into_series();
+        values.push(Some(&offsets));
+
+        let validity = self
+            .validity()
+            .map(|b| BooleanArray::from(("validity", b.clone())).into_series());
+        values.push(validity.as_ref());
+
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &values)?;
         s.end()
@@ -149,7 +160,7 @@ impl serde::Serialize for FixedSizeListArray {
         let validity = self
             .validity()
             .map(|b| BooleanArray::from(("validity", b.clone())).into_series());
-        let values = vec![validity.as_ref(), Some(&self.flat_child)];
+        let values = vec![Some(&self.flat_child), validity.as_ref()];
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &values)?;
         s.end()
