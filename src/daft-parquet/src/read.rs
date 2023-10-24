@@ -15,6 +15,7 @@ use futures::{
 };
 use itertools::Itertools;
 use snafu::ResultExt;
+use tokio::runtime::Runtime;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 use serde::{Deserialize, Serialize};
@@ -317,10 +318,9 @@ pub fn read_parquet(
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    multithreaded_io: bool,
+    runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
         read_parquet_single(
@@ -347,10 +347,9 @@ pub fn read_parquet_into_pyarrow(
     row_groups: Option<Vec<i64>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    multithreaded_io: bool,
+    runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
         read_parquet_single_into_arrow(
@@ -377,10 +376,9 @@ pub fn read_parquet_bulk(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
-    multithreaded_io: bool,
+    runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
@@ -643,6 +641,7 @@ mod tests {
         io_config.s3.anonymous = true;
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let runtime_handle = daft_io::get_runtime(true)?;
 
         let table = read_parquet(
             file,
@@ -652,7 +651,7 @@ mod tests {
             None,
             io_client,
             None,
-            true,
+            runtime_handle,
             Default::default(),
         )?;
         assert_eq!(table.len(), 100);

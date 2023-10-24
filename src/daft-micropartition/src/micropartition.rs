@@ -147,6 +147,9 @@ impl MicroPartition {
     ) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
         if let TableState::Unloaded(params) = guard.deref() {
+            let runtime_handle = daft_io::get_runtime(params.multithreaded_io).unwrap();
+            let _rt_guard = runtime_handle.enter();
+
             let table_values: Vec<_> = match &params.format_params {
                 FormatParams::Parquet {
                     row_groups,
@@ -169,7 +172,7 @@ impl MicroPartition {
                         io_client.clone(),
                         io_stats,
                         8,
-                        params.multithreaded_io,
+                        runtime_handle,
                         inference_options,
                     )
                     .context(DaftCoreComputeSnafu)?;
@@ -418,7 +421,7 @@ pub(crate) fn read_parquet_into_micropartition(
             io_client,
             io_stats,
             num_parallel_tasks,
-            multithreaded_io,
+            runtime_handle,
             schema_infer_options,
         )?;
         let all_tables = all_tables
