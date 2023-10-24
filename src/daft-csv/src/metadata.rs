@@ -327,8 +327,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 328);
         assert_eq!(num_records_read, 20);
@@ -363,8 +362,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 328);
         assert_eq!(num_records_read, 20);
@@ -409,8 +407,7 @@ mod tests {
                 Field::new("column_3", DataType::Float64),
                 Field::new("column_4", DataType::Float64),
                 Field::new("column_5", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 328);
         assert_eq!(num_records_read, 20);
@@ -439,8 +436,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 49);
         assert_eq!(num_records_read, 3);
@@ -466,8 +462,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 82);
         assert_eq!(num_records_read, 6);
@@ -497,8 +492,7 @@ mod tests {
                 Field::new("petal.length", DataType::Utf8),
                 Field::new("petal.width", DataType::Utf8),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         assert_eq!(total_bytes_read, 33);
         assert_eq!(num_records_read, 2);
@@ -530,8 +524,7 @@ mod tests {
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
                 Field::new("variety", DataType::Utf8),
-            ])?
-            .into(),
+            ])?,
         );
         // Max bytes doesn't include header, so add 15 bytes to upper bound.
         assert!(total_bytes_read <= 100 + 15, "{}", total_bytes_read);

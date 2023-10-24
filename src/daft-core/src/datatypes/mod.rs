@@ -6,8 +6,6 @@ mod image_mode;
 mod matching;
 mod time_unit;
 
-use std::ops::{Add, Div, Mul, Rem, Sub};
-
 pub use crate::array::{DataArray, FixedSizeListArray};
 use crate::array::{ListArray, StructArray};
 use arrow2::{
@@ -21,6 +19,8 @@ pub use field::FieldID;
 pub use image_format::ImageFormat;
 pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
+use serde::Serialize;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 pub use time_unit::TimeUnit;
 
 pub mod logical;
@@ -201,6 +201,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + ToPrimitive
+    + Serialize
 {
     type DAFTTYPE: DaftNumericType;
 }
