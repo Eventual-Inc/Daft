@@ -179,7 +179,7 @@ impl GlobScanOperator {
                         comment,
                         ..
                     }) => {
-                        let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
+                        let (schema, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath.as_str(),
                             Some(CsvParseOptions::new_with_defaults(
                                 *has_headers,

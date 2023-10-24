@@ -917,20 +917,11 @@ class PyMicroPartition:
     def read_csv(
         cls,
         uri: str,
-        column_names: list[str] | None = None,
-        include_columns: list[str] | None = None,
-        num_rows: int | None = None,
-        has_header: bool | None = None,
-        delimiter: str | None = None,
-        double_quote: bool | None = None,
-        quote: str | None = None,
-        escape_char: str | None = None,
-        comment: str | None = None,
+        convert_options: CsvConvertOptions | None = None,
+        parse_options: CsvParseOptions | None = None,
+        read_options: CsvReadOptions | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-        schema: PySchema | None = None,
-        buffer_size: int | None = None,
-        chunk_size: int | None = None,
     ): ...
 
 class PhysicalPlanScheduler:
