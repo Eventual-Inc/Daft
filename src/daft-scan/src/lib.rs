@@ -1,6 +1,9 @@
-use std::{fmt::{Debug, Display}, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
-use common_error::{DaftResult, DaftError};
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -10,7 +13,6 @@ mod anonymous;
 #[cfg(feature = "python")]
 pub mod python;
 
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum FileType {
     Parquet,
@@ -18,7 +20,6 @@ pub enum FileType {
     Orc,
     Csv,
 }
-
 
 impl FromStr for FileType {
     type Err = DaftError;
@@ -35,12 +36,12 @@ impl FromStr for FileType {
             return Ok(Csv);
         } else {
             return Err(DaftError::TypeError(format!(
-                "FileType {} not supported!", file_type
-            )))
+                "FileType {} not supported!",
+                file_type
+            )));
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub enum DataFileSource {

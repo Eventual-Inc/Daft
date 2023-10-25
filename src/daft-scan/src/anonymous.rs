@@ -1,9 +1,9 @@
-use std::fmt::{Display, write};
+use std::fmt::{write, Display};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 
-use crate::{DataFileSource, FileType, ScanOperator, ScanTask, ScanOperatorRef};
+use crate::{DataFileSource, FileType, ScanOperator, ScanOperatorRef, ScanTask};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     schema: SchemaRef,
