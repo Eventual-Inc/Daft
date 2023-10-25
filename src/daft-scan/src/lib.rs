@@ -1,11 +1,8 @@
 use common_error::DaftResult;
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
-use daft_stats::{PartitionSpec, TableStatistics};
+use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use serde::{Deserialize, Serialize};
-mod table_metadata;
-
-pub use table_metadata::TableMetadata;
 
 #[derive(Serialize, Deserialize)]
 pub enum FileType {

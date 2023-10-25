@@ -4,7 +4,7 @@ use daft_table::Table;
 
 use crate::micropartition::{MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Self> {

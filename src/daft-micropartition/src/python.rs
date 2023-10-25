@@ -27,7 +27,7 @@ use pyo3::{
 
 use crate::micropartition::{DeferredLoadingParams, MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]

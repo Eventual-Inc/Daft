@@ -12,7 +12,7 @@ use crate::{
 
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs

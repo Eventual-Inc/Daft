@@ -9,7 +9,7 @@ use crate::{
 
 use daft_stats::TruthValue;
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {

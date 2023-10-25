@@ -19,7 +19,7 @@ use snafu::ResultExt;
 use crate::DaftCoreComputeSnafu;
 
 use daft_io::{IOConfig, IOStatsRef};
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
 
 #[derive(Clone, Serialize, Deserialize)]

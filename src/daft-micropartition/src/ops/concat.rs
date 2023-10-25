@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 
 use crate::micropartition::{MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn concat(mps: &[&Self]) -> DaftResult<Self> {

@@ -7,7 +7,7 @@ use crate::micropartition::{MicroPartition, TableState};
 
 use daft_stats::TruthValue;
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {

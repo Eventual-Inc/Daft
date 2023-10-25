@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::micropartition::{MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {

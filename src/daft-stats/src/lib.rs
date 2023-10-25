@@ -3,10 +3,12 @@ use snafu::Snafu;
 
 mod column_stats;
 mod partition_spec;
+mod table_metadata;
 mod table_stats;
 
 pub use column_stats::{ColumnRangeStatistics, TruthValue};
 pub use partition_spec::PartitionSpec;
+pub use table_metadata::TableMetadata;
 pub use table_stats::TableStatistics;
 
 #[derive(Debug, Snafu)]
