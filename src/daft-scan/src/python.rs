@@ -1,9 +1,8 @@
 pub mod pylib {
     use std::str::FromStr;
-    use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
-    use daft_core::schema::Schema;
+
     use pyo3::prelude::*;
     use pyo3::pyclass;
 

@@ -1,4 +1,4 @@
-use std::fmt::{write, Display};
+use std::fmt::Display;
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;

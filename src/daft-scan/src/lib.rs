@@ -27,7 +27,7 @@ impl FromStr for FileType {
     fn from_str(file_type: &str) -> DaftResult<Self> {
         use FileType::*;
         if file_type.trim().eq_ignore_ascii_case("parquet") {
-            return Ok(Parquet);
+            Ok(Parquet)
         } else if file_type.trim().eq_ignore_ascii_case("avro") {
             return Ok(Avro);
         } else if file_type.trim().eq_ignore_ascii_case("orc") {
