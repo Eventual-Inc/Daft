@@ -423,7 +423,7 @@ class Scheduler:
         result = self.results_by_df[result_uuid].get()
 
         # If there are no more results, delete the thread.
-        if isinstance(result, StopIteration):
+        if isinstance(result, (StopIteration, Exception)):
             self.threads_by_df[result_uuid].join()
             del self.threads_by_df[result_uuid]
 
@@ -570,6 +570,11 @@ class Scheduler:
             except StopIteration as e:
                 self.results_by_df[result_uuid].put(e)
 
+            # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
+            except Exception as e:
+                self.results_by_df[result_uuid].put(e)
+                raise
+
 
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
@@ -665,6 +670,9 @@ class RayRunner(Runner[ray.ObjectRef]):
 
             if isinstance(result, StopIteration):
                 return
+            elif isinstance(result, Exception):
+                raise result
+
             yield result
 
     def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
