@@ -1269,6 +1269,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-stats",
  "daft-table",
  "pyo3",
  "pyo3-log",

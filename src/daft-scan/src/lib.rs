@@ -1,10 +1,9 @@
 use common_error::DaftResult;
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
+use daft_stats::{PartitionSpec, TableStatistics};
 use serde::{Deserialize, Serialize};
-mod partition_spec;
 mod table_metadata;
-use partition_spec::PartitionSpec;
 
 pub use table_metadata::TableMetadata;
 
@@ -28,7 +27,7 @@ pub enum DataFileSource {
         path: String,
         metadata: TableMetadata,
         partition_spec: PartitionSpec,
-        // statistics: Option<TableStatstics>
+        statistics: Option<TableStatistics>,
     },
 }
 
