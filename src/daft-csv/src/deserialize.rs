@@ -47,11 +47,11 @@ fn deserialize_primitive<T, B: ByteRecordGeneric, F>(
     rows: &[B],
     column: usize,
     datatype: DataType,
-    op: F,
+    mut op: F,
 ) -> Box<dyn Array>
 where
     T: NativeType + lexical_core::FromLexical,
-    F: Fn(&[u8]) -> Option<T>,
+    F: FnMut(&[u8]) -> Option<T>,
 {
     let iter = rows.iter().map(|row| match row.get(column) {
         Some(bytes) => {
@@ -153,9 +153,13 @@ fn deserialize_null<B: ByteRecordGeneric>(rows: &[B], _: usize) -> Box<dyn Array
 }
 
 #[inline]
-fn deserialize_naive_datetime(string: &str) -> Option<chrono::NaiveDateTime> {
-    for fmt in ALL_NAIVE_TIMESTAMP_FMTS {
+fn deserialize_naive_datetime(string: &str, fmt_idx: &mut usize) -> Option<chrono::NaiveDateTime> {
+    // TODO(Clark): Parse as all candidate formats in a single pass.
+    for i in 0..ALL_NAIVE_TIMESTAMP_FMTS.len() {
+        let idx = (i + *fmt_idx) % ALL_NAIVE_TIMESTAMP_FMTS.len();
+        let fmt = ALL_NAIVE_TIMESTAMP_FMTS[idx];
         if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(string, fmt) {
+            *fmt_idx = idx;
             return Some(dt);
         }
     }
@@ -163,9 +167,17 @@ fn deserialize_naive_datetime(string: &str) -> Option<chrono::NaiveDateTime> {
 }
 
 #[inline]
-fn deserialize_datetime<T: chrono::TimeZone>(string: &str, tz: &T) -> Option<chrono::DateTime<T>> {
-    for fmt in ALL_TIMESTAMP_FMTS {
+fn deserialize_datetime<T: chrono::TimeZone>(
+    string: &str,
+    tz: &T,
+    fmt_idx: &mut usize,
+) -> Option<chrono::DateTime<T>> {
+    // TODO(Clark): Parse as all candidate formats in a single pass.
+    for i in 0..ALL_NAIVE_TIMESTAMP_FMTS.len() {
+        let idx = (i + *fmt_idx) % ALL_NAIVE_TIMESTAMP_FMTS.len();
+        let fmt = ALL_NAIVE_TIMESTAMP_FMTS[idx];
         if let Ok(dt) = chrono::DateTime::parse_from_str(string, fmt) {
+            *fmt_idx = idx;
             return Some(dt.with_timezone(tz));
         }
     }
@@ -254,21 +266,25 @@ pub(crate) fn deserialize_column<B: ByteRecordGeneric>(
                         as i64
                 })
         }),
-        Timestamp(time_unit, None) => deserialize_primitive(rows, column, datatype, |bytes| {
-            to_utf8(bytes)
-                .and_then(deserialize_naive_datetime)
-                .and_then(|dt| match time_unit {
-                    TimeUnit::Second => Some(dt.timestamp()),
-                    TimeUnit::Millisecond => Some(dt.timestamp_millis()),
-                    TimeUnit::Microsecond => Some(dt.timestamp_micros()),
-                    TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
-                })
-        }),
-        Timestamp(time_unit, Some(ref tz)) => {
-            let tz = temporal_conversions::parse_offset(tz)?;
+        Timestamp(time_unit, None) => {
+            let mut last_fmt_idx = 0;
             deserialize_primitive(rows, column, datatype, |bytes| {
                 to_utf8(bytes)
-                    .and_then(|x| deserialize_datetime(x, &tz))
+                    .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
+                    .and_then(|dt| match time_unit {
+                        TimeUnit::Second => Some(dt.timestamp()),
+                        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
+                        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
+                        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+                    })
+            })
+        }
+        Timestamp(time_unit, Some(ref tz)) => {
+            let tz = temporal_conversions::parse_offset(tz)?;
+            let mut last_fmt_idx = 0;
+            deserialize_primitive(rows, column, datatype, |bytes| {
+                to_utf8(bytes)
+                    .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
                         TimeUnit::Second => Some(dt.timestamp()),
                         TimeUnit::Millisecond => Some(dt.timestamp_millis()),
