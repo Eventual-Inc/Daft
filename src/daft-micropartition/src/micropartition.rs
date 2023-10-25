@@ -357,7 +357,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .flat_map(|fm| {
                 fm.row_groups
                     .iter()
-                    .map(|rg| daft_parquet::row_group_metadata_to_table_stats(rg))
+                    .map(daft_parquet::row_group_metadata_to_table_stats)
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
         stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?

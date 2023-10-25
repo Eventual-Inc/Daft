@@ -146,7 +146,7 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
         let ser = value.to_series();
         assert_eq!(ser.len(), 1);
-        Ok(Self::new(Some(ser.clone()), Some(ser.clone()))?)
+        Self::new(Some(ser.clone()), Some(ser.clone()))
     }
 }
 
@@ -160,8 +160,6 @@ pub enum Error {
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
 }
-
-type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {

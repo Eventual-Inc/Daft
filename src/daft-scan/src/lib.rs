@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,6 @@ mod partition_spec;
 mod table_metadata;
 use partition_spec::PartitionSpec;
 
-use snafu::Snafu;
 pub use table_metadata::TableMetadata;
 
 #[derive(Serialize, Deserialize)]

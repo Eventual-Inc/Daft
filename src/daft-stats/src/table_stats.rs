@@ -3,9 +3,8 @@ use std::{fmt::Display, ops::Not};
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
-use snafu::ResultExt;
 
-use crate::column_stats::{self, ColumnRangeStatistics};
+use crate::column_stats::ColumnRangeStatistics;
 
 use daft_core::{array::ops::DaftCompare, schema::Schema};
 
@@ -15,7 +14,7 @@ pub struct TableStatistics {
 }
 
 impl TableStatistics {
-    fn from_table(table: &Table) -> Self {
+    fn _from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -136,7 +135,7 @@ mod test {
         let table =
             Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
                 .unwrap();
-        let table_stats = TableStatistics::from_table(&table);
+        let table_stats = TableStatistics::_from_table(&table);
 
         // False case
         let expr = col("a").eq(&lit(0));
@@ -151,7 +150,7 @@ mod test {
         // True case
         let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
             .unwrap();
-        let table_stats = TableStatistics::from_table(&table);
+        let table_stats = TableStatistics::_from_table(&table);
 
         let expr = col("a").eq(&lit(0));
         let result = table_stats.eval_expression(&expr)?;

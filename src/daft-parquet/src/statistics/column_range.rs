@@ -142,7 +142,7 @@ fn make_decimal_column_range_statistics(
     let upper = Decimal128Array::new(daft_core::datatypes::Field::new("upper", daft_type), upper)
         .into_series();
 
-    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
 fn make_date_column_range_statistics(
@@ -161,7 +161,7 @@ fn make_date_column_range_statistics(
     .into_series();
     let upper =
         DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
 fn make_timestamp_column_range_statistics(
@@ -198,7 +198,7 @@ fn make_timestamp_column_range_statistics(
     .into_series();
     let upper =
         TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
 impl TryFrom<&FixedLenStatistics> for Wrap<ColumnRangeStatistics> {
