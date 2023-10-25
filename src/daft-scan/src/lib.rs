@@ -31,16 +31,16 @@ impl FromStr for FileType {
         if file_type.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
         } else if file_type.trim().eq_ignore_ascii_case("avro") {
-            return Ok(Avro);
+            Ok(Avro)
         } else if file_type.trim().eq_ignore_ascii_case("orc") {
-            return Ok(Orc);
+            Ok(Orc)
         } else if file_type.trim().eq_ignore_ascii_case("csv") {
-            return Ok(Csv);
+            Ok(Csv)
         } else {
-            return Err(DaftError::TypeError(format!(
+            Err(DaftError::TypeError(format!(
                 "FileType {} not supported!",
                 file_type
-            )));
+            )))
         }
     }
 }
