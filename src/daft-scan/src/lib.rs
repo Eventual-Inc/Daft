@@ -4,7 +4,9 @@ use daft_dsl::Expr;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+mod anonymous;
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub enum FileType {
     Parquet,
     Avro,
@@ -15,9 +17,11 @@ pub enum FileType {
 #[derive(Serialize, Deserialize)]
 pub enum DataFileSource {
     AnonymousDataFile {
+        file_type: FileType,
         path: String,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
+        statistics: Option<TableStatistics>,
     },
     CatalogDataFile {
         file_type: FileType,
@@ -34,15 +38,13 @@ pub struct ScanTask {
     source: DataFileSource,
     columns: Option<Vec<String>>,
     limit: Option<usize>,
-    filter: Option<Expr>,
 }
 
 pub trait ScanOperator {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[Field];
-    fn partition_spec(&self) -> Option<&PartitionSpec>;
     fn num_partitions(&self) -> DaftResult<usize>;
-    fn filter(self: Box<Self>, predicate: &Expr) -> DaftResult<Box<Self>>;
+    fn filter(self: Box<Self>, predicate: &Expr) -> DaftResult<(bool, Box<Self>)>;
     fn select(self: Box<Self>, columns: &[&str]) -> DaftResult<Box<Self>>;
     fn limit(self: Box<Self>, num: usize) -> DaftResult<Box<Self>>;
     fn to_scan_tasks(self: Box<Self>)
