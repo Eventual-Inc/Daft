@@ -13,6 +13,14 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 
 from __future__ import annotations
 
+# Task fusion
+# Streaming execution
+# - Admission control
+# Scheduling policy
+# - Furthest progress first
+# - Avoid and even cancel redundant work
+from __future__ import annotations
+
 import math
 import pathlib
 from collections import deque
@@ -44,11 +52,21 @@ PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
 
 
+# PartitionTask - returning a dependency
+# PartitionTaskBuilder - returning a partition for this current node
+
+
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
 # A PhysicalPlan that is complete and will only yield PartitionTasks or final PartitionTs.
 MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionT]]
+
+# PartitionTaskBuilder <=> Direct child
+
+# PartitionTask <=> Black box (transitive dependency)
+
+# part_1, part_2, part_3
 
 
 def partition_read(
@@ -57,6 +75,7 @@ def partition_read(
     """Instantiate a (no-op) physical plan from existing partitions."""
     if metadatas is None:
         # Iterator of empty metadatas.
+        # TODO: could populate
         metadatas = (PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in iter(int, 1))
 
     yield from (
@@ -64,7 +83,14 @@ def partition_read(
         for partition, metadata in zip(partitions, metadatas)
     )
 
+    # PartitionTaskBuilder(part_1)
+    # PartitionTaskBuilder(part_2)
+    # PartitionTaskBuilder(part_3)
 
+
+# part_file
+#   file1.csv, num_rows=10, etc etc.
+#   file2.csv, num_rows=10, etc etc.  <-- at query planning time
 def file_read(
     child_plan: InProgressPhysicalPlan[PartitionT],
     # Max number of rows to read.
@@ -252,6 +278,7 @@ def concat(
     yield from bottom_plan
 
 
+# per-partition limit
 def local_limit(
     child_plan: InProgressPhysicalPlan[PartitionT],
     limit: int,
@@ -265,14 +292,37 @@ def local_limit(
     Send back: A new value to the limit (optional). This allows you to update the limit after each partition if desired.
     """
     for step in child_plan:
+        # Not our immediate child
+        # Instructions to materialize a transitive dependency
+        # This is a black box, pass through to caller
         if not isinstance(step, PartitionTaskBuilder):
             yield step
+
+        # This is a actual source partition
+        # This is our immediate child
         else:
+            # take the task builder
+            # add local limit instruction
+            # yield the task builder
             maybe_new_limit = yield step.add_instruction(
                 execution_step.LocalLimit(limit),
             )
             if maybe_new_limit is not None:
                 limit = maybe_new_limit
+
+
+# PartitionTaskBuilder(part_1)
+# PartitionTaskBuilder(part_2)
+# PartitionTaskBuilder(part_3)
+
+
+# global_limit 3
+
+# ? pending
+# ? pending
+# ? pending
+
+# -> PartitionTaskBuilder(10_rows, limit 10)
 
 
 def global_limit(
@@ -305,6 +355,7 @@ def global_limit(
 
             limit = remaining_rows and min(remaining_rows, done_task.partition_metadata().num_rows)
 
+            # Take partition, create new partition builder, apply limit 10
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
                 partial_metadatas=[done_task.partition_metadata()],
@@ -314,6 +365,7 @@ def global_limit(
             )
             yield global_limit_step
             remaining_partitions -= 1
+            # 13 - 10 = 3
             remaining_rows -= limit
 
             if remaining_rows == 0:
@@ -347,6 +399,7 @@ def global_limit(
         try:
             child_step = child_plan.send(remaining_rows) if started else next(child_plan)
             started = True
+            # If this is a direct child.
             if isinstance(child_step, PartitionTaskBuilder):
                 # If this is the very next partition to apply a nonvacuous global limit on,
                 # see if it has any row metadata already.
@@ -358,12 +411,15 @@ def global_limit(
                     remaining_partitions -= 1
                     remaining_rows -= limit
                 else:
+                    # Materialize an input partition, so we can see the number of rows
                     child_step = child_step.finalize_partition_task_single_output()
                     materializations.append(child_step)
             yield child_step
 
         except StopIteration:
+            # No more children to dispatch and materialize
             if len(materializations) > 0:
+                # We still are waiting for pending materializations
                 logger.debug(
                     "global_limit blocked on completion of first source in: {sources}", sources=materializations
                 )

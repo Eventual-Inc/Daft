@@ -368,6 +368,14 @@ def get_meta(partition: Table) -> PartitionMetadata:
     return PartitionMetadata.from_table(partition)
 
 
+# Takes a iterator of tasks to execute
+# Polls the iterator and executes the tasks
+
+# 1. Poll and dispatch
+# 2. Get results from completed tasks
+# 3. Final results
+
+
 class Scheduler:
     def __init__(self, max_task_backlog: int | None) -> None:
         """
@@ -465,6 +473,9 @@ class Scheduler:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break
 
+                            # When a physical plan is complete,
+                            # instead of emitting tasks, it emits partitions directly.
+                            # Collect the returned partitions
                             elif isinstance(next_step, ray.ObjectRef):
                                 # A final result.
                                 self.results_by_df[result_uuid].put(next_step)
@@ -484,8 +495,10 @@ class Scheduler:
                                 next_step = next(tasks)
 
                             else:
+                                # Usual case
                                 # Add the task to the batch.
                                 tasks_to_dispatch.append(next_step)
+                                # Poll iterator for the next task.
                                 next_step = next(tasks)
 
                         # Dispatch the batch of tasks.
@@ -518,6 +531,7 @@ class Scheduler:
                         if num_returns == 0:
                             break
 
+                        # Get the next batch of results
                         readies, _ = ray.wait(
                             list(inflight_ref_to_task.keys()),
                             num_returns=num_returns,
@@ -525,6 +539,7 @@ class Scheduler:
                             fetch_local=False,
                         )
 
+                        # Mark them all as completed
                         for ready in readies:
                             if ready in inflight_ref_to_task:
                                 task_id = inflight_ref_to_task[ready]
