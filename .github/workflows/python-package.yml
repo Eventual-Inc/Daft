@@ -307,7 +307,7 @@ jobs:
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.1
       with:
-        compose-file: ./tests/integration/docker-compose/docker-compose.yml
+        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
