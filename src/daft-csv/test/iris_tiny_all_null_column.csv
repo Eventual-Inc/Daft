@@ -1,0 +1,7 @@
+"sepal.length","sepal.width","petal.length","petal.width","variety"
+5.1,3.5,,.2,"Setosa"
+4.9,3,,.5,"Setosa"
+4.7,3.2,,.2,"Setosa"
+4.6,2.9,,.2,"Setosa"
+5.0,.6,,.2,"Setosa"
+5.4,3.9,,.4,"Setosa"
