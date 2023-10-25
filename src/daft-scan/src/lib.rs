@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "python")]
+pub use python::register_modules;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum FileType {

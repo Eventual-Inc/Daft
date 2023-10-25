@@ -1,9 +1,11 @@
+use pyo3::prelude::*;
+
 pub mod pylib {
+    use pyo3::prelude::*;
     use std::str::FromStr;
 
     use daft_core::python::schema::PySchema;
 
-    use pyo3::prelude::*;
     use pyo3::pyclass;
 
     use crate::anonymous::AnonymousScanOperator;
@@ -11,7 +13,7 @@ pub mod pylib {
     use crate::ScanOperatorRef;
 
     #[pyclass(module = "daft.daft", frozen)]
-    struct ScanOperator {
+    pub(crate) struct ScanOperator {
         scan_op: ScanOperatorRef,
     }
 
@@ -36,4 +38,9 @@ pub mod pylib {
             Ok(ScanOperator { scan_op: operator })
         }
     }
+}
+
+pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+    parent.add_class::<pylib::ScanOperator>()?;
+    Ok(())
 }
