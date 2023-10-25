@@ -1,6 +1,5 @@
 mod arithmetic;
 mod comparison;
-// mod from_parquet;
 mod logical;
 
 use std::string::FromUtf8Error;
@@ -155,8 +154,6 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
 pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
-    // #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
-    // UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
 }
