@@ -76,7 +76,7 @@ def bulk_read_adapter(func):
 
 
 def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    tables = daft.table.Table.read_parquet_bulk(paths, columns=columns)
+    tables = daft.table.LegacyTable.read_parquet_bulk(paths, columns=columns)
     return [t.to_arrow() for t in tables]
 
 

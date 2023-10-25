@@ -316,6 +316,33 @@ class MicroPartition:
         )
 
     @classmethod
+    def read_parquet_bulk(
+        cls,
+        paths: list[str],
+        columns: list[str] | None = None,
+        start_offset: int | None = None,
+        num_rows: int | None = None,
+        row_groups_per_path: list[list[int]] | None = None,
+        io_config: IOConfig | None = None,
+        num_parallel_tasks: int | None = 128,
+        multithreaded_io: bool | None = None,
+        coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            _PyMicroPartition.read_parquet_bulk(
+                paths,
+                columns,
+                start_offset,
+                num_rows,
+                row_groups_per_path,
+                io_config,
+                num_parallel_tasks,
+                multithreaded_io,
+                coerce_int96_timestamp_unit._timeunit,
+            )
+        )
+
+    @classmethod
     def read_csv(
         cls,
         path: str,
