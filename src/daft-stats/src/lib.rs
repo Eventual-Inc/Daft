@@ -1,15 +1,15 @@
-#![feature(let_chains)]
-#![feature(iterator_try_reduce)]
-
 use common_error::DaftError;
 use snafu::Snafu;
-mod micropartition;
-mod ops;
 
-#[cfg(feature = "python")]
-pub mod python;
-#[cfg(feature = "python")]
-pub use python::register_modules;
+mod column_stats;
+mod partition_spec;
+mod table_metadata;
+mod table_stats;
+
+pub use column_stats::{ColumnRangeStatistics, TruthValue};
+pub use partition_spec::PartitionSpec;
+pub use table_metadata::TableMetadata;
+pub use table_stats::TableStatistics;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -18,6 +18,10 @@ pub enum Error {
 
     #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
     DuplicatedField { name: String },
+
+    #[snafu(display("MissingStatistics: {}", source))]
+    MissingStatistics { source: column_stats::Error },
+
     #[snafu(display(
         "Field: {} not found in Parquet File:  Available Fields: {:?}",
         field,
@@ -37,13 +41,5 @@ impl From<Error> for DaftError {
             Error::DaftCoreCompute { source } => source,
             _ => DaftError::External(value.into()),
         }
-    }
-}
-
-#[cfg(feature = "python")]
-impl From<Error> for pyo3::PyErr {
-    fn from(value: Error) -> Self {
-        let daft_error: DaftError = value.into();
-        daft_error.into()
     }
 }

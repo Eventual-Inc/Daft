@@ -6,13 +6,13 @@ use daft_dsl::Expr;
 use snafu::ResultExt;
 
 use crate::{
-    column_stats::ColumnRangeStatistics,
     micropartition::{MicroPartition, TableState},
-    table_stats::TableStatistics,
     DaftCoreComputeSnafu,
 };
 
-use daft_scan::TableMetadata;
+use daft_stats::{ColumnRangeStatistics, TableStatistics};
+
+use daft_stats::TableMetadata;
 
 fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs

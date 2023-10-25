@@ -5,7 +5,7 @@ use daft_core::Series;
 use daft_table::Table;
 
 use crate::micropartition::{MicroPartition, TableState};
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {

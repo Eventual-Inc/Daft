@@ -3,12 +3,13 @@ use daft_dsl::Expr;
 use snafu::ResultExt;
 
 use crate::{
-    column_stats::TruthValue,
     micropartition::{MicroPartition, TableState},
     DaftCoreComputeSnafu,
 };
 
-use daft_scan::TableMetadata;
+use daft_stats::TruthValue;
+
+use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {

@@ -6,6 +6,7 @@ use daft_core::{
     },
     IntoSeries, Series,
 };
+use daft_stats::ColumnRangeStatistics;
 use parquet2::{
     schema::types::{PhysicalType, PrimitiveConvertedType, TimeUnit},
     statistics::{
@@ -14,32 +15,31 @@ use parquet2::{
 };
 use snafu::{OptionExt, ResultExt};
 
-use super::ColumnRangeStatistics;
-use crate::column_stats::MissingParquetColumnStatisticsSnafu;
+use super::{MissingParquetColumnStatisticsSnafu, Wrap};
 
-use crate::column_stats::UnableToParseUtf8FromBinarySnafu;
-use crate::utils::deserialize::convert_i96_to_i64_timestamp;
+use super::utils::*;
+use super::UnableToParseUtf8FromBinarySnafu;
 
-impl TryFrom<&BooleanStatistics> for ColumnRangeStatistics {
+impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
     fn try_from(value: &BooleanStatistics) -> Result<Self, Self::Error> {
         if let Some(lower) = value.min_value && let Some(upper) = value.max_value {
-            ColumnRangeStatistics::new(
+            Ok(ColumnRangeStatistics::new(
                 Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
                 Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
-            )
+            )?.into())
         } else {
-            Ok(ColumnRangeStatistics::Missing)
+            Ok(ColumnRangeStatistics::Missing.into())
         }
     }
 }
 
-impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
+impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
 
     fn try_from(value: &BinaryStatistics) -> Result<Self, Self::Error> {
         if value.min_value.is_none() || value.max_value.is_none() {
-            return Ok(ColumnRangeStatistics::Missing);
+            return Ok(ColumnRangeStatistics::Missing.into());
         }
 
         let lower = value
@@ -69,15 +69,16 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
+                    return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }
                 PrimitiveLogicalType::Decimal(p, s) => {
-                    return make_decimal_column_range_statistics(
+                    return Ok(make_decimal_column_range_statistics(
                         p,
                         s,
                         lower.as_slice(),
                         upper.as_slice(),
-                    )
+                    )?
+                    .into())
                 }
                 _ => {} // fall back
             }
@@ -96,15 +97,16 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
                     let upper =
                         Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
 
-                    return ColumnRangeStatistics::new(Some(lower), Some(upper));
+                    return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }
                 PrimitiveConvertedType::Decimal(p, s) => {
-                    return make_decimal_column_range_statistics(
+                    return Ok(make_decimal_column_range_statistics(
                         p,
                         s,
                         lower.as_slice(),
                         upper.as_slice(),
-                    )
+                    )?
+                    .into())
                 }
                 _ => {} // fall back
             }
@@ -113,7 +115,7 @@ impl TryFrom<&BinaryStatistics> for ColumnRangeStatistics {
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        ColumnRangeStatistics::new(Some(lower), Some(upper))
+        Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
 }
 
@@ -126,8 +128,8 @@ fn make_decimal_column_range_statistics(
     if lower.len() > 16 || upper.len() > 16 {
         return Ok(ColumnRangeStatistics::Missing);
     }
-    let l = crate::utils::deserialize::convert_i128(lower, lower.len());
-    let u = crate::utils::deserialize::convert_i128(upper, upper.len());
+    let l = convert_i128(lower, lower.len());
+    let u = convert_i128(upper, upper.len());
     let lower = Int128Array::from(("lower", [l].as_slice()));
     let upper = Int128Array::from(("upper", [u].as_slice()));
     let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
@@ -140,7 +142,7 @@ fn make_decimal_column_range_statistics(
     let upper = Decimal128Array::new(daft_core::datatypes::Field::new("upper", daft_type), upper)
         .into_series();
 
-    ColumnRangeStatistics::new(Some(lower), Some(upper))
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
 fn make_date_column_range_statistics(
@@ -159,7 +161,7 @@ fn make_date_column_range_statistics(
     .into_series();
     let upper =
         DateArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    ColumnRangeStatistics::new(Some(lower), Some(upper))
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
 fn make_timestamp_column_range_statistics(
@@ -196,21 +198,16 @@ fn make_timestamp_column_range_statistics(
     .into_series();
     let upper =
         TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
-    ColumnRangeStatistics::new(Some(lower), Some(upper))
+    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
-impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
+impl TryFrom<&FixedLenStatistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
 
     fn try_from(value: &FixedLenStatistics) -> Result<Self, Self::Error> {
         if value.min_value.is_none() || value.max_value.is_none() {
-            return Ok(ColumnRangeStatistics::Missing);
+            return Ok(ColumnRangeStatistics::Missing.into());
         }
-
-        let _n = match value.physical_type() {
-            PhysicalType::FixedLenByteArray(n) => Ok(*n),
-            _ => panic!("This should be a FixedLenByteArray Physical Type"),
-        }?;
 
         let lower = value
             .min_value
@@ -225,32 +222,39 @@ impl TryFrom<&FixedLenStatistics> for ColumnRangeStatistics {
         if let Some(ltype) = ptype.logical_type {
             use parquet2::schema::types::PrimitiveLogicalType;
             if let PrimitiveLogicalType::Decimal(p, s) = ltype {
-                return make_decimal_column_range_statistics(
+                return Ok(make_decimal_column_range_statistics(
                     p,
                     s,
                     lower.as_slice(),
                     upper.as_slice(),
-                );
+                )?
+                .into());
             }
         } else if let Some(PrimitiveConvertedType::Decimal(p, s)) = ptype.converted_type {
-            return make_decimal_column_range_statistics(p, s, lower.as_slice(), upper.as_slice());
+            return Ok(make_decimal_column_range_statistics(
+                p,
+                s,
+                lower.as_slice(),
+                upper.as_slice(),
+            )?
+            .into());
         }
 
         let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
         let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
 
-        ColumnRangeStatistics::new(Some(lower), Some(upper))
+        Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
 }
 
 impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
-    TryFrom<&PrimitiveStatistics<T>> for ColumnRangeStatistics
+    TryFrom<&PrimitiveStatistics<T>> for Wrap<ColumnRangeStatistics>
 {
     type Error = super::Error;
 
     fn try_from(value: &PrimitiveStatistics<T>) -> Result<Self, Self::Error> {
         if value.min_value.is_none() || value.max_value.is_none() {
-            return Ok(ColumnRangeStatistics::Missing);
+            return Ok(ColumnRangeStatistics::Missing.into());
         }
 
         let lower = value
@@ -269,10 +273,11 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
 
             match (ptype, ltype) {
                 (PhysicalType::Int32, PrimitiveLogicalType::Date) => {
-                    return make_date_column_range_statistics(
+                    return Ok(make_date_column_range_statistics(
                         lower.to_i32().unwrap(),
                         upper.to_i32().unwrap(),
-                    )
+                    )?
+                    .into())
                 }
                 (
                     PhysicalType::Int64,
@@ -281,40 +286,44 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
                         is_adjusted_to_utc,
                     },
                 ) => {
-                    return make_timestamp_column_range_statistics(
+                    return Ok(make_timestamp_column_range_statistics(
                         unit,
                         is_adjusted_to_utc,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
-                    )
+                    )?
+                    .into())
                 }
                 _ => {} // fall back
             }
         } else if let Some(ctype) = prim_type.converted_type {
             match (ptype, ctype) {
                 (PhysicalType::Int32, PrimitiveConvertedType::Date) => {
-                    return make_date_column_range_statistics(
+                    return Ok(make_date_column_range_statistics(
                         lower.to_i32().unwrap(),
                         upper.to_i32().unwrap(),
-                    )
+                    )?
+                    .into())
                 }
                 (PhysicalType::Int64, PrimitiveConvertedType::TimestampMicros) => {
                     let unit = TimeUnit::Microseconds;
-                    return make_timestamp_column_range_statistics(
+                    return Ok(make_timestamp_column_range_statistics(
                         unit,
                         false,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
-                    );
+                    )?
+                    .into());
                 }
                 (PhysicalType::Int64, PrimitiveConvertedType::TimestampMillis) => {
                     let unit = TimeUnit::Milliseconds;
-                    return make_timestamp_column_range_statistics(
+                    return Ok(make_timestamp_column_range_statistics(
                         unit,
                         false,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
-                    );
+                    )?
+                    .into());
                 }
                 _ => {}
             }
@@ -331,7 +340,7 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
         ))
         .unwrap();
 
-        ColumnRangeStatistics::new(Some(lower), Some(upper))
+        Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
 }
 
@@ -383,7 +392,7 @@ fn convert_int96_column_range_statistics(
     Ok(ColumnRangeStatistics::Missing)
 }
 
-impl TryFrom<&dyn Statistics> for ColumnRangeStatistics {
+impl TryFrom<&dyn Statistics> for Wrap<ColumnRangeStatistics> {
     type Error = super::Error;
 
     fn try_from(value: &dyn Statistics) -> Result<Self, Self::Error> {
@@ -402,11 +411,11 @@ impl TryFrom<&dyn Statistics> for ColumnRangeStatistics {
                 .downcast_ref::<PrimitiveStatistics<i64>>()
                 .unwrap()
                 .try_into(),
-            PhysicalType::Int96 => convert_int96_column_range_statistics(
+            PhysicalType::Int96 => Ok(Wrap(convert_int96_column_range_statistics(
                 stats
                     .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
                     .unwrap(),
-            ),
+            )?)),
             PhysicalType::Float => stats
                 .downcast_ref::<PrimitiveStatistics<f32>>()
                 .unwrap()

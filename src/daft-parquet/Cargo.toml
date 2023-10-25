@@ -6,8 +6,10 @@ bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
+daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 parquet2 = {workspace = true}
@@ -22,7 +24,7 @@ tokio-util = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python"]
 
 [package]
 edition = {workspace = true}

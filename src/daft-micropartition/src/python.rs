@@ -15,6 +15,7 @@ use daft_core::{
 use daft_dsl::python::PyExpr;
 use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_stats::TableStatistics;
 use daft_table::{python::PyTable, Table};
 use indexmap::IndexMap;
 use pyo3::{
@@ -24,13 +25,9 @@ use pyo3::{
     Python,
 };
 
-use crate::{
-    column_stats::ColumnRangeStatistics,
-    micropartition::{DeferredLoadingParams, MicroPartition, TableState},
-    table_stats::TableStatistics,
-};
+use crate::micropartition::{DeferredLoadingParams, MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 use pyo3::PyTypeInfo;
 
 #[pyclass(module = "daft.daft", frozen)]

@@ -3,10 +3,9 @@ use std::{ops::Deref, sync::Arc};
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    table_stats::TableStatistics,
-};
+use crate::micropartition::{MicroPartition, TableState};
+
+use daft_stats::TableStatistics;
 
 impl MicroPartition {
     pub fn cast_to_schema(&self, schema: SchemaRef) -> DaftResult<Self> {

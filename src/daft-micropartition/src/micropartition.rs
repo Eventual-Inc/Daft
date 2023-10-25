@@ -18,9 +18,9 @@ use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
 
-use crate::table_stats::TableStatistics;
 use daft_io::{IOConfig, IOStatsRef};
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
+use daft_stats::TableStatistics;
 
 #[derive(Clone, Serialize, Deserialize)]
 enum FormatParams {
@@ -354,8 +354,12 @@ pub(crate) fn read_parquet_into_micropartition(
     let stats = if any_stats_avail {
         let stat_per_table = metadata
             .iter()
-            .flat_map(|fm| fm.row_groups.iter().map(|rg| rg.try_into()))
-            .collect::<crate::Result<Vec<TableStatistics>>>()?;
+            .flat_map(|fm| {
+                fm.row_groups
+                    .iter()
+                    .map(daft_parquet::row_group_metadata_to_table_stats)
+            })
+            .collect::<DaftResult<Vec<TableStatistics>>>()?;
         stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
     } else {
         None

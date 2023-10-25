@@ -7,6 +7,7 @@ daft-micropartition = {path = "src/daft-micropartition", default-features = fals
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
+daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
@@ -24,7 +25,8 @@ python = [
   "daft-parquet/python",
   "daft-csv/python",
   "daft-micropartition/python",
-  "daft-scan/python"
+  "daft-scan/python",
+  "daft-stats/python"
 ]
 
 [lib]

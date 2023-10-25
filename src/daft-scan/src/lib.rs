@@ -1,9 +1,8 @@
 use common_error::DaftResult;
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
+use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use serde::{Deserialize, Serialize};
-mod table_metadata;
-pub use table_metadata::TableMetadata;
 
 #[derive(Serialize, Deserialize)]
 pub enum FileType {
@@ -12,9 +11,6 @@ pub enum FileType {
     Orc,
     Csv,
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct PartitionSpec {}
 
 #[derive(Serialize, Deserialize)]
 pub enum DataFileSource {
@@ -27,7 +23,8 @@ pub enum DataFileSource {
         file_type: FileType,
         path: String,
         metadata: TableMetadata,
-        partition_spec: PartitionSpec, //statistics: Option<TableStatistics> // Need to figure out better serialization story for series
+        partition_spec: PartitionSpec,
+        statistics: Option<TableStatistics>,
     },
 }
 

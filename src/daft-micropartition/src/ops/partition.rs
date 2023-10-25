@@ -6,7 +6,7 @@ use daft_table::Table;
 
 use crate::micropartition::{MicroPartition, TableState};
 
-use daft_scan::TableMetadata;
+use daft_stats::TableMetadata;
 
 fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
     if v.is_empty() {
