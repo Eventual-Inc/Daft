@@ -1,6 +1,6 @@
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType, NullArray, UInt64Array, Utf8Array},
+    datatypes::{BinaryArray, BooleanArray, DaftNumericType, NullArray, UInt64Array, Utf8Array},
     kernels,
 };
 
@@ -24,6 +24,18 @@ where
 }
 
 impl Utf8Array {
+    pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        let as_arrowed = self.as_arrow();
+
+        let seed = seed.map(|v| v.as_arrow());
+
+        let result = kernels::hashing::hash(as_arrowed, seed)?;
+
+        Ok(DataArray::from((self.name(), Box::new(result))))
+    }
+}
+
+impl BinaryArray {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
 

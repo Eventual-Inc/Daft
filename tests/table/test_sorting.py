@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from daft import col
+from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import Table
@@ -131,6 +132,69 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
 
     daft_table = daft_table.eval_expression_list([col("a").cast(sort_dtype), col("b").cast(value_dtype)])
 
+    assert len(daft_table) == 5
+    assert daft_table.column_names() == ["a", "b"]
+
+    sorted_table = daft_table.sort([col("a"), col("b")], descending=[a_desc, b_desc])
+
+    assert len(sorted_table) == 5
+
+    assert sorted_table.column_names() == ["a", "b"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()
+
+    assert (
+        daft_table.argsort([col("a"), col("b")], descending=[a_desc, b_desc]).to_pylist() == argsort_order.to_pylist()
+    )
+
+    # Descending
+
+    sorted_table = daft_table.sort([col("a"), col("b")], descending=[not a_desc, not b_desc])
+
+    assert len(sorted_table) == 5
+
+    assert sorted_table.column_names() == ["a", "b"]
+
+    assert sorted_table.get_column("a").datatype() == daft_table.get_column("a").datatype()
+    assert sorted_table.get_column("b").datatype() == daft_table.get_column("b").datatype()
+
+    assert sorted_table.get_column("a").to_pylist() == daft_table.get_column("a").take(argsort_order).to_pylist()[::-1]
+    assert sorted_table.get_column("b").to_pylist() == daft_table.get_column("b").take(argsort_order).to_pylist()[::-1]
+
+    assert (
+        daft_table.argsort([col("a"), col("b")], descending=[not a_desc, not b_desc]).to_pylist()
+        == argsort_order.to_pylist()[::-1]
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        ([None, 4, 2, 1, 5], [0, 1, 2, 3, None], False, False, [3, 2, 1, 4, 0]),
+        ([None, 4, 2, 1, 5], [0, 1, 2, 3, None], False, True, [3, 2, 1, 4, 0]),
+        ([1, 1, 1, 1, 1], [None, 3, 1, 2, 0], False, False, [4, 2, 3, 1, 0]),
+        ([1, 1, 1, 1, 1], [None, 3, 1, 2, 0], True, False, [4, 2, 3, 1, 0]),
+        ([None, None, None, None, None], [None, 3, 1, 2, 0], False, False, [4, 2, 3, 1, 0]),
+        ([None, None, None, None, None], [None, 3, 1, 2, 0], True, False, [4, 2, 3, 1, 0]),
+        ([None, 4, 2, 1, 5], [None, None, None, None, None], False, False, [3, 2, 1, 4, 0]),
+        ([None, 4, 2, 1, 5], [None, None, None, None, None], False, True, [3, 2, 1, 4, 0]),
+    ],
+)
+def test_table_multiple_col_sorting_binary(data) -> None:
+    a, b, a_desc, b_desc, expected = data
+    a = [x.to_bytes(1, "little") if x is not None else None for x in a]
+    b = [x.to_bytes(1, "little") if x is not None else None for x in b]
+
+    pa_table = pa.Table.from_pydict({"a": a, "b": b})
+
+    argsort_order = Series.from_pylist(expected)
+
+    daft_table = Table.from_arrow(pa_table)
+    daft_table = daft_table.eval_expression_list([col("a").cast(DataType.binary()), col("b").cast(DataType.binary())])
     assert len(daft_table) == 5
     assert daft_table.column_names() == ["a", "b"]
 

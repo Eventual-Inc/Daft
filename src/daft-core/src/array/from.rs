@@ -32,6 +32,13 @@ impl From<(&str, Box<arrow2::array::Utf8Array<i64>>)> for Utf8Array {
     }
 }
 
+impl From<(&str, Box<arrow2::array::BinaryArray<i64>>)> for BinaryArray {
+    fn from(item: (&str, Box<arrow2::array::BinaryArray<i64>>)) -> Self {
+        let (name, array) = item;
+        DataArray::new(Field::new(name, DataType::Binary).into(), array).unwrap()
+    }
+}
+
 impl<T> From<(&str, &[T::Native])> for DataArray<T>
 where
     T: DaftNumericType,

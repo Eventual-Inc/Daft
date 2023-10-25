@@ -84,6 +84,8 @@ async-compat = "0.2.1"
 async-compression = {version = "0.4.4", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.4.0"
+chrono = "0.4.26"
+chrono-tz = "0.8.3"
 futures = "0.3.28"
 html-escape = "0.2.13"
 indexmap = "2.0.0"
