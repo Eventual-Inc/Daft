@@ -1,10 +1,21 @@
-use common_error::DaftResult;
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
+
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::Expr;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+mod anonymous;
+#[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
+pub use python::register_modules;
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum FileType {
     Parquet,
     Avro,
@@ -12,12 +23,36 @@ pub enum FileType {
     Csv,
 }
 
+impl FromStr for FileType {
+    type Err = DaftError;
+
+    fn from_str(file_type: &str) -> DaftResult<Self> {
+        use FileType::*;
+        if file_type.trim().eq_ignore_ascii_case("parquet") {
+            Ok(Parquet)
+        } else if file_type.trim().eq_ignore_ascii_case("avro") {
+            Ok(Avro)
+        } else if file_type.trim().eq_ignore_ascii_case("orc") {
+            Ok(Orc)
+        } else if file_type.trim().eq_ignore_ascii_case("csv") {
+            Ok(Csv)
+        } else {
+            Err(DaftError::TypeError(format!(
+                "FileType {} not supported!",
+                file_type
+            )))
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub enum DataFileSource {
     AnonymousDataFile {
+        file_type: FileType,
         path: String,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
+        statistics: Option<TableStatistics>,
     },
     CatalogDataFile {
         file_type: FileType,
@@ -34,17 +69,17 @@ pub struct ScanTask {
     source: DataFileSource,
     columns: Option<Vec<String>>,
     limit: Option<usize>,
-    filter: Option<Expr>,
 }
 
-pub trait ScanOperator {
+pub trait ScanOperator: Send + Display {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[Field];
-    fn partition_spec(&self) -> Option<&PartitionSpec>;
     fn num_partitions(&self) -> DaftResult<usize>;
-    fn filter(self: Box<Self>, predicate: &Expr) -> DaftResult<Box<Self>>;
-    fn select(self: Box<Self>, columns: &[&str]) -> DaftResult<Box<Self>>;
-    fn limit(self: Box<Self>, num: usize) -> DaftResult<Box<Self>>;
+
+    // also returns a bool to indicate if the scan operator can "absorb" the predicate
+    fn filter(self: Box<Self>, predicate: &Expr) -> DaftResult<(bool, ScanOperatorRef)>;
+    fn select(self: Box<Self>, columns: &[&str]) -> DaftResult<ScanOperatorRef>;
+    fn limit(self: Box<Self>, num: usize) -> DaftResult<ScanOperatorRef>;
     fn to_scan_tasks(self: Box<Self>)
         -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
 }
