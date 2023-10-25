@@ -152,8 +152,8 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
 )
 def test_table_multiple_col_sorting_binary(data) -> None:
     a, b, a_desc, b_desc, expected = data
-    a = [x.to_bytes(1) if x is not None else None for x in a]
-    b = [x.to_bytes(1) if x is not None else None for x in b]
+    a = [x.to_bytes(1, "little") if x is not None else None for x in a]
+    b = [x.to_bytes(1, "little") if x is not None else None for x in b]
 
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
