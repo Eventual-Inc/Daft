@@ -380,10 +380,22 @@ pub(crate) fn read_parquet_into_micropartition(
 
     let daft_schema = prune_fields_from_schema(daft_schema, columns)?;
 
-    let total_rows: usize = metadata
-        .iter()
-        .map(|m| num_rows.unwrap_or(m.num_rows).min(m.num_rows))
-        .sum();
+    // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
+    let total_rows_no_limit = match &row_groups {
+        None => metadata.iter().map(|fm| fm.num_rows).sum(),
+        Some(row_groups) => metadata
+            .iter()
+            .zip(row_groups.iter())
+            .map(|(fm, rg)| {
+                rg.iter()
+                    .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
+                    .sum::<usize>()
+            })
+            .sum(),
+    };
+    let total_rows = num_rows
+        .map(|num_rows| num_rows.min(total_rows_no_limit))
+        .unwrap_or(total_rows_no_limit);
 
     if let Some(stats) = stats {
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
