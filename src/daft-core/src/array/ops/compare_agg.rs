@@ -192,6 +192,89 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
     }
 }
 
+fn grouped_cmp_binary<'a, F>(
+    data_array: &'a BinaryArray,
+    op: F,
+    groups: &GroupIndices,
+) -> DaftResult<BinaryArray>
+where
+    F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
+{
+    let arrow_array = data_array.as_arrow();
+    let cmp_per_group = if arrow_array.null_count() > 0 {
+        let cmp_values_iter = groups.iter().map(|g| {
+            let reduced_val = g
+                .iter()
+                .map(|i| {
+                    let idx = *i as usize;
+                    match arrow_array.is_null(idx) {
+                        false => Some(unsafe { arrow_array.value_unchecked(idx) }),
+                        true => None,
+                    }
+                })
+                .reduce(|l, r| match (l, r) {
+                    (None, None) => None,
+                    (None, Some(r)) => Some(r),
+                    (Some(l), None) => Some(l),
+                    (Some(l), Some(r)) => Some(op(l, r)),
+                });
+            match reduced_val {
+                None => None,
+                Some(v) => v,
+            }
+        });
+        Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
+            cmp_values_iter,
+        ))
+    } else {
+        Box::new(
+            arrow2::array::BinaryArray::<i64>::from_trusted_len_values_iter(groups.iter().map(
+                |g| {
+                    g.iter()
+                        .map(|i| {
+                            let idx = *i as usize;
+                            unsafe { arrow_array.value_unchecked(idx) }
+                        })
+                        .reduce(|l, r| op(l, r))
+                        .unwrap()
+                },
+            )),
+        )
+    };
+    Ok(DataArray::from((
+        data_array.field.name.as_ref(),
+        cmp_per_group,
+    )))
+}
+
+impl DaftCompareAggable for DataArray<BinaryType> {
+    type Output = DaftResult<DataArray<BinaryType>>;
+    fn min(&self) -> Self::Output {
+        let arrow_array: &arrow2::array::BinaryArray<i64> = self.as_arrow();
+
+        let result = arrow2::compute::aggregate::min_binary(arrow_array);
+        let res_arrow_array = arrow2::array::BinaryArray::<i64>::from([result]);
+
+        DataArray::new(self.field.clone(), Box::new(res_arrow_array))
+    }
+    fn max(&self) -> Self::Output {
+        let arrow_array: &arrow2::array::BinaryArray<i64> = self.as_arrow();
+
+        let result = arrow2::compute::aggregate::max_binary(arrow_array);
+        let res_arrow_array = arrow2::array::BinaryArray::<i64>::from([result]);
+
+        DataArray::new(self.field.clone(), Box::new(res_arrow_array))
+    }
+
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_binary(self, |l, r| l.min(r), groups)
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        grouped_cmp_binary(self, |l, r| l.max(r), groups)
+    }
+}
+
 fn grouped_cmp_bool(
     data_array: &BooleanArray,
     val_to_find: bool,
@@ -339,7 +422,6 @@ macro_rules! impl_todo_daft_comparable {
     };
 }
 
-impl_todo_daft_comparable!(BinaryArray);
 impl_todo_daft_comparable!(StructArray);
 impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
