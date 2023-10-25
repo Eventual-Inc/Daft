@@ -216,11 +216,7 @@ class RayRunnerIO(runner_io.RunnerIO):
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
         return FileInfos.from_table(
-            ray.get(
-                _glob_path_into_file_infos.remote(
-                    source_paths, file_format_config, io_config=io_config
-                )
-            )
+            ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
             .to_table()
             ._table
         )
