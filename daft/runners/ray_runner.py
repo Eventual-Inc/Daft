@@ -230,7 +230,9 @@ class RayRunnerIO(runner_io.RunnerIO):
                 _glob_path_into_file_infos.remote(
                     source_paths, file_format_config, fs=fs, storage_config=storage_config
                 )
-            )._table
+            )
+            .to_table()
+            ._table
         )
 
     def get_schema_from_first_filepath(

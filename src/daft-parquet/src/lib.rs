@@ -1,5 +1,5 @@
 #![feature(async_closure)]
-
+#![feature(let_chains)]
 use common_error::DaftError;
 use snafu::Snafu;
 
@@ -8,6 +8,8 @@ pub mod metadata;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
+mod statistics;
+pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
 #[cfg(feature = "python")]

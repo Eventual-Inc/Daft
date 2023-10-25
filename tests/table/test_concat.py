@@ -27,10 +27,10 @@ def test_table_concat() -> None:
 
 def test_table_concat_bad_input() -> None:
     mix_types_table = [Table.from_pydict({"x": [1, 2, 3]}), []]
-    with pytest.raises(TypeError, match="Expected a Table for concat"):
+    with pytest.raises(TypeError, match=f"Expected a {Table.__name__} for concat"):
         Table.concat(mix_types_table)
 
-    with pytest.raises(ValueError, match="Need at least 1 table"):
+    with pytest.raises(ValueError, match=f"Need at least 1 {Table.__name__}"):
         Table.concat([])
 
 
@@ -40,7 +40,7 @@ def test_table_concat_schema_mismatch() -> None:
         Table.from_pydict({"y": [1, 2, 3]}),
     ]
 
-    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{Table.__name__} concat requires all schemas to match"):
         Table.concat(mix_types_table)
 
     mix_types_table = [
@@ -48,7 +48,7 @@ def test_table_concat_schema_mismatch() -> None:
         Table.from_pydict({"x": [1.0, 2.0, 3.0]}),
     ]
 
-    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{Table.__name__} concat requires all schemas to match"):
         Table.concat(mix_types_table)
 
     mix_types_table = [
@@ -56,7 +56,7 @@ def test_table_concat_schema_mismatch() -> None:
         Table.from_pydict({"x": [object(), object(), object()]}),
     ]
 
-    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{Table.__name__} concat requires all schemas to match"):
         Table.concat(mix_types_table)
 
     mix_types_table = [
@@ -64,5 +64,5 @@ def test_table_concat_schema_mismatch() -> None:
         Table.from_pydict({"x": [1, 2, 3], "y": [2, 3, 4]}),
     ]
 
-    with pytest.raises(ValueError, match="Table concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{Table.__name__} concat requires all schemas to match"):
         Table.concat(mix_types_table)

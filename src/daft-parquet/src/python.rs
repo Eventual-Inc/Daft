@@ -35,6 +35,8 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+
             let result = crate::read::read_parquet(
                 uri,
                 columns.as_deref(),
@@ -43,7 +45,7 @@ pub mod pylib {
                 row_groups,
                 io_client,
                 Some(io_stats.clone()),
-                multithreaded_io.unwrap_or(true),
+                runtime_handle,
                 schema_infer_options,
             )?
             .into();
@@ -97,6 +99,9 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+
+            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+
             crate::read::read_parquet_into_pyarrow(
                 uri,
                 columns.as_deref(),
@@ -105,12 +110,12 @@ pub mod pylib {
                 row_groups,
                 io_client,
                 None,
-                multithreaded_io.unwrap_or(true),
+                runtime_handle,
                 schema_infer_options,
             )
         })?;
         let (schema, all_arrays) = read_parquet_result;
-        let pyarrow = py.import("pyarrow")?;
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, pyarrow)
     }
     #[allow(clippy::too_many_arguments)]
@@ -137,6 +142,7 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+            let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
 
             Ok(crate::read::read_parquet_bulk(
                 uris.as_ref(),
@@ -147,7 +153,7 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,
-                multithreaded_io.unwrap_or(true),
+                runtime_handle,
                 &schema_infer_options,
             )?
             .into_iter()
@@ -192,7 +198,7 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import("pyarrow")?;
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays)| {

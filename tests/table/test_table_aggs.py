@@ -4,9 +4,11 @@ import datetime
 import math
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 from daft import DataType, col, utils
+from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import Table
 from tests.table import (
@@ -25,6 +27,46 @@ test_table_count_cases = [
     ([0], {"count": [1]}),
     ([None, 0, None, 0, None], {"count": [2]}),
 ]
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64()), "b": pa.array([], type=pa.string())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64(), "b": pa.string()}))),  # No tables
+    ],
+)
+def test_multipartition_count_empty(mp):
+    counted = mp.agg([col("a")._count()])
+    assert len(counted) == 1
+    assert counted.to_pydict() == {"a": [0]}
+
+    counted = mp.agg([col("a")._count()], group_by=[col("b")])
+    assert len(counted) == 0
+    assert counted.to_pydict() == {"b": [], "a": []}
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                Table.from_pydict({"a": [1], "b": ["a"]}),
+                Table.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_multipartition_count(mp):
+    counted = mp.agg([col("a")._count()])
+    assert len(counted) == 1
+    assert counted.to_pydict() == {"a": [2]}
+
+    counted = mp.agg([col("a")._count()], group_by=[col("b")])
+    assert len(counted) == 2
+    assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 1]}
 
 
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])

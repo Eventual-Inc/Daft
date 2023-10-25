@@ -16,14 +16,16 @@ use daft_core::series::{IntoSeries, Series};
 use daft_dsl::functions::FunctionEvaluator;
 use daft_dsl::{col, null_lit, AggExpr, Expr};
 #[cfg(feature = "python")]
-mod ffi;
+pub mod ffi;
 mod ops;
+
+pub use ops::infer_join_schema;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Table {
     pub schema: SchemaRef,
     columns: Vec<Series>,
@@ -211,7 +213,7 @@ impl Table {
     pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
-                "Need at least 1 table to perform concat".to_string(),
+                "Need at least 1 Table to perform concat".to_string(),
             ));
         }
         if tables.len() == 1 {

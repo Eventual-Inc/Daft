@@ -1066,6 +1066,8 @@ dependencies = [
  "daft-micropartition",
  "daft-parquet",
  "daft-plan",
+ "daft-scan",
+ "daft-stats",
  "daft-table",
  "libc",
  "pyo3",
@@ -1198,16 +1200,21 @@ name = "daft-micropartition"
 version = "0.1.10"
 dependencies = [
  "arrow2",
+ "bincode",
  "common-error",
  "daft-core",
+ "daft-csv",
  "daft-dsl",
  "daft-io",
  "daft-parquet",
+ "daft-scan",
+ "daft-stats",
  "daft-table",
  "indexmap 2.0.2",
  "parquet2",
  "pyo3",
  "pyo3-log",
+ "serde",
  "snafu",
 ]
 
@@ -1222,14 +1229,17 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-io",
+ "daft-stats",
  "daft-table",
  "futures",
+ "indexmap 2.0.2",
  "itertools",
  "log",
  "parquet2",
  "pyo3",
  "pyo3-log",
  "rayon",
+ "serde",
  "snafu",
  "tokio",
  "tokio-stream",
@@ -1257,6 +1267,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-scan"
+version = "0.1.10"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-stats",
+ "daft-table",
+ "pyo3",
+ "pyo3-log",
+ "serde",
+ "snafu",
+]
+
+[[package]]
+name = "daft-stats"
+version = "0.1.10"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-table",
+ "indexmap 2.0.2",
+ "pyo3",
+ "pyo3-log",
+ "serde",
+ "snafu",
+]
+
+[[package]]
 name = "daft-table"
 version = "0.1.10"
 dependencies = [
@@ -1270,6 +1310,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]

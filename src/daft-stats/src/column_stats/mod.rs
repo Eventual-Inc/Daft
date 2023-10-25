@@ -1,23 +1,21 @@
 mod arithmetic;
 mod comparison;
-mod from_parquet;
 mod logical;
 
 use std::string::FromUtf8Error;
 
-use daft_core::{datatypes::BooleanArray, IntoSeries, Series};
-use snafu::Snafu;
-#[derive(Clone)]
-pub(crate) enum ColumnRangeStatistics {
+use daft_core::{
+    array::ops::full::FullNull,
+    datatypes::{BooleanArray, NullArray},
+    IntoSeries, Series,
+};
+use snafu::{ResultExt, Snafu};
+
+use crate::DaftCoreComputeSnafu;
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum ColumnRangeStatistics {
     Missing,
     Loaded(Series, Series),
-}
-
-struct ColumnMetadata {
-    pub range_statistics: ColumnRangeStatistics,
-    pub count: usize,
-    pub null_count: usize,
-    pub num_bytes: usize,
 }
 
 #[derive(PartialEq, Debug)]
@@ -40,7 +38,7 @@ impl std::fmt::Display for TruthValue {
 }
 
 impl ColumnRangeStatistics {
-    pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
+    pub fn new(lower: Option<Series>, upper: Option<Series>) -> crate::Result<Self> {
         match (lower, upper) {
             (Some(l), Some(u)) => {
                 assert_eq!(l.len(), 1);
@@ -78,6 +76,24 @@ impl ColumnRangeStatistics {
         let lower = BooleanArray::from(("lower", [lower].as_slice())).into_series();
         let upper = BooleanArray::from(("upper", [upper].as_slice())).into_series();
         Self::Loaded(lower, upper)
+    }
+
+    pub(crate) fn combined_series(&self) -> crate::Result<Series> {
+        match self {
+            Self::Missing => {
+                Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series())
+            }
+            Self::Loaded(l, u) => Series::concat([l, u].as_slice()).context(DaftCoreComputeSnafu),
+        }
+    }
+
+    pub(crate) fn element_size(&self) -> crate::Result<usize> {
+        match self {
+            Self::Missing => Ok(0),
+            Self::Loaded(l, u) => Ok((l.size_bytes().context(DaftCoreComputeSnafu)?
+                + u.size_bytes().context(DaftCoreComputeSnafu)?)
+                / 2),
+        }
     }
 
     pub fn from_series(series: &Series) -> Self {
@@ -126,10 +142,10 @@ impl std::fmt::Debug for ColumnRangeStatistics {
 
 impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     type Error = crate::Error;
-    fn try_from(value: &daft_dsl::LiteralValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
         let ser = value.to_series();
         assert_eq!(ser.len(), 1);
-        Ok(Self::new(Some(ser.clone()), Some(ser.clone()))?)
+        Self::new(Some(ser.clone()), Some(ser.clone()))
     }
 }
 
@@ -138,13 +154,9 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
 pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
-    #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
-    UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
 }
-
-type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {

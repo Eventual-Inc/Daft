@@ -8,9 +8,43 @@ import pytest
 
 from daft import col
 from daft.datatype import DataType
+from daft.logical.schema import Schema
 from daft.series import Series
 from daft.table import Table
 from tests.table import daft_numeric_types, daft_string_types
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+    ],
+)
+def test_micropartitions_sort_empty(mp) -> None:
+    sorted_table = mp.sort([col("a")])
+    assert len(mp) == len(sorted_table) == 0
+    assert mp.schema() == sorted_table.schema()
+
+
+@pytest.mark.parametrize(
+    "mp",
+    [
+        Table.from_pydict({"a": [1, 3, 2, 4]}),  # 1 table
+        Table.concat(
+            [
+                Table.from_pydict({"a": np.array([]).astype(np.int64)}),
+                Table.from_pydict({"a": [1]}),
+                Table.from_pydict({"a": [3, 2, 4]}),
+            ]
+        ),  # 3 tables
+    ],
+)
+def test_micropartitions_sort(mp) -> None:
+    sorted_table = mp.sort([col("a")])
+    assert len(mp) == len(sorted_table) == 4
+    assert mp.schema() == sorted_table.schema()
+    assert sorted_table.to_pydict()["a"] == sorted(mp.to_pydict()["a"])
 
 
 @pytest.mark.parametrize(

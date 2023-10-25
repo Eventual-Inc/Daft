@@ -1,20 +1,20 @@
-use std::{collections::HashSet, ops::Not};
+use std::{fmt::Display, ops::Not};
 
 use daft_dsl::Expr;
 use daft_table::Table;
-use indexmap::IndexMap;
-use snafu::ResultExt;
+use indexmap::{IndexMap, IndexSet};
 
-use crate::column_stats::{self, ColumnRangeStatistics};
+use crate::column_stats::ColumnRangeStatistics;
 
-use daft_core::array::ops::DaftCompare;
+use daft_core::{array::ops::DaftCompare, schema::Schema};
 
-#[derive(Clone, Debug)]
-pub(crate) struct TableStatistics {
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
+
 impl TableStatistics {
-    fn from_table(table: &Table) -> Self {
+    fn _from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -26,13 +26,13 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    pub(crate) fn union(&self, other: &Self) -> crate::Result<Self> {
+    pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self
             .columns
             .keys()
             .chain(other.columns.keys())
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         let mut columns = IndexMap::with_capacity(unioned_columns.len());
         for col in unioned_columns {
             let res_col = match (self.columns.get(col), other.columns.get(col)) {
@@ -46,7 +46,37 @@ impl TableStatistics {
         Ok(TableStatistics { columns })
     }
 
-    pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
+    pub fn eval_expression_list(
+        &self,
+        exprs: &[Expr],
+        expected_schema: &Schema,
+    ) -> crate::Result<Self> {
+        let result_cols = exprs
+            .iter()
+            .map(|e| self.eval_expression(e))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let new_col_stats = result_cols
+            .into_iter()
+            .zip(expected_schema.fields.keys())
+            .map(|(c, f)| (f.clone(), c))
+            .collect::<IndexMap<_, _>>();
+
+        Ok(Self {
+            columns: new_col_stats,
+        })
+    }
+
+    pub fn estimate_row_size(&self) -> super::Result<usize> {
+        let mut sum_so_far = 0;
+
+        for elem_size in self.columns.values().map(|c| c.element_size()) {
+            sum_so_far += elem_size?;
+        }
+        Ok(sum_so_far)
+    }
+
+    pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col) => {
@@ -75,28 +105,17 @@ impl TableStatistics {
         }
     }
 }
-use crate::MissingStatisticsSnafu;
 
-impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
-    type Error = crate::Error;
-    fn try_from(value: &daft_parquet::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
-        let _num_rows = value.num_rows();
-        let mut columns = IndexMap::new();
-        for col in value.columns() {
-            let stats = col
-                .statistics()
-                .transpose()
-                .context(column_stats::UnableToParseParquetColumnStatisticsSnafu)?;
-            let col_stats =
-                stats.and_then(|v| v.as_ref().try_into().context(MissingStatisticsSnafu).ok());
-            let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing);
-            columns.insert(
-                col.descriptor().path_in_schema.get(0).unwrap().clone(),
-                col_stats,
-            );
-        }
+impl Display for TableStatistics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let columns = self
+            .columns
+            .iter()
+            .map(|(s, c)| c.combined_series().unwrap().rename(s))
+            .collect::<Vec<_>>();
 
-        Ok(TableStatistics { columns })
+        let tab = Table::from_columns(columns).unwrap();
+        write!(f, "{tab}")
     }
 }
 
@@ -116,7 +135,7 @@ mod test {
         let table =
             Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
                 .unwrap();
-        let table_stats = TableStatistics::from_table(&table);
+        let table_stats = TableStatistics::_from_table(&table);
 
         // False case
         let expr = col("a").eq(&lit(0));
@@ -131,7 +150,7 @@ mod test {
         // True case
         let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
             .unwrap();
-        let table_stats = TableStatistics::from_table(&table);
+        let table_stats = TableStatistics::_from_table(&table);
 
         let expr = col("a").eq(&lit(0));
         let result = table_stats.eval_expression(&expr)?;

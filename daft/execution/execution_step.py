@@ -788,6 +788,8 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
         [boundaries, input] = inputs
         if self._num_outputs == 1:
             return [input]
+
+        boundaries = boundaries.to_table()
         partitioned_tables = input.partition_by_range(self.sort_by, boundaries, self.descending)
 
         # Pad the partitioned_tables with empty tables if fewer than self._num_outputs were returned
