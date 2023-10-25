@@ -24,7 +24,7 @@ def test_load_csv_no_headers(tmp_path: pathlib.Path):
     csv.write_text("\n".join(pathlib.Path(COOKBOOK_DATA_CSV).read_text().split("\n")[1:]))
     daft_df = daft.read_csv(str(csv), has_headers=False)
     pd_df = pd.read_csv(csv, header=None, keep_default_na=False)
-    pd_df.columns = [f"column_{i}" for i in range(52)]
+    pd_df.columns = [f"column_{i}" for i in range(1, 53)]
     daft_pd_df = daft_df.to_pandas()
     assert list(daft_pd_df.columns) == list(pd_df.columns)
 
