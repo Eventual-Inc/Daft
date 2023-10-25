@@ -139,6 +139,7 @@ macro_rules! with_match_comparable_daft_types {(
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Utf8 => __with_ty__! { Utf8Type },
+        Binary => __with_ty__! { BinaryType },
         _ => panic!("{:?} not implemented", $key_type)
     }
 })}

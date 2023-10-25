@@ -31,8 +31,6 @@ impl DataType {
         // - the type at which the comparison should be performed.
         use DataType::*;
         match (self, other) {
-            // TODO: [ISSUE-688] Make Binary type comparable
-            (Binary, _) | (_, Binary) => Err(()),
             (s, o) if s == o => Ok(s.to_physical()),
             (s, o) if s.is_physical() && o.is_physical() => {
                 try_physical_supertype(s, o).map_err(|_| ())
@@ -187,10 +185,10 @@ pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType
     use DataType::*;
     try_numeric_supertype(l, r).or(match (l, r) {
         (Null, other) | (other, Null) if other.is_physical() => Ok(other.clone()),
-        (Boolean, other) | (other, Boolean) if other.is_physical() => Ok(other.clone()),
+        (Boolean, other) | (other, Boolean) if other.is_numeric() => Ok(other.clone()),
         #[cfg(feature = "python")]
         (Python, _) | (_, Python) => Ok(Python),
-        (Utf8, o) | (o, Utf8) if o.is_physical() => Ok(Utf8),
+        (Utf8, o) | (o, Utf8) if o.is_physical() && !matches!(o, Binary) => Ok(Utf8),
         _ => Err(DaftError::TypeError(format!(
             "Invalid arguments to try_physical_supertype: {}, {}",
             l, r

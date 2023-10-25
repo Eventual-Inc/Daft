@@ -138,6 +138,7 @@ def is_comparable(dt: DataType):
         or dt == DataType.bool()
         or dt == DataType.string()
         or dt == DataType.null()
+        or dt == DataType.binary()
         or dt._is_temporal_type()
     )
 

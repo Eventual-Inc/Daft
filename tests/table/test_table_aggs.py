@@ -385,6 +385,66 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
     )
 
 
+def test_groupby_binary_bool_some_nulls() -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"1", b"1", None]),
+            "cookies": [2, 2, 3],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
+    expected_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"1", None]),
+            "cookies": [4, 3],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
+
+
+def test_groupby_binary_no_nulls() -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
+            "cookies": [1, 2, 2, 3],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._sum()], group_by=[col("group")])
+    expected_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"0", b"1"]),
+            "cookies": [5, 3],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
+
+
+def test_groupby_binary_no_nulls_max() -> None:
+    daft_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"1", b"0", b"1", b"0"]),
+            "cookies": [b"1", b"2", b"2", b"3"],
+        }
+    )
+    result_table = daft_table.agg([col("cookies")._max()], group_by=[col("group")])
+    expected_table = Table.from_pydict(
+        {
+            "group": Series.from_pylist([b"0", b"1"]),
+            "cookies": [b"3", "2"],
+        }
+    )
+
+    assert set(utils.freeze(utils.pydict_to_rows(result_table.to_pydict()))) == set(
+        utils.freeze(utils.pydict_to_rows(expected_table.to_pydict()))
+    )
+
+
 @pytest.mark.parametrize(
     "dtype",
     daft_floating_types,
