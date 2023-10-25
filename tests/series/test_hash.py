@@ -68,6 +68,21 @@ def test_hash_str_array_with_reference():
     assert hashed_again.to_pylist() == expected
 
 
+def test_hash_binary_array_with_reference():
+    arr = Series.from_pylist([b"hi", b"bye", None])
+    expected = [xxhash.xxh3_64_intdigest(b"hi"), xxhash.xxh3_64_intdigest(b"bye"), xxhash.xxh3_64_intdigest(b"")]
+    hashed = arr.hash()
+    assert hashed.to_pylist() == expected
+
+    hashed_again = arr.hash(hashed)
+    expected = [
+        xxhash.xxh3_64_intdigest(b"hi", expected[0]),
+        xxhash.xxh3_64_intdigest(b"bye", expected[1]),
+        xxhash.xxh3_64_intdigest(b"", expected[2]),
+    ]
+    assert hashed_again.to_pylist() == expected
+
+
 def test_hash_null_array_with_reference():
     arr = Series.from_pylist([None, None, None])
     expected = [xxhash.xxh3_64_intdigest(b""), xxhash.xxh3_64_intdigest(b""), xxhash.xxh3_64_intdigest(b"")]
