@@ -173,9 +173,13 @@ fn deserialize_datetime<T: chrono::TimeZone>(
     fmt_idx: &mut usize,
 ) -> Option<chrono::DateTime<T>> {
     // TODO(Clark): Parse as all candidate formats in a single pass.
-    for i in 0..ALL_NAIVE_TIMESTAMP_FMTS.len() {
-        let idx = (i + *fmt_idx) % ALL_NAIVE_TIMESTAMP_FMTS.len();
-        let fmt = ALL_NAIVE_TIMESTAMP_FMTS[idx];
+    for i in 0..ALL_TIMESTAMP_FMTS.len() {
+        let idx = (i + *fmt_idx) % ALL_TIMESTAMP_FMTS.len();
+        let fmt = ALL_TIMESTAMP_FMTS[idx];
+        println!(
+            "Deserializing dt: {string} with {fmt} as {:?}",
+            chrono::DateTime::parse_from_str(string, fmt)
+        );
         if let Ok(dt) = chrono::DateTime::parse_from_str(string, fmt) {
             *fmt_idx = idx;
             return Some(dt.with_timezone(tz));
