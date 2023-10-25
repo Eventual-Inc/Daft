@@ -31,8 +31,6 @@ impl DataType {
         // - the type at which the comparison should be performed.
         use DataType::*;
         match (self, other) {
-            // TODO: [ISSUE-688] Make Binary type comparable
-            (Binary, _) | (_, Binary) => Err(()),
             (s, o) if s == o => Ok(s.to_physical()),
             (s, o) if s.is_physical() && o.is_physical() => {
                 try_physical_supertype(s, o).map_err(|_| ())
