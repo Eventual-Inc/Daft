@@ -123,6 +123,10 @@ macro_rules! physical_compare_op {
                 Python => py_binary_op_bool!(lhs, $rhs, $pyop)
                     .downcast::<BooleanArray>()
                     .cloned(),
+                Binary => {
+                    // we are special casing this for now since we are not implementing grouping or hashing on binary arrays quite yet
+                    cast_downcast_op!(lhs, $rhs, &Binary, BinaryArray, $op)
+                }
                 _ => with_match_comparable_daft_types!(comp_type, |$T| {
                     cast_downcast_op!(lhs, $rhs, &comp_type, <$T as DaftDataType>::ArrayType, $op)
                 }),

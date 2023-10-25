@@ -523,7 +523,7 @@ def test_comparisons_binary(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_binary_types, repeat=2))
 def test_comparisons_binary_left_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([b"2"])
+    l_arrow = pa.array([b"22"])
     r_arrow = pa.array([b"1", b"22", b"333", None])
     # gt, eq, lt
 
