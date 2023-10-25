@@ -69,9 +69,12 @@ def test_temporal_file_roundtrip(format) -> None:
             "timestamp_s": pa.array([1], pa.timestamp("s")),
             "timestamp_ms": pa.array([1], pa.timestamp("ms")),
             "timestamp_us": pa.array([1], pa.timestamp("us")),
-            "timestamp_s_tz": pa.array([1], pa.timestamp("s", tz="UTC")),
-            "timestamp_ms_tz": pa.array([1], pa.timestamp("ms", tz="UTC")),
-            "timestamp_us_tz": pa.array([1], pa.timestamp("us", tz="UTC")),
+            "timestamp_s_utc_tz": pa.array([1], pa.timestamp("s", tz="UTC")),
+            "timestamp_ms_utc_tz": pa.array([1], pa.timestamp("ms", tz="UTC")),
+            "timestamp_us_utc_tz": pa.array([1], pa.timestamp("us", tz="UTC")),
+            "timestamp_s_tz": pa.array([1], pa.timestamp("s", tz="Asia/Singapore")),
+            "timestamp_ms_tz": pa.array([1], pa.timestamp("ms", tz="Asia/Singapore")),
+            "timestamp_us_tz": pa.array([1], pa.timestamp("us", tz="Asia/Singapore")),
         }
 
     pa_table = pa.Table.from_pydict(data)
