@@ -423,7 +423,9 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
         mp = Table.read_parquet_bulk(
             url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
         )
-        assert len(mp) == 100 * 11
+        assert len(mp) == 100 + (
+            10 * 10
+        )  # 100 rows in first table (10 rgs), 10 rows each in subsequent tables (1 rg each)
 
 
 @pytest.mark.integration()
