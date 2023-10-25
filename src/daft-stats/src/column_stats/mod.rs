@@ -1,6 +1,6 @@
 mod arithmetic;
 mod comparison;
-mod from_parquet;
+// mod from_parquet;
 mod logical;
 
 use std::string::FromUtf8Error;
@@ -14,7 +14,7 @@ use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) enum ColumnRangeStatistics {
+pub enum ColumnRangeStatistics {
     Missing,
     Loaded(Series, Series),
 }
@@ -39,7 +39,7 @@ impl std::fmt::Display for TruthValue {
 }
 
 impl ColumnRangeStatistics {
-    pub fn new(lower: Option<Series>, upper: Option<Series>) -> Result<Self> {
+    pub fn new(lower: Option<Series>, upper: Option<Series>) -> crate::Result<Self> {
         match (lower, upper) {
             (Some(l), Some(u)) => {
                 assert_eq!(l.len(), 1);
@@ -79,7 +79,7 @@ impl ColumnRangeStatistics {
         Self::Loaded(lower, upper)
     }
 
-    pub(crate) fn combined_series(&self) -> super::Result<Series> {
+    pub(crate) fn combined_series(&self) -> crate::Result<Series> {
         match self {
             Self::Missing => {
                 Ok(NullArray::full_null("null", &daft_core::DataType::Null, 2).into_series())
@@ -88,7 +88,7 @@ impl ColumnRangeStatistics {
         }
     }
 
-    pub(crate) fn element_size(&self) -> super::Result<usize> {
+    pub(crate) fn element_size(&self) -> crate::Result<usize> {
         match self {
             Self::Missing => Ok(0),
             Self::Loaded(l, u) => Ok((l.size_bytes().context(DaftCoreComputeSnafu)?
@@ -143,7 +143,7 @@ impl std::fmt::Debug for ColumnRangeStatistics {
 
 impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     type Error = crate::Error;
-    fn try_from(value: &daft_dsl::LiteralValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
         let ser = value.to_series();
         assert_eq!(ser.len(), 1);
         Ok(Self::new(Some(ser.clone()), Some(ser.clone()))?)
@@ -155,8 +155,8 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
 pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
-    #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
-    UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
+    // #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
+    // UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
 }

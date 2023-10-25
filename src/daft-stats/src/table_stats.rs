@@ -10,7 +10,7 @@ use crate::column_stats::{self, ColumnRangeStatistics};
 use daft_core::{array::ops::DaftCompare, schema::Schema};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct TableStatistics {
+pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
 
@@ -27,7 +27,7 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    pub(crate) fn union(&self, other: &Self) -> crate::Result<Self> {
+    pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self
             .columns
@@ -47,7 +47,7 @@ impl TableStatistics {
         Ok(TableStatistics { columns })
     }
 
-    pub(crate) fn eval_expression_list(
+    pub fn eval_expression_list(
         &self,
         exprs: &[Expr],
         expected_schema: &Schema,
@@ -68,7 +68,7 @@ impl TableStatistics {
         })
     }
 
-    pub(crate) fn estimate_row_size(&self) -> super::Result<usize> {
+    pub fn estimate_row_size(&self) -> super::Result<usize> {
         let mut sum_so_far = 0;
 
         for elem_size in self.columns.values().map(|c| c.element_size()) {
@@ -77,7 +77,7 @@ impl TableStatistics {
         Ok(sum_so_far)
     }
 
-    pub(crate) fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
+    pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col) => {
@@ -104,30 +104,6 @@ impl TableStatistics {
             }
             _ => Ok(ColumnRangeStatistics::Missing),
         }
-    }
-}
-use crate::MissingStatisticsSnafu;
-
-impl TryFrom<&daft_parquet::metadata::RowGroupMetaData> for TableStatistics {
-    type Error = crate::Error;
-    fn try_from(value: &daft_parquet::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
-        let _num_rows = value.num_rows();
-        let mut columns = IndexMap::new();
-        for col in value.columns() {
-            let stats = col
-                .statistics()
-                .transpose()
-                .context(column_stats::UnableToParseParquetColumnStatisticsSnafu)?;
-            let col_stats =
-                stats.and_then(|v| v.as_ref().try_into().context(MissingStatisticsSnafu).ok());
-            let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing);
-            columns.insert(
-                col.descriptor().path_in_schema.get(0).unwrap().clone(),
-                col_stats,
-            );
-        }
-
-        Ok(TableStatistics { columns })
     }
 }
 
