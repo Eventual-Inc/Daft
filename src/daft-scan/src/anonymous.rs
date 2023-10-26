@@ -3,7 +3,7 @@ use std::fmt::Display;
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 
-use crate::{DataFileSource, FileType, ScanOperator, ScanOperatorRef, ScanTask};
+use crate::{DataFileSource, FileType, PartitionField, ScanOperator, ScanOperatorRef, ScanTask};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     schema: SchemaRef,
@@ -36,7 +36,7 @@ impl ScanOperator for AnonymousScanOperator {
         self.schema.clone()
     }
 
-    fn partitioning_keys(&self) -> &[daft_core::datatypes::Field] {
+    fn partitioning_keys(&self) -> &[PartitionField] {
         &[]
     }
 

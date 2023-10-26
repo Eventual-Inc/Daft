@@ -13,6 +13,11 @@ pub struct PyField {
 
 #[pymethods]
 impl PyField {
+    #[staticmethod]
+    pub fn create(name: &str, data_type: PyDataType) -> PyResult<Self> {
+        Ok(datatypes::Field::new(name, data_type.dtype).into())
+    }
+
     pub fn name(&self) -> PyResult<String> {
         Ok(self.field.name.clone())
     }
