@@ -219,6 +219,9 @@ def _resolve_path_and_filesystem(
             None, the provided filesystem will still be validated against the
             filesystem inferred from the provided path to ensure compatibility.
     """
+    # NOTE: PyArrow really dislikes the "file://" prefix, so we trim it out if present
+    path = path[7:] if path.startswith("file://") else path
+
     # Use pyarrow utility to resolve filesystem and this particular path.
     # If a non-None filesystem is provided to this utility, it will ensure that
     # it is compatible with the provided path.
