@@ -33,6 +33,11 @@ class Field:
         f._field = field
         return f
 
+    @staticmethod
+    def create(name: str, dtype: DataType) -> Field:
+        pyfield = _PyField.create(name, dtype._dtype)
+        return Field._from_pyfield(pyfield)
+
     @property
     def name(self):
         return self._field.name()

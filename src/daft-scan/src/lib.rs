@@ -70,10 +70,16 @@ pub struct ScanTask {
     columns: Option<Vec<String>>,
     limit: Option<usize>,
 }
+#[derive(Serialize, Deserialize)]
+pub struct PartitionField {
+    field: Field,
+    source_field: Option<Field>,
+    transform: Option<Expr>,
+}
 
 pub trait ScanOperator: Send + Display {
     fn schema(&self) -> SchemaRef;
-    fn partitioning_keys(&self) -> &[Field];
+    fn partitioning_keys(&self) -> &[PartitionField];
     fn num_partitions(&self) -> DaftResult<usize>;
 
     // also returns a bool to indicate if the scan operator can "absorb" the predicate
