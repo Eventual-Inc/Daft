@@ -11,9 +11,11 @@ use daft_csv::read::read_csv;
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
+use daft_scan::file_format::{FileFormatConfig, ParquetSourceConfig};
+use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
+use daft_scan::{DataFileSource, ScanTaskBatch};
 use daft_table::Table;
 
-use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
@@ -22,33 +24,18 @@ use daft_io::{IOConfig, IOStatsRef};
 use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
 
-#[derive(Clone, Serialize, Deserialize)]
-enum FormatParams {
-    Parquet {
-        row_groups: Option<Vec<Vec<i64>>>,
-        inference_options: ParquetSchemaInferenceOptions,
-    },
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct DeferredLoadingParams {
-    format_params: FormatParams,
-    urls: Vec<String>,
-    io_config: Arc<IOConfig>,
-    multithreaded_io: bool,
-    limit: Option<usize>,
-    columns: Option<Vec<String>>,
-}
 pub(crate) enum TableState {
-    Unloaded(DeferredLoadingParams),
+    // Unloaded(DeferredLoadingParams),
+    Unloaded(Arc<ScanTaskBatch>),
     Loaded(Arc<Vec<Table>>),
 }
 
 impl Display for TableState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableState::Unloaded(params) => {
-                write!(f, "TableState: Unloaded. To load from: {:?}", params.urls)
+            TableState::Unloaded(_) => {
+                write!(f, "TableState: Unloaded")
+                // write!(f, "TableState: Unloaded. To load from: {:?}", params.urls)
             }
             TableState::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
@@ -63,7 +50,7 @@ impl Display for TableState {
 pub(crate) struct MicroPartition {
     pub(crate) schema: SchemaRef,
     pub(crate) state: Mutex<TableState>,
-    pub(crate) metadata: TableMetadata,
+    pub(crate) metadata: Option<TableMetadata>,
     pub(crate) statistics: Option<TableStatistics>,
 }
 
@@ -71,12 +58,9 @@ impl MicroPartition {
     pub fn new(
         schema: SchemaRef,
         state: TableState,
-        metadata: TableMetadata,
+        metadata: Option<TableMetadata>,
         statistics: Option<TableStatistics>,
     ) -> Self {
-        if let TableState::Unloaded(..) = state && statistics.is_none() {
-            panic!("MicroPartition does not allow the Table without Statistics")
-        }
         if let Some(stats) = &statistics {
             if stats.columns.len() != schema.fields.len() {
                 panic!("MicroPartition: TableStatistics and Schema have differing lengths")
@@ -99,13 +83,21 @@ impl MicroPartition {
         }
     }
 
+    pub fn from_scan_task_batch(scan_task_batch: Arc<ScanTaskBatch>) -> Self {
+        let schema = scan_task_batch.schema.clone();
+        let metadata = scan_task_batch.metadata.clone();
+        let statistics = scan_task_batch.statistics.clone();
+        let state = TableState::Unloaded(scan_task_batch);
+        Self::new(schema, state, metadata, statistics)
+    }
+
     pub fn empty(schema: Option<SchemaRef>) -> Self {
         let schema = schema.unwrap_or(Schema::empty().into());
 
         Self::new(
             schema,
             TableState::Loaded(Arc::new(vec![])),
-            TableMetadata { length: 0 },
+            Some(TableMetadata { length: 0 }),
             None,
         )
     }
@@ -115,7 +107,7 @@ impl MicroPartition {
     }
 
     pub fn len(&self) -> usize {
-        self.metadata.length
+        self.metadata.as_ref().map(|m| m.length).unwrap_or(0)
     }
 
     pub fn size_bytes(&self) -> DaftResult<usize> {
@@ -146,42 +138,68 @@ impl MicroPartition {
         io_stats: Option<IOStatsRef>,
     ) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
-        if let TableState::Unloaded(params) = guard.deref() {
-            let runtime_handle = daft_io::get_runtime(params.multithreaded_io).unwrap();
-            let _rt_guard = runtime_handle.enter();
-
-            let table_values: Vec<_> = match &params.format_params {
-                FormatParams::Parquet {
+        if let TableState::Unloaded(scan_task_batch) = guard.deref() {
+            let table_values: Vec<_> = match scan_task_batch.file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    // TODO(Clark): Support different row group specification per file.
                     row_groups,
-                    inference_options,
-                } => {
-                    let io_client =
-                        daft_io::get_io_client(params.multithreaded_io, params.io_config.clone())
-                            .unwrap();
-                    let column_names = params
-                        .columns
-                        .as_ref()
-                        .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
-                    let urls = params.urls.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-                    let all_tables = daft_parquet::read::read_parquet_bulk(
-                        urls.as_slice(),
-                        column_names.as_deref(),
-                        None,
-                        params.limit,
-                        row_groups.clone(),
-                        io_client.clone(),
-                        io_stats,
-                        8,
-                        runtime_handle,
-                        inference_options,
-                    )
-                    .context(DaftCoreComputeSnafu)?;
-                    all_tables
-                        .into_iter()
-                        .map(|t| t.cast_to_schema(&self.schema))
-                        .collect::<DaftResult<Vec<_>>>()
-                        .context(DaftCoreComputeSnafu)?
-                }
+                }) => match scan_task_batch.storage_config.as_ref() {
+                    StorageConfig::Native(native_storage_config) => {
+                        let runtime_handle =
+                            daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
+                        let _rt_guard = runtime_handle.enter();
+
+                        let io_config = Arc::new(
+                            native_storage_config
+                                .io_config
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or_default(),
+                        );
+                        let io_client = daft_io::get_io_client(
+                            native_storage_config.multithreaded_io,
+                            io_config,
+                        )
+                        .unwrap();
+                        let column_names = scan_task_batch
+                            .columns
+                            .as_ref()
+                            .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
+                        let urls = scan_task_batch
+                            .sources
+                            .iter()
+                            .map(|s| s.get_path())
+                            .collect::<Vec<_>>();
+                        let inference_options =
+                            ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+                        let all_tables = daft_parquet::read::read_parquet_bulk(
+                            urls.as_slice(),
+                            column_names.as_deref(),
+                            None,
+                            scan_task_batch.limit,
+                            row_groups
+                                .as_ref()
+                                .map(|row_groups| vec![row_groups.clone(); urls.len()]),
+                            io_client.clone(),
+                            io_stats,
+                            8,
+                            runtime_handle,
+                            &inference_options,
+                        )
+                        .context(DaftCoreComputeSnafu)?;
+                        all_tables
+                            .into_iter()
+                            .map(|t| t.cast_to_schema(&self.schema))
+                            .collect::<DaftResult<Vec<_>>>()
+                            .context(DaftCoreComputeSnafu)?
+                    }
+                    #[cfg(feature = "python")]
+                    StorageConfig::Python(_) => {
+                        todo!("TODO: Implement Python I/O backend for MicroPartitions.")
+                    }
+                },
+                _ => todo!("TODO: Implement MicroPartition reads for other file formats."),
             };
             let casted_table_values = table_values
                 .iter()
@@ -315,7 +333,7 @@ pub(crate) fn read_csv_into_micropartition(
             Ok(MicroPartition::new(
                 unioned_schema.clone(),
                 TableState::Loaded(Arc::new(tables)),
-                TableMetadata { length: total_len },
+                Some(TableMetadata { length: total_len }),
                 None,
             ))
         }
@@ -401,19 +419,35 @@ pub(crate) fn read_parquet_into_micropartition(
 
     if let Some(stats) = stats {
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let owned_columns = columns.map(|c| c.iter().map(|s| s.to_string()).collect::<Vec<_>>());
 
-        let params = DeferredLoadingParams {
-            format_params: FormatParams::Parquet {
-                row_groups,
-                inference_options: *schema_infer_options,
-            },
-            urls: owned_urls,
-            io_config: io_config.clone(),
-            multithreaded_io,
-            limit: num_rows,
-            columns: owned_columns,
-        };
+        let daft_schema = Arc::new(daft_schema);
+        let scan_task_batch = ScanTaskBatch::new(
+            owned_urls
+                .into_iter()
+                .map(|url| DataFileSource::AnonymousDataFile {
+                    path: url,
+                    metadata: None,
+                    partition_spec: None,
+                    statistics: None,
+                })
+                .collect::<Vec<_>>(),
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
+                row_groups: None,
+            })
+            .into(),
+            daft_schema.clone(),
+            StorageConfig::Native(
+                NativeStorageConfig::new_internal(
+                    multithreaded_io,
+                    Some(io_config.as_ref().clone()),
+                )
+                .into(),
+            )
+            .into(),
+            columns.map(|cols| Arc::new(cols.iter().map(|v| v.to_string()).collect::<Vec<_>>())),
+            num_rows,
+        );
 
         let exprs = daft_schema
             .fields
@@ -421,12 +455,12 @@ pub(crate) fn read_parquet_into_micropartition(
             .map(|n| daft_dsl::col(n.as_str()))
             .collect::<Vec<_>>();
         // use schema to update stats
-        let stats = stats.eval_expression_list(exprs.as_slice(), &daft_schema)?;
+        let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
         Ok(MicroPartition::new(
-            Arc::new(daft_schema),
-            TableState::Unloaded(params),
-            TableMetadata { length: total_rows },
+            daft_schema,
+            TableState::Unloaded(scan_task_batch.into()),
+            Some(TableMetadata { length: total_rows }),
             Some(stats),
         ))
     } else {
@@ -449,7 +483,7 @@ pub(crate) fn read_parquet_into_micropartition(
         Ok(MicroPartition::new(
             Arc::new(daft_schema),
             TableState::Loaded(all_tables.into()),
-            TableMetadata { length: total_rows },
+            Some(TableMetadata { length: total_rows }),
             None,
         ))
     }

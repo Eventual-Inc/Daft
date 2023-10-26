@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 
 use crate::{
     physical_plan::PhysicalPlan, sink_info::OutputFileInfo,
-    source_info::ExternalInfo as ExternalSourceInfo, PartitionSpec,
+    source_info::LegacyExternalInfo as ExternalSourceInfo, PartitionSpec,
 };
 use serde::{Deserialize, Serialize};
 

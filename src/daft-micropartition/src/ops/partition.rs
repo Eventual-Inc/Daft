@@ -37,7 +37,7 @@ impl MicroPartition {
                 MicroPartition::new(
                     self.schema.clone(),
                     TableState::Loaded(Arc::new(v)),
-                    TableMetadata { length: new_len },
+                    Some(TableMetadata { length: new_len }),
                     self.statistics.clone(),
                 )
             })

@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
+use daft_scan::ScanExternalInfo;
 
-use crate::source_info::{ExternalInfo, SourceInfo};
+use crate::source_info::{ExternalInfo, LegacyExternalInfo, SourceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -14,6 +15,8 @@ pub struct Source {
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
 
+    // TODO(Clark): Replace these pushdown fields with the Pushdown struct, where the Pushdown struct would exist
+    // on the LegacyExternalInfo struct in SourceInfo.
     /// Optional filters to apply to the source data.
     pub filters: Vec<ExprRef>,
     /// Optional number of rows to read.
@@ -56,12 +59,12 @@ impl Source {
         let mut res = vec![];
 
         match self.source_info.as_ref() {
-            SourceInfo::ExternalInfo(ExternalInfo {
+            SourceInfo::ExternalInfo(ExternalInfo::Legacy(LegacyExternalInfo {
                 source_schema,
                 file_infos,
                 file_format_config,
                 storage_config,
-            }) => {
+            })) => {
                 res.push(format!("Source: {}", file_format_config.var_name()));
                 res.push(format!(
                     "File paths = [{}]",
@@ -70,6 +73,18 @@ impl Source {
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
                 res.push(format!("Storage config = {:?}", storage_config));
+            }
+            SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo {
+                source_schema,
+                scan_op,
+                partitioning_keys,
+                pushdowns,
+            })) => {
+                res.push("Source:".to_string());
+                res.push(format!("Scan op = {}", scan_op));
+                res.push(format!("File schema = {}", source_schema.short_string()));
+                res.push(format!("Partitioning keys = {:?}", partitioning_keys));
+                res.push(format!("Scan pushdowns = {:?}", pushdowns));
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(_) => {}

@@ -1,31 +1,20 @@
-#![allow(unused)] // MAKE SURE TO REMOVE THIS
-
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::{ops::Deref, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{
-    ffi,
     python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
     schema::Schema,
     Series,
 };
 use daft_dsl::python::PyExpr;
-use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
+use daft_io::{python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_scan::{python::pylib::PyScanTaskBatch, ScanTaskBatch};
 use daft_stats::TableStatistics;
-use daft_table::{python::PyTable, Table};
-use indexmap::IndexMap;
-use pyo3::{
-    exceptions::PyValueError,
-    prelude::*,
-    types::{PyBytes, PyDict, PyList, PyTuple},
-    Python,
-};
+use daft_table::python::PyTable;
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, Python};
 
-use crate::micropartition::{DeferredLoadingParams, MicroPartition, TableState};
+use crate::micropartition::{MicroPartition, TableState};
 
 use daft_stats::TableMetadata;
 use pyo3::PyTypeInfo;
@@ -78,6 +67,11 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
+    pub fn from_scan_task_batch(scan_task_batch: PyScanTaskBatch) -> PyResult<Self> {
+        Ok(MicroPartition::from_scan_task_batch(scan_task_batch.into()).into())
+    }
+
+    #[staticmethod]
     pub fn from_tables(tables: Vec<PyTable>) -> PyResult<Self> {
         match &tables[..] {
             [] => Ok(MicroPartition::empty(None).into()),
@@ -86,9 +80,9 @@ impl PyMicroPartition {
                 Ok(MicroPartition::new(
                     first.table.schema.clone(),
                     TableState::Loaded(tables.clone()),
-                    TableMetadata {
+                    Some(TableMetadata {
                         length: tables.iter().map(|t| t.len()).sum(),
-                    },
+                    }),
                     // Don't compute statistics if data is already materialized
                     None,
                 )
@@ -122,14 +116,14 @@ impl PyMicroPartition {
         Ok(MicroPartition::new(
             schema.schema.clone(),
             TableState::Loaded(Arc::new(tables)),
-            TableMetadata { length: total_len },
+            Some(TableMetadata { length: total_len }),
             None,
         )
         .into())
     }
 
     // Export Methods
-    pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
+    pub fn to_table(&self) -> PyResult<PyTable> {
         let concatted = self.inner.concat_or_get()?;
         match &concatted.as_ref()[..] {
             [] => PyTable::empty(Some(self.schema()?)),
@@ -469,23 +463,23 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn _from_unloaded_table_state(
-        py: Python,
         schema_bytes: &PyBytes,
-        loading_params_bytes: &PyBytes,
+        loading_scan_task_batch_bytes: &PyBytes,
         metadata_bytes: &PyBytes,
         statistics_bytes: &PyBytes,
     ) -> PyResult<Self> {
         let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
-        let params =
-            bincode::deserialize::<DeferredLoadingParams>(loading_params_bytes.as_bytes()).unwrap();
+        let scan_task_batch =
+            bincode::deserialize::<ScanTaskBatch>(loading_scan_task_batch_bytes.as_bytes())
+                .unwrap();
         let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
         let statistics =
             bincode::deserialize::<Option<TableStatistics>>(statistics_bytes.as_bytes()).unwrap();
 
         Ok(MicroPartition::new(
             schema.into(),
-            TableState::Unloaded(params),
-            metadata,
+            TableState::Unloaded(scan_task_batch.into()),
+            Some(metadata),
             statistics,
         )
         .into())
@@ -516,7 +510,7 @@ impl PyMicroPartition {
         Ok(MicroPartition::new(
             schema.into(),
             TableState::Loaded(tables.into()),
-            metadata,
+            Some(metadata),
             statistics,
         )
         .into())

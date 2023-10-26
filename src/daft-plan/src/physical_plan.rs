@@ -2,15 +2,17 @@
 use {
     crate::{
         sink_info::OutputFileInfo,
-        source_info::{
-            ExternalInfo, FileFormat, FileFormatConfig, FileInfos, InMemoryInfo,
-            PyFileFormatConfig, PyStorageConfig, StorageConfig,
-        },
+        source_info::{FileInfos, InMemoryInfo, LegacyExternalInfo},
     },
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
+    daft_scan::{
+        file_format::{FileFormat, FileFormatConfig, PyFileFormatConfig},
+        python::pylib::PyScanTask,
+        storage_config::{PyStorageConfig, StorageConfig},
+    },
     pyo3::{
         pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
         Python, ToPyObject,
@@ -32,6 +34,7 @@ pub enum PhysicalPlan {
     TabularScanParquet(TabularScanParquet),
     TabularScanCsv(TabularScanCsv),
     TabularScanJson(TabularScanJson),
+    TabularScan(TabularScan),
     Project(Project),
     Filter(Filter),
     Limit(Limit),
@@ -58,6 +61,7 @@ impl PhysicalPlan {
         match self {
             #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan { partition_spec, .. }) => partition_spec.clone(),
+            Self::TabularScan(TabularScan { partition_spec, .. }) => partition_spec.clone(),
             Self::TabularScanParquet(TabularScanParquet { partition_spec, .. }) => {
                 partition_spec.clone()
             }
@@ -303,10 +307,21 @@ impl PhysicalPlan {
                     .call1((partition_iter,))?;
                 Ok(py_iter.into())
             }
+            PhysicalPlan::TabularScan(TabularScan { scan_tasks, .. }) => {
+                let py_scan_tasks = scan_tasks
+                    .iter()
+                    .map(|scan_task| PyScanTask::from(Arc::new(scan_task.clone())))
+                    .collect::<Vec<_>>();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "scan_with_tasks"))?
+                    .call1((py_scan_tasks,))?;
+                Ok(py_iter.into())
+            }
             PhysicalPlan::TabularScanParquet(TabularScanParquet {
                 projection_schema,
                 external_info:
-                    ExternalInfo {
+                    LegacyExternalInfo {
                         source_schema,
                         file_infos,
                         file_format_config,
@@ -328,7 +343,7 @@ impl PhysicalPlan {
             PhysicalPlan::TabularScanCsv(TabularScanCsv {
                 projection_schema,
                 external_info:
-                    ExternalInfo {
+                    LegacyExternalInfo {
                         source_schema,
                         file_infos,
                         file_format_config,
@@ -350,7 +365,7 @@ impl PhysicalPlan {
             PhysicalPlan::TabularScanJson(TabularScanJson {
                 projection_schema,
                 external_info:
-                    ExternalInfo {
+                    LegacyExternalInfo {
                         source_schema,
                         file_infos,
                         file_format_config,

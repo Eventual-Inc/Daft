@@ -23,7 +23,7 @@ PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
 
 def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
     if use_native_downloader:
-        return StorageConfig.native(NativeStorageConfig(None))
+        return StorageConfig.native(NativeStorageConfig(True, None))
     else:
         return StorageConfig.python(PythonStorageConfig(None))
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -7,6 +8,7 @@ from daft.daft import (
     FileFormatConfig,
     NativeStorageConfig,
     PythonStorageConfig,
+    ScanOperatorHandle,
     StorageConfig,
 )
 from daft.datatype import DataType
@@ -43,21 +45,41 @@ def _get_tabular_files_scan(
         io_config = storage_config.config.io_config
     else:
         raise NotImplementedError(f"Tabular scan with config not implemented: {storage_config.config}")
+    # TODO(Clark): Move this flag check to the global Daft context.
+    if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
+        # TODO(Clark): Add globbing scan, once implemented.
+        runner_io = get_context().runner().runner_io()
+        file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
 
-    runner_io = get_context().runner().runner_io()
-    file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
+        # Infer schema if no hints provided
+        inferred_or_provided_schema = (
+            schema_hint
+            if schema_hint is not None
+            else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
+        )
+        scan_op = ScanOperatorHandle.anonymous_scan(
+            file_infos.file_paths, inferred_or_provided_schema._schema, file_format_config, storage_config
+        )
+        builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
+            scan_operator=scan_op,
+            schema_hint=inferred_or_provided_schema,
+        )
+        return builder
+    else:
+        runner_io = get_context().runner().runner_io()
+        file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
 
-    # Infer schema if no hints provided
-    inferred_or_provided_schema = (
-        schema_hint
-        if schema_hint is not None
-        else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
-    )
-    # Construct plan
-    builder = LogicalPlanBuilder.from_tabular_scan(
-        file_infos=file_infos,
-        schema=inferred_or_provided_schema,
-        file_format_config=file_format_config,
-        storage_config=storage_config,
-    )
-    return builder
+        # Infer schema if no hints provided
+        inferred_or_provided_schema = (
+            schema_hint
+            if schema_hint is not None
+            else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
+        )
+        # Construct plan
+        builder = LogicalPlanBuilder.from_tabular_scan(
+            file_infos=file_infos,
+            schema=inferred_or_provided_schema,
+            file_format_config=file_format_config,
+            storage_config=storage_config,
+        )
+        return builder

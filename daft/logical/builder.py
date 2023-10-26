@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING
 
 from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.daft import PartitionScheme, ResourceRequest, StorageConfig
+from daft.daft import (
+    PartitionScheme,
+    ResourceRequest,
+    ScanOperatorHandle,
+    StorageConfig,
+)
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -64,6 +69,17 @@ class LogicalPlanBuilder:
         cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int
     ) -> LogicalPlanBuilder:
         builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, num_partitions)
+        return cls(builder)
+
+    @classmethod
+    def from_tabular_scan_with_scan_operator(
+        cls,
+        *,
+        scan_operator: ScanOperatorHandle,
+        schema_hint: Schema | None,
+    ) -> LogicalPlanBuilder:
+        pyschema = schema_hint._schema if schema_hint is not None else None
+        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator, pyschema)
         return cls(builder)
 
     @classmethod

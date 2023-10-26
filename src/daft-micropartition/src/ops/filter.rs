@@ -42,7 +42,7 @@ impl MicroPartition {
         Ok(Self::new(
             self.schema.clone(),
             TableState::Loaded(tables.into()),
-            TableMetadata { length: new_len },
+            Some(TableMetadata { length: new_len }),
             self.statistics.clone(), // update these values based off the filter we just ran
         ))
     }

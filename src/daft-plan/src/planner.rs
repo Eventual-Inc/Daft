@@ -5,6 +5,8 @@ use std::{cmp::max, collections::HashMap};
 use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_dsl::Expr;
+use daft_scan::file_format::FileFormatConfig;
+use daft_scan::ScanExternalInfo;
 
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
@@ -15,7 +17,7 @@ use crate::logical_ops::{
 use crate::logical_plan::LogicalPlan;
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::{ExternalInfo as ExternalSourceInfo, FileFormatConfig, SourceInfo};
+use crate::source_info::{ExternalInfo as ExternalSourceInfo, LegacyExternalInfo, SourceInfo};
 use crate::{physical_ops::*, PartitionSpec};
 use crate::{FileFormat, PartitionScheme};
 
@@ -31,13 +33,13 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             limit,
             filters,
         }) => match source_info.as_ref() {
-            SourceInfo::ExternalInfo(
-                ext_info @ ExternalSourceInfo {
+            SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(
+                ext_info @ LegacyExternalInfo {
                     file_format_config,
                     file_infos,
                     ..
                 },
-            ) => {
+            )) => {
                 let partition_spec = Arc::new(PartitionSpec::new_internal(
                     PartitionScheme::Unknown,
                     file_infos.len(),
@@ -72,6 +74,24 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                         )))
                     }
                 }
+            }
+            SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo {
+                pushdowns,
+                scan_op,
+                ..
+            })) => {
+                let scan_tasks = scan_op
+                    .to_scan_tasks(pushdowns.clone())?
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let partition_spec = Arc::new(PartitionSpec::new_internal(
+                    PartitionScheme::Unknown,
+                    scan_tasks.len(),
+                    None,
+                ));
+                Ok(PhysicalPlan::TabularScan(TabularScan::new(
+                    scan_tasks,
+                    partition_spec,
+                )))
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => {

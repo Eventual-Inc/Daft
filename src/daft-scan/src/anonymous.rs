@@ -1,26 +1,32 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 
-use crate::{DataFileSource, FileType, PartitionField, ScanOperator, ScanOperatorRef, ScanTask};
-#[derive(Debug)]
+use crate::{
+    file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
+    Pushdowns, ScanOperator, ScanTask,
+};
+#[derive(Debug, PartialEq, Hash)]
 pub struct AnonymousScanOperator {
-    schema: SchemaRef,
-    file_type: FileType,
     files: Vec<String>,
-    columns_to_select: Option<Vec<String>>,
-    limit: Option<usize>,
+    schema: SchemaRef,
+    file_format_config: Arc<FileFormatConfig>,
+    storage_config: Arc<StorageConfig>,
 }
 
 impl AnonymousScanOperator {
-    pub fn new(schema: SchemaRef, file_type: FileType, files: Vec<String>) -> Self {
+    pub fn new(
+        files: Vec<String>,
+        schema: SchemaRef,
+        file_format_config: Arc<FileFormatConfig>,
+        storage_config: Arc<StorageConfig>,
+    ) -> Self {
         Self {
-            schema,
-            file_type,
             files,
-            columns_to_select: None,
-            limit: None,
+            schema,
+            file_format_config,
+            storage_config,
         }
     }
 }
@@ -40,40 +46,27 @@ impl ScanOperator for AnonymousScanOperator {
         &[]
     }
 
-    fn num_partitions(&self) -> common_error::DaftResult<usize> {
-        Ok(self.files.len())
+    fn can_absorb_filter(&self) -> bool {
+        false
     }
-
-    fn select(self: Box<Self>, columns: &[&str]) -> common_error::DaftResult<ScanOperatorRef> {
-        for c in columns {
-            if self.schema.get_field(c).is_err() {
-                return Err(common_error::DaftError::FieldNotFound(format!(
-                    "{c} not found in {:?}",
-                    self.columns_to_select
-                )));
-            }
-        }
-        let mut to_rtn = self;
-        to_rtn.columns_to_select = Some(columns.iter().map(|s| s.to_string()).collect());
-        Ok(to_rtn)
+    fn can_absorb_select(&self) -> bool {
+        false
     }
-
-    fn limit(self: Box<Self>, num: usize) -> DaftResult<ScanOperatorRef> {
-        let mut to_rtn = self;
-        to_rtn.limit = Some(num);
-        Ok(to_rtn)
-    }
-
-    fn filter(self: Box<Self>, _predicate: &daft_dsl::Expr) -> DaftResult<(bool, ScanOperatorRef)> {
-        Ok((false, self))
+    fn can_absorb_limit(&self) -> bool {
+        false
     }
 
     fn to_scan_tasks(
-        self: Box<Self>,
+        &self,
+        pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
+        let columns = pushdowns.columns;
+        let file_format_config = self.file_format_config.clone();
+        let storage_config = self.storage_config.clone();
+        let limit = pushdowns.limit;
+        let schema = self.schema.clone();
         let iter = self.files.clone().into_iter().map(move |f| {
             let source = DataFileSource::AnonymousDataFile {
-                file_type: self.file_type,
                 path: f,
                 metadata: None,
                 partition_spec: None,
@@ -81,8 +74,11 @@ impl ScanOperator for AnonymousScanOperator {
             };
             Ok(ScanTask {
                 source,
-                columns: self.columns_to_select.clone(),
-                limit: self.limit,
+                file_format_config: file_format_config.clone(),
+                schema: schema.clone(),
+                storage_config: storage_config.clone(),
+                columns: columns.clone(),
+                limit,
             })
         });
         Ok(Box::new(iter))
