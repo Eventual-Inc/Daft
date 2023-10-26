@@ -31,6 +31,14 @@ change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: \<*_&   # You can add # and @ to disable mentions, and add ` to disable code blocks.
 
 
+# Add the "increment-minor-version" label to increment minor versions
+version-resolver:
+  minor:
+    labels:
+    - increment-minor-version
+  default: patch
+
+
 template: |
   ## Changes
 
