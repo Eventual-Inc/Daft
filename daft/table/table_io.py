@@ -149,10 +149,6 @@ def read_parquet(
     if not isinstance(file, (str, pathlib.Path)):
         f = file
     else:
-        # PyArrow really doesn't like the file:// prefix on URLs so we have to strip it before passing into PyArrow
-        # NOTE: This can go away once we deprecate our PyArrow reads.
-        file = file[7:] if isinstance(file, str) and file.startswith("file://") else file
-
         paths, fs = _resolve_paths_and_filesystem(file, fs)
         assert len(paths) == 1
         path = paths[0]

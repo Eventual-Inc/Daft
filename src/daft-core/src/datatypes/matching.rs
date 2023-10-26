@@ -131,6 +131,7 @@ macro_rules! with_match_comparable_daft_types {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+        Int128 => __with_ty__! { Int128Type },
         UInt8 => __with_ty__! { UInt8Type },
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },

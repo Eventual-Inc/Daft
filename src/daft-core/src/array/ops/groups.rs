@@ -52,7 +52,7 @@ where
 impl<T> IntoGroups for DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: arrow2::types::Index,
+    <T as DaftNumericType>::Native: Ord,
     <T as DaftNumericType>::Native: Hash,
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
