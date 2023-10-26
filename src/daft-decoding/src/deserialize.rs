@@ -26,7 +26,7 @@ pub(crate) const ALL_TIMESTAMP_FMTS: &[&str] = &[ISO8601, RFC3339_WITH_SPACE];
 // Ideally this trait should not be needed and both `csv` and `csv_async` crates would share
 // the same `ByteRecord` struct. Unfortunately, they do not and thus we must use generics
 // over this trait and materialize the generics for each struct.
-pub(crate) trait ByteRecordGeneric {
+pub trait ByteRecordGeneric {
     fn get(&self, index: usize) -> Option<&[u8]>;
 }
 
@@ -190,7 +190,7 @@ fn deserialize_datetime<T: chrono::TimeZone>(
 
 /// Deserializes `column` of `rows` into an [`Array`] of [`DataType`] `datatype`.
 #[inline]
-pub(crate) fn deserialize_column<B: ByteRecordGeneric>(
+pub fn deserialize_column<B: ByteRecordGeneric>(
     rows: &[B],
     column: usize,
     datatype: DataType,

@@ -9,6 +9,7 @@ chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 csv-async = "1.2.6"
 daft-core = {path = "../daft-core", default-features = false}
+daft-decoding = {path = "../daft-decoding"}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
