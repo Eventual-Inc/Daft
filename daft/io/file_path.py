@@ -1,19 +1,18 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional
 
-import fsspec
+from typing import Optional
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import PartitionScheme, PartitionSpec
+from daft.daft import IOConfig, PartitionScheme, PartitionSpec
 from daft.dataframe import DataFrame
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import Table
 
 
 @PublicAPI
-def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) -> DataFrame:
+def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame:
     """Creates a DataFrame of file paths and other metadata from a glob path.
 
     This method supports wildcards:
@@ -36,8 +35,7 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
 
     Args:
         path (str): Path to files on disk (allows wildcards).
-        fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for globbing and fetching metadata.
-            By default, Daft will automatically construct a FileSystem instance internally.
+        io_config (IOConfig): Configuration to use when running IO with remote services
 
     Returns:
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata
@@ -45,7 +43,7 @@ def from_glob_path(path: str, fs: Optional[fsspec.AbstractFileSystem] = None) ->
     """
     context = get_context()
     runner_io = context.runner().runner_io()
-    file_infos = runner_io.glob_paths_details([path], fs=fs)
+    file_infos = runner_io.glob_paths_details([path], io_config=io_config)
     file_infos_table = Table._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet({0: file_infos_table})
     cache_entry = context.runner().put_partition_set_into_cache(partition)

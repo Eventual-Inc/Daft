@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pandas as pd
 import pyarrow as pa
 import pytest
-import requests
 from pyarrow import parquet as pq
 
 import daft
@@ -192,22 +188,6 @@ def parquet_file(request) -> tuple[str, str]:
     return request.param
 
 
-HTTP_CAN_READ_FILES = [param for param in DAFT_CAN_READ_FILES if param[1].startswith("http")]
-
-
-@pytest.fixture(scope="session", params=HTTP_CAN_READ_FILES, ids=[name for name, _ in HTTP_CAN_READ_FILES])
-def local_parquet_file(request) -> tuple[str, str]:
-    """Returns a tuple of (`name`, `url`) of files that Daft should be able to handle. URLs input are remote but will return local paths."""
-    name, url = request.param
-    with tempfile.TemporaryDirectory() as dir:
-        file = os.path.join(dir, "tempfile")
-        response = requests.get(url)
-        with open(file, "wb") as f:
-            f.write(response.content)
-
-        yield (name, file)
-
-
 def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
     if get_protocol_from_path(path) == "s3":
@@ -228,19 +208,6 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 )
 def test_parquet_read_table(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
-    daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
-    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
-    assert daft_native_read.schema() == pa_read.schema()
-    pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "multithreaded_io",
-    [False, True],
-)
-def test_parquet_read_table_local(local_parquet_file, public_storage_io_config, multithreaded_io):
-    _, url = local_parquet_file
     daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
@@ -312,15 +279,7 @@ def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multi
 @pytest.mark.integration()
 def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
-    # This is a hack until we remove `fsspec.info`, `fsspec.glob` and `fsspec.glob` from  `daft.read_parquet`.
-    # We rely on the native downloaders impl for that
-    if url.startswith("az"):
-        import adlfs
-
-        fs = adlfs.AzureBlobFileSystem(account_name="dafttestdata", anon=True)
-    else:
-        fs = None
-    daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config, use_native_downloader=True, fs=fs)
+    daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config)
     pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
@@ -333,43 +292,6 @@ def test_parquet_read_df(parquet_file, public_storage_io_config):
 )
 def test_row_groups_selection(public_storage_io_config, multithreaded_io):
     url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
-    all_rows = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
-    assert len(all_rows) == 100
-    first = Table.read_parquet(
-        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[0]
-    )
-    assert len(first) == 10
-    assert all_rows.to_arrow()[:10] == first.to_arrow()
-
-    fifth = Table.read_parquet(
-        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[5]
-    )
-    assert len(fifth) == 10
-    assert all_rows.to_arrow()[50:60] == fifth.to_arrow()
-
-    repeated = Table.read_parquet(
-        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 1, 1]
-    )
-    assert len(repeated) == 30
-    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[:10]
-    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[10:20]
-    assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[20:]
-
-    out_of_order = Table.read_parquet(
-        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 0]
-    )
-    assert len(out_of_order) == 20
-    assert all_rows.to_arrow()[10:20] == out_of_order.to_arrow()[:10]
-    assert all_rows.to_arrow()[0:10] == out_of_order.to_arrow()[10:20]
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "multithreaded_io",
-    [False, True],
-)
-def test_row_groups_selection_local(public_storage_io_config, multithreaded_io):
-    url = "tests/assets/parquet-data/mvp.parquet"
     all_rows = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
     assert len(all_rows) == 100
     first = Table.read_parquet(

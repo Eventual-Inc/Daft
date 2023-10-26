@@ -6,10 +6,8 @@ import uuid
 
 import pandas as pd
 import pytest
-from fsspec.implementations.local import LocalFileSystem
 
 import daft
-from daft.context import get_context
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 
@@ -41,26 +39,6 @@ def test_download(files, use_native_downloader):
         pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
         pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])
         assert_df_equals(df.to_pandas(), pd_df, sort_key="filenames")
-
-
-@pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
-def test_download_custom_ds(files):
-    # Mark that this filesystem instance shouldn't be automatically reused by fsspec; without this,
-    # fsspec would cache this instance and reuse it for Daft's default construction of filesystems,
-    # which would make this test pass without the passed filesystem being used.
-
-    # Run it twice to ensure runtime works
-    for _ in range(2):
-        fs = LocalFileSystem(skip_instance_cache=True)
-
-        df = daft.from_pydict({"filenames": [str(f) for f in files]})
-
-        df = df.with_column("bytes", col("filenames").url.download(fs=fs))
-        out_df = df.to_pandas()
-
-        pd_df = pd.DataFrame.from_dict({"filenames": [str(f) for f in files]})
-        pd_df["bytes"] = pd.Series([pathlib.Path(fn).read_bytes() for fn in files])
-        assert_df_equals(out_df, pd_df, sort_key="filenames")
 
 
 @pytest.mark.parametrize("use_native_downloader", [False, True])

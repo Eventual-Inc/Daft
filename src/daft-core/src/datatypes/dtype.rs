@@ -125,7 +125,10 @@ impl DataType {
             DataType::Int16 => Ok(ArrowType::Int16),
             DataType::Int32 => Ok(ArrowType::Int32),
             DataType::Int64 => Ok(ArrowType::Int64),
-            DataType::Int128 => Ok(ArrowType::Decimal(38, 0)),
+            // Must maintain same default mapping as Arrow2, otherwise this will throw errors in
+            // DataArray<Int128Type>::new() which makes strong assumptions about the arrow/Daft types
+            // https://github.com/jorgecarleitao/arrow2/blob/b0734542c2fef5d2d0c7b6ffce5d094de371168a/src/datatypes/mod.rs#L493
+            DataType::Int128 => Ok(ArrowType::Decimal(32, 32)),
             DataType::UInt8 => Ok(ArrowType::UInt8),
             DataType::UInt16 => Ok(ArrowType::UInt16),
             DataType::UInt32 => Ok(ArrowType::UInt32),

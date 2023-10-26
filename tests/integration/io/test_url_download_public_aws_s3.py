@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import pytest
-import s3fs
 
 import daft
 
 
 @pytest.mark.integration()
 def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
-    fs = s3fs.S3FileSystem(anon=True)
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(fs=fs))
+    df = df.with_column(
+        "data", df["urls"].url.download(io_config=daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True)))
+    )
 
     data = df.to_pydict()
     assert len(data["data"]) == 6
@@ -21,10 +21,11 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
 
 @pytest.mark.integration()
 def test_url_download_aws_s3_public_bucket_custom_s3fs_wrong_region(small_images_s3_paths):
-    fs = s3fs.S3FileSystem(anon=True)
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(fs=fs))
+    df = df.with_column(
+        "data", df["urls"].url.download(io_config=daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True)))
+    )
 
     data = df.to_pydict()
     assert len(data["data"]) == 6

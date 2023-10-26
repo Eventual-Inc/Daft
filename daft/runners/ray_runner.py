@@ -27,7 +27,7 @@ except ImportError:
 from daft.daft import (
     FileFormatConfig,
     FileInfos,
-    PythonStorageConfig,
+    IOConfig,
     ResourceRequest,
     StorageConfig,
 )
@@ -41,7 +41,7 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     SingleOutputPartitionTask,
 )
-from daft.filesystem import get_filesystem_from_path, glob_path_with_stats
+from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     PartID,
@@ -56,7 +56,6 @@ from daft.table import Table
 
 if TYPE_CHECKING:
     import dask
-    import fsspec
     import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
@@ -76,20 +75,12 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
 def _glob_path_into_file_infos(
     paths: list[str],
     file_format_config: FileFormatConfig | None,
-    fs: fsspec.AbstractFileSystem | None,
-    storage_config: StorageConfig | None,
+    io_config: IOConfig | None,
 ) -> Table:
-    if fs is None and storage_config is not None:
-        config = storage_config.config
-        if isinstance(config, PythonStorageConfig):
-            fs = config.fs
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
     for path in paths:
-        if fs is None:
-            fs = get_filesystem_from_path(path)
-
-        path_file_infos = glob_path_with_stats(path, file_format, fs, storage_config)
+        path_file_infos = glob_path_with_stats(path, file_format=file_format, io_config=io_config)
         if len(path_file_infos) == 0:
             raise FileNotFoundError(f"No files found at {path}")
         file_infos.extend(path_file_infos)
@@ -221,16 +212,11 @@ class RayRunnerIO(runner_io.RunnerIO):
         self,
         source_paths: list[str],
         file_format_config: FileFormatConfig | None = None,
-        fs: fsspec.AbstractFileSystem | None = None,
-        storage_config: StorageConfig | None = None,
+        io_config: IOConfig | None = None,
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
         return FileInfos.from_table(
-            ray.get(
-                _glob_path_into_file_infos.remote(
-                    source_paths, file_format_config, fs=fs, storage_config=storage_config
-                )
-            )
+            ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
             .to_table()
             ._table
         )
