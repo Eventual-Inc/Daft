@@ -1119,6 +1119,7 @@ dependencies = [
  "common-error",
  "csv-async",
  "daft-core",
+ "daft-decoding",
  "daft-io",
  "daft-table",
  "futures",
@@ -1134,6 +1135,18 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "daft-decoding"
+version = "0.1.10"
+dependencies = [
+ "arrow2",
+ "chrono",
+ "chrono-tz",
+ "csv-async",
+ "lexical-core",
+ "simdutf8",
 ]
 
 [[package]]

@@ -29,9 +29,9 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::deserialize::deserialize_column;
 use crate::metadata::read_csv_schema_single;
 use crate::{compression::CompressionCodec, ArrowSnafu};
+use daft_decoding::deserialize::deserialize_column;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(

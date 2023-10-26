@@ -12,8 +12,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::inference::merge_schema;
-use crate::{compression::CompressionCodec, inference::infer};
+use crate::{compression::CompressionCodec, schema::merge_schema};
+use daft_decoding::inference::infer;
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
