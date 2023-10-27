@@ -9,7 +9,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularScanJson {
     pub projection_schema: SchemaRef,
     pub external_info: ExternalInfo,
@@ -36,7 +36,7 @@ impl TabularScanJson {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularWriteJson {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,

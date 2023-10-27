@@ -9,7 +9,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularScanParquet {
     pub projection_schema: SchemaRef,
     pub external_info: ExternalSourceInfo,
@@ -36,7 +36,7 @@ impl TabularScanParquet {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularWriteParquet {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,

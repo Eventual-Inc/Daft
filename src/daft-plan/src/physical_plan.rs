@@ -25,7 +25,7 @@ use std::{cmp::max, sync::Arc};
 use crate::{physical_ops::*, PartitionScheme, PartitionSpec};
 
 /// Physical plan for a Daft query.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),

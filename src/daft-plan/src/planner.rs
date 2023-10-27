@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 use std::{cmp::max, collections::HashMap};
 
@@ -165,43 +166,57 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             scheme,
         }) => {
             let input_physical = Arc::new(plan(input)?);
-            let input_num_partitions = input_physical.partition_spec().num_partitions;
+            let input_partition_spec = input_physical.partition_spec();
+            let input_num_partitions = input_partition_spec.num_partitions;
             let num_partitions = num_partitions.unwrap_or(input_num_partitions);
-            match scheme {
-                PartitionScheme::Unknown => {
-                    if num_partitions > input_num_partitions {
+            let repartitioned_plan = match scheme {
+                PartitionScheme::Unknown => match num_partitions.cmp(&input_num_partitions) {
+                    Ordering::Greater => {
                         // Split input partitions into num_partitions.
                         let split_op = PhysicalPlan::Split(Split::new(
-                            input_physical,
+                            input_physical.clone(),
                             input_num_partitions,
                             num_partitions,
                         ));
-                        Ok(PhysicalPlan::Flatten(Flatten::new(split_op.into())))
-                    } else {
+                        PhysicalPlan::Flatten(Flatten::new(split_op.into()))
+                    }
+                    Ordering::Less => {
                         // Coalesce input partitions into num_partitions.
-                        Ok(PhysicalPlan::Coalesce(Coalesce::new(
-                            input_physical,
+                        PhysicalPlan::Coalesce(Coalesce::new(
+                            input_physical.clone(),
                             input_num_partitions,
                             num_partitions,
-                        )))
+                        ))
                     }
-                }
+                    Ordering::Equal => {
+                        // # of output partitions == # of input partitions, so we drop the redundant repartition.
+                        return Ok(input_physical.as_ref().clone());
+                    }
+                },
                 PartitionScheme::Random => {
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
-                        input_physical,
+                        input_physical.clone(),
                         num_partitions,
                     ));
-                    Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
+                    PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 PartitionScheme::Hash => {
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                        input_physical,
+                        input_physical.clone(),
                         num_partitions,
                         partition_by.clone(),
                     ));
-                    Ok(PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())))
+                    PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 PartitionScheme::Range => unreachable!("Repartitioning by range is not supported"),
+            };
+            let repartitioned_partition_spec = repartitioned_plan.partition_spec();
+            if (input_num_partitions == 1 && repartitioned_partition_spec.num_partitions == 1)
+                || (repartitioned_partition_spec == input_partition_spec)
+            {
+                Ok(input_physical.as_ref().clone())
+            } else {
+                Ok(repartitioned_plan)
             }
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
@@ -522,5 +537,109 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_core::{datatypes::Field, DataType};
+    use daft_dsl::{col, lit, AggExpr, Expr};
+    use std::assert_matches::assert_matches;
+
+    use crate::physical_plan::PhysicalPlan;
+    use crate::planner::plan;
+    use crate::{test::dummy_scan_node, PartitionScheme};
+
+    /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
+    ///
+    /// Repartition-upstream_op -> upstream_op
+    #[test]
+    fn repartition_dropped_redundant_into_partitions() -> DaftResult<()> {
+        // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
+        let builder = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .repartition(Some(10), vec![], PartitionScheme::Unknown)?
+        .filter(col("a").lt(&lit(2)))?;
+        assert_eq!(
+            plan(builder.build().as_ref())?
+                .partition_spec()
+                .num_partitions,
+            10
+        );
+        let logical_plan = builder
+            .repartition(Some(10), vec![], PartitionScheme::Unknown)?
+            .build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        // Check that the last repartition was dropped (the last op should be the filter).
+        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        Ok(())
+    }
+
+    /// Tests that planner drops a Repartition if both the Repartition and the child have a single partition.
+    ///
+    /// Repartition-upstream_op -> upstream_op
+    #[test]
+    fn repartition_dropped_single_partition() -> DaftResult<()> {
+        // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
+        let builder = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        assert_eq!(
+            plan(builder.build().as_ref())?
+                .partition_spec()
+                .num_partitions,
+            1
+        );
+        let logical_plan = builder
+            .repartition(Some(1), vec![col("a")], PartitionScheme::Hash)?
+            .build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        assert_matches!(physical_plan, PhysicalPlan::TabularScanJson(_));
+        Ok(())
+    }
+
+    /// Tests that planner drops a Repartition if both the Repartition and the child have the same partition spec.
+    ///
+    /// Repartition-upstream_op -> upstream_op
+    #[test]
+    fn repartition_dropped_same_partition_spec() -> DaftResult<()> {
+        let logical_plan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .repartition(Some(10), vec![col("a")], PartitionScheme::Hash)?
+        .filter(col("a").lt(&lit(2)))?
+        .repartition(Some(10), vec![col("a")], PartitionScheme::Hash)?
+        .build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        // Check that the last repartition was dropped (the last op should be the filter).
+        assert_matches!(physical_plan, PhysicalPlan::Filter(_));
+        Ok(())
+    }
+
+    /// Tests that planner drops a Repartition if both the Repartition and the upstream Aggregation have the same partition spec.
+    ///
+    /// Repartition-Aggregation -> Aggregation
+    #[test]
+    fn repartition_dropped_same_partition_spec_agg() -> DaftResult<()> {
+        let logical_plan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ])
+        .repartition(Some(10), vec![col("a")], PartitionScheme::Hash)?
+        .aggregate(
+            vec![Expr::Agg(AggExpr::Sum(col("a").into()))],
+            vec![col("b")],
+        )?
+        .repartition(Some(10), vec![col("b")], PartitionScheme::Hash)?
+        .build();
+        let physical_plan = plan(logical_plan.as_ref())?;
+        // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).
+        assert_matches!(physical_plan, PhysicalPlan::Project(_));
+        Ok(())
     }
 }

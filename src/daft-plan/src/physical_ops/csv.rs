@@ -9,7 +9,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TabularScanCsv {
     pub projection_schema: SchemaRef,
     pub external_info: ExternalInfo,
@@ -36,7 +36,7 @@ impl TabularScanCsv {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularWriteCsv {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,

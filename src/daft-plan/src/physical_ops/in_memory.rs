@@ -3,7 +3,7 @@ use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub schema: SchemaRef,
     pub in_memory_info: InMemoryInfo,

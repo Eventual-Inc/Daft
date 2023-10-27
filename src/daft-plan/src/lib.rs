@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(assert_matches)]
 
 mod builder;
 mod display;
