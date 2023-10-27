@@ -1,4 +1,4 @@
-use std::{cmp::max, num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
@@ -6,7 +6,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use indexmap::IndexSet;
 use snafu::Snafu;
 
-use crate::{display::TreeDisplay, logical_ops::*, PartitionScheme, PartitionSpec};
+use crate::{display::TreeDisplay, logical_ops::*};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -118,80 +118,6 @@ impl LogicalPlan {
             }
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
-        }
-    }
-
-    pub fn partition_spec(&self) -> Arc<PartitionSpec> {
-        match self {
-            Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
-            Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
-            Self::Filter(Filter { input, .. }) => input.partition_spec(),
-            Self::Limit(Limit { input, .. }) => input.partition_spec(),
-            Self::Explode(Explode { input, .. }) => input.partition_spec(),
-            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
-                PartitionScheme::Range,
-                input.partition_spec().num_partitions,
-                Some(sort_by.clone()),
-            )
-            .into(),
-            Self::Repartition(Repartition {
-                num_partitions,
-                partition_by,
-                scheme,
-                ..
-            }) => PartitionSpec::new_internal(
-                scheme.clone(),
-                *num_partitions,
-                Some(partition_by.clone()),
-            )
-            .into(),
-            Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
-            Self::Aggregate(Aggregate { input, groupby, .. }) => {
-                let input_partition_spec = input.partition_spec();
-                if input_partition_spec.num_partitions == 1 {
-                    input_partition_spec.clone()
-                } else if groupby.is_empty() {
-                    PartitionSpec::new_internal(PartitionScheme::Unknown, 1, None).into()
-                } else {
-                    PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
-                        input.partition_spec().num_partitions,
-                        Some(groupby.clone()),
-                    )
-                    .into()
-                }
-            }
-            Self::Concat(Concat { input, other }) => PartitionSpec::new_internal(
-                PartitionScheme::Unknown,
-                input.partition_spec().num_partitions + other.partition_spec().num_partitions,
-                None,
-            )
-            .into(),
-            Self::Join(Join {
-                left,
-                right,
-                left_on,
-                ..
-            }) => {
-                let input_partition_spec = left.partition_spec();
-                match max(
-                    input_partition_spec.num_partitions,
-                    right.partition_spec().num_partitions,
-                ) {
-                    // NOTE: This duplicates the repartitioning logic in the planner, where we
-                    // conditionally repartition the left and right tables.
-                    // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
-                    // to be an entirely planner-side concept.
-                    1 => input_partition_spec,
-                    num_partitions => PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
-                        num_partitions,
-                        Some(left_on.clone()),
-                    )
-                    .into(),
-                }
-            }
-            Self::Sink(Sink { input, .. }) => input.partition_spec(),
         }
     }
 

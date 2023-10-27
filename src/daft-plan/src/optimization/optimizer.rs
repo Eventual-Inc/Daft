@@ -7,8 +7,7 @@ use crate::LogicalPlan;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        ApplyOrder, DropRepartition, OptimizerRule, PushDownFilter, PushDownLimit,
-        PushDownProjection, Transformed,
+        ApplyOrder, OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, Transformed,
     },
 };
 
@@ -131,7 +130,6 @@ impl Optimizer {
         // Default rule batches.
         let rule_batches: Vec<RuleBatch> = vec![RuleBatch::new(
             vec![
-                Box::new(DropRepartition::new()),
                 Box::new(PushDownFilter::new()),
                 Box::new(PushDownProjection::new()),
                 Box::new(PushDownLimit::new()),

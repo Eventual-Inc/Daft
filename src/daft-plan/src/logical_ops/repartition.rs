@@ -8,7 +8,7 @@ use crate::{LogicalPlan, PartitionScheme};
 pub struct Repartition {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
-    pub num_partitions: usize,
+    pub num_partitions: Option<usize>,
     pub partition_by: Vec<Expr>,
     pub scheme: PartitionScheme,
 }
@@ -16,7 +16,7 @@ pub struct Repartition {
 impl Repartition {
     pub(crate) fn new(
         input: Arc<LogicalPlan>,
-        num_partitions: usize,
+        num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
         scheme: PartitionScheme,
     ) -> Self {
@@ -31,7 +31,7 @@ impl Repartition {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Repartition: Scheme = {:?}", self.scheme));
-        res.push(format!("Number of partitions = {}", self.num_partitions));
+        res.push(format!("Number of partitions = {:?}", self.num_partitions));
         if !self.partition_by.is_empty() {
             res.push(format!(
                 "Partition by = {}",

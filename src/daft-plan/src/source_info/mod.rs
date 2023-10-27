@@ -39,15 +39,22 @@ pub struct InMemoryInfo {
         deserialize_with = "deserialize_py_object"
     )]
     pub cache_entry: PyObject,
+    pub num_partitions: usize,
 }
 
 #[cfg(feature = "python")]
 impl InMemoryInfo {
-    pub fn new(source_schema: SchemaRef, cache_key: String, cache_entry: PyObject) -> Self {
+    pub fn new(
+        source_schema: SchemaRef,
+        cache_key: String,
+        cache_entry: PyObject,
+        num_partitions: usize,
+    ) -> Self {
         Self {
             source_schema,
             cache_key,
             cache_entry,
+            num_partitions,
         }
     }
 }

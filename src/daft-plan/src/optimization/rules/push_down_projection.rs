@@ -153,13 +153,8 @@ impl PushDownProjection {
                         })
                         .collect::<Vec<_>>();
                     let schema = Schema::new(pruned_upstream_schema)?;
-                    let new_source: LogicalPlan = Source::new(
-                        schema.into(),
-                        source.source_info.clone(),
-                        source.partition_spec.clone(),
-                        source.limit,
-                    )
-                    .into();
+                    let new_source: LogicalPlan =
+                        Source::new(schema.into(), source.source_info.clone(), source.limit).into();
 
                     let new_plan = plan.with_new_children(&[new_source.into()]);
                     // Retry optimization now that the upstream node is different.

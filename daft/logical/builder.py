@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest, StorageConfig
+from daft.daft import PartitionScheme, ResourceRequest, StorageConfig
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
@@ -40,19 +40,6 @@ class LogicalPlanBuilder:
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
-    def partition_spec(self) -> PartitionSpec:
-        """
-        Partition spec for the current logical plan.
-        """
-        # TODO(Clark): Push PartitionSpec into planner.
-        return self._builder.partition_spec()
-
-    def num_partitions(self) -> int:
-        """
-        Number of partitions for the current logical plan.
-        """
-        return self.partition_spec().num_partitions
-
     def pretty_print(self, simple: bool = False) -> str:
         """
         Pretty prints the current underlying logical plan.
@@ -74,11 +61,9 @@ class LogicalPlanBuilder:
 
     @classmethod
     def from_in_memory_scan(
-        cls, partition: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
+        cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int
     ) -> LogicalPlanBuilder:
-        if partition_spec is None:
-            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
-        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, partition_spec)
+        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, num_partitions)
         return cls(builder)
 
     @classmethod
@@ -134,10 +119,10 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def repartition(
-        self, num_partitions: int, partition_by: list[Expression], scheme: PartitionScheme
+        self, num_partitions: int | None, partition_by: list[Expression], scheme: PartitionScheme
     ) -> LogicalPlanBuilder:
         partition_by_pyexprs = [expr._expr for expr in partition_by]
-        builder = self._builder.repartition(num_partitions, partition_by_pyexprs, scheme)
+        builder = self._builder.repartition(partition_by_pyexprs, scheme, num_partitions=num_partitions)
         return LogicalPlanBuilder(builder)
 
     def agg(

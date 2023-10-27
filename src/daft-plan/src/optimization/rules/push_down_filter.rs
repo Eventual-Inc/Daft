@@ -370,7 +370,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .repartition(1, vec![col("a")], PartitionScheme::Hash)?
+        .repartition(Some(1), vec![col("a")], PartitionScheme::Hash)?
         .filter(col("a").lt(&lit(2)))?
         .build();
         let expected = "\
