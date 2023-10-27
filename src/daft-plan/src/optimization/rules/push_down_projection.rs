@@ -559,7 +559,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4)\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
         Ok(())
@@ -592,7 +592,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: col(b), col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(b), col(a)\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
@@ -610,7 +610,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: col(b) + lit(3), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(b) + lit(3)\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
@@ -635,8 +635,8 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: col(a), col(b), col(b) AS c, Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
-        \n  Project: col(b) + lit(3), col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(a), col(b), col(b) AS c\
+        \n  Project: col(b) + lit(3), col(a)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
@@ -656,7 +656,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(a)\
         \n  Aggregation: mean(col(a)), Group by = col(c), Output schema = c (Int64), a (Float64)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), c (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
@@ -677,7 +677,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Project: col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(a)\
         \n  Filter: col(b)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Boolean), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Boolean)";
         assert_optimized_plan_eq(unoptimized, expected)?;

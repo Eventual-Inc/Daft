@@ -220,7 +220,7 @@ mod tests {
         .limit(5, false)?
         .build();
         let expected = "\
-        Project: col(a), Partition spec = PartitionSpec { scheme: Unknown, num_partitions: 1, by: None }\
+        Project: col(a)\
         \n  Limit: 5\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
