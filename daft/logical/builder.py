@@ -1,33 +1,27 @@
 from __future__ import annotations
 
 import pathlib
-from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import (
-    FileFormat,
-    FileFormatConfig,
-    FileInfos,
-    JoinType,
-    PartitionScheme,
-    PartitionSpec,
-    ResourceRequest,
-    StorageConfig,
-)
-from daft.expressions.expressions import Expression
+from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
+from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
+from daft.daft import PartitionScheme, PartitionSpec, ResourceRequest, StorageConfig
+from daft.expressions import Expression, col
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
-    from daft.planner import PhysicalPlanScheduler
+    from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
 
-class LogicalPlanBuilder(ABC):
+class LogicalPlanBuilder:
     """
-    An interface for building a logical plan for the Daft DataFrame.
+    A logical plan builder for the Daft DataFrame.
     """
 
-    @abstractmethod
+    def __init__(self, builder: _LogicalPlanBuilder) -> None:
+        self._builder = builder
+
     def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler:
         """
         Convert the underlying logical plan to a physical plan scheduler, which is
@@ -35,18 +29,23 @@ class LogicalPlanBuilder(ABC):
 
         This should be called after triggering optimization with self.optimize().
         """
+        from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
-    @abstractmethod
+        return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler())
+
     def schema(self) -> Schema:
         """
         The schema of the current logical plan.
         """
+        pyschema = self._builder.schema()
+        return Schema._from_pyschema(pyschema)
 
-    @abstractmethod
     def partition_spec(self) -> PartitionSpec:
         """
         Partition spec for the current logical plan.
         """
+        # TODO(Clark): Push PartitionSpec into planner.
+        return self._builder.partition_spec()
 
     def num_partitions(self) -> int:
         """
@@ -54,29 +53,35 @@ class LogicalPlanBuilder(ABC):
         """
         return self.partition_spec().num_partitions
 
-    @abstractmethod
     def pretty_print(self, simple: bool = False) -> str:
         """
         Pretty prints the current underlying logical plan.
         """
+        if simple:
+            return self._builder.repr_ascii(simple=True)
+        else:
+            return repr(self)
 
-    @abstractmethod
+    def __repr__(self) -> str:
+        return self._builder.repr_ascii(simple=False)
+
     def optimize(self) -> LogicalPlanBuilder:
         """
         Optimize the underlying logical plan.
         """
-
-    ### Logical operator builder methods.
+        builder = self._builder.optimize()
+        return LogicalPlanBuilder(builder)
 
     @classmethod
-    @abstractmethod
     def from_in_memory_scan(
         cls, partition: PartitionCacheEntry, schema: Schema, partition_spec: PartitionSpec | None = None
     ) -> LogicalPlanBuilder:
-        pass
+        if partition_spec is None:
+            partition_spec = PartitionSpec(scheme=PartitionScheme.Unknown, num_partitions=1)
+        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, partition_spec)
+        return cls(builder)
 
     @classmethod
-    @abstractmethod
     def from_tabular_scan(
         cls,
         *,
@@ -85,72 +90,118 @@ class LogicalPlanBuilder(ABC):
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
     ) -> LogicalPlanBuilder:
-        pass
+        builder = _LogicalPlanBuilder.table_scan(file_infos, schema._schema, file_format_config, storage_config)
+        return cls(builder)
 
-    @abstractmethod
     def project(
         self,
         projection: list[Expression],
         custom_resource_request: ResourceRequest = ResourceRequest(),
     ) -> LogicalPlanBuilder:
-        pass
+        projection_pyexprs = [expr._expr for expr in projection]
+        builder = self._builder.project(projection_pyexprs, custom_resource_request)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def filter(self, predicate: Expression) -> LogicalPlanBuilder:
-        pass
+        builder = self._builder.filter(predicate._expr)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def limit(self, num_rows: int, eager: bool) -> LogicalPlanBuilder:
-        pass
+        builder = self._builder.limit(num_rows, eager)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
-        pass
+        explode_pyexprs = [expr._expr for expr in explode_expressions]
+        builder = self._builder.explode(explode_pyexprs)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def count(self) -> LogicalPlanBuilder:
-        pass
+        # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
+        first_col = col(self.schema().column_names()[0])
+        builder = self._builder.aggregate([first_col._count(CountMode.All)._expr], [])
+        builder = builder.project([first_col.alias("count")._expr], ResourceRequest())
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def distinct(self) -> LogicalPlanBuilder:
-        pass
+        builder = self._builder.distinct()
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> LogicalPlanBuilder:
-        pass
+        sort_by_pyexprs = [expr._expr for expr in sort_by]
+        if not isinstance(descending, list):
+            descending = [descending] * len(sort_by_pyexprs)
+        builder = self._builder.sort(sort_by_pyexprs, descending)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def repartition(
         self, num_partitions: int, partition_by: list[Expression], scheme: PartitionScheme
     ) -> LogicalPlanBuilder:
-        pass
+        partition_by_pyexprs = [expr._expr for expr in partition_by]
+        builder = self._builder.repartition(num_partitions, partition_by_pyexprs, scheme)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def coalesce(self, num_partitions: int) -> LogicalPlanBuilder:
-        pass
+        if num_partitions > self.num_partitions():
+            raise ValueError(
+                f"Coalesce can only reduce the number of partitions: {num_partitions} vs {self.num_partitions}"
+            )
+        builder = self._builder.coalesce(num_partitions)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
-    def agg(self, to_agg: list[tuple[Expression, str]], group_by: list[Expression] | None) -> LogicalPlanBuilder:
-        """
-        to_agg: (<expression identifying column>, <string identifying agg operation>)
-        TODO - clean this up after old logical plan is removed
-        """
+    def agg(
+        self,
+        to_agg: list[tuple[Expression, str]],
+        group_by: list[Expression] | None,
+    ) -> LogicalPlanBuilder:
+        exprs = []
+        for expr, op in to_agg:
+            if op == "sum":
+                exprs.append(expr._sum())
+            elif op == "count":
+                exprs.append(expr._count())
+            elif op == "min":
+                exprs.append(expr._min())
+            elif op == "max":
+                exprs.append(expr._max())
+            elif op == "mean":
+                exprs.append(expr._mean())
+            elif op == "list":
+                exprs.append(expr._agg_list())
+            elif op == "concat":
+                exprs.append(expr._agg_concat())
+            else:
+                raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
-    @abstractmethod
-    def join(
+        group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
+        builder = self._builder.aggregate([expr._expr for expr in exprs], group_by_pyexprs)
+        return LogicalPlanBuilder(builder)
+
+    def join(  # type: ignore[override]
         self,
         right: LogicalPlanBuilder,
         left_on: list[Expression],
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
     ) -> LogicalPlanBuilder:
-        pass
+        if how == JoinType.Left:
+            raise NotImplementedError("Left join not implemented.")
+        elif how == JoinType.Right:
+            raise NotImplementedError("Right join not implemented.")
+        elif how == JoinType.Inner:
+            builder = self._builder.join(
+                right._builder,
+                [expr._expr for expr in left_on],
+                [expr._expr for expr in right_on],
+                how,
+            )
+            return LogicalPlanBuilder(builder)
+        else:
+            raise NotImplementedError(f"{how} join not implemented.")
 
-    @abstractmethod
-    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
-        pass
+    def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
+        builder = self._builder.concat(other._builder)
+        return LogicalPlanBuilder(builder)
 
-    @abstractmethod
     def write_tabular(
         self,
         root_dir: str | pathlib.Path,
@@ -158,4 +209,8 @@ class LogicalPlanBuilder(ABC):
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
-        pass
+        if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
+            raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
+        part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
+        builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression)
+        return LogicalPlanBuilder(builder)

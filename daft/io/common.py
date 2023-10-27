@@ -44,8 +44,7 @@ def _get_tabular_files_scan(
         else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
     )
     # Construct plan
-    builder_cls = get_context().logical_plan_builder_class()
-    builder = builder_cls.from_tabular_scan(
+    builder = LogicalPlanBuilder.from_tabular_scan(
         file_infos=file_infos,
         schema=inferred_or_provided_schema,
         file_format_config=file_format_config,

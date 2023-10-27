@@ -231,9 +231,6 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
-)
 @pytest.mark.parametrize(
     "multithreaded_io",
     [False, True],
@@ -253,13 +250,10 @@ def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multith
     # MicroPartitions returns a MicroPartition
     else:
         assert daft_native_reads.schema() == pa_read.schema()
-        pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
+        pd.testing.assert_frame_equal(daft_native_reads.to_pandas(), Table.concat([pa_read, pa_read]).to_pandas())
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    daft.context.get_context().use_rust_planner, reason="Custom fsspec filesystems not supported in new query planner"
-)
 @pytest.mark.parametrize(
     "multithreaded_io",
     [False, True],
