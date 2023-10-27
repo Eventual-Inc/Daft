@@ -111,7 +111,7 @@ Complex Types
 
 Daft supports many more interesting complex DataTypes, for example:
 
-* :meth::`DataType.tensor() <daft.DataType.tensor>`: Multi-dimensional (potentially uniformly-shaped) tensors of data
+* :meth:`DataType.tensor() <daft.DataType.tensor>`: Multi-dimensional (potentially uniformly-shaped) tensors of data
 * :meth:`DataType.embedding() <daft.DataType.embedding>`: Lower-dimensional vector representation of data (e.g. words)
 * :meth:`DataType.image() <daft.DataType.image>`: NHWC images
 
