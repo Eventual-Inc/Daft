@@ -306,7 +306,7 @@ class DataFrame:
 
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
-        builder = context.logical_plan_builder_class().from_in_memory_scan(cache_entry, parts[0].schema())
+        builder = LogicalPlanBuilder.from_in_memory_scan(cache_entry, parts[0].schema())
         return cls(builder)
 
     ###
@@ -1175,7 +1175,7 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
-        builder = context.logical_plan_builder_class().from_in_memory_scan(
+        builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
@@ -1244,7 +1244,7 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
-        builder = context.logical_plan_builder_class().from_in_memory_scan(
+        builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry,
             schema=schema,
             partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),

@@ -4,7 +4,7 @@ from typing import Any, Callable
 
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
-from daft.planner.planner import PartitionT
+from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
 import fsspec
 

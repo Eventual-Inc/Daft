@@ -7,7 +7,6 @@ import warnings
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
@@ -56,18 +55,12 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 _RUNNER: Runner | None = None
 
 
-def _get_planner_from_env() -> bool:
-    """Returns whether or not to use the new query planner."""
-    return bool(int(os.getenv("DAFT_NEW_QUERY_PLANNER", default="1")))
-
-
 @dataclasses.dataclass(frozen=True)
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
-    use_rust_planner: bool = dataclasses.field(default_factory=_get_planner_from_env)
 
     def runner(self) -> Runner:
         global _RUNNER
@@ -116,15 +109,6 @@ class DaftContext:
     @property
     def is_ray_runner(self) -> bool:
         return isinstance(self.runner_config, _RayRunnerConfig)
-
-    def logical_plan_builder_class(self) -> type[LogicalPlanBuilder]:
-        from daft.logical.logical_plan import PyLogicalPlanBuilder
-        from daft.logical.rust_logical_plan import RustLogicalPlanBuilder
-
-        if self.use_rust_planner:
-            return RustLogicalPlanBuilder
-        else:
-            return PyLogicalPlanBuilder
 
 
 _DaftContext = DaftContext()
@@ -198,42 +182,6 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         old_ctx,
         runner_config=_PyRunnerConfig(use_thread_pool=use_thread_pool),
         disallow_set_runner=True,
-    )
-    _set_context(new_ctx)
-    return new_ctx
-
-
-def set_new_planner() -> DaftContext:
-    """Enable the new query planner.
-
-    WARNING: The new query planner is currently experimental and only partially implemented.
-
-    Alternatively, users can set this behavior via an environment variable: DAFT_NEW_QUERY_PLANNER=1
-
-    Returns:
-        DaftContext: Daft context after enabling the new query planner.
-    """
-    old_ctx = get_context()
-    new_ctx = dataclasses.replace(
-        old_ctx,
-        use_rust_planner=True,
-    )
-    _set_context(new_ctx)
-    return new_ctx
-
-
-def set_old_planner() -> DaftContext:
-    """Enable the old query planner.
-
-    Alternatively, users can set this behavior via an environment variable: DAFT_NEW_QUERY_PLANNER=0
-
-    Returns:
-        DaftContext: Daft context after enabling the old query planner.
-    """
-    old_ctx = get_context()
-    new_ctx = dataclasses.replace(
-        old_ctx,
-        use_rust_planner=False,
     )
     _set_context(new_ctx)
     return new_ctx

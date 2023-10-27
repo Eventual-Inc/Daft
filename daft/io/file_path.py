@@ -7,6 +7,7 @@ from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import IOConfig, PartitionScheme, PartitionSpec
 from daft.dataframe import DataFrame
+from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import Table
 
@@ -47,8 +48,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     file_infos_table = Table._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet({0: file_infos_table})
     cache_entry = context.runner().put_partition_set_into_cache(partition)
-    builder_cls = context.logical_plan_builder_class()
-    builder = builder_cls.from_in_memory_scan(
+    builder = LogicalPlanBuilder.from_in_memory_scan(
         cache_entry,
         schema=file_infos_table.schema(),
         partition_spec=PartitionSpec(PartitionScheme.Unknown, partition.num_partitions()),

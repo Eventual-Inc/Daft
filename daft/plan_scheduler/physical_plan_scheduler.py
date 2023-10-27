@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.execution import physical_plan
-from daft.planner.planner import PartitionT, PhysicalPlanScheduler
+from daft.runners.partitioning import PartitionT
 
 
-class RustPhysicalPlanScheduler(PhysicalPlanScheduler):
+class PhysicalPlanScheduler:
+    """
+    Generates executable tasks for an underlying physical plan.
+    """
+
     def __init__(self, scheduler: _PhysicalPlanScheduler):
         self._scheduler = scheduler
 

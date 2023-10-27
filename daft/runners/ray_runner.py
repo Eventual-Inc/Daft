@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 import pyarrow as pa
 
 from daft.logical.builder import LogicalPlanBuilder
-from daft.planner import PhysicalPlanScheduler
+from daft.plan_scheduler import PhysicalPlanScheduler
 
 logger = logging.getLogger(__name__)
 
