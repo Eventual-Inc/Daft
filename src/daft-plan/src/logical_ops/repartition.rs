@@ -35,7 +35,7 @@ impl Repartition {
             "Number of partitions = {}",
             self.num_partitions
                 .map(|n| n.to_string())
-                .unwrap_or("None".to_string())
+                .unwrap_or("Unknown".to_string())
         ));
         if !self.partition_by.is_empty() {
             res.push(format!(
