@@ -29,9 +29,7 @@ impl OptimizerRule for PushDownLimit {
                     // Naive commuting with unary ops.
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
-                    LogicalPlan::Repartition(_)
-                    | LogicalPlan::Coalesce(_)
-                    | LogicalPlan::Project(_) => {
+                    LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
                         let new_limit = plan.with_new_children(&[input.children()[0].clone()]);
                         Ok(Transformed::Yes(input.with_new_children(&[new_limit])))
                     }
@@ -203,26 +201,6 @@ mod tests {
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
-        \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that Limit commutes with Coalesce.
-    ///
-    /// Limit-Coalesce-Source -> Coalesce-Source[with_limit]
-    #[test]
-    fn limit_commutes_with_coalesce() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .coalesce(1)?
-        .limit(5, false)?
-        .build();
-        let expected = "\
-        Coalesce: To = 1\
         \n  Limit: 5\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;

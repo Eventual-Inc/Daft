@@ -657,24 +657,12 @@ class DataFrame:
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
         """
-        current_partitions = self._builder.num_partitions()
-
-        if num > current_partitions:
-            # Do a split (increase the number of partitions).
-            builder = self._builder.repartition(
-                num_partitions=num,
-                partition_by=[],
-                scheme=PartitionScheme.Unknown,
-            )
-            return DataFrame(builder)
-
-        elif num < current_partitions:
-            # Do a coalese (decrease the number of partitions).
-            builder = self._builder.coalesce(num)
-            return DataFrame(builder)
-
-        else:
-            return self
+        builder = self._builder.repartition(
+            num_partitions=num,
+            partition_by=[],
+            scheme=PartitionScheme.Unknown,
+        )
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def join(

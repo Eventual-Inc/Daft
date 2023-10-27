@@ -140,14 +140,6 @@ class LogicalPlanBuilder:
         builder = self._builder.repartition(num_partitions, partition_by_pyexprs, scheme)
         return LogicalPlanBuilder(builder)
 
-    def coalesce(self, num_partitions: int) -> LogicalPlanBuilder:
-        if num_partitions > self.num_partitions():
-            raise ValueError(
-                f"Coalesce can only reduce the number of partitions: {num_partitions} vs {self.num_partitions}"
-            )
-        builder = self._builder.coalesce(num_partitions)
-        return LogicalPlanBuilder(builder)
-
     def agg(
         self,
         to_agg: list[tuple[Expression, str]],

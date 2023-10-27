@@ -149,12 +149,6 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn coalesce(&self, num_partitions: usize) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            logical_ops::Coalesce::new(self.plan.clone(), num_partitions).into();
-        Ok(logical_plan.into())
-    }
-
     pub fn distinct(&self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Distinct::new(self.plan.clone()).into();
         Ok(logical_plan.into())
@@ -349,10 +343,6 @@ impl PyLogicalPlanBuilder {
             .builder
             .repartition(num_partitions, partition_by_exprs, scheme)?
             .into())
-    }
-
-    pub fn coalesce(&self, num_partitions: usize) -> PyResult<Self> {
-        Ok(self.builder.coalesce(num_partitions)?.into())
     }
 
     pub fn distinct(&self) -> PyResult<Self> {

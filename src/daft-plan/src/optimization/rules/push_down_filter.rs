@@ -135,7 +135,7 @@ impl OptimizerRule for PushDownFilter {
                     post_projection_filter.into()
                 }
             }
-            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) | LogicalPlan::Coalesce(_) => {
+            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) => {
                 // Naive commuting with unary ops.
                 let new_filter = plan.with_new_children(&[child_plan.children()[0].clone()]);
                 child_plan.with_new_children(&[new_filter])
@@ -375,24 +375,6 @@ mod tests {
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that Filter commutes with Coalesce.
-    #[test]
-    fn filter_commutes_with_coalesce() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .coalesce(1)?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Coalesce: To = 1\
         \n  Filter: col(a) < lit(2)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
