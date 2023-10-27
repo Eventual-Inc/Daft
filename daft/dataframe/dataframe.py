@@ -123,6 +123,9 @@ class DataFrame:
             builder = builder.optimize()
         print(builder.pretty_print(simple))
 
+    def num_partitions(self) -> int:
+        return self.__builder.to_physical_plan_scheduler().num_partitions()
+
     @DataframePublicAPI
     def schema(self) -> Schema:
         """Returns the Schema of the DataFrame, which provides information about each column

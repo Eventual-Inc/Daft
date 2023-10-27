@@ -13,6 +13,9 @@ class PhysicalPlanScheduler:
     def __init__(self, scheduler: _PhysicalPlanScheduler):
         self._scheduler = scheduler
 
+    def num_partitions(self) -> int:
+        return self._scheduler.num_partitions()
+
     def to_partition_tasks(
         self, psets: dict[str, list[PartitionT]], is_ray_runner: bool
     ) -> physical_plan.MaterializedPhysicalPlan:

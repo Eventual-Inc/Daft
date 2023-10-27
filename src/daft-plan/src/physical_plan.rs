@@ -170,6 +170,9 @@ pub struct PhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PhysicalPlanScheduler {
+    pub fn num_partitions(&self) -> PyResult<i64> {
+        self.plan.partition_spec().get_num_partitions()
+    }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,

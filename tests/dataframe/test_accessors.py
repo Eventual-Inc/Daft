@@ -11,6 +11,13 @@ def df():
     return daft.from_pydict({"foo": [1, 2, 3]})
 
 
+def test_num_partitions(df):
+    assert df.num_partitions() == 1
+
+    df2 = df.repartition(2)
+    assert df2.num_partitions() == 2
+
+
 def test_schema(df):
     fields = [f for f in df.schema()]
     assert len(fields) == 1
