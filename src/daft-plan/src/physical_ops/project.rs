@@ -183,3 +183,116 @@ impl Project {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_core::{datatypes::Field, DataType};
+    use daft_dsl::{col, lit, Expr};
+    use rstest::rstest;
+
+    use crate::{planner::plan, test::dummy_scan_node, PartitionScheme, PartitionSpec};
+
+    /// Test that projections preserving column inputs, even through aliasing,
+    /// do not destroy the partition spec.
+    #[test]
+    fn test_partition_spec_preserving() -> DaftResult<()> {
+        let expressions = vec![
+            (col("a") % lit(2)), // this is now "a"
+            col("b"),
+            col("a").alias("aa"),
+        ];
+        let logical_plan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .project(expressions, Default::default())?
+        .build();
+
+        let physical_plan = plan(&logical_plan)?;
+
+        let expected_pspec =
+            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("aa"), col("b")]));
+
+        assert_eq!(
+            expected_pspec,
+            physical_plan.partition_spec().as_ref().clone()
+        );
+
+        Ok(())
+    }
+
+    /// Test that projections destroying even a single column input from the partition spec
+    /// destroys the entire partition spec.
+    #[rstest]
+    fn test_partition_spec_destroying(
+        #[values(
+            vec![col("a"), col("c").alias("b")], // original "b" is gone even though "b" is present
+            vec![col("b")],                      // original "a" dropped
+            vec![col("a") % lit(2), col("b")],   // original "a" gone
+            vec![col("c")],                      // everything gone
+        )]
+        projection: Vec<Expr>,
+    ) -> DaftResult<()> {
+        let logical_plan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .project(projection, Default::default())?
+        .build();
+
+        let physical_plan = plan(&logical_plan)?;
+
+        let expected_pspec = PartitionSpec::new_internal(PartitionScheme::Unknown, 3, None);
+        assert_eq!(
+            expected_pspec,
+            physical_plan.partition_spec().as_ref().clone()
+        );
+
+        Ok(())
+    }
+
+    /// Test that new partition specs favor existing instead of new names.
+    /// i.e. ("a", "a" as "b") remains partitioned by "a", not "b"
+    #[test]
+    fn test_partition_spec_prefer_existing_names() -> DaftResult<()> {
+        let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
+
+        let logical_plan = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ])
+        .repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+            PartitionScheme::Hash,
+        )?
+        .project(expressions, Default::default())?
+        .build();
+
+        let physical_plan = plan(&logical_plan)?;
+
+        let expected_pspec =
+            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("a"), col("b")]));
+
+        assert_eq!(
+            expected_pspec,
+            physical_plan.partition_spec().as_ref().clone()
+        );
+
+        Ok(())
+    }
+}

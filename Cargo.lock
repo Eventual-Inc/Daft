@@ -1274,6 +1274,7 @@ dependencies = [
  "log",
  "pyo3",
  "pyo3-log",
+ "rstest",
  "serde",
  "serde_json",
  "snafu",
