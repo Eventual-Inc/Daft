@@ -347,8 +347,9 @@ class PythonStorageConfig:
     """
 
     fs: fsspec.AbstractFileSystem
+    io_config: IOConfig
 
-    def __init__(self, fs: fsspec.AbstractFileSystem | None = None): ...
+    def __init__(self, fs: fsspec.AbstractFileSystem | None = None, io_config: IOConfig | None = None): ...
 
 class StorageConfig:
     """

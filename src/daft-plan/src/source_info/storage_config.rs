@@ -21,7 +21,7 @@ use {
 pub enum StorageConfig {
     Native(Arc<NativeStorageConfig>),
     #[cfg(feature = "python")]
-    Python(PythonStorageConfig),
+    Python(Arc<PythonStorageConfig>),
 }
 
 /// Storage configuration for the Rust-native I/O layer.
@@ -54,23 +54,36 @@ impl NativeStorageConfig {
 /// Storage configuration for the legacy Python I/O layer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg(feature = "python")]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct PythonStorageConfig {
     /// An fsspec filesystem instance.
+    #[pyo3(get)]
     #[serde(
         serialize_with = "serialize_py_object_optional",
         deserialize_with = "deserialize_py_object_optional",
         default
     )]
     pub fs: Option<PyObject>,
+    /// IOConfig is used for globbing still, but not for actual data read
+    pub io_config: Option<IOConfig>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl PythonStorageConfig {
     #[new]
-    pub fn new(fs: Option<PyObject>) -> Self {
-        Self { fs }
+    pub fn new(fs: Option<PyObject>, io_config: Option<python::IOConfig>) -> Self {
+        Self {
+            fs,
+            io_config: io_config.map(|c| c.config),
+        }
+    }
+
+    #[getter]
+    pub fn io_config(&self) -> Option<python::IOConfig> {
+        self.io_config
+            .as_ref()
+            .map(|c| python::IOConfig { config: c.clone() })
     }
 }
 
@@ -126,7 +139,7 @@ impl PyStorageConfig {
     /// Create from a Python storage config.
     #[staticmethod]
     fn python(config: PythonStorageConfig) -> Self {
-        Self(Arc::new(StorageConfig::Python(config)))
+        Self(Arc::new(StorageConfig::Python(config.into())))
     }
 
     /// Get the underlying storage config.
@@ -136,7 +149,7 @@ impl PyStorageConfig {
 
         match self.0.as_ref() {
             Native(config) => config.as_ref().clone().into_py(py),
-            Python(config) => config.clone().into_py(py),
+            Python(config) => config.as_ref().clone().into_py(py),
         }
     }
 }

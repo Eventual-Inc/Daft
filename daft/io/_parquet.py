@@ -38,8 +38,7 @@ def read_parquet(
         schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
             disable all schema inference on data being read, and throw an error if data being read is incompatible.
         io_config (IOConfig): Config to be used with the native downloader
-        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
-            is currently experimental.
+        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
@@ -63,7 +62,7 @@ def read_parquet(
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(io_config))
     else:
-        storage_config = StorageConfig.python(PythonStorageConfig(None))
+        storage_config = StorageConfig.python(PythonStorageConfig(None, io_config=io_config))
 
     builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)
