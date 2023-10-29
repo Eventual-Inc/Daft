@@ -36,7 +36,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
@@ -85,7 +85,7 @@ jobs:
       contents: read
     steps:
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v3
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
