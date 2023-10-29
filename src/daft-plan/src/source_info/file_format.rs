@@ -79,6 +79,7 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 pub struct CsvSourceConfig {
     pub delimiter: String,
     pub has_headers: bool,
+    pub double_quote_escape: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -98,12 +99,14 @@ impl CsvSourceConfig {
     fn new(
         delimiter: String,
         has_headers: bool,
+        double_quote_escape: bool,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> Self {
         Self {
             delimiter,
             has_headers,
+            double_quote_escape,
             buffer_size,
             chunk_size,
         }

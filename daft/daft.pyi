@@ -190,6 +190,7 @@ class CsvSourceConfig:
 
     delimiter: str
     has_headers: bool
+    double_quote_escape: bool
     buffer_size: int | None
     chunk_size: int | None
 
@@ -197,6 +198,7 @@ class CsvSourceConfig:
         self,
         delimiter: str,
         has_headers: bool,
+        double_quote_escape: bool,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
     ): ...
