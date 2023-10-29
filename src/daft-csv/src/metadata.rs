@@ -21,6 +21,7 @@ pub fn read_csv_schema(
     uri: &str,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote_escape: bool,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -32,6 +33,7 @@ pub fn read_csv_schema(
             uri,
             has_header,
             delimiter,
+            double_quote_escape,
             // Default to 1 MiB.
             max_bytes.or(Some(1024 * 1024)),
             io_client,
@@ -45,6 +47,7 @@ pub(crate) async fn read_csv_schema_single(
     uri: &str,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote_escape: bool,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -60,6 +63,7 @@ pub(crate) async fn read_csv_schema_single(
                 compression_codec,
                 has_header,
                 delimiter,
+                double_quote_escape,
                 max_bytes,
             )
             .await
@@ -70,6 +74,7 @@ pub(crate) async fn read_csv_schema_single(
                 compression_codec,
                 has_header,
                 delimiter,
+                double_quote_escape,
                 // Truncate max_bytes to size if both are set.
                 max_bytes.map(|m| size.map(|s| m.min(s)).unwrap_or(m)),
             )
@@ -83,6 +88,7 @@ async fn read_csv_schema_from_compressed_reader<R>(
     compression_codec: Option<CompressionCodec>,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote_escape: bool,
     max_bytes: Option<usize>,
 ) -> DaftResult<(Schema, usize, usize, f64, f64)>
 where
@@ -94,12 +100,20 @@ where
                 compression.to_decoder(reader),
                 has_header,
                 delimiter,
+                double_quote_escape,
                 max_bytes,
             )
             .await
         }
         None => {
-            read_csv_schema_from_uncompressed_reader(reader, has_header, delimiter, max_bytes).await
+            read_csv_schema_from_uncompressed_reader(
+                reader,
+                has_header,
+                delimiter,
+                double_quote_escape,
+                max_bytes,
+            )
+            .await
         }
     }
 }
@@ -108,14 +122,21 @@ async fn read_csv_schema_from_uncompressed_reader<R>(
     reader: R,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote_escape: bool,
     max_bytes: Option<usize>,
 ) -> DaftResult<(Schema, usize, usize, f64, f64)>
 where
     R: AsyncRead + Unpin + Send,
 {
     let (schema, total_bytes_read, num_records_read, mean_size, std_size) =
-        read_csv_arrow_schema_from_uncompressed_reader(reader, has_header, delimiter, max_bytes)
-            .await?;
+        read_csv_arrow_schema_from_uncompressed_reader(
+            reader,
+            has_header,
+            delimiter,
+            double_quote_escape,
+            max_bytes,
+        )
+        .await?;
     Ok((
         Schema::try_from(&schema)?,
         total_bytes_read,
@@ -129,6 +150,7 @@ async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote_escape: bool,
     max_bytes: Option<usize>,
 ) -> DaftResult<(arrow2::datatypes::Schema, usize, usize, f64, f64)>
 where
@@ -137,6 +159,7 @@ where
     let mut reader = AsyncReaderBuilder::new()
         .has_headers(has_header)
         .delimiter(delimiter.unwrap_or(b','))
+        .double_quote(double_quote_escape)
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
         .create_reader(reader.compat());
     let (fields, total_bytes_read, num_records_read, mean_size, std_size) =
