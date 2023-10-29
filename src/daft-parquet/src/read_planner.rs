@@ -175,15 +175,21 @@ impl ReadPlanner {
             });
             entries.push(entry);
         }
-        Ok(Arc::new(RangesContainer { ranges: entries }))
+        Ok(Arc::new(RangesContainer::new(entries)))
     }
 }
 
 pub(crate) struct RangesContainer {
+    // NOTE: Must be sorted by .start because we use it with `.binary_search_by_key`
     ranges: Vec<Arc<RangeCacheEntry>>,
 }
 
 impl RangesContainer {
+    fn new(mut ranges: Vec<Arc<RangeCacheEntry>>) -> Self {
+        ranges.sort_unstable_by_key(|e| e.start);
+        RangesContainer { ranges }
+    }
+
     pub fn get_range_reader(&self, range: Range<usize>) -> DaftResult<impl futures::AsyncRead> {
         let mut current_pos = range.start;
         let mut curr_index;
