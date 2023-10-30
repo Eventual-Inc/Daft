@@ -10,6 +10,7 @@ use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
+mod glob;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
