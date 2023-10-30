@@ -848,4 +848,5 @@ def io_glob(
     io_config: IOConfig | None = None,
     fanout_limit: int | None = None,
     page_size: int | None = None,
+    limit: int | None = None,
 ) -> list[dict]: ...

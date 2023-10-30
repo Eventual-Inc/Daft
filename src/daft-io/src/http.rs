@@ -250,6 +250,7 @@ impl ObjectSource for HttpSource {
         glob_path: &str,
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
+        limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
@@ -258,7 +259,7 @@ impl ObjectSource for HttpSource {
         let fanout_limit = None;
         let page_size = None;
 
-        glob(self, glob_path, fanout_limit, page_size, io_stats).await
+        glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
     }
 
     async fn ls(

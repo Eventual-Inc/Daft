@@ -147,6 +147,7 @@ impl ObjectSource for LocalSource {
         glob_path: &str,
         _fanout_limit: Option<usize>,
         _page_size: Option<i32>,
+        limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
@@ -160,10 +161,18 @@ impl ObjectSource for LocalSource {
         #[cfg(target_env = "msvc")]
         {
             let glob_path = glob_path.replace("\\", "/");
-            return glob(self, glob_path.as_str(), fanout_limit, page_size, io_stats).await;
+            return glob(
+                self,
+                glob_path.as_str(),
+                fanout_limit,
+                page_size,
+                limit,
+                io_stats,
+            )
+            .await;
         }
 
-        glob(self, glob_path, fanout_limit, page_size, io_stats).await
+        glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
     }
 
     async fn ls(

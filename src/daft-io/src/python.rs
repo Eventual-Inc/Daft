@@ -18,6 +18,7 @@ mod py {
         io_config: Option<common_io_config::python::IOConfig>,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        limit: Option<usize>,
     ) -> PyResult<&PyList> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
@@ -39,6 +40,7 @@ mod py {
                         path.as_ref(),
                         fanout_limit,
                         page_size,
+                        limit,
                         Some(io_stats_handle),
                     )
                     .await?

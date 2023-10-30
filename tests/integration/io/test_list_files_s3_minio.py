@@ -362,3 +362,15 @@ def test_missing_file_path(minio_io_config, recursive):
             fs.write_bytes(f"s3://{bucket_name}/{name}", b"")
         with pytest.raises(FileNotFoundError, match=f"s3://{bucket_name}/c/cc/ddd"):
             daft_ls_result = io_glob(path, io_config=minio_io_config)
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("limit", [1, 2])
+def test_limit(minio_io_config, limit):
+    bucket_name = "bucket"
+    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+        files = ["a", "b/bb", "c/cc/ccc"]
+        for name in files:
+            fs.write_bytes(f"s3://{bucket_name}/{name}", b"")
+        daft_ls_result = io_glob(f"s3://{bucket_name}/**", io_config=minio_io_config, limit=limit)
+        assert len(daft_ls_result) == limit

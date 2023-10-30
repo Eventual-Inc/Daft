@@ -171,12 +171,13 @@ impl IOClient {
         input: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
     ) -> Result<Vec<FileMetadata>> {
         let (scheme, _) = parse_url(input)?;
         let source = self.get_source(&scheme).await?;
         let files: Vec<FileMetadata> = source
-            .glob(input, fanout_limit, page_size, io_stats)
+            .glob(input, fanout_limit, page_size, limit, io_stats)
             .await?
             .try_collect()
             .await?;

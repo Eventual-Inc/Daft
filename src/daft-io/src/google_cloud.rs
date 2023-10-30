@@ -407,6 +407,7 @@ impl ObjectSource for GCSSource {
         glob_path: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
@@ -419,6 +420,7 @@ impl ObjectSource for GCSSource {
             glob_path,
             fanout_limit,
             page_size.or(Some(1000)),
+            limit,
             io_stats,
         )
         .await
