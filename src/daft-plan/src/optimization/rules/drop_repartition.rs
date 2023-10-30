@@ -7,6 +7,9 @@ use crate::LogicalPlan;
 use super::{ApplyOrder, OptimizerRule, Transformed};
 
 /// Optimization rules for dropping unnecessary Repartitions.
+///
+/// Dropping of Repartitions that would yield the same partitioning as their input
+/// happens during logical -> physical plan translation.
 #[derive(Default, Debug)]
 pub struct DropRepartition {}
 
