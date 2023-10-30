@@ -15,10 +15,12 @@ pub struct GlobScanOperator {
     io_config: Arc<daft_io::IOConfig>,
 }
 
-fn run_glob(glob_path: &str, io_config: Arc<daft_io::IOConfig>) -> DaftResult<Vec<String>> {
+fn run_full_glob(glob_path: &str, io_config: Arc<daft_io::IOConfig>) -> DaftResult<Vec<String>> {
     // Use single-threaded runtime which should be safe here as it is not shared across async contexts
     let runtime = get_runtime(false)?;
     let io_client = get_io_client(false, io_config)?;
+
+    let _rt_guard = runtime.enter();
     runtime.block_on(async {
         Ok(io_client
             .as_ref()
@@ -37,7 +39,7 @@ impl GlobScanOperator {
         io_config: Arc<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
         // TODO: Limit return from run_glob
-        let paths = run_glob(glob_path, io_config.clone())?;
+        let paths = run_full_glob(glob_path, io_config.clone())?;
         let first_filepath = paths[0].as_str();
 
         let schema = match file_type {
@@ -129,7 +131,7 @@ impl ScanOperator for GlobScanOperator {
     fn to_scan_tasks(
         self: Box<Self>,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
-        let files = run_glob(self.glob_path.as_str(), self.io_config.clone())?;
+        let files = run_full_glob(self.glob_path.as_str(), self.io_config.clone())?;
         let iter = files.into_iter().map(move |f| {
             let source = DataFileSource::AnonymousDataFile {
                 file_type: self.file_type,
