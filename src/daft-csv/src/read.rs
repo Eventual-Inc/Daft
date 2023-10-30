@@ -464,12 +464,14 @@ mod tests {
         out: &Table,
         has_header: bool,
         delimiter: Option<u8>,
+        double_quote_escape: bool,
         column_names: Option<Vec<&str>>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
         let mut reader = ReaderBuilder::new()
             .delimiter(delimiter.unwrap_or(b','))
+            .double_quote(double_quote_escape)
             .from_path(path)
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
@@ -567,7 +569,7 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+            check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
         }
 
         Ok(())
@@ -625,6 +627,7 @@ mod tests {
             &table,
             false,
             None,
+            true,
             Some(column_names),
             None,
             None,
@@ -673,7 +676,70 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, Some(b'|'), None, None, Some(5));
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            Some(b'|'),
+            true,
+            None,
+            None,
+            Some(5),
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_double_quote_escape() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_double_quote_escape.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            Some(5),
+            true,
+            None,
+            false,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 5);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("\"sepal.\"\"length\"", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            false,
+            None,
+            None,
+            Some(5),
+        );
 
         Ok(())
     }
@@ -715,7 +781,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, Some(5));
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, Some(5));
 
         Ok(())
     }
@@ -759,6 +825,7 @@ mod tests {
             &table,
             true,
             None,
+            true,
             None,
             Some(vec![2, 3]),
             None,
@@ -816,6 +883,7 @@ mod tests {
             &table,
             false,
             None,
+            true,
             Some(column_names),
             Some(vec![2, 3]),
             None,
@@ -861,7 +929,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -903,7 +971,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -945,7 +1013,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -987,7 +1055,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -1149,7 +1217,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
