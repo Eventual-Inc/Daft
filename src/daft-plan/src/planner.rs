@@ -165,16 +165,37 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
             partition_by,
             scheme,
         }) => {
-            let input_physical = Arc::new(plan(input)?);
+            // Below partition-dropping optimization assumes we are NOT repartitioning using a range partitioning scheme.
+            // A range repartitioning of an existing range-partitioned DataFrame is only redundant if the partition boundaries
+            // are consistent, which is only the case if boundary sampling is deterministic within a query.
+            assert!(!matches!(scheme, PartitionScheme::Range));
+
+            let input_physical = plan(input)?;
             let input_partition_spec = input_physical.partition_spec();
             let input_num_partitions = input_partition_spec.num_partitions;
             let num_partitions = num_partitions.unwrap_or(input_num_partitions);
+            // Partition spec after repartitioning.
+            let repartitioned_partition_spec = PartitionSpec::new_internal(
+                scheme.clone(),
+                num_partitions,
+                Some(partition_by.clone()),
+            );
+            // Drop the repartition if the output of the repartition would yield the same partitioning as the input.
+            if (input_num_partitions == 1 && num_partitions == 1)
+                // Simple split/coalesce repartition to the same # of partitions is a no-op, no matter the upstream partitioning scheme.
+                || (num_partitions == input_num_partitions && matches!(scheme, PartitionScheme::Unknown))
+                // Repartitioning to the same partition spec as the input is always a no-op.
+                || (&repartitioned_partition_spec == input_partition_spec.as_ref())
+            {
+                return Ok(input_physical);
+            }
+            let input_physical = Arc::new(input_physical);
             let repartitioned_plan = match scheme {
                 PartitionScheme::Unknown => match num_partitions.cmp(&input_num_partitions) {
                     Ordering::Greater => {
                         // Split input partitions into num_partitions.
                         let split_op = PhysicalPlan::Split(Split::new(
-                            input_physical.clone(),
+                            input_physical,
                             input_num_partitions,
                             num_partitions,
                         ));
@@ -183,26 +204,27 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     Ordering::Less => {
                         // Coalesce input partitions into num_partitions.
                         PhysicalPlan::Coalesce(Coalesce::new(
-                            input_physical.clone(),
+                            input_physical,
                             input_num_partitions,
                             num_partitions,
                         ))
                     }
                     Ordering::Equal => {
-                        // # of output partitions == # of input partitions, so we drop the redundant repartition.
-                        return Ok(input_physical.as_ref().clone());
+                        // # of output partitions == # of input partitions; this should have already short-circuited with
+                        // a repartition drop above.
+                        unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
                     }
                 },
                 PartitionScheme::Random => {
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
-                        input_physical.clone(),
+                        input_physical,
                         num_partitions,
                     ));
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 PartitionScheme::Hash => {
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                        input_physical.clone(),
+                        input_physical,
                         num_partitions,
                         partition_by.clone(),
                     ));
@@ -210,14 +232,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 }
                 PartitionScheme::Range => unreachable!("Repartitioning by range is not supported"),
             };
-            let repartitioned_partition_spec = repartitioned_plan.partition_spec();
-            if (input_num_partitions == 1 && repartitioned_partition_spec.num_partitions == 1)
-                || (repartitioned_partition_spec == input_partition_spec)
-            {
-                Ok(input_physical.as_ref().clone())
-            } else {
-                Ok(repartitioned_plan)
-            }
+            Ok(repartitioned_plan)
         }
         LogicalPlan::Distinct(LogicalDistinct { input }) => {
             let input_physical = plan(input)?;
