@@ -65,6 +65,7 @@ pub mod pylib {
     }
 
     #[pyfunction]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,
