@@ -20,12 +20,12 @@ use {
 
 use daft_core::impl_bincode_py_state_serialization;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
-use crate::physical_ops::*;
+use crate::{physical_ops::*, PartitionScheme, PartitionSpec};
 
 /// Physical plan for a Daft query.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),
@@ -38,6 +38,7 @@ pub enum PhysicalPlan {
     Explode(Explode),
     Sort(Sort),
     Split(Split),
+    Coalesce(Coalesce),
     Flatten(Flatten),
     FanoutRandom(FanoutRandom),
     FanoutByHash(FanoutByHash),
@@ -45,12 +46,118 @@ pub enum PhysicalPlan {
     FanoutByRange(FanoutByRange),
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
-    Coalesce(Coalesce),
     Concat(Concat),
     Join(Join),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+}
+
+impl PhysicalPlan {
+    pub fn partition_spec(&self) -> Arc<PartitionSpec> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(InMemoryScan { partition_spec, .. }) => partition_spec.clone(),
+            Self::TabularScanParquet(TabularScanParquet { partition_spec, .. }) => {
+                partition_spec.clone()
+            }
+            Self::TabularScanCsv(TabularScanCsv { partition_spec, .. }) => partition_spec.clone(),
+            Self::TabularScanJson(TabularScanJson { partition_spec, .. }) => partition_spec.clone(),
+            Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
+            Self::Filter(Filter { input, .. }) => input.partition_spec(),
+            Self::Limit(Limit { input, .. }) => input.partition_spec(),
+            Self::Explode(Explode { input, .. }) => input.partition_spec(),
+            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                input.partition_spec().num_partitions,
+                Some(sort_by.clone()),
+            )
+            .into(),
+            Self::Split(Split {
+                output_num_partitions,
+                ..
+            }) => {
+                PartitionSpec::new_internal(PartitionScheme::Unknown, *output_num_partitions, None)
+                    .into()
+            }
+            Self::Coalesce(Coalesce { num_to, .. }) => {
+                PartitionSpec::new_internal(PartitionScheme::Unknown, *num_to, None).into()
+            }
+            Self::Flatten(Flatten { input }) => input.partition_spec(),
+            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => {
+                PartitionSpec::new_internal(PartitionScheme::Random, *num_partitions, None).into()
+            }
+            Self::FanoutByHash(FanoutByHash {
+                num_partitions,
+                partition_by,
+                ..
+            }) => PartitionSpec::new_internal(
+                PartitionScheme::Hash,
+                *num_partitions,
+                Some(partition_by.clone()),
+            )
+            .into(),
+            Self::FanoutByRange(FanoutByRange {
+                num_partitions,
+                sort_by,
+                ..
+            }) => PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                *num_partitions,
+                Some(sort_by.clone()),
+            )
+            .into(),
+            Self::ReduceMerge(ReduceMerge { input }) => input.partition_spec(),
+            Self::Aggregate(Aggregate { input, groupby, .. }) => {
+                let input_partition_spec = input.partition_spec();
+                if input_partition_spec.num_partitions == 1 {
+                    input_partition_spec.clone()
+                } else if groupby.is_empty() {
+                    PartitionSpec::new_internal(PartitionScheme::Unknown, 1, None).into()
+                } else {
+                    PartitionSpec::new_internal(
+                        PartitionScheme::Hash,
+                        input.partition_spec().num_partitions,
+                        Some(groupby.clone()),
+                    )
+                    .into()
+                }
+            }
+            Self::Concat(Concat { input, other }) => PartitionSpec::new_internal(
+                PartitionScheme::Unknown,
+                input.partition_spec().num_partitions + other.partition_spec().num_partitions,
+                None,
+            )
+            .into(),
+            Self::Join(Join {
+                left,
+                right,
+                left_on,
+                ..
+            }) => {
+                let input_partition_spec = left.partition_spec();
+                match max(
+                    input_partition_spec.num_partitions,
+                    right.partition_spec().num_partitions,
+                ) {
+                    // NOTE: This duplicates the repartitioning logic in the planner, where we
+                    // conditionally repartition the left and right tables.
+                    // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
+                    // to be an entirely planner-side concept.
+                    1 => input_partition_spec,
+                    num_partitions => PartitionSpec::new_internal(
+                        PartitionScheme::Hash,
+                        num_partitions,
+                        Some(left_on.clone()),
+                    )
+                    .into(),
+                }
+            }
+            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
+            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
+            Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
+        }
+    }
 }
 
 /// A work scheduler for physical plans.
@@ -63,6 +170,9 @@ pub struct PhysicalPlanScheduler {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PhysicalPlanScheduler {
+    pub fn num_partitions(&self) -> PyResult<i64> {
+        self.plan.partition_spec().get_num_partitions()
+    }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,
@@ -263,6 +373,7 @@ impl PhysicalPlan {
                 input,
                 projection,
                 resource_request,
+                ..
             }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let projection_pyexprs: Vec<PyExpr> = projection

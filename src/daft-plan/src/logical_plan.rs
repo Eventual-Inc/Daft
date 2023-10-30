@@ -1,4 +1,4 @@
-use std::{cmp::max, num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::schema::SchemaRef;
@@ -6,7 +6,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use indexmap::IndexSet;
 use snafu::Snafu;
 
-use crate::{display::TreeDisplay, logical_ops::*, PartitionScheme, PartitionSpec};
+use crate::{display::TreeDisplay, logical_ops::*};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -18,7 +18,6 @@ pub enum LogicalPlan {
     Explode(Explode),
     Sort(Sort),
     Repartition(Repartition),
-    Coalesce(Coalesce),
     Distinct(Distinct),
     Aggregate(Aggregate),
     Concat(Concat),
@@ -40,7 +39,6 @@ impl LogicalPlan {
             }) => exploded_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
-            Self::Coalesce(Coalesce { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(aggregate) => aggregate.schema(),
             Self::Concat(Concat { input, .. }) => input.schema(),
@@ -52,7 +50,7 @@ impl LogicalPlan {
     pub fn required_columns(&self) -> Vec<IndexSet<String>> {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
-            Self::Limit(..) | Self::Coalesce(..) => vec![IndexSet::new()],
+            Self::Limit(..) => vec![IndexSet::new()],
             Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
             Self::Project(projection) => {
                 let res = projection
@@ -123,83 +121,6 @@ impl LogicalPlan {
         }
     }
 
-    pub fn partition_spec(&self) -> Arc<PartitionSpec> {
-        match self {
-            Self::Source(Source { partition_spec, .. }) => partition_spec.clone(),
-            Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
-            Self::Filter(Filter { input, .. }) => input.partition_spec(),
-            Self::Limit(Limit { input, .. }) => input.partition_spec(),
-            Self::Explode(Explode { input, .. }) => input.partition_spec(),
-            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
-                PartitionScheme::Range,
-                input.partition_spec().num_partitions,
-                Some(sort_by.clone()),
-            )
-            .into(),
-            Self::Repartition(Repartition {
-                num_partitions,
-                partition_by,
-                scheme,
-                ..
-            }) => PartitionSpec::new_internal(
-                scheme.clone(),
-                *num_partitions,
-                Some(partition_by.clone()),
-            )
-            .into(),
-            Self::Coalesce(Coalesce { num_to, .. }) => {
-                PartitionSpec::new_internal(PartitionScheme::Unknown, *num_to, None).into()
-            }
-            Self::Distinct(Distinct { input, .. }) => input.partition_spec(),
-            Self::Aggregate(Aggregate { input, groupby, .. }) => {
-                let input_partition_spec = input.partition_spec();
-                if input_partition_spec.num_partitions == 1 {
-                    input_partition_spec.clone()
-                } else if groupby.is_empty() {
-                    PartitionSpec::new_internal(PartitionScheme::Unknown, 1, None).into()
-                } else {
-                    PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
-                        input.partition_spec().num_partitions,
-                        Some(groupby.clone()),
-                    )
-                    .into()
-                }
-            }
-            Self::Concat(Concat { input, other }) => PartitionSpec::new_internal(
-                PartitionScheme::Unknown,
-                input.partition_spec().num_partitions + other.partition_spec().num_partitions,
-                None,
-            )
-            .into(),
-            Self::Join(Join {
-                left,
-                right,
-                left_on,
-                ..
-            }) => {
-                let input_partition_spec = left.partition_spec();
-                match max(
-                    input_partition_spec.num_partitions,
-                    right.partition_spec().num_partitions,
-                ) {
-                    // NOTE: This duplicates the repartitioning logic in the planner, where we
-                    // conditionally repartition the left and right tables.
-                    // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
-                    // to be an entirely planner-side concept.
-                    1 => input_partition_spec,
-                    num_partitions => PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
-                        num_partitions,
-                        Some(left_on.clone()),
-                    )
-                    .into(),
-                }
-            }
-            Self::Sink(Sink { input, .. }) => input.partition_spec(),
-        }
-    }
-
     pub fn children(&self) -> Vec<&Arc<Self>> {
         match self {
             Self::Source(..) => vec![],
@@ -209,7 +130,6 @@ impl LogicalPlan {
             Self::Explode(Explode { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
-            Self::Coalesce(Coalesce { input, .. }) => vec![input],
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Concat(Concat { input, other }) => vec![input, other],
@@ -229,8 +149,7 @@ impl LogicalPlan {
                 Self::Limit(Limit { limit, eager, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager)),
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Sort(Sort { sort_by, descending, .. }) => Self::Sort(Sort::try_new(input.clone(), sort_by.clone(), descending.clone()).unwrap()),
-                Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::new(input.clone(), *num_partitions, partition_by.clone(), scheme.clone())),
-                Self::Coalesce(Coalesce { num_to, .. }) => Self::Coalesce(Coalesce::new(input.clone(), *num_to)),
+                Self::Repartition(Repartition { num_partitions, partition_by, scheme, .. }) => Self::Repartition(Repartition::try_new(input.clone(), *num_partitions, partition_by.clone(), scheme.clone()).unwrap()),
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Sink(Sink { schema, sink_info, .. }) => Self::Sink(Sink::new(input.clone(), schema.clone(), sink_info.clone())),
@@ -271,7 +190,6 @@ impl LogicalPlan {
             Self::Explode(..) => "Explode",
             Self::Sort(..) => "Sort",
             Self::Repartition(..) => "Repartition",
-            Self::Coalesce(..) => "Coalesce",
             Self::Distinct(..) => "Distinct",
             Self::Aggregate(..) => "Aggregate",
             Self::Concat(..) => "Concat",
@@ -299,7 +217,6 @@ impl LogicalPlan {
             }
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
-            Self::Coalesce(Coalesce { num_to, .. }) => vec![format!("Coalesce: To = {num_to}")],
             Self::Distinct(_) => vec!["Distinct".to_string()],
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Concat(_) => vec!["Concat".to_string()],
@@ -360,7 +277,6 @@ impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
-impl_from_data_struct_for_logical_plan!(Coalesce);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Concat);

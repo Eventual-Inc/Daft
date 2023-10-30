@@ -24,13 +24,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import (
-    FileFormat,
-    JoinType,
-    PartitionScheme,
-    PartitionSpec,
-    ResourceRequest,
-)
+from daft.daft import FileFormat, JoinType, PartitionScheme, ResourceRequest
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -89,8 +83,11 @@ class DataFrame:
         if self._result_cache is None:
             return self.__builder
         else:
+            num_partitions = self._result_cache.num_partitions()
+            # Partition set should always be set on cache entry.
+            assert num_partitions is not None, "Partition set should always be set on cache entry"
             return self.__builder.from_in_memory_scan(
-                self._result_cache, self.__builder.schema(), self.__builder.partition_spec()
+                self._result_cache, self.__builder.schema(), num_partitions=num_partitions
             )
 
     def _get_current_builder(self) -> LogicalPlanBuilder:
@@ -127,7 +124,7 @@ class DataFrame:
         print(builder.pretty_print(simple))
 
     def num_partitions(self) -> int:
-        return self.__builder.num_partitions()
+        return self.__builder.to_physical_plan_scheduler().num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -306,7 +303,7 @@ class DataFrame:
 
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
-        builder = LogicalPlanBuilder.from_in_memory_scan(cache_entry, parts[0].schema())
+        builder = LogicalPlanBuilder.from_in_memory_scan(cache_entry, parts[0].schema(), result_pset.num_partitions())
         return cls(builder)
 
     ###
@@ -345,7 +342,7 @@ class DataFrame:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
                 assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(self.num_partitions(), *cols)
+            self.repartition(None, *cols)
         else:
             pass
         builder = self._builder.write_tabular(
@@ -386,7 +383,7 @@ class DataFrame:
             cols = self.__column_input_to_expression(tuple(partition_cols))
             for c in cols:
                 assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(self.num_partitions(), *cols)
+            self.repartition(None, *cols)
         else:
             pass
         builder = self._builder.write_tabular(
@@ -614,7 +611,7 @@ class DataFrame:
         return count_df.to_pydict()["count"][0]
 
     @DataframePublicAPI
-    def repartition(self, num: int, *partition_by: ColumnInputType) -> "DataFrame":
+    def repartition(self, num: Optional[int], *partition_by: ColumnInputType) -> "DataFrame":
         """Repartitions DataFrame to ``num`` partitions
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
@@ -625,8 +622,8 @@ class DataFrame:
             >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
 
         Args:
-            num (int): number of target partitions.
-            *partition_by (Union[str, Expression]): optional columns to partition by.
+            num (Optional[int]): Number of target partitions; if None, the number of partitions will not be changed.
+            *partition_by (Union[str, Expression]): Optional columns to partition by.
 
         Returns:
             DataFrame: Repartitioned DataFrame.
@@ -657,24 +654,12 @@ class DataFrame:
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
         """
-        current_partitions = self._builder.num_partitions()
-
-        if num > current_partitions:
-            # Do a split (increase the number of partitions).
-            builder = self._builder.repartition(
-                num_partitions=num,
-                partition_by=[],
-                scheme=PartitionScheme.Unknown,
-            )
-            return DataFrame(builder)
-
-        elif num < current_partitions:
-            # Do a coalese (decrease the number of partitions).
-            builder = self._builder.coalesce(num)
-            return DataFrame(builder)
-
-        else:
-            return self
+        builder = self._builder.repartition(
+            num_partitions=num,
+            partition_by=[],
+            scheme=PartitionScheme.Unknown,
+        )
+        return DataFrame(builder)
 
     @DataframePublicAPI
     def join(
@@ -1176,9 +1161,7 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry,
-            schema=schema,
-            partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
+            cache_entry, schema=schema, num_partitions=partition_set.num_partitions()
         )
         return cls(builder)
 
@@ -1245,9 +1228,7 @@ class DataFrame:
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry,
-            schema=schema,
-            partition_spec=PartitionSpec(PartitionScheme.Unknown, partition_set.num_partitions()),
+            cache_entry, schema=schema, num_partitions=partition_set.num_partitions()
         )
         return cls(builder)
 

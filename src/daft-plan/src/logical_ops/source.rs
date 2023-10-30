@@ -3,10 +3,7 @@ use std::sync::Arc;
 use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 
-use crate::{
-    source_info::{ExternalInfo, SourceInfo},
-    PartitionSpec,
-};
+use crate::source_info::{ExternalInfo, SourceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -16,8 +13,6 @@ pub struct Source {
 
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
-
-    pub partition_spec: Arc<PartitionSpec>,
 
     /// Optional filters to apply to the source data.
     pub filters: Vec<ExprRef>,
@@ -29,13 +24,11 @@ impl Source {
     pub(crate) fn new(
         output_schema: SchemaRef,
         source_info: Arc<SourceInfo>,
-        partition_spec: Arc<PartitionSpec>,
         limit: Option<usize>,
     ) -> Self {
         Self {
             output_schema,
             source_info,
-            partition_spec,
             limit,
             filters: vec![], // Will be populated by plan optimizer.
         }
@@ -45,7 +38,6 @@ impl Source {
         Self {
             output_schema: self.output_schema.clone(),
             source_info: self.source_info.clone(),
-            partition_spec: self.partition_spec.clone(),
             filters: self.filters.clone(),
             limit,
         }
@@ -55,7 +47,6 @@ impl Source {
         Self {
             output_schema: self.output_schema.clone(),
             source_info: self.source_info.clone(),
-            partition_spec: self.partition_spec.clone(),
             filters,
             limit: self.limit,
         }

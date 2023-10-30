@@ -5,7 +5,7 @@ from typing import Optional
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import IOConfig, PartitionScheme, PartitionSpec
+from daft.daft import IOConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.pyrunner import LocalPartitionSet
@@ -51,6 +51,6 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     builder = LogicalPlanBuilder.from_in_memory_scan(
         cache_entry,
         schema=file_infos_table.schema(),
-        partition_spec=PartitionSpec(PartitionScheme.Unknown, partition.num_partitions()),
+        num_partitions=partition.num_partitions(),
     )
     return DataFrame(builder)

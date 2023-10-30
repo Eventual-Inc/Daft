@@ -14,6 +14,9 @@ serde = {workspace = true, features = ["rc"]}
 serde_json = {workspace = true}
 snafu = {workspace = true}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [features]
 default = ["python"]
 python = ["dep:pyo3", "common-error/python", "common-io-config/python", "daft-core/python", "daft-dsl/python", "daft-table/python"]

@@ -10,7 +10,7 @@ use crate::{
         ExternalInfo as ExternalSourceInfo, FileFormatConfig, FileInfos as InputFileInfos,
         PyStorageConfig, SourceInfo, StorageConfig,
     },
-    FileFormat, JoinType, PartitionScheme, PartitionSpec, PhysicalPlanScheduler, ResourceRequest,
+    FileFormat, JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
@@ -51,20 +51,16 @@ impl LogicalPlanBuilder {
         partition_key: &str,
         cache_entry: PyObject,
         schema: Arc<Schema>,
-        partition_spec: PartitionSpec,
+        num_partitions: usize,
     ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
+            num_partitions,
         ));
-        let logical_plan: LogicalPlan = logical_ops::Source::new(
-            schema.clone(),
-            source_info.into(),
-            partition_spec.clone().into(),
-            None,
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
         Ok(logical_plan.into())
     }
 
@@ -84,22 +80,14 @@ impl LogicalPlanBuilder {
         storage_config: Arc<StorageConfig>,
         limit: Option<usize>,
     ) -> DaftResult<Self> {
-        let num_partitions = file_infos.len();
         let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
             schema.clone(),
             file_infos.into(),
             file_format_config,
             storage_config,
         ));
-        let partition_spec =
-            PartitionSpec::new_internal(PartitionScheme::Unknown, num_partitions, None);
-        let logical_plan: LogicalPlan = logical_ops::Source::new(
-            schema.clone(),
-            source_info.into(),
-            partition_spec.into(),
-            limit,
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            logical_ops::Source::new(schema.clone(), source_info.into(), limit).into();
         Ok(logical_plan.into())
     }
 
@@ -139,19 +127,17 @@ impl LogicalPlanBuilder {
 
     pub fn repartition(
         &self,
-        num_partitions: usize,
+        num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
         scheme: PartitionScheme,
     ) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            logical_ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme)
-                .into();
-        Ok(logical_plan.into())
-    }
-
-    pub fn coalesce(&self, num_partitions: usize) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            logical_ops::Coalesce::new(self.plan.clone(), num_partitions).into();
+        let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
+            self.plan.clone(),
+            num_partitions,
+            partition_by,
+            scheme,
+        )?
+        .into();
         Ok(logical_plan.into())
     }
 
@@ -231,10 +217,6 @@ impl LogicalPlanBuilder {
         self.plan.schema()
     }
 
-    pub fn partition_spec(&self) -> PartitionSpec {
-        self.plan.partition_spec().as_ref().clone()
-    }
-
     pub fn repr_ascii(&self, simple: bool) -> String {
         self.plan.repr_ascii(simple)
     }
@@ -272,13 +254,13 @@ impl PyLogicalPlanBuilder {
         partition_key: &str,
         cache_entry: &PyAny,
         schema: PySchema,
-        partition_spec: PartitionSpec,
+        num_partitions: usize,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
             cache_entry.to_object(cache_entry.py()),
             schema.into(),
-            partition_spec,
+            num_partitions,
         )?
         .into())
     }
@@ -337,9 +319,9 @@ impl PyLogicalPlanBuilder {
 
     pub fn repartition(
         &self,
-        num_partitions: usize,
         partition_by: Vec<PyExpr>,
         scheme: PartitionScheme,
+        num_partitions: Option<usize>,
     ) -> PyResult<Self> {
         let partition_by_exprs: Vec<Expr> = partition_by
             .iter()
@@ -349,10 +331,6 @@ impl PyLogicalPlanBuilder {
             .builder
             .repartition(num_partitions, partition_by_exprs, scheme)?
             .into())
-    }
-
-    pub fn coalesce(&self, num_partitions: usize) -> PyResult<Self> {
-        Ok(self.builder.coalesce(num_partitions)?.into())
     }
 
     pub fn distinct(&self) -> PyResult<Self> {
@@ -413,10 +391,6 @@ impl PyLogicalPlanBuilder {
 
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(self.builder.schema().into())
-    }
-
-    pub fn partition_spec(&self) -> PyResult<PartitionSpec> {
-        Ok(self.builder.partition_spec())
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.

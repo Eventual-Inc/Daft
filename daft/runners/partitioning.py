@@ -170,6 +170,9 @@ class PartitionCacheEntry:
         self.key = key
         self.value = None
 
+    def num_partitions(self) -> int | None:
+        return self.value.num_partitions() if self.value is not None else None
+
 
 class PartitionSetCache:
     def __init__(self) -> None:

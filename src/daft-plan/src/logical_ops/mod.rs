@@ -1,5 +1,4 @@
 mod agg;
-mod coalesce;
 mod concat;
 mod distinct;
 mod explode;
@@ -13,7 +12,6 @@ mod sort;
 mod source;
 
 pub use agg::Aggregate;
-pub use coalesce::Coalesce;
 pub use concat::Concat;
 pub use distinct::Distinct;
 pub use explode::Explode;
