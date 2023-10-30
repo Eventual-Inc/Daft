@@ -434,6 +434,7 @@ def read_csv(
     num_rows: int | None = None,
     has_header: bool | None = None,
     delimiter: str | None = None,
+    double_quote_escape: bool | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     schema: PySchema | None = None,
