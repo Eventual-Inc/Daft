@@ -131,9 +131,13 @@ impl LogicalPlanBuilder {
         partition_by: Vec<Expr>,
         scheme: PartitionScheme,
     ) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            logical_ops::Repartition::new(self.plan.clone(), num_partitions, partition_by, scheme)
-                .into();
+        let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
+            self.plan.clone(),
+            num_partitions,
+            partition_by,
+            scheme,
+        )?
+        .into();
         Ok(logical_plan.into())
     }
 

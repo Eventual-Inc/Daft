@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 
 use crate::{LogicalPlan, PartitionScheme};
@@ -14,18 +15,23 @@ pub struct Repartition {
 }
 
 impl Repartition {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
         scheme: PartitionScheme,
-    ) -> Self {
-        Self {
+    ) -> DaftResult<Self> {
+        if matches!(scheme, PartitionScheme::Range) {
+            return Err(DaftError::ValueError(
+                "Repartitioning with the Range partition scheme is not supported.".to_string(),
+            ));
+        }
+        Ok(Self {
             input,
             num_partitions,
             partition_by,
             scheme,
-        }
+        })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
