@@ -144,16 +144,20 @@ impl ReadPlanner {
                 self.ranges = ranges;
             }
         }
-
         Ok(())
     }
 
     pub fn collect(
-        self,
+        mut self,
         io_client: Arc<IOClient>,
         io_stats: Option<IOStatsRef>,
     ) -> DaftResult<Arc<RangesContainer>> {
         let mut entries = Vec::with_capacity(self.ranges.len());
+
+        // We have to sort again to maintain the invariant of the list being sorted after running passes
+        // We also have to do this before the loop so we spawn tokio tasks front to back of the file
+        self.ranges.sort_by_key(|v| v.start);
+
         for range in self.ranges {
             let owned_io_client = io_client.clone();
             let owned_url = self.source.clone();
