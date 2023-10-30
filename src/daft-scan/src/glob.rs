@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use daft_io::{get_io_client, get_runtime};
+use daft_io::{get_io_client, get_runtime, IOStatsContext};
 
 use crate::{DataFileSource, FileType, PartitionField, ScanOperator, ScanOperatorRef, ScanTask};
 #[derive(Debug)]
@@ -31,17 +31,43 @@ fn run_glob(glob_path: &str, io_config: Arc<daft_io::IOConfig>) -> DaftResult<Ve
 }
 
 impl GlobScanOperator {
-    pub fn try_new(
+    pub fn _try_new(
         glob_path: &str,
         file_type: FileType,
         io_config: Arc<daft_io::IOConfig>,
     ) -> DaftResult<Self> {
-        // TODO: Glob for first file using a limit
-        let paths = run_glob(glob_path, io_config)?;
-        let _first_filepath = paths[0].as_str();
+        // TODO: Limit return from run_glob
+        let paths = run_glob(glob_path, io_config.clone())?;
+        let first_filepath = paths[0].as_str();
+
         let schema = match file_type {
-            FileType::Parquet => todo!(),
-            FileType::Csv => todo!(),
+            FileType::Parquet => {
+                let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
+                let io_stats = IOStatsContext::new(format!(
+                    "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                ));
+                daft_parquet::read::read_parquet_schema(
+                    first_filepath,
+                    io_client,
+                    Some(io_stats),
+                    Default::default(), // TODO: pass-through schema inference options
+                )?
+            }
+            FileType::Csv => {
+                let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
+                let io_stats = IOStatsContext::new(format!(
+                    "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
+                ));
+                let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
+                    first_filepath,
+                    true, // TODO: pass-through schema inference options
+                    None, // TODO: pass-through schema inference options
+                    None, // TODO: pass-through schema inference options
+                    io_client,
+                    Some(io_stats),
+                )?;
+                schema
+            }
             FileType::Avro => todo!("Schema inference for Avro not implemented"),
             FileType::Orc => todo!("Schema inference for Orc not implemented"),
         };
@@ -51,7 +77,7 @@ impl GlobScanOperator {
             file_type,
             columns_to_select: None,
             limit: None,
-            schema,
+            schema: Arc::new(schema),
             io_config,
         })
     }
