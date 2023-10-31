@@ -398,10 +398,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        // Allow for essentially unbounded page sizes. This is was added to parquet2
-                                        // as a guard against **both** unbounded large page headers and page data.
+                                        // Set to a very high number 256MB to guard against unbounded large
+                                        // downloads from remote storage, which likely indicates corrupted Parquet data
                                         // See: https://github.com/Eventual-Inc/Daft/issues/1551
-                                        usize::MAX,
+                                        256 * 1024 * 1024,
                                     )
                                     .await
                                     .with_context(|_| {
@@ -567,10 +567,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        // Allow for essentially unbounded page sizes. This is was added to parquet2
-                                        // as a guard against **both** unbounded large page headers and page data.
+                                        // Set to a very high number 256MB to guard against unbounded large
+                                        // downloads from remote storage, which likely indicates corrupted Parquet data
                                         // See: https://github.com/Eventual-Inc/Daft/issues/1551
-                                        usize::MAX,
+                                        256 * 1024 * 1024,
                                     )
                                     .await
                                     .with_context(|_| {
