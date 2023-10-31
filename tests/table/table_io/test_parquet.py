@@ -88,6 +88,16 @@ def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
         assert schema == Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_dtype)])
 
 
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_parquet_read_empty(use_native_downloader):
+    with _parquet_write_helper(pa.Table.from_pydict({"foo": pa.array([], type=pa.int64())})) as f:
+        schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
+        expected = Table.from_pydict({"foo": pa.array([], type=pa.int64())})
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+        table = table_io.read_parquet(f, schema, storage_config=storage_config)
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
 @pytest.mark.parametrize(
     ["data", "expected_data_series"],
     [
