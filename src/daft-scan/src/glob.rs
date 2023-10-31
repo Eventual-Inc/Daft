@@ -67,6 +67,7 @@ impl GlobScanOperator {
                     first_filepath,
                     true, // TODO: pass-through schema inference options
                     None, // TODO: pass-through schema inference options
+                    true, // TODO: pass-through schema inference options
                     None, // TODO: pass-through schema inference options
                     io_client,
                     Some(io_stats),
