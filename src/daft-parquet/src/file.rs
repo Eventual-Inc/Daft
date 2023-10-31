@@ -398,7 +398,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        4 * 1024 * 1024,
+                                        // Set to a very high number 256MB to guard against unbounded large
+                                        // downloads from remote storage, which likely indicates corrupted Parquet data
+                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
+                                        256 * 1024 * 1024,
                                     )
                                     .await
                                     .with_context(|_| {
@@ -564,7 +567,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        4 * 1024 * 1024,
+                                        // Set to a very high number 256MB to guard against unbounded large
+                                        // downloads from remote storage, which likely indicates corrupted Parquet data
+                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
+                                        256 * 1024 * 1024,
                                     )
                                     .await
                                     .with_context(|_| {
