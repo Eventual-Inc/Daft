@@ -398,7 +398,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        4 * 1024 * 1024,
+                                        // Allow for essentially unbounded page sizes. This is was added to parquet2
+                                        // as a guard against **both** unbounded large page headers and page data.
+                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
+                                        usize::MAX,
                                     )
                                     .await
                                     .with_context(|_| {
@@ -564,7 +567,10 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        4 * 1024 * 1024,
+                                        // Allow for essentially unbounded page sizes. This is was added to parquet2
+                                        // as a guard against **both** unbounded large page headers and page data.
+                                        // See: https://github.com/Eventual-Inc/Daft/issues/1551
+                                        usize::MAX,
                                     )
                                     .await
                                     .with_context(|_| {
