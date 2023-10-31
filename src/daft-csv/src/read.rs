@@ -41,6 +41,7 @@ pub fn read_csv(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: Option<u8>,
+    double_quote: bool,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
@@ -59,6 +60,7 @@ pub fn read_csv(
             num_rows,
             has_header,
             delimiter.unwrap_or(b','),
+            double_quote,
             io_client,
             io_stats,
             schema,
@@ -78,6 +80,7 @@ async fn read_csv_single(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
+    double_quote: bool,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema: Option<SchemaRef>,
@@ -92,6 +95,7 @@ async fn read_csv_single(
                 uri,
                 has_header,
                 Some(delimiter),
+                double_quote,
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
                 io_client.clone(),
@@ -115,6 +119,7 @@ async fn read_csv_single(
                 num_rows,
                 has_header,
                 delimiter,
+                double_quote,
                 schema,
                 // Default buffer size of 512 KiB.
                 buffer_size.unwrap_or(512 * 1024),
@@ -144,6 +149,7 @@ async fn read_csv_single(
                 num_rows,
                 has_header,
                 delimiter,
+                double_quote,
                 schema,
                 // Default buffer size of 512 KiB.
                 buffer_size.unwrap_or(512 * 1024),
@@ -176,6 +182,7 @@ async fn read_csv_from_compressed_reader<R>(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
+    double_quote: bool,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -195,6 +202,7 @@ where
                 num_rows,
                 has_header,
                 delimiter,
+                double_quote,
                 schema,
                 buffer_size,
                 chunk_size,
@@ -212,6 +220,7 @@ where
                 num_rows,
                 has_header,
                 delimiter,
+                double_quote,
                 schema,
                 buffer_size,
                 chunk_size,
@@ -232,6 +241,7 @@ async fn read_csv_from_uncompressed_reader<R>(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
+    double_quote: bool,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -245,6 +255,7 @@ where
     let reader = AsyncReaderBuilder::new()
         .has_headers(has_header)
         .delimiter(delimiter)
+        .double_quote(double_quote)
         .buffer_capacity(buffer_size)
         .create_reader(stream_reader.compat());
     let mut fields = schema.fields;
@@ -453,12 +464,14 @@ mod tests {
         out: &Table,
         has_header: bool,
         delimiter: Option<u8>,
+        double_quote: bool,
         column_names: Option<Vec<&str>>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
         let mut reader = ReaderBuilder::new()
             .delimiter(delimiter.unwrap_or(b','))
+            .double_quote(double_quote)
             .from_path(path)
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
@@ -534,6 +547,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -555,7 +569,7 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+            check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
         }
 
         Ok(())
@@ -587,6 +601,7 @@ mod tests {
             None,
             false,
             None,
+            true,
             io_client,
             None,
             true,
@@ -612,6 +627,7 @@ mod tests {
             &table,
             false,
             None,
+            true,
             Some(column_names),
             None,
             None,
@@ -639,6 +655,7 @@ mod tests {
             Some(5),
             true,
             Some(b'|'),
+            true,
             io_client,
             None,
             true,
@@ -659,7 +676,70 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, Some(b'|'), None, None, Some(5));
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            Some(b'|'),
+            true,
+            None,
+            None,
+            Some(5),
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_csv_read_local_double_quote() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_double_quote.csv",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let table = read_csv(
+            file.as_ref(),
+            None,
+            None,
+            Some(5),
+            true,
+            None,
+            false,
+            io_client,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(table.len(), 5);
+        assert_eq!(
+            table.schema,
+            Schema::new(vec![
+                Field::new("\"sepal.\"\"length\"", DataType::Float64),
+                Field::new("sepal.width", DataType::Float64),
+                Field::new("petal.length", DataType::Float64),
+                Field::new("petal.width", DataType::Float64),
+                Field::new("variety", DataType::Utf8),
+            ])?
+            .into(),
+        );
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            false,
+            None,
+            None,
+            Some(5),
+        );
 
         Ok(())
     }
@@ -680,6 +760,7 @@ mod tests {
             Some(5),
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -700,7 +781,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, Some(5));
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, Some(5));
 
         Ok(())
     }
@@ -721,6 +802,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -743,6 +825,7 @@ mod tests {
             &table,
             true,
             None,
+            true,
             None,
             Some(vec![2, 3]),
             None,
@@ -777,6 +860,7 @@ mod tests {
             None,
             false,
             None,
+            true,
             io_client,
             None,
             true,
@@ -799,6 +883,7 @@ mod tests {
             &table,
             false,
             None,
+            true,
             Some(column_names),
             Some(vec![2, 3]),
             None,
@@ -823,6 +908,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -843,7 +929,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -864,6 +950,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -884,7 +971,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -905,6 +992,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -925,7 +1013,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -946,6 +1034,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -966,7 +1055,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -990,6 +1079,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1051,6 +1141,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1105,6 +1196,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1125,7 +1217,7 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, None, None, None);
+        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None, None);
 
         Ok(())
     }
@@ -1154,6 +1246,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1192,6 +1285,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1232,6 +1326,7 @@ mod tests {
             None,
             false,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1294,6 +1389,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1332,6 +1428,7 @@ mod tests {
             None,
             false,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1370,6 +1467,7 @@ mod tests {
             None,
             false,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1403,6 +1501,7 @@ mod tests {
             Some(10),
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1440,6 +1539,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1473,6 +1573,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1502,6 +1603,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,
@@ -1531,6 +1633,7 @@ mod tests {
             None,
             true,
             None,
+            true,
             io_client,
             None,
             true,

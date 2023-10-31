@@ -30,6 +30,7 @@ pub mod pylib {
         num_rows: Option<usize>,
         has_header: Option<bool>,
         delimiter: Option<&str>,
+        double_quote: Option<bool>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         schema: Option<PySchema>,
@@ -50,6 +51,7 @@ pub mod pylib {
                 num_rows,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
+                double_quote.unwrap_or(true),
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
@@ -63,11 +65,13 @@ pub mod pylib {
     }
 
     #[pyfunction]
+    #[allow(clippy::too_many_arguments)]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,
         has_header: Option<bool>,
         delimiter: Option<&str>,
+        double_quote: Option<bool>,
         max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
@@ -83,6 +87,7 @@ pub mod pylib {
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
+                double_quote.unwrap_or(true),
                 max_bytes,
                 io_client,
                 Some(io_stats),
