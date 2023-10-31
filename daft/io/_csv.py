@@ -23,6 +23,7 @@ def read_csv(
     has_headers: bool = True,
     column_names: Optional[List[str]] = None,
     delimiter: str = ",",
+    double_quote: bool = True,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     _buffer_size: Optional[int] = None,
@@ -42,6 +43,7 @@ def read_csv(
             disable all schema inference on data being read, and throw an error if data being read is incompatible.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         delimiter (Str): Delimiter used in the CSV, defaults to ","
+        doubled_quote_escape (bool): Whether to support double quote escapes, defaults to True
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
@@ -62,6 +64,7 @@ def read_csv(
     csv_config = CsvSourceConfig(
         delimiter=delimiter,
         has_headers=has_headers,
+        double_quote=double_quote,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
     )

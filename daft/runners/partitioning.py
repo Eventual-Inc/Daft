@@ -44,12 +44,14 @@ class TableParseCSVOptions:
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
         header_index: Index of the header row, or None if no header
+        double_quote: Whether to support escaping quotes by doubling them, defaults to True
         buffer_size: Size of the buffer (in bytes) used by the streaming reader.
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     """
 
     delimiter: str = ","
     header_index: int | None = 0
+    double_quote: bool = True
     buffer_size: int | None = None
     chunk_size: int | None = None
 
