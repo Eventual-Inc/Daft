@@ -49,7 +49,7 @@ def _get_tabular_files_scan(
     file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
 
     if max_bytes is not None and sum(file_infos.file_sizes) > max_bytes:
-        raise ValueError("Parquet files exceeed max_bytes limit")
+        raise ValueError("Parquet files exceed max_bytes limit")
 
     # Infer schema if no hints provided
     inferred_or_provided_schema = (
