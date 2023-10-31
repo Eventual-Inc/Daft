@@ -179,13 +179,18 @@ pub(crate) async fn local_parquet_read_async(
                 .into_par_iter()
                 .zip(schema.fields)
                 .map(|(v, f)| {
-                    let casted_arrays = v
-                        .into_iter()
-                        .map(move |a| {
-                            Series::try_from((f.name.as_str(), cast_array_for_daft_if_needed(a)))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
+                    let f_name = f.name.as_str();
+                    if v.is_empty() {
+                        Ok(Series::empty(f_name, &f.data_type().into()))
+                    } else {
+                        let casted_arrays = v
+                            .into_iter()
+                            .map(move |a| {
+                                Series::try_from((f_name, cast_array_for_daft_if_needed(a)))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
+                    }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok((metadata, Table::from_columns(converted_arrays)?))
