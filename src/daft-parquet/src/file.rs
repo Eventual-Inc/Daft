@@ -463,6 +463,7 @@ impl ParquetFileReader {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
                 let owned_uri = self.uri.clone();
+                let owned_field = field.clone();
                 let concated_handle = tokio::task::spawn(async move {
                     let series_to_concat =
                         try_join_all(field_handles).await.context(JoinSnafu {
@@ -474,8 +475,14 @@ impl ParquetFileReader {
 
                     let (send, recv) = tokio::sync::oneshot::channel();
                     rayon::spawn(move || {
-                        let concated =
-                            Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>());
+                        let concated = if series_to_concat.is_empty() {
+                            Ok(Series::empty(
+                                owned_field.name.as_str(),
+                                &owned_field.data_type().into(),
+                            ))
+                        } else {
+                            Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>())
+                        };
                         drop(series_to_concat);
                         let _ = send.send(concated);
                     });
