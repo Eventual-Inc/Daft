@@ -166,7 +166,7 @@ class Schema:
         path: str,
         has_header: bool | None = None,
         delimiter: str | None = None,
-        double_quote_escape: bool | None = None,
+        double_quote: bool | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ) -> Schema:
@@ -175,7 +175,7 @@ class Schema:
                 uri=path,
                 has_header=has_header,
                 delimiter=delimiter,
-                double_quote_escape=double_quote_escape,
+                double_quote=double_quote,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
             )

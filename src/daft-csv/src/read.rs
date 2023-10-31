@@ -41,7 +41,7 @@ pub fn read_csv(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: Option<u8>,
-    double_quote_escape: bool,
+    double_quote: bool,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
@@ -60,7 +60,7 @@ pub fn read_csv(
             num_rows,
             has_header,
             delimiter.unwrap_or(b','),
-            double_quote_escape,
+            double_quote,
             io_client,
             io_stats,
             schema,
@@ -80,7 +80,7 @@ async fn read_csv_single(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
-    double_quote_escape: bool,
+    double_quote: bool,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema: Option<SchemaRef>,
@@ -95,7 +95,7 @@ async fn read_csv_single(
                 uri,
                 has_header,
                 Some(delimiter),
-                double_quote_escape,
+                double_quote,
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
                 io_client.clone(),
@@ -119,7 +119,7 @@ async fn read_csv_single(
                 num_rows,
                 has_header,
                 delimiter,
-                double_quote_escape,
+                double_quote,
                 schema,
                 // Default buffer size of 512 KiB.
                 buffer_size.unwrap_or(512 * 1024),
@@ -149,7 +149,7 @@ async fn read_csv_single(
                 num_rows,
                 has_header,
                 delimiter,
-                double_quote_escape,
+                double_quote,
                 schema,
                 // Default buffer size of 512 KiB.
                 buffer_size.unwrap_or(512 * 1024),
@@ -182,7 +182,7 @@ async fn read_csv_from_compressed_reader<R>(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
-    double_quote_escape: bool,
+    double_quote: bool,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -202,7 +202,7 @@ where
                 num_rows,
                 has_header,
                 delimiter,
-                double_quote_escape,
+                double_quote,
                 schema,
                 buffer_size,
                 chunk_size,
@@ -220,7 +220,7 @@ where
                 num_rows,
                 has_header,
                 delimiter,
-                double_quote_escape,
+                double_quote,
                 schema,
                 buffer_size,
                 chunk_size,
@@ -241,7 +241,7 @@ async fn read_csv_from_uncompressed_reader<R>(
     num_rows: Option<usize>,
     has_header: bool,
     delimiter: u8,
-    double_quote_escape: bool,
+    double_quote: bool,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -255,7 +255,7 @@ where
     let reader = AsyncReaderBuilder::new()
         .has_headers(has_header)
         .delimiter(delimiter)
-        .double_quote(double_quote_escape)
+        .double_quote(double_quote)
         .buffer_capacity(buffer_size)
         .create_reader(stream_reader.compat());
     let mut fields = schema.fields;
@@ -464,14 +464,14 @@ mod tests {
         out: &Table,
         has_header: bool,
         delimiter: Option<u8>,
-        double_quote_escape: bool,
+        double_quote: bool,
         column_names: Option<Vec<&str>>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
         let mut reader = ReaderBuilder::new()
             .delimiter(delimiter.unwrap_or(b','))
-            .double_quote(double_quote_escape)
+            .double_quote(double_quote)
             .from_path(path)
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
@@ -691,9 +691,9 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_read_local_double_quote_escape() -> DaftResult<()> {
+    fn test_csv_read_local_double_quote() -> DaftResult<()> {
         let file = format!(
-            "{}/test/iris_tiny_double_quote_escape.csv",
+            "{}/test/iris_tiny_double_quote.csv",
             env!("CARGO_MANIFEST_DIR"),
         );
 

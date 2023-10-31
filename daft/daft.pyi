@@ -190,7 +190,7 @@ class CsvSourceConfig:
 
     delimiter: str
     has_headers: bool
-    double_quote_escape: bool
+    double_quote: bool
     buffer_size: int | None
     chunk_size: int | None
 
@@ -198,7 +198,7 @@ class CsvSourceConfig:
         self,
         delimiter: str,
         has_headers: bool,
-        double_quote_escape: bool,
+        double_quote: bool,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
     ): ...
@@ -434,7 +434,7 @@ def read_csv(
     num_rows: int | None = None,
     has_header: bool | None = None,
     delimiter: str | None = None,
-    double_quote_escape: bool | None = None,
+    double_quote: bool | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     schema: PySchema | None = None,
@@ -445,7 +445,7 @@ def read_csv_schema(
     uri: str,
     has_header: bool | None = None,
     delimiter: str | None = None,
-    double_quote_escape: bool | None = None,
+    double_quote: bool | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
 ): ...
@@ -782,7 +782,7 @@ class PyMicroPartition:
         num_rows: int | None = None,
         has_header: bool | None = None,
         delimiter: str | None = None,
-        double_quote_escape: bool | None = None,
+        double_quote: bool | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         schema: PySchema | None = None,

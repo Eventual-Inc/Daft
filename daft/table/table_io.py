@@ -222,7 +222,7 @@ def read_csv(
                 num_rows=read_options.num_rows,
                 has_header=has_header,
                 delimiter=csv_options.delimiter,
-                double_quote_escape=csv_options.double_quote_escape,
+                double_quote=csv_options.double_quote,
                 io_config=config.io_config,
                 schema=schema,
                 buffer_size=csv_options.buffer_size,

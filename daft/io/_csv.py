@@ -23,7 +23,7 @@ def read_csv(
     has_headers: bool = True,
     column_names: Optional[List[str]] = None,
     delimiter: str = ",",
-    double_quote_escape: bool = True,
+    double_quote: bool = True,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     _buffer_size: Optional[int] = None,
@@ -64,7 +64,7 @@ def read_csv(
     csv_config = CsvSourceConfig(
         delimiter=delimiter,
         has_headers=has_headers,
-        double_quote_escape=double_quote_escape,
+        double_quote=double_quote,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
     )
