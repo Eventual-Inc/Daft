@@ -1286,13 +1286,17 @@ version = "0.1.10"
 dependencies = [
  "common-error",
  "daft-core",
+ "daft-csv",
  "daft-dsl",
+ "daft-io",
+ "daft-parquet",
  "daft-stats",
  "daft-table",
  "pyo3",
  "pyo3-log",
  "serde",
  "snafu",
+ "tokio",
 ]
 
 [[package]]

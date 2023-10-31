@@ -116,6 +116,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         glob_path: &str,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
+        limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>>;
 

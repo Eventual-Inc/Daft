@@ -17,6 +17,7 @@ use lazy_static::lazy_static;
 pub mod python;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
+use object_io::FileMetadata;
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
@@ -163,6 +164,24 @@ impl IOClient {
             w_handle.insert(*source_type, new_source.clone());
         }
         Ok(new_source)
+    }
+
+    pub async fn glob(
+        &self,
+        input: &str,
+        fanout_limit: Option<usize>,
+        page_size: Option<i32>,
+        limit: Option<usize>,
+        io_stats: Option<Arc<IOStatsContext>>,
+    ) -> Result<Vec<FileMetadata>> {
+        let (scheme, _) = parse_url(input)?;
+        let source = self.get_source(&scheme).await?;
+        let files: Vec<FileMetadata> = source
+            .glob(input, fanout_limit, page_size, limit, io_stats)
+            .await?
+            .try_collect()
+            .await?;
+        Ok(files)
     }
 
     pub async fn single_url_get(

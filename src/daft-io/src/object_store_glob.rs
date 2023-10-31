@@ -320,18 +320,21 @@ pub(crate) async fn glob(
     glob: &str,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
+    limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
+        let mut remaining_results = limit;
         let glob = full_fragment.escaped_str().to_string();
         return Ok(stream! {
             let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
-            while let Some(result) = results.next().await {
+            while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
                 match result {
                     Ok(fm) => {
                         if matches!(fm.filetype, FileType::File) {
+                            remaining_results = remaining_results.map(|rr| rr - 1);
                             yield Ok(fm)
                         }
                     },
@@ -362,7 +365,7 @@ pub(crate) async fn glob(
         .compile_matcher();
 
     // Channel to send results back to caller. Note that all results must have FileType::File.
-    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(16 * 1024);
+    let (to_rtn_tx, mut to_rtn_rx) = tokio::sync::mpsc::channel(limit.unwrap_or(16 * 1024));
 
     /// Dispatches a task to visit the specified `path` (a concrete path on the filesystem to either a File or Directory).
     /// Based on the current glob_fragment being processed (accessible via `glob_fragments[i]`) this task will:
@@ -419,16 +422,20 @@ pub(crate) async fn glob(
                                 FileType::File
                                     if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
                                 {
-                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                    if let Some(e) = result_tx.send(Ok(fm)).await.err() {
+                                        log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                    };
                                 }
                                 _ => (),
                             }
                         }
                         // Silence NotFound errors when in wildcard "search" mode
                         Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
+                        Err(e) => {
+                            if let Some(e) = result_tx.send(Err(e)).await.err() {
+                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                            }
+                        }
                     }
                 }
             // BASE CASE: current fragment is the last fragment in `glob_fragments`
@@ -446,14 +453,18 @@ pub(crate) async fn glob(
                                 if matches!(fm.filetype, FileType::File)
                                     && state.full_glob_matcher.is_match(fm.filepath.as_str())
                                 {
-                                    result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                    if let Some(e) = result_tx.send(Ok(fm)).await.err() {
+                                        log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                    }
                                 }
                             }
                             // Silence NotFound errors when in wildcard "search" mode
                             Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
-                            Err(e) => result_tx.send(Err(e)).await.expect(
-                                "Internal multithreading channel is broken: results may be incorrect",
-                            ),
+                            Err(e) => {
+                                if let Some(e) = result_tx.send(Err(e)).await.err() {
+                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                }
+                            }
                         }
                     }
                 // Last fragment does not contain wildcard: we return it if the full path exists and is a FileType::File
@@ -474,14 +485,18 @@ pub(crate) async fn glob(
                                 && matches!(single_file_ls.files[0].filetype, FileType::File)
                             {
                                 let fm = single_file_ls.files.drain(..).next().unwrap();
-                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                if let Some(e) = result_tx.send(Ok(fm)).await.err() {
+                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                }
                             }
                         }
                         // Silence NotFound errors when in wildcard "search" mode
                         Err(super::Error::NotFound { .. }) if state.wildcard_mode => (),
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
+                        Err(e) => {
+                            if let Some(e) = result_tx.send(Err(e)).await.err() {
+                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                            }
+                        }
                     };
                 }
 
@@ -535,15 +550,19 @@ pub(crate) async fn glob(
                             FileType::File
                                 if state.full_glob_matcher.is_match(fm.filepath.as_str()) =>
                             {
-                                result_tx.send(Ok(fm)).await.expect("Internal multithreading channel is broken: results may be incorrect");
+                                if let Some(e) = result_tx.send(Ok(fm)).await.err() {
+                                    log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                                }
                             }
                             _ => (),
                         },
                         // Always silence NotFound since we are in wildcard "search" mode here by definition
                         Err(super::Error::NotFound { .. }) => (),
-                        Err(e) => result_tx.send(Err(e)).await.expect(
-                            "Internal multithreading channel is broken: results may be incorrect",
-                        ),
+                        Err(e) => {
+                            if let Some(e) = result_tx.send(Err(e)).await.err() {
+                                log::debug!("Sender unable to send results into channel during glob (this is expected if a limit was applied, which results in early termination): {e}");
+                            }
+                        }
                     }
                 }
 
@@ -579,7 +598,9 @@ pub(crate) async fn glob(
     );
 
     let to_rtn_stream = stream! {
-        while let Some(v) = to_rtn_rx.recv().await {
+        let mut remaining_results = limit;
+        while remaining_results.map(|rr| rr > 0).unwrap_or(true) && let Some(v) = to_rtn_rx.recv().await {
+            remaining_results = remaining_results.map(|rr| rr - 1);
             yield v
         }
     };
