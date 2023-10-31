@@ -20,9 +20,9 @@ fn run_glob(
     io_config: Arc<daft_io::IOConfig>,
     limit: Option<usize>,
 ) -> DaftResult<Vec<String>> {
-    // Use single-threaded runtime which should be safe here as it is not shared across async contexts
-    let runtime = get_runtime(false)?;
-    let io_client = get_io_client(false, io_config)?;
+    // Use multi-threaded runtime which should be global Arc-ed cached singletons
+    let runtime = get_runtime(true)?;
+    let io_client = get_io_client(true, io_config)?;
 
     let _rt_guard = runtime.enter();
     runtime.block_on(async {
