@@ -10,20 +10,21 @@ pub mod pylib {
     use pyo3::{pyfunction, types::PyModule, PyResult, Python};
     use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
+    use crate::read::{ArrowChunk, ParquetReadOptions, ParquetSchemaInferenceOptions};
     use daft_core::ffi::to_py_array;
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet(
         py: Python,
         uri: &str,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        max_page_size: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
@@ -36,13 +37,17 @@ pub mod pylib {
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+            let read_options = ParquetReadOptions {
+                max_page_size,
+                row_groups,
+                num_rows,
+                start_offset,
+                columns: columns.map(|s| s.iter().map(|s| s.to_string()).collect()),
+            };
 
             let result = crate::read::read_parquet(
                 uri,
-                columns.as_deref(),
-                start_offset,
-                num_rows,
-                row_groups,
+                read_options,
                 io_client,
                 Some(io_stats.clone()),
                 runtime_handle,
@@ -83,13 +88,14 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        max_page_size: Option<usize>,
     ) -> PyResult<PyArrowParquetType> {
         let read_parquet_result = py.allow_threads(|| {
             let io_client = get_io_client(
@@ -99,15 +105,19 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+            let read_options = ParquetReadOptions {
+                max_page_size,
+                row_groups,
+                num_rows,
+                start_offset,
+                columns,
+            };
 
             let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
 
             crate::read::read_parquet_into_pyarrow(
                 uri,
-                columns.as_deref(),
-                start_offset,
-                num_rows,
-                row_groups,
+                read_options,
                 io_client,
                 None,
                 runtime_handle,
@@ -123,7 +133,7 @@ pub mod pylib {
     pub fn read_parquet_bulk(
         py: Python,
         uris: Vec<&str>,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Vec<i64>>>,
@@ -131,6 +141,7 @@ pub mod pylib {
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        max_page_size: Option<usize>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new("read_parquet_bulk".to_string());
@@ -142,13 +153,18 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+            let single_file_read_options = ParquetReadOptions {
+                max_page_size,
+                row_groups: None, // This is set separately with a multi-file Vec<Vec<int64>>
+                num_rows,
+                start_offset,
+                columns,
+            };
             let runtime_handle = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
 
             Ok(crate::read::read_parquet_bulk(
                 uris.as_ref(),
-                columns.as_deref(),
-                start_offset,
-                num_rows,
+                single_file_read_options,
                 row_groups,
                 io_client,
                 Some(io_stats),
@@ -167,7 +183,7 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow_bulk(
         py: Python,
         uris: Vec<&str>,
-        columns: Option<Vec<&str>>,
+        columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Vec<i64>>>,
@@ -175,6 +191,7 @@ pub mod pylib {
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        max_page_size: Option<usize>,
     ) -> PyResult<Vec<PyArrowParquetType>> {
         let parquet_read_results = py.allow_threads(|| {
             let io_client = get_io_client(
@@ -184,12 +201,17 @@ pub mod pylib {
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
+            let single_file_read_options = ParquetReadOptions {
+                max_page_size,
+                row_groups: None, // This is set separately with a multi-file Vec<Vec<int64>>
+                num_rows,
+                start_offset,
+                columns,
+            };
 
             crate::read::read_parquet_into_pyarrow_bulk(
                 uris.as_ref(),
-                columns.as_deref(),
-                start_offset,
-                num_rows,
+                single_file_read_options,
                 row_groups,
                 io_client,
                 None,

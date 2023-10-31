@@ -20,6 +20,32 @@ use tokio::runtime::Runtime;
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ParquetReadOptions {
+    // Maximum size of each page's data to accept before erroring out
+    pub max_page_size: Option<usize>,
+    // Which rowgroups to read, or None to read all
+    pub row_groups: Option<Vec<i64>>,
+    // A limit on the total number of rows to read, or None to read all
+    pub num_rows: Option<usize>,
+    // Offset to start reading from, or None to start from beginning of file
+    pub start_offset: Option<usize>,
+    // Columns to read, or None to read all
+    pub columns: Option<Vec<String>>,
+}
+
+impl Default for ParquetReadOptions {
+    fn default() -> Self {
+        ParquetReadOptions {
+            max_page_size: Some(32 * 1024 * 1024),
+            row_groups: None,
+            num_rows: None,
+            start_offset: None,
+            columns: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
@@ -57,10 +83,7 @@ impl From<ParquetSchemaInferenceOptions>
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
-    row_groups: Option<Vec<i64>>,
+    read_options: ParquetReadOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
@@ -69,10 +92,13 @@ async fn read_parquet_single(
     let (metadata, table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
-            columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
-            start_offset,
-            num_rows,
-            row_groups.clone(),
+            read_options
+                .columns
+                .clone()
+                .map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+            read_options.start_offset,
+            read_options.num_rows,
+            read_options.row_groups.clone(),
             schema_infer_options,
         )
         .await
@@ -81,19 +107,21 @@ async fn read_parquet_single(
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
+        let builder = if let Some(ref columns) = &read_options.columns {
             builder.prune_columns(columns)?
         } else {
             builder
         };
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
+        if read_options.row_groups.is_some()
+            && (read_options.num_rows.is_some() || read_options.start_offset.is_some())
+        {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows)?;
+        let builder = builder.limit(read_options.start_offset, read_options.num_rows)?;
         let metadata = builder.metadata().clone();
 
-        let builder = if let Some(ref row_groups) = row_groups {
+        let builder = if let Some(ref row_groups) = read_options.row_groups {
             builder.set_row_groups(row_groups)?
         } else {
             builder
@@ -117,7 +145,7 @@ async fn read_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
 
-    if let Some(row_groups) = row_groups {
+    if let Some(row_groups) = read_options.row_groups {
         let expected_rows: usize = row_groups
             .iter()
             .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
@@ -131,7 +159,7 @@ async fn read_parquet_single(
             .into());
         }
     } else {
-        match (start_offset, num_rows) {
+        match (read_options.start_offset, read_options.num_rows) {
             (None, None) if metadata_num_rows != table.len() => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
@@ -155,7 +183,7 @@ async fn read_parquet_single(
         }?;
     };
 
-    let expected_num_columns = if let Some(columns) = columns {
+    let expected_num_columns = if let Some(ref columns) = &read_options.columns {
         columns.len()
     } else {
         metadata_num_columns
@@ -173,13 +201,9 @@ async fn read_parquet_single(
     Ok(table)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn read_parquet_single_into_arrow(
     uri: &str,
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
-    row_groups: Option<Vec<i64>>,
+    read_options: ParquetReadOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
@@ -189,10 +213,13 @@ async fn read_parquet_single_into_arrow(
         let (metadata, schema, all_arrays) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
                 fixed_uri.as_ref(),
-                columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
-                start_offset,
-                num_rows,
-                row_groups.clone(),
+                read_options
+                    .columns
+                    .clone()
+                    .map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+                read_options.start_offset,
+                read_options.num_rows,
+                read_options.row_groups.clone(),
                 schema_infer_options,
             )
             .await?;
@@ -202,19 +229,21 @@ async fn read_parquet_single_into_arrow(
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
+        let builder = if let Some(ref columns) = read_options.columns {
             builder.prune_columns(columns)?
         } else {
             builder
         };
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
+        if read_options.row_groups.is_some()
+            && (read_options.num_rows.is_some() || read_options.start_offset.is_some())
+        {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows)?;
+        let builder = builder.limit(read_options.start_offset, read_options.num_rows)?;
         let metadata = builder.metadata().clone();
 
-        let builder = if let Some(ref row_groups) = row_groups {
+        let builder = if let Some(ref row_groups) = read_options.row_groups {
             builder.set_row_groups(row_groups)?
         } else {
             builder
@@ -253,7 +282,7 @@ async fn read_parquet_single_into_arrow(
 
     let table_ncol = all_arrays.len();
 
-    if let Some(row_groups) = &row_groups {
+    if let Some(row_groups) = &read_options.row_groups {
         let expected_rows: usize = row_groups
             .iter()
             .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
@@ -267,7 +296,7 @@ async fn read_parquet_single_into_arrow(
             .into());
         }
     } else {
-        match (start_offset, num_rows) {
+        match (read_options.start_offset, read_options.num_rows) {
             (None, None) if metadata_num_rows != table_len => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
@@ -291,7 +320,7 @@ async fn read_parquet_single_into_arrow(
         }?;
     };
 
-    let expected_num_columns = if let Some(columns) = columns {
+    let expected_num_columns = if let Some(ref columns) = read_options.columns {
         columns.len()
     } else {
         metadata_num_columns
@@ -309,13 +338,9 @@ async fn read_parquet_single_into_arrow(
     Ok((schema, all_arrays))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_parquet(
     uri: &str,
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
-    row_groups: Option<Vec<i64>>,
+    read_options: ParquetReadOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
@@ -323,28 +348,14 @@ pub fn read_parquet(
 ) -> DaftResult<Table> {
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        read_parquet_single(
-            uri,
-            columns,
-            start_offset,
-            num_rows,
-            row_groups,
-            io_client,
-            io_stats,
-            schema_infer_options,
-        )
-        .await
+        read_parquet_single(uri, read_options, io_client, io_stats, schema_infer_options).await
     })
 }
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
 pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>);
-#[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
-    row_groups: Option<Vec<i64>>,
+    read_options: ParquetReadOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
@@ -352,26 +363,15 @@ pub fn read_parquet_into_pyarrow(
 ) -> DaftResult<ParquetPyarrowChunk> {
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        read_parquet_single_into_arrow(
-            uri,
-            columns,
-            start_offset,
-            num_rows,
-            row_groups,
-            io_client,
-            io_stats,
-            schema_infer_options,
-        )
-        .await
+        read_parquet_single_into_arrow(uri, read_options, io_client, io_stats, schema_infer_options)
+            .await
     })
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_bulk(
     uris: &[&str],
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
+    read_options: ParquetReadOptions,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -380,7 +380,6 @@ pub fn read_parquet_bulk(
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
-    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
             return Err(common_error::DaftError::ValueError(format!(
@@ -394,27 +393,22 @@ pub fn read_parquet_bulk(
         .block_on(async move {
             let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
-                let owned_columns = owned_columns.clone();
-                let owned_row_group = match &row_groups {
-                    None => None,
-                    Some(v) => v.get(i).cloned(),
-                };
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
+                let single_read_options = ParquetReadOptions {
+                    row_groups: row_groups
+                        .clone()
+                        .and_then(|multi_row_groups| multi_row_groups.get(i).cloned()),
+                    ..read_options.clone()
+                };
                 tokio::task::spawn(async move {
-                    let columns = owned_columns
-                        .as_ref()
-                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
                     Ok((
                         i,
                         read_parquet_single(
                             &uri,
-                            columns.as_deref(),
-                            start_offset,
-                            num_rows,
-                            owned_row_group,
+                            single_read_options,
                             io_client,
                             io_stats,
                             schema_infer_options,
@@ -438,9 +432,7 @@ pub fn read_parquet_bulk(
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow_bulk(
     uris: &[&str],
-    columns: Option<&[&str]>,
-    start_offset: Option<usize>,
-    num_rows: Option<usize>,
+    read_options: ParquetReadOptions,
     row_groups: Option<Vec<Vec<i64>>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -450,7 +442,6 @@ pub fn read_parquet_into_pyarrow_bulk(
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
-    let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
             return Err(common_error::DaftError::ValueError(format!(
@@ -464,28 +455,23 @@ pub fn read_parquet_into_pyarrow_bulk(
         .block_on(async move {
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
                 let uri = uri.to_string();
-                let owned_columns = owned_columns.clone();
                 let schema_infer_options = schema_infer_options;
-                let owned_row_group = match &row_groups {
-                    None => None,
-                    Some(v) => v.get(i).cloned(),
+                let single_read_options = ParquetReadOptions {
+                    row_groups: row_groups
+                        .clone()
+                        .and_then(|multi_row_groups| multi_row_groups.get(i).cloned()),
+                    ..read_options.clone()
                 };
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
 
                 tokio::task::spawn(async move {
-                    let columns = owned_columns
-                        .as_ref()
-                        .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
                     Ok((
                         i,
                         read_parquet_single_into_arrow(
                             &uri,
-                            columns.as_deref(),
-                            start_offset,
-                            num_rows,
-                            owned_row_group,
+                            single_read_options,
                             io_client,
                             io_stats,
                             schema_infer_options,
@@ -645,10 +631,7 @@ mod tests {
 
         let table = read_parquet(
             file,
-            None,
-            None,
-            None,
-            None,
+            Default::default(),
             io_client,
             None,
             runtime_handle,

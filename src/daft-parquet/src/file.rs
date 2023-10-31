@@ -172,7 +172,7 @@ impl ParquetReaderBuilder {
         self.metadata().schema()
     }
 
-    pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
+    pub fn prune_columns<S: AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
         let avail_names = self
             .parquet_schema()
             .fields()
@@ -181,11 +181,11 @@ impl ParquetReaderBuilder {
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
-            if avail_names.contains(col_name) {
-                names_to_keep.insert(col_name.to_string());
+            if avail_names.contains(col_name.as_ref()) {
+                names_to_keep.insert(col_name.as_ref().to_string());
             } else {
                 return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
+                    field: col_name.as_ref().to_string(),
                     available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
                     path: self.uri,
                 });

@@ -9,7 +9,8 @@ use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::read::read_csv;
 use daft_parquet::read::{
-    read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
+    read_parquet_bulk, read_parquet_metadata_bulk, ParquetReadOptions,
+    ParquetSchemaInferenceOptions,
 };
 use daft_table::Table;
 
@@ -158,16 +159,16 @@ impl MicroPartition {
                     let io_client =
                         daft_io::get_io_client(params.multithreaded_io, params.io_config.clone())
                             .unwrap();
-                    let column_names = params
-                        .columns
-                        .as_ref()
-                        .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
                     let urls = params.urls.iter().map(|s| s.as_str()).collect::<Vec<_>>();
                     let all_tables = daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
-                        column_names.as_deref(),
-                        None,
-                        params.limit,
+                        ParquetReadOptions {
+                            columns: params.columns.clone(),
+                            start_offset: None,
+                            num_rows: params.limit,
+                            row_groups: None, // Specified in subsequent multi-file `row_groups` arg
+                            ..Default::default()
+                        },
                         row_groups.clone(),
                         io_client.clone(),
                         io_stats,
@@ -430,9 +431,13 @@ pub(crate) fn read_parquet_into_micropartition(
     } else {
         let all_tables = read_parquet_bulk(
             uris,
-            columns,
-            start_offset,
-            num_rows,
+            ParquetReadOptions {
+                row_groups: None,
+                num_rows,
+                start_offset,
+                columns: columns.map(|c| c.iter().map(|s| s.to_string()).collect::<Vec<_>>()),
+                ..Default::default()
+            },
             row_groups,
             io_client,
             io_stats,
