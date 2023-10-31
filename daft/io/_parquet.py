@@ -24,6 +24,7 @@ def read_parquet(
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
     _multithreaded_io: Optional[bool] = None,
+    max_bytes = None,
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
@@ -64,5 +65,5 @@ def read_parquet(
     else:
         storage_config = StorageConfig.python(PythonStorageConfig(None, io_config=io_config))
 
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
+    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config, max_bytes=max_bytes)
     return DataFrame(builder)
