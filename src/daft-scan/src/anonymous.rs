@@ -7,7 +7,7 @@ use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
     Pushdowns, ScanOperator, ScanTask,
 };
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
     schema: SchemaRef,

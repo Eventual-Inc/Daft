@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
@@ -169,7 +168,7 @@ pub struct PartitionField {
     transform: Option<Expr>,
 }
 
-pub trait ScanOperator: Send + Sync + Display + Debug + DynHash {
+pub trait ScanOperator: Send + Sync + Display + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     // fn statistics(&self) -> &TableStatistics;
@@ -184,57 +183,22 @@ pub trait ScanOperator: Send + Sync + Display + Debug + DynHash {
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
 }
 
-// The following implements PartialEq, Eq, and Hash for trait objects.
+pub type ScanOperatorRef = Arc<dyn ScanOperator>;
 
-pub trait DynEq: Any {
-    fn as_any(&self) -> &dyn Any;
-    fn dyn_eq(&self, that: &dyn DynEq) -> bool;
-}
-
-impl<T: Any + PartialEq<Self>> DynEq for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn dyn_eq(&self, that: &dyn DynEq) -> bool {
-        if let Some(that) = that.as_any().downcast_ref::<Self>() {
-            self == that
-        } else {
-            false
-        }
+impl PartialEq<dyn ScanOperator + '_> for Arc<dyn ScanOperator + '_> {
+    fn eq(&self, other: &dyn ScanOperator) -> bool {
+        self.as_ref().eq(other)
     }
 }
 
-pub trait DynHash: DynEq {
-    fn dyn_hash(&self, hasher: &mut dyn Hasher);
-
-    fn as_dyn_eq(&self) -> &dyn DynEq;
-}
-
-impl<H: Hash + DynEq> DynHash for H {
-    fn dyn_hash(&self, mut hasher: &mut dyn Hasher) {
-        H::hash(self, &mut hasher)
-    }
-
-    fn as_dyn_eq(&self) -> &dyn DynEq {
-        self
-    }
-}
-
-impl PartialEq for dyn ScanOperator + '_ {
-    fn eq(&self, that: &dyn ScanOperator) -> bool {
-        self.dyn_eq(that.as_dyn_eq())
-    }
-}
-
-impl PartialEq<dyn ScanOperator> for Box<dyn ScanOperator + '_> {
-    fn eq(&self, that: &dyn ScanOperator) -> bool {
-        self.dyn_eq(that.as_dyn_eq())
-    }
-}
-
-impl PartialEq<dyn ScanOperator> for Arc<dyn ScanOperator + '_> {
-    fn eq(&self, that: &dyn ScanOperator) -> bool {
-        self.dyn_eq(that.as_dyn_eq())
+impl PartialEq<dyn ScanOperator + '_> for dyn ScanOperator + '_ {
+    #[allow(clippy::ptr_eq)]
+    fn eq(&self, other: &dyn ScanOperator) -> bool {
+        // We don't use std::ptr::eq() since that also includes fat pointer metadata in the comparison;
+        // for trait objects, vtables are duplicated in multiple codegen units, which could cause false negatives.
+        // We therefore cast to unit type pointers to ditch the vtables before comparing.
+        self as *const dyn ScanOperator as *const ()
+            == other as *const dyn ScanOperator as *const ()
     }
 }
 
@@ -242,11 +206,10 @@ impl Eq for dyn ScanOperator + '_ {}
 
 impl Hash for dyn ScanOperator + '_ {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
-        self.dyn_hash(hasher)
+        // We prune the fat trait object pointer of the vtable before hashing; see comment for PartialEq implementation.
+        (self as *const dyn ScanOperator as *const ()).hash(hasher)
     }
 }
-
-pub type ScanOperatorRef = Arc<dyn ScanOperator>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScanExternalInfo {
