@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 pub mod pylib {
 
+    use daft_core::python::field::PyField;
     use daft_dsl::python::PyExpr;
 
     use daft_core::impl_bincode_py_state_serialization;
@@ -19,6 +20,7 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
+    use crate::PartitionField;
     use crate::Pushdowns;
     use crate::ScanOperator;
     use crate::ScanOperatorRef;
@@ -222,10 +224,32 @@ pub mod pylib {
             .getattr(pyo3::intern!(py, "_schema"))?
             .extract()
     }
+
+    #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PyPartitionField(Arc<PartitionField>);
+
+    #[pymethods]
+    impl PyPartitionField {
+        #[new]
+        fn new(
+            field: PyField,
+            source_field: Option<PyField>,
+            transform: Option<PyExpr>,
+        ) -> PyResult<Self> {
+            let p_field = PartitionField {
+                field: field.field,
+                source_field: source_field.map(|f| f.into()),
+                transform: transform.map(|e| e.expr),
+            };
+            Ok(PyPartitionField(Arc::new(p_field)))
+        }
+    }
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
+    parent.add_class::<pylib::PyPartitionField>()?;
     Ok(())
 }
