@@ -39,6 +39,8 @@ services:
     - rest:rest
     - minio:minio
   rest:
+    depends_on:
+    - mc
     image: tabulario/iceberg-rest
     container_name: pyiceberg-rest
     networks:
