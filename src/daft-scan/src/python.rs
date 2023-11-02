@@ -1,12 +1,17 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use std::sync::Arc;
+
+    use daft_dsl::python::PyExpr;
 
     use daft_core::impl_bincode_py_state_serialization;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
     use pyo3::PyTypeInfo;
+
+    use std::fmt::Display;
+
+    use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
 
@@ -14,10 +19,14 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
+    use crate::Pushdowns;
+    use crate::ScanOperator;
+    use crate::ScanOperatorRef;
+    use crate::ScanTask;
+
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
-    use crate::{ScanOperatorRef, ScanTask};
 
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -72,6 +81,92 @@ pub mod pylib {
                     scan_op: ScanOperatorRef(operator),
                 })
             })
+        }
+
+        #[staticmethod]
+        pub fn from_python_abc(py_scan: PyObject) -> PyResult<Self> {
+            let scan_op  =
+                ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(py_scan)?));
+            Ok(ScanOperatorHandle { scan_op })
+        }
+    }
+    #[pyclass(module = "daft.daft")]
+    #[derive(Debug)]
+    struct PythonScanOperatorBridge {
+        operator: PyObject,
+    }
+    #[pymethods]
+    impl PythonScanOperatorBridge {
+        #[staticmethod]
+        pub fn from_python_abc(abc: PyObject) -> PyResult<Self> {
+            Ok(Self { operator: abc })
+        }
+
+        pub fn _filter(&self, py: Python, predicate: PyExpr) -> PyResult<(bool, Self)> {
+            let _from_pyexpr = py
+                .import(pyo3::intern!(py, "daft.expressions"))?
+                .getattr(pyo3::intern!(py, "Expression"))?
+                .getattr(pyo3::intern!(py, "_from_pyexpr"))?;
+            let expr = _from_pyexpr.call1((predicate,))?;
+            let result = self.operator.call_method(py, "filter", (expr,), None)?;
+            let (absorb, new_op) = result.extract::<(bool, PyObject)>(py)?;
+            Ok((absorb, Self { operator: new_op }))
+        }
+    }
+
+    impl Display for PythonScanOperatorBridge {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:#?}", self)
+        }
+    }
+
+    impl ScanOperator for PythonScanOperatorBridge {
+        // fn filter(
+        //     self: Box<Self>,
+        //     predicate: &daft_dsl::Expr,
+        // ) -> common_error::DaftResult<(bool, ScanOperatorRef)> {
+        //     Python::with_gil(|py| {
+        //         let (can, new_op) = self._filter(
+        //             py,
+        //             PyExpr {
+        //                 expr: predicate.clone(),
+        //             },
+        //         )?;
+        //         Ok((can, Box::new(new_op) as ScanOperatorRef))
+        //     })
+        // }
+        // fn limit(self: Box<Self>, num: usize) -> common_error::DaftResult<ScanOperatorRef> {
+        //     todo!()
+        // }
+        // fn num_partitions(&self) -> common_error::DaftResult<usize> {
+        //     todo!()
+        // }
+        fn partitioning_keys(&self) -> &[crate::PartitionField] {
+            todo!()
+        }
+        fn schema(&self) -> daft_core::schema::SchemaRef {
+            todo!()
+        }
+        fn can_absorb_filter(&self) -> bool {
+            todo!()
+        }
+        fn can_absorb_limit(&self) -> bool {
+            todo!()
+        }
+        fn can_absorb_select(&self) -> bool {
+            todo!()
+        }
+
+        // fn select(self: Box<Self>, columns: &[&str]) -> common_error::DaftResult<ScanOperatorRef> {
+        //     todo!()
+        // }
+        fn to_scan_tasks(
+            &self,
+            _pushdowns: Pushdowns,
+        ) -> common_error::DaftResult<
+            Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTask>>>,
+        > {
+            todo!()
         }
     }
 
