@@ -1,11 +1,15 @@
-use daft_core::impl_bincode_py_state_serialization;
+use common_error::{DaftError, DaftResult};
+use daft_core::{datatypes::TimeUnit, impl_bincode_py_state_serialization};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 #[cfg(feature = "python")]
-use pyo3::{
-    pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo,
-    Python, ToPyObject,
+use {
+    daft_core::python::datatype::PyTimeUnit,
+    pyo3::{
+        exceptions::PyValueError, pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy,
+        PyObject, PyResult, PyTypeInfo, Python, ToPyObject,
+    },
 };
 
 /// Format of a file, e.g. Parquet, CSV, JSON.
@@ -15,6 +19,27 @@ pub enum FileFormat {
     Parquet,
     Csv,
     Json,
+}
+
+impl FromStr for FileFormat {
+    type Err = DaftError;
+
+    fn from_str(file_format: &str) -> DaftResult<Self> {
+        use FileFormat::*;
+
+        if file_format.trim().eq_ignore_ascii_case("parquet") {
+            Ok(Parquet)
+        } else if file_format.trim().eq_ignore_ascii_case("csv") {
+            Ok(Csv)
+        } else if file_format.trim().eq_ignore_ascii_case("json") {
+            Ok(Json)
+        } else {
+            Err(DaftError::TypeError(format!(
+                "FileFormat {} not supported!",
+                file_format
+            )))
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(FileFormat);
@@ -53,7 +78,8 @@ impl FileFormatConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
-    multithreaded_io: bool,
+    pub coerce_int96_timestamp_unit: TimeUnit,
+    pub row_groups: Option<Vec<i64>>,
 }
 
 #[cfg(feature = "python")]
@@ -61,13 +87,23 @@ pub struct ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    fn new(multithreaded_io: bool) -> Self {
-        Self { multithreaded_io }
+    fn new(coerce_int96_timestamp_unit: Option<PyTimeUnit>, row_groups: Option<Vec<i64>>) -> Self {
+        Self {
+            coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
+                .unwrap_or(TimeUnit::Nanoseconds.into())
+                .into(),
+            row_groups,
+        }
     }
 
     #[getter]
-    fn multithreaded_io(&self) -> PyResult<bool> {
-        Ok(self.multithreaded_io)
+    fn row_groups(&self) -> PyResult<Option<Vec<i64>>> {
+        Ok(self.row_groups.clone())
+    }
+
+    #[getter]
+    fn coerce_int96_timestamp_unit(&self) -> PyResult<PyTimeUnit> {
+        Ok(self.coerce_int96_timestamp_unit.into())
     }
 }
 
@@ -102,14 +138,20 @@ impl CsvSourceConfig {
         double_quote: bool,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        if delimiter.as_bytes().len() != 1 {
+            return Err(PyValueError::new_err(format!(
+                "Cannot create CsvSourceConfig with delimiter with length: {}",
+                delimiter.len()
+            )));
+        }
+        Ok(Self {
             delimiter,
             has_headers,
             double_quote,
             buffer_size,
             chunk_size,
-        }
+        })
     }
 }
 

@@ -18,7 +18,7 @@ impl MicroPartition {
                 Ok(Self::new(
                     self.schema.clone(),
                     TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: idx.len() },
+                    Some(TableMetadata { length: idx.len() }),
                     self.statistics.clone(),
                 ))
             }
@@ -27,7 +27,7 @@ impl MicroPartition {
                 Ok(Self::new(
                     self.schema.clone(),
                     TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: idx.len() },
+                    Some(TableMetadata { length: idx.len() }),
                     self.statistics.clone(),
                 ))
             }
@@ -46,7 +46,7 @@ impl MicroPartition {
                 Ok(Self::new(
                     self.schema.clone(),
                     TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: taken_len },
+                    Some(TableMetadata { length: taken_len }),
                     self.statistics.clone(),
                 ))
             }
@@ -64,7 +64,7 @@ impl MicroPartition {
                 Ok(Self::new(
                     self.schema.clone(),
                     TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: taken_len },
+                    Some(TableMetadata { length: taken_len }),
                     self.statistics.clone(),
                 ))
             }

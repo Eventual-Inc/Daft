@@ -1,23 +1,14 @@
-pub mod file_format;
 pub mod file_info;
-#[cfg(feature = "python")]
-mod py_object_serde;
-pub mod storage_config;
-
 use daft_core::schema::SchemaRef;
-pub use file_format::{
-    CsvSourceConfig, FileFormat, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
-    PyFileFormatConfig,
-};
+use daft_scan::file_format::FileFormatConfig;
+use daft_scan::storage_config::StorageConfig;
+use daft_scan::ScanExternalInfo;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
 use std::{hash::Hash, sync::Arc};
 #[cfg(feature = "python")]
-pub use storage_config::PythonStorageConfig;
-pub use storage_config::{NativeStorageConfig, PyStorageConfig, StorageConfig};
-#[cfg(feature = "python")]
 use {
-    py_object_serde::{deserialize_py_object, serialize_py_object},
+    daft_scan::py_object_serde::{deserialize_py_object, serialize_py_object},
     pyo3::{PyObject, Python},
     std::hash::Hasher,
 };
@@ -89,15 +80,21 @@ impl Hash for InMemoryInfo {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ExternalInfo {
+    Scan(ScanExternalInfo),
+    Legacy(LegacyExternalInfo),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ExternalInfo {
+pub struct LegacyExternalInfo {
     pub source_schema: SchemaRef,
     pub file_infos: Arc<FileInfos>,
     pub file_format_config: Arc<FileFormatConfig>,
     pub storage_config: Arc<StorageConfig>,
 }
 
-impl ExternalInfo {
+impl LegacyExternalInfo {
     pub fn new(
         source_schema: SchemaRef,
         file_infos: Arc<FileInfos>,

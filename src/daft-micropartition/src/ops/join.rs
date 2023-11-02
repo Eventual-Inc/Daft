@@ -47,7 +47,7 @@ impl MicroPartition {
                 Ok(MicroPartition::new(
                     join_schema.into(),
                     TableState::Loaded(vec![joined_table].into()),
-                    TableMetadata { length: joined_len },
+                    Some(TableMetadata { length: joined_len }),
                     None,
                 ))
             }

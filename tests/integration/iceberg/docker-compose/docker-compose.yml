@@ -18,6 +18,8 @@ version: '3'
 
 services:
   spark-iceberg:
+    depends_on:
+    - rest
     image: python-integration
     container_name: pyiceberg-spark
     build: .
@@ -39,6 +41,8 @@ services:
     - rest:rest
     - minio:minio
   rest:
+    depends_on:
+    - mc
     image: tabulario/iceberg-rest
     container_name: pyiceberg-rest
     networks:

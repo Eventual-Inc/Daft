@@ -4,7 +4,7 @@ use serde::{
 };
 use std::fmt;
 
-pub(super) fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
+pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -56,7 +56,7 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
 }
 
 #[cfg(feature = "python")]
-pub(super) fn deserialize_py_object<'de, D>(d: D) -> Result<PyObject, D::Error>
+pub fn deserialize_py_object<'de, D>(d: D) -> Result<PyObject, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -69,10 +69,7 @@ where
 struct PyObjSerdeWrapper<'a>(#[serde(serialize_with = "serialize_py_object")] &'a PyObject);
 
 #[cfg(feature = "python")]
-pub(super) fn serialize_py_object_optional<S>(
-    obj: &Option<PyObject>,
-    s: S,
-) -> Result<S::Ok, S::Error>
+pub fn serialize_py_object_optional<S>(obj: &Option<PyObject>, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -108,7 +105,7 @@ impl<'de> Visitor<'de> for OptPyObjectVisitor {
 }
 
 #[cfg(feature = "python")]
-pub(super) fn deserialize_py_object_optional<'de, D>(d: D) -> Result<Option<PyObject>, D::Error>
+pub fn deserialize_py_object_optional<'de, D>(d: D) -> Result<Option<PyObject>, D::Error>
 where
     D: Deserializer<'de>,
 {

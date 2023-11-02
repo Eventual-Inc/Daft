@@ -18,7 +18,7 @@ impl MicroPartition {
                 Ok(MicroPartition::new(
                     agged.schema.clone(),
                     TableState::Loaded(vec![agged].into()),
-                    TableMetadata { length: agged_len },
+                    Some(TableMetadata { length: agged_len }),
                     None,
                 ))
             }
@@ -28,7 +28,7 @@ impl MicroPartition {
                 Ok(MicroPartition::new(
                     agged.schema.clone(),
                     TableState::Loaded(vec![agged].into()),
-                    TableMetadata { length: agged_len },
+                    Some(TableMetadata { length: agged_len }),
                     None,
                 ))
             }

@@ -4,7 +4,7 @@ use daft_core::schema::SchemaRef;
 use daft_dsl::ExprRef;
 
 use crate::{
-    physical_plan::PhysicalPlan, sink_info::OutputFileInfo, source_info::ExternalInfo,
+    physical_plan::PhysicalPlan, sink_info::OutputFileInfo, source_info::LegacyExternalInfo,
     PartitionSpec,
 };
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TabularScanJson {
     pub projection_schema: SchemaRef,
-    pub external_info: ExternalInfo,
+    pub external_info: LegacyExternalInfo,
     pub partition_spec: Arc<PartitionSpec>,
     pub limit: Option<usize>,
     pub filters: Vec<ExprRef>,
@@ -21,7 +21,7 @@ pub struct TabularScanJson {
 impl TabularScanJson {
     pub(crate) fn new(
         projection_schema: SchemaRef,
-        external_info: ExternalInfo,
+        external_info: LegacyExternalInfo,
         partition_spec: Arc<PartitionSpec>,
         limit: Option<usize>,
         filters: Vec<ExprRef>,

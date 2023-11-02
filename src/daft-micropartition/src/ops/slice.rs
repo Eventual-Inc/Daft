@@ -39,7 +39,7 @@ impl MicroPartition {
         Ok(MicroPartition {
             schema: self.schema.clone(),
             state: TableState::Loaded(slices_tables.into()).into(),
-            metadata: TableMetadata { length: new_len },
+            metadata: Some(TableMetadata { length: new_len }),
             statistics: self.statistics.clone(),
         })
     }

@@ -51,7 +51,7 @@ impl MicroPartition {
         Ok(MicroPartition::new(
             expected_schema.into(),
             TableState::Loaded(Arc::new(evaluated_tables)),
-            TableMetadata { length: self.len() },
+            Some(TableMetadata { length: self.len() }),
             eval_stats,
         ))
     }
@@ -92,7 +92,7 @@ impl MicroPartition {
         Ok(MicroPartition::new(
             Arc::new(expected_schema),
             TableState::Loaded(Arc::new(evaluated_tables)),
-            TableMetadata { length: new_len },
+            Some(TableMetadata { length: new_len }),
             eval_stats,
         ))
     }

@@ -178,10 +178,7 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
-    # Whether or not to use a multithreaded tokio runtime for processing I/O
-    multithreaded_io: bool
-
-    def __init__(self, multithreaded_io: bool): ...
+    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None, row_groups: list[int] | None = None): ...
 
 class CsvSourceConfig:
     """
@@ -339,9 +336,11 @@ class NativeStorageConfig:
     Storage configuration for the Rust-native I/O layer.
     """
 
+    # Whether or not to use a multithreaded tokio runtime for processing I/O
+    multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, io_config: IOConfig | None = None): ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None = None): ...
 
 class PythonStorageConfig:
     """
@@ -373,6 +372,48 @@ class StorageConfig:
         ...
     @property
     def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
+
+class ScanTask:
+    """
+    A scan task for reading data from an external source.
+    """
+
+    ...
+
+class ScanTaskBatch:
+    """
+    A batch of scan tasks for reading data from an external source.
+    """
+
+    @staticmethod
+    def from_scan_tasks(scan_tasks: list[ScanTask]) -> ScanTaskBatch:
+        """
+        Create a scan task batch from a list of scan tasks.
+        """
+        ...
+    def num_rows(self) -> int:
+        """
+        Get number of rows that will be scanned by all tasks in this batch.
+        """
+        ...
+    def size_bytes(self) -> int:
+        """
+        Get number of bytes that will be scanned by all tasks in this batch.
+        """
+        ...
+
+class ScanOperatorHandle:
+    """
+    A handle to a scan operator.
+    """
+
+    @staticmethod
+    def anonymous_scan(
+        files: list[str],
+        schema: PySchema,
+        file_format_config: FileFormatConfig,
+        storage_config: StorageConfig,
+    ) -> ScanOperatorHandle: ...
 
 def read_parquet(
     uri: str,
@@ -722,6 +763,8 @@ class PyMicroPartition:
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyMicroPartition: ...
     @staticmethod
+    def from_scan_task_batch(scan_task_batch: ScanTaskBatch) -> PyMicroPartition: ...
+    @staticmethod
     def from_tables(tables: list[PyTable]) -> PyMicroPartition: ...
     @staticmethod
     def from_arrow_record_batches(record_batches: list[pyarrow.RecordBatch], schema: PySchema) -> PyMicroPartition: ...
@@ -812,6 +855,10 @@ class LogicalPlanBuilder:
     @staticmethod
     def in_memory_scan(
         partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int
+    ) -> LogicalPlanBuilder: ...
+    @staticmethod
+    def table_scan_with_scan_operator(
+        scan_operator: ScanOperatorHandle, schema_hint: PySchema | None
     ) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(

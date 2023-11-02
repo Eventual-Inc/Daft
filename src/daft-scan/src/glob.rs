@@ -3,16 +3,19 @@ use std::{fmt::Display, sync::Arc};
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, IOStatsContext};
+use daft_parquet::read::ParquetSchemaInferenceOptions;
 
-use crate::{DataFileSource, FileType, PartitionField, ScanOperator, ScanOperatorRef, ScanTask};
-#[derive(Debug)]
+use crate::{
+    file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
+    storage_config::StorageConfig,
+    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask,
+};
+#[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
     glob_path: String,
-    file_type: FileType,
-    columns_to_select: Option<Vec<String>>,
-    limit: Option<usize>,
+    file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
-    io_config: Arc<daft_io::IOConfig>,
+    storage_config: Arc<StorageConfig>,
 }
 
 fn run_glob(
@@ -39,14 +42,22 @@ fn run_glob(
 impl GlobScanOperator {
     pub fn _try_new(
         glob_path: &str,
-        file_type: FileType,
-        io_config: Arc<daft_io::IOConfig>,
+        file_format_config: FileFormatConfig,
+        storage_config: Arc<StorageConfig>,
     ) -> DaftResult<Self> {
+        let io_config = match storage_config.as_ref() {
+            StorageConfig::Native(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+            #[cfg(feature = "python")]
+            StorageConfig::Python(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+        };
         let paths = run_glob(glob_path, io_config.clone(), Some(1))?;
         let first_filepath = paths[0].as_str();
 
-        let schema = match file_type {
-            FileType::Parquet => {
+        let schema = match &file_format_config {
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit,
+                row_groups: _,
+            }) => {
                 let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
                 let io_stats = IOStatsContext::new(format!(
                     "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
@@ -55,36 +66,45 @@ impl GlobScanOperator {
                     first_filepath,
                     io_client,
                     Some(io_stats),
-                    Default::default(), // TODO: pass-through schema inference options
+                    ParquetSchemaInferenceOptions {
+                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                    },
                 )?
             }
-            FileType::Csv => {
+            FileFormatConfig::Csv(CsvSourceConfig {
+                delimiter,
+                has_headers,
+                double_quote,
+                buffer_size: _,
+                chunk_size: _,
+            }) => {
                 let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
                 let io_stats = IOStatsContext::new(format!(
                     "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
                 ));
                 let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                     first_filepath,
-                    true, // TODO: pass-through schema inference options
-                    None, // TODO: pass-through schema inference options
-                    true, // TODO: pass-through schema inference options
-                    None, // TODO: pass-through schema inference options
+                    *has_headers,
+                    Some(delimiter.as_bytes()[0]),
+                    *double_quote,
+                    None,
                     io_client,
                     Some(io_stats),
                 )?;
                 schema
             }
-            FileType::Avro => todo!("Schema inference for Avro not implemented"),
-            FileType::Orc => todo!("Schema inference for Orc not implemented"),
+            FileFormatConfig::Json(JsonSourceConfig {}) => {
+                // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
+                // a daft_json crate that gives us native JSON schema inference
+                todo!("Implement schema inference from JSON in GlobScanOperator");
+            }
         };
 
         Ok(Self {
             glob_path: glob_path.to_string(),
-            file_type,
-            columns_to_select: None,
-            limit: None,
+            file_format_config: Arc::new(file_format_config),
             schema: Arc::new(schema),
-            io_config,
+            storage_config,
         })
     }
 }
@@ -104,41 +124,36 @@ impl ScanOperator for GlobScanOperator {
         &[]
     }
 
-    fn num_partitions(&self) -> common_error::DaftResult<usize> {
-        unimplemented!("Cannot get number of partitions -- this will not be implemented.");
+    fn can_absorb_filter(&self) -> bool {
+        false
     }
-
-    fn select(self: Box<Self>, columns: &[&str]) -> common_error::DaftResult<ScanOperatorRef> {
-        for c in columns {
-            if self.schema.get_field(c).is_err() {
-                return Err(common_error::DaftError::FieldNotFound(format!(
-                    "{c} not found in {:?}",
-                    self.columns_to_select
-                )));
-            }
-        }
-        let mut to_rtn = self;
-        to_rtn.columns_to_select = Some(columns.iter().map(|s| s.to_string()).collect());
-        Ok(to_rtn)
+    fn can_absorb_select(&self) -> bool {
+        false
     }
-
-    fn limit(self: Box<Self>, num: usize) -> DaftResult<ScanOperatorRef> {
-        let mut to_rtn = self;
-        to_rtn.limit = Some(num);
-        Ok(to_rtn)
-    }
-
-    fn filter(self: Box<Self>, _predicate: &daft_dsl::Expr) -> DaftResult<(bool, ScanOperatorRef)> {
-        Ok((false, self))
+    fn can_absorb_limit(&self) -> bool {
+        false
     }
 
     fn to_scan_tasks(
-        self: Box<Self>,
+        &self,
+        pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
-        let files = run_glob(self.glob_path.as_str(), self.io_config.clone(), None)?;
+        let io_config = match self.storage_config.as_ref() {
+            StorageConfig::Native(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+            #[cfg(feature = "python")]
+            StorageConfig::Python(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+        };
+        let columns = pushdowns.columns;
+        let limit = pushdowns.limit;
+
+        // Clone to move into closure for delayed execution
+        let storage_config = self.storage_config.clone();
+        let schema = self.schema.clone();
+        let file_format_config = self.file_format_config.clone();
+
+        let files = run_glob(self.glob_path.as_str(), io_config, None)?;
         let iter = files.into_iter().map(move |f| {
             let source = DataFileSource::AnonymousDataFile {
-                file_type: self.file_type,
                 path: f,
                 metadata: None,
                 partition_spec: None,
@@ -146,8 +161,11 @@ impl ScanOperator for GlobScanOperator {
             };
             Ok(ScanTask {
                 source,
-                columns: self.columns_to_select.clone(),
-                limit: self.limit,
+                file_format_config: file_format_config.clone(),
+                schema: schema.clone(),
+                storage_config: storage_config.clone(),
+                columns: columns.clone(),
+                limit,
             })
         });
         Ok(Box::new(iter))

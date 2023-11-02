@@ -8,6 +8,7 @@ import pyarrow as pa
 from daft.daft import IOConfig, JoinType
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyTable as _PyTable
+from daft.daft import ScanTaskBatch as _ScanTaskBatch
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
@@ -63,6 +64,11 @@ class MicroPartition:
     def empty(schema: Schema | None = None) -> MicroPartition:
         pyt = _PyMicroPartition.empty(None) if schema is None else _PyMicroPartition.empty(schema._schema)
         return MicroPartition._from_pymicropartition(pyt)
+
+    @staticmethod
+    def _from_scan_task_batch(scan_task_batch: _ScanTaskBatch) -> MicroPartition:
+        assert isinstance(scan_task_batch, _ScanTaskBatch)
+        return MicroPartition._from_pymicropartition(_PyMicroPartition.from_scan_task_batch(scan_task_batch))
 
     @staticmethod
     def _from_pytable(pyt: _PyTable) -> MicroPartition:
