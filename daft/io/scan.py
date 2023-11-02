@@ -1,25 +1,10 @@
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
 
 from daft.daft import PartitionField
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Field, Schema
-
-
-@dataclass(frozen=True)
-class ScanTask:
-    file_type: str
-    columns: list[str] | None
-    limit: int | None
-
-
-# @dataclass(frozen=True)
-# class PartitionField:
-#     field: Field
-#     source_field: Field
-#     transform: Expression
 
 
 def make_partition_field(

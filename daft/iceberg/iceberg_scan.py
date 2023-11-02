@@ -7,8 +7,16 @@ from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import Table
 
+from daft.daft import (
+    FileFormatConfig,
+    NativeStorageConfig,
+    ParquetSourceConfig,
+    ScanTask,
+    StorageConfig,
+)
 from daft.datatype import DataType
 from daft.expressions.expressions import col
+from daft.io import IOConfig, S3Config
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -62,9 +70,10 @@ def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: Iceber
 
 
 class IcebergScanOperator(ScanOperator):
-    def __init__(self, iceberg_table: Table) -> None:
+    def __init__(self, iceberg_table: Table, io_config: IOConfig | None = None) -> None:
         super().__init__()
         self._table = iceberg_table
+        self._io_config = io_config
         arrow_schema = schema_to_pyarrow(iceberg_table.schema())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
@@ -74,6 +83,30 @@ class IcebergScanOperator(ScanOperator):
 
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
+
+    def _make_scan_tasks(self) -> list[ScanTask]:
+        iceberg_tasks = self._table.scan().plan_files()
+        scan_tasks = []
+        storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
+        for task in iceberg_tasks:
+            file = task.file
+            path = file.file_path
+            record_count = file.record_count
+            file_format = file.file_format
+            if file_format == "PARQUET":
+                file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
+            else:
+                raise NotImplementedError(f"{file_format} for iceberg not implemented!")
+
+            st = ScanTask.catalog_scan_task(
+                file=path,
+                file_format=file_format_config,
+                schema=self._schema._schema,
+                num_rows=record_count,
+                storage_config=storage_config,
+            )
+            scan_tasks.append(st)
+        return scan_tasks
 
 
 def catalog() -> Catalog:
@@ -91,4 +124,6 @@ def catalog() -> Catalog:
 
 cat = catalog()
 tab = cat.load_table("default.test_partitioned_by_years")
-ice = IcebergScanOperator(tab)
+
+io_config = IOConfig(s3=S3Config(endpoint_url="http://localhost:9000", key_id="admin", access_key="password"))
+ice = IcebergScanOperator(tab, io_config=io_config)

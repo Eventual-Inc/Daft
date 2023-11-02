@@ -231,6 +231,10 @@ pub mod pylib {
             let scan_task = ScanTask::new(vec![data_source], file_format.into(), schema.schema, storage_config.into(), Pushdowns::default());
             Ok(PyScanTask(scan_task.into()))
         }
+
+        pub fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("{:?}", self.0))
+        }
     }
 
     impl From<Arc<ScanTask>> for PyScanTask {
