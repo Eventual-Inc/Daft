@@ -71,8 +71,8 @@ impl LogicalPlanBuilder {
         scan_operator: ScanOperatorRef,
         schema_hint: Option<SchemaRef>,
     ) -> DaftResult<Self> {
-        let schema = schema_hint.unwrap_or_else(|| scan_operator.schema());
-        let partitioning_keys = scan_operator.partitioning_keys();
+        let schema = schema_hint.unwrap_or_else(|| scan_operator.0.schema());
+        let partitioning_keys = scan_operator.0.partitioning_keys();
         let source_info =
             SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo::new(
                 scan_operator.clone(),

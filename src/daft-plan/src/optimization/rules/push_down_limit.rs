@@ -76,7 +76,7 @@ impl OptimizerRule for PushDownLimit {
                             (SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo { scan_op, .. })), _) => {
                                 let new_source =
                                     LogicalPlan::Source(source.with_limit(Some(limit))).into();
-                                let out_plan = if scan_op.can_absorb_limit() {
+                                let out_plan = if scan_op.0.can_absorb_limit() {
                                     // Scan can fully absorb the limit, so we can drop the Limit op from the logical plan.
                                     new_source
                                 } else {

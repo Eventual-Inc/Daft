@@ -41,7 +41,9 @@ pub mod pylib {
                 file_format_config.into(),
                 storage_config.into(),
             ));
-            Ok(ScanOperatorHandle { scan_op: operator })
+            Ok(ScanOperatorHandle {
+                scan_op: ScanOperatorRef(operator),
+            })
         }
     }
 
