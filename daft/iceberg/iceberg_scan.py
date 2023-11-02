@@ -87,6 +87,7 @@ class IcebergScanOperator(ScanOperator):
     def _make_scan_tasks(self) -> list[ScanTask]:
         iceberg_tasks = self._table.scan().plan_files()
         scan_tasks = []
+        # TODO(sammy): multithreading should be RayRunner config?
         storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
         for task in iceberg_tasks:
             file = task.file
@@ -96,8 +97,14 @@ class IcebergScanOperator(ScanOperator):
             if file_format == "PARQUET":
                 file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
             else:
+                # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
 
+            if (task.delete_files) > 0:
+                raise NotImplementedError(f"Iceberg Merge-on-Read currently not supported, please make an issue!")
+
+            # TODO: Thread in PartitionSpec to each ScanTask: P1
+            # TODO: Thread in Statistics to each ScanTask: P2
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
