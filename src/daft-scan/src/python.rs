@@ -6,6 +6,9 @@ pub mod pylib {
     use daft_dsl::python::PyExpr;
 
     use daft_core::impl_bincode_py_state_serialization;
+    use daft_stats::PartitionSpec;
+    use daft_stats::TableMetadata;
+    use daft_table::Table;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
     use pyo3::PyTypeInfo;
@@ -20,6 +23,7 @@ pub mod pylib {
     use serde::{Deserialize, Serialize};
 
     use crate::anonymous::AnonymousScanOperator;
+    use crate::DataFileSource;
     use crate::PartitionField;
     use crate::Pushdowns;
     use crate::ScanOperator;
@@ -196,6 +200,36 @@ pub mod pylib {
 
         pub fn size_bytes(&self) -> PyResult<Option<i64>> {
             Ok(self.0.size_bytes().map(i64::try_from).transpose()?)
+        }
+    }
+
+    #[pymethods]
+    impl PyScanTask {
+        #[staticmethod]
+        pub fn catalog_scan_task(
+            file: String,
+            file_format: PyFileFormatConfig,
+            schema: PySchema,
+            num_rows: i64,
+            storage_config: PyStorageConfig,
+            columns: Option<Vec<String>>,
+            limit: Option<usize>,
+        ) -> PyResult<Self> {
+            let empty_pspec = PartitionSpec {
+                keys: Table::empty(None)?,
+            };
+            let data_source = DataFileSource::CatalogDataFile {
+                path: file,
+                chunk_spec: None,
+                size_bytes: None,
+                metadata: TableMetadata {
+                    length: num_rows as usize,
+                },
+                partition_spec: empty_pspec,
+                statistics: None,
+            };
+            let scan_task = ScanTask::new(vec![data_source], file_format.into(), schema.schema, storage_config.into(), Pushdowns::default());
+            Ok(PyScanTask(scan_task.into()))
         }
     }
 
