@@ -237,12 +237,16 @@ pub mod pylib {
             source_field: Option<PyField>,
             transform: Option<PyExpr>,
         ) -> PyResult<Self> {
-            let p_field = PartitionField {
-                field: field.field,
-                source_field: source_field.map(|f| f.into()),
-                transform: transform.map(|e| e.expr),
-            };
+            let p_field = PartitionField::new(
+                field.field,
+                source_field.map(|f| f.into()),
+                transform.map(|e| e.expr),
+            )?;
             Ok(PyPartitionField(Arc::new(p_field)))
+        }
+
+        pub fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("{}", self.0))
         }
     }
 }

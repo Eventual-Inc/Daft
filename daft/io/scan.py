@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 from dataclasses import dataclass
 
+from daft.daft import PartitionField
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Field, Schema
 
@@ -14,11 +15,21 @@ class ScanTask:
     limit: int | None
 
 
-@dataclass(frozen=True)
-class PartitionField:
-    field: Field
-    source_field: Field
-    transform: Expression
+# @dataclass(frozen=True)
+# class PartitionField:
+#     field: Field
+#     source_field: Field
+#     transform: Expression
+
+
+def make_partition_field(
+    field: Field, source_field: Field | None = None, transform: Expression | None = None
+) -> PartitionField:
+    return PartitionField(
+        field._field,
+        source_field._field if source_field is not None else None,
+        transform._expr if transform is not None else None,
+    )
 
 
 class ScanOperator(abc.ABC):

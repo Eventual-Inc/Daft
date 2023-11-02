@@ -9,7 +9,7 @@ from pyiceberg.table import Table
 
 from daft.datatype import DataType
 from daft.expressions.expressions import col
-from daft.io.scan import PartitionField, ScanOperator
+from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
 
@@ -54,7 +54,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         raise NotImplementedError(f"{transform} not implemented, Please make an issue!")
 
     assert expr is not None
-    return PartitionField(result_field, daft_field, transform=expr)
+    return make_partition_field(result_field, daft_field, transform=expr)
 
 
 def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
