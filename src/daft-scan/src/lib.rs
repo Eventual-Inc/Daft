@@ -62,18 +62,6 @@ impl DataFileSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanTask {
-    // Micropartition will take this in as an input
-    pub source: DataFileSource,
-    pub file_format_config: Arc<FileFormatConfig>,
-    pub schema: SchemaRef,
-    pub storage_config: Arc<StorageConfig>,
-    // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
-    pub columns: Option<Arc<Vec<String>>>,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanTaskBatch {
     pub sources: Vec<DataFileSource>,
     pub file_format_config: Arc<FileFormatConfig>,
@@ -136,28 +124,24 @@ impl ScanTaskBatch {
                 .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
         })
     }
-}
 
-impl From<Vec<ScanTask>> for ScanTaskBatch {
-    fn from(value: Vec<ScanTask>) -> Self {
-        if value.is_empty() {
-            panic!("Must have at least one ScanTask to create a ScanTaskBatch.");
-        }
-        let mut scan_task_iter = value.into_iter();
-        let first_scan_task = scan_task_iter.next().unwrap();
-        let first_scan_task_source = first_scan_task.source;
-        let sources = vec![first_scan_task_source]
-            .into_iter()
-            .chain(scan_task_iter.map(|t| t.source))
-            .collect::<Vec<_>>();
-        Self::new(
-            sources,
-            first_scan_task.file_format_config,
-            first_scan_task.schema,
-            first_scan_task.storage_config,
-            first_scan_task.columns,
-            first_scan_task.limit,
+    pub fn slice(&self, start: usize, end: usize) -> ScanTaskBatch {
+        ScanTaskBatch::new(
+            self.sources[start..end].to_vec(),
+            self.file_format_config.clone(),
+            self.schema.clone(),
+            self.storage_config.clone(),
+            self.columns.clone(),
+            self.limit,
         )
+    }
+
+    pub fn len(&self) -> usize {
+        self.sources.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
     }
 }
 
@@ -175,10 +159,7 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch>;
 }
 
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash

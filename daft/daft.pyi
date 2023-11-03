@@ -373,22 +373,17 @@ class StorageConfig:
     @property
     def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
 
-class ScanTask:
-    """
-    A scan task for reading data from an external source.
-    """
-
-    ...
-
 class ScanTaskBatch:
     """
     A batch of scan tasks for reading data from an external source.
     """
 
-    @staticmethod
-    def from_scan_tasks(scan_tasks: list[ScanTask]) -> ScanTaskBatch:
+    def __len__(self) -> int:
+        """Returns the numer of ScanTasks in this batch"""
+        ...
+    def slice(self, start: int, end: int) -> ScanTaskBatch:
         """
-        Create a scan task batch from a list of scan tasks.
+        Slices the ScanTaskBatch and returns a new one with just the tasks in the specified slice
         """
         ...
     def num_rows(self) -> int:

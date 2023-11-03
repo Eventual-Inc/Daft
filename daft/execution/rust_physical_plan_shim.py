@@ -11,7 +11,6 @@ from daft.daft import (
     PySchema,
     PyTable,
     ResourceRequest,
-    ScanTask,
     ScanTaskBatch,
     StorageConfig,
 )
@@ -26,20 +25,22 @@ PartitionT = TypeVar("PartitionT")
 
 
 def scan_with_tasks(
-    scan_tasks: Iterator[ScanTask],
+    scan_task_batch: ScanTaskBatch,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
 
     Yield a plan to read those filenames.
     """
-    # TODO(Clark): Bundle scan tasks into single-instruction bulk reads.
-    for scan_task in scan_tasks:
-        scan_task_batch = ScanTaskBatch.from_scan_tasks([scan_task])
+    for i in range(len(scan_task_batch)):
+        # TODO(Clark): We currently hardcode this to have len-1-ScanTaskBatches per instruction.
+        # We can instead right-size and bundle the ScanTaskBatch into single-instruction bulk reads.
+        single_task_batch = scan_task_batch.slice(i, i + 1)
+
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
-            instruction=ScanWithTask(scan_task_batch),
+            instruction=ScanWithTask(single_task_batch),
             # Set the filesize as the memory request.
             # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
-            resource_request=ResourceRequest(memory_bytes=scan_task_batch.size_bytes()),
+            resource_request=ResourceRequest(memory_bytes=single_task_batch.size_bytes()),
         )
         yield scan_step
 

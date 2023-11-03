@@ -8,7 +8,7 @@ use daft_parquet::read::ParquetSchemaInferenceOptions;
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask,
+    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTaskBatch,
 };
 #[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
@@ -161,37 +161,27 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
-        let columns = pushdowns.columns;
-        let limit = pushdowns.limit;
-
-        // Clone to move into closure for delayed execution
-        let storage_config = self.storage_config.clone();
-        let schema = self.schema.clone();
-        let file_format_config = self.file_format_config.clone();
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
-        let iter = files.into_iter().map(move |f| {
-            let source = DataFileSource::AnonymousDataFile {
-                path: f,
-                metadata: None,
-                partition_spec: None,
-                statistics: None,
-            };
-            Ok(ScanTask {
-                source,
-                file_format_config: file_format_config.clone(),
-                schema: schema.clone(),
-                storage_config: storage_config.clone(),
-                columns: columns.clone(),
-                limit,
-            })
-        });
-        Ok(Box::new(iter))
+
+        Ok(ScanTaskBatch::new(
+            files
+                .into_iter()
+                .map(|f| DataFileSource::AnonymousDataFile {
+                    path: f,
+                    metadata: None,
+                    partition_spec: None,
+                    statistics: None,
+                })
+                .collect(),
+            self.file_format_config.clone(),
+            self.schema.clone(),
+            self.storage_config.clone(),
+            pushdowns.columns,
+            pushdowns.limit,
+        ))
     }
 }

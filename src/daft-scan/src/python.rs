@@ -14,7 +14,7 @@ pub mod pylib {
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
-    use crate::{ScanOperatorRef, ScanTask, ScanTaskBatch};
+    use crate::{ScanOperatorRef, ScanTaskBatch};
 
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -78,36 +78,18 @@ pub mod pylib {
         }
     }
 
-    #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTask(Arc<ScanTask>);
-
-    impl From<Arc<ScanTask>> for PyScanTask {
-        fn from(value: Arc<ScanTask>) -> Self {
-            Self(value)
-        }
-    }
-
-    impl From<PyScanTask> for Arc<ScanTask> {
-        fn from(value: PyScanTask) -> Self {
-            value.0
-        }
-    }
-
     #[pyclass(module = "daft.daft", name = "ScanTaskBatch", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTaskBatch(Arc<ScanTaskBatch>);
+    pub struct PyScanTaskBatch(pub Arc<ScanTaskBatch>);
 
     #[pymethods]
     impl PyScanTaskBatch {
-        #[staticmethod]
-        pub fn from_scan_tasks(scan_tasks: Vec<PyScanTask>) -> PyResult<Self> {
-            let scan_tasks: Vec<ScanTask> = scan_tasks
-                .into_iter()
-                .map(|st| st.0.as_ref().clone())
-                .collect();
-            let scan_task_batch: ScanTaskBatch = scan_tasks.into();
-            Ok(Self(Arc::new(scan_task_batch)))
+        pub fn __len__(&self) -> PyResult<usize> {
+            Ok(self.0.sources.len())
+        }
+
+        pub fn slice(&self, start: usize, end: usize) -> PyResult<PyScanTaskBatch> {
+            Ok(PyScanTaskBatch(Arc::new(self.0.slice(start, end))))
         }
 
         pub fn num_rows(&self) -> PyResult<Option<i64>> {
@@ -134,7 +116,6 @@ pub mod pylib {
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
-    parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyScanTaskBatch>()?;
     Ok(())
 }

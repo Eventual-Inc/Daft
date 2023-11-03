@@ -5,7 +5,7 @@ use daft_core::schema::SchemaRef;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
-    Pushdowns, ScanOperator, ScanTask,
+    Pushdowns, ScanOperator, ScanTaskBatch,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -56,31 +56,23 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
-        let columns = pushdowns.columns;
-        let file_format_config = self.file_format_config.clone();
-        let storage_config = self.storage_config.clone();
-        let limit = pushdowns.limit;
-        let schema = self.schema.clone();
-        let iter = self.files.clone().into_iter().map(move |f| {
-            let source = DataFileSource::AnonymousDataFile {
-                path: f,
-                metadata: None,
-                partition_spec: None,
-                statistics: None,
-            };
-            Ok(ScanTask {
-                source,
-                file_format_config: file_format_config.clone(),
-                schema: schema.clone(),
-                storage_config: storage_config.clone(),
-                columns: columns.clone(),
-                limit,
-            })
-        });
-        Ok(Box::new(iter))
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch> {
+        Ok(ScanTaskBatch::new(
+            self.files
+                .clone()
+                .into_iter()
+                .map(|f| DataFileSource::AnonymousDataFile {
+                    path: f,
+                    metadata: None,
+                    partition_spec: None,
+                    statistics: None,
+                })
+                .collect(),
+            self.file_format_config.clone(),
+            self.schema.clone(),
+            self.storage_config.clone(),
+            pushdowns.columns,
+            pushdowns.limit,
+        ))
     }
 }
