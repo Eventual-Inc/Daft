@@ -40,70 +40,80 @@ fn run_glob(
 }
 
 impl GlobScanOperator {
-    pub fn _try_new(
+    pub fn try_new(
         glob_path: &str,
-        file_format_config: FileFormatConfig,
+        file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
+        schema: Option<SchemaRef>,
     ) -> DaftResult<Self> {
-        let io_config = match storage_config.as_ref() {
-            StorageConfig::Native(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
-            #[cfg(feature = "python")]
-            StorageConfig::Python(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
-        };
-        let paths = run_glob(glob_path, io_config.clone(), Some(1))?;
-        let first_filepath = paths[0].as_str();
-
-        let schema = match &file_format_config {
-            FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit,
-                row_groups: _,
-            }) => {
-                let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
-                let io_stats = IOStatsContext::new(format!(
-                    "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                ));
-                daft_parquet::read::read_parquet_schema(
-                    first_filepath,
-                    io_client,
-                    Some(io_stats),
-                    ParquetSchemaInferenceOptions {
-                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
-                    },
-                )?
-            }
-            FileFormatConfig::Csv(CsvSourceConfig {
-                delimiter,
-                has_headers,
-                double_quote,
-                buffer_size: _,
-                chunk_size: _,
-            }) => {
-                let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
-                let io_stats = IOStatsContext::new(format!(
-                    "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
-                ));
-                let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
-                    first_filepath,
-                    *has_headers,
-                    Some(delimiter.as_bytes()[0]),
-                    *double_quote,
-                    None,
-                    io_client,
-                    Some(io_stats),
-                )?;
-                schema
-            }
-            FileFormatConfig::Json(JsonSourceConfig {}) => {
-                // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
-                // a daft_json crate that gives us native JSON schema inference
-                todo!("Implement schema inference from JSON in GlobScanOperator");
+        let schema = match schema {
+            Some(s) => s,
+            None => {
+                let io_config = match storage_config.as_ref() {
+                    StorageConfig::Native(cfg) => {
+                        Arc::new(cfg.io_config.clone().unwrap_or_default())
+                    }
+                    #[cfg(feature = "python")]
+                    StorageConfig::Python(cfg) => {
+                        Arc::new(cfg.io_config.clone().unwrap_or_default())
+                    }
+                };
+                let paths = run_glob(glob_path, io_config.clone(), Some(1))?;
+                let first_filepath = paths[0].as_str();
+                let inferred_schema = match file_format_config.as_ref() {
+                    FileFormatConfig::Parquet(ParquetSourceConfig {
+                        coerce_int96_timestamp_unit,
+                        row_groups: _,
+                    }) => {
+                        let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
+                        let io_stats = IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                        ));
+                        daft_parquet::read::read_parquet_schema(
+                            first_filepath,
+                            io_client,
+                            Some(io_stats),
+                            ParquetSchemaInferenceOptions {
+                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                            },
+                        )?
+                    }
+                    FileFormatConfig::Csv(CsvSourceConfig {
+                        delimiter,
+                        has_headers,
+                        double_quote,
+                        buffer_size: _,
+                        chunk_size: _,
+                    }) => {
+                        let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
+                        let io_stats = IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
+                        ));
+                        let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
+                            first_filepath,
+                            *has_headers,
+                            Some(delimiter.as_bytes()[0]),
+                            *double_quote,
+                            None,
+                            io_client,
+                            Some(io_stats),
+                        )?;
+                        schema
+                    }
+                    FileFormatConfig::Json(JsonSourceConfig {}) => {
+                        // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
+                        // a daft_json crate that gives us native JSON schema inference
+                        todo!("Implement schema inference from JSON in GlobScanOperator");
+                    }
+                };
+                Arc::new(inferred_schema)
             }
         };
 
         Ok(Self {
             glob_path: glob_path.to_string(),
-            file_format_config: Arc::new(file_format_config),
-            schema: Arc::new(schema),
+            file_format_config,
+            schema,
             storage_config,
         })
     }
