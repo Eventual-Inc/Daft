@@ -171,8 +171,6 @@ pub struct PartitionField {
 pub trait ScanOperator: Send + Sync + Display + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
-    // fn statistics(&self) -> &TableStatistics;
-    // fn clustering_spec(&self) -> &ClusteringSpec;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -186,7 +184,7 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash
 /// functionality to be performed on the **pointer** instead of on the value in the pointer.
 ///
-/// This lets us get around having to implement fiull hashing/equality on [`ScanOperator`]`, which
+/// This lets us get around having to implement full hashing/equality on [`ScanOperator`]`, which
 /// is difficult because we sometimes have weird Python implementations that can be hard to check.
 ///
 /// [`ScanOperatorRef`] should be thus held by structs that need to check the "sameness" of the

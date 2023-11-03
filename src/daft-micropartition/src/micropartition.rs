@@ -32,9 +32,16 @@ pub(crate) enum TableState {
 impl Display for TableState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableState::Unloaded(_) => {
-                write!(f, "TableState: Unloaded")
-                // write!(f, "TableState: Unloaded. To load from: {:?}", params.urls)
+            TableState::Unloaded(scan_task_batch) => {
+                write!(
+                    f,
+                    "TableState: Unloaded. To load from: {:#?}",
+                    scan_task_batch
+                        .sources
+                        .iter()
+                        .map(|s| s.get_path())
+                        .collect::<Vec<_>>()
+                )
             }
             TableState::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
