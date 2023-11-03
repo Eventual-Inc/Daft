@@ -10,7 +10,7 @@ use {
     daft_dsl::Expr,
     daft_scan::{
         file_format::{FileFormat, FileFormatConfig, PyFileFormatConfig},
-        python::pylib::PyScanTaskBatch,
+        python::pylib::PyScanTask,
         storage_config::{PyStorageConfig, StorageConfig},
     },
     pyo3::{
@@ -311,7 +311,7 @@ impl PhysicalPlan {
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "scan_with_tasks"))?
-                    .call1((PyScanTaskBatch(Arc::new(scan_tasks.clone())),))?;
+                    .call1((PyScanTask(Arc::new(scan_tasks.clone())),))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularScanParquet(TabularScanParquet {

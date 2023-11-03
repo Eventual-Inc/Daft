@@ -14,7 +14,7 @@ pub mod pylib {
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
-    use crate::{ScanOperatorRef, ScanTaskBatch};
+    use crate::{ScanOperatorRef, ScanTask};
 
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -78,18 +78,18 @@ pub mod pylib {
         }
     }
 
-    #[pyclass(module = "daft.daft", name = "ScanTaskBatch", frozen)]
+    #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTaskBatch(pub Arc<ScanTaskBatch>);
+    pub struct PyScanTask(pub Arc<ScanTask>);
 
     #[pymethods]
-    impl PyScanTaskBatch {
+    impl PyScanTask {
         pub fn __len__(&self) -> PyResult<usize> {
             Ok(self.0.sources.len())
         }
 
-        pub fn slice(&self, start: usize, end: usize) -> PyResult<PyScanTaskBatch> {
-            Ok(PyScanTaskBatch(Arc::new(self.0.slice(start, end))))
+        pub fn slice(&self, start: usize, end: usize) -> PyResult<PyScanTask> {
+            Ok(PyScanTask(Arc::new(self.0.slice(start, end))))
         }
 
         pub fn num_rows(&self) -> PyResult<Option<i64>> {
@@ -101,14 +101,14 @@ pub mod pylib {
         }
     }
 
-    impl From<Arc<ScanTaskBatch>> for PyScanTaskBatch {
-        fn from(value: Arc<ScanTaskBatch>) -> Self {
+    impl From<Arc<ScanTask>> for PyScanTask {
+        fn from(value: Arc<ScanTask>) -> Self {
             Self(value)
         }
     }
 
-    impl From<PyScanTaskBatch> for Arc<ScanTaskBatch> {
-        fn from(value: PyScanTaskBatch) -> Self {
+    impl From<PyScanTask> for Arc<ScanTask> {
+        fn from(value: PyScanTask) -> Self {
             value.0
         }
     }
@@ -116,6 +116,6 @@ pub mod pylib {
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
-    parent.add_class::<pylib::PyScanTaskBatch>()?;
+    parent.add_class::<pylib::PyScanTask>()?;
     Ok(())
 }

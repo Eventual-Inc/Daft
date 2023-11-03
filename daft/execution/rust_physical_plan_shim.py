@@ -11,7 +11,7 @@ from daft.daft import (
     PySchema,
     PyTable,
     ResourceRequest,
-    ScanTaskBatch,
+    ScanTask,
     StorageConfig,
 )
 from daft.execution import execution_step, physical_plan
@@ -25,16 +25,16 @@ PartitionT = TypeVar("PartitionT")
 
 
 def scan_with_tasks(
-    scan_task_batch: ScanTaskBatch,
+    scan_task: ScanTask,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     """child_plan represents partitions with filenames.
 
     Yield a plan to read those filenames.
     """
-    for i in range(len(scan_task_batch)):
-        # TODO(Clark): We currently hardcode this to have len-1-ScanTaskBatches per instruction.
-        # We can instead right-size and bundle the ScanTaskBatch into single-instruction bulk reads.
-        single_task_batch = scan_task_batch.slice(i, i + 1)
+    for i in range(len(scan_task)):
+        # TODO(Clark): We currently hardcode this to have len-1-ScanTaskes per instruction.
+        # We can instead right-size and bundle the ScanTask into single-instruction bulk reads.
+        single_task_batch = scan_task.slice(i, i + 1)
 
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
             instruction=ScanWithTask(single_task_batch),
@@ -47,21 +47,21 @@ def scan_with_tasks(
 
 @dataclass(frozen=True)
 class ScanWithTask(execution_step.SingleOutputInstruction):
-    scan_task_batch: ScanTaskBatch
+    scan_task: ScanTask
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._scan(inputs)
 
     def _scan(self, inputs: list[Table]) -> list[Table]:
         assert len(inputs) == 0
-        return [Table._from_scan_task_batch(self.scan_task_batch)]
+        return [Table._from_scan_task(self.scan_task)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 0
 
         return [
             PartialPartitionMetadata(
-                num_rows=self.scan_task_batch.num_rows(),
+                num_rows=self.scan_task.num_rows(),
                 size_bytes=None,
             )
         ]

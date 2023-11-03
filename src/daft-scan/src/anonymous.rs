@@ -5,7 +5,7 @@ use daft_core::schema::SchemaRef;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
-    Pushdowns, ScanOperator, ScanTaskBatch,
+    Pushdowns, ScanOperator, ScanTask,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -56,8 +56,8 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch> {
-        Ok(ScanTaskBatch::new(
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask> {
+        Ok(ScanTask::new(
             self.files
                 .clone()
                 .into_iter()

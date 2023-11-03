@@ -12,7 +12,7 @@ use daft_core::{
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_scan::{python::pylib::PyScanTaskBatch, ScanTaskBatch};
+use daft_scan::{python::pylib::PyScanTask, ScanTask};
 use daft_stats::TableStatistics;
 use daft_table::python::PyTable;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, Python};
@@ -70,8 +70,8 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
-    pub fn from_scan_task_batch(scan_task_batch: PyScanTaskBatch) -> PyResult<Self> {
-        Ok(MicroPartition::from_scan_task_batch(scan_task_batch.into(), None)?.into())
+    pub fn from_scan_task(scan_task: PyScanTask) -> PyResult<Self> {
+        Ok(MicroPartition::from_scan_task(scan_task.into(), None)?.into())
     }
 
     #[staticmethod]
@@ -457,21 +457,20 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn _from_unloaded_table_state(
         schema_bytes: &PyBytes,
-        loading_scan_task_batch_bytes: &PyBytes,
+        loading_scan_task_bytes: &PyBytes,
         metadata_bytes: &PyBytes,
         statistics_bytes: &PyBytes,
     ) -> PyResult<Self> {
         let schema = bincode::deserialize::<Schema>(schema_bytes.as_bytes()).unwrap();
-        let scan_task_batch =
-            bincode::deserialize::<ScanTaskBatch>(loading_scan_task_batch_bytes.as_bytes())
-                .unwrap();
+        let scan_task =
+            bincode::deserialize::<ScanTask>(loading_scan_task_bytes.as_bytes()).unwrap();
         let metadata = bincode::deserialize::<TableMetadata>(metadata_bytes.as_bytes()).unwrap();
         let statistics =
             bincode::deserialize::<Option<TableStatistics>>(statistics_bytes.as_bytes()).unwrap();
 
         Ok(MicroPartition {
             schema: Arc::new(schema),
-            state: Mutex::new(TableState::Unloaded(Arc::new(scan_task_batch))),
+            state: Mutex::new(TableState::Unloaded(Arc::new(scan_task))),
             metadata,
             statistics,
         }

@@ -8,7 +8,7 @@ use daft_parquet::read::ParquetSchemaInferenceOptions;
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTaskBatch,
+    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask,
 };
 #[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
@@ -161,13 +161,13 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch> {
+fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
 
-        Ok(ScanTaskBatch::new(
+        Ok(ScanTask::new(
             files
                 .into_iter()
                 .map(|f| DataFileSource::AnonymousDataFile {

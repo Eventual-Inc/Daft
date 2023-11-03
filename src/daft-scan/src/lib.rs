@@ -62,19 +62,19 @@ impl DataFileSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScanTaskBatch {
+pub struct ScanTask {
     pub sources: Vec<DataFileSource>,
     pub file_format_config: Arc<FileFormatConfig>,
     pub schema: SchemaRef,
     pub storage_config: Arc<StorageConfig>,
-    // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTaskBatch struct?
+    // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
     pub columns: Option<Arc<Vec<String>>>,
     pub limit: Option<usize>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
 
-impl ScanTaskBatch {
+impl ScanTask {
     pub fn new(
         sources: Vec<DataFileSource>,
         file_format_config: Arc<FileFormatConfig>,
@@ -125,8 +125,8 @@ impl ScanTaskBatch {
         })
     }
 
-    pub fn slice(&self, start: usize, end: usize) -> ScanTaskBatch {
-        ScanTaskBatch::new(
+    pub fn slice(&self, start: usize, end: usize) -> ScanTask {
+        ScanTask::new(
             self.sources[start..end].to_vec(),
             self.file_format_config.clone(),
             self.schema.clone(),
@@ -159,7 +159,7 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTaskBatch>;
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask>;
 }
 
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash

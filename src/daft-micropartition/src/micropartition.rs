@@ -13,7 +13,7 @@ use daft_parquet::read::{
 };
 use daft_scan::file_format::{FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{DataFileSource, ScanTaskBatch};
+use daft_scan::{DataFileSource, ScanTask};
 use daft_table::Table;
 
 use snafu::ResultExt;
@@ -25,18 +25,18 @@ use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
 
 pub(crate) enum TableState {
-    Unloaded(Arc<ScanTaskBatch>),
+    Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
 }
 
 impl Display for TableState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableState::Unloaded(scan_task_batch) => {
+            TableState::Unloaded(scan_task) => {
                 write!(
                     f,
                     "TableState: Unloaded. To load from: {:#?}",
-                    scan_task_batch
+                    scan_task
                         .sources
                         .iter()
                         .map(|s| s.get_path())
@@ -60,25 +60,25 @@ pub(crate) struct MicroPartition {
     pub(crate) statistics: Option<TableStatistics>,
 }
 
-/// Helper to run all the IO and compute required to materialize a ScanTaskBatch into a Vec<Table>
+/// Helper to run all the IO and compute required to materialize a ScanTask into a Vec<Table>
 ///
 /// # Arguments
 ///
-/// * `scan_task_batch` - a batch of ScanTasks to materialize as Tables
+/// * `scan_task` - a batch of ScanTasks to materialize as Tables
 /// * `cast_to_schema` - an Optional schema to cast all the resulting Tables to. If not provided, will use the schema
-///     provided by the ScanTaskBatch
+///     provided by the ScanTask
 /// * `io_stats` - an optional IOStats object to record the IO operations performed
-fn materialize_scan_task_batch(
-    scan_task_batch: Arc<ScanTaskBatch>,
+fn materialize_scan_task(
+    scan_task: Arc<ScanTask>,
     cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<Vec<Table>> {
-    let table_values = match scan_task_batch.file_format_config.as_ref() {
+    let table_values = match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             // TODO(Clark): Support different row group specification per file.
             row_groups,
-        }) => match scan_task_batch.storage_config.as_ref() {
+        }) => match scan_task.storage_config.as_ref() {
             StorageConfig::Native(native_storage_config) => {
                 let runtime_handle =
                     daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
@@ -94,11 +94,11 @@ fn materialize_scan_task_batch(
                 let io_client =
                     daft_io::get_io_client(native_storage_config.multithreaded_io, io_config)
                         .unwrap();
-                let column_names = scan_task_batch
+                let column_names = scan_task
                     .columns
                     .as_ref()
                     .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
-                let urls = scan_task_batch
+                let urls = scan_task
                     .sources
                     .iter()
                     .map(|s| s.get_path())
@@ -109,7 +109,7 @@ fn materialize_scan_task_batch(
                     urls.as_slice(),
                     column_names.as_deref(),
                     None,
-                    scan_task_batch.limit,
+                    scan_task.limit,
                     row_groups
                         .as_ref()
                         .map(|row_groups| vec![row_groups.clone(); urls.len()]),
@@ -129,7 +129,7 @@ fn materialize_scan_task_batch(
         _ => todo!("TODO: Implement MicroPartition reads for other file formats."),
     };
 
-    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task_batch.schema.clone());
+    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema.clone());
     let casted_table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))
@@ -141,7 +141,7 @@ fn materialize_scan_task_batch(
 impl MicroPartition {
     pub fn new_unloaded(
         schema: SchemaRef,
-        scan_task_batch: Arc<ScanTaskBatch>,
+        scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
@@ -159,7 +159,7 @@ impl MicroPartition {
 
         MicroPartition {
             schema,
-            state: Mutex::new(TableState::Unloaded(scan_task_batch)),
+            state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
             statistics: Some(statistics),
         }
@@ -181,22 +181,22 @@ impl MicroPartition {
         }
     }
 
-    pub fn from_scan_task_batch(
-        scan_task_batch: Arc<ScanTaskBatch>,
+    pub fn from_scan_task(
+        scan_task: Arc<ScanTask>,
         io_stats: Option<IOStatsRef>,
     ) -> crate::Result<Self> {
-        let schema = scan_task_batch.schema.clone();
-        let statistics = scan_task_batch.statistics.clone();
-        match (&scan_task_batch.metadata, &scan_task_batch.statistics) {
+        let schema = scan_task.schema.clone();
+        let statistics = scan_task.statistics.clone();
+        match (&scan_task.metadata, &scan_task.statistics) {
             (Some(metadata), Some(statistics)) => Ok(Self::new_unloaded(
                 schema,
-                scan_task_batch.clone(),
+                scan_task.clone(),
                 metadata.clone(),
                 statistics.clone(),
             )),
             // If any metadata or statistics are missing, we need to perform an eager read
             _ => {
-                let tables = materialize_scan_task_batch(scan_task_batch, None, io_stats)?;
+                let tables = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
         }
@@ -244,9 +244,9 @@ impl MicroPartition {
     ) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
         match guard.deref() {
-            TableState::Unloaded(scan_task_batch) => {
-                let table_values = Arc::new(materialize_scan_task_batch(
-                    scan_task_batch.clone(),
+            TableState::Unloaded(scan_task) => {
+                let table_values = Arc::new(materialize_scan_task(
+                    scan_task.clone(),
                     Some(self.schema.clone()),
                     io_stats,
                 )?);
@@ -463,7 +463,7 @@ pub(crate) fn read_parquet_into_micropartition(
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
         let daft_schema = Arc::new(daft_schema);
-        let scan_task_batch = ScanTaskBatch::new(
+        let scan_task = ScanTask::new(
             owned_urls
                 .into_iter()
                 .map(|url| DataFileSource::AnonymousDataFile {
@@ -500,8 +500,8 @@ pub(crate) fn read_parquet_into_micropartition(
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
-            scan_task_batch.schema.clone(),
-            Arc::new(scan_task_batch),
+            scan_task.schema.clone(),
+            Arc::new(scan_task),
             TableMetadata { length: total_rows },
             stats,
         ))

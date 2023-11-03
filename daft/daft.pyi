@@ -373,27 +373,27 @@ class StorageConfig:
     @property
     def config(self) -> NativeStorageConfig | PythonStorageConfig: ...
 
-class ScanTaskBatch:
+class ScanTask:
     """
     A batch of scan tasks for reading data from an external source.
     """
 
     def __len__(self) -> int:
-        """Returns the numer of ScanTasks in this batch"""
+        """Returns the number of files in this ScanTask"""
         ...
-    def slice(self, start: int, end: int) -> ScanTaskBatch:
+    def slice(self, start: int, end: int) -> ScanTask:
         """
-        Slices the ScanTaskBatch and returns a new one with just the tasks in the specified slice
+        Slices the files in this ScanTask and returns a new one with just those files
         """
         ...
     def num_rows(self) -> int:
         """
-        Get number of rows that will be scanned by all tasks in this batch.
+        Get number of rows that will be scanned by this ScanTask.
         """
         ...
     def size_bytes(self) -> int:
         """
-        Get number of bytes that will be scanned by all tasks in this batch.
+        Get number of bytes that will be scanned by this ScanTask.
         """
         ...
 
@@ -765,7 +765,7 @@ class PyMicroPartition:
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyMicroPartition: ...
     @staticmethod
-    def from_scan_task_batch(scan_task_batch: ScanTaskBatch) -> PyMicroPartition: ...
+    def from_scan_task(scan_task: ScanTask) -> PyMicroPartition: ...
     @staticmethod
     def from_tables(tables: list[PyTable]) -> PyMicroPartition: ...
     @staticmethod
