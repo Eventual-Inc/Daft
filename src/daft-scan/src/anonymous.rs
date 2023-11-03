@@ -56,8 +56,11 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask> {
-        Ok(ScanTask::new(
+    fn to_scan_tasks(
+        &self,
+        pushdowns: Pushdowns,
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
+        let scan_task = ScanTask::new(
             self.files
                 .clone()
                 .into_iter()
@@ -73,6 +76,7 @@ impl ScanOperator for AnonymousScanOperator {
             self.storage_config.clone(),
             pushdowns.columns,
             pushdowns.limit,
-        ))
+        );
+        Ok(Box::new(std::iter::once(Ok(scan_task))))
     }
 }

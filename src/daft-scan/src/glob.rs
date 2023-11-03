@@ -161,13 +161,16 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
-fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask> {
+    fn to_scan_tasks(
+        &self,
+        pushdowns: Pushdowns,
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
 
-        Ok(ScanTask::new(
+        let scan_task = ScanTask::new(
             files
                 .into_iter()
                 .map(|f| DataFileSource::AnonymousDataFile {
@@ -182,6 +185,8 @@ fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<ScanTask> {
             self.storage_config.clone(),
             pushdowns.columns,
             pushdowns.limit,
-        ))
+        );
+
+        Ok(Box::new(std::iter::once(Ok(scan_task))))
     }
 }
