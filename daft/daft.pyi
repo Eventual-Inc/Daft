@@ -414,6 +414,13 @@ class ScanOperatorHandle:
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
     ) -> ScanOperatorHandle: ...
+    @staticmethod
+    def glob_scan(
+        glob_path: str,
+        file_format_config: FileFormatConfig,
+        storage_config: StorageConfig,
+        schema: PySchema | None = None,
+    ) -> ScanOperatorHandle: ...
 
 def read_parquet(
     uri: str,

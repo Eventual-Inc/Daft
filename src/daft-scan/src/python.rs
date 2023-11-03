@@ -12,6 +12,7 @@ pub mod pylib {
 
     use crate::anonymous::AnonymousScanOperator;
     use crate::file_format::PyFileFormatConfig;
+    use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
     use crate::{ScanOperatorRef, ScanTask, ScanTaskBatch};
 
@@ -44,6 +45,22 @@ pub mod pylib {
             Ok(ScanOperatorHandle {
                 scan_op: ScanOperatorRef(operator),
             })
+        }
+
+        #[staticmethod]
+        pub fn glob_scan(
+            glob_path: &str,
+            file_format_config: PyFileFormatConfig,
+            storage_config: PyStorageConfig,
+            schema: Option<PySchema>,
+        ) -> PyResult<Self> {
+            let operator = Arc::new(GlobScanOperator::try_new(
+                glob_path,
+                file_format_config.into(),
+                storage_config.into(),
+                schema.map(|s| s.schema),
+            )?);
+            Ok(ScanOperatorHandle { scan_op: operator })
         }
     }
 
