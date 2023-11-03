@@ -1,4 +1,7 @@
-use std::{ops::Deref, sync::Arc};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
 use daft_core::{
@@ -68,7 +71,7 @@ impl PyMicroPartition {
     // Creation Methods
     #[staticmethod]
     pub fn from_scan_task_batch(scan_task_batch: PyScanTaskBatch) -> PyResult<Self> {
-        Ok(MicroPartition::from_scan_task_batch(scan_task_batch.into()).into())
+        Ok(MicroPartition::from_scan_task_batch(scan_task_batch.into(), None)?.into())
     }
 
     #[staticmethod]
@@ -77,12 +80,9 @@ impl PyMicroPartition {
             [] => Ok(MicroPartition::empty(None).into()),
             [first, ..] => {
                 let tables = Arc::new(tables.iter().map(|t| t.table.clone()).collect::<Vec<_>>());
-                Ok(MicroPartition::new(
+                Ok(MicroPartition::new_loaded(
                     first.table.schema.clone(),
-                    TableState::Loaded(tables.clone()),
-                    Some(TableMetadata {
-                        length: tables.iter().map(|t| t.len()).sum(),
-                    }),
+                    tables,
                     // Don't compute statistics if data is already materialized
                     None,
                 )
@@ -112,14 +112,7 @@ impl PyMicroPartition {
             .map(|rb| daft_table::ffi::record_batches_to_table(py, &[rb], schema.schema.clone()))
             .collect::<PyResult<Vec<_>>>()?;
 
-        let total_len = tables.iter().map(|tbl| tbl.len()).sum();
-        Ok(MicroPartition::new(
-            schema.schema.clone(),
-            TableState::Loaded(Arc::new(tables)),
-            Some(TableMetadata { length: total_len }),
-            None,
-        )
-        .into())
+        Ok(MicroPartition::new_loaded(schema.schema.clone(), Arc::new(tables), None).into())
     }
 
     // Export Methods
@@ -476,12 +469,12 @@ impl PyMicroPartition {
         let statistics =
             bincode::deserialize::<Option<TableStatistics>>(statistics_bytes.as_bytes()).unwrap();
 
-        Ok(MicroPartition::new(
-            schema.into(),
-            TableState::Unloaded(scan_task_batch.into()),
-            Some(metadata),
+        Ok(MicroPartition {
+            schema: Arc::new(schema),
+            state: Mutex::new(TableState::Unloaded(Arc::new(scan_task_batch))),
+            metadata,
             statistics,
-        )
+        }
         .into())
     }
 
@@ -507,12 +500,12 @@ impl PyMicroPartition {
             })
             .collect::<PyResult<Vec<_>>>()?;
 
-        Ok(MicroPartition::new(
-            schema.into(),
-            TableState::Loaded(tables.into()),
-            Some(metadata),
+        Ok(MicroPartition {
+            schema: Arc::new(schema),
+            state: Mutex::new(TableState::Loaded(Arc::new(tables))),
+            metadata,
             statistics,
-        )
+        }
         .into())
     }
 
