@@ -46,7 +46,10 @@ def _get_tabular_files_scan(
     else:
         raise NotImplementedError(f"Tabular scan with config not implemented: {storage_config.config}")
     # TODO(Clark): Move this flag check to the global Daft context.
-    if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
+    if os.getenv("DAFT_V2_SCANS", "0") == "1":
+        assert (
+            os.getenv("DAFT_MICROPARTITIONS", "0") == "1"
+        ), "DAFT_V2_SCANS=1 requires DAFT_MICROPARTITIONS=1 to be set as well"
         # TODO(Clark): Add globbing scan, once implemented.
         runner_io = get_context().runner().runner_io()
         file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
