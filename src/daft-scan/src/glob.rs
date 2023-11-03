@@ -169,24 +169,26 @@ impl ScanOperator for GlobScanOperator {
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
+        let file_format_config = self.file_format_config.clone();
+        let schema = self.schema.clone();
+        let storage_config = self.storage_config.clone();
 
-        let scan_task = ScanTask::new(
-            files
-                .into_iter()
-                .map(|f| DataFileSource::AnonymousDataFile {
-                    path: f,
+        // Create one ScanTask per file. We should find a way to perform streaming from the glob instead
+        // of materializing here.
+        Ok(Box::new(files.into_iter().map(move |f| {
+            Ok(ScanTask::new(
+                vec![DataFileSource::AnonymousDataFile {
+                    path: f.to_string(),
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
-                })
-                .collect(),
-            self.file_format_config.clone(),
-            self.schema.clone(),
-            self.storage_config.clone(),
-            pushdowns.columns,
-            pushdowns.limit,
-        );
-
-        Ok(Box::new(std::iter::once(Ok(scan_task))))
+                }],
+                file_format_config.clone(),
+                schema.clone(),
+                storage_config.clone(),
+                pushdowns.columns.clone(),
+                pushdowns.limit,
+            ))
+        })))
     }
 }
