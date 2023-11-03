@@ -20,22 +20,21 @@ impl MicroPartition {
         let guard = self.state.lock().unwrap();
         match guard.deref() {
             // Replace schema if Unloaded, which should be applied when data is lazily loaded
-            TableState::Unloaded(scan_task_batch) => Ok(MicroPartition::new(
+            TableState::Unloaded(scan_task_batch) => Ok(MicroPartition::new_unloaded(
                 schema.clone(),
-                TableState::Unloaded(scan_task_batch.clone()),
+                scan_task_batch.clone(),
                 self.metadata.clone(),
-                pruned_statistics,
+                pruned_statistics.expect("Unloaded MicroPartition should have statistics"),
             )),
             // If Tables are already loaded, we map `Table::cast_to_schema` on each Table
-            TableState::Loaded(tables) => Ok(MicroPartition::new(
+            TableState::Loaded(tables) => Ok(MicroPartition::new_loaded(
                 schema.clone(),
-                TableState::Loaded(Arc::new(
+                Arc::new(
                     tables
                         .iter()
                         .map(|tbl| tbl.cast_to_schema(schema.as_ref()))
                         .collect::<DaftResult<Vec<_>>>()?,
-                )),
-                self.metadata.clone(),
+                ),
                 pruned_statistics,
             )),
         }

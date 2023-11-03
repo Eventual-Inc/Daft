@@ -48,7 +48,7 @@ impl MicroPartition {
         Ok(MicroPartition {
             schema: mps.first().unwrap().schema.clone(),
             state: Mutex::new(TableState::Loaded(all_tables.into())),
-            metadata: Some(TableMetadata { length: new_len }),
+            metadata: TableMetadata { length: new_len },
             statistics: all_stats,
         })
     }
