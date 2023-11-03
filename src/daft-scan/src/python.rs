@@ -60,7 +60,9 @@ pub mod pylib {
                 storage_config.into(),
                 schema.map(|s| s.schema),
             )?);
-            Ok(ScanOperatorHandle { scan_op: operator })
+            Ok(ScanOperatorHandle {
+                scan_op: ScanOperatorRef(operator),
+            })
         }
     }
 
