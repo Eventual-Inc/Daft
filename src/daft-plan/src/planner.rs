@@ -81,6 +81,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 ..
             })) => {
                 let scan_tasks = scan_op
+                    .0
                     .to_scan_tasks(pushdowns.clone())?
                     .collect::<DaftResult<Vec<_>>>()?;
                 let partition_spec = Arc::new(PartitionSpec::new_internal(

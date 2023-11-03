@@ -183,37 +183,41 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
 }
 
-pub type ScanOperatorRef = Arc<dyn ScanOperator>;
+/// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash
+/// functionality to be performed on the **pointer** instead of on the value in the pointer.
+///
+/// This lets us get around having to implement fiull hashing/equality on [`ScanOperator`]`, which
+/// is difficult because we sometimes have weird Python implementations that can be hard to check.
+///
+/// [`ScanOperatorRef`] should be thus held by structs that need to check the "sameness" of the
+/// underlying ScanOperator instance, for example in the Scan nodes in a logical plan which need
+/// to check for sameness of Scan nodes during plan optimization.
+#[derive(Debug, Clone)]
+pub struct ScanOperatorRef(pub Arc<dyn ScanOperator>);
 
-impl PartialEq<dyn ScanOperator + '_> for Arc<dyn ScanOperator + '_> {
-    fn eq(&self, other: &dyn ScanOperator) -> bool {
-        self.as_ref().eq(other)
+impl Hash for ScanOperatorRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state)
     }
 }
 
-impl PartialEq<dyn ScanOperator + '_> for dyn ScanOperator + '_ {
-    #[allow(clippy::ptr_eq)]
-    fn eq(&self, other: &dyn ScanOperator) -> bool {
-        // We don't use std::ptr::eq() since that also includes fat pointer metadata in the comparison;
-        // for trait objects, vtables are duplicated in multiple codegen units, which could cause false negatives.
-        // We therefore cast to unit type pointers to ditch the vtables before comparing.
-        self as *const dyn ScanOperator as *const ()
-            == other as *const dyn ScanOperator as *const ()
+impl PartialEq<ScanOperatorRef> for ScanOperatorRef {
+    fn eq(&self, other: &ScanOperatorRef) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl Eq for dyn ScanOperator + '_ {}
+impl std::cmp::Eq for ScanOperatorRef {}
 
-impl Hash for dyn ScanOperator + '_ {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        // We prune the fat trait object pointer of the vtable before hashing; see comment for PartialEq implementation.
-        (self as *const dyn ScanOperator as *const ()).hash(hasher)
+impl Display for ScanOperatorRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScanExternalInfo {
-    pub scan_op: Arc<dyn ScanOperator>,
+    pub scan_op: ScanOperatorRef,
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
@@ -221,7 +225,7 @@ pub struct ScanExternalInfo {
 
 impl ScanExternalInfo {
     pub fn new(
-        scan_op: Arc<dyn ScanOperator>,
+        scan_op: ScanOperatorRef,
         source_schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
         pushdowns: Pushdowns,
