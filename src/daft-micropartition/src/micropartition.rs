@@ -54,11 +54,19 @@ pub(crate) struct MicroPartition {
 }
 
 /// Helper to run all the IO and compute required to materialize a ScanTaskBatch into a Vec<Table>
+///
+/// # Arguments
+///
+/// * `scan_task_batch` - a batch of ScanTasks to materialize as Tables
+/// * `cast_to_schema` - an Optional schema to cast all the resulting Tables to. If not provided, will use the schema
+///     provided by the ScanTaskBatch
+/// * `io_stats` - an optional IOStats object to record the IO operations performed
 fn materialize_scan_task_batch(
     scan_task_batch: Arc<ScanTaskBatch>,
+    cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<Vec<Table>> {
-    let table_values: Vec<_> = match scan_task_batch.file_format_config.as_ref() {
+    let table_values = match scan_task_batch.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,
             // TODO(Clark): Support different row group specification per file.
@@ -90,7 +98,7 @@ fn materialize_scan_task_batch(
                     .collect::<Vec<_>>();
                 let inference_options =
                     ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
-                let all_tables = daft_parquet::read::read_parquet_bulk(
+                daft_parquet::read::read_parquet_bulk(
                     urls.as_slice(),
                     column_names.as_deref(),
                     None,
@@ -104,12 +112,7 @@ fn materialize_scan_task_batch(
                     runtime_handle,
                     &inference_options,
                 )
-                .context(DaftCoreComputeSnafu)?;
-                all_tables
-                    .into_iter()
-                    .map(|t| t.cast_to_schema(&scan_task_batch.schema))
-                    .collect::<DaftResult<Vec<_>>>()
-                    .context(DaftCoreComputeSnafu)?
+                .context(DaftCoreComputeSnafu)?
             }
             #[cfg(feature = "python")]
             StorageConfig::Python(_) => {
@@ -118,12 +121,13 @@ fn materialize_scan_task_batch(
         },
         _ => todo!("TODO: Implement MicroPartition reads for other file formats."),
     };
+
+    let cast_to_schema = cast_to_schema.unwrap_or(scan_task_batch.schema.clone());
     let casted_table_values = table_values
         .iter()
-        .map(|tbl| tbl.cast_to_schema(scan_task_batch.schema.as_ref()))
+        .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
-
     Ok(casted_table_values)
 }
 
@@ -185,7 +189,7 @@ impl MicroPartition {
             )),
             // If any metadata or statistics are missing, we need to perform an eager read
             _ => {
-                let tables = materialize_scan_task_batch(scan_task_batch, io_stats)?;
+                let tables = materialize_scan_task_batch(scan_task_batch, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
         }
@@ -236,6 +240,7 @@ impl MicroPartition {
             TableState::Unloaded(scan_task_batch) => {
                 let table_values = Arc::new(materialize_scan_task_batch(
                     scan_task_batch.clone(),
+                    Some(self.schema.clone()),
                     io_stats,
                 )?);
 
