@@ -151,7 +151,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -172,7 +172,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 3";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8), Limit = 3";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -193,7 +193,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -211,7 +211,7 @@ mod tests {
             .build();
         let expected = "\
         Limit: 5\
-        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8)";
+        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -231,7 +231,7 @@ mod tests {
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -251,7 +251,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Utf8), Limit = 5";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8), Limit = 5";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
