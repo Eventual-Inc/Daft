@@ -246,4 +246,12 @@ impl Pushdowns {
             limit: self.limit,
         }
     }
+
+    pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            columns,
+            limit: self.limit,
+        }
+    }
 }

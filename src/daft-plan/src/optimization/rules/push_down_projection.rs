@@ -4,10 +4,12 @@ use common_error::DaftResult;
 
 use daft_core::schema::Schema;
 use daft_dsl::{optimization::replace_columns_with_expressions, Expr};
+use daft_scan::ScanExternalInfo;
 use indexmap::IndexSet;
 
 use crate::{
     logical_ops::{Aggregate, Project, Source},
+    source_info::{ExternalInfo, SourceInfo},
     LogicalPlan, ResourceRequest,
 };
 
@@ -153,8 +155,25 @@ impl PushDownProjection {
                         })
                         .collect::<Vec<_>>();
                     let schema = Schema::new(pruned_upstream_schema)?;
-                    let new_source: LogicalPlan =
-                        Source::new(schema.into(), source.source_info.clone(), source.limit).into();
+                    let new_source: LogicalPlan = match source.source_info.as_ref() {
+                        SourceInfo::ExternalInfo(ExternalInfo::Scan(scan_external_info)) => {
+                            Source::new(
+                                schema.into(),
+                                Arc::new(SourceInfo::ExternalInfo(ExternalInfo::Scan(
+                                    ScanExternalInfo {
+                                        pushdowns: scan_external_info.pushdowns.with_columns(Some(
+                                            Arc::new(required_columns.iter().cloned().collect()),
+                                        )),
+                                        ..scan_external_info.clone()
+                                    },
+                                ))),
+                                source.limit,
+                            )
+                            .into()
+                        }
+                        _ => Source::new(schema.into(), source.source_info.clone(), source.limit)
+                            .into(),
+                    };
 
                     let new_plan = plan.with_new_children(&[new_source.into()]);
                     // Retry optimization now that the upstream node is different.
