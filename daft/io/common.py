@@ -33,8 +33,6 @@ def _get_tabular_files_scan(
     storage_config: StorageConfig,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
-    schema_hint = _get_schema_from_hints(schema_hints) if schema_hints is not None else None
-
     # Glob the path using the Runner
     # NOTE: Globbing will always need the IOConfig, regardless of whether "native reads" are used
     io_config = None
@@ -44,6 +42,8 @@ def _get_tabular_files_scan(
         io_config = storage_config.config.io_config
     else:
         raise NotImplementedError(f"Tabular scan with config not implemented: {storage_config.config}")
+
+    schema_hint = _get_schema_from_hints(schema_hints) if schema_hints is not None else None
 
     ### FEATURE_FLAG: $DAFT_V2_SCANS
     #
@@ -60,6 +60,7 @@ def _get_tabular_files_scan(
             runner_io = get_context().runner().runner_io()
             file_infos = runner_io.glob_paths_details(path, file_format_config=file_format_config, io_config=io_config)
 
+            # TODO: Should we move this into the AnonymousScanOperator itself?
             # Infer schema if no hints provided
             inferred_or_provided_schema = (
                 schema_hint
@@ -68,7 +69,10 @@ def _get_tabular_files_scan(
             )
 
             scan_op = ScanOperatorHandle.anonymous_scan(
-                file_infos.file_paths, inferred_or_provided_schema._schema, file_format_config, storage_config
+                file_infos.file_paths,
+                inferred_or_provided_schema._schema,
+                file_format_config,
+                storage_config,
             )
         elif isinstance(path, str):
             scan_op = ScanOperatorHandle.glob_scan(
@@ -82,7 +86,7 @@ def _get_tabular_files_scan(
 
         builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
             scan_operator=scan_op,
-            schema_hint=inferred_or_provided_schema,
+            schema_hint=schema_hint,
         )
         return builder
 
