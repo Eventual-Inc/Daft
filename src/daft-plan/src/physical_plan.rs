@@ -313,7 +313,7 @@ impl PhysicalPlan {
                     .getattr(pyo3::intern!(py, "scan_with_tasks"))?
                     .call1((scan_tasks
                         .iter()
-                        .map(|scan_task| PyScanTask(Arc::new(scan_task.clone())))
+                        .map(|scan_task| PyScanTask(scan_task.clone()))
                         .collect::<Vec<PyScanTask>>(),))?;
                 Ok(py_iter.into())
             }

@@ -61,7 +61,7 @@ impl DataFileSource {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScanTask {
     pub sources: Vec<DataFileSource>,
     pub file_format_config: Arc<FileFormatConfig>,
