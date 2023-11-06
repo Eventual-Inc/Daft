@@ -101,8 +101,7 @@ impl GlobScanOperator {
                         delimiter,
                         has_headers,
                         double_quote,
-                        buffer_size: _,
-                        chunk_size: _,
+                        ..
                     }) => {
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
