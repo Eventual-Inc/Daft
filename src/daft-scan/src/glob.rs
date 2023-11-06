@@ -164,34 +164,31 @@ impl ScanOperator for GlobScanOperator {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
-        let columns = pushdowns.columns;
-        let limit = pushdowns.limit;
-
-        // Clone to move into closure for delayed execution
-        let storage_config = self.storage_config.clone();
-        let schema = self.schema.clone();
-        let file_format_config = self.file_format_config.clone();
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
-        let iter = files.into_iter().map(move |f| {
-            let source = DataFileSource::AnonymousDataFile {
-                path: f,
-                metadata: None,
-                partition_spec: None,
-                statistics: None,
-            };
-            Ok(ScanTask {
-                source,
-                file_format_config: file_format_config.clone(),
-                schema: schema.clone(),
-                storage_config: storage_config.clone(),
-                columns: columns.clone(),
-                limit,
-            })
-        });
-        Ok(Box::new(iter))
+        let file_format_config = self.file_format_config.clone();
+        let schema = self.schema.clone();
+        let storage_config = self.storage_config.clone();
+
+        // Create one ScanTask per file. We should find a way to perform streaming from the glob instead
+        // of materializing here.
+        Ok(Box::new(files.into_iter().map(move |f| {
+            Ok(ScanTask::new(
+                vec![DataFileSource::AnonymousDataFile {
+                    path: f.to_string(),
+                    metadata: None,
+                    partition_spec: None,
+                    statistics: None,
+                }],
+                file_format_config.clone(),
+                schema.clone(),
+                storage_config.clone(),
+                pushdowns.columns.clone(),
+                pushdowns.limit,
+            ))
+        })))
     }
 }

@@ -375,30 +375,17 @@ class StorageConfig:
 
 class ScanTask:
     """
-    A scan task for reading data from an external source.
-    """
-
-    ...
-
-class ScanTaskBatch:
-    """
     A batch of scan tasks for reading data from an external source.
     """
 
-    @staticmethod
-    def from_scan_tasks(scan_tasks: list[ScanTask]) -> ScanTaskBatch:
-        """
-        Create a scan task batch from a list of scan tasks.
-        """
-        ...
     def num_rows(self) -> int:
         """
-        Get number of rows that will be scanned by all tasks in this batch.
+        Get number of rows that will be scanned by this ScanTask.
         """
         ...
     def size_bytes(self) -> int:
         """
-        Get number of bytes that will be scanned by all tasks in this batch.
+        Get number of bytes that will be scanned by this ScanTask.
         """
         ...
 
@@ -770,7 +757,7 @@ class PyMicroPartition:
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyMicroPartition: ...
     @staticmethod
-    def from_scan_task_batch(scan_task_batch: ScanTaskBatch) -> PyMicroPartition: ...
+    def from_scan_task(scan_task: ScanTask) -> PyMicroPartition: ...
     @staticmethod
     def from_tables(tables: list[PyTable]) -> PyMicroPartition: ...
     @staticmethod

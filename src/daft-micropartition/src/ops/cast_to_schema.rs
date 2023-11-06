@@ -20,9 +20,9 @@ impl MicroPartition {
         let guard = self.state.lock().unwrap();
         match guard.deref() {
             // Replace schema if Unloaded, which should be applied when data is lazily loaded
-            TableState::Unloaded(scan_task_batch) => Ok(MicroPartition::new_unloaded(
+            TableState::Unloaded(scan_task) => Ok(MicroPartition::new_unloaded(
                 schema.clone(),
-                scan_task_batch.clone(),
+                scan_task.clone(),
                 self.metadata.clone(),
                 pruned_statistics.expect("Unloaded MicroPartition should have statistics"),
             )),

@@ -59,28 +59,27 @@ impl ScanOperator for AnonymousScanOperator {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
-        let columns = pushdowns.columns;
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
+        let files = self.files.clone();
         let file_format_config = self.file_format_config.clone();
-        let storage_config = self.storage_config.clone();
-        let limit = pushdowns.limit;
         let schema = self.schema.clone();
-        let iter = self.files.clone().into_iter().map(move |f| {
-            let source = DataFileSource::AnonymousDataFile {
-                path: f,
-                metadata: None,
-                partition_spec: None,
-                statistics: None,
-            };
-            Ok(ScanTask {
-                source,
-                file_format_config: file_format_config.clone(),
-                schema: schema.clone(),
-                storage_config: storage_config.clone(),
-                columns: columns.clone(),
-                limit,
-            })
-        });
-        Ok(Box::new(iter))
+        let storage_config = self.storage_config.clone();
+
+        // Create one ScanTask per file.
+        Ok(Box::new(files.into_iter().map(move |f| {
+            Ok(ScanTask::new(
+                vec![DataFileSource::AnonymousDataFile {
+                    path: f.to_string(),
+                    metadata: None,
+                    partition_spec: None,
+                    statistics: None,
+                }],
+                file_format_config.clone(),
+                schema.clone(),
+                storage_config.clone(),
+                pushdowns.columns.clone(),
+                pushdowns.limit,
+            ))
+        })))
     }
 }

@@ -14,7 +14,7 @@ pub mod pylib {
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
-    use crate::{ScanOperatorRef, ScanTask, ScanTaskBatch};
+    use crate::{ScanOperatorRef, ScanTask};
 
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -80,7 +80,18 @@ pub mod pylib {
 
     #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTask(Arc<ScanTask>);
+    pub struct PyScanTask(pub Arc<ScanTask>);
+
+    #[pymethods]
+    impl PyScanTask {
+        pub fn num_rows(&self) -> PyResult<Option<i64>> {
+            Ok(self.0.num_rows().map(i64::try_from).transpose()?)
+        }
+
+        pub fn size_bytes(&self) -> PyResult<Option<i64>> {
+            Ok(self.0.size_bytes().map(i64::try_from).transpose()?)
+        }
+    }
 
     impl From<Arc<ScanTask>> for PyScanTask {
         fn from(value: Arc<ScanTask>) -> Self {
@@ -93,48 +104,10 @@ pub mod pylib {
             value.0
         }
     }
-
-    #[pyclass(module = "daft.daft", name = "ScanTaskBatch", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTaskBatch(Arc<ScanTaskBatch>);
-
-    #[pymethods]
-    impl PyScanTaskBatch {
-        #[staticmethod]
-        pub fn from_scan_tasks(scan_tasks: Vec<PyScanTask>) -> PyResult<Self> {
-            let scan_tasks: Vec<ScanTask> = scan_tasks
-                .into_iter()
-                .map(|st| st.0.as_ref().clone())
-                .collect();
-            let scan_task_batch: ScanTaskBatch = scan_tasks.into();
-            Ok(Self(Arc::new(scan_task_batch)))
-        }
-
-        pub fn num_rows(&self) -> PyResult<Option<i64>> {
-            Ok(self.0.num_rows().map(i64::try_from).transpose()?)
-        }
-
-        pub fn size_bytes(&self) -> PyResult<Option<i64>> {
-            Ok(self.0.size_bytes().map(i64::try_from).transpose()?)
-        }
-    }
-
-    impl From<Arc<ScanTaskBatch>> for PyScanTaskBatch {
-        fn from(value: Arc<ScanTaskBatch>) -> Self {
-            Self(value)
-        }
-    }
-
-    impl From<PyScanTaskBatch> for Arc<ScanTaskBatch> {
-        fn from(value: PyScanTaskBatch) -> Self {
-            value.0
-        }
-    }
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
-    parent.add_class::<pylib::PyScanTaskBatch>()?;
     Ok(())
 }

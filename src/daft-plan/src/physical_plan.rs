@@ -308,14 +308,13 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularScan(TabularScan { scan_tasks, .. }) => {
-                let py_scan_tasks = scan_tasks
-                    .iter()
-                    .map(|scan_task| PyScanTask::from(Arc::new(scan_task.clone())))
-                    .collect::<Vec<_>>();
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "scan_with_tasks"))?
-                    .call1((py_scan_tasks,))?;
+                    .call1((scan_tasks
+                        .iter()
+                        .map(|scan_task| PyScanTask(scan_task.clone()))
+                        .collect::<Vec<PyScanTask>>(),))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::TabularScanParquet(TabularScanParquet {
