@@ -187,14 +187,70 @@ impl MicroPartition {
     ) -> crate::Result<Self> {
         let schema = scan_task.schema.clone();
         let statistics = scan_task.statistics.clone();
-        match (&scan_task.metadata, &scan_task.statistics) {
-            (Some(metadata), Some(statistics)) => Ok(Self::new_unloaded(
+        match (
+            &scan_task.metadata,
+            &scan_task.statistics,
+            scan_task.file_format_config.as_ref(),
+        ) {
+            // If the scan_task provides metadata (e.g. retrieved from a catalog) use it and create an unloaded MicroPartition
+            (Some(metadata), Some(statistics), _) => Ok(Self::new_unloaded(
                 schema,
                 scan_task.clone(),
                 metadata.clone(),
                 statistics.clone(),
             )),
-            // If any metadata or statistics are missing, we need to perform an eager read
+
+            // If the scan_task is from files that support reading metadata, we can perform an eager **metadata** read to create an unloaded MicroPartition
+            (
+                _,
+                _,
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    row_groups,
+                }),
+            ) => {
+                let (io_config, multithreaded_io) = match scan_task.storage_config.as_ref() {
+                    StorageConfig::Native(cfg) => (
+                        cfg.io_config.clone().map(|c| Arc::new(c.clone())),
+                        cfg.multithreaded_io,
+                    ),
+                    #[cfg(feature = "python")]
+                    StorageConfig::Python(cfg) => {
+                        (cfg.io_config.clone().map(|c| Arc::new(c.clone())), true)
+                    }
+                };
+                let columns = scan_task
+                    .columns
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+
+                read_parquet_into_micropartition(
+                    scan_task
+                        .sources
+                        .iter()
+                        .map(|s| s.get_path())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    columns.as_deref(),
+                    None,
+                    scan_task.limit,
+                    row_groups.clone().map(|rg| {
+                        std::iter::repeat(rg)
+                            .take(scan_task.sources.len())
+                            .collect::<Vec<_>>()
+                    }), // HACK: Properly propagate multi-file row_groups
+                    io_config.unwrap_or_default(),
+                    io_stats,
+                    if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
+                    multithreaded_io,
+                    &ParquetSchemaInferenceOptions {
+                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                    },
+                )
+                .context(DaftCoreComputeSnafu)
+            }
+
+            // Lastly as a fallback, perform an eager **data** read
             _ => {
                 let tables = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
