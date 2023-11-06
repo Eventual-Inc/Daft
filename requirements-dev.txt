@@ -30,7 +30,7 @@ opencv-python==4.8.1.78
 
 # Pyarrow
 pyarrow==12; platform_system != "Windows"
-pyarrow==6.0.1; platform_system === "Windows"
+pyarrow==14.0.0; platform_system === "Windows"
 # Ray
 ray[data, default]==2.6.3
 pydantic<2  # pin pydantic because Ray uses broken APIs
