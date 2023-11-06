@@ -84,14 +84,6 @@ pub mod pylib {
 
     #[pymethods]
     impl PyScanTask {
-        pub fn __len__(&self) -> PyResult<usize> {
-            Ok(self.0.sources.len())
-        }
-
-        pub fn slice(&self, start: usize, end: usize) -> PyResult<PyScanTask> {
-            Ok(PyScanTask(Arc::new(self.0.slice(start, end))))
-        }
-
         pub fn num_rows(&self) -> PyResult<Option<i64>> {
             Ok(self.0.num_rows().map(i64::try_from).transpose()?)
         }

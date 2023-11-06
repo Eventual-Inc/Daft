@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_dsl::Expr;
 use daft_scan::file_format::FileFormatConfig;
-use daft_scan::{ScanExternalInfo, ScanTask};
+use daft_scan::ScanExternalInfo;
 
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
@@ -80,24 +80,18 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 scan_op,
                 ..
             })) => {
-                // Currently naively concats all ScanTasks together into one fat ScanTask
-                // TODO: we can instead forward this iterator of ScanTasks to the physical planner which can
-                // perform intelligent coalescing/splitting of ScanTasks to be right-sized for the executor
-                let coalesced_scan_task = ScanTask::concat(
-                    scan_op
-                        .0
-                        .to_scan_tasks(pushdowns.clone())?
-                        .collect::<DaftResult<Vec<_>>>()?
-                        .as_slice(),
-                );
+                let scan_tasks = scan_op
+                    .0
+                    .to_scan_tasks(pushdowns.clone())?
+                    .collect::<DaftResult<Vec<_>>>()?;
 
                 let partition_spec = Arc::new(PartitionSpec::new_internal(
                     PartitionScheme::Unknown,
-                    coalesced_scan_task.len(),
+                    scan_tasks.len(),
                     None,
                 ));
                 Ok(PhysicalPlan::TabularScan(TabularScan::new(
-                    coalesced_scan_task,
+                    scan_tasks,
                     partition_spec,
                 )))
             }

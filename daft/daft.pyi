@@ -378,14 +378,6 @@ class ScanTask:
     A batch of scan tasks for reading data from an external source.
     """
 
-    def __len__(self) -> int:
-        """Returns the number of files in this ScanTask"""
-        ...
-    def slice(self, start: int, end: int) -> ScanTask:
-        """
-        Slices the files in this ScanTask and returns a new one with just those files
-        """
-        ...
     def num_rows(self) -> int:
         """
         Get number of rows that will be scanned by this ScanTask.
