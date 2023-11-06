@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use daft_io::{get_io_client, get_runtime, IOStatsContext};
+use daft_io::{get_io_client, get_runtime, IOClient, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 
 use crate::{
@@ -20,13 +20,10 @@ pub struct GlobScanOperator {
 
 fn run_glob(
     glob_path: &str,
-    io_config: Arc<daft_io::IOConfig>,
     limit: Option<usize>,
+    io_client: Arc<IOClient>,
+    runtime: Arc<tokio::runtime::Runtime>,
 ) -> DaftResult<Vec<String>> {
-    // Use multi-threaded runtime which should be global Arc-ed cached singletons
-    let runtime = get_runtime(true)?;
-    let io_client = get_io_client(true, io_config)?;
-
     let _rt_guard = runtime.enter();
     runtime.block_on(async {
         Ok(io_client
@@ -39,6 +36,36 @@ fn run_glob(
     })
 }
 
+fn get_io_client_and_runtime(
+    storage_config: &StorageConfig,
+) -> DaftResult<(Arc<tokio::runtime::Runtime>, Arc<IOClient>)> {
+    // Grab an IOClient and Runtime
+    // TODO: This should be cleaned up and hidden behind a better API from daft-io
+    match storage_config {
+        StorageConfig::Native(cfg) => {
+            let multithreaded_io = cfg.multithreaded_io;
+            Ok((
+                get_runtime(multithreaded_io)?,
+                get_io_client(
+                    multithreaded_io,
+                    Arc::new(cfg.io_config.clone().unwrap_or_default()),
+                )?,
+            ))
+        }
+        #[cfg(feature = "python")]
+        StorageConfig::Python(cfg) => {
+            let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
+            Ok((
+                get_runtime(multithreaded_io)?,
+                get_io_client(
+                    multithreaded_io,
+                    Arc::new(cfg.io_config.clone().unwrap_or_default()),
+                )?,
+            ))
+        }
+    }
+}
+
 impl GlobScanOperator {
     pub fn try_new(
         glob_path: &str,
@@ -49,29 +76,20 @@ impl GlobScanOperator {
         let schema = match schema {
             Some(s) => s,
             None => {
-                let io_config = match storage_config.as_ref() {
-                    StorageConfig::Native(cfg) => {
-                        Arc::new(cfg.io_config.clone().unwrap_or_default())
-                    }
-                    #[cfg(feature = "python")]
-                    StorageConfig::Python(cfg) => {
-                        Arc::new(cfg.io_config.clone().unwrap_or_default())
-                    }
-                };
-                let paths = run_glob(glob_path, io_config.clone(), Some(1))?;
+                let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
+                let paths = run_glob(glob_path, Some(1), io_client.clone(), io_runtime)?;
                 let first_filepath = paths[0].as_str();
                 let inferred_schema = match file_format_config.as_ref() {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         row_groups: _,
                     }) => {
-                        let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
                         daft_parquet::read::read_parquet_schema(
                             first_filepath,
-                            io_client,
+                            io_client.clone(),
                             Some(io_stats),
                             ParquetSchemaInferenceOptions {
                                 coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
@@ -85,7 +103,6 @@ impl GlobScanOperator {
                         buffer_size: _,
                         chunk_size: _,
                     }) => {
-                        let io_client = get_io_client(true, io_config.clone())?; // it appears that read_parquet_schema is hardcoded to use multithreaded_io
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
                         ));
@@ -148,11 +165,7 @@ impl ScanOperator for GlobScanOperator {
         &self,
         pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<crate::ScanTask>>>> {
-        let io_config = match self.storage_config.as_ref() {
-            StorageConfig::Native(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
-            #[cfg(feature = "python")]
-            StorageConfig::Python(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
-        };
+        let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
         let columns = pushdowns.columns;
         let limit = pushdowns.limit;
 
@@ -161,7 +174,8 @@ impl ScanOperator for GlobScanOperator {
         let schema = self.schema.clone();
         let file_format_config = self.file_format_config.clone();
 
-        let files = run_glob(self.glob_path.as_str(), io_config, None)?;
+        // TODO: This runs the glob to exhaustion, but we should return an iterator instead
+        let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
         let iter = files.into_iter().map(move |f| {
             let source = DataFileSource::AnonymousDataFile {
                 path: f,

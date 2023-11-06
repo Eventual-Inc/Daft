@@ -129,7 +129,7 @@ fn materialize_scan_task_batch(
         _ => todo!("TODO: Implement MicroPartition reads for other file formats."),
     };
 
-    let cast_to_schema = cast_to_schema.unwrap_or(scan_task_batch.schema.clone());
+    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task_batch.schema.clone());
     let casted_table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))
