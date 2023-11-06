@@ -18,7 +18,7 @@ tokio = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-stats/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-stats/python", "common-io-config/python"]
 
 [package]
 edition = {workspace = true}
