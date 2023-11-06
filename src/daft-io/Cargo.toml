@@ -10,7 +10,7 @@ aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
 aws-smithy-client = "0.55.3"
 azure_storage = {version = "0.13.0", features = ["enable_reqwest"], default-features = false}
-azure_storage_blobs = {version = "0.13.1", features = ["enable_reqwest"], default-features = false}
+azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
