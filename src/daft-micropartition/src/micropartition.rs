@@ -11,7 +11,7 @@ use daft_csv::read::read_csv;
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{FileFormatConfig, ParquetSourceConfig};
+use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{DataFileSource, ScanTask};
 use daft_table::Table;
@@ -73,63 +73,115 @@ fn materialize_scan_task(
     cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<Vec<Table>> {
-    let table_values = match scan_task.file_format_config.as_ref() {
-        FileFormatConfig::Parquet(ParquetSourceConfig {
-            coerce_int96_timestamp_unit,
-            // TODO(Clark): Support different row group specification per file.
-            row_groups,
-        }) => match scan_task.storage_config.as_ref() {
-            StorageConfig::Native(native_storage_config) => {
-                let runtime_handle =
-                    daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
-                let _rt_guard = runtime_handle.enter();
+    log::debug!("Materializing ScanTask: {scan_task:?}");
 
-                let io_config = Arc::new(
-                    native_storage_config
-                        .io_config
-                        .as_ref()
-                        .cloned()
-                        .unwrap_or_default(),
-                );
-                let io_client =
-                    daft_io::get_io_client(native_storage_config.multithreaded_io, io_config)
-                        .unwrap();
-                let column_names = scan_task
-                    .columns
-                    .as_ref()
-                    .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<_>>());
-                let urls = scan_task
-                    .sources
+    let column_names = scan_task
+        .columns
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
+    let urls = scan_task.sources.iter().map(|s| s.get_path());
+
+    // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
+    // Note that we need to apply column pruning here if specified by the ScanTask
+    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema.clone());
+    let cast_to_schema = match &column_names {
+        None => Ok(cast_to_schema),
+        Some(column_names) => Ok(Arc::new(
+            Schema::new(
+                cast_to_schema
+                    .names()
                     .iter()
-                    .map(|s| s.get_path())
-                    .collect::<Vec<_>>();
-                let inference_options =
-                    ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
-                daft_parquet::read::read_parquet_bulk(
-                    urls.as_slice(),
-                    column_names.as_deref(),
-                    None,
-                    scan_task.limit,
-                    row_groups
-                        .as_ref()
-                        .map(|row_groups| vec![row_groups.clone(); urls.len()]),
-                    io_client.clone(),
-                    io_stats,
-                    8,
-                    runtime_handle,
-                    &inference_options,
-                )
-                .context(DaftCoreComputeSnafu)?
+                    .filter(|name| column_names.contains(&name.as_str()))
+                    .map(|name| cast_to_schema.get_field(name).unwrap().clone())
+                    .collect(),
+            )
+            .context(DaftCoreComputeSnafu)?,
+        )),
+    }?;
+
+    let table_values = match scan_task.storage_config.as_ref() {
+        StorageConfig::Native(native_storage_config) => {
+            let runtime_handle =
+                daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
+            let io_config = Arc::new(
+                native_storage_config
+                    .io_config
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            let io_client =
+                daft_io::get_io_client(native_storage_config.multithreaded_io, io_config).unwrap();
+
+            match scan_task.file_format_config.as_ref() {
+                // ********************
+                // Native Parquet Reads
+                // ********************
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    // TODO(Clark): Support different row group specification per file.
+                    row_groups,
+                }) => {
+                    let inference_options =
+                        ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+                    let urls = urls.collect::<Vec<_>>();
+                    daft_parquet::read::read_parquet_bulk(
+                        urls.as_slice(),
+                        column_names.as_deref(),
+                        None,
+                        scan_task.limit,
+                        row_groups
+                            .as_ref()
+                            .map(|row_groups| vec![row_groups.clone(); urls.len()]),
+                        io_client.clone(),
+                        io_stats,
+                        8,
+                        runtime_handle,
+                        &inference_options,
+                    )
+                    .context(DaftCoreComputeSnafu)?
+                }
+
+                // ****************
+                // Native CSV Reads
+                // ****************
+                FileFormatConfig::Csv(cfg @ CsvSourceConfig { .. }) => {
+                    urls.map(|url| {
+                        daft_csv::read::read_csv(
+                            url,
+                            None,
+                            None, // column_names.clone(), NOTE: `read_csv` seems to be buggy when provided with out-of-order column_names
+                            scan_task.limit,
+                            cfg.has_headers,
+                            Some(cfg.delimiter.as_bytes()[0]),
+                            cfg.double_quote,
+                            io_client.clone(),
+                            io_stats.clone(),
+                            native_storage_config.multithreaded_io,
+                            None, // Allow read_csv to perform its own schema inference
+                            cfg.buffer_size,
+                            cfg.chunk_size,
+                            None, // max_chunks_in_flight
+                        )
+                        .context(DaftCoreComputeSnafu)
+                    })
+                    .collect::<crate::Result<Vec<Table>>>()?
+                }
+
+                // ****************
+                // Native JSON Reads
+                // ****************
+                FileFormatConfig::Json(_) => {
+                    todo!("TODO: Implement MicroPartition native reads for JSON.");
+                }
             }
-            #[cfg(feature = "python")]
-            StorageConfig::Python(_) => {
-                todo!("TODO: Implement Python I/O backend for MicroPartitions.")
-            }
-        },
-        _ => todo!("TODO: Implement MicroPartition reads for other file formats."),
+        }
+        #[cfg(feature = "python")]
+        StorageConfig::Python(_) => {
+            todo!("TODO: Implement Python I/O backend for MicroPartitions.")
+        }
     };
 
-    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema.clone());
     let casted_table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))

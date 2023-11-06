@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use daft_io::{get_io_client, get_runtime, IOClient, IOStatsContext};
+use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 
 use crate::{
@@ -24,11 +24,12 @@ fn run_glob(
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
 ) -> DaftResult<Vec<String>> {
+    let (_, parsed_glob_path) = parse_url(glob_path)?;
     let _rt_guard = runtime.enter();
     runtime.block_on(async {
         Ok(io_client
             .as_ref()
-            .glob(glob_path, None, None, limit, None)
+            .glob(&parsed_glob_path, None, None, limit, None)
             .await?
             .into_iter()
             .map(|fm| fm.filepath)

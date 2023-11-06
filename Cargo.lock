@@ -1224,6 +1224,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "indexmap 2.0.2",
+ "log",
  "parquet2",
  "pyo3",
  "pyo3-log",
