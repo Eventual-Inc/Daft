@@ -114,62 +114,6 @@ impl ScanTask {
         }
     }
 
-    pub fn concat(scan_tasks: &[Self]) -> ScanTask {
-        if scan_tasks.is_empty() {
-            panic!("Must have at least one ScanTask to concat.");
-        }
-
-        // Use all metadata from the first ScanTask, but validate that the metadata matches all other ScanTasks
-        let mut scan_task_iter = scan_tasks.iter().peekable();
-        let first_scan_task = scan_task_iter.peek().unwrap();
-        let file_format_config = first_scan_task.file_format_config.clone();
-        let schema = first_scan_task.schema.clone();
-        let storage_config = first_scan_task.storage_config.clone();
-        let columns = first_scan_task.columns.clone();
-        let limit = first_scan_task.limit;
-
-        let mut sources = Vec::with_capacity(scan_tasks.iter().map(|t| t.sources.len()).sum());
-        for scan_task in scan_task_iter {
-            if scan_task.file_format_config != file_format_config {
-                panic!("ScanTasks' file_format_config must match in concat, expected {:?} but found {:?}", file_format_config, scan_task.file_format_config);
-            }
-            if scan_task.schema != schema {
-                panic!(
-                    "ScanTasks' schema must match in concat, expected {:?} but found {:?}",
-                    schema, scan_task.schema
-                );
-            }
-            if scan_task.storage_config != storage_config {
-                panic!(
-                    "ScanTasks' storage_config must match in concat, expected {:?} but found {:?}",
-                    storage_config, scan_task.storage_config
-                );
-            }
-            if scan_task.columns != columns {
-                panic!(
-                    "ScanTasks' columns must match in concat, expected {:?} but found {:?}",
-                    columns, scan_task.columns
-                );
-            }
-            if scan_task.limit != limit {
-                panic!(
-                    "ScanTasks' limit must match in concat, expected {:?} but found {:?}",
-                    limit, scan_task.limit
-                );
-            }
-            sources.extend_from_slice(scan_task.sources.as_slice());
-        }
-
-        Self::new(
-            sources,
-            file_format_config,
-            schema,
-            storage_config,
-            columns,
-            limit,
-        )
-    }
-
     pub fn num_rows(&self) -> Option<usize> {
         self.metadata.as_ref().map(|m| m.length)
     }
@@ -179,25 +123,6 @@ impl ScanTask {
             self.num_rows()
                 .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
         })
-    }
-
-    pub fn slice(&self, start: usize, end: usize) -> ScanTask {
-        ScanTask::new(
-            self.sources[start..end].to_vec(),
-            self.file_format_config.clone(),
-            self.schema.clone(),
-            self.storage_config.clone(),
-            self.columns.clone(),
-            self.limit,
-        )
-    }
-
-    pub fn len(&self) -> usize {
-        self.sources.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.sources.is_empty()
     }
 }
 
