@@ -100,7 +100,7 @@ class IcebergScanOperator(ScanOperator):
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
 
-            if (task.delete_files) > 0:
+            if len(task.delete_files) > 0:
                 raise NotImplementedError(f"Iceberg Merge-on-Read currently not supported, please make an issue!")
 
             # TODO: Thread in PartitionSpec to each ScanTask: P1
