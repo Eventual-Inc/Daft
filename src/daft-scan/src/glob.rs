@@ -1,11 +1,14 @@
 use std::{fmt::Display, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 #[cfg(feature = "python")]
 use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python, snafu::ResultExt};
+use futures::StreamExt;
+use snafu::Snafu;
+use tokio::sync::mpsc::Receiver;
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
@@ -20,23 +23,63 @@ pub struct GlobScanOperator {
     storage_config: Arc<StorageConfig>,
 }
 
+/// Wrapper struct that implements a sync Iterator for a tokio::sync::mpsc::Receiver
+struct TokioMPSCReceiverIterator<T> {
+    recv: Receiver<T>,
+}
+impl<T> Iterator for TokioMPSCReceiverIterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.recv.blocking_recv()
+    }
+}
+
+#[derive(Snafu, Debug)]
+enum Error {
+    #[snafu(display("Glob path had no matches: \"{}\"", glob_path))]
+    GlobNoMatch { glob_path: String },
+}
+
+impl From<Error> for DaftError {
+    fn from(value: Error) -> Self {
+        match &value {
+            Error::GlobNoMatch { glob_path } => DaftError::FileNotFound {
+                path: glob_path.clone(),
+                source: Box::new(value),
+            },
+        }
+    }
+}
+
 fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<Vec<String>> {
+) -> DaftResult<Box<dyn Iterator<Item = DaftResult<String>>>> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     let _rt_guard = runtime.enter();
+
     runtime.block_on(async {
-        Ok(io_client
+        let (sender, recv) = tokio::sync::mpsc::channel(128);
+        let mut fm_stream = io_client
             .as_ref()
             .glob(&parsed_glob_path, None, None, limit, io_stats)
-            .await?
-            .into_iter()
-            .map(|fm| fm.filepath)
-            .collect())
+            .await?;
+
+        // Spawn a task to asynchronously send data into the spawned channel with best-effort
+        tokio::spawn(async move {
+            while let Some(fm) = fm_stream.next().await {
+                let _ = sender.send(fm).await;
+            }
+        });
+
+        Ok(
+            Box::new(TokioMPSCReceiverIterator { recv }.map(|fm| Ok(fm.map(|fm| fm.filepath)?)))
+                as Box<dyn Iterator<Item = DaftResult<String>>>,
+        )
     })
 }
 
@@ -84,26 +127,37 @@ impl GlobScanOperator {
                 let io_stats = IOStatsContext::new(format!(
                     "GlobScanOperator::try_new schema inference for {glob_path}"
                 ));
-                let paths = run_glob(
+                let mut paths = run_glob(
                     glob_path,
                     Some(1),
                     io_client.clone(),
-                    io_runtime,
+                    io_runtime.clone(),
                     Some(io_stats.clone()),
                 )?;
-                let first_filepath = paths[0].as_str();
+                let first_filepath = match paths.next() {
+                    Some(path) => path,
+                    None => Err(Error::GlobNoMatch {
+                        glob_path: glob_path.to_string(),
+                    }
+                    .into()),
+                }?;
                 let inferred_schema = match file_format_config.as_ref() {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         ..
-                    }) => daft_parquet::read::read_parquet_schema(
-                        first_filepath,
-                        io_client.clone(),
-                        Some(io_stats),
-                        ParquetSchemaInferenceOptions {
-                            coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
-                        },
-                    )?,
+                    }) => {
+                        let io_stats = IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                        ));
+                        daft_parquet::read::read_parquet_schema(
+                            first_filepath.as_str(),
+                            io_client.clone(),
+                            Some(io_stats),
+                            ParquetSchemaInferenceOptions {
+                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                            },
+                        )?
+                    }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
                         has_headers,
@@ -111,7 +165,7 @@ impl GlobScanOperator {
                         ..
                     }) => {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
-                            first_filepath,
+                            first_filepath.as_str(),
                             *has_headers,
                             Some(delimiter.as_bytes()[0]),
                             *double_quote,
@@ -191,7 +245,6 @@ impl ScanOperator for GlobScanOperator {
             self.glob_path
         ));
 
-        // TODO: This runs the glob to exhaustion, but we should return an iterator instead
         let files = run_glob(
             self.glob_path.as_str(),
             None,
@@ -199,16 +252,17 @@ impl ScanOperator for GlobScanOperator {
             io_runtime,
             Some(io_stats),
         )?;
+
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
         // Create one ScanTask per file. We should find a way to perform streaming from the glob instead
         // of materializing here.
-        Ok(Box::new(files.into_iter().map(move |f| {
+        Ok(Box::new(files.map(move |f| {
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
-                    path: f.to_string(),
+                    path: f.expect("Error happened during globbing").to_string(),
                     metadata: None,
                     partition_spec: None,
                     statistics: None,

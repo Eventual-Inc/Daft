@@ -9,6 +9,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
+futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true}
 serde = {workspace = true}
