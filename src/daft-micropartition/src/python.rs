@@ -40,8 +40,8 @@ impl PyMicroPartition {
         Ok(self.inner.column_names())
     }
 
-    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
-        let tables = self.inner.concat_or_get()?;
+    pub fn get_column(&self, name: &str, py: Python) -> PyResult<PySeries> {
+        let tables = py.allow_threads(|| self.inner.concat_or_get())?;
         let columns = tables
             .iter()
             .map(|t| t.get_column(name))
@@ -70,8 +70,10 @@ impl PyMicroPartition {
 
     // Creation Methods
     #[staticmethod]
-    pub fn from_scan_task(scan_task: PyScanTask) -> PyResult<Self> {
-        Ok(MicroPartition::from_scan_task(scan_task.into(), None)?.into())
+    pub fn from_scan_task(scan_task: PyScanTask, py: Python) -> PyResult<Self> {
+        Ok(py
+            .allow_threads(|| MicroPartition::from_scan_task(scan_task.into(), None))?
+            .into())
     }
 
     #[staticmethod]
@@ -116,8 +118,8 @@ impl PyMicroPartition {
     }
 
     // Export Methods
-    pub fn to_table(&self) -> PyResult<PyTable> {
-        let concatted = self.inner.concat_or_get()?;
+    pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
+        let concatted = py.allow_threads(|| self.inner.concat_or_get())?;
         match &concatted.as_ref()[..] {
             [] => PyTable::empty(Some(self.schema()?)),
             [table] => Ok(PyTable {

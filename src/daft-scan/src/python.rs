@@ -30,38 +30,45 @@ pub mod pylib {
 
         #[staticmethod]
         pub fn anonymous_scan(
+            py: Python,
             files: Vec<String>,
             schema: PySchema,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
         ) -> PyResult<Self> {
-            let schema = schema.schema;
-            let operator = Arc::new(AnonymousScanOperator::new(
-                files,
-                schema,
-                file_format_config.into(),
-                storage_config.into(),
-            ));
-            Ok(ScanOperatorHandle {
-                scan_op: ScanOperatorRef(operator),
+            py.allow_threads(|| {
+                let schema = schema.schema;
+                let operator = Arc::new(AnonymousScanOperator::new(
+                    files,
+                    schema,
+                    file_format_config.into(),
+                    storage_config.into(),
+                ));
+                Ok(ScanOperatorHandle {
+                    scan_op: ScanOperatorRef(operator),
+                })
             })
         }
 
         #[staticmethod]
         pub fn glob_scan(
+            py: Python,
             glob_path: &str,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             schema: Option<PySchema>,
         ) -> PyResult<Self> {
-            let operator = Arc::new(GlobScanOperator::try_new(
-                glob_path,
-                file_format_config.into(),
-                storage_config.into(),
-                schema.map(|s| s.schema),
-            )?);
-            Ok(ScanOperatorHandle {
-                scan_op: ScanOperatorRef(operator),
+            py.allow_threads(|| {
+                let operator = Arc::new(GlobScanOperator::try_new(
+                    glob_path,
+                    file_format_config.into(),
+                    storage_config.into(),
+                    schema.map(|s| s.schema),
+                )?);
+
+                Ok(ScanOperatorHandle {
+                    scan_op: ScanOperatorRef(operator),
+                })
             })
         }
     }
