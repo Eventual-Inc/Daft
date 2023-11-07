@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext};
+use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 
 use crate::{
@@ -23,13 +23,14 @@ fn run_glob(
     limit: Option<usize>,
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
+    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Vec<String>> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     let _rt_guard = runtime.enter();
     runtime.block_on(async {
         Ok(io_client
             .as_ref()
-            .glob(&parsed_glob_path, None, None, limit, None)
+            .glob(&parsed_glob_path, None, None, limit, io_stats)
             .await?
             .into_iter()
             .map(|fm| fm.filepath)
@@ -78,34 +79,35 @@ impl GlobScanOperator {
             Some(s) => s,
             None => {
                 let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
-                let paths = run_glob(glob_path, Some(1), io_client.clone(), io_runtime)?;
+                let io_stats = IOStatsContext::new(format!(
+                    "GlobScanOperator::try_new schema inference for {glob_path}"
+                ));
+                let paths = run_glob(
+                    glob_path,
+                    Some(1),
+                    io_client.clone(),
+                    io_runtime,
+                    Some(io_stats.clone()),
+                )?;
                 let first_filepath = paths[0].as_str();
                 let inferred_schema = match file_format_config.as_ref() {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         ..
-                    }) => {
-                        let io_stats = IOStatsContext::new(format!(
-                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                        ));
-                        daft_parquet::read::read_parquet_schema(
-                            first_filepath,
-                            io_client.clone(),
-                            Some(io_stats),
-                            ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
-                            },
-                        )?
-                    }
+                    }) => daft_parquet::read::read_parquet_schema(
+                        first_filepath,
+                        io_client.clone(),
+                        Some(io_stats),
+                        ParquetSchemaInferenceOptions {
+                            coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                        },
+                    )?,
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
                         has_headers,
                         double_quote,
                         ..
                     }) => {
-                        let io_stats = IOStatsContext::new(format!(
-                            "GlobScanOperator constructor read_csv_schema: for uri {first_filepath}"
-                        ));
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath,
                             *has_headers,
@@ -166,9 +168,19 @@ impl ScanOperator for GlobScanOperator {
         pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
+        let io_stats = IOStatsContext::new(format!(
+            "GlobScanOperator::to_scan_tasks for {}",
+            self.glob_path
+        ));
 
         // TODO: This runs the glob to exhaustion, but we should return an iterator instead
-        let files = run_glob(self.glob_path.as_str(), None, io_client, io_runtime)?;
+        let files = run_glob(
+            self.glob_path.as_str(),
+            None,
+            io_client,
+            io_runtime,
+            Some(io_stats),
+        )?;
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
