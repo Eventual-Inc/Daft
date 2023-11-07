@@ -4,9 +4,7 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use daft_table::Table;
 
-use crate::micropartition::{MicroPartition, TableState};
-
-use daft_stats::TableMetadata;
+use crate::micropartition::MicroPartition;
 
 fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
     if v.is_empty() {
@@ -33,11 +31,9 @@ impl MicroPartition {
         Ok(part_tables
             .into_iter()
             .map(|v| {
-                let new_len = v.iter().map(|t| t.len()).sum();
-                MicroPartition::new(
+                MicroPartition::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(v)),
-                    TableMetadata { length: new_len },
+                    Arc::new(v),
                     self.statistics.clone(),
                 )
             })

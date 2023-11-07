@@ -14,6 +14,7 @@ mod limit;
 mod parquet;
 mod project;
 mod reduce;
+mod scan;
 mod sort;
 mod split;
 
@@ -33,5 +34,6 @@ pub use limit::Limit;
 pub use parquet::{TabularScanParquet, TabularWriteParquet};
 pub use project::Project;
 pub use reduce::ReduceMerge;
+pub use scan::TabularScan;
 pub use sort::Sort;
 pub use split::Split;

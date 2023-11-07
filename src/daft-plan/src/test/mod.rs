@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use daft_core::{datatypes::Field, schema::Schema};
+use daft_scan::{file_format::FileFormatConfig, storage_config::StorageConfig};
 
 use crate::{
-    builder::LogicalPlanBuilder,
-    source_info::{FileFormatConfig, FileInfos, StorageConfig},
-    JsonSourceConfig, NativeStorageConfig,
+    builder::LogicalPlanBuilder, source_info::FileInfos, JsonSourceConfig, NativeStorageConfig,
 };
 
 /// Create a dummy scan node containing the provided fields in its schema.
@@ -15,7 +14,7 @@ pub fn dummy_scan_node(fields: Vec<Field>) -> LogicalPlanBuilder {
         FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]),
         schema,
         FileFormatConfig::Json(JsonSourceConfig {}).into(),
-        StorageConfig::Native(NativeStorageConfig::new_internal(None).into()).into(),
+        StorageConfig::Native(NativeStorageConfig::new_internal(true, None).into()).into(),
     )
     .unwrap()
 }
@@ -27,7 +26,7 @@ pub fn dummy_scan_node_with_limit(fields: Vec<Field>, limit: Option<usize>) -> L
         FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]),
         schema,
         FileFormatConfig::Json(JsonSourceConfig {}).into(),
-        StorageConfig::Native(NativeStorageConfig::new_internal(None).into()).into(),
+        StorageConfig::Native(NativeStorageConfig::new_internal(true, None).into()).into(),
         limit,
     )
     .unwrap()

@@ -3,11 +3,9 @@ use daft_core::array::ops::DaftCompare;
 use daft_dsl::Expr;
 use daft_table::infer_join_schema;
 
-use crate::micropartition::{MicroPartition, TableState};
+use crate::micropartition::MicroPartition;
 
 use daft_stats::TruthValue;
-
-use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
@@ -43,11 +41,9 @@ impl MicroPartition {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),
             ([lt], [rt]) => {
                 let joined_table = lt.join(rt, left_on, right_on)?;
-                let joined_len = joined_table.len();
-                Ok(MicroPartition::new(
+                Ok(MicroPartition::new_loaded(
                     join_schema.into(),
-                    TableState::Loaded(vec![joined_table].into()),
-                    TableMetadata { length: joined_len },
+                    vec![joined_table].into(),
                     None,
                 ))
             }

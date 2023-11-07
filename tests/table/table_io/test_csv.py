@@ -18,7 +18,7 @@ from daft.table import Table, schema_inference, table_io
 
 def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
     if use_native_downloader:
-        return StorageConfig.native(NativeStorageConfig(None))
+        return StorageConfig.native(NativeStorageConfig(True, None))
     else:
         return StorageConfig.python(PythonStorageConfig(None))
 

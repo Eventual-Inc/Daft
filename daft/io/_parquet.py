@@ -54,13 +54,9 @@ def read_parquet(
     # This is because each Ray worker process receives its own pool of thread workers and connections
     multithreaded_io = not context.get_context().is_ray_runner if _multithreaded_io is None else _multithreaded_io
 
-    file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(
-            multithreaded_io=multithreaded_io,
-        )
-    )
+    file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
     if use_native_downloader:
-        storage_config = StorageConfig.native(NativeStorageConfig(io_config))
+        storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
     else:
         storage_config = StorageConfig.python(PythonStorageConfig(None, io_config=io_config))
 

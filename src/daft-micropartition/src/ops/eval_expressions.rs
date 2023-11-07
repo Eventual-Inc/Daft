@@ -5,14 +5,9 @@ use daft_core::schema::Schema;
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    DaftCoreComputeSnafu,
-};
+use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
-
-use daft_stats::TableMetadata;
 
 fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
     let fields = exprs
@@ -48,10 +43,9 @@ impl MicroPartition {
             .map(|s| s.eval_expression_list(exprs, &expected_schema))
             .transpose()?;
 
-        Ok(MicroPartition::new(
+        Ok(MicroPartition::new_loaded(
             expected_schema.into(),
-            TableState::Loaded(Arc::new(evaluated_tables)),
-            TableMetadata { length: self.len() },
+            Arc::new(evaluated_tables),
             eval_stats,
         ))
     }
@@ -87,12 +81,9 @@ impl MicroPartition {
             }
         }
 
-        let new_len = evaluated_tables.iter().map(|t| t.len()).sum();
-
-        Ok(MicroPartition::new(
+        Ok(MicroPartition::new_loaded(
             Arc::new(expected_schema),
-            TableState::Loaded(Arc::new(evaluated_tables)),
-            TableMetadata { length: new_len },
+            Arc::new(evaluated_tables),
             eval_stats,
         ))
     }

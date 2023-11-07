@@ -1,8 +1,6 @@
 use common_error::DaftResult;
 
-use crate::micropartition::{MicroPartition, TableState};
-
-use daft_stats::TableMetadata;
+use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -34,14 +32,11 @@ impl MicroPartition {
             }
         }
 
-        let new_len = slices_tables.iter().map(|t| t.len()).sum();
-
-        Ok(MicroPartition {
-            schema: self.schema.clone(),
-            state: TableState::Loaded(slices_tables.into()).into(),
-            metadata: TableMetadata { length: new_len },
-            statistics: self.statistics.clone(),
-        })
+        Ok(MicroPartition::new_loaded(
+            self.schema.clone(),
+            slices_tables.into(),
+            self.statistics.clone(),
+        ))
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {

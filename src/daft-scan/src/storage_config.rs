@@ -29,11 +29,15 @@ pub enum StorageConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeStorageConfig {
     pub io_config: Option<IOConfig>,
+    pub multithreaded_io: bool,
 }
 
 impl NativeStorageConfig {
-    pub fn new_internal(io_config: Option<IOConfig>) -> Self {
-        Self { io_config }
+    pub fn new_internal(multithreaded_io: bool, io_config: Option<IOConfig>) -> Self {
+        Self {
+            io_config,
+            multithreaded_io,
+        }
     }
 }
 
@@ -41,13 +45,18 @@ impl NativeStorageConfig {
 #[pymethods]
 impl NativeStorageConfig {
     #[new]
-    pub fn new(io_config: Option<python::IOConfig>) -> Self {
-        Self::new_internal(io_config.map(|c| c.config))
+    pub fn new(multithreaded_io: bool, io_config: Option<python::IOConfig>) -> Self {
+        Self::new_internal(multithreaded_io, io_config.map(|c| c.config))
     }
 
     #[getter]
     pub fn io_config(&self) -> Option<python::IOConfig> {
         self.io_config.clone().map(|c| c.into())
+    }
+
+    #[getter]
+    pub fn multithreaded_io(&self) -> bool {
+        self.multithreaded_io
     }
 }
 

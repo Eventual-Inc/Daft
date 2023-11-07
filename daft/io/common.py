@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -7,6 +8,7 @@ from daft.daft import (
     FileFormatConfig,
     NativeStorageConfig,
     PythonStorageConfig,
+    ScanOperatorHandle,
     StorageConfig,
 )
 from daft.datatype import DataType
@@ -31,9 +33,6 @@ def _get_tabular_files_scan(
     storage_config: StorageConfig,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
-    paths = path if isinstance(path, list) else [str(path)]
-    schema_hint = _get_schema_from_hints(schema_hints) if schema_hints is not None else None
-
     # Glob the path using the Runner
     # NOTE: Globbing will always need the IOConfig, regardless of whether "native reads" are used
     io_config = None
@@ -44,6 +43,54 @@ def _get_tabular_files_scan(
     else:
         raise NotImplementedError(f"Tabular scan with config not implemented: {storage_config.config}")
 
+    schema_hint = _get_schema_from_hints(schema_hints) if schema_hints is not None else None
+
+    ### FEATURE_FLAG: $DAFT_V2_SCANS
+    #
+    # This environment variable will make Daft use the new "v2 scans" and MicroPartitions when building Daft logical plans
+    if os.getenv("DAFT_V2_SCANS", "0") == "1":
+        assert (
+            os.getenv("DAFT_MICROPARTITIONS", "0") == "1"
+        ), "DAFT_V2_SCANS=1 requires DAFT_MICROPARTITIONS=1 to be set as well"
+
+        scan_op: ScanOperatorHandle
+        if isinstance(path, list):
+            # Eagerly globs each path and fallback to AnonymousScanOperator.
+            # NOTE: We could instead have GlobScanOperator take a list of paths and mux the glob output streams
+            runner_io = get_context().runner().runner_io()
+            file_infos = runner_io.glob_paths_details(path, file_format_config=file_format_config, io_config=io_config)
+
+            # TODO: Should we move this into the AnonymousScanOperator itself?
+            # Infer schema if no hints provided
+            inferred_or_provided_schema = (
+                schema_hint
+                if schema_hint is not None
+                else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
+            )
+
+            scan_op = ScanOperatorHandle.anonymous_scan(
+                file_infos.file_paths,
+                inferred_or_provided_schema._schema,
+                file_format_config,
+                storage_config,
+            )
+        elif isinstance(path, str):
+            scan_op = ScanOperatorHandle.glob_scan(
+                path,
+                file_format_config,
+                storage_config,
+                schema=schema_hint._schema if schema_hint is not None else None,
+            )
+        else:
+            raise NotImplementedError(f"_get_tabular_files_scan cannot construct ScanOperatorHandle for input: {path}")
+
+        builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
+            scan_operator=scan_op,
+            schema_hint=schema_hint,
+        )
+        return builder
+
+    paths = path if isinstance(path, list) else [str(path)]
     runner_io = get_context().runner().runner_io()
     file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
 

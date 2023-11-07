@@ -2,14 +2,9 @@ use common_error::DaftResult;
 use daft_dsl::Expr;
 use snafu::ResultExt;
 
-use crate::{
-    micropartition::{MicroPartition, TableState},
-    DaftCoreComputeSnafu,
-};
+use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
 use daft_stats::TruthValue;
-
-use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
@@ -37,12 +32,9 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()
             .context(DaftCoreComputeSnafu)?;
 
-        let new_len = tables.iter().map(|t| t.len()).sum();
-
-        Ok(Self::new(
+        Ok(Self::new_loaded(
             self.schema.clone(),
-            TableState::Loaded(tables.into()),
-            TableMetadata { length: new_len },
+            tables.into(),
             self.statistics.clone(), // update these values based off the filter we just ran
         ))
     }

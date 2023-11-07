@@ -4,8 +4,7 @@ use common_error::DaftResult;
 use daft_core::Series;
 use daft_table::Table;
 
-use crate::micropartition::{MicroPartition, TableState};
-use daft_stats::TableMetadata;
+use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
@@ -15,19 +14,17 @@ impl MicroPartition {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
                 let taken = empty_table.take(idx)?;
-                Ok(Self::new(
+                Ok(Self::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: idx.len() },
+                    Arc::new(vec![taken]),
                     self.statistics.clone(),
                 ))
             }
             [single] => {
                 let taken = single.take(idx)?;
-                Ok(Self::new(
+                Ok(Self::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: idx.len() },
+                    Arc::new(vec![taken]),
                     self.statistics.clone(),
                 ))
             }
@@ -42,11 +39,9 @@ impl MicroPartition {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
                 let taken = single.sample(num)?;
-                let taken_len = taken.len();
-                Ok(Self::new(
+                Ok(Self::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: taken_len },
+                    Arc::new(vec![taken]),
                     self.statistics.clone(),
                 ))
             }
@@ -60,11 +55,9 @@ impl MicroPartition {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
                 let taken = single.quantiles(num)?;
-                let taken_len = taken.len();
-                Ok(Self::new(
+                Ok(Self::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(vec![taken])),
-                    TableMetadata { length: taken_len },
+                    Arc::new(vec![taken]),
                     self.statistics.clone(),
                 ))
             }

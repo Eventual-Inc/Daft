@@ -7,24 +7,27 @@ use crate::{
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{
-        ExternalInfo as ExternalSourceInfo, FileFormatConfig, FileInfos as InputFileInfos,
-        PyStorageConfig, SourceInfo, StorageConfig,
+        ExternalInfo as ExternalSourceInfo, FileInfos as InputFileInfos, LegacyExternalInfo,
+        SourceInfo,
     },
-    FileFormat, JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
+    JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_core::{datatypes::Field, schema::Schema, DataType};
 use daft_dsl::Expr;
+use daft_scan::{
+    file_format::{FileFormat, FileFormatConfig},
+    storage_config::{PyStorageConfig, StorageConfig},
+    ScanExternalInfo, ScanOperatorRef,
+};
 
 #[cfg(feature = "python")]
 use {
-    crate::{
-        physical_plan::PhysicalPlan,
-        source_info::{InMemoryInfo, PyFileFormatConfig},
-    },
+    crate::{physical_plan::PhysicalPlan, source_info::InMemoryInfo},
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
+    daft_scan::{file_format::PyFileFormatConfig, python::pylib::ScanOperatorHandle},
     pyo3::prelude::*,
 };
 
@@ -64,6 +67,24 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn table_scan_with_scan_operator(
+        scan_operator: ScanOperatorRef,
+        schema_hint: Option<SchemaRef>,
+    ) -> DaftResult<Self> {
+        let schema = schema_hint.unwrap_or_else(|| scan_operator.0.schema());
+        let partitioning_keys = scan_operator.0.partitioning_keys();
+        let source_info =
+            SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo::new(
+                scan_operator.clone(),
+                schema.clone(),
+                partitioning_keys.into(),
+                Default::default(),
+            )));
+        let logical_plan: LogicalPlan =
+            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
+        Ok(logical_plan.into())
+    }
+
     pub fn table_scan(
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
@@ -80,12 +101,13 @@ impl LogicalPlanBuilder {
         storage_config: Arc<StorageConfig>,
         limit: Option<usize>,
     ) -> DaftResult<Self> {
-        let source_info = SourceInfo::ExternalInfo(ExternalSourceInfo::new(
-            schema.clone(),
-            file_infos.into(),
-            file_format_config,
-            storage_config,
-        ));
+        let source_info =
+            SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(LegacyExternalInfo::new(
+                schema.clone(),
+                file_infos.into(),
+                file_format_config,
+                storage_config,
+            )));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into(), limit).into();
         Ok(logical_plan.into())
@@ -261,6 +283,18 @@ impl PyLogicalPlanBuilder {
             cache_entry.to_object(cache_entry.py()),
             schema.into(),
             num_partitions,
+        )?
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn table_scan_with_scan_operator(
+        scan_operator: ScanOperatorHandle,
+        schema_hint: Option<PySchema>,
+    ) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(
+            scan_operator.into(),
+            schema_hint.map(|s| s.into()),
         )?
         .into())
     }

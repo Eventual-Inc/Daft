@@ -8,6 +8,7 @@ import pyarrow as pa
 from daft.arrow_utils import ensure_table
 from daft.daft import JoinType
 from daft.daft import PyTable as _PyTable
+from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
@@ -77,6 +78,10 @@ class Table:
     def empty(schema: Schema | None = None) -> Table:
         pyt = _PyTable.empty(None) if schema is None else _PyTable.empty(schema._schema)
         return Table._from_pytable(pyt)
+
+    @staticmethod
+    def _from_scan_task(_: _ScanTask) -> Table:
+        raise NotImplementedError("_from_scan_task is not implemented for legacy Python Table.")
 
     @staticmethod
     def _from_pytable(pyt: _PyTable) -> Table:

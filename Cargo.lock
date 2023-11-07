@@ -1224,6 +1224,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "indexmap 2.0.2",
+ "log",
  "parquet2",
  "pyo3",
  "pyo3-log",
@@ -1269,6 +1270,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-dsl",
+ "daft-scan",
  "daft-table",
  "indexmap 2.0.2",
  "log",
@@ -1284,7 +1286,9 @@ dependencies = [
 name = "daft-scan"
 version = "0.1.10"
 dependencies = [
+ "bincode",
  "common-error",
+ "common-io-config",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1295,6 +1299,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "serde",
+ "serde_json",
  "snafu",
  "tokio",
 ]

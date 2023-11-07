@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(assert_matches)]
+#![feature(if_let_guard)]
 
 mod builder;
 mod display;
@@ -18,18 +19,23 @@ mod source_info;
 mod test;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_scan::{
+    file_format::{
+        CsvSourceConfig, FileFormat, JsonSourceConfig, ParquetSourceConfig, PyFileFormatConfig,
+    },
+    storage_config::{NativeStorageConfig, PyStorageConfig},
+};
 pub use join::JoinType;
 pub use logical_plan::LogicalPlan;
 pub use partitioning::{PartitionScheme, PartitionSpec};
 pub use physical_plan::PhysicalPlanScheduler;
 pub use resource_request::ResourceRequest;
-pub use source_info::{
-    CsvSourceConfig, FileFormat, FileInfo, FileInfos, JsonSourceConfig, NativeStorageConfig,
-    ParquetSourceConfig, PyFileFormatConfig, PyStorageConfig,
-};
+pub use source_info::{FileInfo, FileInfos};
 
 #[cfg(feature = "python")]
-use {pyo3::prelude::*, source_info::PythonStorageConfig};
+use daft_scan::storage_config::PythonStorageConfig;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {

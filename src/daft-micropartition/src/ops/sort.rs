@@ -5,7 +5,7 @@ use daft_core::Series;
 use daft_dsl::Expr;
 use daft_table::Table;
 
-use crate::micropartition::{MicroPartition, TableState};
+use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
@@ -14,10 +14,9 @@ impl MicroPartition {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
                 let sorted = single.sort(sort_keys, descending)?;
-                Ok(Self::new(
+                Ok(Self::new_loaded(
                     self.schema.clone(),
-                    TableState::Loaded(Arc::new(vec![sorted])),
-                    self.metadata.clone(),
+                    Arc::new(vec![sorted]),
                     self.statistics.clone(),
                 ))
             }

@@ -4,10 +4,12 @@ use common_error::DaftResult;
 
 use daft_core::schema::Schema;
 use daft_dsl::{optimization::replace_columns_with_expressions, Expr};
+use daft_scan::ScanExternalInfo;
 use indexmap::IndexSet;
 
 use crate::{
     logical_ops::{Aggregate, Project, Source},
+    source_info::{ExternalInfo, SourceInfo},
     LogicalPlan, ResourceRequest,
 };
 
@@ -153,8 +155,25 @@ impl PushDownProjection {
                         })
                         .collect::<Vec<_>>();
                     let schema = Schema::new(pruned_upstream_schema)?;
-                    let new_source: LogicalPlan =
-                        Source::new(schema.into(), source.source_info.clone(), source.limit).into();
+                    let new_source: LogicalPlan = match source.source_info.as_ref() {
+                        SourceInfo::ExternalInfo(ExternalInfo::Scan(scan_external_info)) => {
+                            Source::new(
+                                schema.into(),
+                                Arc::new(SourceInfo::ExternalInfo(ExternalInfo::Scan(
+                                    ScanExternalInfo {
+                                        pushdowns: scan_external_info.pushdowns.with_columns(Some(
+                                            Arc::new(required_columns.iter().cloned().collect()),
+                                        )),
+                                        ..scan_external_info.clone()
+                                    },
+                                ))),
+                                source.limit,
+                            )
+                            .into()
+                        }
+                        _ => Source::new(schema.into(), source.source_info.clone(), source.limit)
+                            .into(),
+                    };
 
                     let new_plan = plan.with_new_children(&[new_source.into()]);
                     // Retry optimization now that the upstream node is different.
@@ -560,7 +579,7 @@ mod tests {
 
         let expected = "\
         Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
         Ok(())
     }
@@ -576,7 +595,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -593,7 +612,7 @@ mod tests {
 
         let expected = "\
         Project: col(b), col(a)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -611,7 +630,7 @@ mod tests {
 
         let expected = "\
         Project: col(b) + lit(3)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -637,7 +656,7 @@ mod tests {
         let expected = "\
         Project: col(a), col(b), col(b) AS c\
         \n  Project: col(b) + lit(3), col(a)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -658,7 +677,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Aggregation: mean(col(a)), Group by = col(c), Output schema = c (Int64), a (Float64)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), c (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), c (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -679,7 +698,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Filter: col(b)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Boolean), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None }), Output schema = a (Int64), b (Boolean)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Boolean), c (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Boolean)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
