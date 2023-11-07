@@ -243,16 +243,19 @@ impl MicroPartition {
             &scan_task.metadata,
             &scan_task.statistics,
             scan_task.file_format_config.as_ref(),
+            scan_task.storage_config.as_ref(),
         ) {
-            // If the scan_task provides metadata (e.g. retrieved from a catalog) use it and create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _) => Ok(Self::new_unloaded(
+            // CASE: ScanTask provides all required metadata.
+            // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
+            (Some(metadata), Some(statistics), _, _) => Ok(Self::new_unloaded(
                 schema,
                 scan_task.clone(),
                 metadata.clone(),
                 statistics.clone(),
             )),
 
-            // If the scan_task is from files that support reading metadata, we can perform an eager **metadata** read to create an unloaded MicroPartition
+            // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
+            // We can perform an eager **metadata** read to create an unloaded MicroPartition
             (
                 _,
                 _,
@@ -260,17 +263,8 @@ impl MicroPartition {
                     coerce_int96_timestamp_unit,
                     row_groups,
                 }),
+                StorageConfig::Native(cfg),
             ) => {
-                let (io_config, multithreaded_io) = match scan_task.storage_config.as_ref() {
-                    StorageConfig::Native(cfg) => (
-                        cfg.io_config.clone().map(|c| Arc::new(c.clone())),
-                        cfg.multithreaded_io,
-                    ),
-                    #[cfg(feature = "python")]
-                    StorageConfig::Python(cfg) => {
-                        (cfg.io_config.clone().map(|c| Arc::new(c.clone())), true)
-                    }
-                };
                 let columns = scan_task
                     .columns
                     .as_ref()
@@ -291,10 +285,13 @@ impl MicroPartition {
                             .take(scan_task.sources.len())
                             .collect::<Vec<_>>()
                     }), // HACK: Properly propagate multi-file row_groups
-                    io_config.unwrap_or_default(),
+                    cfg.io_config
+                        .clone()
+                        .map(|c| Arc::new(c.clone()))
+                        .unwrap_or_default(),
                     io_stats,
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
-                    multithreaded_io,
+                    cfg.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
@@ -302,7 +299,8 @@ impl MicroPartition {
                 .context(DaftCoreComputeSnafu)
             }
 
-            // Lastly as a fallback, perform an eager **data** read
+            // CASE: Last resort fallback option
+            // Perform an eager **data** read
             _ => {
                 let tables = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
