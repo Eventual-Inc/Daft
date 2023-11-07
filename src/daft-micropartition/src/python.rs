@@ -72,7 +72,13 @@ impl PyMicroPartition {
     #[staticmethod]
     pub fn from_scan_task(scan_task: PyScanTask, py: Python) -> PyResult<Self> {
         Ok(py
-            .allow_threads(|| MicroPartition::from_scan_task(scan_task.into(), None))?
+            .allow_threads(|| {
+                let io_stats = IOStatsContext::new(format!(
+                    "MicroPartition::from_scan_task for {:?}",
+                    scan_task.0.sources
+                ));
+                MicroPartition::from_scan_task(scan_task.into(), Some(io_stats))
+            })?
             .into())
     }
 
