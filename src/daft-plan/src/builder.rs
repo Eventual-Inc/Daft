@@ -459,10 +459,12 @@ impl PyLogicalPlanBuilder {
     /// Finalize the logical plan, translate the logical plan to a physical plan, and return
     /// a physical plan scheduler that's capable of launching the work necessary to compute the output
     /// of the physical plan.
-    pub fn to_physical_plan_scheduler(&self) -> PyResult<PhysicalPlanScheduler> {
-        let logical_plan = self.builder.build();
-        let physical_plan: Arc<PhysicalPlan> = plan(logical_plan.as_ref())?.into();
-        Ok(physical_plan.into())
+    pub fn to_physical_plan_scheduler(&self, py: Python) -> PyResult<PhysicalPlanScheduler> {
+        py.allow_threads(|| {
+            let logical_plan = self.builder.build();
+            let physical_plan: Arc<PhysicalPlan> = plan(logical_plan.as_ref())?.into();
+            Ok(physical_plan.into())
+        })
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
