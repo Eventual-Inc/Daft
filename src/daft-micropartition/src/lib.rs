@@ -9,13 +9,16 @@ mod ops;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
+use pyo3::PyErr;
+#[cfg(feature = "python")]
 pub use python::register_modules;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
-
+    #[cfg(feature = "python")]
+    PyIO { source: PyErr },
     #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
     DuplicatedField { name: String },
     #[snafu(display(

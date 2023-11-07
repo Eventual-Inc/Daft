@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::{Expr, ExprRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -21,8 +21,31 @@ pub mod py_object_serde;
 pub mod python;
 pub mod storage_config;
 #[cfg(feature = "python")]
+use pyo3::PyErr;
+#[cfg(feature = "python")]
 pub use python::register_modules;
+use snafu::Snafu;
 use storage_config::StorageConfig;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[cfg(feature = "python")]
+    PyIO { source: PyErr },
+}
+
+impl From<Error> for DaftError {
+    fn from(value: Error) -> Self {
+        DaftError::External(value.into())
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DataFileSource {

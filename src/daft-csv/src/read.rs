@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    sync::Arc,
-};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
@@ -283,8 +279,14 @@ where
     .await?;
     // Truncate fields to only contain projected columns.
     if let Some(include_columns) = include_columns {
-        let include_columns: HashSet<&str> = include_columns.into_iter().collect();
-        fields.retain(|f| include_columns.contains(f.name.as_str()))
+        let field_map = fields
+            .into_iter()
+            .map(|field| (field.name.clone(), field))
+            .collect::<HashMap<String, Field>>();
+        fields = include_columns
+            .into_iter()
+            .map(|col| field_map[col].clone())
+            .collect::<Vec<_>>();
     }
     // Concatenate column chunks and convert into Daft Series.
     // Note that this concatenation is done in parallel on the rayon threadpool.

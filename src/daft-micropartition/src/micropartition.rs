@@ -19,6 +19,8 @@ use daft_table::Table;
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
+#[cfg(feature = "python")]
+use crate::PyIOSnafu;
 
 use daft_io::{IOConfig, IOStatsRef};
 use daft_stats::TableMetadata;
@@ -84,20 +86,6 @@ fn materialize_scan_task(
     // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
     // Note that we need to apply column pruning here if specified by the ScanTask
     let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema.clone());
-    let cast_to_schema = match &column_names {
-        None => Ok(cast_to_schema),
-        Some(column_names) => Ok(Arc::new(
-            Schema::new(
-                cast_to_schema
-                    .names()
-                    .iter()
-                    .filter(|name| column_names.contains(&name.as_str()))
-                    .map(|name| cast_to_schema.get_field(name).unwrap().clone())
-                    .collect(),
-            )
-            .context(DaftCoreComputeSnafu)?,
-        )),
-    }?;
 
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
@@ -146,11 +134,22 @@ fn materialize_scan_task(
                 // Native CSV Reads
                 // ****************
                 FileFormatConfig::Csv(cfg @ CsvSourceConfig { .. }) => {
+                    let col_names = if !cfg.has_headers {
+                        Some(
+                            cast_to_schema
+                                .fields
+                                .values()
+                                .map(|f| f.name.as_str())
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    };
                     urls.map(|url| {
                         daft_csv::read::read_csv(
                             url,
-                            None,
-                            None, // column_names.clone(), NOTE: `read_csv` seems to be buggy when provided with out-of-order column_names
+                            col_names.clone(),
+                            column_names.clone(),
                             scan_task.limit,
                             cfg.has_headers,
                             Some(cfg.delimiter.as_bytes()[0]),
@@ -178,9 +177,82 @@ fn materialize_scan_task(
         }
         #[cfg(feature = "python")]
         StorageConfig::Python(_) => {
-            todo!("TODO: Implement Python I/O backend for MicroPartitions.")
+            use pyo3::Python;
+            match scan_task.file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    ..
+                }) => Python::with_gil(|py| {
+                    urls.map(|url| {
+                        crate::python::read_parquet_into_py_table(
+                            py,
+                            url,
+                            cast_to_schema.clone().into(),
+                            (*coerce_int96_timestamp_unit).into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
+                            scan_task.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })
+                    .collect::<crate::Result<Vec<_>>>()
+                })?,
+                FileFormatConfig::Csv(CsvSourceConfig {
+                    has_headers,
+                    delimiter,
+                    double_quote,
+                    ..
+                }) => Python::with_gil(|py| {
+                    urls.map(|url| {
+                        crate::python::read_csv_into_py_table(
+                            py,
+                            url,
+                            *has_headers,
+                            delimiter,
+                            *double_quote,
+                            cast_to_schema.clone().into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
+                            scan_task.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })
+                    .collect::<crate::Result<Vec<_>>>()
+                })?,
+                FileFormatConfig::Json(_) => Python::with_gil(|py| {
+                    urls.map(|url| {
+                        crate::python::read_json_into_py_table(
+                            py,
+                            url,
+                            cast_to_schema.clone().into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
+                            scan_task.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })
+                    .collect::<crate::Result<Vec<_>>>()
+                })?,
+            }
         }
     };
+    let cast_to_schema = match &column_names {
+        None => Ok(cast_to_schema),
+        Some(column_names) => Ok(Arc::new(
+            Schema::new(
+                cast_to_schema
+                    .names()
+                    .iter()
+                    .filter(|name| column_names.contains(&name.as_str()))
+                    .map(|name| cast_to_schema.get_field(name).unwrap().clone())
+                    .collect(),
+            )
+            .context(DaftCoreComputeSnafu)?,
+        )),
+    }?;
 
     let casted_table_values = table_values
         .iter()

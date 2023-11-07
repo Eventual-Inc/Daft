@@ -4,6 +4,8 @@ use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+#[cfg(feature = "python")]
+use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python, snafu::ResultExt};
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
@@ -120,7 +122,23 @@ impl GlobScanOperator {
                     FileFormatConfig::Json(JsonSourceConfig {}) => {
                         // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
                         // a daft_json crate that gives us native JSON schema inference
-                        todo!("Implement schema inference from JSON in GlobScanOperator");
+                        match storage_config.as_ref() {
+                            StorageConfig::Native(_) => todo!(
+                                "Implement native JSON schema inference in a daft_json crate."
+                            ),
+                            #[cfg(feature = "python")]
+                            StorageConfig::Python(_) => Python::with_gil(|py| {
+                                crate::python::pylib::read_json_schema(
+                                    py,
+                                    first_filepath,
+                                    storage_config.clone().into(),
+                                )
+                                .and_then(|s| {
+                                    Ok(Schema::new(s.schema.fields.values().cloned().collect())?)
+                                })
+                                .context(PyIOSnafu)
+                            })?,
+                        }
                     }
                 };
                 Arc::new(inferred_schema)
