@@ -55,28 +55,15 @@ def _get_tabular_files_scan(
 
         scan_op: ScanOperatorHandle
         if isinstance(path, list):
-            # Eagerly globs each path and fallback to AnonymousScanOperator.
-            # NOTE: We could instead have GlobScanOperator take a list of paths and mux the glob output streams
-            runner_io = get_context().runner().runner_io()
-            file_infos = runner_io.glob_paths_details(path, file_format_config=file_format_config, io_config=io_config)
-
-            # TODO: Should we move this into the AnonymousScanOperator itself?
-            # Infer schema if no hints provided
-            inferred_or_provided_schema = (
-                schema_hint
-                if schema_hint is not None
-                else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
-            )
-
-            scan_op = ScanOperatorHandle.anonymous_scan(
-                file_infos.file_paths,
-                inferred_or_provided_schema._schema,
+            scan_op = ScanOperatorHandle.glob_scan(
+                path,
                 file_format_config,
                 storage_config,
+                schema=schema_hint._schema if schema_hint is not None else None,
             )
         elif isinstance(path, str):
             scan_op = ScanOperatorHandle.glob_scan(
-                path,
+                [path],
                 file_format_config,
                 storage_config,
                 schema=schema_hint._schema if schema_hint is not None else None,

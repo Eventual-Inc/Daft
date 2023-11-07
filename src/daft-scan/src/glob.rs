@@ -17,7 +17,7 @@ use crate::{
 };
 #[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
-    glob_path: String,
+    glob_paths: Vec<String>,
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
@@ -115,20 +115,27 @@ fn get_io_client_and_runtime(
 
 impl GlobScanOperator {
     pub fn try_new(
-        glob_path: &str,
+        glob_paths: &[&str],
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
         schema: Option<SchemaRef>,
     ) -> DaftResult<Self> {
+        let first_glob_path = match glob_paths.first() {
+            None => Err(DaftError::ValueError(
+                "Cannot glob empty list of files".to_string(),
+            )),
+            Some(path) => Ok(path),
+        }?;
+
         let schema = match schema {
             Some(s) => s,
             None => {
                 let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
                 let io_stats = IOStatsContext::new(format!(
-                    "GlobScanOperator::try_new schema inference for {glob_path}"
+                    "GlobScanOperator::try_new schema inference for {first_glob_path}"
                 ));
                 let mut paths = run_glob(
-                    glob_path,
+                    first_glob_path,
                     Some(1),
                     io_client.clone(),
                     io_runtime.clone(),
@@ -137,7 +144,7 @@ impl GlobScanOperator {
                 let first_filepath = match paths.next() {
                     Some(path) => path,
                     None => Err(Error::GlobNoMatch {
-                        glob_path: glob_path.to_string(),
+                        glob_path: first_glob_path.to_string(),
                     }
                     .into()),
                 }?;
@@ -202,7 +209,7 @@ impl GlobScanOperator {
         };
 
         Ok(Self {
-            glob_path: glob_path.to_string(),
+            glob_paths: glob_paths.iter().map(|s| s.to_string()).collect(),
             file_format_config,
             schema,
             storage_config,
@@ -238,31 +245,40 @@ impl ScanOperator for GlobScanOperator {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>> + 'static>> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
         let io_stats = IOStatsContext::new(format!(
-            "GlobScanOperator::to_scan_tasks for {}",
-            self.glob_path
+            "GlobScanOperator::to_scan_tasks for {:#?}",
+            self.glob_paths
         ));
 
-        let files = run_glob(
-            self.glob_path.as_str(),
-            None,
-            io_client,
-            io_runtime,
-            Some(io_stats),
-        )?;
+        // Run [`run_glob`] on each path and mux them into the same iterator
+        let files = self
+            .glob_paths
+            .clone()
+            .into_iter()
+            .flat_map(move |glob_path| {
+                match run_glob(
+                    glob_path.as_str(),
+                    None,
+                    io_client.clone(),
+                    io_runtime.clone(),
+                    Some(io_stats.clone()),
+                ) {
+                    Ok(paths) => paths,
+                    Err(err) => Box::new(vec![Err(err)].into_iter()),
+                }
+            });
 
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
-        // Create one ScanTask per file. We should find a way to perform streaming from the glob instead
-        // of materializing here.
+        // Create one ScanTask per file
         Ok(Box::new(files.map(move |f| {
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
-                    path: f.expect("Error happened during globbing").to_string(),
+                    path: f?.to_string(),
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
