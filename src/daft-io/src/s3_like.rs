@@ -783,7 +783,7 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
+    ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
         // Ensure fanout_limit is not None to prevent runaway concurrency

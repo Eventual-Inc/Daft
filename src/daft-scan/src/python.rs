@@ -53,19 +53,18 @@ pub mod pylib {
         #[staticmethod]
         pub fn glob_scan(
             py: Python,
-            glob_path: &str,
+            glob_path: Vec<&str>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             schema: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path,
+                    glob_path.as_slice(),
                     file_format_config.into(),
                     storage_config.into(),
                     schema.map(|s| s.schema),
                 )?);
-
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),
                 })

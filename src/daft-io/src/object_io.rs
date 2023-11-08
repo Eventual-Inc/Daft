@@ -118,7 +118,7 @@ pub(crate) trait ObjectSource: Sync + Send {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
-    ) -> super::Result<BoxStream<super::Result<FileMetadata>>>;
+    ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>>;
 
     async fn ls(
         &self,

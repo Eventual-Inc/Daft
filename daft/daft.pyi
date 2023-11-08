@@ -403,7 +403,7 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def glob_scan(
-        glob_path: str,
+        glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
         schema: PySchema | None = None,

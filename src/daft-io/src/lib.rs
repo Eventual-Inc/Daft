@@ -26,7 +26,7 @@ use tokio::runtime::RuntimeFlavor;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
-use futures::{StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 
 use snafu::Snafu;
 use url::ParseError;
@@ -168,18 +168,16 @@ impl IOClient {
 
     pub async fn glob(
         &self,
-        input: &str,
+        input: String,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
-    ) -> Result<Vec<FileMetadata>> {
-        let (scheme, _) = parse_url(input)?;
+    ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
+        let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
-        let files: Vec<FileMetadata> = source
-            .glob(input, fanout_limit, page_size, limit, io_stats)
-            .await?
-            .try_collect()
+        let files = source
+            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
             .await?;
         Ok(files)
     }
