@@ -431,8 +431,11 @@ impl MicroPartition {
         }
     }
 
-    pub(crate) fn concat_or_get(&self) -> crate::Result<Arc<Vec<Table>>> {
-        let tables = self.tables_or_read(None)?;
+    pub(crate) fn concat_or_get(
+        &self,
+        io_stats: Option<IOStatsRef>,
+    ) -> crate::Result<Arc<Vec<Table>>> {
+        let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {
             return Ok(tables);
         }

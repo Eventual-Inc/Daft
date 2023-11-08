@@ -1,6 +1,7 @@
 use common_error::DaftResult;
 use daft_core::array::ops::DaftCompare;
 use daft_dsl::Expr;
+use daft_io::IOStatsContext;
 use daft_table::infer_join_schema;
 
 use crate::micropartition::MicroPartition;
@@ -33,9 +34,10 @@ impl MicroPartition {
         if let TruthValue::False = tv {
             return Ok(Self::empty(Some(join_schema.into())));
         }
+        let io_stats = IOStatsContext::new(format!("MicroPartition::join:"));
 
-        let lt = self.concat_or_get()?;
-        let rt = right.concat_or_get()?;
+        let lt = self.concat_or_get(Some(io_stats.clone()))?;
+        let rt = right.concat_or_get(Some(io_stats))?;
 
         match (lt.as_slice(), rt.as_slice()) {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),
