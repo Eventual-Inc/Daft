@@ -671,7 +671,7 @@ pub(crate) fn read_parquet_into_py_table(
         .call1((coerce_int96_timestamp_unit,))?;
     py.import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
-        .call1((uri, py_schema, storage_config, parse_options, read_options))?
+        .call1((uri, py_schema, storage_config, read_options, parse_options))?
         .getattr(pyo3::intern!(py, "to_table"))?
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?
