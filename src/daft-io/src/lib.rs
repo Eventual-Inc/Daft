@@ -168,16 +168,16 @@ impl IOClient {
 
     pub async fn glob(
         &self,
-        input: &str,
+        input: String,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
-        let (scheme, _) = parse_url(input)?;
+        let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
         let files = source
-            .glob(input, fanout_limit, page_size, limit, io_stats)
+            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
             .await?;
         Ok(files)
     }

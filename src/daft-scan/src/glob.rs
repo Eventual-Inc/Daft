@@ -5,10 +5,9 @@ use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 #[cfg(feature = "python")]
-use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python, snafu::ResultExt};
-use futures::StreamExt;
-use snafu::Snafu;
-use tokio::sync::mpsc::Receiver;
+use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
+use futures::{stream::BoxStream, StreamExt};
+use snafu::{ResultExt, Snafu};
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
@@ -23,15 +22,18 @@ pub struct GlobScanOperator {
     storage_config: Arc<StorageConfig>,
 }
 
-/// Wrapper struct that implements a sync Iterator for a tokio::sync::mpsc::Receiver
-struct TokioMPSCReceiverIterator<T> {
-    recv: Receiver<T>,
+/// Wrapper struct that implements a sync Iterator for a BoxStream
+struct BoxStreamIterator<'a, T> {
+    boxstream: BoxStream<'a, T>,
+    runtime_handle: tokio::runtime::Handle,
 }
-impl<T> Iterator for TokioMPSCReceiverIterator<T> {
+
+impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.recv.blocking_recv()
+        self.runtime_handle
+            .block_on(async { self.boxstream.next().await })
     }
 }
 
@@ -39,6 +41,11 @@ impl<T> Iterator for TokioMPSCReceiverIterator<T> {
 enum Error {
     #[snafu(display("Glob path had no matches: \"{}\"", glob_path))]
     GlobNoMatch { glob_path: String },
+    #[snafu(display("Error during glob: \"{}\"", glob_path))]
+    GlobIOError {
+        glob_path: String,
+        source: daft_io::Error,
+    },
 }
 
 impl From<Error> for DaftError {
@@ -48,6 +55,9 @@ impl From<Error> for DaftError {
                 path: glob_path.clone(),
                 source: Box::new(value),
             },
+            Error::GlobIOError { glob_path, source } => DaftError::InternalError(format!(
+                "Error when performing IO on path {glob_path}: {source}"
+            )),
         }
     }
 }
@@ -60,27 +70,28 @@ fn run_glob(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<String>>>> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
-    let _rt_guard = runtime.enter();
 
-    runtime.block_on(async {
-        let (sender, recv) = tokio::sync::mpsc::channel(128);
-        let mut fm_stream = io_client
-            .as_ref()
-            .glob(&parsed_glob_path, None, None, limit, io_stats)
-            .await?;
+    // Construct a static-lifetime BoxStream returning the FileMetadata
+    let glob_input = parsed_glob_path.as_ref().to_string();
+    let runtime_handle = runtime.handle();
+    let boxstream = runtime_handle.block_on(async move {
+        io_client
+            .glob(glob_input, None, None, limit, io_stats)
+            .await
+    })?;
 
-        // Spawn a task to asynchronously send data into the spawned channel with best-effort
-        tokio::spawn(async move {
-            while let Some(fm) = fm_stream.next().await {
-                let _ = sender.send(fm).await;
-            }
-        });
-
-        Ok(
-            Box::new(TokioMPSCReceiverIterator { recv }.map(|fm| Ok(fm.map(|fm| fm.filepath)?)))
-                as Box<dyn Iterator<Item = DaftResult<String>>>,
-        )
-    })
+    // Construct a static-lifetime BoxStreamIterator
+    let glob_input = parsed_glob_path.as_ref().to_string();
+    let iterator = BoxStreamIterator {
+        boxstream,
+        runtime_handle: runtime_handle.clone(),
+    };
+    let iterator = iterator.map(move |fm| {
+        Ok(fm.map(|fm| fm.filepath).context(GlobIOSnafu {
+            glob_path: glob_input.clone(),
+        })?)
+    });
+    Ok(Box::new(iterator))
 }
 
 fn get_io_client_and_runtime(
