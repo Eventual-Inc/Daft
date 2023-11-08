@@ -22,6 +22,9 @@ pub fn read_csv_schema(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -34,6 +37,9 @@ pub fn read_csv_schema(
             has_header,
             delimiter,
             double_quote,
+            quote,
+            escape_char,
+            comment,
             // Default to 1 MiB.
             max_bytes.or(Some(1024 * 1024)),
             io_client,
@@ -48,6 +54,9 @@ pub(crate) async fn read_csv_schema_single(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -64,6 +73,9 @@ pub(crate) async fn read_csv_schema_single(
                 has_header,
                 delimiter,
                 double_quote,
+                quote,
+                escape_char,
+                comment,
                 max_bytes,
             )
             .await
@@ -75,6 +87,9 @@ pub(crate) async fn read_csv_schema_single(
                 has_header,
                 delimiter,
                 double_quote,
+                quote,
+                escape_char,
+                comment,
                 // Truncate max_bytes to size if both are set.
                 max_bytes.map(|m| size.map(|s| m.min(s)).unwrap_or(m)),
             )
@@ -89,6 +104,9 @@ async fn read_csv_schema_from_compressed_reader<R>(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     max_bytes: Option<usize>,
 ) -> DaftResult<(Schema, usize, usize, f64, f64)>
 where
@@ -101,6 +119,9 @@ where
                 has_header,
                 delimiter,
                 double_quote,
+                quote,
+                escape_char,
+                comment,
                 max_bytes,
             )
             .await
@@ -111,6 +132,9 @@ where
                 has_header,
                 delimiter,
                 double_quote,
+                quote,
+                escape_char,
+                comment,
                 max_bytes,
             )
             .await
@@ -123,6 +147,9 @@ async fn read_csv_schema_from_uncompressed_reader<R>(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     max_bytes: Option<usize>,
 ) -> DaftResult<(Schema, usize, usize, f64, f64)>
 where
@@ -134,6 +161,9 @@ where
             has_header,
             delimiter,
             double_quote,
+            quote,
+            escape_char,
+            comment,
             max_bytes,
         )
         .await?;
@@ -151,6 +181,9 @@ async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     max_bytes: Option<usize>,
 ) -> DaftResult<(arrow2::datatypes::Schema, usize, usize, f64, f64)>
 where
@@ -160,6 +193,9 @@ where
         .has_headers(has_header)
         .delimiter(delimiter.unwrap_or(b','))
         .double_quote(double_quote)
+        .quote(quote.unwrap_or(b'"'))
+        .escape(escape_char)
+        .comment(comment)
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
         .create_reader(reader.compat());
     let (fields, total_bytes_read, num_records_read, mean_size, std_size) =
@@ -304,6 +340,9 @@ mod tests {
             None,
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         )?;
@@ -340,6 +379,9 @@ mod tests {
             Some(b'|'),
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         )?;
@@ -373,6 +415,9 @@ mod tests {
             None,
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         )?;
@@ -398,6 +443,9 @@ mod tests {
             false,
             None,
             true,
+            None,
+            None,
+            None,
             None,
             io_client.clone(),
             None,
@@ -435,6 +483,9 @@ mod tests {
             None,
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         )?;
@@ -467,6 +518,9 @@ mod tests {
             true,
             None,
             true,
+            None,
+            None,
+            None,
             None,
             io_client.clone(),
             None,
@@ -504,6 +558,9 @@ mod tests {
             None,
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         )?;
@@ -537,6 +594,9 @@ mod tests {
             true,
             None,
             true,
+            None,
+            None,
+            None,
             Some(100),
             io_client.clone(),
             None,
@@ -575,6 +635,9 @@ mod tests {
             None,
             true,
             None,
+            None,
+            None,
+            None,
             io_client.clone(),
             None,
         );
@@ -607,6 +670,9 @@ mod tests {
             true,
             None,
             true,
+            None,
+            None,
+            None,
             None,
             io_client.clone(),
             None,
@@ -662,6 +728,9 @@ mod tests {
             true,
             None,
             true,
+            None,
+            None,
+            None,
             None,
             io_client.clone(),
             None,

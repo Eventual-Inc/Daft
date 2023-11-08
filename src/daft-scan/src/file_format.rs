@@ -116,6 +116,9 @@ pub struct CsvSourceConfig {
     pub delimiter: String,
     pub has_headers: bool,
     pub double_quote: bool,
+    pub quote: Option<u8>,
+    pub escape_char: Option<u8>,
+    pub comment: Option<u8>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -136,6 +139,9 @@ impl CsvSourceConfig {
         delimiter: String,
         has_headers: bool,
         double_quote: bool,
+        quote: Option<u8>,
+        escape_char: Option<u8>,
+        comment: Option<u8>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
@@ -149,6 +155,9 @@ impl CsvSourceConfig {
             delimiter,
             has_headers,
             double_quote,
+            quote,
+            escape_char,
+            comment,
             buffer_size,
             chunk_size,
         })
