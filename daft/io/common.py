@@ -45,7 +45,7 @@ def _get_tabular_files_scan(
 
     schema_hint = _get_schema_from_hints(schema_hints) if schema_hints is not None else None
 
-    ### FEATURE_FLAG: $DAFT_V2_SCANS
+    ### FEATURE_FLAG: $DAFT_MICROPARTITIONS
     #
     # This environment variable will make Daft use the new "v2 scans" and MicroPartitions when building Daft logical plans
     if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
