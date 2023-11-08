@@ -665,10 +665,15 @@ pub(crate) fn read_parquet_into_py_table(
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?
         .call1((num_rows, include_columns))?;
+    let py_coerce_int96_timestamp_unit = py
+        .import(pyo3::intern!(py, "daft.datatype"))?
+        .getattr(pyo3::intern!(py, "TimeUnit"))?
+        .getattr(pyo3::intern!(py, "_from_pytimeunit"))?
+        .call1((coerce_int96_timestamp_unit,))?;
     let parse_options = py
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
-        .call1((coerce_int96_timestamp_unit,))?;
+        .call1((py_coerce_int96_timestamp_unit,))?;
     py.import(pyo3::intern!(py, "daft.table.table_io"))?
         .getattr(pyo3::intern!(py, "read_parquet"))?
         .call1((uri, py_schema, storage_config, read_options, parse_options))?
