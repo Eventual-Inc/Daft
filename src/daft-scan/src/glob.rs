@@ -4,10 +4,10 @@ use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-#[cfg(feature = "python")]
-use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
 use futures::{stream::BoxStream, StreamExt};
 use snafu::{ResultExt, Snafu};
+#[cfg(feature = "python")]
+use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
@@ -204,7 +204,7 @@ impl GlobScanOperator {
                             StorageConfig::Python(_) => Python::with_gil(|py| {
                                 crate::python::pylib::read_json_schema(
                                     py,
-                                    first_filepath,
+                                    first_filepath.as_str(),
                                     storage_config.clone().into(),
                                 )
                                 .and_then(|s| {
