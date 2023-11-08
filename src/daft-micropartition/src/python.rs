@@ -12,7 +12,7 @@ use daft_core::{
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_scan::{python::pylib::PyScanTask, ScanTask};
+use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
 use daft_stats::TableStatistics;
 use daft_table::python::PyTable;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, Python};
@@ -338,6 +338,31 @@ impl PyMicroPartition {
         })
     }
 
+    #[staticmethod]
+    pub fn read_json(
+        py: Python,
+        uri: &str,
+        schema: PySchema,
+        storage_config: PyStorageConfig,
+        include_columns: Option<Vec<String>>,
+        num_rows: Option<usize>,
+    ) -> PyResult<Self> {
+        let py_table = read_json_into_py_table(
+            py,
+            uri,
+            schema.clone(),
+            storage_config,
+            include_columns,
+            num_rows,
+        )?;
+        let mp = crate::micropartition::MicroPartition::new_loaded(
+            schema.into(),
+            Arc::new(vec![py_table.into()]),
+            None,
+        );
+        Ok(mp.into())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[staticmethod]
     pub fn read_csv(
@@ -558,6 +583,99 @@ impl PyMicroPartition {
             unreachable!()
         }
     }
+}
+
+pub(crate) fn read_json_into_py_table(
+    py: Python,
+    uri: &str,
+    schema: PySchema,
+    storage_config: PyStorageConfig,
+    include_columns: Option<Vec<String>>,
+    num_rows: Option<usize>,
+) -> PyResult<PyTable> {
+    let read_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .call1((num_rows, include_columns))?;
+    let py_schema = py
+        .import(pyo3::intern!(py, "daft.logical.schema"))?
+        .getattr(pyo3::intern!(py, "Schema"))?
+        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .call1((schema,))?;
+    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+        .getattr(pyo3::intern!(py, "read_json"))?
+        .call1((uri, py_schema, storage_config, read_options))?
+        .getattr(pyo3::intern!(py, "to_table"))?
+        .call0()?
+        .getattr(pyo3::intern!(py, "_table"))?
+        .extract()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_csv_into_py_table(
+    py: Python,
+    uri: &str,
+    has_header: bool,
+    delimiter: &str,
+    double_quote: bool,
+    schema: PySchema,
+    storage_config: PyStorageConfig,
+    include_columns: Option<Vec<String>>,
+    num_rows: Option<usize>,
+) -> PyResult<PyTable> {
+    let py_schema = py
+        .import(pyo3::intern!(py, "daft.logical.schema"))?
+        .getattr(pyo3::intern!(py, "Schema"))?
+        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .call1((schema,))?;
+    let read_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .call1((num_rows, include_columns))?;
+    let header_idx = if has_header { Some(0) } else { None };
+    let parse_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableParseCSVOptions"))?
+        .call1((delimiter, header_idx, double_quote))?;
+    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+        .getattr(pyo3::intern!(py, "read_csv"))?
+        .call1((uri, py_schema, storage_config, parse_options, read_options))?
+        .getattr(pyo3::intern!(py, "to_table"))?
+        .call0()?
+        .getattr(pyo3::intern!(py, "_table"))?
+        .extract()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_parquet_into_py_table(
+    py: Python,
+    uri: &str,
+    schema: PySchema,
+    coerce_int96_timestamp_unit: PyTimeUnit,
+    storage_config: PyStorageConfig,
+    include_columns: Option<Vec<String>>,
+    num_rows: Option<usize>,
+) -> PyResult<PyTable> {
+    let py_schema = py
+        .import(pyo3::intern!(py, "daft.logical.schema"))?
+        .getattr(pyo3::intern!(py, "Schema"))?
+        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .call1((schema,))?;
+    let read_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .call1((num_rows, include_columns))?;
+    let parse_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableParseParquetOptions"))?
+        .call1((coerce_int96_timestamp_unit,))?;
+    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+        .getattr(pyo3::intern!(py, "read_parquet"))?
+        .call1((uri, py_schema, storage_config, parse_options, read_options))?
+        .getattr(pyo3::intern!(py, "to_table"))?
+        .call0()?
+        .getattr(pyo3::intern!(py, "_table"))?
+        .extract()
 }
 
 impl From<MicroPartition> for PyMicroPartition {

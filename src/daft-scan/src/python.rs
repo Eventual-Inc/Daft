@@ -111,6 +111,18 @@ pub mod pylib {
             value.0
         }
     }
+
+    pub(crate) fn read_json_schema(
+        py: Python,
+        uri: &str,
+        storage_config: PyStorageConfig,
+    ) -> PyResult<PySchema> {
+        py.import(pyo3::intern!(py, "daft.table.schema_inference"))?
+            .getattr(pyo3::intern!(py, "from_json"))?
+            .call1((uri, storage_config))?
+            .getattr(pyo3::intern!(py, "_schema"))?
+            .extract()
+    }
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
