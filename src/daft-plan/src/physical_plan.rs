@@ -180,10 +180,11 @@ impl PhysicalPlanScheduler {
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,
+        py: Python,
         psets: HashMap<String, Vec<PyObject>>,
         is_ray_runner: bool,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| self.plan.to_partition_tasks(py, &psets, is_ray_runner))
+        self.plan.to_partition_tasks(py, &psets, is_ray_runner)
     }
 }
 
