@@ -17,10 +17,14 @@ pub use python::register_modules;
 pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
+
     #[cfg(feature = "python")]
+    #[snafu(display("PyIOError: {}", source))]
     PyIO { source: PyErr },
+
     #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
     DuplicatedField { name: String },
+
     #[snafu(display(
         "Field: {} not found in Parquet File:  Available Fields: {:?}",
         field,
