@@ -838,7 +838,7 @@ mod tests {
         assert_eq!(
             table.schema,
             Schema::new(vec![
-                Field::new("\"sepal.\"\"length\"", DataType::Float64),
+                Field::new("sepal.length", DataType::Float64),
                 Field::new("sepal.width", DataType::Float64),
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
@@ -851,7 +851,7 @@ mod tests {
             &table,
             true,
             None,
-            false,
+            true,
             Some(b'\''),
             None,
             None,
@@ -866,7 +866,7 @@ mod tests {
     #[test]
     fn test_csv_read_local_escape() -> DaftResult<()> {
         let file = format!(
-            "{}/test/iris_tiny_single_quote.csv",
+            "{}/test/iris_tiny_escape.csv",
             env!("CARGO_MANIFEST_DIR"),
         );
 
@@ -884,7 +884,7 @@ mod tests {
             None,
             true,
             None,
-            Some(b'-'), //testing with hyphen as separator
+            Some(b'\\'), //testing with '\' as escape character
             None,
             io_client,
             None,
@@ -898,7 +898,7 @@ mod tests {
         assert_eq!(
             table.schema,
             Schema::new(vec![
-                Field::new("\"sepal.\"\"length\"", DataType::Float64),
+                Field::new("sepal.\"length\"", DataType::Float64),
                 Field::new("sepal.width", DataType::Float64),
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
@@ -911,9 +911,9 @@ mod tests {
             &table,
             true,
             None,
-            false,
+            true,
             None,
-            Some(b'-'),
+            Some(b'\\'),
             None,
             None,
             None,
@@ -958,7 +958,7 @@ mod tests {
         assert_eq!(
             table.schema,
             Schema::new(vec![
-                Field::new("\"sepal.\"\"length\"", DataType::Float64),
+                Field::new("sepal.length", DataType::Float64),
                 Field::new("sepal.width", DataType::Float64),
                 Field::new("petal.length", DataType::Float64),
                 Field::new("petal.width", DataType::Float64),
@@ -971,7 +971,7 @@ mod tests {
             &table,
             true,
             None,
-            false,
+            true,
             None,
             None,
             Some(b'#'),
