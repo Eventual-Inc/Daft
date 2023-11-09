@@ -4,6 +4,7 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import logging
 import pathlib
 from dataclasses import dataclass
 from functools import reduce
@@ -45,6 +46,8 @@ if TYPE_CHECKING:
     import dask
 
 from daft.logical.schema import Schema
+
+logger = logging.getLogger(__name__)
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
@@ -898,7 +901,9 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning("No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts.")
+            cols = tuple(self.columns)
         return self._agg([(c, "count") for c in cols])
 
     @DataframePublicAPI
