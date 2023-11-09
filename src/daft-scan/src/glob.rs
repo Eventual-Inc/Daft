@@ -64,13 +64,13 @@ fn run_glob(
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<String>>>> {
     let runtime_handle = runtime.handle();
     let _rt_guard = runtime_handle.enter();
-    let io_client = get_io_client(runtime_handle, io_config)?;
 
     let (_, parsed_glob_path) = parse_url(glob_path)?;
 
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let boxstream = runtime_handle.block_on(async move {
+        let io_client = get_io_client(io_config).await?;
         io_client
             .glob(glob_input, None, None, limit, io_stats)
             .await

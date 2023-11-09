@@ -27,13 +27,10 @@ mod py {
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let runtime_handle = get_runtime(multithreaded_io)?;
             let _rt_guard = runtime_handle.enter();
-            let io_client = get_io_client(
-                runtime_handle.handle(),
-                io_config.unwrap_or_default().config.into(),
-            )?;
             let (scheme, path) = parse_url(&path)?;
 
             runtime_handle.block_on(async move {
+                let io_client = get_io_client(io_config.unwrap_or_default().config.into()).await?;
                 let source = io_client.get_source(&scheme).await?;
                 let files = source
                     .glob(

@@ -27,8 +27,8 @@ pub fn read_csv_schema(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(Schema, usize, usize, f64, f64)> {
     let runtime_handle = tokio::runtime::Handle::current();
-    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     runtime_handle.block_on(async {
+        let io_client = daft_io::get_io_client(io_config).await?;
         read_csv_schema_single(
             uri,
             has_header,

@@ -62,6 +62,8 @@ pub mod pylib {
             schema: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
+                let runtime = daft_io::get_runtime(true)?;
+                let _rt_guard = runtime.enter();
                 let operator = Arc::new(GlobScanOperator::try_new(
                     glob_path.as_slice(),
                     file_format_config.into(),

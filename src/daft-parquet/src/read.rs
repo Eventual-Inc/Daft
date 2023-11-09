@@ -64,7 +64,7 @@ async fn read_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let io_client = daft_io::get_io_client(&tokio::runtime::Handle::current(), io_config)?;
+    let io_client = daft_io::get_io_client(io_config).await?;
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
@@ -349,8 +349,8 @@ pub fn read_parquet_into_pyarrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<ParquetPyarrowChunk> {
     let runtime_handle = tokio::runtime::Handle::current();
-    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     runtime_handle.block_on(async {
+        let io_client = daft_io::get_io_client(io_config).await?;
         read_parquet_single_into_arrow(
             uri,
             columns,
@@ -446,7 +446,6 @@ pub fn read_parquet_into_pyarrow_bulk(
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
     let runtime_handle = tokio::runtime::Handle::current();
-    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
@@ -467,11 +466,11 @@ pub fn read_parquet_into_pyarrow_bulk(
                     None => None,
                     Some(v) => v.get(i).cloned(),
                 };
-
-                let io_client = io_client.clone();
+                let owned_io_config = io_config.clone();
                 let io_stats = io_stats.clone();
 
                 tokio::task::spawn(async move {
+                    let io_client = daft_io::get_io_client(owned_io_config).await?;
                     let columns = owned_columns
                         .as_ref()
                         .map(|s| s.iter().map(AsRef::as_ref).collect::<Vec<_>>());
@@ -508,8 +507,8 @@ pub fn read_parquet_schema(
     schema_inference_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
     let runtime_handle = tokio::runtime::Handle::current();
-    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     let builder = runtime_handle.block_on(async {
+        let io_client = daft_io::get_io_client(io_config).await.expect("TODO: Fix");
         ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats).await
     })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
@@ -522,7 +521,7 @@ pub async fn read_parquet_metadata(
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<parquet2::metadata::FileMetaData> {
-    let io_client = daft_io::get_io_client(&tokio::runtime::Handle::current(), io_config)?;
+    let io_client = daft_io::get_io_client(io_config).await?;
     let builder = ParquetReaderBuilder::from_uri(uri, io_client, io_stats).await?;
     Ok(builder.metadata)
 }

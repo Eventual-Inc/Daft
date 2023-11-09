@@ -305,18 +305,16 @@ lazy_static! {
         tokio::sync::RwLock::new(HashMap::new());
 }
 
-pub fn get_io_client(
-    runtime_handle: &tokio::runtime::Handle,
-    config: Arc<IOConfig>,
-) -> DaftResult<Arc<IOClient>> {
-    let read_handle = CLIENT_CACHE.blocking_read();
+pub async fn get_io_client(config: Arc<IOConfig>) -> Result<Arc<IOClient>> {
+    let runtime_handle = tokio::runtime::Handle::current();
+    let read_handle = CLIENT_CACHE.read().await;
     let key = (runtime_handle.id(), config.clone());
     if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
         drop(read_handle);
 
-        let mut w_handle = CLIENT_CACHE.blocking_write();
+        let mut w_handle = CLIENT_CACHE.write().await;
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
@@ -403,16 +401,17 @@ pub fn _url_download(
             max_connections * usize::from(std::thread::available_parallelism()?)
         }
     };
-    let io_client = get_io_client(&runtime_handle, config)?;
-
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
-        let owned_client = io_client.clone();
         let owned_io_stats = io_stats.clone();
+        let owned_config = config.clone();
         tokio::spawn(async move {
+            let io_client = get_io_client(owned_config.clone())
+                .await
+                .expect("TODO: propagate error");
             (
                 i,
-                owned_client
+                io_client
                     .single_url_download(i, owned_url, raise_error_on_failure, owned_io_stats)
                     .await,
             )

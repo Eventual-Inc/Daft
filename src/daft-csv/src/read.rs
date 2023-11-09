@@ -46,8 +46,8 @@ pub fn read_csv(
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = tokio::runtime::Handle::current();
-    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     runtime_handle.block_on(async {
+        let io_client = daft_io::get_io_client(io_config).await?;
         read_csv_single(
             uri,
             column_names,

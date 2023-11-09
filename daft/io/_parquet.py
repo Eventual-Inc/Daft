@@ -2,7 +2,6 @@
 
 from typing import Dict, List, Optional, Union
 
-from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -52,7 +51,7 @@ def read_parquet(
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not context.get_context().is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = True
 
     file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
     if use_native_downloader:

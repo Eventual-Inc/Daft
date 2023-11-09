@@ -523,8 +523,6 @@ pub(crate) fn read_csv_into_micropartition(
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
-    let runtime_handle = tokio::runtime::Handle::current();
-    let _io_client = daft_io::get_io_client(&runtime_handle, io_config.clone())?;
     let mut remaining_rows = num_rows;
 
     match uris {
