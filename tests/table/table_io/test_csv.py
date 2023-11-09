@@ -263,3 +263,91 @@ def test_csv_read_data_csv_no_header(use_native_downloader):
             read_options=TableReadOptions(column_names=["id", "data"]),
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_csv_read_data_csv_custom_quote(use_native_downloader):
+    with _csv_write_helper(
+            header=["\'id\'", "\'data\'"],
+            data=[
+                ["1", "\'aa\'"],
+                ["2", "aa"],
+                ["3", "aa"],
+            ]
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "id": [1,2, 3],
+                "data": ['aa','aa','aa'],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(quote='\''),
+        )
+
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+# TODO this test still fails.
+@pytest.mark.parametrize("use_native_downloader", [False])
+def test_csv_read_data_csv_custom_escape(use_native_downloader):
+    with _csv_write_helper(
+            header=["id", "data"],
+            data=[
+                ["1", "\\\"aa\\\""],
+                ["2", "aa"],
+                ["3", "aa"],
+            ]
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "\"id\"": [1,2, 3],
+                "\"data\"": ['\"aa\"','aa','aa'],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(escape_char='\\'),
+        )
+
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+#TODO Not testing use_native_downloader = False, as pyarrow does not support comments directly
+@pytest.mark.parametrize("use_native_downloader", [True])
+def test_csv_read_data_csv_custom_comment(use_native_downloader):
+    with _csv_write_helper(
+            header=["id", "data"],
+            data=[
+                ["1", "aa"],
+                ["#2", "aa"],
+                ["3", "aa"],
+            ]
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "id": [1, 3],
+                "data": ['aa','aa'],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(comment='#'),
+        )
+
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+

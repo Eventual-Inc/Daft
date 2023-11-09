@@ -167,6 +167,9 @@ class Schema:
         has_header: bool | None = None,
         delimiter: str | None = None,
         double_quote: bool | None = None,
+        quote: str | None = None,
+        escape_char: str | None = None,
+        comment: str | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ) -> Schema:
@@ -176,6 +179,9 @@ class Schema:
                 has_header=has_header,
                 delimiter=delimiter,
                 double_quote=double_quote,
+                quote=quote,
+                escape_char=escape_char,
+                comment=comment,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
             )

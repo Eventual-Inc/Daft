@@ -108,6 +108,7 @@ impl GlobScanOperator {
                         double_quote,
                         quote,
                         escape_char,
+                        comment,
                         ..
                     }) => {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
@@ -115,9 +116,9 @@ impl GlobScanOperator {
                             *has_headers,
                             Some(delimiter.as_bytes()[0]),
                             *double_quote,
-                            *quote,
-                            *escape_char,
-                            None,
+                            Some(*quote as u8),
+                            Some(*escape_char as u8),
+                            Some(*comment as u8),
                             None,
                             io_client,
                             Some(io_stats),

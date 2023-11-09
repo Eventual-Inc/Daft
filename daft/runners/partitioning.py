@@ -52,6 +52,9 @@ class TableParseCSVOptions:
     delimiter: str = ","
     header_index: int | None = 0
     double_quote: bool = True
+    quote: str = '\"'
+    escape_char: str = '\"'
+    comment: str = '#'
     buffer_size: int | None = None
     chunk_size: int | None = None
 

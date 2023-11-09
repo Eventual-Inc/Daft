@@ -64,9 +64,9 @@ pub fn read_csv(
             has_header,
             delimiter.unwrap_or(b','),
             double_quote,
-            quote,
-            escape_char,
-            comment,
+            quote.unwrap_or(b'\"'),
+            escape_char.unwrap_or(b'\"'),
+            comment.unwrap_or(b'#'),
             io_client,
             io_stats,
             schema,
@@ -87,9 +87,9 @@ async fn read_csv_single(
     has_header: bool,
     delimiter: u8,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: u8,
+    escape_char: u8,
+    comment: u8,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema: Option<SchemaRef>,
@@ -105,9 +105,9 @@ async fn read_csv_single(
                 has_header,
                 Some(delimiter),
                 double_quote,
-                quote,
-                escape_char,
-                comment,
+                Some(quote),
+                Some(escape_char),
+                Some(comment),
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
                 io_client.clone(),
@@ -201,9 +201,9 @@ async fn read_csv_from_compressed_reader<R>(
     has_header: bool,
     delimiter: u8,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: u8,
+    escape_char: u8,
+    comment: u8,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -269,9 +269,9 @@ async fn read_csv_from_uncompressed_reader<R>(
     has_header: bool,
     delimiter: u8,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: u8,
+    escape_char: u8,
+    comment: u8,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -286,9 +286,9 @@ where
         .has_headers(has_header)
         .delimiter(delimiter)
         .double_quote(double_quote)
-        .quote(quote.unwrap_or(b'"'))
-        .escape(escape_char)
-        .comment(comment)
+        .quote(quote)
+        .escape(Some(escape_char))
+        .comment(Some(comment))
         .buffer_capacity(buffer_size)
         .create_reader(stream_reader.compat());
     let mut fields = schema.fields;
