@@ -51,12 +51,14 @@ impl From<Error> for pyo3::PyErr {
 pub enum DataFileSource {
     AnonymousDataFile {
         path: String,
+        size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
     },
     CatalogDataFile {
         path: String,
+        size_bytes: Option<u64>,
         metadata: TableMetadata,
         partition_spec: PartitionSpec,
         statistics: Option<TableStatistics>,
@@ -67,6 +69,12 @@ impl DataFileSource {
     pub fn get_path(&self) -> &str {
         match self {
             Self::AnonymousDataFile { path, .. } | Self::CatalogDataFile { path, .. } => path,
+        }
+    }
+    pub fn get_size_bytes(&self) -> Option<u64> {
+        match self {
+            Self::AnonymousDataFile { size_bytes, .. }
+            | Self::CatalogDataFile { size_bytes, .. } => *size_bytes,
         }
     }
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
@@ -93,6 +101,7 @@ pub struct ScanTask {
     // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
     pub columns: Option<Arc<Vec<String>>>,
     pub limit: Option<usize>,
+    pub size_bytes_file: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
@@ -107,22 +116,27 @@ impl ScanTask {
         limit: Option<usize>,
     ) -> Self {
         assert!(!sources.is_empty());
-        let (length, statistics) = sources
+        let (length, size_bytes_file, statistics) = sources
             .iter()
             .map(|s| {
                 (
                     s.get_metadata().map(|m| m.length),
+                    s.get_size_bytes(),
                     s.get_statistics().cloned(),
                 )
             })
-            .reduce(|(acc_len, acc_stats), (curr_len, curr_stats)| {
-                (
-                    acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
-                    acc_stats.and_then(|acc_stats| {
-                        curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
-                    }),
-                )
-            })
+            .reduce(
+                |(acc_len, acc_size, acc_stats), (curr_len, curr_size, curr_stats)| {
+                    (
+                        acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
+                        acc_size
+                            .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
+                        acc_stats.and_then(|acc_stats| {
+                            curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
+                        }),
+                    )
+                },
+            )
             .unwrap();
         let metadata = length.map(|l| TableMetadata { length: l });
         Self {
@@ -132,6 +146,7 @@ impl ScanTask {
             storage_config,
             columns,
             limit,
+            size_bytes_file,
             metadata,
             statistics,
         }
@@ -142,10 +157,13 @@ impl ScanTask {
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
-        self.statistics.as_ref().and_then(|s| {
-            self.num_rows()
-                .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
-        })
+        self.statistics
+            .as_ref()
+            .and_then(|s| {
+                self.num_rows()
+                    .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
+            })
+            .or_else(|| self.size_bytes_file.map(|s| s as usize))
     }
 }
 

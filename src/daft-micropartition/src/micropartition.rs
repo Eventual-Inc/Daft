@@ -661,11 +661,18 @@ pub(crate) fn read_parquet_into_micropartition(
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
         let daft_schema = Arc::new(daft_schema);
+        let size_bytes = metadata
+            .iter()
+            .map(|m| -> u64 {
+                std::iter::Sum::sum(m.row_groups.iter().map(|m| m.total_byte_size() as u64))
+            })
+            .sum();
         let scan_task = ScanTask::new(
             owned_urls
                 .into_iter()
                 .map(|url| DataFileSource::AnonymousDataFile {
                     path: url,
+                    size_bytes: Some(size_bytes),
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
