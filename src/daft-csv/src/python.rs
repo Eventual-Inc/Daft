@@ -4,7 +4,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
-    use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
+    use daft_io::{get_runtime, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult, Python};
 
@@ -38,12 +38,9 @@ pub mod pylib {
         chunk_size: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
+            let runtime = get_runtime(multithreaded_io.unwrap_or(true))?;
+            let _rt_guard = runtime.enter();
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
-
-            let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
-                io_config.unwrap_or_default().config.into(),
-            )?;
             Ok(crate::read::read_csv(
                 uri,
                 column_names,
@@ -52,9 +49,8 @@ pub mod pylib {
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
-                io_client,
+                io_config.unwrap_or_default().config.into(),
                 Some(io_stats),
-                multithreaded_io.unwrap_or(true),
                 schema.map(|s| s.schema),
                 buffer_size,
                 chunk_size,
@@ -78,18 +74,15 @@ pub mod pylib {
     ) -> PyResult<PySchema> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv_schema: for uri {uri}"));
-
-            let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
-                io_config.unwrap_or_default().config.into(),
-            )?;
+            let runtime = get_runtime(multithreaded_io.unwrap_or(true))?;
+            let _rt_guard = runtime.enter();
             let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
                 str_delimiter_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
                 max_bytes,
-                io_client,
+                io_config.unwrap_or_default().config.into(),
                 Some(io_stats),
             )?;
             Ok(Arc::new(schema).into())

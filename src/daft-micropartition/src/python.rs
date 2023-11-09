@@ -392,6 +392,8 @@ impl PyMicroPartition {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
+            let runtime = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+            let _rt_guard = runtime.enter();
 
             crate::micropartition::read_csv_into_micropartition(
                 [uri].as_ref(),
@@ -402,7 +404,6 @@ impl PyMicroPartition {
                 delimiter,
                 double_quote.unwrap_or(true),
                 io_config,
-                multithreaded_io.unwrap_or(true),
                 Some(io_stats),
                 schema.map(|s| s.schema),
                 buffer_size,
@@ -427,6 +428,8 @@ impl PyMicroPartition {
     ) -> PyResult<Self> {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
+            let runtime = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+            let _rt_guard = runtime.enter();
 
             let io_config = io_config.unwrap_or_default().config.into();
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
@@ -442,7 +445,6 @@ impl PyMicroPartition {
                 io_config,
                 Some(io_stats),
                 1,
-                multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )
         })?;
@@ -465,6 +467,8 @@ impl PyMicroPartition {
     ) -> PyResult<Self> {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uris:?}"));
+            let runtime = daft_io::get_runtime(multithreaded_io.unwrap_or(true))?;
+            let _rt_guard = runtime.enter();
 
             let io_config = io_config.unwrap_or_default().config.into();
             let schema_infer_options = ParquetSchemaInferenceOptions::new(
@@ -480,7 +484,6 @@ impl PyMicroPartition {
                 io_config,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,
-                multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
             )
         })?;

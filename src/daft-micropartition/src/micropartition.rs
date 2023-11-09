@@ -89,8 +89,8 @@ fn materialize_scan_task(
 
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
-            let runtime_handle =
-                daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
+            let runtime = daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
+            let _rt_guard = runtime.enter();
             let io_config = Arc::new(
                 native_storage_config
                     .io_config
@@ -98,8 +98,6 @@ fn materialize_scan_task(
                     .cloned()
                     .unwrap_or_default(),
             );
-            let io_client =
-                daft_io::get_io_client(native_storage_config.multithreaded_io, io_config).unwrap();
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
@@ -121,10 +119,9 @@ fn materialize_scan_task(
                         row_groups
                             .as_ref()
                             .map(|row_groups| vec![row_groups.clone(); urls.len()]),
-                        io_client.clone(),
+                        io_config.clone(),
                         io_stats,
                         8,
-                        runtime_handle,
                         &inference_options,
                     )
                     .context(DaftCoreComputeSnafu)?
@@ -154,9 +151,8 @@ fn materialize_scan_task(
                             cfg.has_headers,
                             Some(cfg.delimiter.as_bytes()[0]),
                             cfg.double_quote,
-                            io_client.clone(),
+                            io_config.clone(),
                             io_stats.clone(),
-                            native_storage_config.multithreaded_io,
                             None, // Allow read_csv to perform its own schema inference
                             cfg.buffer_size,
                             cfg.chunk_size,
@@ -325,6 +321,9 @@ impl MicroPartition {
                 }),
                 StorageConfig::Native(cfg),
             ) => {
+                let runtime_handle = daft_io::get_runtime(cfg.multithreaded_io).unwrap();
+                let _rt_guard = runtime_handle.enter();
+
                 let columns = scan_task
                     .columns
                     .as_ref()
@@ -351,7 +350,6 @@ impl MicroPartition {
                         .unwrap_or_default(),
                     io_stats,
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
-                    cfg.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
@@ -520,13 +518,13 @@ pub(crate) fn read_csv_into_micropartition(
     delimiter: Option<u8>,
     double_quote: bool,
     io_config: Arc<IOConfig>,
-    multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
     schema: Option<SchemaRef>,
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let runtime_handle = tokio::runtime::Handle::current();
+    let _io_client = daft_io::get_io_client(&runtime_handle, io_config.clone())?;
     let mut remaining_rows = num_rows;
 
     match uris {
@@ -547,9 +545,8 @@ pub(crate) fn read_csv_into_micropartition(
                     has_header,
                     delimiter,
                     double_quote,
-                    io_client.clone(),
+                    io_config.clone(),
                     io_stats.clone(),
-                    multithreaded_io,
                     schema.clone(),
                     buffer_size,
                     chunk_size,
@@ -590,21 +587,18 @@ pub(crate) fn read_parquet_into_micropartition(
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
-    multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset && so > 0 {
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
     }
 
-    let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-
-    let meta_io_client = io_client.clone();
+    let runtime_handle = tokio::runtime::Handle::current();
     let meta_io_stats = io_stats.clone();
 
+    let owned_io_config = io_config.clone();
     let metadata = runtime_handle.block_on(async move {
-        read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats).await
+        read_parquet_metadata_bulk(uris, owned_io_config, meta_io_stats).await
     })?;
     let any_stats_avail = metadata
         .iter()
@@ -679,7 +673,11 @@ pub(crate) fn read_parquet_into_micropartition(
             daft_schema.clone(),
             StorageConfig::Native(
                 NativeStorageConfig::new_internal(
-                    multithreaded_io,
+                    match runtime_handle.runtime_flavor() {
+                        tokio::runtime::RuntimeFlavor::CurrentThread => false,
+                        tokio::runtime::RuntimeFlavor::MultiThread => true,
+                        _ => true,
+                    },
                     Some(io_config.as_ref().clone()),
                 )
                 .into(),
@@ -710,10 +708,9 @@ pub(crate) fn read_parquet_into_micropartition(
             start_offset,
             num_rows,
             row_groups,
-            io_client,
+            io_config,
             io_stats,
             num_parallel_tasks,
-            runtime_handle,
             schema_infer_options,
         )?;
         let all_tables = all_tables

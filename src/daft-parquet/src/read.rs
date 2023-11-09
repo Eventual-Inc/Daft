@@ -7,7 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
-use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
+use daft_io::{parse_url, IOClient, IOConfig, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
     future::{join_all, try_join_all},
@@ -15,7 +15,6 @@ use futures::{
 };
 use itertools::Itertools;
 use snafu::ResultExt;
-use tokio::runtime::Runtime;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 use serde::{Deserialize, Serialize};
@@ -61,10 +60,11 @@ async fn read_parquet_single(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
+    let io_client = daft_io::get_io_client(&tokio::runtime::Handle::current(), io_config)?;
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
@@ -316,12 +316,11 @@ pub fn read_parquet(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
-    runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
     runtime_handle.block_on(async {
         read_parquet_single(
             uri,
@@ -329,7 +328,7 @@ pub fn read_parquet(
             start_offset,
             num_rows,
             row_groups,
-            io_client,
+            io_config,
             io_stats,
             schema_infer_options,
         )
@@ -345,12 +344,12 @@ pub fn read_parquet_into_pyarrow(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
-    runtime_handle: Arc<Runtime>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
+    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     runtime_handle.block_on(async {
         read_parquet_single_into_arrow(
             uri,
@@ -373,13 +372,12 @@ pub fn read_parquet_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
-    runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<Table>> {
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
@@ -400,7 +398,7 @@ pub fn read_parquet_bulk(
                     Some(v) => v.get(i).cloned(),
                 };
 
-                let io_client = io_client.clone();
+                let io_config = io_config.clone();
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
                 tokio::task::spawn(async move {
@@ -415,7 +413,7 @@ pub fn read_parquet_bulk(
                             start_offset,
                             num_rows,
                             owned_row_group,
-                            io_client,
+                            io_config,
                             io_stats,
                             schema_infer_options,
                         )
@@ -442,14 +440,13 @@ pub fn read_parquet_into_pyarrow_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Vec<i64>>>,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
-    multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<ParquetPyarrowChunk>> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
+    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
     if let Some(ref row_groups) = row_groups {
         if row_groups.len() != uris.len() {
@@ -506,12 +503,12 @@ pub fn read_parquet_into_pyarrow_bulk(
 
 pub fn read_parquet_schema(
     uri: &str,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Schema> {
-    let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
+    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     let builder = runtime_handle.block_on(async {
         ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats).await
     })?;
@@ -522,23 +519,24 @@ pub fn read_parquet_schema(
 
 pub async fn read_parquet_metadata(
     uri: &str,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<parquet2::metadata::FileMetaData> {
+    let io_client = daft_io::get_io_client(&tokio::runtime::Handle::current(), io_config)?;
     let builder = ParquetReaderBuilder::from_uri(uri, io_client, io_stats).await?;
     Ok(builder.metadata)
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
     let handles_iter = uris.iter().map(|uri| {
         let owned_string = uri.to_string();
-        let owned_client = io_client.clone();
+        let owned_io_config = io_config.clone();
         let owned_io_stats = io_stats.clone();
         tokio::spawn(async move {
-            read_parquet_metadata(&owned_string, owned_client, owned_io_stats).await
+            read_parquet_metadata(&owned_string, owned_io_config, owned_io_stats).await
         })
     });
     let all_metadatas = try_join_all(handles_iter)
@@ -549,12 +547,10 @@ pub async fn read_parquet_metadata_bulk(
 
 pub fn read_parquet_statistics(
     uris: &Series,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(true)?;
-    let _rt_guard = runtime_handle.enter();
-
+    let runtime_handle = tokio::runtime::Handle::current();
     if uris.data_type() != &DataType::Utf8 {
         return Err(common_error::DaftError::ValueError(format!(
             "Expected Utf8 Datatype, got {}",
@@ -568,12 +564,13 @@ pub fn read_parquet_statistics(
 
     let handles_iter = values.iter().map(|uri| {
         let owned_string = uri.map(|v| v.to_string());
-        let owned_client = io_client.clone();
+        let owned_io_config = io_config.clone();
         let io_stats = io_stats.clone();
 
         tokio::spawn(async move {
             if let Some(owned_string) = owned_string {
-                let metadata = read_parquet_metadata(&owned_string, owned_client, io_stats).await?;
+                let metadata =
+                    read_parquet_metadata(&owned_string, owned_io_config, io_stats).await?;
                 let num_rows = metadata.num_rows;
                 let num_row_groups = metadata.row_groups.len();
                 let version_num = metadata.version;
@@ -626,11 +623,9 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use common_error::DaftResult;
-
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::IOConfig;
 
     use super::read_parquet;
     #[test]
@@ -640,8 +635,8 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
-        let runtime_handle = daft_io::get_runtime(true)?;
+        let runtime = daft_io::get_runtime(true)?;
+        let _rt_guard = runtime.enter();
 
         let table = read_parquet(
             file,
@@ -649,9 +644,8 @@ mod tests {
             None,
             None,
             None,
-            io_client,
+            io_config.into(),
             None,
-            runtime_handle,
             Default::default(),
         )?;
         assert_eq!(table.len(), 100);

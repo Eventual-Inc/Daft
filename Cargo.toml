@@ -1,3 +1,6 @@
+[build]
+rustflags = ["--cfg", "tokio_unstable"]
+
 [dependencies]
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}

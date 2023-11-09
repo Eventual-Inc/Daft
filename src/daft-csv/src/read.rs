@@ -12,7 +12,7 @@ use daft_core::{
     utils::arrow::cast_array_for_daft_if_needed,
     Series,
 };
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOConfig, IOStatsRef};
 use daft_table::Table;
 use futures::TryStreamExt;
 use rayon::prelude::{
@@ -38,16 +38,15 @@ pub fn read_csv(
     has_header: bool,
     delimiter: Option<u8>,
     double_quote: bool,
-    io_client: Arc<IOClient>,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
-    multithreaded_io: bool,
     schema: Option<SchemaRef>,
     buffer_size: Option<usize>,
     chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = tokio::runtime::Handle::current();
+    let io_client = daft_io::get_io_client(&runtime_handle, io_config)?;
     runtime_handle.block_on(async {
         read_csv_single(
             uri,
@@ -455,7 +454,7 @@ mod tests {
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
         DataType,
     };
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{get_runtime, IOClient, IOConfig};
     use daft_table::Table;
     use rstest::rstest;
 
@@ -540,7 +539,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -550,9 +549,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -587,7 +585,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let column_names = vec![
             "sepal.length",
@@ -604,9 +602,8 @@ mod tests {
             false,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -648,7 +645,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -658,9 +655,8 @@ mod tests {
             true,
             Some(b'|'),
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -702,7 +698,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -712,9 +708,8 @@ mod tests {
             true,
             None,
             false,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -753,7 +748,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -763,9 +758,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -795,7 +789,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -805,9 +799,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -846,7 +839,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let column_names = vec![
             "sepal.length",
@@ -863,9 +856,8 @@ mod tests {
             false,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -901,7 +893,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -911,9 +903,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             Some(128),
             None,
@@ -943,7 +934,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -953,9 +944,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             Some(100),
@@ -985,7 +975,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -995,9 +985,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1027,7 +1016,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -1037,9 +1026,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1072,7 +1060,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -1082,9 +1070,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1127,7 +1114,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
         let schema = Schema::new(vec![
             Field::new("sepal.length", DataType::Float64),
             Field::new("sepal.width", DataType::Float64),
@@ -1144,9 +1131,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             Some(schema.into()),
             None,
             None,
@@ -1189,7 +1175,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -1199,9 +1185,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1231,7 +1216,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let schema = Schema::new(vec![
             // Conversion to all of these types should fail, resulting in nulls.
@@ -1249,9 +1234,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             Some(schema.into()),
             None,
             None,
@@ -1278,7 +1262,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let err = read_csv(
             file.as_ref(),
@@ -1288,9 +1272,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1319,7 +1302,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let err = read_csv(
             file.as_ref(),
@@ -1329,9 +1312,8 @@ mod tests {
             false,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1382,7 +1364,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file.as_ref(),
@@ -1392,9 +1374,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1420,7 +1401,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let column_names = vec!["a", "b"];
         let table = read_csv(
@@ -1431,9 +1412,8 @@ mod tests {
             false,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1459,7 +1439,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let column_names = vec!["a", "b"];
         let table = read_csv(
@@ -1470,9 +1450,8 @@ mod tests {
             false,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1494,7 +1473,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file,
@@ -1504,9 +1483,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1532,7 +1510,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file,
@@ -1542,9 +1520,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,
@@ -1566,7 +1543,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file,
@@ -1576,9 +1553,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             Some(100),
             None,
@@ -1596,7 +1572,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file,
@@ -1606,9 +1582,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             Some(100),
@@ -1626,7 +1601,7 @@ mod tests {
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
 
-        let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let _rt_guard = get_runtime(true)?.enter();
 
         let table = read_csv(
             file,
@@ -1636,9 +1611,8 @@ mod tests {
             true,
             None,
             true,
-            io_client,
+            io_config.into(),
             None,
-            true,
             None,
             None,
             None,

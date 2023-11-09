@@ -286,7 +286,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         _ => Err(Error::NotImplementedSource { store: scheme }),
     }
 }
-type CacheKey = (bool, Arc<IOConfig>);
+type CacheKey = (tokio::runtime::Id, Arc<IOConfig>);
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
     static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
@@ -305,9 +305,12 @@ lazy_static! {
         tokio::sync::RwLock::new(HashMap::new());
 }
 
-pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
+pub fn get_io_client(
+    runtime_handle: &tokio::runtime::Handle,
+    config: Arc<IOConfig>,
+) -> DaftResult<Arc<IOClient>> {
     let read_handle = CLIENT_CACHE.blocking_read();
-    let key = (multi_thread, config.clone());
+    let key = (runtime_handle.id(), config.clone());
     if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
@@ -379,7 +382,6 @@ pub fn _url_download(
     array: &Utf8Array,
     max_connections: usize,
     raise_error_on_failure: bool,
-    multi_thread: bool,
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<BinaryArray> {
@@ -392,13 +394,16 @@ pub fn _url_download(
         }
     );
 
-    let runtime_handle = get_runtime(multi_thread)?;
+    let runtime_handle = tokio::runtime::Handle::current();
     let _rt_guard = runtime_handle.enter();
-    let max_connections = match multi_thread {
-        false => max_connections,
-        true => max_connections * usize::from(std::thread::available_parallelism()?),
+    let max_connections = match runtime_handle.runtime_flavor() {
+        tokio::runtime::RuntimeFlavor::CurrentThread => max_connections,
+        _ => {
+            // Multithreaded tokio runtime
+            max_connections * usize::from(std::thread::available_parallelism()?)
+        }
     };
-    let io_client = get_io_client(multi_thread, config)?;
+    let io_client = get_io_client(&runtime_handle, config)?;
 
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
@@ -462,12 +467,14 @@ pub fn url_download(
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Series> {
+    let runtime = get_runtime(multi_thread)?;
+    let _rt_guard = runtime.enter();
+
     match series.data_type() {
         DataType::Utf8 => Ok(_url_download(
             series.utf8()?,
             max_connections,
             raise_error_on_failure,
-            multi_thread,
             config,
             io_stats,
         )?

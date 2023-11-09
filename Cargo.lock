@@ -1230,6 +1230,7 @@ dependencies = [
  "pyo3-log",
  "serde",
  "snafu",
+ "tokio",
 ]
 
 [[package]]
