@@ -902,7 +902,9 @@ class DataFrame:
             DataFrame: Globally aggregated count. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning("No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts.")
+            logger.warning(
+                "No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts."
+            )
             cols = tuple(self.columns)
         return self._agg([(c, "count") for c in cols])
 
