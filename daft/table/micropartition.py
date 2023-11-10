@@ -328,7 +328,7 @@ class MicroPartition:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        row_groups_per_path: list[list[int]] | None = None,
+        row_groups_per_path: list[list[int] | None] | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,

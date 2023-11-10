@@ -47,10 +47,18 @@ impl From<Error> for pyo3::PyErr {
     }
 }
 
+/// Specification of a subset of a file to be read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChunkSpec {
+    /// Selection of Parquet row groups.
+    Parquet(Vec<i64>),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DataFileSource {
     AnonymousDataFile {
         path: String,
+        chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
@@ -58,6 +66,7 @@ pub enum DataFileSource {
     },
     CatalogDataFile {
         path: String,
+        chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
         metadata: TableMetadata,
         partition_spec: PartitionSpec,
@@ -71,12 +80,21 @@ impl DataFileSource {
             Self::AnonymousDataFile { path, .. } | Self::CatalogDataFile { path, .. } => path,
         }
     }
+
+    pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
+        match self {
+            Self::AnonymousDataFile { chunk_spec, .. }
+            | Self::CatalogDataFile { chunk_spec, .. } => chunk_spec.as_ref(),
+        }
+    }
+
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
             Self::AnonymousDataFile { size_bytes, .. }
             | Self::CatalogDataFile { size_bytes, .. } => *size_bytes,
         }
     }
+
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
             Self::AnonymousDataFile { metadata, .. } => metadata.as_ref(),

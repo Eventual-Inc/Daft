@@ -178,9 +178,7 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
-    def __init__(
-        self, coerce_int96_timestamp_unit: PyTimeUnit | None = None, row_groups: list[list[int]] | None = None
-    ): ...
+    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None): ...
 
 class CsvSourceConfig:
     """
@@ -426,7 +424,7 @@ def read_parquet_bulk(
     columns: list[str] | None = None,
     start_offset: int | None = None,
     num_rows: int | None = None,
-    row_groups: list[list[int]] | None = None,
+    row_groups: list[list[int] | None] | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
@@ -452,7 +450,7 @@ def read_parquet_into_pyarrow_bulk(
     columns: list[str] | None = None,
     start_offset: int | None = None,
     num_rows: int | None = None,
-    row_groups: list[list[int]] | None = None,
+    row_groups: list[list[int] | None] | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
@@ -806,7 +804,7 @@ class PyMicroPartition:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        row_groups: list[list[int]] | None = None,
+        row_groups: list[list[int] | None] | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = None,
         multithreaded_io: bool | None = None,
