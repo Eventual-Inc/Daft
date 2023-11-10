@@ -111,22 +111,7 @@ fn materialize_scan_task(
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
-                    let row_groups = scan_task
-                        .sources
-                        .iter()
-                        .map(|s| {
-                            if let Some(ChunkSpec::Parquet(row_group)) = s.get_chunk_spec() {
-                                Some(row_group.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    let row_groups = if row_groups.iter().any(|rgs| rgs.is_some()) {
-                        Some(row_groups)
-                    } else {
-                        None
-                    };
+                    let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
                         column_names.as_deref(),
@@ -345,22 +330,7 @@ impl MicroPartition {
                     .as_ref()
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
-                let row_groups = scan_task
-                    .sources
-                    .iter()
-                    .map(|s| {
-                        if let Some(ChunkSpec::Parquet(row_group)) = s.get_chunk_spec() {
-                            Some(row_group.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let row_groups = if row_groups.iter().any(|rgs| rgs.is_some()) {
-                    Some(row_groups)
-                } else {
-                    None
-                };
+                let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
@@ -530,6 +500,24 @@ fn prune_fields_from_schema_ref(
         Ok(Schema::new(filtered_columns)?.into())
     } else {
         Ok(schema)
+    }
+}
+
+fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Option<Vec<i64>>>> {
+    let row_groups = sources
+        .iter()
+        .map(|s| {
+            if let Some(ChunkSpec::Parquet(row_group)) = s.get_chunk_spec() {
+                Some(row_group.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if row_groups.iter().any(|rgs| rgs.is_some()) {
+        Some(row_groups)
+    } else {
+        None
     }
 }
 
