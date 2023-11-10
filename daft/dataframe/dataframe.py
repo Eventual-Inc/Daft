@@ -29,6 +29,7 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.io import IOConfig
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -316,6 +317,7 @@ class DataFrame:
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
         partition_cols: Optional[List[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
 
@@ -330,6 +332,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -350,6 +353,7 @@ class DataFrame:
             partition_cols=cols,
             file_format=FileFormat.Parquet,
             compression=compression,
+            io_config=io_config,
         )
         # Block and write, then retrieve data and return a new disconnected DataFrame
         write_df = DataFrame(builder)
@@ -359,7 +363,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_csv(
-        self, root_dir: Union[str, pathlib.Path], partition_cols: Optional[List[ColumnInputType]] = None
+        self,
+        root_dir: Union[str, pathlib.Path],
+        partition_cols: Optional[List[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
 
@@ -374,6 +381,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -390,6 +398,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             file_format=FileFormat.Csv,
+            io_config=io_config,
         )
 
         # Block and write, then retrieve data and return a new disconnected DataFrame

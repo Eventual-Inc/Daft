@@ -38,6 +38,7 @@ impl Sink {
                 file_format,
                 partition_cols,
                 compression,
+                io_config,
             }) => {
                 res.push(format!("Sink: {:?}", file_format));
                 if let Some(partition_cols) = partition_cols {
@@ -54,6 +55,7 @@ impl Sink {
                     res.push(format!("Compression = {}", compression));
                 }
                 res.push(format!("Root dir = {}", root_dir));
+                res.push(format!("IOConfig = {:?}", io_config));
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

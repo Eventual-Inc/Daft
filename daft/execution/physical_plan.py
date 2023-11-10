@@ -22,6 +22,7 @@ from typing import Generator, Iterator, TypeVar, Union
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     ResourceRequest,
     StorageConfig,
@@ -137,6 +138,7 @@ def file_write(
     root_dir: str | pathlib.Path,
     compression: str | None,
     partition_cols: ExpressionsProjection | None,
+    io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
 
@@ -148,6 +150,7 @@ def file_write(
                 root_dir=root_dir,
                 compression=compression,
                 partition_cols=partition_cols,
+                io_config=io_config,
             ),
         )
         if isinstance(step, PartitionTaskBuilder)

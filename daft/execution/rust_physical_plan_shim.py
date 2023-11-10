@@ -6,6 +6,7 @@ from typing import Iterator, TypeVar, cast
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     PyExpr,
     PySchema,
@@ -214,11 +215,18 @@ def write_file(
     root_dir: str,
     compression: str | None,
     partition_cols: list[PyExpr] | None,
+    io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     if partition_cols is not None:
         expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols])
     else:
         expr_projection = None
     return physical_plan.file_write(
-        input, file_format, Schema._from_pyschema(schema), root_dir, compression, expr_projection
+        input,
+        file_format,
+        Schema._from_pyschema(schema),
+        root_dir,
+        compression,
+        expr_projection,
+        io_config,
     )

@@ -285,6 +285,7 @@ def write_csv(
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
     return _to_file(
         table=table,
@@ -292,6 +293,7 @@ def write_csv(
         path=path,
         partition_cols=partition_cols,
         compression=compression,
+        io_config=io_config,
     )
 
 
@@ -300,6 +302,7 @@ def write_parquet(
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
     return _to_file(
         table=table,
@@ -307,6 +310,7 @@ def write_parquet(
         path=path,
         partition_cols=partition_cols,
         compression=compression,
+        io_config=io_config,
     )
 
 
@@ -318,6 +322,7 @@ def _to_file(
     compression: str | None = None,
     io_config: IOConfig | None = None,
 ) -> list[str]:
+    resolved_path, fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     arrow_table = table.to_arrow()
 
     partitioning = [e.name() for e in (partition_cols or [])]
@@ -356,7 +361,7 @@ def _to_file(
 
     pads.write_dataset(
         arrow_table,
-        base_dir=path,
+        base_dir=resolved_path,
         basename_template=str(uuid4()) + "-{i}." + format.default_extname,
         format=format,
         partitioning=partitioning,
@@ -364,6 +369,7 @@ def _to_file(
         file_visitor=file_visitor,
         use_threads=False,
         existing_data_behavior="overwrite_or_ignore",
+        filesystem=fs,
     )
 
     return visited_paths
