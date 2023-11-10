@@ -8,7 +8,7 @@ dependencies = [
   "pyarrow >= 6.0.1",
   "fsspec[http]",
   "psutil",
-  "typing-extensions >= 4.0.0; python_version < '3.8'",
+  "typing-extensions >= 4.0.0; python_version < '3.10'",
   "pickle5 >= 0.0.12; python_version < '3.8'"
 ]
 description = "A Distributed DataFrame library for large scale complex data processing."
