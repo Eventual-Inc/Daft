@@ -16,7 +16,14 @@ from typing import Any
 import fsspec
 import pyarrow as pa
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSystem, FSSpecHandler, PyFileSystem
+from pyarrow.fs import (
+    FileSystem,
+    FSSpecHandler,
+    GcsFileSystem,
+    LocalFileSystem,
+    PyFileSystem,
+    S3FileSystem,
+)
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -172,7 +179,7 @@ def _resolve_paths_and_filesystem(
 
     # Resolve path and filesystem for the first path.
     # We use this first resolved filesystem for validation on all other paths.
-    resolved_path, resolved_filesystem = _resolve_path_and_filesystem(paths[0], cached_filesystem)
+    resolved_path, resolved_filesystem = _infer_filesystem(paths[0], cached_filesystem)
 
     if cached_filesystem is None:
         # Put resolved filesystem in cache under these paths' canonical protocol.
@@ -185,15 +192,24 @@ def _resolve_paths_and_filesystem(
     # Resolve all other paths and validate with the user-provided/cached/inferred filesystem.
     resolved_paths = [resolved_path]
     for path in paths[1:]:
-        resolved_path, _ = _resolve_path_and_filesystem(path, resolved_filesystem)
+        resolved_path = _validate_filesystem(path, resolved_filesystem, io_config)
         resolved_paths.append(resolved_path)
 
     return resolved_paths, resolved_filesystem
 
 
-def _resolve_path_and_filesystem(
+def _validate_filesystem(path: str, fs: FileSystem, io_config: IOConfig | None) -> str:
+    resolved_path, inferred_fs = _infer_filesystem(path, io_config)
+    if not isinstance(fs, type(inferred_fs)):
+        raise RuntimeError(
+            f"Cannot read multiple paths with different inferred PyArrow filesystems. Expected: {fs} but received: {inferred_fs}"
+        )
+    return resolved_path
+
+
+def _infer_filesystem(
     path: str,
-    cached_filesystem: FileSystem | fsspec.AbstractFileSystem | None,
+    io_config: IOConfig | None,
 ) -> tuple[str, FileSystem]:
     """
     Resolves and normalizes the provided path, infers a filesystem from the
@@ -202,47 +218,70 @@ def _resolve_path_and_filesystem(
 
     Args:
         path: A single file/directory path.
-        cached_filesystem: The filesystem implementation that should be used for
-            reading these files. If None, a filesystem will be inferred. If not
-            None, the provided filesystem will still be validated against the
-            filesystem inferred from the provided path to ensure compatibility.
+        io_config: A Daft IOConfig that should be best-effort applied onto the returned
+            FileSystem
+        cached_filesystem: If provided, this filesystem will be validated against the
+            filesystem inferred from the provided path to ensure compatibility. If None,
+            a filesystem will be inferred.
     """
-    # NOTE: PyArrow really dislikes the "file://" prefix, so we trim it out if present
-    path = path[7:] if path.startswith("file://") else path
+    protocol = get_protocol_from_path(path)
+    translated_kwargs: dict[str, Any]
 
-    # Use pyarrow utility to resolve filesystem and this particular path.
-    # If a non-None filesystem is provided to this utility, it will ensure that
-    # it is compatible with the provided path.
-    # A non-None filesystem will be provided if:
-    #  - a user-provided filesystem was passed to _resolve_paths_and_filesystem.
-    #  - a filesystem for the paths' protocol exists in the protocol -> fs cache.
-    #  - a filesystem was resolved for a previous path; i.e., filesystem is
-    #    guaranteed to be non-None for all but the first path.
-    try:
-        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, cached_filesystem)
-    except pa.lib.ArrowInvalid as e:
-        if "Unrecognized filesystem type in URI" in str(e):
-            # Fall back to fsspec.
-            protocol = get_protocol_from_path(path)
-            logger.debug(f"pyarrow doesn't support paths with protocol {protocol}, falling back to fsspec.")
-            try:
-                fsspec_fs_cls = get_filesystem_class(protocol)
-            except ValueError:
-                raise ValueError("pyarrow and fsspec don't recognize protocol {protocol} for path {path}.")
-            fsspec_fs = fsspec_fs_cls()
-            resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
-        else:
-            raise
+    ###
+    # S3
+    ###
+    if protocol == "s3":
+        translated_kwargs = {}
+        if io_config is not None and io_config.s3 is not None:
+            pass  # TODO: Translate Daft S3Config to pyarrow S3FileSystem kwargs
 
-    # If filesystem is fsspec HTTPFileSystem, the protocol/scheme of paths
-    # should not be unwrapped/removed, because HTTPFileSystem expects full file
-    # paths including protocol/scheme. This is different behavior compared to
-    # pyarrow filesystems.
-    if not _is_http_fs(resolved_filesystem):
-        resolved_path = _unwrap_protocol(resolved_path)
+        resolved_filesystem = S3FileSystem(**translated_kwargs)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
+        return resolved_path, resolved_filesystem
 
-    resolved_path = resolved_filesystem.normalize_path(resolved_path)
-    return resolved_path, resolved_filesystem
+    ###
+    # Local
+    ###
+    elif protocol == "file":
+        # NOTE: PyArrow really dislikes the "file://" prefix, so we trim it out if present
+        path = path[7:] if path.startswith("file://") else path
+        resolved_filesystem = LocalFileSystem()
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
+        return resolved_path, resolved_filesystem
+
+    ###
+    # GCS
+    ###
+    elif protocol in {"gs", "gcs"}:
+        translated_kwargs = {}
+        if io_config is not None and io_config.gcs is not None:
+            pass  # TODO: Translate Daft GCSConfig to pyarrow S3FileSystem kwargs
+
+        resolved_filesystem = GcsFileSystem(**translated_kwargs)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
+        return resolved_path, resolved_filesystem
+
+    ###
+    # HTTP: Use FSSpec as a fallback
+    ###
+    elif protocol in {"http", "https"}:
+        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs = fsspec_fs_cls()
+        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_path = resolved_filesystem.normalize_path(resolved_path)
+        return resolved_path, resolved_filesystem
+
+    ###
+    # Azure: Unsupported! Users should use our native IO layer if possible.
+    ###
+    elif protocol in {"az", "abfs"}:
+        raise NotImplementedError(
+            "PyArrow filesystem does not support Azure blob storage. Please Daft's native IO layers instead or make "
+            "an issue to let us know which operation isn't yet supported!"
+        )
+
+    else:
+        raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 
 
 def _is_http_fs(fs: FileSystem) -> bool:
