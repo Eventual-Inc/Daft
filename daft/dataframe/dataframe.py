@@ -853,7 +853,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated sums. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing sum on all columns. Specify columns using df.sum('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "sum") for c in cols])
 
     @DataframePublicAPI
@@ -865,7 +869,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated mean. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing mean on all columns. Specify columns using df.mean('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "mean") for c in cols])
 
     @DataframePublicAPI
@@ -877,7 +885,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated min. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing min on all columns. Specify columns using df.min('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "min") for c in cols])
 
     @DataframePublicAPI
@@ -889,7 +901,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated max. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing max on all columns. Specify columns using df.max('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "max") for c in cols])
 
     @DataframePublicAPI
@@ -917,7 +933,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing agg_list on all columns. Specify columns using df.agg_list('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "list") for c in cols])
 
     @DataframePublicAPI
@@ -929,7 +949,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            logger.warning(
+                "No columns specified; performing agg_concat on all columns. Specify columns using df.agg_concat('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "concat") for c in cols])
 
     @DataframePublicAPI
