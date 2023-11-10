@@ -124,14 +124,12 @@ impl IOConfig {
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
-        let io_config_module = py.import("daft.io.config")?;
+        let ioconfig_from_json = py
+            .import("daft.io")?
+            .getattr("IOConfig")?
+            .getattr("from_json")?;
         let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
-        Ok((
-            io_config_module
-                .getattr("_io_config_from_json")?
-                .to_object(py),
-            (json_string,),
-        ))
+        Ok((ioconfig_from_json.to_object(py), (json_string,)))
     }
 }
 
