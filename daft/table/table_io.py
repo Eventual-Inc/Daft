@@ -322,7 +322,7 @@ def _to_file(
     compression: str | None = None,
     io_config: IOConfig | None = None,
 ) -> list[str]:
-    resolved_path, fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     arrow_table = table.to_arrow()
 
     partitioning = [e.name() for e in (partition_cols or [])]
