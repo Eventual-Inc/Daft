@@ -424,7 +424,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         max_connections: int = 32,
         on_error: Literal["raise"] | Literal["null"] = "raise",
         io_config: IOConfig | None = None,
-        use_native_downloader: bool = False,
+        use_native_downloader: bool = True,
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
