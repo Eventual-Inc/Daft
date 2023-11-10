@@ -15,7 +15,7 @@ from typing import Any
 
 import fsspec
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSystem, GcsFileSystem, LocalFileSystem, S3FileSystem
+from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -241,6 +241,14 @@ def _infer_filesystem(
     # GCS
     ###
     elif protocol in {"gs", "gcs"}:
+        try:
+            from pyarrow.fs import GcsFileSystem
+        except ImportError:
+            raise ImportError(
+                "Unable to import GcsFileSystem from pyarrow - please ensure you have pyarrow >= 9.0 or consider "
+                "using Daft's native GCS IO code instead"
+            )
+
         translated_kwargs = {}
         if io_config is not None and io_config.gcs is not None:
             gcs_config = io_config.gcs
