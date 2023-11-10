@@ -16,12 +16,8 @@ from typing import Any
 import fsspec
 import pyarrow as pa
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import (
-    FileSystem,
-    FSSpecHandler,
-    PyFileSystem,
-    _resolve_filesystem_and_path,
-)
+from pyarrow.fs import FileSystem, FSSpecHandler, PyFileSystem
+from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.table import Table
@@ -137,7 +133,6 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
 
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
-    filesystem: FileSystem | None = None,  # TODO: Can be removed.
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], FileSystem]:
     """
@@ -147,11 +142,6 @@ def _resolve_paths_and_filesystem(
     Args:
         paths: A single file/directory path or a list of file/directory paths.
             A list of paths can contain both files and directories.
-        filesystem: The filesystem implementation that should be used for
-            reading these files. If None, a filesystem will be inferred. If not
-            None, the provided filesystem will still be validated against all
-            filesystems inferred from the provided paths to ensure
-            compatibility.
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
@@ -177,38 +167,33 @@ def _resolve_paths_and_filesystem(
     # Canonical protocol shared by all paths.
     protocol = next(iter(canonicalized_protocols))
 
-    if filesystem is None:
-        # Try to get filesystem from protocol -> fs cache.
-        filesystem = _get_fs_from_cache(protocol, io_config)
-    elif isinstance(filesystem, fsspec.AbstractFileSystem):
-        # Wrap fsspec filesystems so they are valid pyarrow filesystems.
-        filesystem = PyFileSystem(FSSpecHandler(filesystem))
+    # Try to get filesystem from protocol -> fs cache.
+    cached_filesystem = _get_fs_from_cache(protocol, io_config)
 
     # Resolve path and filesystem for the first path.
     # We use this first resolved filesystem for validation on all other paths.
-    resolved_path, resolved_filesystem = _resolve_path_and_filesystem(paths[0], filesystem)
+    resolved_path, resolved_filesystem = _resolve_path_and_filesystem(paths[0], cached_filesystem)
 
-    if filesystem is None:
-        filesystem = resolved_filesystem
+    if cached_filesystem is None:
         # Put resolved filesystem in cache under these paths' canonical protocol.
-        _put_fs_in_cache(protocol, filesystem, io_config)
+        _put_fs_in_cache(protocol, resolved_filesystem, io_config)
 
     # filesystem should be a non-None pyarrow FileSystem at this point, either
     # user-provided, taken from the cache, or inferred from the first path.
-    assert filesystem is not None and isinstance(filesystem, FileSystem)
+    assert resolved_filesystem is not None and isinstance(resolved_filesystem, FileSystem)
 
     # Resolve all other paths and validate with the user-provided/cached/inferred filesystem.
     resolved_paths = [resolved_path]
     for path in paths[1:]:
-        resolved_path, _ = _resolve_path_and_filesystem(path, filesystem)
+        resolved_path, _ = _resolve_path_and_filesystem(path, resolved_filesystem)
         resolved_paths.append(resolved_path)
 
-    return resolved_paths, filesystem
+    return resolved_paths, resolved_filesystem
 
 
 def _resolve_path_and_filesystem(
     path: str,
-    filesystem: FileSystem | fsspec.AbstractFileSystem | None,
+    cached_filesystem: FileSystem | fsspec.AbstractFileSystem | None,
 ) -> tuple[str, FileSystem]:
     """
     Resolves and normalizes the provided path, infers a filesystem from the
@@ -217,7 +202,7 @@ def _resolve_path_and_filesystem(
 
     Args:
         path: A single file/directory path.
-        filesystem: The filesystem implementation that should be used for
+        cached_filesystem: The filesystem implementation that should be used for
             reading these files. If None, a filesystem will be inferred. If not
             None, the provided filesystem will still be validated against the
             filesystem inferred from the provided path to ensure compatibility.
@@ -234,7 +219,7 @@ def _resolve_path_and_filesystem(
     #  - a filesystem was resolved for a previous path; i.e., filesystem is
     #    guaranteed to be non-None for all but the first path.
     try:
-        resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, filesystem)
+        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, cached_filesystem)
     except pa.lib.ArrowInvalid as e:
         if "Unrecognized filesystem type in URI" in str(e):
             # Fall back to fsspec.
@@ -245,7 +230,7 @@ def _resolve_path_and_filesystem(
             except ValueError:
                 raise ValueError("pyarrow and fsspec don't recognize protocol {protocol} for path {path}.")
             fsspec_fs = fsspec_fs_cls()
-            resolved_filesystem, resolved_path = _resolve_filesystem_and_path(path, fsspec_fs)
+            resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
         else:
             raise
 
