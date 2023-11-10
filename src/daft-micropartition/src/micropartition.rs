@@ -381,26 +381,27 @@ impl MicroPartition {
         self.metadata.length
     }
 
-    pub fn size_bytes(&self) -> DaftResult<usize> {
+    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
         let guard = self.state.lock().unwrap();
-        if let TableState::Loaded(tables) = guard.deref() {
+        let size_bytes = if let TableState::Loaded(tables) = guard.deref() {
             let total_size: usize = tables
                 .iter()
                 .map(|t| t.size_bytes())
                 .collect::<DaftResult<Vec<_>>>()?
                 .iter()
                 .sum();
-            Ok(total_size)
+            Some(total_size)
         } else if let Some(stats) = &self.statistics {
             let row_size = stats.estimate_row_size()?;
-            Ok(row_size * self.len())
-        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_file) = scan_task.size_bytes_on_disk {
-            Ok(size_bytes_file as usize)
+            Some(row_size * self.len())
+        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_on_disk) = scan_task.size_bytes_on_disk {
+            Some(size_bytes_on_disk as usize)
         } else {
-            // if the table is not loaded, we dont have stats, and we don't have the file size in bytes, just return 0.
-            // not sure if we should pull the table in for this
-            Ok(0)
-        }
+            // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
+            // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
+            None
+        };
+        Ok(size_bytes)
     }
 
     pub(crate) fn tables_or_read(
