@@ -5,6 +5,9 @@ use daft_scan::ScanExternalInfo;
 
 use crate::source_info::{ExternalInfo, LegacyExternalInfo, SourceInfo};
 
+#[cfg(feature = "python")]
+use crate::source_info::InMemoryInfo;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
@@ -42,7 +45,22 @@ impl Source {
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
                 res.push(format!("Storage config = {:?}", storage_config));
-                res.push(format!("Pushdowns = {:?}", pushdowns));
+                if let Some(columns) = &pushdowns.columns {
+                    res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
+                }
+                if let Some(filters) = &pushdowns.filters {
+                    res.push(format!(
+                        "Filter pushdown = [{}]",
+                        filters
+                            .iter()
+                            .map(|f| f.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if let Some(limit) = pushdowns.limit {
+                    res.push(format!("Limit pushdown = {}", limit));
+                }
             }
             SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo {
                 source_schema,
@@ -54,10 +72,28 @@ impl Source {
                 res.push(format!("Scan op = {}", scan_op));
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Partitioning keys = {:?}", partitioning_keys));
-                res.push(format!("Scan pushdowns = {:?}", pushdowns));
+                if let Some(columns) = &pushdowns.columns {
+                    res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
+                }
+                if let Some(filters) = &pushdowns.filters {
+                    res.push(format!(
+                        "Filter pushdown = [{}]",
+                        filters
+                            .iter()
+                            .map(|f| f.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if let Some(limit) = pushdowns.limit {
+                    res.push(format!("Limit pushdown = {}", limit));
+                }
             }
             #[cfg(feature = "python")]
-            SourceInfo::InMemoryInfo(_) => {}
+            SourceInfo::InMemoryInfo(InMemoryInfo { num_partitions, .. }) => {
+                res.push("Source:".to_string());
+                res.push(format!("Number of partitions = {}", num_partitions));
+            }
         }
         res.push(format!(
             "Output schema = {}",
