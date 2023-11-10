@@ -4,12 +4,11 @@ use common_error::DaftResult;
 
 use daft_core::schema::Schema;
 use daft_dsl::{optimization::replace_columns_with_expressions, Expr};
-use daft_scan::ScanExternalInfo;
 use indexmap::IndexSet;
 
 use crate::{
     logical_ops::{Aggregate, Project, Source},
-    source_info::{ExternalInfo, SourceInfo},
+    source_info::SourceInfo,
     LogicalPlan, ResourceRequest,
 };
 
@@ -146,43 +145,38 @@ impl PushDownProjection {
                 let [required_columns] = &plan.required_columns()[..] else {
                     panic!()
                 };
-                if required_columns.len() < upstream_schema.names().len() {
-                    let pruned_upstream_schema = upstream_schema
-                        .fields
-                        .iter()
-                        .filter_map(|(name, field)| {
-                            required_columns.contains(name).then(|| field.clone())
-                        })
-                        .collect::<Vec<_>>();
-                    let schema = Schema::new(pruned_upstream_schema)?;
-                    let new_source: LogicalPlan = match source.source_info.as_ref() {
-                        SourceInfo::ExternalInfo(ExternalInfo::Scan(scan_external_info)) => {
-                            Source::new(
+                match source.source_info.as_ref() {
+                    SourceInfo::ExternalInfo(external_info) => {
+                        if required_columns.len() < upstream_schema.names().len() {
+                            let pruned_upstream_schema = upstream_schema
+                                .fields
+                                .iter()
+                                .filter_map(|(name, field)| {
+                                    required_columns.contains(name).then(|| field.clone())
+                                })
+                                .collect::<Vec<_>>();
+                            let schema = Schema::new(pruned_upstream_schema)?;
+                            let new_source: LogicalPlan = Source::new(
                                 schema.into(),
-                                Arc::new(SourceInfo::ExternalInfo(ExternalInfo::Scan(
-                                    ScanExternalInfo {
-                                        pushdowns: scan_external_info.pushdowns.with_columns(Some(
-                                            Arc::new(required_columns.iter().cloned().collect()),
-                                        )),
-                                        ..scan_external_info.clone()
-                                    },
+                                Arc::new(SourceInfo::ExternalInfo(external_info.with_pushdowns(
+                                    external_info.pushdowns().with_columns(Some(Arc::new(
+                                        required_columns.iter().cloned().collect(),
+                                    ))),
                                 ))),
-                                source.limit,
                             )
-                            .into()
+                            .into();
+                            let new_plan = plan.with_new_children(&[new_source.into()]);
+                            // Retry optimization now that the upstream node is different.
+                            let new_plan = self
+                                .try_optimize(new_plan.clone())?
+                                .or(Transformed::Yes(new_plan));
+                            Ok(new_plan)
+                        } else {
+                            Ok(Transformed::No(plan))
                         }
-                        _ => Source::new(schema.into(), source.source_info.clone(), source.limit)
-                            .into(),
-                    };
-
-                    let new_plan = plan.with_new_children(&[new_source.into()]);
-                    // Retry optimization now that the upstream node is different.
-                    let new_plan = self
-                        .try_optimize(new_plan.clone())?
-                        .or(Transformed::Yes(new_plan));
-                    Ok(new_plan)
-                } else {
-                    Ok(Transformed::No(plan))
+                    }
+                    #[cfg(feature = "python")]
+                    SourceInfo::InMemoryInfo(_) => Ok(Transformed::No(plan)),
                 }
             }
             LogicalPlan::Project(upstream_projection) => {

@@ -30,13 +30,12 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
         LogicalPlan::Source(Source {
             output_schema,
             source_info,
-            limit,
-            filters,
         }) => match source_info.as_ref() {
             SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(
                 ext_info @ LegacyExternalInfo {
                     file_format_config,
                     file_infos,
+                    pushdowns,
                     ..
                 },
             )) => {
@@ -51,8 +50,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                             output_schema.clone(),
                             ext_info.clone(),
                             partition_spec,
-                            *limit,
-                            filters.to_vec(),
+                            pushdowns.clone(),
                         )))
                     }
                     FileFormatConfig::Csv(_) => {
@@ -60,8 +58,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                             output_schema.clone(),
                             ext_info.clone(),
                             partition_spec,
-                            *limit,
-                            filters.to_vec(),
+                            pushdowns.clone(),
                         )))
                     }
                     FileFormatConfig::Json(_) => {
@@ -69,8 +66,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                             output_schema.clone(),
                             ext_info.clone(),
                             partition_spec,
-                            *limit,
-                            filters.to_vec(),
+                            pushdowns.clone(),
                         )))
                     }
                 }
@@ -103,23 +99,7 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                     PartitionSpec::new(PartitionScheme::Unknown, mem_info.num_partitions, None)
                         .into(),
                 ));
-                let plan = if output_schema.fields.len() < mem_info.source_schema.fields.len() {
-                    let projection = output_schema
-                        .fields
-                        .iter()
-                        .map(|(name, _)| Expr::Column(name.clone().into()))
-                        .collect::<Vec<_>>();
-                    let partition_spec = scan.partition_spec().clone();
-                    PhysicalPlan::Project(Project::try_new(
-                        scan.into(),
-                        projection,
-                        Default::default(),
-                        partition_spec,
-                    )?)
-                } else {
-                    scan
-                };
-                Ok(plan)
+                Ok(scan)
             }
         },
         LogicalPlan::Project(LogicalProject {

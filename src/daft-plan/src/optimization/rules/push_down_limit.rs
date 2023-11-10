@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_scan::{Pushdowns, ScanExternalInfo};
+use daft_scan::ScanExternalInfo;
 
 use crate::{
-    logical_ops::Limit as LogicalLimit,
+    logical_ops::{Limit as LogicalLimit, Source},
     source_info::{ExternalInfo, SourceInfo},
     LogicalPlan,
 };
@@ -42,46 +42,34 @@ impl OptimizerRule for PushDownLimit {
                     //
                     // Limit-Source -> Limit-Source[with_limit]
                     LogicalPlan::Source(source) => {
-                        match (source.source_info.as_ref(), source.limit) {
+                        match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             #[cfg(feature = "python")]
-                            (SourceInfo::InMemoryInfo(_), _) => Ok(Transformed::No(plan)),
-
-                            // Legacy external info handling.
-
+                            SourceInfo::InMemoryInfo(_) => Ok(Transformed::No(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
-                            (SourceInfo::ExternalInfo(ExternalInfo::Legacy(_)), Some(existing_source_limit))
-                                if (existing_source_limit <= limit) =>
+                            SourceInfo::ExternalInfo(external_info)
+                                if let Some(existing_limit) =
+                                    external_info.pushdowns().limit && existing_limit <= limit =>
                             {
                                 Ok(Transformed::No(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
-                            (SourceInfo::ExternalInfo(ExternalInfo::Legacy(_)), _) => {
-                                let new_source =
-                                    LogicalPlan::Source(source.with_limit(Some(limit))).into();
-                                let limit_with_local_limited_source =
-                                    plan.with_new_children(&[new_source]);
-                                Ok(Transformed::Yes(limit_with_local_limited_source))
-                            }
-
-                            // Scan operator external info handling.
-
-                            // Do not pushdown if Source node is already more limited than `limit`
-                            (SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo { pushdowns: Pushdowns { limit: existing_source_limit, .. }, .. })), _)
-                                if let Some(existing_source_limit) = existing_source_limit && existing_source_limit <= &limit =>
-                            {
-                                Ok(Transformed::No(plan))
-                            }
-                            // Pushdown limit into the Source node as a "local" limit
-                            (SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo { scan_op, .. })), _) => {
-                                let new_source =
-                                    LogicalPlan::Source(source.with_limit(Some(limit))).into();
-                                let out_plan = if scan_op.0.can_absorb_limit() {
-                                    // Scan can fully absorb the limit, so we can drop the Limit op from the logical plan.
-                                    new_source
-                                } else {
-                                    plan.with_new_children(&[new_source])
-                                };
+                            SourceInfo::ExternalInfo(external_info) => {
+                                let new_pushdowns =
+                                    external_info.pushdowns().with_limit(Some(limit));
+                                let new_external_info = external_info.with_pushdowns(new_pushdowns);
+                                let new_source = LogicalPlan::Source(Source::new(
+                                    source.output_schema.clone(),
+                                    SourceInfo::ExternalInfo(new_external_info).into(),
+                                ))
+                                .into();
+                                let out_plan =
+                                    match external_info {
+                                        ExternalInfo::Scan(ScanExternalInfo {
+                                            scan_op, ..
+                                        }) if scan_op.0.can_absorb_limit() => new_source,
+                                        _ => plan.with_new_children(&[new_source]),
+                                    };
                                 Ok(Transformed::Yes(out_plan))
                             }
                         }

@@ -116,9 +116,7 @@ pub struct ScanTask {
     pub file_format_config: Arc<FileFormatConfig>,
     pub schema: SchemaRef,
     pub storage_config: Arc<StorageConfig>,
-    // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
-    pub columns: Option<Arc<Vec<String>>>,
-    pub limit: Option<usize>,
+    pub pushdowns: Pushdowns,
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
@@ -130,8 +128,7 @@ impl ScanTask {
         file_format_config: Arc<FileFormatConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
-        columns: Option<Arc<Vec<String>>>,
-        limit: Option<usize>,
+        pushdowns: Pushdowns,
     ) -> Self {
         assert!(!sources.is_empty());
         let (length, size_bytes_on_disk, statistics) = sources
@@ -162,8 +159,7 @@ impl ScanTask {
             file_format_config,
             schema,
             storage_config,
-            columns,
-            limit,
+            pushdowns,
             size_bytes_on_disk,
             metadata,
             statistics,
@@ -263,7 +259,7 @@ impl ScanExternalInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
     pub filters: Option<Arc<Vec<ExprRef>>>,

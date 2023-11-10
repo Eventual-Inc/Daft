@@ -19,7 +19,7 @@ use daft_dsl::Expr;
 use daft_scan::{
     file_format::{FileFormat, FileFormatConfig},
     storage_config::{PyStorageConfig, StorageConfig},
-    ScanExternalInfo, ScanOperatorRef,
+    Pushdowns, ScanExternalInfo, ScanOperatorRef,
 };
 
 #[cfg(feature = "python")]
@@ -63,7 +63,7 @@ impl LogicalPlanBuilder {
             num_partitions,
         ));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -81,7 +81,7 @@ impl LogicalPlanBuilder {
                 Default::default(),
             )));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -91,15 +91,21 @@ impl LogicalPlanBuilder {
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
     ) -> DaftResult<Self> {
-        Self::table_scan_with_limit(file_infos, schema, file_format_config, storage_config, None)
+        Self::table_scan_with_pushdowns(
+            file_infos,
+            schema,
+            file_format_config,
+            storage_config,
+            Default::default(),
+        )
     }
 
-    pub fn table_scan_with_limit(
+    pub fn table_scan_with_pushdowns(
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
-        limit: Option<usize>,
+        pushdowns: Pushdowns,
     ) -> DaftResult<Self> {
         let source_info =
             SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(LegacyExternalInfo::new(
@@ -107,9 +113,10 @@ impl LogicalPlanBuilder {
                 file_infos.into(),
                 file_format_config,
                 storage_config,
+                pushdowns,
             )));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), limit).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 

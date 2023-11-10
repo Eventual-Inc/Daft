@@ -12,6 +12,7 @@ use {
         file_format::{FileFormat, FileFormatConfig, PyFileFormatConfig},
         python::pylib::PyScanTask,
         storage_config::{PyStorageConfig, StorageConfig},
+        Pushdowns,
     },
     pyo3::{
         pyclass, pymethods, types::PyBytes, PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo,
@@ -224,7 +225,7 @@ fn tabular_scan(
     file_infos: &Arc<FileInfos>,
     file_format_config: &Arc<FileFormatConfig>,
     storage_config: &Arc<StorageConfig>,
-    limit: &Option<usize>,
+    pushdowns: &Pushdowns,
     is_ray_runner: bool,
 ) -> PyResult<PyObject> {
     let columns_to_read = if projection_schema.names() != source_schema.names() {
@@ -248,7 +249,7 @@ fn tabular_scan(
             file_infos.to_table()?,
             PyFileFormatConfig::from(file_format_config.clone()),
             PyStorageConfig::from(storage_config.clone()),
-            *limit,
+            pushdowns.limit,
             is_ray_runner,
         ))?;
 
@@ -325,9 +326,9 @@ impl PhysicalPlan {
                         file_infos,
                         file_format_config,
                         storage_config,
+                        pushdowns,
                         ..
                     },
-                limit,
                 ..
             }) => tabular_scan(
                 py,
@@ -336,7 +337,7 @@ impl PhysicalPlan {
                 file_infos,
                 file_format_config,
                 storage_config,
-                limit,
+                pushdowns,
                 is_ray_runner,
             ),
             PhysicalPlan::TabularScanCsv(TabularScanCsv {
@@ -347,9 +348,9 @@ impl PhysicalPlan {
                         file_infos,
                         file_format_config,
                         storage_config,
+                        pushdowns,
                         ..
                     },
-                limit,
                 ..
             }) => tabular_scan(
                 py,
@@ -358,7 +359,7 @@ impl PhysicalPlan {
                 file_infos,
                 file_format_config,
                 storage_config,
-                limit,
+                pushdowns,
                 is_ray_runner,
             ),
             PhysicalPlan::TabularScanJson(TabularScanJson {
@@ -369,9 +370,9 @@ impl PhysicalPlan {
                         file_infos,
                         file_format_config,
                         storage_config,
+                        pushdowns,
                         ..
                     },
-                limit,
                 ..
             }) => tabular_scan(
                 py,
@@ -380,7 +381,7 @@ impl PhysicalPlan {
                 file_infos,
                 file_format_config,
                 storage_config,
-                limit,
+                pushdowns,
                 is_ray_runner,
             ),
             PhysicalPlan::Project(Project {
