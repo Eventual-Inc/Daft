@@ -24,12 +24,11 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, JoinType, PartitionScheme, ResourceRequest
+from daft.daft import FileFormat, IOConfig, JoinType, PartitionScheme, ResourceRequest
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.io import IOConfig
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
