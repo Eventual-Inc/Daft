@@ -382,23 +382,22 @@ impl MicroPartition {
     }
 
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        {
-            let guard = self.state.lock().unwrap();
-            if let TableState::Loaded(tables) = guard.deref() {
-                let total_size: usize = tables
-                    .iter()
-                    .map(|t| t.size_bytes())
-                    .collect::<DaftResult<Vec<_>>>()?
-                    .iter()
-                    .sum();
-                return Ok(total_size);
-            }
-        }
-        if let Some(stats) = &self.statistics {
+        let guard = self.state.lock().unwrap();
+        if let TableState::Loaded(tables) = guard.deref() {
+            let total_size: usize = tables
+                .iter()
+                .map(|t| t.size_bytes())
+                .collect::<DaftResult<Vec<_>>>()?
+                .iter()
+                .sum();
+            Ok(total_size)
+        } else if let Some(stats) = &self.statistics {
             let row_size = stats.estimate_row_size()?;
             Ok(row_size * self.len())
+        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_file) = scan_task.size_bytes_file {
+            Ok(size_bytes_file as usize)
         } else {
-            // if the table is not loaded and we dont have stats, just return 0.
+            // if the table is not loaded, we dont have stats, and we don't have the file size in bytes, just return 0.
             // not sure if we should pull the table in for this
             Ok(0)
         }
