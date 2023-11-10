@@ -281,6 +281,21 @@ class S3Config:
     I/O configuration for accessing an S3-compatible system.
     """
 
+    region_name: str | None
+    endpoint_url: str | None
+    key_id: str | None
+    session_token: str | None
+    access_key: str | None
+    max_connections: int
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
+    retry_mode: str | None
+    anonymous: bool
+    verify_ssl: bool
+    check_hostname_ssl: bool
+
     def __init__(
         self,
         region_name: str | None = None,
@@ -312,6 +327,9 @@ class GCSConfig:
     """
     I/O configuration for accessing Google Cloud Storage.
     """
+
+    project_id: str | None
+    anonymous: bool
 
     def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
 

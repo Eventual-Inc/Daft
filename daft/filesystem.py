@@ -14,16 +14,8 @@ import logging
 from typing import Any
 
 import fsspec
-import pyarrow as pa
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import (
-    FileSystem,
-    FSSpecHandler,
-    GcsFileSystem,
-    LocalFileSystem,
-    PyFileSystem,
-    S3FileSystem,
-)
+from pyarrow.fs import FileSystem, GcsFileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -60,35 +52,27 @@ class ListingInfo:
     rows: int | None = None
 
 
-def _get_s3fs_kwargs() -> dict[str, Any]:
-    """Get keyword arguments to forward to s3fs during construction"""
-
-    try:
-        import botocore.session
-    except ImportError:
-        logger.error(
-            "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
-        )
-        raise
-
-    kwargs = {}
-
-    # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
-    credentials_available = botocore.session.get_session().get_credentials() is not None
-    if not credentials_available:
-        logger.warning(
-            "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
-        )
-        kwargs["anon"] = True
-
-    # kwargs["default_fill_cache"] = False
-
-    return kwargs
-
-
 def get_filesystem(protocol: str, **kwargs) -> fsspec.AbstractFileSystem:
     if protocol == "s3" or protocol == "s3a":
-        kwargs = {**kwargs, **_get_s3fs_kwargs()}
+        try:
+            import botocore.session
+        except ImportError:
+            logger.error(
+                "Error when importing botocore. Install getdaft[aws] for the required 3rd party dependencies to interact with AWS S3 (https://www.getdaft.io/projects/docs/en/latest/learn/install.html)"
+            )
+            raise
+
+        s3fs_kwargs = {}
+
+        # If accessing S3 without credentials, use anonymous access: https://github.com/Eventual-Inc/Daft/issues/503
+        credentials_available = botocore.session.get_session().get_credentials() is not None
+        if not credentials_available:
+            logger.warning(
+                "AWS credentials not found - using anonymous access to S3 which will fail if the bucket you are accessing is not a public bucket. See boto3 documentation for more details on configuring your AWS credentials: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html"
+            )
+            s3fs_kwargs["anon"] = True
+
+        kwargs = {**kwargs, **s3fs_kwargs}
 
     try:
         klass = fsspec.get_filesystem_class(protocol)
@@ -130,12 +114,6 @@ def canonicalize_protocol(protocol: str) -> str:
     mapping between protocols and pyarrow/fsspec filesystem implementations.
     """
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
-
-
-def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
-    protocol = get_protocol_from_path(path)
-    fs = get_filesystem(protocol, **kwargs)
-    return fs
 
 
 def _resolve_paths_and_filesystem(
@@ -227,13 +205,25 @@ def _infer_filesystem(
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
 
+    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
+        """Helper method used when setting kwargs for pyarrow"""
+        if val is not None:
+            kwargs[key] = val
+
     ###
     # S3
     ###
     if protocol == "s3":
         translated_kwargs = {}
         if io_config is not None and io_config.s3 is not None:
-            pass  # TODO: Translate Daft S3Config to pyarrow S3FileSystem kwargs
+            s3_config = io_config.s3
+            _set_if_not_none(translated_kwargs, "endpoint_override", s3_config.endpoint_url)
+            _set_if_not_none(translated_kwargs, "access_key", s3_config.key_id)
+            _set_if_not_none(translated_kwargs, "secret_key", s3_config.access_key)
+            _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
+            _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
+            _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
+            _set_if_not_none(translated_kwargs, "connect_timeout", s3_config.connect_timeout_ms / 1000)
 
         resolved_filesystem = S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
@@ -243,8 +233,6 @@ def _infer_filesystem(
     # Local
     ###
     elif protocol == "file":
-        # NOTE: PyArrow really dislikes the "file://" prefix, so we trim it out if present
-        path = path[7:] if path.startswith("file://") else path
         resolved_filesystem = LocalFileSystem()
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem
@@ -255,7 +243,9 @@ def _infer_filesystem(
     elif protocol in {"gs", "gcs"}:
         translated_kwargs = {}
         if io_config is not None and io_config.gcs is not None:
-            pass  # TODO: Translate Daft GCSConfig to pyarrow S3FileSystem kwargs
+            gcs_config = io_config.gcs
+            _set_if_not_none(translated_kwargs, "anonymous", gcs_config.anonymous)
+            _set_if_not_none(translated_kwargs, "project_id", gcs_config.project_id)
 
         resolved_filesystem = GcsFileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
@@ -284,17 +274,6 @@ def _infer_filesystem(
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 
 
-def _is_http_fs(fs: FileSystem) -> bool:
-    """Returns whether the provided pyarrow filesystem is an HTTP filesystem."""
-    from fsspec.implementations.http import HTTPFileSystem
-
-    return (
-        isinstance(fs, PyFileSystem)
-        and isinstance(fs.handler, FSSpecHandler)
-        and isinstance(fs.handler.fs, HTTPFileSystem)
-    )
-
-
 def _unwrap_protocol(path):
     """
     Slice off any protocol prefixes on path.
@@ -307,22 +286,6 @@ def _unwrap_protocol(path):
 ###
 # File globbing
 ###
-
-
-def _ensure_path_protocol(protocol: str, returned_path: str) -> str:
-    """This function adds the protocol that fsspec strips from returned results"""
-    if protocol == "file":
-        return returned_path
-    parsed_scheme = urllib.parse.urlparse(returned_path).scheme
-    if parsed_scheme == "" or parsed_scheme is None:
-        return f"{protocol}://{returned_path}"
-    return returned_path
-
-
-def _path_is_glob(path: str) -> bool:
-    # fsspec glob supports *, ? and [..] patterns
-    # See: : https://filesystem-spec.readthedocs.io/en/latest/api.html
-    return any([char in path for char in ["*", "?", "["]])
 
 
 def glob_path_with_stats(
@@ -352,10 +315,3 @@ def glob_path_with_stats(
         num_rows.append(infos.get("rows"))
 
     return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
-
-
-def _get_parquet_metadata_single(path: str) -> pa.parquet.FileMetadata:
-    """Get the Parquet metadata for a given Parquet file."""
-    fs = get_filesystem_from_path(path)
-    with fs.open(path) as f:
-        return pa.parquet.ParquetFile(f).metadata

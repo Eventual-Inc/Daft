@@ -256,6 +256,24 @@ impl S3Config {
     pub fn retry_mode(&self) -> PyResult<Option<String>> {
         Ok(self.config.retry_mode.clone())
     }
+
+    /// AWS Anonymous Mode
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.anonymous))
+    }
+
+    /// AWS Verify SSL
+    #[getter]
+    pub fn verify_ssl(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.verify_ssl))
+    }
+
+    /// AWS Check SSL Hostname
+    #[getter]
+    pub fn check_hostname_ssl(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.check_hostname_ssl))
+    }
 }
 
 #[pymethods]
@@ -316,6 +334,12 @@ impl GCSConfig {
     #[getter]
     pub fn project_id(&self) -> PyResult<Option<String>> {
         Ok(self.config.project_id.clone())
+    }
+
+    /// Whether to use anonymous mode
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<bool> {
+        Ok(self.config.anonymous)
     }
 }
 
