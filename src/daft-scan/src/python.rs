@@ -3,7 +3,10 @@ use pyo3::prelude::*;
 pub mod pylib {
     use std::sync::Arc;
 
+    use daft_core::impl_bincode_py_state_serialization;
     use pyo3::prelude::*;
+    use pyo3::types::PyBytes;
+    use pyo3::PyTypeInfo;
 
     use daft_core::python::schema::PySchema;
 
@@ -110,6 +113,8 @@ pub mod pylib {
             value.0
         }
     }
+
+    impl_bincode_py_state_serialization!(PyScanTask);
 
     pub(crate) fn read_json_schema(
         py: Python,

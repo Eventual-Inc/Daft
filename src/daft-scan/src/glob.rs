@@ -41,11 +41,6 @@ impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
 enum Error {
     #[snafu(display("Glob path had no matches: \"{}\"", glob_path))]
     GlobNoMatch { glob_path: String },
-    #[snafu(display("Error during glob: \"{}\"", glob_path))]
-    GlobIOError {
-        glob_path: String,
-        source: daft_io::Error,
-    },
 }
 
 impl From<Error> for DaftError {
@@ -55,9 +50,6 @@ impl From<Error> for DaftError {
                 path: glob_path.clone(),
                 source: Box::new(value),
             },
-            Error::GlobIOError { glob_path, source } => DaftError::InternalError(format!(
-                "Error when performing IO on path {glob_path}: {source}"
-            )),
         }
     }
 }
@@ -81,16 +73,11 @@ fn run_glob(
     })?;
 
     // Construct a static-lifetime BoxStreamIterator
-    let glob_input = parsed_glob_path.as_ref().to_string();
     let iterator = BoxStreamIterator {
         boxstream,
         runtime_handle: runtime_handle.clone(),
     };
-    let iterator = iterator.map(move |fm| {
-        Ok(fm.map(|fm| fm.filepath).context(GlobIOSnafu {
-            glob_path: glob_input.clone(),
-        })?)
-    });
+    let iterator = iterator.map(move |fm| Ok(fm.map(|fm| fm.filepath)?));
     Ok(Box::new(iterator))
 }
 

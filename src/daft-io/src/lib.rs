@@ -301,6 +301,17 @@ lazy_static! {
             ),
             *THREADED_RUNTIME_NUM_WORKER_THREADS,
         ));
+    static ref SINGLE_THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
+        tokio::sync::RwLock::new((
+            Arc::new(
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .enable_all()
+                    .build()
+                    .unwrap()
+            ),
+            1,
+        ));
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
 }
@@ -326,11 +337,10 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
 
 pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
     match multi_thread {
-        false => Ok(Arc::new(
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?,
-        )),
+        false => {
+            let guard = SINGLE_THREADED_RUNTIME.blocking_read();
+            Ok(guard.clone().0)
+        }
         true => {
             let guard = THREADED_RUNTIME.blocking_read();
             Ok(guard.clone().0)

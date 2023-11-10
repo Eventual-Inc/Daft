@@ -74,7 +74,7 @@ fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
     cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
-) -> crate::Result<Vec<Table>> {
+) -> crate::Result<(Vec<Table>, SchemaRef)> {
     log::debug!("Materializing ScanTask: {scan_task:?}");
 
     let column_names = scan_task
@@ -239,27 +239,15 @@ fn materialize_scan_task(
             }
         }
     };
-    let cast_to_schema = match &column_names {
-        None => Ok(cast_to_schema),
-        Some(column_names) => Ok(Arc::new(
-            Schema::new(
-                cast_to_schema
-                    .names()
-                    .iter()
-                    .filter(|name| column_names.contains(&name.as_str()))
-                    .map(|name| cast_to_schema.get_field(name).unwrap().clone())
-                    .collect(),
-            )
-            .context(DaftCoreComputeSnafu)?,
-        )),
-    }?;
+    let cast_to_schema = prune_fields_from_schema_ref(cast_to_schema, column_names.as_deref())
+        .context(DaftCoreComputeSnafu)?;
 
     let casted_table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
-    Ok(casted_table_values)
+    Ok((casted_table_values, cast_to_schema))
 }
 
 impl MicroPartition {
@@ -374,7 +362,7 @@ impl MicroPartition {
             // CASE: Last resort fallback option
             // Perform an eager **data** read
             _ => {
-                let tables = materialize_scan_task(scan_task, None, io_stats)?;
+                let (tables, schema) = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
         }
@@ -423,11 +411,9 @@ impl MicroPartition {
         let mut guard = self.state.lock().unwrap();
         match guard.deref() {
             TableState::Unloaded(scan_task) => {
-                let table_values = Arc::new(materialize_scan_task(
-                    scan_task.clone(),
-                    Some(self.schema.clone()),
-                    io_stats,
-                )?);
+                let (tables, _) =
+                    materialize_scan_task(scan_task.clone(), Some(self.schema.clone()), io_stats)?;
+                let table_values = Arc::new(tables);
 
                 // Cache future accesses by setting the state to TableState::Loaded
                 *guard = TableState::Loaded(table_values.clone());
@@ -485,6 +471,40 @@ fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftRes
             .filter(|field| names_to_keep.contains(field.name.as_str()))
             .collect::<Vec<_>>();
         Schema::new(filtered_columns)
+    } else {
+        Ok(schema)
+    }
+}
+
+fn prune_fields_from_schema_ref(
+    schema: SchemaRef,
+    columns: Option<&[&str]>,
+) -> DaftResult<SchemaRef> {
+    if let Some(columns) = columns {
+        let avail_names = schema
+            .fields
+            .keys()
+            .map(|f| f.as_str())
+            .collect::<HashSet<_>>();
+        let mut names_to_keep = HashSet::new();
+        for col_name in columns.iter() {
+            if avail_names.contains(col_name) {
+                names_to_keep.insert(*col_name);
+            } else {
+                return Err(super::Error::FieldNotFound {
+                    field: col_name.to_string(),
+                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
+                }
+                .into());
+            }
+        }
+        let filtered_columns = schema
+            .fields
+            .values()
+            .filter(|field| names_to_keep.contains(field.name.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        Ok(Schema::new(filtered_columns)?.into())
     } else {
         Ok(schema)
     }
