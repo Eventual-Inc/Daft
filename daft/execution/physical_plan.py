@@ -193,12 +193,24 @@ def join(
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
 
+            # Calculate memory request for task.
+            left_size_bytes = next_left.partition_metadata().size_bytes
+            right_size_bytes = next_right.partition_metadata().size_bytes
+            if left_size_bytes is None and right_size_bytes is None:
+                size_bytes = None
+            elif left_size_bytes is None and right_size_bytes is not None:
+                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * right_size_bytes
+            elif right_size_bytes is None and left_size_bytes is not None:
+                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * left_size_bytes
+            elif left_size_bytes is not None and right_size_bytes is not None:
+                size_bytes = left_size_bytes + right_size_bytes
+
             join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.partition(), next_right.partition()],
                 partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
-                resource_request=ResourceRequest(
-                    memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
-                ),
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
             ).add_instruction(
                 instruction=execution_step.Join(
                     left_on=left_on,
@@ -495,12 +507,29 @@ def coalesce(
         ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
         if len(ready_to_coalesce) == num_partitions_to_merge:
             # Coalesce the partition and emit it.
+
+            # Calculate memory request for task.
+            size_bytes_per_task = [task.partition_metadata().size_bytes for task in ready_to_coalesce]
+            non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
+            non_null_size_bytes = sum(non_null_size_bytes_per_task)
+            if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
+                # If all task size bytes are non-null, directly use the non-null size bytes sum.
+                size_bytes = non_null_size_bytes
+            elif non_null_size_bytes_per_task:
+                # If some are null, calculate the non-null mean and assume that null task size bytes
+                # have that size.
+                mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
+                size_bytes = non_null_size_bytes + mean_size * (
+                    len(size_bytes_per_task) - len(non_null_size_bytes_per_task)
+                )
+            else:
+                # If all null, set to null.
+                size_bytes = None
+
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
                 partial_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
-                resource_request=ResourceRequest(
-                    memory_bytes=sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
-                ),
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),
             )

@@ -298,7 +298,6 @@ impl MicroPartition {
         io_stats: Option<IOStatsRef>,
     ) -> crate::Result<Self> {
         let schema = scan_task.schema.clone();
-        let statistics = scan_task.statistics.clone();
         match (
             &scan_task.metadata,
             &scan_task.statistics,
@@ -362,6 +361,7 @@ impl MicroPartition {
             // CASE: Last resort fallback option
             // Perform an eager **data** read
             _ => {
+                let statistics = scan_task.statistics.clone();
                 let (tables, schema) = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
@@ -381,27 +381,27 @@ impl MicroPartition {
         self.metadata.length
     }
 
-    pub fn size_bytes(&self) -> DaftResult<usize> {
-        {
-            let guard = self.state.lock().unwrap();
-            if let TableState::Loaded(tables) = guard.deref() {
-                let total_size: usize = tables
-                    .iter()
-                    .map(|t| t.size_bytes())
-                    .collect::<DaftResult<Vec<_>>>()?
-                    .iter()
-                    .sum();
-                return Ok(total_size);
-            }
-        }
-        if let Some(stats) = &self.statistics {
+    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
+        let guard = self.state.lock().unwrap();
+        let size_bytes = if let TableState::Loaded(tables) = guard.deref() {
+            let total_size: usize = tables
+                .iter()
+                .map(|t| t.size_bytes())
+                .collect::<DaftResult<Vec<_>>>()?
+                .iter()
+                .sum();
+            Some(total_size)
+        } else if let Some(stats) = &self.statistics {
             let row_size = stats.estimate_row_size()?;
-            Ok(row_size * self.len())
+            Some(row_size * self.len())
+        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_on_disk) = scan_task.size_bytes_on_disk {
+            Some(size_bytes_on_disk as usize)
         } else {
-            // if the table is not loaded and we dont have stats, just return 0.
-            // not sure if we should pull the table in for this
-            Ok(0)
-        }
+            // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
+            // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
+            None
+        };
+        Ok(size_bytes)
     }
 
     pub(crate) fn tables_or_read(
@@ -661,11 +661,18 @@ pub(crate) fn read_parquet_into_micropartition(
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
         let daft_schema = Arc::new(daft_schema);
+        let size_bytes = metadata
+            .iter()
+            .map(|m| -> u64 {
+                std::iter::Sum::sum(m.row_groups.iter().map(|m| m.total_byte_size() as u64))
+            })
+            .sum();
         let scan_task = ScanTask::new(
             owned_urls
                 .into_iter()
                 .map(|url| DataFileSource::AnonymousDataFile {
                     path: url,
+                    size_bytes: Some(size_bytes),
                     metadata: None,
                     partition_spec: None,
                     statistics: None,

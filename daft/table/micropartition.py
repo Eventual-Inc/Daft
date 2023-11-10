@@ -44,7 +44,7 @@ class MicroPartition:
     def get_column(self, name: str) -> Series:
         return Series._from_pyseries(self._micropartition.get_column(name))
 
-    def size_bytes(self) -> int:
+    def size_bytes(self) -> int | None:
         return self._micropartition.size_bytes()
 
     def __len__(self) -> int:

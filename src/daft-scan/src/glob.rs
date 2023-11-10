@@ -2,7 +2,9 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
-use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
+use daft_io::{
+    get_io_client, get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef,
+};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
 use snafu::{ResultExt, Snafu};
@@ -54,13 +56,15 @@ impl From<Error> for DaftError {
     }
 }
 
+type FileInfoIterator = Box<dyn Iterator<Item = DaftResult<FileMetadata>>>;
+
 fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<Box<dyn Iterator<Item = DaftResult<String>>>> {
+) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
 
     // Construct a static-lifetime BoxStream returning the FileMetadata
@@ -77,7 +81,7 @@ fn run_glob(
         boxstream,
         runtime_handle: runtime_handle.clone(),
     };
-    let iterator = iterator.map(move |fm| Ok(fm.map(|fm| fm.filepath)?));
+    let iterator = iterator.map(|fm| Ok(fm?));
     Ok(Box::new(iterator))
 }
 
@@ -139,8 +143,11 @@ impl GlobScanOperator {
                     io_runtime.clone(),
                     Some(io_stats.clone()),
                 )?;
-                let first_filepath = match paths.next() {
-                    Some(path) => path,
+                let FileMetadata {
+                    filepath: first_filepath,
+                    ..
+                } = match paths.next() {
+                    Some(file_metadata) => file_metadata,
                     None => Err(Error::GlobNoMatch {
                         glob_path: first_glob_path.to_string(),
                     }
@@ -274,9 +281,15 @@ impl ScanOperator for GlobScanOperator {
 
         // Create one ScanTask per file
         Ok(Box::new(files.map(move |f| {
+            let FileMetadata {
+                filepath: path,
+                size: size_bytes,
+                ..
+            } = f?;
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
-                    path: f?.to_string(),
+                    path: path.to_string(),
+                    size_bytes,
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
