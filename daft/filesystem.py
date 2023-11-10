@@ -223,7 +223,6 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
             _set_if_not_none(translated_kwargs, "region", s3_config.region_name)
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
-            _set_if_not_none(translated_kwargs, "connect_timeout", s3_config.connect_timeout_ms / 1000)
 
         resolved_filesystem = S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
