@@ -380,7 +380,8 @@ pub fn _url_download(
     array: &Utf8Array,
     max_connections: usize,
     raise_error_on_failure: bool,
-    config: Arc<IOConfig>,
+    multi_thread: bool,
+    io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<BinaryArray> {
     let urls = array.as_arrow().iter();
@@ -392,26 +393,21 @@ pub fn _url_download(
         }
     );
 
-    let runtime_handle = tokio::runtime::Handle::current();
-    let _rt_guard = runtime_handle.enter();
-    let max_connections = match runtime_handle.runtime_flavor() {
-        tokio::runtime::RuntimeFlavor::CurrentThread => max_connections,
-        _ => {
-            // Multithreaded tokio runtime
-            max_connections * usize::from(std::thread::available_parallelism()?)
-        }
+    let runtime = get_runtime(multi_thread)?;
+    let _rt_guard = runtime.enter();
+    let io_client = runtime.block_on(async move { get_io_client(io_config).await })?;
+    let max_connections = match multi_thread {
+        false => max_connections,
+        true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
     let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
         let owned_url = url.map(|s| s.to_string());
         let owned_io_stats = io_stats.clone();
-        let owned_config = config.clone();
+        let owned_client = io_client.clone();
         tokio::spawn(async move {
-            let io_client = get_io_client(owned_config.clone())
-                .await
-                .expect("TODO: propagate error");
             (
                 i,
-                io_client
+                owned_client
                     .single_url_download(i, owned_url, raise_error_on_failure, owned_io_stats)
                     .await,
             )
@@ -425,7 +421,7 @@ pub fn _url_download(
     });
 
     let collect_future = fetches.try_collect::<Vec<_>>();
-    let mut results = runtime_handle.block_on(collect_future)?;
+    let mut results = runtime.block_on(collect_future)?;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);
@@ -466,14 +462,12 @@ pub fn url_download(
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Series> {
-    let runtime = get_runtime(multi_thread)?;
-    let _rt_guard = runtime.enter();
-
     match series.data_type() {
         DataType::Utf8 => Ok(_url_download(
             series.utf8()?,
             max_connections,
             raise_error_on_failure,
+            multi_thread,
             config,
             io_stats,
         )?
