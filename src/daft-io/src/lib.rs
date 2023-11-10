@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 pub mod python;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-use object_io::FileMetadata;
+pub use object_io::FileMetadata;
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;

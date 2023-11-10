@@ -298,7 +298,6 @@ impl MicroPartition {
         io_stats: Option<IOStatsRef>,
     ) -> crate::Result<Self> {
         let schema = scan_task.schema.clone();
-        let statistics = scan_task.statistics.clone();
         match (
             &scan_task.metadata,
             &scan_task.statistics,
@@ -362,6 +361,7 @@ impl MicroPartition {
             // CASE: Last resort fallback option
             // Perform an eager **data** read
             _ => {
+                let statistics = scan_task.statistics.clone();
                 let (tables, schema) = materialize_scan_task(scan_task, None, io_stats)?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
@@ -394,7 +394,7 @@ impl MicroPartition {
         } else if let Some(stats) = &self.statistics {
             let row_size = stats.estimate_row_size()?;
             Ok(row_size * self.len())
-        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_file) = scan_task.size_bytes_file {
+        } else if let TableState::Unloaded(scan_task) = guard.deref() && let Some(size_bytes_file) = scan_task.size_bytes_on_disk {
             Ok(size_bytes_file as usize)
         } else {
             // if the table is not loaded, we dont have stats, and we don't have the file size in bytes, just return 0.

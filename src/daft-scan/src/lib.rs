@@ -101,7 +101,7 @@ pub struct ScanTask {
     // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
     pub columns: Option<Arc<Vec<String>>>,
     pub limit: Option<usize>,
-    pub size_bytes_file: Option<u64>,
+    pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
@@ -116,7 +116,7 @@ impl ScanTask {
         limit: Option<usize>,
     ) -> Self {
         assert!(!sources.is_empty());
-        let (length, size_bytes_file, statistics) = sources
+        let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
                 (
@@ -146,7 +146,7 @@ impl ScanTask {
             storage_config,
             columns,
             limit,
-            size_bytes_file,
+            size_bytes_on_disk,
             metadata,
             statistics,
         }
@@ -160,10 +160,12 @@ impl ScanTask {
         self.statistics
             .as_ref()
             .and_then(|s| {
+                // Derive in-memory size estimate from table stats.
                 self.num_rows()
                     .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
             })
-            .or_else(|| self.size_bytes_file.map(|s| s as usize))
+            // Fall back on on-disk size.
+            .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
     }
 }
 
