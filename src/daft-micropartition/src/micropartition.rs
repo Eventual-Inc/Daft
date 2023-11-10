@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::read::read_csv;
@@ -113,14 +113,25 @@ fn materialize_scan_task(
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
+                    let row_groups = if let Some(rgs) = row_groups && rgs.len() != urls.len() {
+                        if rgs.len() != 1 {
+                            return Err(DaftError::ValueError(format!("Number of row group selectors and number of paths does not match, and more than one row group selector makes it non-broadcastable: len(row_groups)={}, len(urls)={}", rgs.len(), urls.len()))).context(DaftCoreComputeSnafu);
+                        } else {
+                            Some(
+                                std::iter::repeat(rgs[0].clone())
+                                    .take(urls.len())
+                                    .collect::<Vec<_>>(),
+                            )
+                        }
+                    } else {
+                        row_groups.clone()
+                    };
                     daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
                         column_names.as_deref(),
                         None,
                         scan_task.limit,
-                        row_groups
-                            .as_ref()
-                            .map(|row_groups| vec![row_groups.clone(); urls.len()]),
+                        row_groups,
                         io_client.clone(),
                         io_stats,
                         8,
@@ -329,6 +340,19 @@ impl MicroPartition {
                     .as_ref()
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
+                let row_groups = if let Some(rgs) = row_groups && rgs.len() != scan_task.sources.len() {
+                    if rgs.len() != 1 {
+                        return Err(DaftError::ValueError(format!("Number of row group selectors and number of paths does not match, and more than one row group selector makes it non-broadcastable: len(row_groups)={}, len(urls)={}", rgs.len(), scan_task.sources.len()))).context(DaftCoreComputeSnafu);
+                    } else {
+                        Some(
+                            std::iter::repeat(rgs[0].clone())
+                                .take(scan_task.sources.len())
+                                .collect::<Vec<_>>(),
+                        )
+                    }
+                } else {
+                    row_groups.clone()
+                };
                 read_parquet_into_micropartition(
                     scan_task
                         .sources
@@ -339,11 +363,7 @@ impl MicroPartition {
                     columns.as_deref(),
                     None,
                     scan_task.limit,
-                    row_groups.clone().map(|rg| {
-                        std::iter::repeat(rg)
-                            .take(scan_task.sources.len())
-                            .collect::<Vec<_>>()
-                    }), // HACK: Properly propagate multi-file row_groups
+                    row_groups,
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -680,7 +700,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
-                row_groups: None,
+                row_groups,
             })
             .into(),
             daft_schema.clone(),

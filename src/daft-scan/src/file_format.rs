@@ -79,7 +79,7 @@ impl FileFormatConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
-    pub row_groups: Option<Vec<i64>>,
+    pub row_groups: Option<Vec<Vec<i64>>>,
 }
 
 #[cfg(feature = "python")]
@@ -87,7 +87,10 @@ pub struct ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    fn new(coerce_int96_timestamp_unit: Option<PyTimeUnit>, row_groups: Option<Vec<i64>>) -> Self {
+    fn new(
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        row_groups: Option<Vec<Vec<i64>>>,
+    ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds.into())
@@ -97,7 +100,7 @@ impl ParquetSourceConfig {
     }
 
     #[getter]
-    fn row_groups(&self) -> PyResult<Option<Vec<i64>>> {
+    fn row_groups(&self) -> PyResult<Option<Vec<Vec<i64>>>> {
         Ok(self.row_groups.clone())
     }
 

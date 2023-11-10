@@ -178,7 +178,9 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
-    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None, row_groups: list[int] | None = None): ...
+    def __init__(
+        self, coerce_int96_timestamp_unit: PyTimeUnit | None = None, row_groups: list[list[int]] | None = None
+    ): ...
 
 class CsvSourceConfig:
     """
