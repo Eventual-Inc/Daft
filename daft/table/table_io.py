@@ -14,7 +14,7 @@ from pyarrow import json as pajson
 from pyarrow import parquet as papq
 from pyarrow.fs import FileSystem
 
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
+from daft.daft import IOConfig, NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -320,6 +320,7 @@ def _to_file(
     path: str | pathlib.Path,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
     arrow_table = table.to_arrow()
 

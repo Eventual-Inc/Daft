@@ -28,10 +28,10 @@ from daft.table import Table
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FSES: dict[str, FileSystem] = {}
+_CACHED_FSES: dict[tuple[str, IOConfig | None], FileSystem] = {}
 
 
-def _get_fs_from_cache(protocol: str) -> FileSystem | None:
+def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> FileSystem | None:
     """
     Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
 
@@ -39,14 +39,14 @@ def _get_fs_from_cache(protocol: str) -> FileSystem | None:
     """
     global _CACHED_FSES
 
-    return _CACHED_FSES.get(protocol)
+    return _CACHED_FSES.get((protocol, io_config))
 
 
-def _put_fs_in_cache(protocol: str, fs: FileSystem) -> None:
+def _put_fs_in_cache(protocol: str, fs: FileSystem, io_config: IOConfig | None) -> None:
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[protocol] = fs
+    _CACHED_FSES[(protocol, io_config)] = fs
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,6 +138,7 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     filesystem: FileSystem | fsspec.AbstractFileSystem | None = None,
+    io_config: IOConfig | None = None,
 ) -> tuple[list[str], FileSystem]:
     """
     Resolves and normalizes all provided paths, infers a filesystem from the
@@ -151,6 +152,8 @@ def _resolve_paths_and_filesystem(
             None, the provided filesystem will still be validated against all
             filesystems inferred from the provided paths to ensure
             compatibility.
+        io_config: A Daft IOConfig that should be best-effort applied onto the returned
+            FileSystem
     """
     if isinstance(paths, pathlib.Path):
         paths = str(paths)
@@ -176,7 +179,7 @@ def _resolve_paths_and_filesystem(
 
     if filesystem is None:
         # Try to get filesystem from protocol -> fs cache.
-        filesystem = _get_fs_from_cache(protocol)
+        filesystem = _get_fs_from_cache(protocol, io_config)
     elif isinstance(filesystem, fsspec.AbstractFileSystem):
         # Wrap fsspec filesystems so they are valid pyarrow filesystems.
         filesystem = PyFileSystem(FSSpecHandler(filesystem))
@@ -188,7 +191,7 @@ def _resolve_paths_and_filesystem(
     if filesystem is None:
         filesystem = resolved_filesystem
         # Put resolved filesystem in cache under these paths' canonical protocol.
-        _put_fs_in_cache(protocol, filesystem)
+        _put_fs_in_cache(protocol, filesystem, io_config)
 
     # filesystem should be a non-None pyarrow FileSystem at this point, either
     # user-provided, taken from the cache, or inferred from the first path.

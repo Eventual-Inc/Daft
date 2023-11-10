@@ -1,3 +1,5 @@
+use std::hash::Hasher;
+
 use common_error::DaftError;
 use pyo3::prelude::*;
 
@@ -130,6 +132,15 @@ impl IOConfig {
             .getattr("from_json")?;
         let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
         Ok((ioconfig_from_json.to_object(py), (json_string,)))
+    }
+
+    pub fn __hash__(&self) -> PyResult<u64> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hash;
+
+        let mut hasher = DefaultHasher::new();
+        self.config.hash(&mut hasher);
+        Ok(hasher.finish())
     }
 }
 
