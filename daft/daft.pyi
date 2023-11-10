@@ -347,10 +347,9 @@ class PythonStorageConfig:
     Storage configuration for the legacy Python I/O layer.
     """
 
-    fs: fsspec.AbstractFileSystem
     io_config: IOConfig
 
-    def __init__(self, fs: fsspec.AbstractFileSystem | None = None, io_config: IOConfig | None = None): ...
+    def __init__(self, io_config: IOConfig | None = None): ...
 
 class StorageConfig:
     """

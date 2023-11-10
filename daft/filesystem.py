@@ -137,7 +137,7 @@ def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
 
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
-    filesystem: FileSystem | fsspec.AbstractFileSystem | None = None,
+    filesystem: FileSystem | None = None,  # TODO: Can be removed.
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], FileSystem]:
     """

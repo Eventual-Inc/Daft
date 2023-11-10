@@ -43,6 +43,6 @@ def read_json(
 
     json_config = JsonSourceConfig()
     file_format_config = FileFormatConfig.from_json_config(json_config)
-    storage_config = StorageConfig.python(PythonStorageConfig(None, io_config=io_config))
+    storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
     builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)
