@@ -311,4 +311,25 @@ impl Pushdowns {
             limit: self.limit,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(columns) = &self.columns {
+            res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
+        }
+        if let Some(filters) = &self.filters {
+            res.push(format!(
+                "Filter pushdown = [{}]",
+                filters
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if let Some(limit) = self.limit {
+            res.push(format!("Limit pushdown = {}", limit));
+        }
+        res
+    }
 }

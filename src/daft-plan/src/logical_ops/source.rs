@@ -45,22 +45,7 @@ impl Source {
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Format-specific config = {:?}", file_format_config));
                 res.push(format!("Storage config = {:?}", storage_config));
-                if let Some(columns) = &pushdowns.columns {
-                    res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
-                }
-                if let Some(filters) = &pushdowns.filters {
-                    res.push(format!(
-                        "Filter pushdown = [{}]",
-                        filters
-                            .iter()
-                            .map(|f| f.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
-                if let Some(limit) = pushdowns.limit {
-                    res.push(format!("Limit pushdown = {}", limit));
-                }
+                res.extend(pushdowns.multiline_display());
             }
             SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo {
                 source_schema,
@@ -72,22 +57,7 @@ impl Source {
                 res.push(format!("Scan op = {}", scan_op));
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Partitioning keys = {:?}", partitioning_keys));
-                if let Some(columns) = &pushdowns.columns {
-                    res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
-                }
-                if let Some(filters) = &pushdowns.filters {
-                    res.push(format!(
-                        "Filter pushdown = [{}]",
-                        filters
-                            .iter()
-                            .map(|f| f.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
-                if let Some(limit) = pushdowns.limit {
-                    res.push(format!("Limit pushdown = {}", limit));
-                }
+                res.extend(pushdowns.multiline_display());
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(InMemoryInfo { num_partitions, .. }) => {
