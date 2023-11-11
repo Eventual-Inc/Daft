@@ -267,13 +267,14 @@ def _infer_filesystem(
         return resolved_path, resolved_filesystem
 
     ###
-    # Azure: Unsupported! Users should use our native IO layer if possible.
+    # Azure: Use FSSpec as a fallback
     ###
     elif protocol in {"az", "abfs"}:
-        raise NotImplementedError(
-            "PyArrow filesystem does not support Azure blob storage. Please Daft's native IO layers instead or make "
-            "an issue to let us know which operation isn't yet supported!"
-        )
+        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs = fsspec_fs_cls()
+        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
+        return resolved_path, resolved_filesystem
 
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
