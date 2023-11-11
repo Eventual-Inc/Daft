@@ -157,7 +157,7 @@ def _resolve_paths_and_filesystem(
 
     # Resolve path and filesystem for the first path.
     # We use this first resolved filesystem for validation on all other paths.
-    resolved_path, resolved_filesystem = _infer_filesystem(paths[0], cached_filesystem)
+    resolved_path, resolved_filesystem = _infer_filesystem(paths[0], io_config)
 
     if cached_filesystem is None:
         # Put resolved filesystem in cache under these paths' canonical protocol.
