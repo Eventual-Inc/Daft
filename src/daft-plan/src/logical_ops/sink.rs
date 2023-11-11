@@ -55,7 +55,10 @@ impl Sink {
                     res.push(format!("Compression = {}", compression));
                 }
                 res.push(format!("Root dir = {}", root_dir));
-                res.push(format!("IOConfig = {:?}", io_config));
+                match io_config {
+                    None => res.push("IOConfig = None".to_string()),
+                    Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+                }
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
