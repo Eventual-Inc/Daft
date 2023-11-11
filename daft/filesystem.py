@@ -153,15 +153,16 @@ def _resolve_paths_and_filesystem(
     protocol = next(iter(canonicalized_protocols))
 
     # Try to get filesystem from protocol -> fs cache.
-    cached_filesystem = _get_fs_from_cache(protocol, io_config)
+    resolved_filesystem = _get_fs_from_cache(protocol, io_config)
+    if resolved_filesystem is None:
+        # Resolve path and filesystem for the first path.
+        # We use this first resolved filesystem for validation on all other paths.
+        resolved_path, resolved_filesystem = _infer_filesystem(paths[0], io_config)
 
-    # Resolve path and filesystem for the first path.
-    # We use this first resolved filesystem for validation on all other paths.
-    resolved_path, resolved_filesystem = _infer_filesystem(paths[0], io_config)
-
-    if cached_filesystem is None:
         # Put resolved filesystem in cache under these paths' canonical protocol.
         _put_fs_in_cache(protocol, resolved_filesystem, io_config)
+    else:
+        resolved_path = _validate_filesystem(paths[0], resolved_filesystem, io_config)
 
     # filesystem should be a non-None pyarrow FileSystem at this point, either
     # user-provided, taken from the cache, or inferred from the first path.
