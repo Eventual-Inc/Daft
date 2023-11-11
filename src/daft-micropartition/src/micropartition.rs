@@ -13,7 +13,7 @@ use daft_parquet::read::{
 };
 use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{DataFileSource, ScanTask};
+use daft_scan::{ChunkSpec, DataFileSource, ScanTask};
 use daft_table::Table;
 
 use snafu::ResultExt;
@@ -107,20 +107,17 @@ fn materialize_scan_task(
                 // ********************
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
-                    // TODO(Clark): Support different row group specification per file.
-                    row_groups,
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
                     let urls = urls.collect::<Vec<_>>();
+                    let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     daft_parquet::read::read_parquet_bulk(
                         urls.as_slice(),
                         column_names.as_deref(),
                         None,
                         scan_task.limit,
-                        row_groups
-                            .as_ref()
-                            .map(|row_groups| vec![row_groups.clone(); urls.len()]),
+                        row_groups,
                         io_client.clone(),
                         io_stats,
                         8,
@@ -209,7 +206,7 @@ fn materialize_scan_task(
                             py,
                             url,
                             *has_headers,
-                            delimiter,
+                            delimiter.as_str(),
                             *double_quote,
                             cast_to_schema.clone().into(),
                             scan_task.storage_config.clone().into(),
@@ -320,30 +317,26 @@ impl MicroPartition {
                 _,
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
-                    row_groups,
                 }),
                 StorageConfig::Native(cfg),
             ) => {
+                let uris = scan_task
+                    .sources
+                    .iter()
+                    .map(|s| s.get_path())
+                    .collect::<Vec<_>>();
                 let columns = scan_task
                     .columns
                     .as_ref()
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
+                let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                 read_parquet_into_micropartition(
-                    scan_task
-                        .sources
-                        .iter()
-                        .map(|s| s.get_path())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+                    uris.as_slice(),
                     columns.as_deref(),
                     None,
                     scan_task.limit,
-                    row_groups.clone().map(|rg| {
-                        std::iter::repeat(rg)
-                            .take(scan_task.sources.len())
-                            .collect::<Vec<_>>()
-                    }), // HACK: Properly propagate multi-file row_groups
+                    row_groups,
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -510,6 +503,24 @@ fn prune_fields_from_schema_ref(
     }
 }
 
+fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Option<Vec<i64>>>> {
+    let row_groups = sources
+        .iter()
+        .map(|s| {
+            if let Some(ChunkSpec::Parquet(row_group)) = s.get_chunk_spec() {
+                Some(row_group.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if row_groups.iter().any(|rgs| rgs.is_some()) {
+        Some(row_groups)
+    } else {
+        None
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_csv_into_micropartition(
     uris: &[&str],
@@ -586,7 +597,7 @@ pub(crate) fn read_parquet_into_micropartition(
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
-    row_groups: Option<Vec<Vec<i64>>>,
+    row_groups: Option<Vec<Option<Vec<i64>>>>,
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -646,10 +657,12 @@ pub(crate) fn read_parquet_into_micropartition(
         Some(row_groups) => metadata
             .iter()
             .zip(row_groups.iter())
-            .map(|(fm, rg)| {
-                rg.iter()
+            .map(|(fm, rg)| match rg {
+                Some(rg) => rg
+                    .iter()
                     .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
-                    .sum::<usize>()
+                    .sum::<usize>(),
+                None => fm.num_rows,
             })
             .sum(),
     };
@@ -670,8 +683,13 @@ pub(crate) fn read_parquet_into_micropartition(
         let scan_task = ScanTask::new(
             owned_urls
                 .into_iter()
-                .map(|url| DataFileSource::AnonymousDataFile {
+                .zip(
+                    row_groups
+                        .unwrap_or_else(|| std::iter::repeat(None).take(uris.len()).collect()),
+                )
+                .map(|(url, rgs)| DataFileSource::AnonymousDataFile {
                     path: url,
+                    chunk_spec: rgs.map(ChunkSpec::Parquet),
                     size_bytes: Some(size_bytes),
                     metadata: None,
                     partition_spec: None,
@@ -680,7 +698,6 @@ pub(crate) fn read_parquet_into_micropartition(
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
-                row_groups: None,
             })
             .into(),
             daft_schema.clone(),

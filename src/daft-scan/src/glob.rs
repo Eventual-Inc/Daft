@@ -156,7 +156,6 @@ impl GlobScanOperator {
                 let inferred_schema = match file_format_config.as_ref() {
                     FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
-                        ..
                     }) => {
                         let io_stats = IOStatsContext::new(format!(
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
@@ -289,6 +288,7 @@ impl ScanOperator for GlobScanOperator {
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
                     path: path.to_string(),
+                    chunk_spec: None,
                     size_bytes,
                     metadata: None,
                     partition_spec: None,
