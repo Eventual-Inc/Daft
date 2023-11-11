@@ -8,14 +8,14 @@ pub mod pylib {
     use daft_table::python::PyTable;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult, Python};
 
-    fn str_delimiter_to_byte(delimiter: Option<&str>) -> PyResult<Option<u8>> {
-        delimiter
-            .map(|s| match s.as_bytes() {
-                &[c] => Ok(c),
-                _ => Err(PyValueError::new_err(format!(
-                    "Delimiter must be a single-character string, but got {}",
-                    s
+    fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
+
+        char_val.map(|c| match u8::try_from(c){
+                Err(e) => Err(PyValueError::new_err(format!(
+                    "character is not valid : {:?}",
+                    c
                 ))),
+                Ok(c) => Ok(c),
             })
             .transpose()
     }
@@ -29,7 +29,7 @@ pub mod pylib {
         include_columns: Option<Vec<&str>>,
         num_rows: Option<usize>,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
         quote: Option<char>,
         escape_char: Option<char>,
@@ -53,11 +53,11 @@ pub mod pylib {
                 include_columns,
                 num_rows,
                 has_header.unwrap_or(true),
-                str_delimiter_to_byte(delimiter)?,
+                char_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
-                Some(quote.unwrap_or('\"') as u8),
-                Some(escape_char.unwrap_or('\"') as u8),
-                Some(comment.unwrap_or('#') as u8),
+                char_to_byte(quote)?,
+                char_to_byte(escape_char)?,
+                char_to_byte(comment)?,
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
@@ -76,11 +76,11 @@ pub mod pylib {
         py: Python,
         uri: &str,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
-        quote: Option<u8>,
-        escape_char: Option<u8>,
-        comment: Option<u8>,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
@@ -95,11 +95,11 @@ pub mod pylib {
             let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
-                str_delimiter_to_byte(delimiter)?,
+                char_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
-                quote,
-                escape_char,
-                comment,
+                char_to_byte(quote)?,
+                char_to_byte(escape_char)?,
+                char_to_byte(comment)?,
                 max_bytes,
                 io_client,
                 Some(io_stats),

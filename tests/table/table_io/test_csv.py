@@ -43,14 +43,18 @@ def test_read_input(tmpdir):
 
 
 @contextlib.contextmanager
-def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], delimiter: str = ","):
+def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], delimiter: str = ",", escapechar: str='"', quoting=None):
     with tempfile.TemporaryDirectory() as directory_name:
         file = os.path.join(directory_name, "tempfile")
         with open(file, "w", newline="") as f:
-            writer = csv.writer(f, delimiter=delimiter)
+            writer = csv.writer(f, delimiter=delimiter, escapechar=escapechar, quoting=csv.QUOTE_NONE)
             if header is not None:
                 writer.writerow(header)
             writer.writerows(data)
+        with open(file, "rb") as f:
+            print("File contents:!!!")
+            print(f.read())
+            print("End of file contents!!!")
         yield file
 
 
@@ -293,45 +297,48 @@ def test_csv_read_data_csv_custom_quote(use_native_downloader):
 
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
-# TODO this test still fails.
+# TODO this test still fails with use_native_downloader = True
 @pytest.mark.parametrize("use_native_downloader", [False])
-def test_csv_read_data_csv_custom_escape(use_native_downloader):
+def test_csv_read_data_custom_escape(use_native_downloader):
     with _csv_write_helper(
             header=["id", "data"],
             data=[
-                ["1", "\\\"aa\\\""],
+                ["1", 'a\"a\"a'],
                 ["2", "aa"],
                 ["3", "aa"],
-            ]
+            ],
+    escapechar="\\", #csvhelper inserts the escape character before the quote character in the file
+    quoting=csv.QUOTE_NONE
     ) as f:
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
         expected = Table.from_pydict(
             {
-                "\"id\"": [1,2, 3],
-                "\"data\"": ['\"aa\"','aa','aa'],
+                "id": [1,2, 3],
+                "data": ['a\"a\"a','aa','aa'],
             }
         )
         table = table_io.read_csv(
             f,
             schema,
             storage_config=storage_config,
-            csv_options=TableParseCSVOptions(escape_char='\\'),
+            csv_options=TableParseCSVOptions(escape_char="\\"),
         )
 
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 #TODO Not testing use_native_downloader = False, as pyarrow does not support comments directly
 @pytest.mark.parametrize("use_native_downloader", [True])
-def test_csv_read_data_csv_custom_comment(use_native_downloader):
+def test_csv_read_data_custom_comment(use_native_downloader):
     with _csv_write_helper(
             header=["id", "data"],
             data=[
                 ["1", "aa"],
-                ["#2", "aa"],
+                ["# 2", "aa"],
                 ["3", "aa"],
-            ]
+            ],
+            delimiter=","
     ) as f:
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 

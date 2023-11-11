@@ -28,6 +28,18 @@ struct PyMicroPartition {
     inner: Arc<MicroPartition>,
 }
 
+// TODO remove this repeated code fragment
+pub fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
+
+    char_val.map(|c| match u8::try_from(c){
+        Err(e) => Err(PyValueError::new_err(format!(
+            "character is not valid : {:?}",
+            c
+        ))),
+        Ok(c) => Ok(c),
+    })
+        .transpose()
+}
 #[pymethods]
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
@@ -347,10 +359,10 @@ impl PyMicroPartition {
         include_columns: Option<Vec<&str>>,
         num_rows: Option<usize>,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
         quote: Option<char>,
-        escape_char: Option<char>,
+        escape_ch: Option<char>,
         comment: Option<char>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
@@ -358,30 +370,22 @@ impl PyMicroPartition {
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-        let delimiter = delimiter
-            .map(|delimiter| match delimiter.as_bytes() {
-                [c] => Ok(*c),
-                _ => Err(PyValueError::new_err(
-                    "Provided CSV delimiter must be a 1-byte character",
-                )),
-            })
-            .transpose()?;
 
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
-
+            println!("!!!!, {:?}",quote.unwrap_or('\0'));
             crate::micropartition::read_csv_into_micropartition(
                 [uri].as_ref(),
                 column_names,
                 include_columns,
                 num_rows,
                 has_header.unwrap_or(true),
-                delimiter,
+                char_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
-                Some(quote.unwrap_or('\"') as u8),
-                Some(escape_char.unwrap_or('\"') as u8),
-                Some(comment.unwrap_or('#') as u8),
+                char_to_byte(quote)?,
+                char_to_byte(quote)?,
+                char_to_byte(comment)?,
                 io_config,
                 multithreaded_io.unwrap_or(true),
                 Some(io_stats),

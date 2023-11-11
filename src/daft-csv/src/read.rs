@@ -62,11 +62,11 @@ pub fn read_csv(
             include_columns,
             num_rows,
             has_header,
-            delimiter.unwrap_or(b','),
+            delimiter,
             double_quote,
-            quote.unwrap_or(b'\"'),
-            escape_char.unwrap_or(b'\"'),
-            comment.unwrap_or(b'#'),
+            quote,
+            escape_char,
+            comment,
             io_client,
             io_stats,
             schema,
@@ -85,11 +85,11 @@ async fn read_csv_single(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: u8,
+    delimiter: Option<u8>,
     double_quote: bool,
-    quote: u8,
-    escape_char: u8,
-    comment: u8,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema: Option<SchemaRef>,
@@ -103,11 +103,11 @@ async fn read_csv_single(
             let (schema, _, _, mean, std) = read_csv_schema_single(
                 uri,
                 has_header,
-                Some(delimiter),
+                delimiter,
                 double_quote,
-                Some(quote),
-                Some(escape_char),
-                Some(comment),
+                quote,
+                escape_char,
+                comment,
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
                 io_client.clone(),
@@ -199,11 +199,11 @@ async fn read_csv_from_compressed_reader<R>(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: u8,
+    delimiter: Option<u8>,
     double_quote: bool,
-    quote: u8,
-    escape_char: u8,
-    comment: u8,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -267,11 +267,11 @@ async fn read_csv_from_uncompressed_reader<R>(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: u8,
+    delimiter: Option<u8>,
     double_quote: bool,
-    quote: u8,
-    escape_char: u8,
-    comment: u8,
+    quote: Option<u8>,
+    escape_char: Option<u8>,
+    comment: Option<u8>,
     schema: arrow2::datatypes::Schema,
     buffer_size: usize,
     chunk_size: usize,
@@ -284,11 +284,11 @@ where
 {
     let reader = AsyncReaderBuilder::new()
         .has_headers(has_header)
-        .delimiter(delimiter)
+        .delimiter(delimiter.unwrap_or(b','))
         .double_quote(double_quote)
-        .quote(quote)
-        .escape(Some(escape_char))
-        .comment(Some(comment))
+        .quote(quote.unwrap_or(b'"'))
+        .escape(escape_char)
+        .comment(comment)
         .buffer_capacity(buffer_size)
         .create_reader(stream_reader.compat());
     let mut fields = schema.fields;

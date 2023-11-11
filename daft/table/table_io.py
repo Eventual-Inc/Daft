@@ -185,8 +185,13 @@ class PACSVStreamHelper:
 
     def __iter__(self) -> PACSVStreamHelper:
         return self
-def skip_comment(comment: str='#'):
-    return lambda row: 'skip' if row.text.startswith(comment) else 'error'
+
+def skip_comment(row):
+    print("!#!#")
+    if row.text.startswith("# "):
+        return 'skip'
+    else:
+        return 'error'
 
 def read_csv(
     file: FileInput,
@@ -210,6 +215,7 @@ def read_csv(
     """
     if storage_config is not None:
         config = storage_config.config
+        print(isinstance(config, NativeStorageConfig))
         if isinstance(config, NativeStorageConfig):
             assert isinstance(
                 file, (str, pathlib.Path)
@@ -231,21 +237,28 @@ def read_csv(
                 buffer_size=csv_options.buffer_size,
                 chunk_size=csv_options.chunk_size,
             )
+            print(tbl)
+            print("here1")
+            print(csv_options.escape_char)
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
         assert isinstance(config, PythonStorageConfig)
         fs = config.fs
     else:
         fs = None
-
     with _open_stream(file, fs) as f:
+        print("CSV options!!")
+        print(csv_options.delimiter)
+        print(csv_options.quote)
+        print(csv_options.escape_char)
+        print(csv_options.comment)
         pacsv_stream = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(
                 delimiter=csv_options.delimiter,
                 quote_char=csv_options.quote,
                 escape_char=csv_options.escape_char,
-                invalid_row_handler=skip_comment(csv_options.comment),
+                invalid_row_handler=skip_comment,
             ),
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
