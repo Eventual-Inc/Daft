@@ -3,6 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::Schema;
 use daft_dsl::Expr;
+use daft_io::IOStatsContext;
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
@@ -30,8 +31,10 @@ fn infer_schema(exprs: &[Expr], schema: &Schema) -> DaftResult<Schema> {
 
 impl MicroPartition {
     pub fn eval_expression_list(&self, exprs: &[Expr]) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
+
         let expected_schema = infer_schema(exprs, &self.schema)?;
-        let tables = self.tables_or_read(None)?;
+        let tables = self.tables_or_read(io_stats)?;
         let evaluated_tables = tables
             .iter()
             .map(|t| t.eval_expression_list(exprs))
@@ -51,7 +54,9 @@ impl MicroPartition {
     }
 
     pub fn explode(&self, exprs: &[Expr]) -> DaftResult<Self> {
-        let tables = self.tables_or_read(None)?;
+        let io_stats = IOStatsContext::new("MicroPartition::explode");
+
+        let tables = self.tables_or_read(io_stats)?;
         let evaluated_tables = tables
             .iter()
             .map(|t| t.explode(exprs))

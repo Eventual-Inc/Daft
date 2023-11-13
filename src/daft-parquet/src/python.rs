@@ -133,7 +133,7 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("read_parquet_bulk".to_string());
+            let io_stats = IOStatsContext::new("read_parquet_bulk");
 
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -243,7 +243,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("read_parquet_statistics".to_string());
+            let io_stats = IOStatsContext::new("read_parquet_statistics");
 
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),

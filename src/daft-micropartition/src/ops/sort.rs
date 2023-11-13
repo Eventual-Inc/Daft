@@ -3,13 +3,16 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::Series;
 use daft_dsl::Expr;
+use daft_io::IOStatsContext;
 use daft_table::Table;
 
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
-        let tables = self.concat_or_get()?;
+        let io_stats = IOStatsContext::new("MicroPartition::sort");
+
+        let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
@@ -25,7 +28,9 @@ impl MicroPartition {
     }
 
     pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
-        let tables = self.concat_or_get()?;
+        let io_stats = IOStatsContext::new("MicroPartition::argsort");
+
+        let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
