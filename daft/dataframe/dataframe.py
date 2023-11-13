@@ -4,7 +4,6 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
-import logging
 import pathlib
 from dataclasses import dataclass
 from functools import reduce
@@ -21,6 +20,7 @@ from typing import (
     TypeVar,
     Union,
 )
+import warnings
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -46,8 +46,6 @@ if TYPE_CHECKING:
     import dask
 
 from daft.logical.schema import Schema
-
-logger = logging.getLogger(__name__)
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
@@ -854,7 +852,7 @@ class DataFrame:
             DataFrame: Globally aggregated sums. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing sum on all columns. Specify columns using df.sum('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
@@ -870,7 +868,7 @@ class DataFrame:
             DataFrame: Globally aggregated mean. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing mean on all columns. Specify columns using df.mean('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
@@ -886,7 +884,7 @@ class DataFrame:
             DataFrame: Globally aggregated min. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing min on all columns. Specify columns using df.min('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
@@ -902,7 +900,7 @@ class DataFrame:
             DataFrame: Globally aggregated max. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing max on all columns. Specify columns using df.max('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
@@ -918,7 +916,7 @@ class DataFrame:
             DataFrame: Globally aggregated count. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts."
             )
             cols = tuple(self.columns)
@@ -934,7 +932,7 @@ class DataFrame:
             DataFrame: Globally aggregated list. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing agg_list on all columns. Specify columns using df.agg_list('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
@@ -950,7 +948,7 @@ class DataFrame:
             DataFrame: Globally aggregated list. Should be a single row.
         """
         if len(cols) == 0:
-            logger.warning(
+            warnings.warn(
                 "No columns specified; performing agg_concat on all columns. Specify columns using df.agg_concat('col1', 'col2', ...)."
             )
             cols = tuple(self.columns)
