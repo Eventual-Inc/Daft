@@ -303,10 +303,7 @@ impl MicroPartition {
         }
     }
 
-    pub fn from_scan_task(
-        scan_task: Arc<ScanTask>,
-        io_stats: Option<IOStatsRef>,
-    ) -> crate::Result<Self> {
+    pub fn from_scan_task(scan_task: Arc<ScanTask>, io_stats: IOStatsRef) -> crate::Result<Self> {
         let schema = scan_task.schema.clone();
         match (
             &scan_task.metadata,
@@ -355,7 +352,7 @@ impl MicroPartition {
                         .clone()
                         .map(|c| Arc::new(c.clone()))
                         .unwrap_or_default(),
-                    io_stats,
+                    Some(io_stats),
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
                     cfg.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
@@ -369,7 +366,7 @@ impl MicroPartition {
             // Perform an eager **data** read
             _ => {
                 let statistics = scan_task.statistics.clone();
-                let (tables, schema) = materialize_scan_task(scan_task, None, io_stats)?;
+                let (tables, schema) = materialize_scan_task(scan_task, None, Some(io_stats))?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
         }

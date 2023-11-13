@@ -80,7 +80,7 @@ impl PyMicroPartition {
                     "MicroPartition::from_scan_task for {:?}",
                     scan_task.0.sources
                 ));
-                MicroPartition::from_scan_task(scan_task.into(), Some(io_stats))
+                MicroPartition::from_scan_task(scan_task.into(), io_stats)
             })?
             .into())
     }
