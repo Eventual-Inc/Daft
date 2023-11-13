@@ -1,3 +1,5 @@
+use std::hash::Hasher;
+
 use common_error::DaftError;
 use pyo3::prelude::*;
 
@@ -133,6 +135,15 @@ impl IOConfig {
             (json_string,),
         ))
     }
+
+    pub fn __hash__(&self) -> PyResult<u64> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hash;
+
+        let mut hasher = DefaultHasher::new();
+        self.config.hash(&mut hasher);
+        Ok(hasher.finish())
+    }
 }
 
 #[pymethods]
@@ -247,6 +258,24 @@ impl S3Config {
     pub fn retry_mode(&self) -> PyResult<Option<String>> {
         Ok(self.config.retry_mode.clone())
     }
+
+    /// AWS Anonymous Mode
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.anonymous))
+    }
+
+    /// AWS Verify SSL
+    #[getter]
+    pub fn verify_ssl(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.verify_ssl))
+    }
+
+    /// AWS Check SSL Hostname
+    #[getter]
+    pub fn check_hostname_ssl(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.check_hostname_ssl))
+    }
 }
 
 #[pymethods]
@@ -307,6 +336,12 @@ impl GCSConfig {
     #[getter]
     pub fn project_id(&self) -> PyResult<Option<String>> {
         Ok(self.config.project_id.clone())
+    }
+
+    /// Whether to use anonymous mode
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<bool> {
+        Ok(self.config.anonymous)
     }
 }
 

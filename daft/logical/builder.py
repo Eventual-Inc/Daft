@@ -3,7 +3,14 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING
 
-from daft.daft import CountMode, FileFormat, FileFormatConfig, FileInfos, JoinType
+from daft.daft import (
+    CountMode,
+    FileFormat,
+    FileFormatConfig,
+    FileInfos,
+    IOConfig,
+    JoinType,
+)
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import (
     PartitionScheme,
@@ -201,9 +208,10 @@ class LogicalPlanBuilder:
         file_format: FileFormat,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
+        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder:
         if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
             raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
-        builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression)
+        builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression, io_config)
         return LogicalPlanBuilder(builder)

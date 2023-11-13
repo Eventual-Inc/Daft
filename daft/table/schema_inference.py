@@ -33,6 +33,7 @@ def from_csv(
     # Have PyArrow generate the column names if user specifies that there are no headers
     pyarrow_autogenerate_column_names = csv_options.header_index is None
 
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
         if isinstance(config, NativeStorageConfig):
@@ -46,10 +47,9 @@ def from_csv(
             )
 
         assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-    with _open_stream(file, fs) as f:
+        io_config = config.io_config
+
+    with _open_stream(file, io_config) as f:
         reader = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(
@@ -76,13 +76,13 @@ def from_json(
     Returns:
         Schema: Inferred Schema from the JSON
     """
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-    with _open_stream(file, fs) as f:
+        assert isinstance(config, PythonStorageConfig), "JSON schema inference only supports PythonStorageConfig"
+        io_config = config.io_config
+
+    with _open_stream(file, io_config) as f:
         table = pajson.read_json(f)
 
     return Table.from_arrow(table).schema()
@@ -93,6 +93,7 @@ def from_parquet(
     storage_config: StorageConfig | None = None,
 ) -> Schema:
     """Infers a Schema from a Parquet file"""
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
         if isinstance(config, NativeStorageConfig):
@@ -103,15 +104,13 @@ def from_parquet(
             return Schema.from_parquet(str(file), io_config=io_config)
 
         assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
+        io_config = config.io_config
 
     if not isinstance(file, (str, pathlib.Path)):
         # BytesIO path.
         f = file
     else:
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        paths, fs = _resolve_paths_and_filesystem(file, io_config=io_config)
         assert len(paths) == 1
         path = paths[0]
         f = fs.open_input_file(path)

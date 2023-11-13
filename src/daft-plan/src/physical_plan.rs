@@ -4,6 +4,7 @@ use {
         sink_info::OutputFileInfo,
         source_info::{FileInfos, InMemoryInfo, LegacyExternalInfo},
     },
+    common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
     daft_dsl::python::PyExpr,
@@ -256,6 +257,7 @@ fn tabular_scan(
     Ok(py_iter.into())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "python")]
 fn tabular_write(
     py: Python<'_>,
@@ -265,6 +267,7 @@ fn tabular_write(
     root_dir: &String,
     compression: &Option<String>,
     partition_cols: &Option<Vec<Expr>>,
+    io_config: &Option<IOConfig>,
 ) -> PyResult<PyObject> {
     let part_cols = partition_cols.as_ref().map(|cols| {
         cols.iter()
@@ -281,6 +284,11 @@ fn tabular_write(
             root_dir,
             compression.clone(),
             part_cols,
+            io_config
+                .as_ref()
+                .map(|cfg| common_io_config::python::IOConfig {
+                    config: cfg.clone(),
+                }),
         ))?;
     Ok(py_iter.into())
 }
@@ -612,6 +620,7 @@ impl PhysicalPlan {
                         file_format,
                         partition_cols,
                         compression,
+                        io_config,
                     },
                 input,
             }) => tabular_write(
@@ -622,6 +631,7 @@ impl PhysicalPlan {
                 root_dir,
                 compression,
                 partition_cols,
+                io_config,
             ),
             PhysicalPlan::TabularWriteCsv(TabularWriteCsv {
                 schema,
@@ -631,6 +641,7 @@ impl PhysicalPlan {
                         file_format,
                         partition_cols,
                         compression,
+                        io_config,
                     },
                 input,
             }) => tabular_write(
@@ -641,6 +652,7 @@ impl PhysicalPlan {
                 root_dir,
                 compression,
                 partition_cols,
+                io_config,
             ),
             PhysicalPlan::TabularWriteJson(TabularWriteJson {
                 schema,
@@ -650,6 +662,7 @@ impl PhysicalPlan {
                         file_format,
                         partition_cols,
                         compression,
+                        io_config,
                     },
                 input,
             }) => tabular_write(
@@ -660,6 +673,7 @@ impl PhysicalPlan {
                 root_dir,
                 compression,
                 partition_cols,
+                io_config,
             ),
         }
     }
