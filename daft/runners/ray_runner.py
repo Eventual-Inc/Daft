@@ -400,6 +400,7 @@ class Scheduler:
 
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
+        self.active_by_df: dict[str, bool] = dict()
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -407,13 +408,12 @@ class Scheduler:
         if result_uuid not in self.threads_by_df:
             return StopIteration()
 
+        # Case: thread needs to be terminated
+        if not self.active_by_df.get(result_uuid, False):
+            return StopIteration()
+
         # Common case: get the next result from the thread.
         result = self.results_by_df[result_uuid].get()
-
-        # If there are no more results, delete the thread.
-        if isinstance(result, (StopIteration, Exception)):
-            self.threads_by_df[result_uuid].join()
-            del self.threads_by_df[result_uuid]
 
         return result
 
@@ -425,6 +425,7 @@ class Scheduler:
         results_buffer_size: int | None = None,
     ) -> None:
         self.results_by_df[result_uuid] = Queue(maxsize=results_buffer_size or -1)
+        self.active_by_df[result_uuid] = True
 
         t = threading.Thread(
             target=self._run_plan,
@@ -437,6 +438,17 @@ class Scheduler:
         )
         t.start()
         self.threads_by_df[result_uuid] = t
+
+    def stop_plan(self, result_uuid: str) -> None:
+        if result_uuid in self.active_by_df:
+            # Mark df as non-active
+            self.active_by_df[result_uuid] = False
+            # wait till thread gracefully completes
+            self.threads_by_df[result_uuid].join()
+            # remove thread and history of df
+            del self.threads_by_df[result_uuid]
+            del self.active_by_df[result_uuid]
+            del self.results_by_df[result_uuid]
 
     def _run_plan(
         self,
@@ -461,8 +473,8 @@ class Scheduler:
             try:
                 next_step = next(tasks)
 
-                while True:  # Loop: Dispatch -> await.
-                    while True:  # Loop: Dispatch (get tasks -> batch dispatch).
+                while self.active_by_df.get(result_uuid, False):  # Loop: Dispatch -> await.
+                    while self.active_by_df.get(result_uuid, False):  # Loop: Dispatch (get tasks -> batch dispatch).
                         tasks_to_dispatch: list[PartitionTask] = []
 
                         cores: int = next(num_cpus_provider) - self.reserved_cores
@@ -649,19 +661,25 @@ class RayRunner(Runner[ray.ObjectRef]):
                 result_uuid=result_uuid,
                 results_buffer_size=results_buffer_size,
             )
+        try:
+            while True:
+                if isinstance(self.ray_context, ray.client_builder.ClientContext):
+                    result = ray.get(self.scheduler_actor.next.remote(result_uuid))
+                else:
+                    result = self.scheduler.next(result_uuid)
 
-        while True:
+                if isinstance(result, StopIteration):
+                    break
+                elif isinstance(result, Exception):
+                    raise result
+
+                yield result
+        finally:
+            # Generator is out of scope, ensure that state has been cleaned up
             if isinstance(self.ray_context, ray.client_builder.ClientContext):
-                result = ray.get(self.scheduler_actor.next.remote(result_uuid))
+                ray.get(self.scheduler_actor.stop_plan.remote(result_uuid))
             else:
-                result = self.scheduler.next(result_uuid)
-
-            if isinstance(result, StopIteration):
-                return
-            elif isinstance(result, Exception):
-                raise result
-
-            yield result
+                self.scheduler.stop_plan(result_uuid)
 
     def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
         for ref in self.run_iter(builder, results_buffer_size=results_buffer_size):
