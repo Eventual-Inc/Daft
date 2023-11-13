@@ -5,6 +5,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import pathlib
+import warnings
 from dataclasses import dataclass
 from functools import reduce
 from typing import (
@@ -20,7 +21,6 @@ from typing import (
     TypeVar,
     Union,
 )
-import warnings
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
