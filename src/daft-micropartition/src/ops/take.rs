@@ -9,7 +9,7 @@ use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::take"));
+        let io_stats = IOStatsContext::new("MicroPartition::take".to_string());
 
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {

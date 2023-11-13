@@ -9,7 +9,7 @@ use daft_stats::TruthValue;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::filter"));
+        let io_stats = IOStatsContext::new("MicroPartition::filter".to_string());
         if predicate.is_empty() {
             return Ok(Self::empty(Some(self.schema.clone())));
         }

@@ -7,7 +7,7 @@ use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::agg"));
+        let io_stats = IOStatsContext::new("MicroPartition::agg".to_string());
 
         let tables = self.concat_or_get(io_stats)?;
 
