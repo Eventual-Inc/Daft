@@ -411,15 +411,15 @@ impl MicroPartition {
         Ok(size_bytes)
     }
 
-    pub(crate) fn tables_or_read(
-        &self,
-        io_stats: Option<IOStatsRef>,
-    ) -> crate::Result<Arc<Vec<Table>>> {
+    pub(crate) fn tables_or_read(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
         match guard.deref() {
             TableState::Unloaded(scan_task) => {
-                let (tables, _) =
-                    materialize_scan_task(scan_task.clone(), Some(self.schema.clone()), io_stats)?;
+                let (tables, _) = materialize_scan_task(
+                    scan_task.clone(),
+                    Some(self.schema.clone()),
+                    Some(io_stats),
+                )?;
                 let table_values = Arc::new(tables);
 
                 // Cache future accesses by setting the state to TableState::Loaded
@@ -431,10 +431,7 @@ impl MicroPartition {
         }
     }
 
-    pub(crate) fn concat_or_get(
-        &self,
-        io_stats: Option<IOStatsRef>,
-    ) -> crate::Result<Arc<Vec<Table>>> {
+    pub(crate) fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let tables = self.tables_or_read(io_stats)?;
         if tables.len() <= 1 {
             return Ok(tables);

@@ -34,7 +34,7 @@ impl MicroPartition {
         let io_stats = IOStatsContext::new(format!("MicroPartition::eval_expression_list"));
 
         let expected_schema = infer_schema(exprs, &self.schema)?;
-        let tables = self.tables_or_read(Some(io_stats))?;
+        let tables = self.tables_or_read(io_stats)?;
         let evaluated_tables = tables
             .iter()
             .map(|t| t.eval_expression_list(exprs))
@@ -56,7 +56,7 @@ impl MicroPartition {
     pub fn explode(&self, exprs: &[Expr]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::explode"));
 
-        let tables = self.tables_or_read(Some(io_stats))?;
+        let tables = self.tables_or_read(io_stats)?;
         let evaluated_tables = tables
             .iter()
             .map(|t| t.explode(exprs))

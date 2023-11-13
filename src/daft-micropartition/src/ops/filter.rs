@@ -28,7 +28,7 @@ impl MicroPartition {
         }
         // TODO figure out defered IOStats
         let tables = self
-            .tables_or_read(Some(io_stats))?
+            .tables_or_read(io_stats)?
             .iter()
             .map(|t| t.filter(predicate))
             .collect::<DaftResult<Vec<_>>>()

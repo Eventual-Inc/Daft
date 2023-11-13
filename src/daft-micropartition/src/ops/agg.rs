@@ -9,7 +9,7 @@ impl MicroPartition {
     pub fn agg(&self, to_agg: &[Expr], group_by: &[Expr]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::agg"));
 
-        let tables = self.concat_or_get(Some(io_stats))?;
+        let tables = self.concat_or_get(io_stats)?;
 
         match tables.as_slice() {
             [] => {

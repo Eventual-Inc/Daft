@@ -34,10 +34,10 @@ impl MicroPartition {
         if let TruthValue::False = tv {
             return Ok(Self::empty(Some(join_schema.into())));
         }
-        let io_stats = IOStatsContext::new(format!("MicroPartition::join:"));
+        let io_stats = IOStatsContext::new(format!("MicroPartition::join"));
 
-        let lt = self.concat_or_get(Some(io_stats.clone()))?;
-        let rt = right.concat_or_get(Some(io_stats))?;
+        let lt = self.concat_or_get(io_stats.clone())?;
+        let rt = right.concat_or_get(io_stats)?;
 
         match (lt.as_slice(), rt.as_slice()) {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema.into()))),

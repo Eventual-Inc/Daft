@@ -43,7 +43,7 @@ impl PyMicroPartition {
     pub fn get_column(&self, name: &str, py: Python) -> PyResult<PySeries> {
         let tables = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("PyMicroPartition::get_column: {name}"));
-            self.inner.concat_or_get(Some(io_stats))
+            self.inner.concat_or_get(io_stats)
         })?;
         let columns = tables
             .iter()
@@ -130,7 +130,7 @@ impl PyMicroPartition {
     pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
         let concatted = py.allow_threads(|| {
             let io_stats = IOStatsContext::new("PyMicroPartition::to_table".to_string());
-            self.inner.concat_or_get(Some(io_stats))
+            self.inner.concat_or_get(io_stats)
         })?;
         match &concatted.as_ref()[..] {
             [] => PyTable::empty(Some(self.schema()?)),

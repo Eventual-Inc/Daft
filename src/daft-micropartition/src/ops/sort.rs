@@ -10,9 +10,9 @@ use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::sort:"));
+        let io_stats = IOStatsContext::new(format!("MicroPartition::sort"));
 
-        let tables = self.concat_or_get(Some(io_stats))?;
+        let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
@@ -28,9 +28,9 @@ impl MicroPartition {
     }
 
     pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::argsort:"));
+        let io_stats = IOStatsContext::new(format!("MicroPartition::argsort"));
 
-        let tables = self.concat_or_get(Some(io_stats))?;
+        let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;

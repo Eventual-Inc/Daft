@@ -32,7 +32,7 @@ impl MicroPartition {
         let mut all_tables = vec![];
 
         for m in mps.iter() {
-            let tables = m.tables_or_read(Some(io_stats.clone()))?;
+            let tables = m.tables_or_read(io_stats.clone())?;
             all_tables.extend_from_slice(tables.as_slice());
         }
         let mut all_stats = None;
