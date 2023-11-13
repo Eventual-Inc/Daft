@@ -417,7 +417,7 @@ class Scheduler:
 
         return result
 
-    def run_plan(
+    def start_plan(
         self,
         plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
@@ -438,6 +438,9 @@ class Scheduler:
         )
         t.start()
         self.threads_by_df[result_uuid] = t
+
+    def active_plans(self) -> list[str]:
+        return [r_uuid for r_uuid, is_active in self.active_by_df.items() if is_active]
 
     def stop_plan(self, result_uuid: str) -> None:
         if result_uuid in self.active_by_df:
@@ -631,6 +634,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
             )
 
+    def active_plans(self) -> list[str]:
+        if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            return ray.get(self.scheduler_actor.active_plans.remote())
+        else:
+            return self.scheduler.active_plans()
+
     def run_iter(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[ray.ObjectRef]:
         # Optimize the logical plan.
         builder = builder.optimize()
@@ -646,7 +655,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         result_uuid = str(uuid.uuid4())
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
-                self.scheduler_actor.run_plan.remote(
+                self.scheduler_actor.start_plan.remote(
                     plan_scheduler=plan_scheduler,
                     psets=psets,
                     result_uuid=result_uuid,
@@ -655,7 +664,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             )
 
         else:
-            self.scheduler.run_plan(
+            self.scheduler.start_plan(
                 plan_scheduler=plan_scheduler,
                 psets=psets,
                 result_uuid=result_uuid,
