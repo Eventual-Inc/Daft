@@ -38,9 +38,9 @@ pub(crate) struct IOStatsByteStreamContextHandle {
 }
 
 impl IOStatsContext {
-    pub fn new(name: String) -> IOStatsRef {
+    pub fn new<S: Into<String>>(name: S) -> IOStatsRef {
         Arc::new(IOStatsContext {
-            name,
+            name: name.into(),
             num_get_requests: atomic::AtomicUsize::new(0),
             num_head_requests: atomic::AtomicUsize::new(0),
             num_list_requests: atomic::AtomicUsize::new(0),
