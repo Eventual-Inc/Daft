@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::schema::SchemaRef;
-use daft_dsl::ExprRef;
+use daft_scan::Pushdowns;
 
 use crate::{
     physical_plan::PhysicalPlan, sink_info::OutputFileInfo,
@@ -14,8 +14,7 @@ pub struct TabularScanParquet {
     pub projection_schema: SchemaRef,
     pub external_info: ExternalSourceInfo,
     pub partition_spec: Arc<PartitionSpec>,
-    pub limit: Option<usize>,
-    pub filters: Vec<ExprRef>,
+    pub pushdowns: Pushdowns,
 }
 
 impl TabularScanParquet {
@@ -23,15 +22,13 @@ impl TabularScanParquet {
         projection_schema: SchemaRef,
         external_info: ExternalSourceInfo,
         partition_spec: Arc<PartitionSpec>,
-        limit: Option<usize>,
-        filters: Vec<ExprRef>,
+        pushdowns: Pushdowns,
     ) -> Self {
         Self {
             projection_schema,
             external_info,
             partition_spec,
-            limit,
-            filters,
+            pushdowns,
         }
     }
 }

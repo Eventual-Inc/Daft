@@ -13,7 +13,7 @@ use daft_parquet::read::{
 };
 use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
-use daft_scan::{ChunkSpec, DataFileSource, ScanTask};
+use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
 
 use snafu::ResultExt;
@@ -78,6 +78,7 @@ fn materialize_scan_task(
     log::debug!("Materializing ScanTask: {scan_task:?}");
 
     let column_names = scan_task
+        .pushdowns
         .columns
         .as_ref()
         .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
@@ -116,7 +117,7 @@ fn materialize_scan_task(
                         urls.as_slice(),
                         column_names.as_deref(),
                         None,
-                        scan_task.limit,
+                        scan_task.pushdowns.limit,
                         row_groups,
                         io_client.clone(),
                         io_stats,
@@ -147,7 +148,7 @@ fn materialize_scan_task(
                             url,
                             col_names.clone(),
                             column_names.clone(),
-                            scan_task.limit,
+                            scan_task.pushdowns.limit,
                             cfg.has_headers,
                             Some(cfg.delimiter.as_bytes()[0]),
                             cfg.double_quote,
@@ -187,8 +188,12 @@ fn materialize_scan_task(
                             cast_to_schema.clone().into(),
                             (*coerce_int96_timestamp_unit).into(),
                             scan_task.storage_config.clone().into(),
-                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
-                            scan_task.limit,
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
                         )
                         .map(|t| t.into())
                         .context(PyIOSnafu)
@@ -210,8 +215,12 @@ fn materialize_scan_task(
                             *double_quote,
                             cast_to_schema.clone().into(),
                             scan_task.storage_config.clone().into(),
-                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
-                            scan_task.limit,
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
                         )
                         .map(|t| t.into())
                         .context(PyIOSnafu)
@@ -225,8 +234,12 @@ fn materialize_scan_task(
                             url,
                             cast_to_schema.clone().into(),
                             scan_task.storage_config.clone().into(),
-                            scan_task.columns.as_ref().map(|cols| cols.as_ref().clone()),
-                            scan_task.limit,
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
                         )
                         .map(|t| t.into())
                         .context(PyIOSnafu)
@@ -326,6 +339,7 @@ impl MicroPartition {
                     .map(|s| s.get_path())
                     .collect::<Vec<_>>();
                 let columns = scan_task
+                    .pushdowns
                     .columns
                     .as_ref()
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
@@ -335,7 +349,7 @@ impl MicroPartition {
                     uris.as_slice(),
                     columns.as_deref(),
                     None,
-                    scan_task.limit,
+                    scan_task.pushdowns.limit,
                     row_groups,
                     cfg.io_config
                         .clone()
@@ -709,8 +723,12 @@ pub(crate) fn read_parquet_into_micropartition(
                 .into(),
             )
             .into(),
-            columns.map(|cols| Arc::new(cols.iter().map(|v| v.to_string()).collect::<Vec<_>>())),
-            num_rows,
+            Pushdowns::new(
+                None,
+                columns
+                    .map(|cols| Arc::new(cols.iter().map(|v| v.to_string()).collect::<Vec<_>>())),
+                num_rows,
+            ),
         );
 
         let exprs = daft_schema

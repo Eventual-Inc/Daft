@@ -297,8 +297,7 @@ impl ScanOperator for GlobScanOperator {
                 file_format_config.clone(),
                 schema.clone(),
                 storage_config.clone(),
-                pushdowns.columns.clone(),
-                pushdowns.limit,
+                pushdowns.clone(),
             ))
         })))
     }
