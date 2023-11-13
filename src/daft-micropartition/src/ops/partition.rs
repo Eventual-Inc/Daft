@@ -46,7 +46,7 @@ impl MicroPartition {
         exprs: &[Expr],
         num_partitions: usize,
     ) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::partition_by_hash");
 
         let tables = self.tables_or_read(io_stats)?;
 
@@ -66,7 +66,7 @@ impl MicroPartition {
     }
 
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_random".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::partition_by_random");
 
         let tables = self.tables_or_read(io_stats)?;
 
@@ -92,7 +92,7 @@ impl MicroPartition {
         boundaries: &Table,
         descending: &[bool],
     ) -> DaftResult<Vec<Self>> {
-        let io_stats = IOStatsContext::new("MicroPartition::partition_by_range".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::partition_by_range");
 
         let tables = self.tables_or_read(io_stats)?;
 

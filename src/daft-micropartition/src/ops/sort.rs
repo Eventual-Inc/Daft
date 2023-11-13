@@ -10,7 +10,7 @@ use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
     pub fn sort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::sort".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::sort");
 
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
@@ -28,7 +28,7 @@ impl MicroPartition {
     }
 
     pub fn argsort(&self, sort_keys: &[Expr], descending: &[bool]) -> DaftResult<Series> {
-        let io_stats = IOStatsContext::new("MicroPartition::argsort".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::argsort");
 
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {

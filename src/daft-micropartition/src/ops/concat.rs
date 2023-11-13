@@ -27,7 +27,7 @@ impl MicroPartition {
             }
         }
 
-        let io_stats = IOStatsContext::new("MicroPartition::concat".to_string());
+        let io_stats = IOStatsContext::new("MicroPartition::concat");
 
         let mut all_tables = vec![];
 

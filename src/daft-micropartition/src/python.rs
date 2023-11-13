@@ -129,7 +129,7 @@ impl PyMicroPartition {
     // Export Methods
     pub fn to_table(&self, py: Python) -> PyResult<PyTable> {
         let concatted = py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("PyMicroPartition::to_table".to_string());
+            let io_stats = IOStatsContext::new("PyMicroPartition::to_table");
             self.inner.concat_or_get(io_stats)
         })?;
         match &concatted.as_ref()[..] {

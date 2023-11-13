@@ -1,13 +1,16 @@
-use std::sync::{
-    atomic::{self},
-    Arc,
+use std::{
+    borrow::Cow,
+    sync::{
+        atomic::{self},
+        Arc,
+    },
 };
 
 pub type IOStatsRef = Arc<IOStatsContext>;
 
 #[derive(Default, Debug)]
 pub struct IOStatsContext {
-    name: String,
+    name: Cow<'static, str>,
     num_get_requests: atomic::AtomicUsize,
     num_head_requests: atomic::AtomicUsize,
     num_list_requests: atomic::AtomicUsize,
@@ -38,7 +41,7 @@ pub(crate) struct IOStatsByteStreamContextHandle {
 }
 
 impl IOStatsContext {
-    pub fn new<S: Into<String>>(name: S) -> IOStatsRef {
+    pub fn new<S: Into<Cow<'static, str>>>(name: S) -> IOStatsRef {
         Arc::new(IOStatsContext {
             name: name.into(),
             num_get_requests: atomic::AtomicUsize::new(0),
