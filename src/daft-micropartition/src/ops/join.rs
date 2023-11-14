@@ -10,7 +10,13 @@ use daft_stats::TruthValue;
 
 impl MicroPartition {
     pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::join");
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
+
+        if self.len() == 0 || right.len() == 0 {
+            return Ok(Self::empty(Some(join_schema.into())));
+        }
+
         let tv = match (&self.statistics, &right.statistics) {
             (_, None) => TruthValue::Maybe,
             (None, _) => TruthValue::Maybe,
@@ -34,7 +40,6 @@ impl MicroPartition {
         if let TruthValue::False = tv {
             return Ok(Self::empty(Some(join_schema.into())));
         }
-        let io_stats = IOStatsContext::new("MicroPartition::join");
 
         let lt = self.concat_or_get(io_stats.clone())?;
         let rt = right.concat_or_get(io_stats)?;

@@ -11,6 +11,10 @@ impl MicroPartition {
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::take");
 
+        if idx.is_empty() {
+            return Ok(Self::empty(Some(self.schema.clone())));
+        }
+
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             // Fallback onto `[empty_table]` behavior
@@ -38,6 +42,10 @@ impl MicroPartition {
     pub fn sample(&self, num: usize) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::sample({num})"));
 
+        if num == 0 {
+            return Ok(Self::empty(Some(self.schema.clone())));
+        }
+
         let tables = self.concat_or_get(io_stats)?;
 
         match tables.as_slice() {
@@ -56,6 +64,10 @@ impl MicroPartition {
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::quantiles({num})"));
+
+        if num <= 1 {
+            return Ok(Self::empty(Some(self.schema.clone())));
+        }
 
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
