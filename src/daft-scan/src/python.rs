@@ -91,8 +91,9 @@ pub mod pylib {
 
         #[staticmethod]
         pub fn from_python_abc(py_scan: PyObject) -> PyResult<Self> {
-            let scan_op  =
-                ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(py_scan)?));
+            let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
+                py_scan,
+            )?));
             Ok(ScanOperatorHandle { scan_op })
         }
     }
@@ -212,6 +213,7 @@ pub mod pylib {
             schema: PySchema,
             num_rows: i64,
             storage_config: PyStorageConfig,
+            size_bytes: Option<u64>,
             columns: Option<Vec<String>>,
             limit: Option<usize>,
         ) -> PyResult<Self> {
@@ -221,14 +223,20 @@ pub mod pylib {
             let data_source = DataFileSource::CatalogDataFile {
                 path: file,
                 chunk_spec: None,
-                size_bytes: None,
+                size_bytes: size_bytes,
                 metadata: TableMetadata {
                     length: num_rows as usize,
                 },
                 partition_spec: empty_pspec,
                 statistics: None,
             };
-            let scan_task = ScanTask::new(vec![data_source], file_format.into(), schema.schema, storage_config.into(), Pushdowns::default());
+            let scan_task = ScanTask::new(
+                vec![data_source],
+                file_format.into(),
+                schema.schema,
+                storage_config.into(),
+                Pushdowns::default(),
+            );
             Ok(PyScanTask(scan_task.into()))
         }
 

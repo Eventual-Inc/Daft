@@ -111,6 +111,7 @@ class IcebergScanOperator(ScanOperator):
                 schema=self._schema._schema,
                 num_rows=record_count,
                 storage_config=storage_config,
+                size_bytes=file.file_size_in_bytes,
             )
             scan_tasks.append(st)
         return scan_tasks
