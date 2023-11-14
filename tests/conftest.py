@@ -4,6 +4,8 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+import daft
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -34,6 +36,52 @@ def uuid_ext_type() -> UuidType:
     pa.register_extension_type(ext_type)
     yield ext_type
     pa.unregister_extension_type(ext_type.NAME)
+
+
+@pytest.fixture(
+    scope="function",
+    params=[
+        # Convert the data into Arrow and then load as in-memory Arrow data
+        "arrow",
+        # Dump the data as Parquet and load it as Parquet (will trigger "Unloaded" MicroPartitions)
+        "parquet",
+        # Dump the data as CSV and load it as CSV (will trigger "loaded" MicroPartitions)
+        "csv",
+    ],
+)
+def make_df(request, tmp_path) -> daft.Dataframe:
+    """Makes a dataframe when provided with data"""
+    tmp_file = tmp_path / "my-df-file"
+
+    def _make_df(data: pa.Table | dict | list) -> daft.DataFrame:
+        pa_table: pa.Table
+        if isinstance(data, pa.Table):
+            pa_table = data
+        elif isinstance(data, dict):
+            pa_table = pa.table(data)
+        elif isinstance(data, list):
+            data = {k: [d[k] for d in data] for k in data[0].keys()}
+            pa_table = pa.table(data)
+        else:
+            raise NotImplementedError(f"make_df not implemented for input type: {type(data)}")
+
+        variant = request.param
+        if variant == "arrow":
+            return daft.from_arrow(pa_table)
+        elif variant == "parquet":
+            import pyarrow.parquet as papq
+
+            papq.write_table(pa_table, str(tmp_file))
+            return daft.read_parquet(str(tmp_file))
+        elif variant == "csv":
+            import pyarrow.csv as pacsv
+
+            pacsv.write_csv(pa_table, str(tmp_file))
+            return daft.read_csv(str(tmp_file))
+        else:
+            raise NotImplementedError(f"make_df not implemented for: {variant}")
+
+    yield _make_df
 
 
 def assert_df_equals(
