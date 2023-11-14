@@ -57,7 +57,7 @@ def _iceberg_partition_field_to_daft_partition_field(
     elif isinstance(transform, DayTransform):
         expr = col(source_name).dt.day().alias(name)
     elif isinstance(transform, HourTransform):
-        raise NotImplementedError("HourTransform not implemented, Please make an issue!")
+        raise NotImplementedError("HourTransform not implemented, Please make a comment: https://github.com/Eventual-Inc/Daft/issues/1606")
     else:
         raise NotImplementedError(f"{transform} not implemented, Please make an issue!")
 

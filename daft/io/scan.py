@@ -27,10 +27,6 @@ class ScanOperator(abc.ABC):
         raise NotImplementedError()
 
     # @abc.abstractmethod
-    # def num_partitions(self) -> int:
-    #     raise NotImplementedError()
-
-    # @abc.abstractmethod
     # def filter(self, predicate: Expression) -> tuple[bool, ScanOperator]:
     #     raise NotImplementedError()
 

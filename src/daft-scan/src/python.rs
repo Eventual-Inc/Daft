@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 pub mod pylib {
 
     use daft_core::python::field::PyField;
+    use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
 
     use daft_core::impl_bincode_py_state_serialization;
@@ -12,6 +13,7 @@ pub mod pylib {
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
     use pyo3::PyTypeInfo;
+    use pyo3::types::PyList;
 
     use std::fmt::Display;
 
@@ -90,9 +92,10 @@ pub mod pylib {
         }
 
         #[staticmethod]
-        pub fn from_python_abc(py_scan: PyObject) -> PyResult<Self> {
+        pub fn from_python_abc(py_scan: PyObject, py: Python) -> PyResult<Self> {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
                 py_scan,
+                py
             )?));
             Ok(ScanOperatorHandle { scan_op })
         }
@@ -101,29 +104,57 @@ pub mod pylib {
     #[derive(Debug)]
     struct PythonScanOperatorBridge {
         operator: PyObject,
+        schema: SchemaRef,
+        partitioning_keys: Vec<PartitionField>
     }
+
+    impl PythonScanOperatorBridge {
+        fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
+            let result = abc.call_method0(py, pyo3::intern!(py,"partitioning_keys"))?;
+            let result = result.extract::<&PyList>(py)?;
+            result.into_iter().map(|p| {Ok(p.extract::<PyPartitionField>()?.0.as_ref().clone())}).collect()
+        }
+
+        fn _schema(abc: &PyObject, py: Python) -> PyResult<SchemaRef> {
+            let python_schema = abc.call_method0(py, pyo3::intern!(py,"schema"))?;
+            let pyschema = python_schema.getattr(py, pyo3::intern!(py, "_schema"))?.extract::<PySchema>(py)?;
+            Ok(pyschema.schema)
+        }
+    }
+
     #[pymethods]
     impl PythonScanOperatorBridge {
         #[staticmethod]
-        pub fn from_python_abc(abc: PyObject) -> PyResult<Self> {
-            Ok(Self { operator: abc })
+        pub fn from_python_abc(abc: PyObject, py: Python) -> PyResult<Self> {
+            let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
+            let schema = Self::_schema(&abc, py)?;
+            Ok(Self { operator: abc, schema, partitioning_keys})
         }
 
-        pub fn _filter(&self, py: Python, predicate: PyExpr) -> PyResult<(bool, Self)> {
-            let _from_pyexpr = py
-                .import(pyo3::intern!(py, "daft.expressions"))?
-                .getattr(pyo3::intern!(py, "Expression"))?
-                .getattr(pyo3::intern!(py, "_from_pyexpr"))?;
-            let expr = _from_pyexpr.call1((predicate,))?;
-            let result = self.operator.call_method(py, "filter", (expr,), None)?;
-            let (absorb, new_op) = result.extract::<(bool, PyObject)>(py)?;
-            Ok((absorb, Self { operator: new_op }))
-        }
+        // pub fn _filter(&self, py: Python, predicate: PyExpr) -> PyResult<(bool, Self)> {
+        //     let _from_pyexpr = py
+        //         .import(pyo3::intern!(py, "daft.expressions"))?
+        //         .getattr(pyo3::intern!(py, "Expression"))?
+        //         .getattr(pyo3::intern!(py, "_from_pyexpr"))?;
+        //     let expr = _from_pyexpr.call1((predicate,))?;
+        //     let result = self.operator.call_method(py, "filter", (expr,), None)?;
+        //     let (absorb, new_op) = result.extract::<(bool, PyObject)>(py)?;
+        //     Ok((absorb, Self { operator: new_op }))
+        // }
+
     }
 
     impl Display for PythonScanOperatorBridge {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{:#?}", self)
+            write!(f, "PythonScanOperator
+operator:\n{:#?}
+schema:\n{}
+partitioning_keys:\n", self.operator, self.schema)?;
+
+            for p in self.partitioning_keys.iter() {
+                writeln!(f, "{p}")?;
+            }
+            Ok(())
         }
     }
 
@@ -142,17 +173,12 @@ pub mod pylib {
         //         Ok((can, Box::new(new_op) as ScanOperatorRef))
         //     })
         // }
-        // fn limit(self: Box<Self>, num: usize) -> common_error::DaftResult<ScanOperatorRef> {
-        //     todo!()
-        // }
-        // fn num_partitions(&self) -> common_error::DaftResult<usize> {
-        //     todo!()
-        // }
+
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
-            todo!()
+            &self.partitioning_keys
         }
         fn schema(&self) -> daft_core::schema::SchemaRef {
-            todo!()
+            self.schema.clone()
         }
         fn can_absorb_filter(&self) -> bool {
             todo!()
@@ -164,9 +190,6 @@ pub mod pylib {
             todo!()
         }
 
-        // fn select(self: Box<Self>, columns: &[&str]) -> common_error::DaftResult<ScanOperatorRef> {
-        //     todo!()
-        // }
         fn to_scan_tasks(
             &self,
             _pushdowns: Pushdowns,
