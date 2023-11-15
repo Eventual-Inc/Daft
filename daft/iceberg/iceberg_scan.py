@@ -73,6 +73,8 @@ class IcebergScanOperator(ScanOperator):
     def __init__(self, iceberg_table: Table, io_config: IOConfig | None = None) -> None:
         super().__init__()
         self._table = iceberg_table
+
+        # TODO:(sammy) translate iceberg_table to io_config instead
         self._io_config = io_config
         arrow_schema = schema_to_pyarrow(iceberg_table.schema())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
