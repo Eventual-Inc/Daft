@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 pub mod pylib {
 
+    use common_error::DaftError;
     use daft_core::python::field::PyField;
     use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
@@ -12,8 +13,8 @@ pub mod pylib {
     use daft_table::Table;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
-    use pyo3::PyTypeInfo;
     use pyo3::types::PyList;
+    use pyo3::PyTypeInfo;
 
     use std::fmt::Display;
 
@@ -94,8 +95,7 @@ pub mod pylib {
         #[staticmethod]
         pub fn from_python_abc(py_scan: PyObject, py: Python) -> PyResult<Self> {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
-                py_scan,
-                py
+                py_scan, py,
             )?));
             Ok(ScanOperatorHandle { scan_op })
         }
@@ -105,20 +105,43 @@ pub mod pylib {
     struct PythonScanOperatorBridge {
         operator: PyObject,
         schema: SchemaRef,
-        partitioning_keys: Vec<PartitionField>
+        partitioning_keys: Vec<PartitionField>,
+        can_absorb_filter: bool,
+        can_absorb_limit: bool,
+        can_absorb_select: bool,
     }
 
     impl PythonScanOperatorBridge {
         fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
-            let result = abc.call_method0(py, pyo3::intern!(py,"partitioning_keys"))?;
+            let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
             let result = result.extract::<&PyList>(py)?;
-            result.into_iter().map(|p| {Ok(p.extract::<PyPartitionField>()?.0.as_ref().clone())}).collect()
+            result
+                .into_iter()
+                .map(|p| Ok(p.extract::<PyPartitionField>()?.0.as_ref().clone()))
+                .collect()
         }
 
         fn _schema(abc: &PyObject, py: Python) -> PyResult<SchemaRef> {
-            let python_schema = abc.call_method0(py, pyo3::intern!(py,"schema"))?;
-            let pyschema = python_schema.getattr(py, pyo3::intern!(py, "_schema"))?.extract::<PySchema>(py)?;
+            let python_schema = abc.call_method0(py, pyo3::intern!(py, "schema"))?;
+            let pyschema = python_schema
+                .getattr(py, pyo3::intern!(py, "_schema"))?
+                .extract::<PySchema>(py)?;
             Ok(pyschema.schema)
+        }
+
+        fn _can_absorb_filter(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "can_absorb_filter"))?
+                .extract::<bool>(py)
+        }
+
+        fn _can_absorb_limit(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "can_absorb_limit"))?
+                .extract::<bool>(py)
+        }
+
+        fn _can_absorb_select(abc: &PyObject, py: Python) -> PyResult<bool> {
+            abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
+                .extract::<bool>(py)
         }
     }
 
@@ -128,7 +151,17 @@ pub mod pylib {
         pub fn from_python_abc(abc: PyObject, py: Python) -> PyResult<Self> {
             let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
             let schema = Self::_schema(&abc, py)?;
-            Ok(Self { operator: abc, schema, partitioning_keys})
+            let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
+            let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
+            let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
+            Ok(Self {
+                operator: abc,
+                schema,
+                partitioning_keys,
+                can_absorb_filter,
+                can_absorb_limit,
+                can_absorb_select,
+            })
         }
 
         // pub fn _filter(&self, py: Python, predicate: PyExpr) -> PyResult<(bool, Self)> {
@@ -141,15 +174,25 @@ pub mod pylib {
         //     let (absorb, new_op) = result.extract::<(bool, PyObject)>(py)?;
         //     Ok((absorb, Self { operator: new_op }))
         // }
-
     }
 
     impl Display for PythonScanOperatorBridge {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "PythonScanOperator
+            write!(
+                f,
+                "PythonScanOperator
 operator:\n{:#?}
+can_absorb_filter: {}
+can_absorb_limit: {}
+can_absorb_select: {}
 schema:\n{}
-partitioning_keys:\n", self.operator, self.schema)?;
+partitioning_keys:\n",
+                self.operator,
+                self.can_absorb_filter,
+                self.can_absorb_limit,
+                self.can_absorb_select,
+                self.schema
+            )?;
 
             for p in self.partitioning_keys.iter() {
                 writeln!(f, "{p}")?;
@@ -159,21 +202,6 @@ partitioning_keys:\n", self.operator, self.schema)?;
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
-        // fn filter(
-        //     self: Box<Self>,
-        //     predicate: &daft_dsl::Expr,
-        // ) -> common_error::DaftResult<(bool, ScanOperatorRef)> {
-        //     Python::with_gil(|py| {
-        //         let (can, new_op) = self._filter(
-        //             py,
-        //             PyExpr {
-        //                 expr: predicate.clone(),
-        //             },
-        //         )?;
-        //         Ok((can, Box::new(new_op) as ScanOperatorRef))
-        //     })
-        // }
-
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
             &self.partitioning_keys
         }
@@ -192,11 +220,17 @@ partitioning_keys:\n", self.operator, self.schema)?;
 
         fn to_scan_tasks(
             &self,
-            _pushdowns: Pushdowns,
+            pushdowns: Pushdowns,
         ) -> common_error::DaftResult<
             Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTask>>>,
         > {
-            todo!()
+            Python::with_gil(|py| {
+                let pypd = PyPushdowns(pushdowns.into()).into_py(py);
+                let iterator =
+                    self.operator
+                        .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
+                return Err(DaftError::ValueError("oops".to_string()).into());
+            })
         }
     }
 
@@ -318,11 +352,36 @@ partitioning_keys:\n", self.operator, self.schema)?;
             Ok(format!("{}", self.0))
         }
     }
+
+    #[pyclass(module = "daft.daft", name = "Pushdowns", frozen)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PyPushdowns(Arc<Pushdowns>);
+    #[pymethods]
+    impl PyPushdowns {
+        pub fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("{:#?}", self.0))
+        }
+        #[getter]
+        pub fn limit(&self) -> Option<usize> {
+            self.0.limit
+        }
+
+        #[getter]
+        pub fn filters(&self) {
+            todo!("filters not yet supported")
+        }
+
+        #[getter]
+        pub fn columns(&self) -> Option<Vec<String>> {
+            self.0.columns.as_deref().cloned()
+        }
+    }
 }
 
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;
+    parent.add_class::<pylib::PyPushdowns>()?;
     Ok(())
 }

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import abc
+from collections.abc import Iterator
 
-from daft.daft import PartitionField
+from daft.daft import PartitionField, Pushdowns, ScanTask
 from daft.expressions.expressions import Expression
 from daft.logical.schema import Field, Schema
 
@@ -26,18 +27,18 @@ class ScanOperator(abc.ABC):
     def partitioning_keys(self) -> list[PartitionField]:
         raise NotImplementedError()
 
-    # @abc.abstractmethod
-    # def filter(self, predicate: Expression) -> tuple[bool, ScanOperator]:
-    #     raise NotImplementedError()
+    @abc.abstractmethod
+    def can_absorb_filter(self) -> bool:
+        raise NotImplementedError()
 
-    # @abc.abstractmethod
-    # def limit(self, num: int) -> ScanOperator:
-    #     raise NotImplementedError()
+    @abc.abstractmethod
+    def can_absorb_limit(self) -> bool:
+        raise NotImplementedError()
 
-    # @abc.abstractmethod
-    # def select(self, columns: list[str]) -> ScanOperator:
-    #     raise NotImplementedError()
+    @abc.abstractmethod
+    def can_absorb_select(self) -> bool:
+        raise NotImplementedError()
 
-    # @abc.abstractmethod
-    # def to_scan_tasks(self) -> Iterator[Any]:
-    #     raise NotImplementedError()
+    @abc.abstractmethod
+    def to_scan_tasks(self, pushdown: Pushdowns) -> Iterator[ScanTask]:
+        raise NotImplementedError()

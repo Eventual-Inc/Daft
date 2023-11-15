@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
@@ -11,6 +13,7 @@ from daft.daft import (
     FileFormatConfig,
     NativeStorageConfig,
     ParquetSourceConfig,
+    Pushdowns,
     ScanTask,
     StorageConfig,
 )
@@ -87,6 +90,18 @@ class IcebergScanOperator(ScanOperator):
 
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
+
+    def to_scan_tasks(self, pushdown: Pushdowns) -> Iterator[ScanTask]:
+        print(pushdown)
+
+    def can_absorb_filter(self) -> bool:
+        return False
+
+    def can_absorb_limit(self) -> bool:
+        return False
+
+    def can_absorb_select(self) -> bool:
+        return False
 
     def _make_scan_tasks(self) -> list[ScanTask]:
         iceberg_tasks = self._table.scan().plan_files()
