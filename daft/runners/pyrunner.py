@@ -211,14 +211,21 @@ class PyRunner(Runner[Table]):
                                 stage_id = next_step.stage_id
 
                                 if self.show_progress:
+                                    if len(pbars) == 0:
+                                        pbars[-1] = tqdm(total=1, desc="Tasks", position=0)
+                                    else:
+                                        task_pbar = pbars[-1]
+                                        task_pbar.total += 1
+                                        # task_pbar.refresh()
+
                                     if stage_id not in pbars:
                                         name = "-".join(i.__class__.__name__ for i in next_step.instructions)
                                         position = len(pbars)
-                                        pbars[stage_id] = tqdm(total=1, desc=name, position=position)
+                                        pbars[stage_id] = tqdm(total=1, desc=name, position=position, leave=False)
                                     else:
                                         pb = pbars[stage_id]
                                         pb.total += 1
-                                        pb.refresh()
+                                        # pb.refresh()
 
                                 future = thread_pool.submit(
                                     self.build_partitions, next_step.instructions, *next_step.inputs
@@ -244,6 +251,8 @@ class PyRunner(Runner[Table]):
                         if self.show_progress:
                             stage_id = done_task.stage_id
                             pbars[stage_id].update(1)
+                            pbars[-1].update(1)
+
                         logger.debug("Task completed: %s -> <%s partitions>", done_id, len(partitions))
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 

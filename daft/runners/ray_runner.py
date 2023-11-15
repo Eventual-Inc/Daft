@@ -541,6 +541,13 @@ class Scheduler:
 
                         if self.show_progress:
                             for task in tasks_to_dispatch:
+                                if len(pbars) == 0:
+                                    pbars[-1] = self.tqdm_builder(total=1, desc="Tasks", position=0)
+                                else:
+                                    task_pbar = pbars[-1]
+                                    task_pbar.total += 1
+                                    task_pbar.refresh()
+
                                 stage_id = task.stage_id
                                 if stage_id not in pbars:
                                     name = "-".join(i.__class__.__name__ for i in task.instructions)
@@ -591,6 +598,8 @@ class Scheduler:
                                 if self.show_progress:
                                     stage_id = task.stage_id
                                     pb = pbars[stage_id]
+                                    pb.update(1)
+                                    pb = pbars[-1]
                                     pb.update(1)
 
                                 del inflight_tasks[task_id]
