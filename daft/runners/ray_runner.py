@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
+    from tqdm import tqdm
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:
@@ -381,7 +382,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 
 class Scheduler:
-    def __init__(self, max_task_backlog: int | None, tqdm_builder) -> None:
+    def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
         """
         max_task_backlog: Max number of inflight tasks waiting for cores.
         """
@@ -401,7 +402,19 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
-        self.tqdm_builder = tqdm_builder
+
+        from .tqdm import IS_INTERACTIVE
+
+        if use_ray_tqdm:
+            from ray.experimental import tqdm_ray
+
+            self.tqdm_builder = tqdm_ray
+        else:
+            from .tqdm import tqdm
+
+            self.tqdm_builder = tqdm
+
+        self.show_progress = IS_INTERACTIVE
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -465,7 +478,7 @@ class Scheduler:
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-        pbars = dict()
+        pbars: dict[int, tqdm] = dict()
         num_cpus_provider = _ray_num_cpus_provider()
 
         start = datetime.now()
@@ -515,7 +528,9 @@ class Scheduler:
 
                         # Dispatch the batch of tasks.
                         logger.debug(
-                            f"{(datetime.now() - start).total_seconds()}s: RayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                            "%ss: RayRunner dispatching %s tasks",
+                            (datetime.now() - start).total_seconds(),
+                            len(tasks_to_dispatch),
                         )
                         for task in tasks_to_dispatch:
                             results = _build_partitions(task)
@@ -524,16 +539,17 @@ class Scheduler:
                             for result in results:
                                 inflight_ref_to_task[result] = task.id()
 
-                        for task in tasks_to_dispatch:
-                            stage_id = task.stage_id
-                            if stage_id not in pbars:
-                                name = "-".join(i.__class__.__name__ for i in task.instructions)
-                                position = len(pbars)
-                                pbars[stage_id] = self.tqdm_builder(total=1, desc=name, position=position)
-                            else:
-                                pb = pbars[stage_id]
-                                pb.total += 1
-                                pb.refresh()
+                        if self.show_progress:
+                            for task in tasks_to_dispatch:
+                                stage_id = task.stage_id
+                                if stage_id not in pbars:
+                                    name = "-".join(i.__class__.__name__ for i in task.instructions)
+                                    position = len(pbars)
+                                    pbars[stage_id] = self.tqdm_builder(total=1, desc=name, position=position)
+                                else:
+                                    pb = pbars[stage_id]
+                                    pb.total += 1
+                                    pb.refresh()
 
                         if dispatches_allowed == 0 or next_step is None:
                             break
@@ -567,19 +583,20 @@ class Scheduler:
                                 completed_task_ids.append(task_id)
                                 # Mark the entire task associated with the result as done.
                                 task = inflight_tasks[task_id]
-                                stage_id = task.stage_id
-                                pb = pbars[stage_id]
-                                pb.update(1)
                                 if isinstance(task, SingleOutputPartitionTask):
                                     del inflight_ref_to_task[ready]
                                 elif isinstance(task, MultiOutputPartitionTask):
                                     for partition in task.partitions():
                                         del inflight_ref_to_task[partition]
+                                if self.show_progress:
+                                    stage_id = task.stage_id
+                                    pb = pbars[stage_id]
+                                    pb.update(1)
 
                                 del inflight_tasks[task_id]
 
                     logger.debug(
-                        f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
+                        "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
                     )
 
                     if next_step is None:
@@ -647,16 +664,12 @@ class RayRunner(Runner[ray.ObjectRef]):
         self.ray_context = ray.init(address=address, ignore_reinit_error=True)
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
-            from ray.experimental import tqdm_ray
-
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-                max_task_backlog=max_task_backlog, tqdm_builder=tqdm_ray
+                max_task_backlog=max_task_backlog, use_ray_tqdm=True
             )
         else:
-            from tqdm.auto import tqdm
-
-            self.scheduler = Scheduler(max_task_backlog=max_task_backlog, tqdm_builder=tqdm)
+            self.scheduler = Scheduler(max_task_backlog=max_task_backlog, use_ray_tqdm=False)
 
     def active_plans(self) -> list[str]:
         if isinstance(self.ray_context, ray.client_builder.ClientContext):

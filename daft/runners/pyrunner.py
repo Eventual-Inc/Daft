@@ -114,6 +114,9 @@ class PyRunner(Runner[Table]):
         self.num_cpus = multiprocessing.cpu_count()
         self.num_gpus = cuda_device_count()
         self.bytes_memory = psutil.virtual_memory().total
+        from .tqdm import IS_INTERACTIVE
+
+        self.show_progress = IS_INTERACTIVE
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
@@ -158,7 +161,7 @@ class PyRunner(Runner[Table]):
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
-        pbars = dict()
+        pbars: dict[int, tqdm] = dict()
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
                 next_step = next(plan)
@@ -206,15 +209,17 @@ class PyRunner(Runner[Table]):
 
                                 logger.debug("Submitting task for execution: %s", next_step)
                                 stage_id = next_step.stage_id
-                                if stage_id not in pbars:
-                                    name = "-".join(i.__class__.__name__ for i in next_step.instructions)
-                                    pbars[stage_id] = tqdm(total=float("inf"), desc=name)
-                                pb = pbars[stage_id]
-                                if pb.total is None:
-                                    pb.total = 1
-                                else:
-                                    pb.total += 1
-                                pb.refresh()
+
+                                if self.show_progress:
+                                    if stage_id not in pbars:
+                                        name = "-".join(i.__class__.__name__ for i in next_step.instructions)
+                                        position = len(pbars)
+                                        pbars[stage_id] = tqdm(total=1, desc=name, position=position)
+                                    else:
+                                        pb = pbars[stage_id]
+                                        pb.total += 1
+                                        pb.refresh()
+
                                 future = thread_pool.submit(
                                     self.build_partitions, next_step.instructions, *next_step.inputs
                                 )
@@ -235,10 +240,10 @@ class PyRunner(Runner[Table]):
                         done_id = future_to_task.pop(done_future)
                         del inflight_tasks_resources[done_id]
                         done_task = inflight_tasks.pop(done_id)
-                        stage_id = done_task.stage_id
                         partitions = done_future.result()
-
-                        pbars[stage_id].update(1)
+                        if self.show_progress:
+                            stage_id = done_task.stage_id
+                            pbars[stage_id].update(1)
                         logger.debug("Task completed: %s -> <%s partitions>", done_id, len(partitions))
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 

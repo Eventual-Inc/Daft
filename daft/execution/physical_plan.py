@@ -257,9 +257,9 @@ def join(
             # Are we still waiting for materializations to complete? (We will emit more joins from them).
             if len(left_requests) + len(right_requests) > 0:
                 logger.debug(
-                    "join blocked on completion of sources.\n"
-                    f"Left sources: {left_requests}\n"
-                    f"Right sources: {right_requests}",
+                    "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
+                    left_requests,
+                    right_requests,
                 )
                 yield None
 
