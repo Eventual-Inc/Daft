@@ -75,6 +75,8 @@ def parse_html_table(
 
 
 def test_empty_repr():
+    # BUG: Cannot read parquet file with empty schema
+    # df = make_df({})
     df = daft.from_pydict({})
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
@@ -84,8 +86,8 @@ def test_empty_repr():
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
 
 
-def test_empty_df_repr():
-    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+def test_empty_df_repr(make_df):
+    df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
     expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
 
@@ -125,8 +127,8 @@ def test_empty_df_repr():
     )
 
 
-def test_alias_repr():
-    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+def test_alias_repr(make_df):
+    df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.select(df["A"].alias("A2"), df["B"])
 
     expected_data = {"A2": ("Int64", []), "B": ("Utf8", [])}
@@ -173,8 +175,8 @@ def test_alias_repr():
     )
 
 
-def test_repr_with_unicode():
-    df = daft.from_pydict({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
+def test_repr_with_unicode(make_df):
+    df = make_df({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
 
     expected_data = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
