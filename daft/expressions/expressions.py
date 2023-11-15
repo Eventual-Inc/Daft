@@ -754,6 +754,9 @@ class ExpressionsProjection(Iterable[Expression]):
         fields = [e._to_field(schema) for e in self]
         return Schema._from_field_name_and_types([(f.name, f.dtype) for f in fields])
 
+    def __repr__(self) -> str:
+        return f"{self._output_name_to_exprs.values()}"
+
 
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns."""

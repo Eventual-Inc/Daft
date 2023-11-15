@@ -4,9 +4,10 @@ import logging
 import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Iterator
+from typing import Iterable, Iterator
 
 import psutil
+from tqdm.auto import tqdm
 
 from daft.daft import (
     FileFormatConfig,
@@ -31,10 +32,6 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
 from daft.table import Table
-
-if TYPE_CHECKING:
-    pass
-
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +146,6 @@ class PyRunner(Runner[Table]):
         }
         # Get executable tasks from planner.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=False)
-
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
             partitions_gen = self._physical_plan_to_partitions(tasks)
             yield from partitions_gen
@@ -162,6 +158,9 @@ class PyRunner(Runner[Table]):
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
 
+        pbars = dict()
+        # tqdm.set_lock(TRLock())
+        # initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
                 next_step = next(plan)
@@ -206,12 +205,24 @@ class PyRunner(Runner[Table]):
 
                             else:
                                 # Submit the task for execution.
+
                                 logger.debug("Submitting task for execution: %s", next_step)
+                                stage_id = next_step.stage_id
+                                if stage_id not in pbars:
+                                    name = "-".join(i.__class__.__name__ for i in next_step.instructions)
+                                    pbars[stage_id] = tqdm(total=float("inf"), desc=name)
+                                pb = pbars[stage_id]
+                                if pb.total is None:
+                                    pb.total = 1
+                                else:
+                                    pb.total += 1
+                                pb.refresh()
                                 future = thread_pool.submit(
                                     self.build_partitions, next_step.instructions, *next_step.inputs
                                 )
                                 # Register the inflight task and resources used.
                                 future_to_task[future] = next_step.id()
+
                                 inflight_tasks[next_step.id()] = next_step
                                 inflight_tasks_resources[next_step.id()] = next_step.resource_request
 
@@ -226,8 +237,10 @@ class PyRunner(Runner[Table]):
                         done_id = future_to_task.pop(done_future)
                         del inflight_tasks_resources[done_id]
                         done_task = inflight_tasks.pop(done_id)
+                        stage_id = done_task.stage_id
                         partitions = done_future.result()
 
+                        pbars[stage_id].update(1)
                         logger.debug("Task completed: %s -> <%s partitions>", done_id, len(partitions))
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
@@ -235,6 +248,8 @@ class PyRunner(Runner[Table]):
                         next_step = next(plan)
 
             except StopIteration:
+                for p in pbars.values():
+                    p.close()
                 return
 
     def _check_resource_requests(self, resource_request: ResourceRequest) -> None:

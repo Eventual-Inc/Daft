@@ -53,6 +53,16 @@ InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], Partiti
 MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionT]]
 
 
+def _stage_id_counter():
+    counter = 0
+    while True:
+        counter += 1
+        yield counter
+
+
+stage_id_counter = _stage_id_counter()
+
+
 def partition_read(
     partitions: Iterator[PartitionT], metadatas: Iterator[PartialPartitionMetadata] | None = None
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -81,6 +91,7 @@ def file_read(
     Yield a plan to read those filenames.
     """
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id = next(stage_id_counter)
     output_partition_index = 0
 
     while True:
@@ -119,7 +130,7 @@ def file_read(
         try:
             child_step = next(child_plan)
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.finalize_partition_task_single_output()
+                child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
                 materializations.append(child_step)
             yield child_step
 
@@ -185,7 +196,7 @@ def join(
     # As the materializations complete, emit new steps to join each left and right partition.
     left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     yield_left = True
 
     while True:
@@ -237,7 +248,7 @@ def join(
         try:
             step = next(next_plan)
             if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_single_output()
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
                 next_requests.append(step)
             yield step
 
@@ -302,7 +313,7 @@ def global_limit(
     remaining_partitions = num_partitions
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     # To dynamically schedule the global limit, we need to apply an appropriate limit to each child partition.
     # We don't know their exact sizes since they are pending execution, so we will have to iteratively execute them,
     # count their rows, and then apply and update the remaining limit.
@@ -317,16 +328,17 @@ def global_limit(
         # Apply and deduct the rolling global limit.
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
-
-            limit = remaining_rows and min(remaining_rows, done_task.partition_metadata().num_rows)
+            done_task_metadata = done_task.partition_metadata()
+            limit = remaining_rows and min(remaining_rows, done_task_metadata.num_rows)
 
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
-                partial_metadatas=[done_task.partition_metadata()],
-                resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
+                partial_metadatas=[done_task_metadata],
+                resource_request=ResourceRequest(memory_bytes=done_task_metadata.size_bytes),
             ).add_instruction(
-                instruction=execution_step.LocalLimit(limit),
+                instruction=execution_step.GlobalLimit(limit),
             )
+
             yield global_limit_step
             remaining_partitions -= 1
             remaining_rows -= limit
@@ -346,7 +358,7 @@ def global_limit(
                         partial_metadatas=[done_task.partition_metadata()],
                         resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
                     ).add_instruction(
-                        instruction=execution_step.LocalLimit(0),
+                        instruction=execution_step.GlobalLimit(0),
                     )
                     for _ in range(remaining_partitions)
                 )
@@ -376,10 +388,11 @@ def global_limit(
                 if len(materializations) == 0 and remaining_rows > 0 and partial_meta.num_rows is not None:
                     limit = min(remaining_rows, partial_meta.num_rows)
                     child_step = child_step.add_instruction(instruction=execution_step.LocalLimit(limit))
+
                     remaining_partitions -= 1
                     remaining_rows -= limit
                 else:
-                    child_step = child_step.finalize_partition_task_single_output()
+                    child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
                     materializations.append(child_step)
             yield child_step
 
@@ -395,7 +408,7 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
     """Wrap a plan that emits multi-output tasks to a plan that emits single-output tasks."""
 
     materializations: deque[MultiOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     while True:
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
@@ -409,7 +422,7 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
         try:
             step = next(child_plan)
             if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_multi_output()
+                step = step.finalize_partition_task_multi_output(stage_id=stage_id)
                 materializations.append(step)
             yield step
 
@@ -436,10 +449,10 @@ def split(
     # Splitting evenly is fairly important if this operation is to be used for parallelism.
     # (optimization TODO: don't materialize if num_rows is already available in physical plan metadata.)
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output()
+            step = step.finalize_partition_task_single_output(stage_id=stage_id)
             materializations.append(step)
         yield step
 
@@ -503,7 +516,7 @@ def coalesce(
     merges_per_result = deque([stop - start for start, stop in zip(starts, stops)])
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     while True:
         # See if we can emit a coalesced partition.
         num_partitions_to_merge = merges_per_result[0]
@@ -545,7 +558,7 @@ def coalesce(
         try:
             child_step = next(child_plan)
             if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.finalize_partition_task_single_output()
+                child_step = child_step.finalize_partition_task_single_output(stage_id)
                 materializations.append(child_step)
             yield child_step
 
@@ -570,11 +583,12 @@ def reduce(
     """
 
     materializations = list()
+    stage_id = next(stage_id_counter)
 
     # Dispatch all fanouts.
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_multi_output()
+            step = step.finalize_partition_task_multi_output(stage_id=stage_id)
             materializations.append(step)
         yield step
 
@@ -611,14 +625,17 @@ def sort(
 
     # First, materialize the child plan.
     source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id_children = next(stage_id_counter)
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output()
+            step = step.finalize_partition_task_single_output(stage_id=stage_id_children)
             source_materializations.append(step)
         yield step
 
     # Sample all partitions (to be used for calculating sort boundaries).
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id_sampling = next(stage_id_counter)
+
     for source in source_materializations:
         while not source.done():
             logger.debug("sort blocked on completion of source: %s", source)
@@ -632,7 +649,7 @@ def sort(
             .add_instruction(
                 instruction=execution_step.Sample(sort_by=sort_by),
             )
-            .finalize_partition_task_single_output()
+            .finalize_partition_task_single_output(stage_id=stage_id_sampling)
         )
 
         sample_materializations.append(sample)
@@ -642,6 +659,8 @@ def sort(
     while any(not _.done() for _ in sample_materializations):
         logger.debug("sort blocked on completion of all samples: %s", sample_materializations)
         yield None
+
+    stage_id_reduce = next(stage_id_counter)
 
     # Reduce the samples to get sort boundaries.
     boundaries = (
@@ -656,7 +675,7 @@ def sort(
                 descending=descending,
             ),
         )
-        .finalize_partition_task_single_output()
+        .finalize_partition_task_single_output(stage_id=stage_id_reduce)
     )
     yield boundaries
 
@@ -714,7 +733,7 @@ def materialize(
     """
 
     materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
+    stage_id = next(stage_id_counter)
     while True:
         # Check if any inputs finished executing.
         while len(materializations) > 0 and materializations[0].done():
@@ -725,7 +744,7 @@ def materialize(
         try:
             step = next(child_plan)
             if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_single_output()
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
                 materializations.append(step)
             assert isinstance(step, (PartitionTask, type(None)))
 
