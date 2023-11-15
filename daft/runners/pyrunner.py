@@ -159,8 +159,6 @@ class PyRunner(Runner[Table]):
         future_to_task: dict[futures.Future, str] = dict()
 
         pbars = dict()
-        # tqdm.set_lock(TRLock())
-        # initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)
         with futures.ThreadPoolExecutor() as thread_pool:
             try:
                 next_step = next(plan)
