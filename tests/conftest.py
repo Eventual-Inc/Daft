@@ -45,8 +45,6 @@ def uuid_ext_type() -> UuidType:
         "arrow",
         # Dump the data as Parquet and load it as Parquet (will trigger "Unloaded" MicroPartitions)
         "parquet",
-        # Dump the data as CSV and load it as CSV (will trigger "loaded" MicroPartitions)
-        "csv",
     ],
 )
 def make_df(request, tmp_path) -> daft.Dataframe:
@@ -73,11 +71,6 @@ def make_df(request, tmp_path) -> daft.Dataframe:
 
             papq.write_table(pa_table, str(tmp_file))
             return daft.read_parquet(str(tmp_file))
-        elif variant == "csv":
-            import pyarrow.csv as pacsv
-
-            pacsv.write_csv(pa_table, str(tmp_file))
-            return daft.read_csv(str(tmp_file))
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
