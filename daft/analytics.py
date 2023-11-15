@@ -113,7 +113,7 @@ class AnalyticsClient:
             self._publish(payload)
         except Exception as e:
             # No-op on failure to avoid crashing the program - TODO: add retries for more robust logging
-            logger.debug(f"Error in analytics publisher thread: {e}")
+            logger.debug("Error in analytics publisher thread: %s", e)
         finally:
             self._buffer = []
 

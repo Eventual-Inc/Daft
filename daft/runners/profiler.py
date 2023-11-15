@@ -49,7 +49,7 @@ def timingcontext(name: str):
     tracer = get_tracer()
 
     try:
-        logger.debug(f"log_event:enter:{name}")
+        logger.debug("log_event:enter:%s", name)
         start = time.time()
         if tracer is not None:
             with tracer.log_event(name) as event:

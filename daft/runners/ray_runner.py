@@ -500,7 +500,7 @@ class Scheduler:
 
                             # If it is a no-op task, just run it locally immediately.
                             elif len(next_step.instructions) == 0:
-                                logger.debug(f"Running task synchronously in main thread: {next_step}")
+                                logger.debug("Running task synchronously in main thread: %s", next_step)
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 next_step.set_result(
                                     [RayMaterializedResult(partition) for partition in next_step.inputs]
@@ -518,7 +518,7 @@ class Scheduler:
                         )
                         for task in tasks_to_dispatch:
                             results = _build_partitions(task)
-                            logger.debug(f"{task} -> {results}")
+                            logger.debug("%s -> %s", task, results)
                             inflight_tasks[task.id()] = task
                             for result in results:
                                 inflight_ref_to_task[result] = task.id()
