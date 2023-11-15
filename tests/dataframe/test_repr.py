@@ -74,9 +74,8 @@ def parse_html_table(
     return result
 
 
-def test_empty_repr():
-    # BUG: Cannot read parquet file with empty schema
-    # df = make_df({})
+def test_empty_repr(make_df):
+    df = make_df({})
     df = daft.from_pydict({})
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
