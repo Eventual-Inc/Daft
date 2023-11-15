@@ -121,6 +121,7 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
+pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
     pub fn new(
@@ -252,7 +253,7 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>>;
 }
 
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash

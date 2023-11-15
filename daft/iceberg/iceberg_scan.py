@@ -91,20 +91,10 @@ class IcebergScanOperator(ScanOperator):
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
 
-    def to_scan_tasks(self, pushdown: Pushdowns) -> Iterator[ScanTask]:
-        print(pushdown)
-
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return False
-
-    def _make_scan_tasks(self) -> list[ScanTask]:
-        iceberg_tasks = self._table.scan().plan_files()
+    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+        limit = pushdowns.limit
+        columns = pushdowns.columns
+        iceberg_tasks = self._table.scan(limit=limit).plan_files()
         scan_tasks = []
         # TODO(sammy): multithreading should be RayRunner config?
         storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
@@ -131,9 +121,20 @@ class IcebergScanOperator(ScanOperator):
                 num_rows=record_count,
                 storage_config=storage_config,
                 size_bytes=file.file_size_in_bytes,
+                limit=limit,
+                columns=columns,
             )
             scan_tasks.append(st)
-        return scan_tasks
+        return iter(scan_tasks)
+
+    def can_absorb_filter(self) -> bool:
+        return False
+
+    def can_absorb_limit(self) -> bool:
+        return False
+
+    def can_absorb_select(self) -> bool:
+        return False
 
 
 def catalog() -> Catalog:

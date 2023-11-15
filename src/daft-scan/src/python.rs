@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 pub mod pylib {
 
     use common_error::DaftError;
+    use common_error::DaftResult;
     use daft_core::python::field::PyField;
     use daft_core::schema::SchemaRef;
     use daft_dsl::python::PyExpr;
@@ -13,6 +14,7 @@ pub mod pylib {
     use daft_table::Table;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
+    use pyo3::types::PyIterator;
     use pyo3::types::PyList;
     use pyo3::PyTypeInfo;
 
@@ -222,15 +224,24 @@ partitioning_keys:\n",
             &self,
             pushdowns: Pushdowns,
         ) -> common_error::DaftResult<
-            Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTask>>>,
+            Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTaskRef>>>,
         > {
-            Python::with_gil(|py| {
+            let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.into()).into_py(py);
-                let iterator =
+                let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                return Err(DaftError::ValueError("oops".to_string()).into());
-            })
+                let pyiter = PyIterator::from_object(py, &pyiter)?;
+                DaftResult::Ok(
+                    pyiter
+                        .map(|v| {
+                            let pyscantask = v?.extract::<PyScanTask>()?.0;
+                            DaftResult::Ok(pyscantask)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })?;
+            Ok(Box::new(scan_tasks.into_iter()))
         }
     }
 

@@ -40,5 +40,5 @@ class ScanOperator(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def to_scan_tasks(self, pushdown: Pushdowns) -> Iterator[ScanTask]:
+    def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         raise NotImplementedError()

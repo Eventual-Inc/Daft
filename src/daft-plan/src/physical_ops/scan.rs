@@ -12,9 +12,9 @@ pub struct TabularScan {
 }
 
 impl TabularScan {
-    pub(crate) fn new(scan_tasks: Vec<ScanTask>, partition_spec: Arc<PartitionSpec>) -> Self {
+    pub(crate) fn new(scan_tasks: Vec<Arc<ScanTask>>, partition_spec: Arc<PartitionSpec>) -> Self {
         Self {
-            scan_tasks: scan_tasks.into_iter().map(Arc::new).collect(),
+            scan_tasks: scan_tasks,
             partition_spec,
         }
     }
