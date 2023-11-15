@@ -15,8 +15,8 @@ from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_global(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_agg_global(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [1, 2, 3],
             "values": [1, None, 2],
@@ -46,8 +46,8 @@ def test_agg_global(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_global_all_null(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_agg_global_all_null(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [0, 1, 2, 3],
             "values": [1, None, None, None],
@@ -82,8 +82,8 @@ def test_agg_global_all_null(repartition_nparts):
     assert pa.Table.from_pydict(daft_cols) == pa.Table.from_pydict(expected)
 
 
-def test_agg_global_empty():
-    daft_df = daft.from_pydict(
+def test_agg_global_empty(make_df):
+    daft_df = make_df(
         {
             "id": [0],
             "values": [1],
@@ -119,8 +119,8 @@ def test_agg_global_empty():
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
-def test_agg_groupby(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_agg_groupby(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "group": [1, 1, 1, 2, 2, 2],
             "values": [1, None, 2, 2, None, 4],
@@ -164,8 +164,8 @@ def test_agg_groupby(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_agg_groupby_all_null(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_agg_groupby_all_null(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [0, 1, 2, 3, 4],
             "group": [0, 1, 1, 2, 2],
@@ -203,8 +203,8 @@ def test_agg_groupby_all_null(repartition_nparts):
     )
 
 
-def test_agg_groupby_null_type_column():
-    daft_df = daft.from_pydict(
+def test_agg_groupby_null_type_column(make_df):
+    daft_df = make_df(
         {
             "id": [1, 2, 3, 4],
             "group": [1, 1, 2, 2],
@@ -222,8 +222,8 @@ def test_agg_groupby_null_type_column():
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_null_groupby_keys(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_null_groupby_keys(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [0, 1, 2, 3, 4],
             "group": [0, 1, None, 2, None],
@@ -252,8 +252,8 @@ def test_null_groupby_keys(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_all_null_groupby_keys(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_all_null_groupby_keys(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [0, 1, 2],
             "group": [None, None, None],
@@ -281,8 +281,8 @@ def test_all_null_groupby_keys(repartition_nparts):
     assert set(daft_cols["list"][0]) == {1, 2, 3}
 
 
-def test_null_type_column_groupby_keys():
-    daft_df = daft.from_pydict(
+def test_null_type_column_groupby_keys(make_df):
+    daft_df = make_df(
         {
             "id": [0, 1, 2],
             "group": [None, None, None],
@@ -294,8 +294,8 @@ def test_null_type_column_groupby_keys():
         daft_df.groupby(col("group"))
 
 
-def test_agg_groupby_empty():
-    daft_df = daft.from_pydict(
+def test_agg_groupby_empty(make_df):
+    daft_df = make_df(
         {
             "id": [0],
             "group": [0],

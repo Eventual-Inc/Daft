@@ -3,14 +3,13 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-import daft
 from daft.datatype import DataType
 from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_nulls(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_nulls(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [1, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
@@ -28,8 +27,8 @@ def test_distinct_with_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_all_nulls(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_all_nulls(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [None, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
@@ -47,8 +46,8 @@ def test_distinct_with_all_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
-def test_distinct_with_empty(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_empty(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [1],
             "values": ["a1"],

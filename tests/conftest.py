@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import pandas as pd
 import pyarrow as pa
 import pytest
@@ -49,7 +51,6 @@ def uuid_ext_type() -> UuidType:
 )
 def make_df(request, tmp_path) -> daft.Dataframe:
     """Makes a dataframe when provided with data"""
-    tmp_file = tmp_path / "my-df-file"
 
     def _make_df(data: pa.Table | dict | list) -> daft.DataFrame:
         pa_table: pa.Table
@@ -69,6 +70,7 @@ def make_df(request, tmp_path) -> daft.Dataframe:
         elif variant == "parquet":
             import pyarrow.parquet as papq
 
+            tmp_file = tmp_path / str(uuid.uuid4())
             papq.write_table(pa_table, str(tmp_file))
             return daft.read_parquet(str(tmp_file))
         else:
