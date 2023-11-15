@@ -114,9 +114,9 @@ class PyRunner(Runner[Table]):
         self.num_cpus = multiprocessing.cpu_count()
         self.num_gpus = cuda_device_count()
         self.bytes_memory = psutil.virtual_memory().total
-        from .tqdm import IS_INTERACTIVE
+        from .tqdm import is_running_from_ipython
 
-        self.show_progress = IS_INTERACTIVE
+        self.show_progress = is_running_from_ipython()
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()

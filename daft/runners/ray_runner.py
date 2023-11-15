@@ -403,18 +403,18 @@ class Scheduler:
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
 
-        from .tqdm import IS_INTERACTIVE
+        from .tqdm import is_running_from_ipython
 
         if use_ray_tqdm:
             from ray.experimental import tqdm_ray
 
             self.tqdm_builder = tqdm_ray
         else:
-            from .tqdm import tqdm
+            from tqdm.auto import tqdm
 
             self.tqdm_builder = tqdm
 
-        self.show_progress = IS_INTERACTIVE
+        self.show_progress = is_running_from_ipython()
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
