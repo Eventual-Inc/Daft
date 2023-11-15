@@ -106,7 +106,7 @@ class Table:
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
             # path.
-            logger.debug(f"Unsupported Arrow types detected for columns: {non_native_fields}")
+            logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
             return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
