@@ -52,7 +52,11 @@ def uuid_ext_type() -> UuidType:
 def make_df(request, tmp_path) -> daft.Dataframe:
     """Makes a dataframe when provided with data"""
 
-    def _make_df(data: pa.Table | dict | list) -> daft.DataFrame:
+    def _make_df(
+        data: pa.Table | dict | list,
+        repartition: int = 1,
+        repartition_columns: list[str] = [],
+    ) -> daft.DataFrame:
         pa_table: pa.Table
         if isinstance(data, pa.Table):
             pa_table = data
@@ -66,13 +70,24 @@ def make_df(request, tmp_path) -> daft.Dataframe:
 
         variant = request.param
         if variant == "arrow":
-            return daft.from_arrow(pa_table)
+            df = daft.from_arrow(pa_table)
+            if repartition != 1:
+                return df.repartition(repartition, *repartition_columns)
+            return df
         elif variant == "parquet":
             import pyarrow.parquet as papq
 
-            tmp_file = tmp_path / str(uuid.uuid4())
-            papq.write_table(pa_table, str(tmp_file))
-            return daft.read_parquet(str(tmp_file))
+            name = str(uuid.uuid4())
+            daft_table = daft.table.Table.from_arrow(pa_table)
+            partitioned_tables = (
+                daft_table.partition_by_random(repartition, 0)
+                if len(repartition_columns) == 0
+                else daft_table.partition_by_hash([daft.col(c) for c in repartition_columns], repartition)
+            )
+            for i, tbl in enumerate(partitioned_tables):
+                tmp_file = tmp_path / (name + f"-{i}")
+                papq.write_table(tbl.to_arrow(), str(tmp_file))
+            return daft.read_parquet(str(tmp_path) + f"/{name}-*")
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 

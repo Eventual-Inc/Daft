@@ -13,8 +13,9 @@ def test_distinct_with_nulls(make_df, repartition_nparts):
         {
             "id": [1, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.distinct()
 
     expected = {
@@ -32,8 +33,9 @@ def test_distinct_with_all_nulls(make_df, repartition_nparts):
         {
             "id": [None, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.select(daft_df["id"].cast(DataType.int64()), daft_df["values"]).distinct()
 
     expected = {
@@ -51,8 +53,9 @@ def test_distinct_with_empty(make_df, repartition_nparts):
         {
             "id": [1],
             "values": ["a1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.where(daft_df["id"] != 1).distinct()
     daft_df.collect()
 
