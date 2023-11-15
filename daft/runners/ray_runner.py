@@ -381,7 +381,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 
 class Scheduler:
-    def __init__(self, max_task_backlog: int | None) -> None:
+    def __init__(self, max_task_backlog: int | None, tqdm_builder) -> None:
         """
         max_task_backlog: Max number of inflight tasks waiting for cores.
         """
@@ -401,6 +401,7 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
+        self.tqdm_builder = tqdm_builder
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -464,7 +465,7 @@ class Scheduler:
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-
+        pbars = dict()
         num_cpus_provider = _ray_num_cpus_provider()
 
         start = datetime.now()
@@ -523,6 +524,17 @@ class Scheduler:
                             for result in results:
                                 inflight_ref_to_task[result] = task.id()
 
+                        for task in tasks_to_dispatch:
+                            stage_id = task.stage_id
+                            if stage_id not in pbars:
+                                name = "-".join(i.__class__.__name__ for i in task.instructions)
+                                position = len(pbars)
+                                pbars[stage_id] = self.tqdm_builder(total=1, desc=name, position=position)
+                            else:
+                                pb = pbars[stage_id]
+                                pb.total += 1
+                                pb.refresh()
+
                         if dispatches_allowed == 0 or next_step is None:
                             break
 
@@ -555,6 +567,9 @@ class Scheduler:
                                 completed_task_ids.append(task_id)
                                 # Mark the entire task associated with the result as done.
                                 task = inflight_tasks[task_id]
+                                stage_id = task.stage_id
+                                pb = pbars[stage_id]
+                                pb.update(1)
                                 if isinstance(task, SingleOutputPartitionTask):
                                     del inflight_ref_to_task[ready]
                                 elif isinstance(task, MultiOutputPartitionTask):
@@ -576,7 +591,14 @@ class Scheduler:
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
             except Exception as e:
                 self.results_by_df[result_uuid].put(e)
+                for p in pbars.values():
+                    p.close()
+                del pbars
                 raise
+
+        for p in pbars.values():
+            p.close()
+        del pbars
 
 
 @ray.remote(num_cpus=1)
@@ -625,14 +647,16 @@ class RayRunner(Runner[ray.ObjectRef]):
         self.ray_context = ray.init(address=address, ignore_reinit_error=True)
 
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
+            from ray.experimental import tqdm_ray
+
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-                max_task_backlog=max_task_backlog,
+                max_task_backlog=max_task_backlog, tqdm_builder=tqdm_ray
             )
         else:
-            self.scheduler = Scheduler(
-                max_task_backlog=max_task_backlog,
-            )
+            from tqdm.auto import tqdm
+
+            self.scheduler = Scheduler(max_task_backlog=max_task_backlog, tqdm_builder=tqdm)
 
     def active_plans(self) -> list[str]:
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
