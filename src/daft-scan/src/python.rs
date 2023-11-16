@@ -93,7 +93,7 @@ pub mod pylib {
         }
 
         #[staticmethod]
-        pub fn from_python_abc(py_scan: PyObject, py: Python) -> PyResult<Self> {
+        pub fn from_python_scan_operator(py_scan: PyObject, py: Python) -> PyResult<Self> {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
                 py_scan, py,
             )?));

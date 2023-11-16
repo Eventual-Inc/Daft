@@ -101,10 +101,12 @@ class IcebergScanOperator(ScanOperator):
         # TODO(sammy): multithreading should be RayRunner config?
         storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
 
-        rows_left = limit
-
+        if limit is not None:
+            rows_left = limit
+        else:
+            rows_left = 0
         for task in iceberg_tasks:
-            if limit_files and rows_left <= 0:
+            if limit_files and (rows_left <= 0):
                 break
             file = task.file
             path = file.file_path
