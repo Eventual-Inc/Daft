@@ -434,7 +434,7 @@ class Table:
         multithreaded_io: bool | None = None,
     ) -> Table:
         if not isinstance(paths, Series):
-            paths = Series.from_pylist(paths, name="uris")
+            paths = Series.from_pylist(paths, name="uris").cast(DataType.string())
         assert paths.name() == "uris", f"Expected input series to have name 'uris', but found: {paths.name()}"
         return Table._from_pytable(
             _read_parquet_statistics(
