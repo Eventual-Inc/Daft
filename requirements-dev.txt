@@ -36,6 +36,7 @@ ray[data]==2.6.3
 
 #Iceberg
 pyiceberg==0.5.1; python_version >= '3.8'
+tenacity==8.2.3; python_version >= '3.8'
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'

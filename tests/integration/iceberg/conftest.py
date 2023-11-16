@@ -6,7 +6,9 @@ import pytest
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
+import tenacity
 from pyiceberg.catalog import Catalog, load_catalog
+from pyiceberg.table import Table
 
 T = TypeVar("T")
 
@@ -32,9 +34,19 @@ local_tables_names = [
 ]
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_delay(60),
+    retry=tenacity.retry_if_exception_type(pyiceberg.exceptions.NoSuchTableError),
+    wait=tenacity.wait_fixed(5),
+    reraise=True,
+)
+def _load_table(catalog, name) -> Table:
+    return catalog.load_table(f"default.{name}")
+
+
 @pytest.fixture(scope="session")
 def local_iceberg_catalog() -> Catalog:
-    return load_catalog(
+    cat = load_catalog(
         "local",
         **{
             "type": "rest",
@@ -44,10 +56,15 @@ def local_iceberg_catalog() -> Catalog:
             "s3.secret-access-key": "password",
         },
     )
+    # ensure all tables are available
+    for name in local_tables_names:
+        _load_table(cat, name)
+
+    return cat
 
 
 @pytest.fixture(scope="session", params=local_tables_names)
-def local_iceberg_tables(request, local_iceberg_catalog):
+def local_iceberg_tables(request, local_iceberg_catalog) -> Table:
     NAMESPACE = "default"
     table_name = request.param
     return local_iceberg_catalog.load_table(f"{NAMESPACE}.{table_name}")
