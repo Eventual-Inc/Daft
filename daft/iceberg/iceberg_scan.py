@@ -3,7 +3,6 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 
-from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
@@ -20,7 +19,7 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions.expressions import col
-from daft.io import IOConfig, S3Config
+from daft.io import IOConfig
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -143,23 +142,3 @@ class IcebergScanOperator(ScanOperator):
 
     def can_absorb_select(self) -> bool:
         return True
-
-
-def catalog() -> Catalog:
-    return load_catalog(
-        "local",
-        **{
-            "type": "rest",
-            "uri": "http://localhost:8181",
-            "s3.endpoint": "http://localhost:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
-
-
-cat = catalog()
-tab = cat.load_table("default.test_partitioned_by_years")
-
-io_config = IOConfig(s3=S3Config(endpoint_url="http://localhost:9000", key_id="admin", access_key="password"))
-ice = IcebergScanOperator(tab, io_config=io_config)
