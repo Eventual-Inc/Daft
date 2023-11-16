@@ -36,21 +36,21 @@ ray[data]==2.6.3
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
-s3fs==2023.6.0; python_version >= '3.8'
+s3fs==2023.10.0; python_version >= '3.8'
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 urllib3<2; python_version < '3.8'
 
 # Azure
 adlfs==2022.2.0; python_version < '3.8'
-adlfs==2023.8.0; python_version >= '3.8'
+adlfs==2023.10.0; python_version >= '3.8'
 
 # Workaround until the next version of adlfs: https://github.com/fsspec/adlfs/issues/424
 azure-storage-blob==12.17.0; python_version >= '3.8'
 
 # GCS
 gcsfs==2023.1.0; python_version < '3.8'
-gcsfs==2023.6.0; python_version >= '3.8'
+gcsfs==2023.10.0; python_version >= '3.8'
 
 # Documentation
 myst-nb>=0.16.0

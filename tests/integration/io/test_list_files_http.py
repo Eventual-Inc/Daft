@@ -14,7 +14,7 @@ def compare_http_result(daft_ls_result: list, fsspec_result: list):
     httpfs_files = [(f["name"], f["type"], f["size"]) for f in fsspec_result]
 
     # io_glob doesn't return directory entries
-    httpfs_files = [(p, t, s) for p, t, s in httpfs_files if t == "file"]
+    httpfs_files = [(p, t, s) for p, t, s in httpfs_files if t == "file" and not p.endswith("/")]
 
     assert len(daft_files) == len(httpfs_files)
     assert sorted(daft_files) == sorted(httpfs_files)
