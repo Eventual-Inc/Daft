@@ -4,7 +4,7 @@ async-stream = "0.3.5"
 async-trait = "0.1.74"
 aws-config = {version = "0.100.0", features = ["rt-tokio", "client-hyper", "credentials-process", "sso"], default-features = false}
 aws-credential-types = {version = "0.58.0", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "0.36.0", features = ["rt-tokio"], default-features = false}
+aws-sdk-s3 = {version = "0.37.0", features = ["rt-tokio"], default-features = false}
 aws-sig-auth = "0.58.0"
 aws-sigv4 = "0.58.0"
 aws-smithy-async = "0.100.0"
