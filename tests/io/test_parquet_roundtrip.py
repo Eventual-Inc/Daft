@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import uuid
 
 import numpy as np
 import pyarrow as pa
@@ -10,11 +9,6 @@ import pytest
 
 import daft
 from daft import DataType, Series, TimeUnit
-
-
-@pytest.fixture(scope="function")
-def tmp_file(tmp_path):
-    yield str(tmp_path / str(uuid.uuid4()))
 
 
 @pytest.mark.parametrize(
