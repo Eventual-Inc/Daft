@@ -85,6 +85,8 @@ def test_http_flat_directory_listing_recursive(nginx_http_url):
     http_path = f"{nginx_http_url}/**"
     fs = HTTPFileSystem()
     fsspec_result = list(fs.glob(http_path, detail=True).values())
+    # filter out directory which is included in fsspec 2023.10.0
+    fsspec_result = [f for f in fsspec_result if f["type"] != "directory"]
     daft_ls_result = io_glob(http_path)
     compare_http_result(daft_ls_result, fsspec_result)
 
