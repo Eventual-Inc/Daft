@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use {
-    super::py_object_serde::{deserialize_py_object_optional, serialize_py_object_optional},
     common_io_config::python,
     pyo3::{
         pyclass, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo, Python,
@@ -65,15 +64,8 @@ impl NativeStorageConfig {
 #[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct PythonStorageConfig {
-    /// An fsspec filesystem instance.
-    #[pyo3(get)]
-    #[serde(
-        serialize_with = "serialize_py_object_optional",
-        deserialize_with = "deserialize_py_object_optional",
-        default
-    )]
-    pub fs: Option<PyObject>,
-    /// IOConfig is used for globbing still, but not for actual data read
+    /// IOConfig is used when constructing Python filesystems (PyArrow or fsspec filesystems)
+    /// and also used for globbing (since we have no Python-based globbing anymore)
     pub io_config: Option<IOConfig>,
 }
 
@@ -81,9 +73,8 @@ pub struct PythonStorageConfig {
 #[pymethods]
 impl PythonStorageConfig {
     #[new]
-    pub fn new(fs: Option<PyObject>, io_config: Option<python::IOConfig>) -> Self {
+    pub fn new(io_config: Option<python::IOConfig>) -> Self {
         Self {
-            fs,
             io_config: io_config.map(|c| c.config),
         }
     }
@@ -99,11 +90,7 @@ impl PythonStorageConfig {
 #[cfg(feature = "python")]
 impl PartialEq for PythonStorageConfig {
     fn eq(&self, other: &Self) -> bool {
-        Python::with_gil(|py| match (&self.fs, &other.fs) {
-            (Some(self_fs), Some(other_fs)) => self_fs.as_ref(py).eq(other_fs.as_ref(py)).unwrap(),
-            (None, None) => true,
-            _ => false,
-        })
+        self.io_config.eq(&other.io_config)
     }
 }
 
@@ -113,17 +100,7 @@ impl Eq for PythonStorageConfig {}
 #[cfg(feature = "python")]
 impl Hash for PythonStorageConfig {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let py_obj_hash = self
-            .fs
-            .as_ref()
-            .map(|fs| Python::with_gil(|py| fs.as_ref(py).hash()))
-            .transpose();
-        match py_obj_hash {
-            // If Python object is None OR is hashable, hash the Option of the Python-side hash.
-            Ok(py_obj_hash) => py_obj_hash.hash(state),
-            // Fall back to hashing the pickled Python object.
-            Err(_) => Some(serde_json::to_vec(self).unwrap()).hash(state),
-        }
+        self.io_config.hash(state)
     }
 }
 

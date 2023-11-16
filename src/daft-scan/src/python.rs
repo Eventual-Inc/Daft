@@ -3,7 +3,10 @@ use pyo3::prelude::*;
 pub mod pylib {
     use std::sync::Arc;
 
+    use daft_core::impl_bincode_py_state_serialization;
     use pyo3::prelude::*;
+    use pyo3::types::PyBytes;
+    use pyo3::PyTypeInfo;
 
     use daft_core::python::schema::PySchema;
 
@@ -53,19 +56,18 @@ pub mod pylib {
         #[staticmethod]
         pub fn glob_scan(
             py: Python,
-            glob_path: &str,
+            glob_path: Vec<&str>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
             schema: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path,
+                    glob_path.as_slice(),
                     file_format_config.into(),
                     storage_config.into(),
                     schema.map(|s| s.schema),
                 )?);
-
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),
                 })
@@ -110,6 +112,20 @@ pub mod pylib {
         fn from(value: PyScanTask) -> Self {
             value.0
         }
+    }
+
+    impl_bincode_py_state_serialization!(PyScanTask);
+
+    pub(crate) fn read_json_schema(
+        py: Python,
+        uri: &str,
+        storage_config: PyStorageConfig,
+    ) -> PyResult<PySchema> {
+        py.import(pyo3::intern!(py, "daft.table.schema_inference"))?
+            .getattr(pyo3::intern!(py, "from_json"))?
+            .call1((uri, storage_config))?
+            .getattr(pyo3::intern!(py, "_schema"))?
+            .extract()
     }
 }
 

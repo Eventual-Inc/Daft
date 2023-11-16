@@ -15,6 +15,7 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     JsonSourceConfig,
     ParquetSourceConfig,
@@ -432,6 +433,7 @@ class WriteFile(SingleOutputInstruction):
     root_dir: str | pathlib.Path
     compression: str | None
     partition_cols: ExpressionsProjection | None
+    io_config: IOConfig | None
 
     def run(self, inputs: list[Table]) -> list[Table]:
         return self._write_file(inputs)
@@ -459,6 +461,7 @@ class WriteFile(SingleOutputInstruction):
                 path=self.root_dir,
                 compression=self.compression,
                 partition_cols=self.partition_cols,
+                io_config=self.io_config,
             )
         elif self.file_format == FileFormat.Csv:
             file_names = table_io.write_csv(
@@ -466,6 +469,7 @@ class WriteFile(SingleOutputInstruction):
                 path=self.root_dir,
                 compression=self.compression,
                 partition_cols=self.partition_cols,
+                io_config=self.io_config,
             )
         else:
             raise ValueError(

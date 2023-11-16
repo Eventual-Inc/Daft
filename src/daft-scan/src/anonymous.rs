@@ -70,6 +70,8 @@ impl ScanOperator for AnonymousScanOperator {
             Ok(ScanTask::new(
                 vec![DataFileSource::AnonymousDataFile {
                     path: f.to_string(),
+                    chunk_spec: None,
+                    size_bytes: None,
                     metadata: None,
                     partition_spec: None,
                     statistics: None,
@@ -77,8 +79,7 @@ impl ScanOperator for AnonymousScanOperator {
                 file_format_config.clone(),
                 schema.clone(),
                 storage_config.clone(),
-                pushdowns.columns.clone(),
-                pushdowns.limit,
+                pushdowns.clone(),
             ))
         })))
     }

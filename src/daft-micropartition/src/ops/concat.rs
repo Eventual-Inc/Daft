@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use common_error::{DaftError, DaftResult};
+use daft_io::IOStatsContext;
 
 use crate::micropartition::{MicroPartition, TableState};
 
@@ -26,10 +27,12 @@ impl MicroPartition {
             }
         }
 
+        let io_stats = IOStatsContext::new("MicroPartition::concat");
+
         let mut all_tables = vec![];
 
         for m in mps.iter() {
-            let tables = m.tables_or_read(None)?;
+            let tables = m.tables_or_read(io_stats.clone())?;
             all_tables.extend_from_slice(tables.as_slice());
         }
         let mut all_stats = None;

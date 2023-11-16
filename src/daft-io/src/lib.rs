@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 pub mod python;
 
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-use object_io::FileMetadata;
+pub use object_io::FileMetadata;
 pub use object_io::GetResult;
 #[cfg(feature = "python")]
 pub use python::register_modules;
@@ -26,7 +26,7 @@ use tokio::runtime::RuntimeFlavor;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
-use futures::{StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 
 use snafu::Snafu;
 use url::ParseError;
@@ -168,18 +168,16 @@ impl IOClient {
 
     pub async fn glob(
         &self,
-        input: &str,
+        input: String,
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
-    ) -> Result<Vec<FileMetadata>> {
-        let (scheme, _) = parse_url(input)?;
+    ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
+        let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
-        let files: Vec<FileMetadata> = source
-            .glob(input, fanout_limit, page_size, limit, io_stats)
-            .await?
-            .try_collect()
+        let files = source
+            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
             .await?;
         Ok(files)
     }
@@ -303,6 +301,17 @@ lazy_static! {
             ),
             *THREADED_RUNTIME_NUM_WORKER_THREADS,
         ));
+    static ref SINGLE_THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
+        tokio::sync::RwLock::new((
+            Arc::new(
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .enable_all()
+                    .build()
+                    .unwrap()
+            ),
+            1,
+        ));
     static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         tokio::sync::RwLock::new(HashMap::new());
 }
@@ -328,11 +337,10 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
 
 pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
     match multi_thread {
-        false => Ok(Arc::new(
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?,
-        )),
+        false => {
+            let guard = SINGLE_THREADED_RUNTIME.blocking_read();
+            Ok(guard.clone().0)
+        }
         true => {
             let guard = THREADED_RUNTIME.blocking_read();
             Ok(guard.clone().0)

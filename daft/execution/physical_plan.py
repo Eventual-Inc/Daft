@@ -22,6 +22,7 @@ from typing import Generator, Iterator, TypeVar, Union
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
+    IOConfig,
     JoinType,
     ResourceRequest,
     StorageConfig,
@@ -124,7 +125,7 @@ def file_read(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(f"file_read blocked on completion of first source in: {materializations}")
+                logger.debug("file_read blocked on completion of first source in: %s", materializations)
                 yield None
             else:
                 return
@@ -137,6 +138,7 @@ def file_write(
     root_dir: str | pathlib.Path,
     compression: str | None,
     partition_cols: ExpressionsProjection | None,
+    io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
 
@@ -148,6 +150,7 @@ def file_write(
                 root_dir=root_dir,
                 compression=compression,
                 partition_cols=partition_cols,
+                io_config=io_config,
             ),
         )
         if isinstance(step, PartitionTaskBuilder)
@@ -193,12 +196,24 @@ def join(
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
 
+            # Calculate memory request for task.
+            left_size_bytes = next_left.partition_metadata().size_bytes
+            right_size_bytes = next_right.partition_metadata().size_bytes
+            if left_size_bytes is None and right_size_bytes is None:
+                size_bytes = None
+            elif left_size_bytes is None and right_size_bytes is not None:
+                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * right_size_bytes
+            elif right_size_bytes is None and left_size_bytes is not None:
+                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * left_size_bytes
+            elif left_size_bytes is not None and right_size_bytes is not None:
+                size_bytes = left_size_bytes + right_size_bytes
+
             join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.partition(), next_right.partition()],
                 partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
-                resource_request=ResourceRequest(
-                    memory_bytes=next_left.partition_metadata().size_bytes + next_right.partition_metadata().size_bytes
-                ),
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
             ).add_instruction(
                 instruction=execution_step.Join(
                     left_on=left_on,
@@ -339,13 +354,13 @@ def global_limit(
 
         # (Optimization. If we are doing limit(0) and already have a partition executing to use for it, just wait.)
         if remaining_rows == 0 and len(materializations) > 0:
-            logger.debug(f"global_limit blocked on completion of: {materializations[0]}")
+            logger.debug("global_limit blocked on completion of: %s", materializations[0])
             yield None
             continue
 
         # If running in eager mode, only allow one task in flight
         if eager and len(materializations) > 0:
-            logger.debug(f"global_limit blocking on eager execution of: {materializations[0]}")
+            logger.debug("global_limit blocking on eager execution of: %s", materializations[0])
             yield None
             continue
 
@@ -370,7 +385,7 @@ def global_limit(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(f"global_limit blocked on completion of first source in: {materializations}")
+                logger.debug("global_limit blocked on completion of first source in: %s", materializations)
                 yield None
             else:
                 return
@@ -400,7 +415,7 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(f"flatten_plan blocked on completion of first source in: {materializations}")
+                logger.debug("flatten_plan blocked on completion of first source in: %s", materializations)
                 yield None
             else:
                 return
@@ -429,7 +444,7 @@ def split(
         yield step
 
     while any(not _.done() for _ in materializations):
-        logger.debug(f"split_to blocked on completion of all sources: {materializations}")
+        logger.debug("split_to blocked on completion of all sources: %s", materializations)
         yield None
 
     splits_per_partition = deque([1 for _ in materializations])
@@ -495,12 +510,29 @@ def coalesce(
         ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
         if len(ready_to_coalesce) == num_partitions_to_merge:
             # Coalesce the partition and emit it.
+
+            # Calculate memory request for task.
+            size_bytes_per_task = [task.partition_metadata().size_bytes for task in ready_to_coalesce]
+            non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
+            non_null_size_bytes = sum(non_null_size_bytes_per_task)
+            if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
+                # If all task size bytes are non-null, directly use the non-null size bytes sum.
+                size_bytes = non_null_size_bytes
+            elif non_null_size_bytes_per_task:
+                # If some are null, calculate the non-null mean and assume that null task size bytes
+                # have that size.
+                mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
+                size_bytes = non_null_size_bytes + mean_size * (
+                    len(size_bytes_per_task) - len(non_null_size_bytes_per_task)
+                )
+            else:
+                # If all null, set to null.
+                size_bytes = None
+
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
                 partial_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
-                resource_request=ResourceRequest(
-                    memory_bytes=sum(_.partition_metadata().size_bytes for _ in ready_to_coalesce),
-                ),
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),
             )
@@ -519,7 +551,7 @@ def coalesce(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(f"coalesce blocked on completion of a task in: {materializations}")
+                logger.debug("coalesce blocked on completion of a task in: %s", materializations)
                 yield None
             else:
                 return
@@ -549,7 +581,7 @@ def reduce(
     # All fanouts dispatched. Wait for all of them to materialize
     # (since we need all of them to emit even a single reduce).
     while any(not _.done() for _ in materializations):
-        logger.debug(f"reduce blocked on completion of all sources in: {materializations}")
+        logger.debug("reduce blocked on completion of all sources in: %s", materializations)
         yield None
 
     inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
@@ -589,7 +621,7 @@ def sort(
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for source in source_materializations:
         while not source.done():
-            logger.debug(f"sort blocked on completion of source: {source}")
+            logger.debug("sort blocked on completion of source: %s", source)
             yield None
 
         sample = (
@@ -608,7 +640,7 @@ def sort(
 
     # Wait for samples to materialize.
     while any(not _.done() for _ in sample_materializations):
-        logger.debug(f"sort blocked on completion of all samples: {sample_materializations}")
+        logger.debug("sort blocked on completion of all samples: %s", sample_materializations)
         yield None
 
     # Reduce the samples to get sort boundaries.
@@ -630,7 +662,7 @@ def sort(
 
     # Wait for boundaries to materialize.
     while not boundaries.done():
-        logger.debug(f"sort blocked on completion of boundary partition: {boundaries}")
+        logger.debug("sort blocked on completion of boundary partition: %s", boundaries)
         yield None
 
     # Create a range fanout plan.
@@ -701,7 +733,7 @@ def materialize(
 
         except StopIteration:
             if len(materializations) > 0:
-                logger.debug(f"materialize blocked on completion of all sources: {materializations}")
+                logger.debug("materialize blocked on completion of all sources: %s", materializations)
                 yield None
             else:
                 return

@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import fsspec
 import pandas as pd
 import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
 
 import daft
-from daft.filesystem import get_filesystem_from_path, get_protocol_from_path
+from daft.filesystem import get_filesystem, get_protocol_from_path
 from daft.table import LegacyTable, Table
+
+
+def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
+    protocol = get_protocol_from_path(path)
+    fs = get_filesystem(protocol, **kwargs)
+    return fs
+
 
 # Taken from our spreadsheet of files that Daft should be able to handle
 DAFT_CAN_READ_FILES = [

@@ -6,15 +6,13 @@ from collections.abc import Generator
 from typing import IO, Union
 from uuid import uuid4
 
-import fsspec
 import pyarrow as pa
 from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
-from pyarrow.fs import FileSystem
 
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
+from daft.daft import IOConfig, NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -31,11 +29,11 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 @contextlib.contextmanager
 def _open_stream(
     file: FileInput,
-    fs: FileSystem | fsspec.AbstractFileSystem | None,
+    io_config: IOConfig | None,
 ) -> Generator[pa.NativeFile, None, None]:
     """Opens the provided file for reading, yield a pyarrow file handle."""
     if isinstance(file, (pathlib.Path, str)):
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        paths, fs = _resolve_paths_and_filesystem(file, io_config=io_config)
         assert len(paths) == 1
         path = paths[0]
         with fs.open_input_stream(path) as f:
@@ -81,13 +79,13 @@ def read_json(
     Returns:
         Table: Parsed Table from JSON
     """
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-    with _open_stream(file, fs) as f:
+        assert isinstance(config, PythonStorageConfig), "JSON reads only supports PyStorageConfig"
+        io_config = config.io_config
+
+    with _open_stream(file, io_config) as f:
         table = pajson.read_json(f)
 
     if read_options.column_names is not None:
@@ -118,6 +116,7 @@ def read_parquet(
     Returns:
         Table: Parsed Table from Parquet
     """
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
         if isinstance(config, NativeStorageConfig):
@@ -135,15 +134,13 @@ def read_parquet(
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
         assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
+        io_config = config.io_config
 
     f: IO
     if not isinstance(file, (str, pathlib.Path)):
         f = file
     else:
-        paths, fs = _resolve_paths_and_filesystem(file, fs)
+        paths, fs = _resolve_paths_and_filesystem(file, io_config=io_config)
         assert len(paths) == 1
         path = paths[0]
         f = fs.open_input_file(path)
@@ -213,6 +210,7 @@ def read_csv(
     Returns:
         Table: Parsed Table from CSV
     """
+    io_config = None
     if storage_config is not None:
         config = storage_config.config
         print(isinstance(config, NativeStorageConfig))
@@ -238,12 +236,11 @@ def read_csv(
                 chunk_size=csv_options.chunk_size,
             )
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+        else:
+            assert isinstance(config, PythonStorageConfig)
+            io_config = config.io_config
 
-        assert isinstance(config, PythonStorageConfig)
-        fs = config.fs
-    else:
-        fs = None
-    with _open_stream(file, fs) as f:
+    with _open_stream(file, io_config) as f:
         pacsv_stream = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(
@@ -301,6 +298,7 @@ def write_csv(
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
     return _to_file(
         table=table,
@@ -308,6 +306,7 @@ def write_csv(
         path=path,
         partition_cols=partition_cols,
         compression=compression,
+        io_config=io_config,
     )
 
 
@@ -316,6 +315,7 @@ def write_parquet(
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
     return _to_file(
         table=table,
@@ -323,6 +323,7 @@ def write_parquet(
         path=path,
         partition_cols=partition_cols,
         compression=compression,
+        io_config=io_config,
     )
 
 
@@ -332,7 +333,9 @@ def _to_file(
     path: str | pathlib.Path,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
+    io_config: IOConfig | None = None,
 ) -> list[str]:
+    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     arrow_table = table.to_arrow()
 
     partitioning = [e.name() for e in (partition_cols or [])]
@@ -371,7 +374,7 @@ def _to_file(
 
     pads.write_dataset(
         arrow_table,
-        base_dir=path,
+        base_dir=resolved_path,
         basename_template=str(uuid4()) + "-{i}." + format.default_extname,
         format=format,
         partitioning=partitioning,
@@ -379,6 +382,7 @@ def _to_file(
         file_visitor=file_visitor,
         use_threads=False,
         existing_data_behavior="overwrite_or_ignore",
+        filesystem=fs,
     )
 
     return visited_paths

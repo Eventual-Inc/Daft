@@ -1296,6 +1296,7 @@ dependencies = [
  "daft-parquet",
  "daft-stats",
  "daft-table",
+ "futures",
  "pyo3",
  "pyo3-log",
  "serde",

@@ -78,6 +78,6 @@ def read_csv(
     if use_native_downloader:
         storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
     else:
-        storage_config = StorageConfig.python(PythonStorageConfig(None, io_config=io_config))
+        storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
     builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)

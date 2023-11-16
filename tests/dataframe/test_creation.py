@@ -399,7 +399,11 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        cnames = [f"column_{i}" for i in range(1, 6)] if use_native_downloader else [f"f{i}" for i in range(5)]
+        cnames = (
+            [f"column_{i}" for i in range(1, 6)]
+            if use_native_downloader or os.environ.get("DAFT_MICROPARTITIONS", "0") == "1"
+            else [f"f{i}" for i in range(5)]
+        )
         df = daft.read_csv(fname, has_headers=False, use_native_downloader=use_native_downloader)
         assert df.column_names == cnames
 

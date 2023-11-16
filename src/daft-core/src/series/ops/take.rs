@@ -11,7 +11,8 @@ impl Series {
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
-        self.inner.slice(start, end)
+        let l = self.len();
+        self.inner.slice(start.min(l), end.min(l))
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Series> {

@@ -200,13 +200,13 @@ class PyRunner(Runner[Table]):
                                     and next_step.resource_request.num_gpus > 0
                                 )
                             ):
-                                logger.debug(f"Running task synchronously in main thread: {next_step}")
+                                logger.debug("Running task synchronously in main thread: %s", next_step)
                                 partitions = self.build_partitions(next_step.instructions, *next_step.inputs)
                                 next_step.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                             else:
                                 # Submit the task for execution.
-                                logger.debug(f"Submitting task for execution: {next_step}")
+                                logger.debug("Submitting task for execution: %s", next_step)
                                 future = thread_pool.submit(
                                     self.build_partitions, next_step.instructions, *next_step.inputs
                                 )
@@ -228,7 +228,7 @@ class PyRunner(Runner[Table]):
                         done_task = inflight_tasks.pop(done_id)
                         partitions = done_future.result()
 
-                        logger.debug(f"Task completed: {done_id} -> <{len(partitions)} partitions>")
+                        logger.debug("Task completed: %s -> <%s partitions>", done_id, len(partitions))
                         done_task.set_result([PyMaterializedResult(partition) for partition in partitions])
 
                     if next_step is None:

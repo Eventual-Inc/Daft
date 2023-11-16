@@ -79,7 +79,7 @@ class PartialPartitionMetadata:
 @dataclass(frozen=True)
 class PartitionMetadata(PartialPartitionMetadata):
     num_rows: int
-    size_bytes: int
+    size_bytes: int | None
 
     @classmethod
     def from_table(cls, table: Table) -> PartitionMetadata:

@@ -1,8 +1,8 @@
 pub mod file_info;
 use daft_core::schema::SchemaRef;
-use daft_scan::file_format::FileFormatConfig;
 use daft_scan::storage_config::StorageConfig;
 use daft_scan::ScanExternalInfo;
+use daft_scan::{file_format::FileFormatConfig, Pushdowns};
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
 use std::{hash::Hash, sync::Arc};
@@ -86,12 +86,35 @@ pub enum ExternalInfo {
     Legacy(LegacyExternalInfo),
 }
 
+impl ExternalInfo {
+    pub fn pushdowns(&self) -> &Pushdowns {
+        match self {
+            Self::Scan(ScanExternalInfo { pushdowns, .. })
+            | Self::Legacy(LegacyExternalInfo { pushdowns, .. }) => pushdowns,
+        }
+    }
+
+    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
+        match self {
+            Self::Scan(external_info) => Self::Scan(ScanExternalInfo {
+                pushdowns,
+                ..external_info.clone()
+            }),
+            Self::Legacy(external_info) => Self::Legacy(LegacyExternalInfo {
+                pushdowns,
+                ..external_info.clone()
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct LegacyExternalInfo {
     pub source_schema: SchemaRef,
     pub file_infos: Arc<FileInfos>,
     pub file_format_config: Arc<FileFormatConfig>,
     pub storage_config: Arc<StorageConfig>,
+    pub pushdowns: Pushdowns,
 }
 
 impl LegacyExternalInfo {
@@ -100,12 +123,14 @@ impl LegacyExternalInfo {
         file_infos: Arc<FileInfos>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
+        pushdowns: Pushdowns,
     ) -> Self {
         Self {
             source_schema,
             file_infos,
             file_format_config,
             storage_config,
+            pushdowns,
         }
     }
 }

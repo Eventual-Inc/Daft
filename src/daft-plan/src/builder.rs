@@ -13,13 +13,14 @@ use crate::{
     JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
+use common_io_config::IOConfig;
 use daft_core::schema::SchemaRef;
 use daft_core::{datatypes::Field, schema::Schema, DataType};
 use daft_dsl::Expr;
 use daft_scan::{
     file_format::{FileFormat, FileFormatConfig},
     storage_config::{PyStorageConfig, StorageConfig},
-    ScanExternalInfo, ScanOperatorRef,
+    Pushdowns, ScanExternalInfo, ScanOperatorRef,
 };
 
 #[cfg(feature = "python")]
@@ -63,7 +64,7 @@ impl LogicalPlanBuilder {
             num_partitions,
         ));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -81,7 +82,7 @@ impl LogicalPlanBuilder {
                 Default::default(),
             )));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), None).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -91,15 +92,21 @@ impl LogicalPlanBuilder {
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
     ) -> DaftResult<Self> {
-        Self::table_scan_with_limit(file_infos, schema, file_format_config, storage_config, None)
+        Self::table_scan_with_pushdowns(
+            file_infos,
+            schema,
+            file_format_config,
+            storage_config,
+            Default::default(),
+        )
     }
 
-    pub fn table_scan_with_limit(
+    pub fn table_scan_with_pushdowns(
         file_infos: InputFileInfos,
         schema: Arc<Schema>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
-        limit: Option<usize>,
+        pushdowns: Pushdowns,
     ) -> DaftResult<Self> {
         let source_info =
             SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(LegacyExternalInfo::new(
@@ -107,9 +114,10 @@ impl LogicalPlanBuilder {
                 file_infos.into(),
                 file_format_config,
                 storage_config,
+                pushdowns,
             )));
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into(), limit).into();
+            logical_ops::Source::new(schema.clone(), source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -214,12 +222,14 @@ impl LogicalPlanBuilder {
         file_format: FileFormat,
         partition_cols: Option<Vec<Expr>>,
         compression: Option<String>,
+        io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             file_format,
             partition_cols,
             compression,
+            io_config,
         ));
         let fields = vec![Field::new("path", DataType::Utf8)];
         let logical_plan: LogicalPlan = logical_ops::Sink::new(
@@ -414,12 +424,19 @@ impl PyLogicalPlanBuilder {
         file_format: FileFormat,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
+        io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         let partition_cols =
             partition_cols.map(|cols| cols.iter().map(|e| e.clone().into()).collect::<Vec<Expr>>());
         Ok(self
             .builder
-            .table_write(root_dir, file_format, partition_cols, compression)?
+            .table_write(
+                root_dir,
+                file_format,
+                partition_cols,
+                compression,
+                io_config.map(|cfg| cfg.config),
+            )?
             .into())
     }
 

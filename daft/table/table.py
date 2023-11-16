@@ -106,7 +106,7 @@ class Table:
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
             # path.
-            logger.debug(f"Unsupported Arrow types detected for columns: {non_native_fields}")
+            logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
             return Table.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
@@ -407,7 +407,7 @@ class Table:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        row_groups_per_path: list[list[int]] | None = None,
+        row_groups_per_path: list[list[int] | None] | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,
@@ -538,7 +538,7 @@ def read_parquet_into_pyarrow_bulk(
     columns: list[str] | None = None,
     start_offset: int | None = None,
     num_rows: int | None = None,
-    row_groups_per_path: list[list[int]] | None = None,
+    row_groups_per_path: list[list[int] | None] | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,

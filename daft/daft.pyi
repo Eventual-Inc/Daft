@@ -178,7 +178,7 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
-    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None, row_groups: list[int] | None = None): ...
+    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None): ...
 
 class CsvSourceConfig:
     """
@@ -287,6 +287,21 @@ class S3Config:
     I/O configuration for accessing an S3-compatible system.
     """
 
+    region_name: str | None
+    endpoint_url: str | None
+    key_id: str | None
+    session_token: str | None
+    access_key: str | None
+    max_connections: int
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
+    retry_mode: str | None
+    anonymous: bool
+    verify_ssl: bool
+    check_hostname_ssl: bool
+
     def __init__(
         self,
         region_name: str | None = None,
@@ -318,6 +333,9 @@ class GCSConfig:
     """
     I/O configuration for accessing Google Cloud Storage.
     """
+
+    project_id: str | None
+    anonymous: bool
 
     def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
 
@@ -353,10 +371,9 @@ class PythonStorageConfig:
     Storage configuration for the legacy Python I/O layer.
     """
 
-    fs: fsspec.AbstractFileSystem
     io_config: IOConfig
 
-    def __init__(self, fs: fsspec.AbstractFileSystem | None = None, io_config: IOConfig | None = None): ...
+    def __init__(self, io_config: IOConfig | None = None): ...
 
 class StorageConfig:
     """
@@ -409,7 +426,7 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def glob_scan(
-        glob_path: str,
+        glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
         schema: PySchema | None = None,
@@ -430,7 +447,7 @@ def read_parquet_bulk(
     columns: list[str] | None = None,
     start_offset: int | None = None,
     num_rows: int | None = None,
-    row_groups: list[list[int]] | None = None,
+    row_groups: list[list[int] | None] | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
@@ -456,7 +473,7 @@ def read_parquet_into_pyarrow_bulk(
     columns: list[str] | None = None,
     start_offset: int | None = None,
     num_rows: int | None = None,
-    row_groups: list[list[int]] | None = None,
+    row_groups: list[list[int] | None] | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
@@ -764,7 +781,7 @@ class PyMicroPartition:
     def schema(self) -> PySchema: ...
     def column_names(self) -> list[str]: ...
     def get_column(self, name: str) -> PySeries: ...
-    def size_bytes(self) -> int: ...
+    def size_bytes(self) -> int | None: ...
     def _repr_html_(self) -> str: ...
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyMicroPartition: ...
@@ -816,7 +833,7 @@ class PyMicroPartition:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        row_groups: list[list[int]] | None = None,
+        row_groups: list[list[int] | None] | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = None,
         multithreaded_io: bool | None = None,
@@ -897,6 +914,7 @@ class LogicalPlanBuilder:
         file_format: FileFormat,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
+        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def optimize(self) -> LogicalPlanBuilder: ...

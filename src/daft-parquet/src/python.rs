@@ -126,14 +126,14 @@ pub mod pylib {
         columns: Option<Vec<&str>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
-        row_groups: Option<Vec<Vec<i64>>>,
+        row_groups: Option<Vec<Option<Vec<i64>>>>,
         io_config: Option<IOConfig>,
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyTable>> {
         py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("read_parquet_bulk".to_string());
+            let io_stats = IOStatsContext::new("read_parquet_bulk");
 
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
@@ -170,7 +170,7 @@ pub mod pylib {
         columns: Option<Vec<&str>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
-        row_groups: Option<Vec<Vec<i64>>>,
+        row_groups: Option<Vec<Option<Vec<i64>>>>,
         io_config: Option<IOConfig>,
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
@@ -243,7 +243,7 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
-            let io_stats = IOStatsContext::new("read_parquet_statistics".to_string());
+            let io_stats = IOStatsContext::new("read_parquet_statistics");
 
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),

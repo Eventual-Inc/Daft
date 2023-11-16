@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
 use daft_dsl::{Expr, ExprRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -21,19 +21,53 @@ pub mod py_object_serde;
 pub mod python;
 pub mod storage_config;
 #[cfg(feature = "python")]
+use pyo3::PyErr;
+#[cfg(feature = "python")]
 pub use python::register_modules;
+use snafu::Snafu;
 use storage_config::StorageConfig;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[cfg(feature = "python")]
+    PyIO { source: PyErr },
+}
+
+impl From<Error> for DaftError {
+    fn from(value: Error) -> Self {
+        DaftError::External(value.into())
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<Error> for pyo3::PyErr {
+    fn from(value: Error) -> Self {
+        let daft_error: DaftError = value.into();
+        daft_error.into()
+    }
+}
+
+/// Specification of a subset of a file to be read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChunkSpec {
+    /// Selection of Parquet row groups.
+    Parquet(Vec<i64>),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DataFileSource {
     AnonymousDataFile {
         path: String,
+        chunk_spec: Option<ChunkSpec>,
+        size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
     },
     CatalogDataFile {
         path: String,
+        chunk_spec: Option<ChunkSpec>,
+        size_bytes: Option<u64>,
         metadata: TableMetadata,
         partition_spec: PartitionSpec,
         statistics: Option<TableStatistics>,
@@ -46,6 +80,21 @@ impl DataFileSource {
             Self::AnonymousDataFile { path, .. } | Self::CatalogDataFile { path, .. } => path,
         }
     }
+
+    pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
+        match self {
+            Self::AnonymousDataFile { chunk_spec, .. }
+            | Self::CatalogDataFile { chunk_spec, .. } => chunk_spec.as_ref(),
+        }
+    }
+
+    pub fn get_size_bytes(&self) -> Option<u64> {
+        match self {
+            Self::AnonymousDataFile { size_bytes, .. }
+            | Self::CatalogDataFile { size_bytes, .. } => *size_bytes,
+        }
+    }
+
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
             Self::AnonymousDataFile { metadata, .. } => metadata.as_ref(),
@@ -67,9 +116,8 @@ pub struct ScanTask {
     pub file_format_config: Arc<FileFormatConfig>,
     pub schema: SchemaRef,
     pub storage_config: Arc<StorageConfig>,
-    // TODO(Clark): Directly use the Pushdowns struct as part of the ScanTask struct?
-    pub columns: Option<Arc<Vec<String>>>,
-    pub limit: Option<usize>,
+    pub pushdowns: Pushdowns,
+    pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
@@ -80,26 +128,30 @@ impl ScanTask {
         file_format_config: Arc<FileFormatConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
-        columns: Option<Arc<Vec<String>>>,
-        limit: Option<usize>,
+        pushdowns: Pushdowns,
     ) -> Self {
         assert!(!sources.is_empty());
-        let (length, statistics) = sources
+        let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
                 (
                     s.get_metadata().map(|m| m.length),
+                    s.get_size_bytes(),
                     s.get_statistics().cloned(),
                 )
             })
-            .reduce(|(acc_len, acc_stats), (curr_len, curr_stats)| {
-                (
-                    acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
-                    acc_stats.and_then(|acc_stats| {
-                        curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
-                    }),
-                )
-            })
+            .reduce(
+                |(acc_len, acc_size, acc_stats), (curr_len, curr_size, curr_stats)| {
+                    (
+                        acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
+                        acc_size
+                            .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
+                        acc_stats.and_then(|acc_stats| {
+                            curr_stats.map(|curr_stats| acc_stats.union(&curr_stats).unwrap())
+                        }),
+                    )
+                },
+            )
             .unwrap();
         let metadata = length.map(|l| TableMetadata { length: l });
         Self {
@@ -107,8 +159,8 @@ impl ScanTask {
             file_format_config,
             schema,
             storage_config,
-            columns,
-            limit,
+            pushdowns,
+            size_bytes_on_disk,
             metadata,
             statistics,
         }
@@ -119,10 +171,15 @@ impl ScanTask {
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
-        self.statistics.as_ref().and_then(|s| {
-            self.num_rows()
-                .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
-        })
+        self.statistics
+            .as_ref()
+            .and_then(|s| {
+                // Derive in-memory size estimate from table stats.
+                self.num_rows()
+                    .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
+            })
+            // Fall back on on-disk size.
+            .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
     }
 }
 
@@ -202,7 +259,7 @@ impl ScanExternalInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
     pub filters: Option<Arc<Vec<ExprRef>>>,
@@ -253,5 +310,26 @@ impl Pushdowns {
             columns,
             limit: self.limit,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(columns) = &self.columns {
+            res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
+        }
+        if let Some(filters) = &self.filters {
+            res.push(format!(
+                "Filter pushdown = [{}]",
+                filters
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if let Some(limit) = self.limit {
+            res.push(format!("Limit pushdown = {}", limit));
+        }
+        res
     }
 }

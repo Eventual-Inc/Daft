@@ -44,7 +44,7 @@ class MicroPartition:
     def get_column(self, name: str) -> Series:
         return Series._from_pyseries(self._micropartition.get_column(name))
 
-    def size_bytes(self) -> int:
+    def size_bytes(self) -> int | None:
         return self._micropartition.size_bytes()
 
     def __len__(self) -> int:
@@ -328,7 +328,7 @@ class MicroPartition:
         columns: list[str] | None = None,
         start_offset: int | None = None,
         num_rows: int | None = None,
-        row_groups_per_path: list[list[int]] | None = None,
+        row_groups_per_path: list[list[int] | None] | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,

@@ -5,6 +5,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import pathlib
+import warnings
 from dataclasses import dataclass
 from functools import reduce
 from typing import (
@@ -24,7 +25,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, JoinType, PartitionScheme, ResourceRequest
+from daft.daft import FileFormat, IOConfig, JoinType, PartitionScheme, ResourceRequest
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -316,6 +317,7 @@ class DataFrame:
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
         partition_cols: Optional[List[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
 
@@ -330,6 +332,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -350,6 +353,7 @@ class DataFrame:
             partition_cols=cols,
             file_format=FileFormat.Parquet,
             compression=compression,
+            io_config=io_config,
         )
         # Block and write, then retrieve data and return a new disconnected DataFrame
         write_df = DataFrame(builder)
@@ -359,7 +363,10 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_csv(
-        self, root_dir: Union[str, pathlib.Path], partition_cols: Optional[List[ColumnInputType]] = None
+        self,
+        root_dir: Union[str, pathlib.Path],
+        partition_cols: Optional[List[ColumnInputType]] = None,
+        io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
 
@@ -374,6 +381,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -390,6 +398,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             file_format=FileFormat.Csv,
+            io_config=io_config,
         )
 
         # Block and write, then retrieve data and return a new disconnected DataFrame
@@ -850,7 +859,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated sums. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing sum on all columns. Specify columns using df.sum('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "sum") for c in cols])
 
     @DataframePublicAPI
@@ -862,7 +875,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated mean. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing mean on all columns. Specify columns using df.mean('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "mean") for c in cols])
 
     @DataframePublicAPI
@@ -874,7 +891,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated min. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing min on all columns. Specify columns using df.min('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "min") for c in cols])
 
     @DataframePublicAPI
@@ -886,7 +907,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated max. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing max on all columns. Specify columns using df.max('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "max") for c in cols])
 
     @DataframePublicAPI
@@ -898,7 +923,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "count") for c in cols])
 
     @DataframePublicAPI
@@ -910,7 +939,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing agg_list on all columns. Specify columns using df.agg_list('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "list") for c in cols])
 
     @DataframePublicAPI
@@ -922,7 +955,11 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        assert len(cols) > 0, "no columns were passed in"
+        if len(cols) == 0:
+            warnings.warn(
+                "No columns specified; performing agg_concat on all columns. Specify columns using df.agg_concat('col1', 'col2', ...)."
+            )
+            cols = tuple(self.columns)
         return self._agg([(c, "concat") for c in cols])
 
     @DataframePublicAPI
