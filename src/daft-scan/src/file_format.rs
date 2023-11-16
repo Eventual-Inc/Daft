@@ -106,12 +106,12 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
-    pub delimiter: char,
+    pub delimiter: Option<char>,
     pub has_headers: bool,
     pub double_quote: bool,
-    pub quote: char,
-    pub escape_char: char,
-    pub comment: char,
+    pub quote: Option<char>,
+    pub escape_char: Option<char>,
+    pub comment: Option<char>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -129,12 +129,12 @@ impl CsvSourceConfig {
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
     fn new(
-        delimiter: char,
+        delimiter: Option<char>,
         has_headers: bool,
         double_quote: bool,
-        quote: char,
-        escape_char: char,
-        comment: char,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {

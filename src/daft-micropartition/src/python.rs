@@ -631,7 +631,7 @@ pub(crate) fn read_csv_into_py_table(
     py: Python,
     uri: &str,
     has_header: bool,
-    delimiter: char,
+    delimiter: Option<char>,
     double_quote: bool,
     schema: PySchema,
     storage_config: PyStorageConfig,

@@ -314,7 +314,7 @@ def test_csv_read_data_custom_escape(use_native_downloader):
         expected = Table.from_pydict(
             {
                 "id": [1,2, 3],
-                "data": ["a\"a\"a",'aa','aa'],
+                "data": ['a\"a\"a','aa','aa'],
             }
         )
         table = table_io.read_csv(

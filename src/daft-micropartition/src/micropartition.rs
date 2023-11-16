@@ -31,10 +31,10 @@ pub(crate) enum TableState {
     Loaded(Arc<Vec<Table>>),
 }
 
-pub fn char_to_byte(char_val: char) -> Result<Option<u8>, Error> {
+pub fn char_to_byte(char_val: Option<char>) -> Result<Option<u8>, Error> {
 
-    match u8::try_from(char_val){
-        Err(_e) => Err(Error::WrongChar{val: char_val}),
+    match u8::try_from(char_val.unwrap()){
+        Err(_e) => Err(Error::WrongChar{val: char_val.unwrap()}),
         Ok(char_val) => Ok(Some(char_val)),
     }
 }

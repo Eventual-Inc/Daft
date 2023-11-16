@@ -85,9 +85,9 @@ fn run_glob(
     Ok(Box::new(iterator))
 }
 
-fn char_to_byte(char_val: char) -> Result<Option<u8>, DaftError> {
+fn char_to_byte(char_val: Option<char>) -> Result<Option<u8>, DaftError> {
 
-    match u8::try_from(char_val){
+    match u8::try_from(char_val.unwrap()){
         Err(_e) => Err(DaftError::ValueError(format!(
             "character is not valid : {:?}",
             char_val
