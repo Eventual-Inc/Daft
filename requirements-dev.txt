@@ -34,6 +34,9 @@ pyarrow==6.0.1; platform_system === "Windows"
 # Ray
 ray[data]==2.6.3
 
+#Iceberg
+pyiceberg==5.0
+
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
 s3fs==2023.6.0; python_version >= '3.8'
