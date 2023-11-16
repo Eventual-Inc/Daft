@@ -8,7 +8,13 @@ import pytest
 import daft
 from daft import DataType, TimeUnit
 
+PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
