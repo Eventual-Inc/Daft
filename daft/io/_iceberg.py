@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 
 
 def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> Optional["IOConfig"]:
+    import pyiceberg
+    from packaging.version import parse
     from pyiceberg.io import (
-        GCS_PROJECT_ID,
         S3_ACCESS_KEY_ID,
         S3_ENDPOINT,
         S3_REGION,
@@ -41,19 +42,21 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
     else:
         s3_config = None
 
-    gcs_mapping = {
-        GCS_PROJECT_ID: "project_id",
-    }
-    gcs_args = dict()  # type: ignore
-    for pyiceberg_key, daft_key in gcs_mapping.items():
-        value = props.get(pyiceberg_key, None)
-        if value is not None:
-            gcs_args[daft_key] = value
+    gcs_config = None
+    if parse(pyiceberg.__version__) >= parse("0.5.0"):
+        from pyiceberg.io import GCS_PROJECT_ID
 
-    if len(gcs_args) > 0:
-        gcs_config = GCSConfig(**gcs_args)
-    else:
-        gcs_config = None
+        gcs_mapping = {
+            GCS_PROJECT_ID: "project_id",
+        }
+        gcs_args = dict()  # type: ignore
+        for pyiceberg_key, daft_key in gcs_mapping.items():
+            value = props.get(pyiceberg_key, None)
+            if value is not None:
+                gcs_args[daft_key] = value
+
+        if len(gcs_args) > 0:
+            gcs_config = GCSConfig(**gcs_args)
 
     if s3_config is not None or gcs_config is not None:
         return IOConfig(s3=s3_config, gcs=gcs_config)
