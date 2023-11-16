@@ -93,12 +93,19 @@ class IcebergScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
-        columns = pushdowns.columns
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
+
+        limit_files = limit is not None and pushdowns.filters is None
+
         scan_tasks = []
         # TODO(sammy): multithreading should be RayRunner config?
         storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
+
+        rows_left = limit
+
         for task in iceberg_tasks:
+            if limit_files and rows_left <= 0:
+                break
             file = task.file
             path = file.file_path
             record_count = file.record_count
@@ -114,6 +121,7 @@ class IcebergScanOperator(ScanOperator):
 
             # TODO: Thread in PartitionSpec to each ScanTask: P1
             # TODO: Thread in Statistics to each ScanTask: P2
+
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -121,9 +129,9 @@ class IcebergScanOperator(ScanOperator):
                 num_rows=record_count,
                 storage_config=storage_config,
                 size_bytes=file.file_size_in_bytes,
-                limit=limit,
-                columns=columns,
+                pushdowns=pushdowns,
             )
+            rows_left -= record_count
             scan_tasks.append(st)
         return iter(scan_tasks)
 
@@ -134,7 +142,7 @@ class IcebergScanOperator(ScanOperator):
         return False
 
     def can_absorb_select(self) -> bool:
-        return False
+        return True
 
 
 def catalog() -> Catalog:

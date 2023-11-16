@@ -211,13 +211,13 @@ partitioning_keys:\n",
             self.schema.clone()
         }
         fn can_absorb_filter(&self) -> bool {
-            todo!()
+            self.can_absorb_filter
         }
         fn can_absorb_limit(&self) -> bool {
-            todo!()
+            self.can_absorb_limit
         }
         fn can_absorb_select(&self) -> bool {
-            todo!()
+            self.can_absorb_select
         }
 
         fn to_scan_tasks(
@@ -282,8 +282,7 @@ partitioning_keys:\n",
             num_rows: i64,
             storage_config: PyStorageConfig,
             size_bytes: Option<u64>,
-            columns: Option<Vec<String>>,
-            limit: Option<usize>,
+            pushdowns: Option<PyPushdowns>,
         ) -> PyResult<Self> {
             let empty_pspec = PartitionSpec {
                 keys: Table::empty(None)?,
@@ -298,12 +297,14 @@ partitioning_keys:\n",
                 partition_spec: empty_pspec,
                 statistics: None,
             };
+
+
             let scan_task = ScanTask::new(
                 vec![data_source],
                 file_format.into(),
                 schema.schema,
                 storage_config.into(),
-                Pushdowns::default(),
+                pushdowns.and_then(|p| Some(p.0.as_ref().clone())).unwrap_or_default(),
             );
             Ok(PyScanTask(scan_task.into()))
         }
@@ -378,8 +379,8 @@ partitioning_keys:\n",
         }
 
         #[getter]
-        pub fn filters(&self) {
-            todo!("filters not yet supported")
+        pub fn filters(&self) -> Option<Vec<String>> {
+            None
         }
 
         #[getter]
