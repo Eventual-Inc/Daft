@@ -10,17 +10,17 @@ from daft.logical.builder import LogicalPlanBuilder
 if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
 
-from pyiceberg.io import (
-    GCS_PROJECT_ID,
-    S3_ACCESS_KEY_ID,
-    S3_ENDPOINT,
-    S3_REGION,
-    S3_SECRET_ACCESS_KEY,
-    S3_SESSION_TOKEN,
-)
-
 
 def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> Optional["IOConfig"]:
+    from pyiceberg.io import (
+        GCS_PROJECT_ID,
+        S3_ACCESS_KEY_ID,
+        S3_ENDPOINT,
+        S3_REGION,
+        S3_SECRET_ACCESS_KEY,
+        S3_SESSION_TOKEN,
+    )
+
     from daft.io import GCSConfig, IOConfig, S3Config
 
     s3_mapping = {
