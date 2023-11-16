@@ -26,3 +26,13 @@ def test_minio_parquet_bulk_readback(minio_io_config):
         assert len(readback) == len(target_paths)
         for tab in readback:
             assert tab.to_pydict() == data
+
+
+@pytest.mark.integration()
+def test_minio_parquet_read_no_files(minio_io_config):
+    bucket_name = "data-engineering-prod"
+    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+        fs.touch("s3://data-engineering-prod/foo/file.txt")
+
+        with pytest.raises(FileNotFoundError, match="No files found at s3://data-engineering-prod/foo/\\*\\*.parquet"):
+            daft.read_parquet("s3://data-engineering-prod/foo/**.parquet", io_config=minio_io_config)
