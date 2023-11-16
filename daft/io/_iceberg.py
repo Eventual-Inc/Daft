@@ -63,14 +63,14 @@ def _convert_iceberg_file_io_properties_to_io_config(props: Dict[str, Any]) -> O
 
 @PublicAPI
 def read_iceberg(
-    table: "PyIcebergTable",
+    pyiceberg_table: "PyIcebergTable",
     io_config: Optional["IOConfig"] = None,
 ) -> DataFrame:
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 
     if io_config is None:
-        io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-    iceberg_operator = IcebergScanOperator(table, io_config=io_config)
+        io_config = _convert_iceberg_file_io_properties_to_io_config(pyiceberg_table.io.properties)
+    iceberg_operator = IcebergScanOperator(pyiceberg_table, io_config=io_config)
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
     builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
         scan_operator=handle, schema_hint=iceberg_operator.schema()
