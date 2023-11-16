@@ -405,7 +405,6 @@ impl PyMicroPartition {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
-            println!("!!!!, {:?}",quote.unwrap_or('\0'));
             crate::micropartition::read_csv_into_micropartition(
                 [uri].as_ref(),
                 column_names,
@@ -632,7 +631,7 @@ pub(crate) fn read_csv_into_py_table(
     py: Python,
     uri: &str,
     has_header: bool,
-    delimiter: &str,
+    delimiter: char,
     double_quote: bool,
     schema: PySchema,
     storage_config: PyStorageConfig,

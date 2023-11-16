@@ -222,7 +222,7 @@ fn materialize_scan_task(
                             py,
                             url,
                             *has_headers,
-                            delimiter.as_str(),
+                            *delimiter,
                             *double_quote,
                             cast_to_schema.clone().into(),
                             scan_task.storage_config.clone().into(),

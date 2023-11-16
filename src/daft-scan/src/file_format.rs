@@ -7,7 +7,7 @@ use std::{str::FromStr, sync::Arc};
 use {
     daft_core::python::datatype::PyTimeUnit,
     pyo3::{
-        exceptions::PyValueError, pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy,
+        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy,
         PyObject, PyResult, PyTypeInfo, Python, ToPyObject,
     },
 };
