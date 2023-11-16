@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use csv_async::ByteRecord;
 use daft_core::schema::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
-use futures::future::try_join_all;
+use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::{
     fs::File,
@@ -77,27 +77,35 @@ pub async fn read_csv_schema_bulk(
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    num_parallel_tasks: usize,
 ) -> DaftResult<Vec<(Schema, CsvReadStats)>> {
-    let handles_iter = uris.iter().map(|uri| {
-        let owned_string = uri.to_string();
-        let owned_client = io_client.clone();
-        let owned_io_stats = io_stats.clone();
-        let owned_parse_options = parse_options.clone();
-        tokio::spawn(async move {
-            read_csv_schema_single(
-                &owned_string,
-                owned_parse_options.unwrap_or_default(),
-                max_bytes,
-                owned_client,
-                owned_io_stats,
-            )
-            .await
+    let runtime_handle = get_runtime(true)?;
+    let _rt_guard = runtime_handle.enter();
+    let result = runtime_handle
+        .block_on(async {
+            let task_stream = futures::stream::iter(uris.iter().map(|uri| {
+                let owned_string = uri.to_string();
+                let owned_client = io_client.clone();
+                let owned_io_stats = io_stats.clone();
+                let owned_parse_options = parse_options.clone();
+                tokio::spawn(async move {
+                    read_csv_schema_single(
+                        &owned_string,
+                        owned_parse_options.unwrap_or_default(),
+                        max_bytes,
+                        owned_client,
+                        owned_io_stats,
+                    )
+                    .await
+                })
+            }));
+            task_stream
+                .buffered(num_parallel_tasks)
+                .try_collect::<Vec<_>>()
+                .await
         })
-    });
-    let all_schemas = try_join_all(handles_iter)
-        .await
         .context(super::JoinSnafu {})?;
-    all_schemas.into_iter().collect::<DaftResult<Vec<_>>>()
+    result.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
 pub(crate) async fn read_csv_schema_single(
