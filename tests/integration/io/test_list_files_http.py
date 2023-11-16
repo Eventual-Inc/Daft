@@ -14,7 +14,7 @@ def compare_http_result(daft_ls_result: list, fsspec_result: list):
     httpfs_files = [(f["name"], f["type"], f["size"]) for f in fsspec_result]
 
     # io_glob doesn't return directory entries
-    httpfs_files = [(p, t, s) for p, t, s in httpfs_files if t == "file"]
+    httpfs_files = [(p, t, s) for p, t, s in httpfs_files if t == "file" and not p.endswith("/")]
 
     assert len(daft_files) == len(httpfs_files)
     assert sorted(daft_files) == sorted(httpfs_files)
@@ -85,8 +85,6 @@ def test_http_flat_directory_listing_recursive(nginx_http_url):
     http_path = f"{nginx_http_url}/**"
     fs = HTTPFileSystem()
     fsspec_result = list(fs.glob(http_path, detail=True).values())
-    # filter out directory which is included in fsspec 2023.10.0
-    fsspec_result = [f for f in fsspec_result if f["type"] != "directory"]
     daft_ls_result = io_glob(http_path)
     compare_http_result(daft_ls_result, fsspec_result)
 
