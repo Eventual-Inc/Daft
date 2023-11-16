@@ -204,7 +204,8 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return len(self._partitions)
 
     def wait(self) -> None:
-        ray.wait([o for o in self._partitions.values()])
+        deduped_object_refs = set(self._partitions.values())
+        ray.wait(list(deduped_object_refs))
 
 
 class RayRunnerIO(runner_io.RunnerIO):
