@@ -73,5 +73,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<CsvConvertOptions>()?;
     parent.add_class::<CsvParseOptions>()?;
     parent.add_class::<CsvReadOptions>()?;
+    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv))?;
+    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv_schema))?;
     Ok(())
 }

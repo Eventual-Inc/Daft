@@ -1,5 +1,3 @@
-use pyo3::prelude::*;
-
 pub mod pylib {
     use std::sync::Arc;
 
@@ -69,10 +67,4 @@ pub mod pylib {
             Ok(Arc::new(schema).into())
         })
     }
-}
-
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_csv))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_csv_schema))?;
-    Ok(())
 }
