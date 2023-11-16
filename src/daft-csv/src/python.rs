@@ -9,7 +9,6 @@ pub mod pylib {
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
     #[pyfunction]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
         py: Python,
         uri: &str,
@@ -41,7 +40,6 @@ pub mod pylib {
     }
 
     #[pyfunction]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,

@@ -122,7 +122,6 @@ pub fn read_csv_bulk(
     Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -180,7 +179,6 @@ async fn read_csv_single_into_table(
     chunks_to_table(column_arrays, include_columns, fields)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn read_csv_single_into_stream(
     uri: &str,
     convert_options: CsvConvertOptions,
@@ -345,7 +343,6 @@ where
     Box::pin(read_stream)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn parse_into_column_array_chunk_stream(
     stream: Pin<Box<dyn ByteRecordChunkStream + Send>>,
     fields: Arc<Vec<arrow2::datatypes::Field>>,

@@ -370,7 +370,6 @@ impl PyMicroPartition {
         Ok(mp.into())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[staticmethod]
     pub fn read_csv(
         py: Python,
@@ -631,7 +630,6 @@ pub(crate) fn read_csv_into_py_table(
         .extract()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_parquet_into_py_table(
     py: Python,
     uri: &str,

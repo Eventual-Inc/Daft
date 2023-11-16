@@ -546,7 +546,6 @@ fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Optio
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_csv_into_micropartition(
     uris: &[&str],
     convert_options: Option<CsvConvertOptions>,
