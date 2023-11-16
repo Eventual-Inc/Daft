@@ -400,7 +400,9 @@ impl From<&ArrowType> for DataType {
                 DataType::Time(timeunit.into())
             }
             ArrowType::Duration(timeunit) => DataType::Duration(timeunit.into()),
-            ArrowType::Binary | ArrowType::LargeBinary => DataType::Binary,
+            ArrowType::Binary | ArrowType::LargeBinary | ArrowType::FixedSizeBinary(_) => {
+                DataType::Binary
+            }
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
             ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
             ArrowType::List(field) | ArrowType::LargeList(field) => {
