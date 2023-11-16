@@ -107,10 +107,29 @@ pub fn read_csv_bulk(
                     Ok((i, table))
                 })
             }));
+            let mut remaining_rows = convert_options
+                .as_ref()
+                .and_then(|opts| opts.limit.map(|limit| limit as i64));
             task_stream
                 // Each task is annotated with its position in the output, so we can use unordered buffering to help mitigate stragglers
                 // and sort the task results at the end.
                 .buffer_unordered(num_parallel_tasks)
+                // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
+                // num_parallel_tasks redundant files.
+                .try_take_while(|result| {
+                    match (result, remaining_rows) {
+                        // Limit has been met, early-teriminate.
+                        (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                        // Limit has not yet been met, update remaining limit slack and continue.
+                        (Ok((_, table)), Some(rows_left)) => {
+                            remaining_rows = Some(rows_left - table.len() as i64);
+                            futures::future::ready(Ok(true))
+                        }
+                        // (1) No limit, never early-terminate.
+                        // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                        (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+                    }
+                })
                 .try_collect::<Vec<_>>()
                 .await
         })
