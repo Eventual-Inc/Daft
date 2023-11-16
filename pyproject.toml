@@ -27,7 +27,7 @@ all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg]"]
 aws = ["s3fs"]
 azure = ["adlfs"]
 gcp = ["gcsfs"]
-iceberg = ["pyiceberg", "packaging"]
+iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
