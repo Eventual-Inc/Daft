@@ -15,7 +15,9 @@ fn coerce_to_daft_compatible_type(
 ) -> Option<arrow2::datatypes::DataType> {
     match dtype {
         arrow2::datatypes::DataType::Utf8 => Some(arrow2::datatypes::DataType::LargeUtf8),
-        arrow2::datatypes::DataType::Binary => Some(arrow2::datatypes::DataType::LargeBinary),
+        arrow2::datatypes::DataType::Binary | arrow2::datatypes::DataType::FixedSizeBinary(_) => {
+            Some(arrow2::datatypes::DataType::LargeBinary)
+        }
         arrow2::datatypes::DataType::List(field) => {
             let new_field = match coerce_to_daft_compatible_type(field.data_type()) {
                 Some(new_inner_dtype) => Box::new(

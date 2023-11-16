@@ -341,7 +341,11 @@ class DataType:
             return cls.float64()
         elif pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
             return cls.string()
-        elif pa.types.is_binary(arrow_type) or pa.types.is_large_binary(arrow_type):
+        elif (
+            pa.types.is_binary(arrow_type)
+            or pa.types.is_large_binary(arrow_type)
+            or pa.types.is_fixed_size_binary(arrow_type)
+        ):
             return cls.binary()
         elif pa.types.is_boolean(arrow_type):
             return cls.bool()
