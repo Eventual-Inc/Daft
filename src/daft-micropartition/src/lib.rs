@@ -16,6 +16,9 @@ pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
 
+    #[snafu(display("non valid char: {}",val))]
+    WrongChar { val: char },
+
     #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
     DuplicatedField { name: String },
     #[snafu(display(

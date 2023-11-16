@@ -1,6 +1,6 @@
 use std::{fmt::Display, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_io::{get_io_client, get_runtime, parse_url, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -36,6 +36,17 @@ fn run_glob(
             .map(|fm| fm.filepath)
             .collect())
     })
+}
+
+fn char_to_byte(char_val: char) -> Result<Option<u8>, DaftError> {
+
+    match u8::try_from(char_val){
+        Err(_e) => Err(DaftError::ValueError(format!(
+            "character is not valid : {:?}",
+            char_val
+        ))),
+        Ok(c) => Ok(Some(c)),
+    }
 }
 
 fn get_io_client_and_runtime(
@@ -114,11 +125,11 @@ impl GlobScanOperator {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath,
                             *has_headers,
-                            Some(delimiter.as_bytes()[0]),
+                            char_to_byte(*delimiter)?,
                             *double_quote,
-                            Some(*quote as u8),
-                            Some(*escape_char as u8),
-                            Some(*comment as u8),
+                            char_to_byte(*quote)?,
+                            char_to_byte(*escape_char)?,
+                            char_to_byte(*comment)?,
                             None,
                             io_client,
                             Some(io_stats),

@@ -49,12 +49,12 @@ class TableParseCSVOptions:
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     """
 
-    delimiter: str = ","
+    delimiter: str | None = None
     header_index: int | None = 0
     double_quote: bool = True
-    quote: str = '\"'
-    escape_char: str = '\"'
-    comment: str = '#'
+    quote: str | None = None
+    escape_char: str | None = None
+    comment: str | None = None
     buffer_size: int | None = None
     chunk_size: int | None = None
 

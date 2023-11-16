@@ -237,9 +237,6 @@ def read_csv(
                 buffer_size=csv_options.buffer_size,
                 chunk_size=csv_options.chunk_size,
             )
-            print(tbl)
-            print("here1")
-            print(csv_options.escape_char)
             return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
 
         assert isinstance(config, PythonStorageConfig)
@@ -247,11 +244,6 @@ def read_csv(
     else:
         fs = None
     with _open_stream(file, fs) as f:
-        print("CSV options!!")
-        print(csv_options.delimiter)
-        print(csv_options.quote)
-        print(csv_options.escape_char)
-        print(csv_options.comment)
         pacsv_stream = pacsv.open_csv(
             f,
             parse_options=pacsv.ParseOptions(

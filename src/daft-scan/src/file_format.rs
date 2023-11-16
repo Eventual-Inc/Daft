@@ -113,7 +113,7 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
-    pub delimiter: String,
+    pub delimiter: char,
     pub has_headers: bool,
     pub double_quote: bool,
     pub quote: char,
@@ -136,7 +136,7 @@ impl CsvSourceConfig {
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
     fn new(
-        delimiter: String,
+        delimiter: char,
         has_headers: bool,
         double_quote: bool,
         quote: char,
@@ -145,12 +145,6 @@ impl CsvSourceConfig {
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-        if delimiter.as_bytes().len() != 1 {
-            return Err(PyValueError::new_err(format!(
-                "Cannot create CsvSourceConfig with delimiter with length: {}",
-                delimiter.len()
-            )));
-        }
         Ok(Self {
             delimiter,
             has_headers,

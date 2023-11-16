@@ -11,7 +11,7 @@ pub mod pylib {
     fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
 
         char_val.map(|c| match u8::try_from(c){
-                Err(e) => Err(PyValueError::new_err(format!(
+                Err(_e) => Err(PyValueError::new_err(format!(
                     "character is not valid : {:?}",
                     c
                 ))),

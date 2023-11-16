@@ -32,7 +32,7 @@ struct PyMicroPartition {
 pub fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
 
     char_val.map(|c| match u8::try_from(c){
-        Err(e) => Err(PyValueError::new_err(format!(
+        Err(_e) => Err(PyValueError::new_err(format!(
             "character is not valid : {:?}",
             c
         ))),
@@ -384,7 +384,7 @@ impl PyMicroPartition {
                 char_to_byte(delimiter)?,
                 double_quote.unwrap_or(true),
                 char_to_byte(quote)?,
-                char_to_byte(quote)?,
+                char_to_byte(escape_ch)?,
                 char_to_byte(comment)?,
                 io_config,
                 multithreaded_io.unwrap_or(true),

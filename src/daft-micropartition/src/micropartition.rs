@@ -18,7 +18,7 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::DaftCoreComputeSnafu;
+use crate::{DaftCoreComputeSnafu, Error};
 
 use daft_io::{IOConfig, IOStatsRef};
 use daft_stats::TableMetadata;
@@ -27,6 +27,14 @@ use daft_stats::TableStatistics;
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
+}
+
+pub fn char_to_byte(char_val: char) -> Result<Option<u8>, Error> {
+
+    match u8::try_from(char_val){
+        Err(_e) => Err(Error::WrongChar{val: char_val}),
+        Ok(char_val) => Ok(Some(char_val)),
+    }
 }
 
 impl Display for TableState {
@@ -153,11 +161,11 @@ fn materialize_scan_task(
                             None, // column_names.clone(), NOTE: `read_csv` seems to be buggy when provided with out-of-order column_names
                             scan_task.limit,
                             cfg.has_headers,
-                            Some(cfg.delimiter.as_bytes()[0]),
+                            char_to_byte(cfg.delimiter)?,
                             cfg.double_quote,
-                            Some(cfg.quote as u8),
-                            Some(cfg.escape_char as u8),
-                            Some(cfg.comment as u8),
+                            char_to_byte(cfg.quote)?,
+                            char_to_byte(cfg.escape_char)?,
+                            char_to_byte(cfg.comment)?,
                             io_client.clone(),
                             io_stats.clone(),
                             native_storage_config.multithreaded_io,
