@@ -163,17 +163,6 @@ pub mod pylib {
                 can_absorb_select,
             })
         }
-
-        // pub fn _filter(&self, py: Python, predicate: PyExpr) -> PyResult<(bool, Self)> {
-        //     let _from_pyexpr = py
-        //         .import(pyo3::intern!(py, "daft.expressions"))?
-        //         .getattr(pyo3::intern!(py, "Expression"))?
-        //         .getattr(pyo3::intern!(py, "_from_pyexpr"))?;
-        //     let expr = _from_pyexpr.call1((predicate,))?;
-        //     let result = self.operator.call_method(py, "filter", (expr,), None)?;
-        //     let (absorb, new_op) = result.extract::<(bool, PyObject)>(py)?;
-        //     Ok((absorb, Self { operator: new_op }))
-        // }
     }
 
     impl Display for PythonScanOperatorBridge {
@@ -377,6 +366,7 @@ partitioning_keys:\n",
 
         #[getter]
         pub fn filters(&self) -> Option<Vec<String>> {
+            //TODO(Sammy): Figure out how to pass filters back to python
             None
         }
 

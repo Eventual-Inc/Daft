@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator
 
 from pyiceberg.catalog import Catalog, load_catalog
@@ -60,13 +61,12 @@ def _iceberg_partition_field_to_daft_partition_field(
     elif isinstance(transform, DayTransform):
         expr = col(source_name).dt.day().alias(name)
     elif isinstance(transform, HourTransform):
-        raise NotImplementedError(
+        warnings.warn(
             "HourTransform not implemented, Please make a comment: https://github.com/Eventual-Inc/Daft/issues/1606"
         )
     else:
-        raise NotImplementedError(f"{transform} not implemented, Please make an issue!")
+        warnings.warn(f"{transform} not implemented, Please make an issue!")
 
-    assert expr is not None
     return make_partition_field(result_field, daft_field, transform=expr)
 
 
