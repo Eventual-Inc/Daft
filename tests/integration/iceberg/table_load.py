@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+
+pyiceberg = pytest.importorskip("pyiceberg")
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 import daft

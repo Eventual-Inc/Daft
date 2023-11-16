@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Generator, TypeVar
 
 import pytest
+
+pyiceberg = pytest.importorskip("pyiceberg")
+
 from pyiceberg.catalog import Catalog, load_catalog
 
 T = TypeVar("T")
