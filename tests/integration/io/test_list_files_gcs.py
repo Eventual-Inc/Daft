@@ -31,6 +31,9 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
     # Remove all directories: our glob utilities don't return dirs
     gcsfs_files = [(path, type_) for path, type_ in gcsfs_files if type_ == "file"]
 
+    # Remove size-0 directory marker files
+    gcsfs_files = [(path, type_) for path, type_ in gcsfs_files if not path.endswith("/")]
+
     assert len(daft_files) == len(gcsfs_files)
     assert sorted(daft_files) == sorted(gcsfs_files)
 
