@@ -104,9 +104,10 @@ tokio-util = "0.7.8"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
+# branch = "jay/fix-parquet-timezone-parsing"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "0a6f79e0da7e32cc30381f4cc8cf5a8483909f78"
+rev = "3a23c780d4d59ef0c9c8751675480e07f4e1c311"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"

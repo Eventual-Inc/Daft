@@ -56,8 +56,26 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype"],
     [
-        # TODO: Fails and seems to just fall-back onto +00:00
-        # ([datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None], pa.timestamp("ms", "UTC"), DataType.timestamp(TimeUnit.ms(), "UTC")),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", None),
+            DataType.timestamp(TimeUnit.ms(), None),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+00:00"),
+            DataType.timestamp(TimeUnit.ms(), "+00:00"),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "UTC"),
+            DataType.timestamp(TimeUnit.ms(), "UTC"),
+        ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("ms", "+08:00"),
+            DataType.timestamp(TimeUnit.ms(), "+08:00"),
+        ),
     ],
 )
 def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype):
