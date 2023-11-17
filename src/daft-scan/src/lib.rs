@@ -197,8 +197,8 @@ impl PartitionField {
         source_field: Option<Field>,
         transform: Option<Expr>,
     ) -> DaftResult<Self> {
-        if let Some(ref tfm) = transform {
-            if let Some(ref sf) = source_field {
+        match (&source_field, &transform) {
+            (Some(sf), Some(tfm)) => {
                 let req_columns = get_required_columns(tfm);
                 match req_columns.as_slice() {
                     [col] => {
@@ -217,18 +217,16 @@ impl PartitionField {
                         tfm
                     ))),
                 }
-            } else {
-                Err(DaftError::ValueError(format!(
-                    "transform set in PartitionField: {} but source_field not set",
-                    tfm
-                )))
             }
-        } else {
-            Ok(PartitionField {
+            (None, Some(tfm)) => Err(DaftError::ValueError(format!(
+                "transform set in PartitionField: {} but source_field not set",
+                tfm
+            ))),
+            _ => Ok(PartitionField {
                 field,
                 source_field,
                 transform,
-            })
+            }),
         }
     }
 }
