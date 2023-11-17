@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, pin::Pin, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
@@ -205,7 +205,7 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(Pin<Box<dyn ColumnArrayChunkStream + Send>>, Vec<Field>)> {
+) -> DaftResult<(impl ColumnArrayChunkStream + Send, Vec<Field>)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
     {
         Some(schema) => (schema.to_arrow()?, None, None),
@@ -310,7 +310,7 @@ fn read_into_byterecord_chunk_stream<R>(
     chunk_size: usize,
     estimated_mean_row_size: Option<f64>,
     estimated_std_row_size: Option<f64>,
-) -> Pin<Box<dyn ByteRecordChunkStream + Send>>
+) -> impl ByteRecordChunkStream + Send
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
@@ -318,7 +318,7 @@ where
     let mut estimated_mean_row_size = estimated_mean_row_size.unwrap_or(200f64);
     let mut estimated_std_row_size = estimated_std_row_size.unwrap_or(20f64);
     // Stream of unparsed CSV byte record chunks.
-    let read_stream = async_stream::try_stream! {
+    async_stream::try_stream! {
         // Number of rows read in last read.
         let mut rows_read = 1;
         // Total number of rows read across all reads.
@@ -358,18 +358,17 @@ where
             chunk_buffer.truncate(rows_read);
             yield chunk_buffer
         }
-    };
-    Box::pin(read_stream)
+    }
 }
 
 fn parse_into_column_array_chunk_stream(
-    stream: Pin<Box<dyn ByteRecordChunkStream + Send>>,
+    stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
-) -> Pin<Box<dyn ColumnArrayChunkStream + Send>> {
+) -> impl ColumnArrayChunkStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    let parse_stream = stream.map_ok(move |record| {
+    stream.map_ok(move |record| {
         let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
@@ -394,8 +393,7 @@ fn parse_into_column_array_chunk_stream(
             recv.await.context(super::OneShotRecvSnafu {})?
         })
         .context(super::JoinSnafu {})
-    });
-    Box::pin(parse_stream)
+    })
 }
 
 fn chunks_to_table(
