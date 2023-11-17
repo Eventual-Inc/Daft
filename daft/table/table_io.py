@@ -22,6 +22,7 @@ from daft.runners.partitioning import (
     TableReadOptions,
 )
 from daft.table import Table
+from collections.abc import Callable
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -183,8 +184,11 @@ class PACSVStreamHelper:
     def __iter__(self) -> PACSVStreamHelper:
         return self
 
-def skip_comment(comment: str='#'):
-    return lambda row: 'skip' if row.text.startswith(comment) else 'error'
+def skip_comment(comment: str | None) -> Callable | None:
+    if comment is None:
+        return None
+    else:
+        return lambda row: 'skip' if row.text.startswith(comment) else 'error'
 def read_csv(
     file: FileInput,
     schema: Schema,
@@ -235,14 +239,24 @@ def read_csv(
             io_config = config.io_config
 
     with _open_stream(file, io_config) as f:
+
+        from daft.utils import ARROW_VERSION
+
+        if csv_options.comment is not None and ARROW_VERSION < (7, 0, 0):
+            raise ValueError("pyarrow < 7.0.0 doesn't support handling comments in CSVs, please upgrade pyarrow to 7.0.0+.")
+
+        parse_options = pacsv.ParseOptions(
+            delimiter=csv_options.delimiter,
+            quote_char=csv_options.quote,
+            escape_char=csv_options.escape_char,
+        )
+
+        if ARROW_VERSION >= (7, 0, 0):
+            parse_options.invalid_row_handler = skip_comment(csv_options.comment)
+
         pacsv_stream = pacsv.open_csv(
             f,
-            parse_options=pacsv.ParseOptions(
-                delimiter=csv_options.delimiter,
-                quote_char=csv_options.quote,
-                escape_char=csv_options.escape_char,
-                invalid_row_handler=skip_comment(csv_options.comment),
-            ),
+            parse_options=parse_options,
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.
                 column_names=schema.column_names()

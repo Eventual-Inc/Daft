@@ -327,7 +327,7 @@ def test_csv_read_data_custom_escape(use_native_downloader):
         assert table.to_arrow() == expected.to_arrow(), f"Received:\n{table}\n\nExpected:\n{expected}"
 
 #TODO Not testing use_native_downloader = False, as pyarrow does not support comments directly
-@pytest.mark.parametrize("use_native_downloader", [False])
+@pytest.mark.parametrize("use_native_downloader", [True,False])
 def test_csv_read_data_custom_comment(use_native_downloader):
 
     with tempfile.TemporaryDirectory() as directory_name:
