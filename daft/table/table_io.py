@@ -183,6 +183,8 @@ class PACSVStreamHelper:
     def __iter__(self) -> PACSVStreamHelper:
         return self
 
+def skip_comment(comment: str='#'):
+    return lambda row: 'skip' if row.text.startswith(comment) else 'error'
 def read_csv(
     file: FileInput,
     schema: Schema,
@@ -206,7 +208,6 @@ def read_csv(
     io_config = None
     if storage_config is not None:
         config = storage_config.config
-        print(isinstance(config, NativeStorageConfig))
         if isinstance(config, NativeStorageConfig):
             assert isinstance(
                 file, (str, pathlib.Path)
@@ -240,6 +241,7 @@ def read_csv(
                 delimiter=csv_options.delimiter,
                 quote_char=csv_options.quote,
                 escape_char=csv_options.escape_char,
+                invalid_row_handler=skip_comment(csv_options.comment),
             ),
             read_options=pacsv.ReadOptions(
                 # If no header, we use the schema's column names. Otherwise we use the headers in the CSV file.

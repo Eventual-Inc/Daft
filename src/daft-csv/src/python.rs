@@ -6,19 +6,7 @@ pub mod pylib {
     use daft_core::python::schema::PySchema;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
-    use pyo3::{exceptions::PyValueError, pyfunction, PyResult, Python};
-
-    fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
-
-        char_val.map(|c| match u8::try_from(c){
-                Err(_e) => Err(PyValueError::new_err(format!(
-                    "character is not valid : {:?}",
-                    c
-                ))),
-                Ok(c) => Ok(c),
-            })
-            .transpose()
-    }
+    use pyo3::{pyfunction, PyResult, Python};
 
     #[pyfunction]
     #[allow(clippy::too_many_arguments)]
@@ -53,11 +41,11 @@ pub mod pylib {
                 include_columns,
                 num_rows,
                 has_header.unwrap_or(true),
-                char_to_byte(delimiter)?,
+                delimiter,
                 double_quote.unwrap_or(true),
-                char_to_byte(quote)?,
-                char_to_byte(escape_char)?,
-                char_to_byte(comment)?,
+                quote,
+                escape_char,
+                comment,
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
@@ -95,11 +83,11 @@ pub mod pylib {
             let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
-                char_to_byte(delimiter)?,
+                delimiter,
                 double_quote.unwrap_or(true),
-                char_to_byte(quote)?,
-                char_to_byte(escape_char)?,
-                char_to_byte(comment)?,
+                quote,
+                escape_char,
+                comment,
                 max_bytes,
                 io_client,
                 Some(io_stats),

@@ -26,8 +26,19 @@ use tokio::{
 use tokio_util::io::StreamReader;
 
 use crate::metadata::read_csv_schema_single;
-use crate::{compression::CompressionCodec, ArrowSnafu};
+use crate::{compression::CompressionCodec, ArrowSnafu, Error};
 use daft_decoding::deserialize::deserialize_column;
+
+
+pub fn char_to_byte(c: Option<char>) -> Result<Option<u8>, Error> {
+    match c.map(u8::try_from).transpose() {
+        Ok(b) => Ok(b),
+        Err(e) => Err(Error::WrongChar {
+            source: e,
+            val: c.unwrap_or(' '),
+        }),
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
@@ -36,11 +47,11 @@ pub fn read_csv(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: Option<u8>,
+    delimiter: Option<char>,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: Option<char>,
+    escape_char: Option<char>,
+    comment: Option<char>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
@@ -58,11 +69,11 @@ pub fn read_csv(
             include_columns,
             num_rows,
             has_header,
-            delimiter,
+            char_to_byte(delimiter)?,
             double_quote,
-            quote,
-            escape_char,
-            comment,
+            char_to_byte(quote)?,
+            char_to_byte(escape_char)?,
+            char_to_byte(comment)?,
             io_client,
             io_stats,
             schema,
@@ -492,27 +503,27 @@ mod tests {
     use daft_table::Table;
     use rstest::rstest;
 
-    use super::read_csv;
+    use super::{char_to_byte, read_csv};
 
     fn check_equal_local_arrow2(
         path: &str,
         out: &Table,
         has_header: bool,
-        delimiter: Option<u8>,
+        delimiter: Option<char>,
         double_quote: bool,
-        quote: Option<u8>,
-        escape_char: Option<u8>,
-        comment: Option<u8>,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         column_names: Option<Vec<&str>>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
         let mut reader = ReaderBuilder::new()
-            .delimiter(delimiter.unwrap_or(b','))
+            .delimiter(char_to_byte(delimiter).unwrap_or(None).unwrap_or(b','))
             .double_quote(double_quote)
-            .quote(quote.unwrap_or(b'"'))
-            .escape(escape_char)
-            .comment(comment)
+            .quote(char_to_byte(quote).unwrap_or(None).unwrap_or(b'"'))
+            .escape(char_to_byte(escape_char).unwrap_or(Some(b'\\')))
+            .comment(char_to_byte(comment).unwrap_or(Some(b'#')))
             .from_path(path)
             .unwrap();
         let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
@@ -704,7 +715,7 @@ mod tests {
             None,
             Some(5),
             true,
-            Some(b'|'),
+            Some('|'),
             true,
             None,
             None,
@@ -733,7 +744,7 @@ mod tests {
             file.as_ref(),
             &table,
             true,
-            Some(b'|'),
+            Some('|'),
             true,
             None,
             None,
@@ -825,7 +836,7 @@ mod tests {
             true,
             None,
             true,
-            Some(b'\''), // Testing with single quote
+            Some('\''), // Testing with single quote
             None,
             None,
             io_client,
@@ -854,7 +865,7 @@ mod tests {
             true,
             None,
             true,
-            Some(b'\''),
+            Some('\''),
             None,
             None,
             None,
@@ -886,7 +897,7 @@ mod tests {
             None,
             true,
             None,
-            Some(b'\\'), //testing with '\' as escape character
+            Some('\\'), //testing with '\' as escape character
             None,
             io_client,
             None,
@@ -915,7 +926,7 @@ mod tests {
             None,
             true,
             None,
-            Some(b'\\'),
+            Some('\\'),
             None,
             None,
             None,
@@ -947,7 +958,7 @@ mod tests {
             true,
             None,
             None,
-            Some(b'#'),
+            Some('#'),
             io_client,
             None,
             true,
@@ -976,7 +987,7 @@ mod tests {
             true,
             None,
             None,
-            Some(b'#'),
+            Some('#'),
             None,
             None,
             Some(5),

@@ -18,7 +18,7 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::{DaftCoreComputeSnafu, Error};
+use crate::{DaftCoreComputeSnafu};
 #[cfg(feature = "python")]
 use crate::PyIOSnafu;
 
@@ -29,14 +29,6 @@ use daft_stats::TableStatistics;
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
-}
-
-pub fn char_to_byte(char_val: Option<char>) -> Result<Option<u8>, Error> {
-
-    match u8::try_from(char_val.unwrap()){
-        Err(_e) => Err(Error::WrongChar{val: char_val.unwrap()}),
-        Ok(char_val) => Ok(Some(char_val)),
-    }
 }
 
 impl Display for TableState {
@@ -158,11 +150,11 @@ fn materialize_scan_task(
                             column_names.clone(),
                             scan_task.pushdowns.limit,
                             cfg.has_headers,
-                            char_to_byte(cfg.delimiter)?,
+                            cfg.delimiter,
                             cfg.double_quote,
-                            char_to_byte(cfg.quote)?,
-                            char_to_byte(cfg.escape_char)?,
-                            char_to_byte(cfg.comment)?,
+                            cfg.quote,
+                            cfg.escape_char,
+                            cfg.comment,
                             io_client.clone(),
                             io_stats.clone(),
                             native_storage_config.multithreaded_io,
@@ -550,11 +542,11 @@ pub(crate) fn read_csv_into_micropartition(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: Option<u8>,
+    delimiter: Option<char>,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: Option<char>,
+    escape_char: Option<char>,
+    comment: Option<char>,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,

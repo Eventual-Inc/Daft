@@ -85,17 +85,6 @@ fn run_glob(
     Ok(Box::new(iterator))
 }
 
-fn char_to_byte(char_val: Option<char>) -> Result<Option<u8>, DaftError> {
-
-    match u8::try_from(char_val.unwrap()){
-        Err(_e) => Err(DaftError::ValueError(format!(
-            "character is not valid : {:?}",
-            char_val
-        ))),
-        Ok(c) => Ok(Some(c)),
-    }
-}
-
 fn get_io_client_and_runtime(
     storage_config: &StorageConfig,
 ) -> DaftResult<(Arc<tokio::runtime::Runtime>, Arc<IOClient>)> {
@@ -192,11 +181,11 @@ impl GlobScanOperator {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath.as_str(),
                             *has_headers,
-                            char_to_byte(*delimiter)?,
+                            *delimiter,
                             *double_quote,
-                            char_to_byte(*quote)?,
-                            char_to_byte(*escape_char)?,
-                            char_to_byte(*comment)?,
+                            *quote,
+                            *escape_char,
+                            *comment,
                             None,
                             io_client,
                             Some(io_stats),

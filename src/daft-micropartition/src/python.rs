@@ -28,18 +28,6 @@ struct PyMicroPartition {
     inner: Arc<MicroPartition>,
 }
 
-// TODO remove this repeated code fragment
-pub fn char_to_byte(char_val: Option<char>) -> PyResult<Option<u8>> {
-
-    char_val.map(|c| match u8::try_from(c){
-        Err(_e) => Err(PyValueError::new_err(format!(
-            "character is not valid : {:?}",
-            c
-        ))),
-        Ok(c) => Ok(c),
-    })
-        .transpose()
-}
 #[pymethods]
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
@@ -411,11 +399,11 @@ impl PyMicroPartition {
                 include_columns,
                 num_rows,
                 has_header.unwrap_or(true),
-                char_to_byte(delimiter)?,
+                delimiter,
                 double_quote.unwrap_or(true),
-                char_to_byte(quote)?,
-                char_to_byte(escape_char)?,
-                char_to_byte(comment)?,
+                quote,
+                escape_char,
+                comment,
                 io_config,
                 multithreaded_io.unwrap_or(true),
                 Some(io_stats),

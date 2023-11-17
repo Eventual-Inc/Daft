@@ -14,17 +14,18 @@ use tokio_util::io::StreamReader;
 
 use crate::{compression::CompressionCodec, schema::merge_schema};
 use daft_decoding::inference::infer;
+use crate::read::char_to_byte;
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
 pub fn read_csv_schema(
     uri: &str,
     has_header: bool,
-    delimiter: Option<u8>,
+    delimiter: Option<char>,
     double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    quote: Option<char>,
+    escape_char: Option<char>,
+    comment: Option<char>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -35,11 +36,11 @@ pub fn read_csv_schema(
         read_csv_schema_single(
             uri,
             has_header,
-            delimiter,
+            char_to_byte(delimiter)?,
             double_quote,
-            quote,
-            escape_char,
-            comment,
+            char_to_byte(quote)?,
+            char_to_byte(escape_char)?,
+            char_to_byte(comment)?,
             // Default to 1 MiB.
             max_bytes.or(Some(1024 * 1024)),
             io_client,
@@ -376,7 +377,7 @@ mod tests {
         let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
             file.as_ref(),
             true,
-            Some(b'|'),
+            Some('|'),
             true,
             None,
             None,

@@ -327,17 +327,18 @@ def test_csv_read_data_custom_escape(use_native_downloader):
         assert table.to_arrow() == expected.to_arrow(), f"Received:\n{table}\n\nExpected:\n{expected}"
 
 #TODO Not testing use_native_downloader = False, as pyarrow does not support comments directly
-@pytest.mark.parametrize("use_native_downloader", [True])
+@pytest.mark.parametrize("use_native_downloader", [False])
 def test_csv_read_data_custom_comment(use_native_downloader):
-    with _csv_write_helper(
-            header=["id", "data"],
-            data=[
-                ["1", "aa"],
-                ["# 2", "aa"],
-                ["3", "aa"],
-            ],
-            delimiter=","
-    ) as f:
+
+    with tempfile.TemporaryDirectory() as directory_name:
+        file = os.path.join(directory_name, "tempfile")
+        with open(file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "data"])
+            writer.writerow(["1", "aa"])
+            f.write("# comment line\n")
+            writer.writerow(["3", "aa"])
+
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
@@ -348,7 +349,7 @@ def test_csv_read_data_custom_comment(use_native_downloader):
             }
         )
         table = table_io.read_csv(
-            f,
+            file,
             schema,
             storage_config=storage_config,
             csv_options=TableParseCSVOptions(comment='#'),

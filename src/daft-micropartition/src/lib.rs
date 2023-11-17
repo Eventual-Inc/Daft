@@ -18,10 +18,6 @@ pub enum Error {
     #[snafu(display("DaftCoreComputeError: {}", source))]
     DaftCoreCompute { source: DaftError },
 
-
-    #[snafu(display("non valid char: {}",val))]
-    WrongChar { val: char },
-
     #[cfg(feature = "python")]
     #[snafu(display("PyIOError: {}", source))]
     PyIO { source: PyErr },
