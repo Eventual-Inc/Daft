@@ -298,6 +298,24 @@ async fn ls_with_prefix_fallback(
     (s.boxed(), dir_count_so_far)
 }
 
+/// Helper to filter FileMetadata entries that should not be returned by globbing
+fn _should_return(fm: &FileMetadata) -> bool {
+    match fm.filetype {
+        // Do not return size-0 File entries that end with "/"
+        // These are usually used to demarcate "empty folders", since S3 is not really a filesystem
+        // However they can lead to unexpected globbing behavior since most users do not expect them to exist
+        FileType::File
+            if fm.filepath.ends_with(GLOB_DELIMITER) && fm.size.is_some_and(|s| s == 0) =>
+        {
+            false
+        }
+        // Return all other File entries
+        FileType::File => true,
+        // Globbing does not return Directory results
+        FileType::Directory => false,
+    }
+}
+
 /// Globs an ObjectSource for Files
 ///
 /// Uses the `globset` crate for matching, and thus supports all the syntax enabled by that crate.
@@ -333,7 +351,7 @@ pub(crate) async fn glob(
             while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
                 match result {
                     Ok(fm) => {
-                        if matches!(fm.filetype, FileType::File) {
+                        if _should_return(&fm) {
                             remaining_results = remaining_results.map(|rr| rr - 1);
                             yield Ok(fm)
                         }
@@ -600,6 +618,11 @@ pub(crate) async fn glob(
     let to_rtn_stream = stream! {
         let mut remaining_results = limit;
         while remaining_results.map(|rr| rr > 0).unwrap_or(true) && let Some(v) = to_rtn_rx.recv().await {
+
+            if v.as_ref().is_ok_and(|v| !_should_return(v)) {
+                continue
+            }
+
             remaining_results = remaining_results.map(|rr| rr - 1);
             yield v
         }
