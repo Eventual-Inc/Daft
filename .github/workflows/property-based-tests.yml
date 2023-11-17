@@ -19,7 +19,7 @@ jobs:
         daft_runner: [py]
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2

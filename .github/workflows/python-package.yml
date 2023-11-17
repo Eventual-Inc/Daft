@@ -36,7 +36,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - name: Install cargo-llvm-cov
@@ -153,7 +153,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         architecture: x64
     - run: pip install -U twine toml maturin
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
@@ -349,7 +349,7 @@ jobs:
         os: [ubuntu, windows]
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
@@ -433,7 +433,7 @@ jobs:
         python-version: ['3.7']
     steps:
     - uses: actions/checkout@v4
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
@@ -522,7 +522,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install pre-commit
-    - uses: moonrepo/setup-rust@v0
+    - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
