@@ -10,7 +10,6 @@ from daft.execution.execution_step import PartitionTask
 
 class ProgressBar:
     def __init__(self, use_ray_tqdm: bool, disable: bool = False) -> None:
-        print("use ray tqdm", use_ray_tqdm)
         self.use_ray_tqdm = use_ray_tqdm
         self.tqdm_mod = tqdm
         self.pbars: dict[int, tqdm] = dict()
