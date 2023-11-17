@@ -51,6 +51,7 @@ class PartitionTask(Generic[PartitionT]):
     instructions: list[Instruction]
     resource_request: ResourceRequest
     num_results: int
+    stage_id: int
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -110,7 +111,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.num_results = instruction.num_outputs()
         return self
 
-    def finalize_partition_task_single_output(self) -> SingleOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_single_output(self, stage_id: int) -> SingleOutputPartitionTask[PartitionT]:
         """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
         Returns a "frozen" version of this PartitionTask that cannot have instructions added.
@@ -125,12 +126,13 @@ class PartitionTaskBuilder(Generic[PartitionT]):
 
         return SingleOutputPartitionTask[PartitionT](
             inputs=self.inputs,
+            stage_id=stage_id,
             instructions=self.instructions,
             num_results=1,
             resource_request=resource_request_final_cpu,
         )
 
-    def finalize_partition_task_multi_output(self) -> MultiOutputPartitionTask[PartitionT]:
+    def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
         """Create a MultiOutputPartitionTask from this PartitionTaskBuilder.
 
         Same as finalize_partition_task_single_output, except the output of this PartitionTask is a list of partitions.
@@ -143,6 +145,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         )
         return MultiOutputPartitionTask[PartitionT](
             inputs=self.inputs,
+            stage_id=stage_id,
             instructions=self.instructions,
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
@@ -564,6 +567,11 @@ class LocalLimit(SingleOutputInstruction):
                 size_bytes=None,
             )
         ]
+
+
+@dataclass(frozen=True)
+class GlobalLimit(LocalLimit):
+    pass
 
 
 @dataclass(frozen=True)

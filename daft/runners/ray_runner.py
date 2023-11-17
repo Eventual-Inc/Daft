@@ -13,6 +13,7 @@ import pyarrow as pa
 
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
+from daft.runners.progress_bar import ProgressBar
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +383,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 
 class Scheduler:
-    def __init__(self, max_task_backlog: int | None) -> None:
+    def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
         """
         max_task_backlog: Max number of inflight tasks waiting for cores.
         """
@@ -402,6 +403,8 @@ class Scheduler:
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
+
+        self.use_ray_tqdm = use_ray_tqdm
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -465,7 +468,7 @@ class Scheduler:
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-
+        pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
 
         start = datetime.now()
@@ -515,7 +518,9 @@ class Scheduler:
 
                         # Dispatch the batch of tasks.
                         logger.debug(
-                            f"{(datetime.now() - start).total_seconds()}s: RayRunner dispatching {len(tasks_to_dispatch)} tasks:"
+                            "%ss: RayRunner dispatching %s tasks",
+                            (datetime.now() - start).total_seconds(),
+                            len(tasks_to_dispatch),
                         )
                         for task in tasks_to_dispatch:
                             results = _build_partitions(task)
@@ -523,6 +528,8 @@ class Scheduler:
                             inflight_tasks[task.id()] = task
                             for result in results:
                                 inflight_ref_to_task[result] = task.id()
+
+                            pbar.mark_task_start(task)
 
                         if dispatches_allowed == 0 or next_step is None:
                             break
@@ -562,10 +569,11 @@ class Scheduler:
                                     for partition in task.partitions():
                                         del inflight_ref_to_task[partition]
 
+                                pbar.mark_task_done(task)
                                 del inflight_tasks[task_id]
 
                     logger.debug(
-                        f"+{(datetime.now() - dispatch).total_seconds()}s to await results from {completed_task_ids}"
+                        "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
                     )
 
                     if next_step is None:
@@ -577,7 +585,10 @@ class Scheduler:
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
             except Exception as e:
                 self.results_by_df[result_uuid].put(e)
+                pbar.close()
                 raise
+
+        pbar.close()
 
 
 @ray.remote(num_cpus=1)
@@ -628,12 +639,10 @@ class RayRunner(Runner[ray.ObjectRef]):
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-                max_task_backlog=max_task_backlog,
+                max_task_backlog=max_task_backlog, use_ray_tqdm=True
             )
         else:
-            self.scheduler = Scheduler(
-                max_task_backlog=max_task_backlog,
-            )
+            self.scheduler = Scheduler(max_task_backlog=max_task_backlog, use_ray_tqdm=False)
 
     def active_plans(self) -> list[str]:
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
