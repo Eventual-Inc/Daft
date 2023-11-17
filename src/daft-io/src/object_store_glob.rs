@@ -600,6 +600,14 @@ pub(crate) async fn glob(
     let to_rtn_stream = stream! {
         let mut remaining_results = limit;
         while remaining_results.map(|rr| rr > 0).unwrap_or(true) && let Some(v) = to_rtn_rx.recv().await {
+
+            // Filter the result stream for any size-0 File entries that end with "/"
+            // These are usually used to demarcate "empty folders", since S3 is not really a filesystem
+            // However they can lead to unexpected globbing behavior since most users do not expect them to exist
+            if v.as_ref().is_ok_and(|v| v.filepath.ends_with(GLOB_DELIMITER)) {
+                continue
+            }
+
             remaining_results = remaining_results.map(|rr| rr - 1);
             yield v
         }
