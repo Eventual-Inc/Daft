@@ -33,7 +33,7 @@ numpy = ["numpy"]
 pandas = ["pandas"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  "ray[data]>=2.0.0",
+  "ray[data, client]>=2.0.0",
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
