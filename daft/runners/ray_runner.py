@@ -13,6 +13,7 @@ import pyarrow as pa
 
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
+from daft.runners.progress_bar import ProgressBar
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,6 @@ if TYPE_CHECKING:
     import pandas as pd
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
-    from tqdm import tqdm
 
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:
@@ -403,18 +403,7 @@ class Scheduler:
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
 
-        from .tqdm import is_running_from_ipython
-
-        if use_ray_tqdm:
-            from ray.experimental import tqdm_ray
-
-            self.tqdm_builder = tqdm_ray
-        else:
-            from tqdm.auto import tqdm
-
-            self.tqdm_builder = tqdm
-
-        self.show_progress = is_running_from_ipython()
+        self.use_ray_tqdm = use_ray_tqdm
 
     def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
         # Case: thread is terminated and no longer exists.
@@ -478,7 +467,7 @@ class Scheduler:
 
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
-        pbars: dict[int, tqdm] = dict()
+        pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
         num_cpus_provider = _ray_num_cpus_provider()
 
         start = datetime.now()
@@ -539,24 +528,7 @@ class Scheduler:
                             for result in results:
                                 inflight_ref_to_task[result] = task.id()
 
-                        if self.show_progress:
-                            for task in tasks_to_dispatch:
-                                if len(pbars) == 0:
-                                    pbars[-1] = self.tqdm_builder(total=1, desc="Tasks", position=0)
-                                else:
-                                    task_pbar = pbars[-1]
-                                    task_pbar.total += 1
-                                    task_pbar.refresh()
-
-                                stage_id = task.stage_id
-                                if stage_id not in pbars:
-                                    name = "-".join(i.__class__.__name__ for i in task.instructions)
-                                    position = len(pbars)
-                                    pbars[stage_id] = self.tqdm_builder(total=1, desc=name, position=position)
-                                else:
-                                    pb = pbars[stage_id]
-                                    pb.total += 1
-                                    pb.refresh()
+                            pbar.mark_task_start(task)
 
                         if dispatches_allowed == 0 or next_step is None:
                             break
@@ -595,13 +567,8 @@ class Scheduler:
                                 elif isinstance(task, MultiOutputPartitionTask):
                                     for partition in task.partitions():
                                         del inflight_ref_to_task[partition]
-                                if self.show_progress:
-                                    stage_id = task.stage_id
-                                    pb = pbars[stage_id]
-                                    pb.update(1)
-                                    pb = pbars[-1]
-                                    pb.update(1)
 
+                                pbar.mark_task_done(task)
                                 del inflight_tasks[task_id]
 
                     logger.debug(
@@ -617,14 +584,10 @@ class Scheduler:
             # Ensure that all Exceptions are correctly propagated to the consumer before reraising to kill thread
             except Exception as e:
                 self.results_by_df[result_uuid].put(e)
-                for p in pbars.values():
-                    p.close()
-                del pbars
+                pbar.close()
                 raise
 
-        for p in pbars.values():
-            p.close()
-        del pbars
+        pbar.close()
 
 
 @ray.remote(num_cpus=1)
