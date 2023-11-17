@@ -64,6 +64,20 @@ pub(crate) fn local_parquet_read_into_arrow(
     let mut reader = File::open(uri).with_context(|_| super::InternalIOSnafu {
         path: uri.to_string(),
     })?;
+    let size = reader
+        .metadata()
+        .with_context(|_| super::InternalIOSnafu {
+            path: uri.to_string(),
+        })?
+        .len();
+
+    if size < 12 {
+        return Err(super::Error::FileTooSmall {
+            path: uri.into(),
+            file_size: size as usize,
+        });
+    }
+
     let metadata = read::read_metadata(&mut reader).with_context(|_| {
         super::UnableToParseMetadataFromLocalFileSnafu {
             path: uri.to_string(),

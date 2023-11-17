@@ -324,5 +324,5 @@ def test_read_empty_parquet_file(tmpdir, n_bytes):
     with open(file_path, "wb") as f:
         for _ in range(n_bytes):
             f.write(b"0")
-    with pytest.raises(ValueError, match="smaller than the minimum size of 8 bytes"):
+    with pytest.raises(ValueError, match="smaller than the minimum size of 12 bytes"):
         Table.read_parquet(file_path.as_posix())

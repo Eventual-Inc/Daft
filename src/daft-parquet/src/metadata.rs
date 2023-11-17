@@ -20,7 +20,7 @@ pub(crate) async fn read_parquet_metadata(
 ) -> super::Result<FileMetaData> {
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
-    if size < FOOTER_SIZE {
+    if size < 12 {
         return Err(Error::FileTooSmall {
             path: uri.into(),
             file_size: size,

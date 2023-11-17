@@ -88,7 +88,7 @@ pub enum Error {
     ))]
     InvalidParquetFile { path: String, footer: Vec<u8> },
     #[snafu(display(
-        "File: {} is not a valid parquet file and is only {} bytes, smaller than the minimum size of 8 bytes",
+        "File: {} is not a valid parquet file and is only {} bytes, smaller than the minimum size of 12 bytes",
         path,
         file_size
     ))]
