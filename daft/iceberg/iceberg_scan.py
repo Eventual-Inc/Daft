@@ -11,7 +11,6 @@ from pyiceberg.table import Table
 
 from daft.daft import (
     FileFormatConfig,
-    NativeStorageConfig,
     ParquetSourceConfig,
     Pushdowns,
     ScanTask,
@@ -19,7 +18,6 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions.expressions import col
-from daft.io import IOConfig
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -74,10 +72,10 @@ def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: Iceber
 
 
 class IcebergScanOperator(ScanOperator):
-    def __init__(self, iceberg_table: Table, io_config: IOConfig | None = None) -> None:
+    def __init__(self, iceberg_table: Table, storage_config: StorageConfig) -> None:
         super().__init__()
         self._table = iceberg_table
-        self._io_config = io_config
+        self._storage_config = storage_config
         arrow_schema = schema_to_pyarrow(iceberg_table.schema())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
@@ -95,8 +93,6 @@ class IcebergScanOperator(ScanOperator):
         limit_files = limit is not None and pushdowns.filters is None
 
         scan_tasks = []
-        # TODO(sammy): multithreading should be RayRunner config?
-        storage_config = StorageConfig.native(NativeStorageConfig(True, self._io_config))
 
         if limit is not None:
             rows_left = limit
@@ -126,7 +122,7 @@ class IcebergScanOperator(ScanOperator):
                 file_format=file_format_config,
                 schema=self._schema._schema,
                 num_rows=record_count,
-                storage_config=storage_config,
+                storage_config=self._storage_config,
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
             )
