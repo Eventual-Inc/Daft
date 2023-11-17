@@ -20,6 +20,12 @@ pub(crate) async fn read_parquet_metadata(
 ) -> super::Result<FileMetaData> {
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
+    if size < FOOTER_SIZE {
+        return Err(Error::FileTooSmall {
+            path: uri.into(),
+            file_size: size,
+        });
+    }
 
     /// The number of bytes read at the end of the parquet file on first read
     const DEFAULT_FOOTER_READ_SIZE: usize = 128 * 1024;

@@ -314,3 +314,15 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
     ) as f:
         schema = Schema.from_parquet(f, coerce_int96_timestamp_unit=coerce_to)
         assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"
+
+
+@pytest.mark.parametrize("n_bytes", [0, 1, 2, 7])
+def test_read_empty_parquet_file(tmpdir, n_bytes):
+
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    with open(file_path, "wb") as f:
+        for _ in range(n_bytes):
+            f.write(b"0")
+    with pytest.raises(ValueError, match="smaller than the minimum size of 8 bytes"):
+        Table.read_parquet(file_path.as_posix())
