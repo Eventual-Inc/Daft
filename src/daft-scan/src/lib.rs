@@ -6,7 +6,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::{optimization::get_required_columns, Expr, ExprRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
 use serde::{Deserialize, Serialize};
@@ -121,6 +121,7 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
 }
+pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
     pub fn new(
@@ -190,6 +191,56 @@ pub struct PartitionField {
     transform: Option<Expr>,
 }
 
+impl PartitionField {
+    pub fn new(
+        field: Field,
+        source_field: Option<Field>,
+        transform: Option<Expr>,
+    ) -> DaftResult<Self> {
+        match (&source_field, &transform) {
+            (Some(sf), Some(tfm)) => {
+                let req_columns = get_required_columns(tfm);
+                match req_columns.as_slice() {
+                    [col] => {
+                        if col == &sf.name {
+                            Ok(PartitionField {
+                                field,
+                                source_field,
+                                transform,
+                            })
+                        } else {
+                            Err(DaftError::ValueError(format!("PartitionField transform's required column and source_field differ: {} vs {}" , col, sf.name)))
+                        }
+                    }
+                    _ => Err(DaftError::ValueError(format!(
+                        "PartitionField only supports unary transforms but received {}",
+                        tfm
+                    ))),
+                }
+            }
+            (None, Some(tfm)) => Err(DaftError::ValueError(format!(
+                "transform set in PartitionField: {} but source_field not set",
+                tfm
+            ))),
+            _ => Ok(PartitionField {
+                field,
+                source_field,
+                transform,
+            }),
+        }
+    }
+}
+
+impl Display for PartitionField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(tfm) = &self.transform {
+            write!(f, "PartitionField({}, {})", self.field, tfm)
+        } else {
+            write!(f, "PartitionField({})", self.field)
+        }
+    }
+}
+
 pub trait ScanOperator: Send + Sync + Display + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
@@ -200,7 +251,7 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>>;
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>>;
 }
 
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash

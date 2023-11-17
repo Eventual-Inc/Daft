@@ -6,7 +6,7 @@ from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
-import fsspec
+from daft.io.scan import ScanOperator
 
 class ImageMode(Enum):
     """
@@ -405,6 +405,20 @@ class ScanTask:
         Get number of bytes that will be scanned by this ScanTask.
         """
         ...
+    @staticmethod
+    def catalog_scan_task(
+        file: str,
+        file_format: FileFormatConfig,
+        schema: PySchema,
+        num_rows: int,
+        storage_config: StorageConfig,
+        size_bytes: int | None,
+        pushdowns: Pushdowns | None,
+    ) -> ScanTask:
+        """
+        Create a Catalog Scan Task
+        """
+        ...
 
 class ScanOperatorHandle:
     """
@@ -425,6 +439,26 @@ class ScanOperatorHandle:
         storage_config: StorageConfig,
         schema: PySchema | None = None,
     ) -> ScanOperatorHandle: ...
+    @staticmethod
+    def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
+
+class PartitionField:
+    """
+    Partitioning Field of a Scan Source such as Hive or Iceberg
+    """
+
+    def __init__(
+        self, field: PyField, source_field: PyField | None = None, transform: PyExpr | None = None
+    ) -> None: ...
+
+class Pushdowns:
+    """
+    Pushdowns from the query optimizer that can optimize scanning data sources.
+    """
+
+    columns: list[str] | None
+    filters: list[str] | None
+    limit: int | None
 
 def read_parquet(
     uri: str,

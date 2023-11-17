@@ -5,7 +5,7 @@ use daft_core::schema::SchemaRef;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
-    Pushdowns, ScanOperator, ScanTask,
+    Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -59,7 +59,7 @@ impl ScanOperator for AnonymousScanOperator {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>>>> {
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>> {
         let files = self.files.clone();
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
@@ -80,7 +80,8 @@ impl ScanOperator for AnonymousScanOperator {
                 schema.clone(),
                 storage_config.clone(),
                 pushdowns.clone(),
-            ))
+            )
+            .into())
         })))
     }
 }

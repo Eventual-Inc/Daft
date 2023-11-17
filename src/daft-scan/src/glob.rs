@@ -14,7 +14,7 @@ use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask,
+    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
@@ -249,7 +249,7 @@ impl ScanOperator for GlobScanOperator {
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTask>> + 'static>> {
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'static>> {
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
@@ -298,7 +298,8 @@ impl ScanOperator for GlobScanOperator {
                 schema.clone(),
                 storage_config.clone(),
                 pushdowns.clone(),
-            ))
+            )
+            .into())
         })))
     }
 }
