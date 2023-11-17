@@ -9,8 +9,9 @@ from daft.execution.execution_step import PartitionTask
 
 
 class ProgressBar:
-    def __init__(self, use_ray_tqdm: bool, disable: bool = False) -> None:
+    def __init__(self, use_ray_tqdm: bool, show_tasks_bar: bool = False, disable: bool = False) -> None:
         self.use_ray_tqdm = use_ray_tqdm
+        self.show_tasks_bar = show_tasks_bar
         self.tqdm_mod = tqdm
         self.pbars: dict[int, tqdm] = dict()
         self.disable = (
@@ -28,20 +29,20 @@ class ProgressBar:
     def mark_task_start(self, step: PartitionTask[Any]) -> None:
         if self.disable:
             return
-        if len(self.pbars) == 0:
-            self._make_new_bar(-1, "Tasks")
-        else:
-            task_pbar = self.pbars[-1]
-            task_pbar.total += 1
-            if self.use_ray_tqdm:
-                task_pbar.refresh()
+        if self.show_tasks_bar:
+            if len(self.pbars) == 0:
+                self._make_new_bar(-1, "Tasks")
+            else:
+                task_pbar = self.pbars[-1]
+                task_pbar.total += 1
+                if self.use_ray_tqdm:
+                    task_pbar.refresh()
 
         stage_id = step.stage_id
 
         if stage_id not in self.pbars:
             name = "-".join(i.__class__.__name__ for i in step.instructions)
             self._make_new_bar(stage_id, name)
-
         else:
             pb = self.pbars[stage_id]
             pb.total += 1
@@ -54,7 +55,8 @@ class ProgressBar:
 
         stage_id = step.stage_id
         self.pbars[stage_id].update(1)
-        self.pbars[-1].update(1)
+        if self.show_tasks_bar:
+            self.pbars[-1].update(1)
 
     def close(self) -> None:
         for p in self.pbars.values():
