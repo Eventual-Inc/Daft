@@ -24,7 +24,9 @@ class ProgressBar:
         if self.use_ray_tqdm:
             self.pbars[stage_id] = self.tqdm_mod(total=1, desc=name, position=len(self.pbars))
         else:
-            self.pbars[stage_id] = self.tqdm_mod(total=1, desc=name, position=len(self.pbars), leave=False)
+            self.pbars[stage_id] = self.tqdm_mod(
+                total=1, desc=name, position=len(self.pbars), leave=False, mininterval=1.0
+            )
 
     def mark_task_start(self, step: PartitionTask[Any]) -> None:
         if self.disable:
@@ -35,8 +37,6 @@ class ProgressBar:
             else:
                 task_pbar = self.pbars[-1]
                 task_pbar.total += 1
-                if self.use_ray_tqdm:
-                    task_pbar.refresh()
 
         stage_id = step.stage_id
 
@@ -46,8 +46,6 @@ class ProgressBar:
         else:
             pb = self.pbars[stage_id]
             pb.total += 1
-            if self.use_ray_tqdm:
-                pb.refresh()
 
     def mark_task_done(self, step: PartitionTask[Any]) -> None:
         if self.disable:
