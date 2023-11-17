@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use daft_core::schema::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
@@ -6,32 +7,31 @@ use super::Wrap;
 
 use indexmap::IndexMap;
 
-impl TryFrom<&crate::metadata::RowGroupMetaData> for Wrap<TableStatistics> {
-    type Error = super::Error;
-    fn try_from(value: &crate::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
-        let _num_rows = value.num_rows();
-        let mut columns = IndexMap::new();
-        for col in value.columns() {
+pub fn row_group_metadata_to_table_stats(
+    metadata: &crate::metadata::RowGroupMetaData,
+    schema: &Schema,
+) -> DaftResult<TableStatistics> {
+    let mut columns = IndexMap::new();
+    for col in metadata.columns() {
+        let top_level_column_name = col
+            .descriptor()
+            .path_in_schema
+            .first()
+            .expect("Parquet schema should have at least one entry in path_in_schema");
+        let daft_field = schema.get_field(top_level_column_name)?;
+        let col_stats = if ColumnRangeStatistics::supports_dtype(&daft_field.dtype) {
             let stats = col
                 .statistics()
                 .transpose()
                 .context(super::UnableToParseParquetColumnStatisticsSnafu)?;
             let col_stats: Option<Wrap<ColumnRangeStatistics>> =
                 stats.and_then(|v| v.as_ref().try_into().ok());
-            let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing.into());
-            columns.insert(
-                col.descriptor().path_in_schema.get(0).unwrap().clone(),
-                col_stats.0,
-            );
-        }
-
-        Ok(TableStatistics { columns }.into())
+            col_stats.unwrap_or(ColumnRangeStatistics::Missing.into())
+        } else {
+            ColumnRangeStatistics::Missing.into()
+        };
+        columns.insert(top_level_column_name.clone(), col_stats.0);
     }
-}
 
-pub fn row_group_metadata_to_table_stats(
-    metadata: &crate::metadata::RowGroupMetaData,
-) -> DaftResult<TableStatistics> {
-    let result = Wrap::<TableStatistics>::try_from(metadata)?;
-    Ok(result.0)
+    Ok(TableStatistics { columns })
 }

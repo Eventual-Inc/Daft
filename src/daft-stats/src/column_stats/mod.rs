@@ -44,31 +44,35 @@ impl ColumnRangeStatistics {
                 assert_eq!(l.len(), 1);
                 assert_eq!(u.len(), 1);
                 assert_eq!(l.data_type(), u.data_type());
-
-                match l.data_type() {
-                    // SUPPORTED TYPES:
-                    // Null
-                    DataType::Null |
-
-                    // Numeric types
-                    DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128 |
-                    DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
-                    DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
-
-                    // String types
-                    DataType::Utf8 | DataType::Binary |
-
-                    // Temporal types
-                    DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) => Ok(ColumnRangeStatistics::Loaded(l, u)),
-
-                    // UNSUPPORTED TYPES:
-                    // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-                    DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => Ok(ColumnRangeStatistics::Missing),
-                    #[cfg(feature = "python")]
-                    DataType::Python => Ok(ColumnRangeStatistics::Missing),
-                }
+                assert!(ColumnRangeStatistics::supports_dtype(l.data_type()));
+                Ok(ColumnRangeStatistics::Loaded(l, u))
             }
             _ => Ok(ColumnRangeStatistics::Missing),
+        }
+    }
+
+    pub fn supports_dtype(dtype: &DataType) -> bool {
+        match dtype {
+            // SUPPORTED TYPES:
+            // Null
+            DataType::Null |
+
+            // Numeric types
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128 |
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+            DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
+
+            // String types
+            DataType::Utf8 | DataType::Binary |
+
+            // Temporal types
+            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) => true,
+
+            // UNSUPPORTED TYPES:
+            // Types that don't support comparisons and can't be used as ColumnRangeStatistics
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => false,
+            #[cfg(feature = "python")]
+            DataType::Python => false,
         }
     }
 

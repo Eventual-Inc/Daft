@@ -612,15 +612,28 @@ pub(crate) fn read_parquet_into_micropartition(
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
     }
 
+    // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
-
     let metadata = runtime_handle.block_on(async move {
         read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats).await
     })?;
+
+    // Retrieve a unioned Schema
+    let schemas = metadata
+        .iter()
+        .map(|m| {
+            let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+            let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+            DaftResult::Ok(daft_schema)
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
+    let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
+
+    // Deserialize and collect relevant TableStatistics
     let any_stats_avail = metadata
         .iter()
         .flat_map(|m| m.row_groups.iter())
@@ -630,9 +643,9 @@ pub(crate) fn read_parquet_into_micropartition(
         let stat_per_table = metadata
             .iter()
             .flat_map(|fm| {
-                fm.row_groups
-                    .iter()
-                    .map(daft_parquet::row_group_metadata_to_table_stats)
+                fm.row_groups.iter().map(|rgm| {
+                    daft_parquet::row_group_metadata_to_table_stats(rgm, &full_daft_schema)
+                })
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
         stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
@@ -640,20 +653,8 @@ pub(crate) fn read_parquet_into_micropartition(
         None
     };
 
-    let schemas = metadata
-        .iter()
-        .map(|m| {
-            let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-            let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
-            DaftResult::Ok(daft_schema)
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
-
-    let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
-
-    let daft_schema = unioned_schema.expect("we need at least 1 schema");
-
-    let daft_schema = prune_fields_from_schema(daft_schema, columns)?;
+    // Prune the schema using the specified `columns`
+    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
 
     // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
     let total_rows_no_limit = match &row_groups {
@@ -677,7 +678,7 @@ pub(crate) fn read_parquet_into_micropartition(
     if let Some(stats) = stats {
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
-        let daft_schema = Arc::new(daft_schema);
+        let daft_schema = Arc::new(pruned_daft_schema);
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {
@@ -750,10 +751,10 @@ pub(crate) fn read_parquet_into_micropartition(
         )?;
         let all_tables = all_tables
             .into_iter()
-            .map(|t| t.cast_to_schema(&daft_schema))
+            .map(|t| t.cast_to_schema(&pruned_daft_schema))
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(MicroPartition::new_loaded(
-            Arc::new(daft_schema),
+            Arc::new(pruned_daft_schema),
             all_tables.into(),
             None,
         ))
