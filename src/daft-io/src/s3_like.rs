@@ -798,6 +798,30 @@ impl ObjectSource for S3LikeSource {
             io_stats,
         )
         .await
+        .map(
+            // Filter the result stream for any size-0 File entries that end with "/"
+            // These are usually used to demarcate "empty folders", since S3 is not really a filesystem
+            // However they can lead to unexpected globbing behavior since most users do not expect them to exist
+            |result_stream| {
+                result_stream
+                    .filter_map(|fm| async move {
+                        match &fm {
+                            Ok(inner) => {
+                                if matches!(inner.filetype, FileType::File)
+                                    && inner.size.is_some_and(|s| s == 0)
+                                    && inner.filepath.ends_with(S3_DELIMITER)
+                                {
+                                    None
+                                } else {
+                                    Some(fm)
+                                }
+                            }
+                            Err(_) => Some(fm),
+                        }
+                    })
+                    .boxed()
+            },
+        )
     }
 
     async fn ls(
