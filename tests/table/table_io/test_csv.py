@@ -13,6 +13,7 @@ from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
+from daft.series import ARROW_VERSION
 from daft.table import Table, schema_inference, table_io
 
 
@@ -348,12 +349,17 @@ def test_csv_read_data_custom_comment(use_native_downloader):
                 "data": ['aa','aa'],
             }
         )
+        csv_options = None
+        if ARROW_VERSION >= (7, 0, 0):
+            csv_options = TableParseCSVOptions(comment='#'),
+
         table = table_io.read_csv(
             file,
             schema,
             storage_config=storage_config,
-            csv_options=TableParseCSVOptions(comment='#'),
+            csv_options=csv_options,
         )
+
 
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
