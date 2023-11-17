@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import decimal
 
 import pyarrow as pa
 import pytest
@@ -23,8 +24,12 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
         ([b"a", b"b", b""], pa.large_binary(), DataType.binary(), DataType.string()),
         ([True, False, None], pa.bool_(), DataType.bool(), DataType.bool()),
         ([None, None, None], pa.null(), DataType.null(), DataType.null()),
-        # TODO: This is broken, needs more investigation into why
-        # ([decimal.Decimal("1.23"), decimal.Decimal("1.24"), None], pa.decimal128(16, 8), DataType.decimal128(16, 8), DataType.float64()),
+        (
+            [decimal.Decimal("1.23"), decimal.Decimal("1.24"), None],
+            pa.decimal128(16, 8),
+            DataType.decimal128(16, 8),
+            DataType.float64(),
+        ),
         ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date32(), DataType.date(), DataType.date()),
         (
             [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
