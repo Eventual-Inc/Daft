@@ -186,17 +186,9 @@ where
         )?
     } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
         // Cast from logical Arrow2 type to logical Arrow2 type.
-        let arrow_logical = cast(
+        cast(
             to_cast.data(),
             &target_arrow_type,
-            CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )?;
-        cast(
-            arrow_logical.as_ref(),
-            &target_arrow_physical_type,
             CastOptions {
                 wrapped: true,
                 partial: false,
