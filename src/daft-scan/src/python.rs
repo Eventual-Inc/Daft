@@ -271,6 +271,7 @@ partitioning_keys:\n",
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
         ) -> PyResult<Self> {
+            // TODO(Sammy): This should parsed from the operator and passed in here
             let empty_pspec = PartitionSpec {
                 keys: Table::empty(None)?,
             };
