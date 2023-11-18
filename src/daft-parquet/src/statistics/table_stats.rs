@@ -3,7 +3,7 @@ use daft_core::schema::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
-use super::Wrap;
+use super::column_range::parquet_statistics_to_column_range_statistics;
 
 use indexmap::IndexMap;
 
@@ -31,14 +31,16 @@ pub fn row_group_metadata_to_table_stats(
         .iter()
         .map(|(field_name, field)| {
             if ColumnRangeStatistics::supports_dtype(&field.dtype) {
-                let stats: Wrap<ColumnRangeStatistics> = parquet_column_metadata
+                let stats: ColumnRangeStatistics = parquet_column_metadata
                     .remove(field_name)
                     .expect("Cannot find parsed Daft field in Parquet rowgroup metadata")
                     .transpose()
                     .context(super::UnableToParseParquetColumnStatisticsSnafu)?
-                    .and_then(|v| v.as_ref().try_into().ok())
-                    .unwrap_or(ColumnRangeStatistics::Missing.into());
-                Ok((field_name.clone(), stats.0))
+                    .and_then(|v| {
+                        parquet_statistics_to_column_range_statistics(v.as_ref(), &field.dtype).ok()
+                    })
+                    .unwrap_or(ColumnRangeStatistics::Missing);
+                Ok((field_name.clone(), stats))
             } else {
                 Ok((field_name.clone(), ColumnRangeStatistics::Missing))
             }

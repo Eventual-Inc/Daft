@@ -4,7 +4,7 @@ use daft_core::{
         logical::{DateArray, Decimal128Array, TimestampArray},
         BinaryArray, BooleanArray, Int128Array, Int32Array, Int64Array, Utf8Array,
     },
-    IntoSeries, Series,
+    DataType, IntoSeries, Series,
 };
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
@@ -15,7 +15,7 @@ use parquet2::{
 };
 use snafu::{OptionExt, ResultExt};
 
-use super::{MissingParquetColumnStatisticsSnafu, Wrap};
+use super::{DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, Wrap};
 
 use super::utils::*;
 use super::UnableToParseUtf8FromBinarySnafu;
@@ -392,43 +392,56 @@ fn convert_int96_column_range_statistics(
     Ok(ColumnRangeStatistics::Missing)
 }
 
-impl TryFrom<&dyn Statistics> for Wrap<ColumnRangeStatistics> {
-    type Error = super::Error;
+pub(crate) fn parquet_statistics_to_column_range_statistics(
+    pq_stats: &dyn Statistics,
+    daft_dtype: &DataType,
+) -> Result<ColumnRangeStatistics, super::Error> {
+    // Create ColumnRangeStatistics containing Series objects that are the **physical** types parsed from Parquet
+    let ptype = pq_stats.physical_type();
+    let stats = pq_stats.as_any();
+    let daft_stats = match ptype {
+        PhysicalType::Boolean => stats
+            .downcast_ref::<BooleanStatistics>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::Int32 => stats
+            .downcast_ref::<PrimitiveStatistics<i32>>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::Int64 => stats
+            .downcast_ref::<PrimitiveStatistics<i64>>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::Int96 => Ok(convert_int96_column_range_statistics(
+            stats
+                .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
+                .unwrap(),
+        )?),
+        PhysicalType::Float => stats
+            .downcast_ref::<PrimitiveStatistics<f32>>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::Double => stats
+            .downcast_ref::<PrimitiveStatistics<f64>>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::ByteArray => stats
+            .downcast_ref::<BinaryStatistics>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+        PhysicalType::FixedLenByteArray(_) => stats
+            .downcast_ref::<FixedLenStatistics>()
+            .unwrap()
+            .try_into()
+            .map(|wrap: Wrap<ColumnRangeStatistics>| wrap.0),
+    };
 
-    fn try_from(value: &dyn Statistics) -> Result<Self, Self::Error> {
-        let ptype = value.physical_type();
-        let stats = value.as_any();
-        match ptype {
-            PhysicalType::Boolean => stats
-                .downcast_ref::<BooleanStatistics>()
-                .unwrap()
-                .try_into(),
-            PhysicalType::Int32 => stats
-                .downcast_ref::<PrimitiveStatistics<i32>>()
-                .unwrap()
-                .try_into(),
-            PhysicalType::Int64 => stats
-                .downcast_ref::<PrimitiveStatistics<i64>>()
-                .unwrap()
-                .try_into(),
-            PhysicalType::Int96 => Ok(Wrap(convert_int96_column_range_statistics(
-                stats
-                    .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
-                    .unwrap(),
-            )?)),
-            PhysicalType::Float => stats
-                .downcast_ref::<PrimitiveStatistics<f32>>()
-                .unwrap()
-                .try_into(),
-            PhysicalType::Double => stats
-                .downcast_ref::<PrimitiveStatistics<f64>>()
-                .unwrap()
-                .try_into(),
-            PhysicalType::ByteArray => stats.downcast_ref::<BinaryStatistics>().unwrap().try_into(),
-            PhysicalType::FixedLenByteArray(_) => stats
-                .downcast_ref::<FixedLenStatistics>()
-                .unwrap()
-                .try_into(),
-        }
-    }
+    // Cast to ensure that the ColumnRangeStatistics now contain the targeted Daft **logical** type
+    daft_stats.and_then(|s| s.cast(daft_dtype).context(DaftStatsSnafu))
 }

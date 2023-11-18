@@ -142,6 +142,17 @@ impl ColumnRangeStatistics {
         let _num_bytes = series.size_bytes().unwrap();
         Self::Loaded(lower, upper)
     }
+
+    /// Casts the internal [`Series`] objects to the specified DataType
+    pub fn cast(&self, dtype: &DataType) -> crate::Result<Self> {
+        match self {
+            ColumnRangeStatistics::Missing => Ok(ColumnRangeStatistics::Missing),
+            ColumnRangeStatistics::Loaded(l, r) => Ok(ColumnRangeStatistics::Loaded(
+                l.cast(dtype).context(DaftCoreComputeSnafu)?,
+                r.cast(dtype).context(DaftCoreComputeSnafu)?,
+            )),
+        }
+    }
 }
 
 impl std::fmt::Display for ColumnRangeStatistics {
