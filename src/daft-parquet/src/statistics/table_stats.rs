@@ -12,6 +12,7 @@ pub fn row_group_metadata_to_table_stats(
     schema: &Schema,
 ) -> DaftResult<TableStatistics> {
     let mut columns = IndexMap::new();
+    // TODO: Iterate over schema instead
     for col in metadata.columns() {
         let top_level_column_name = col
             .descriptor()

@@ -281,6 +281,7 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        // TODO: Validate schemas on statistics
         if statistics.columns.len() != schema.fields.len() {
             panic!("MicroPartition: TableStatistics and Schema have differing lengths")
         }
@@ -306,6 +307,7 @@ impl MicroPartition {
         tables: Arc<Vec<Table>>,
         statistics: Option<TableStatistics>,
     ) -> Self {
+        // TODO: Validate schemas on tables and statistics
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
         MicroPartition {
             schema,
@@ -356,6 +358,8 @@ impl MicroPartition {
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
+
+                // TODO: validate schema
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
@@ -644,6 +648,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .iter()
             .flat_map(|fm| {
                 fm.row_groups.iter().map(|rgm| {
+                    // TODO: pass in each file's schema instead of unified schema
                     daft_parquet::row_group_metadata_to_table_stats(rgm, &full_daft_schema)
                 })
             })
