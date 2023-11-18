@@ -86,10 +86,21 @@ impl Schema {
         }
     }
 
-    /// Checks if [`self`] is a strict subset of `other`
-    /// The types and names of each Field have to match exactly.
-    pub fn is_subset(&self, _other: &Schema) -> bool {
-        todo!("Implement Schema::is_subset");
+    /// Checks if [`self`] is a strict subset of `other` based on their fields' equality
+    pub fn is_subset(&self, other: &Schema) -> bool {
+        for (field_name, self_field) in self.fields.iter() {
+            match other.fields.get(field_name) {
+                None => {
+                    return false;
+                }
+                Some(other_field) => {
+                    if self_field != other_field {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 
     pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
