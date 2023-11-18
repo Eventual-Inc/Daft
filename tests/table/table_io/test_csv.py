@@ -13,6 +13,7 @@ from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
+from daft.series import ARROW_VERSION
 from daft.table import Table, schema_inference, table_io
 
 
@@ -43,11 +44,11 @@ def test_read_input(tmpdir):
 
 
 @contextlib.contextmanager
-def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], delimiter: str = ","):
+def _csv_write_helper(header: list[str] | None, data: list[list[str | None]], **kwargs):
     with tempfile.TemporaryDirectory() as directory_name:
         file = os.path.join(directory_name, "tempfile")
         with open(file, "w", newline="") as f:
-            writer = csv.writer(f, delimiter=delimiter)
+            writer = csv.writer(f, **kwargs)
             if header is not None:
                 writer.writerow(header)
             writer.writerows(data)
@@ -263,3 +264,99 @@ def test_csv_read_data_csv_no_header(use_native_downloader):
             read_options=TableReadOptions(column_names=["id", "data"]),
         )
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_csv_read_data_csv_custom_quote(use_native_downloader):
+    with _csv_write_helper(
+        header=["'id'", "'data'"],
+        data=[
+            ["1", "'aa'"],
+            ["2", "aa"],
+            ["3", "aa"],
+        ],
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "id": [1, 2, 3],
+                "data": ["aa", "aa", "aa"],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(quote="'"),
+        )
+
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+
+
+# TODO this test still fails with use_native_downloader = True
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_csv_read_data_custom_escape(use_native_downloader):
+    with _csv_write_helper(
+        header=["id", "data"],
+        data=[
+            ["1", 'a"a"a'],
+            ["2", "aa"],
+            ["3", "aa"],
+        ],
+        quotechar='"',
+        escapechar="\\",
+        doublequote=False,
+        quoting=csv.QUOTE_ALL,
+    ) as f:
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "id": [1, 2, 3],
+                "data": ['a"a"a', "aa", "aa"],
+            }
+        )
+        table = table_io.read_csv(
+            f,
+            schema,
+            storage_config=storage_config,
+            csv_options=TableParseCSVOptions(escape_char="\\", double_quote=False),
+        )
+
+        assert table.to_arrow() == expected.to_arrow(), f"Received:\n{table}\n\nExpected:\n{expected}"
+
+
+# TODO Not testing use_native_downloader = False, as pyarrow does not support comments directly
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_csv_read_data_custom_comment(use_native_downloader):
+
+    with tempfile.TemporaryDirectory() as directory_name:
+        file = os.path.join(directory_name, "tempfile")
+        with open(file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "data"])
+            writer.writerow(["1", "aa"])
+            f.write("# comment line\n")
+            writer.writerow(["3", "aa"])
+
+        storage_config = storage_config_from_use_native_downloader(use_native_downloader)
+
+        schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
+        expected = Table.from_pydict(
+            {
+                "id": [1, 3],
+                "data": ["aa", "aa"],
+            }
+        )
+        # Skipping test for arrow < 7.0.0 as comments are not supported in pyarrow
+        if ARROW_VERSION >= (7, 0, 0):
+            table = table_io.read_csv(
+                file,
+                schema,
+                storage_config=storage_config,
+                csv_options=TableParseCSVOptions(comment="#"),
+            )
+            assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"

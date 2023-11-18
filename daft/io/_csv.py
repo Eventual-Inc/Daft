@@ -18,16 +18,19 @@ from daft.io.common import _get_tabular_files_scan
 
 @PublicAPI
 def read_csv(
-    path: Union[str, List[str]],
-    schema_hints: Optional[Dict[str, DataType]] = None,
-    has_headers: bool = True,
-    column_names: Optional[List[str]] = None,
-    delimiter: str = ",",
-    double_quote: bool = True,
-    io_config: Optional["IOConfig"] = None,
-    use_native_downloader: bool = True,
-    _buffer_size: Optional[int] = None,
-    _chunk_size: Optional[int] = None,
+        path: Union[str, List[str]],
+        schema_hints: Optional[Dict[str, DataType]] = None,
+        has_headers: bool = True,
+        column_names: Optional[List[str]] = None,
+        delimiter: Optional[str] = None,
+        double_quote: bool = True,
+        quote: Optional[str] = None,
+        escape_char: Optional[str] = None,
+        comment: Optional[str] = None,
+        io_config: Optional["IOConfig"] = None,
+        use_native_downloader: bool = True,
+        _buffer_size: Optional[int] = None,
+        _chunk_size: Optional[int] = None,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s)
 
@@ -65,6 +68,9 @@ def read_csv(
         delimiter=delimiter,
         has_headers=has_headers,
         double_quote=double_quote,
+        quote=quote,
+        escape_char=escape_char,
+        comment=comment,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
     )

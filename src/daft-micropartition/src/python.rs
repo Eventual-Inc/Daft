@@ -378,27 +378,21 @@ impl PyMicroPartition {
         include_columns: Option<Vec<&str>>,
         num_rows: Option<usize>,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         schema: Option<PySchema>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-        let delimiter = delimiter
-            .map(|delimiter| match delimiter.as_bytes() {
-                [c] => Ok(*c),
-                _ => Err(PyValueError::new_err(
-                    "Provided CSV delimiter must be a 1-byte character",
-                )),
-            })
-            .transpose()?;
 
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
-
             crate::micropartition::read_csv_into_micropartition(
                 [uri].as_ref(),
                 column_names,
@@ -407,6 +401,9 @@ impl PyMicroPartition {
                 has_header.unwrap_or(true),
                 delimiter,
                 double_quote.unwrap_or(true),
+                quote,
+                escape_char,
+                comment,
                 io_config,
                 multithreaded_io.unwrap_or(true),
                 Some(io_stats),
@@ -622,7 +619,7 @@ pub(crate) fn read_csv_into_py_table(
     py: Python,
     uri: &str,
     has_header: bool,
-    delimiter: &str,
+    delimiter: Option<char>,
     double_quote: bool,
     schema: PySchema,
     storage_config: PyStorageConfig,

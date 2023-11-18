@@ -18,7 +18,7 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::DaftCoreComputeSnafu;
+use crate::{DaftCoreComputeSnafu};
 #[cfg(feature = "python")]
 use crate::PyIOSnafu;
 
@@ -150,8 +150,11 @@ fn materialize_scan_task(
                             column_names.clone(),
                             scan_task.pushdowns.limit,
                             cfg.has_headers,
-                            Some(cfg.delimiter.as_bytes()[0]),
+                            cfg.delimiter,
                             cfg.double_quote,
+                            cfg.quote,
+                            cfg.escape_char,
+                            cfg.comment,
                             io_client.clone(),
                             io_stats.clone(),
                             native_storage_config.multithreaded_io,
@@ -211,7 +214,7 @@ fn materialize_scan_task(
                             py,
                             url,
                             *has_headers,
-                            delimiter.as_str(),
+                            *delimiter,
                             *double_quote,
                             cast_to_schema.clone().into(),
                             scan_task.storage_config.clone().into(),
@@ -539,8 +542,11 @@ pub(crate) fn read_csv_into_micropartition(
     include_columns: Option<Vec<&str>>,
     num_rows: Option<usize>,
     has_header: bool,
-    delimiter: Option<u8>,
+    delimiter: Option<char>,
     double_quote: bool,
+    quote: Option<char>,
+    escape_char: Option<char>,
+    comment: Option<char>,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
@@ -569,6 +575,9 @@ pub(crate) fn read_csv_into_micropartition(
                     has_header,
                     delimiter,
                     double_quote,
+                    quote,
+                    escape_char,
+                    comment,
                     io_client.clone(),
                     io_stats.clone(),
                     multithreaded_io,

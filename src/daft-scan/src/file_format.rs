@@ -7,7 +7,7 @@ use std::{str::FromStr, sync::Arc};
 use {
     daft_core::python::datatype::PyTimeUnit,
     pyo3::{
-        exceptions::PyValueError, pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy,
+        pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy,
         PyObject, PyResult, PyTypeInfo, Python, ToPyObject,
     },
 };
@@ -106,9 +106,12 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct CsvSourceConfig {
-    pub delimiter: String,
+    pub delimiter: Option<char>,
     pub has_headers: bool,
     pub double_quote: bool,
+    pub quote: Option<char>,
+    pub escape_char: Option<char>,
+    pub comment: Option<char>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -126,22 +129,22 @@ impl CsvSourceConfig {
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
     fn new(
-        delimiter: String,
+        delimiter: Option<char>,
         has_headers: bool,
         double_quote: bool,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-        if delimiter.as_bytes().len() != 1 {
-            return Err(PyValueError::new_err(format!(
-                "Cannot create CsvSourceConfig with delimiter with length: {}",
-                delimiter.len()
-            )));
-        }
         Ok(Self {
             delimiter,
             has_headers,
             double_quote,
+            quote,
+            escape_char,
+            comment,
             buffer_size,
             chunk_size,
         })

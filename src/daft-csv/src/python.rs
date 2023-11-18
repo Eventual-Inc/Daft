@@ -6,19 +6,7 @@ pub mod pylib {
     use daft_core::python::schema::PySchema;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
-    use pyo3::{exceptions::PyValueError, pyfunction, PyResult, Python};
-
-    fn str_delimiter_to_byte(delimiter: Option<&str>) -> PyResult<Option<u8>> {
-        delimiter
-            .map(|s| match s.as_bytes() {
-                &[c] => Ok(c),
-                _ => Err(PyValueError::new_err(format!(
-                    "Delimiter must be a single-character string, but got {}",
-                    s
-                ))),
-            })
-            .transpose()
-    }
+    use pyo3::{pyfunction, PyResult, Python};
 
     #[pyfunction]
     #[allow(clippy::too_many_arguments)]
@@ -29,8 +17,11 @@ pub mod pylib {
         include_columns: Option<Vec<&str>>,
         num_rows: Option<usize>,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         schema: Option<PySchema>,
@@ -50,8 +41,11 @@ pub mod pylib {
                 include_columns,
                 num_rows,
                 has_header.unwrap_or(true),
-                str_delimiter_to_byte(delimiter)?,
+                delimiter,
                 double_quote.unwrap_or(true),
+                quote,
+                escape_char,
+                comment,
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
@@ -70,8 +64,11 @@ pub mod pylib {
         py: Python,
         uri: &str,
         has_header: Option<bool>,
-        delimiter: Option<&str>,
+        delimiter: Option<char>,
         double_quote: Option<bool>,
+        quote: Option<char>,
+        escape_char: Option<char>,
+        comment: Option<char>,
         max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
@@ -86,8 +83,11 @@ pub mod pylib {
             let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
                 uri,
                 has_header.unwrap_or(true),
-                str_delimiter_to_byte(delimiter)?,
+                delimiter,
                 double_quote.unwrap_or(true),
+                quote,
+                escape_char,
+                comment,
                 max_bytes,
                 io_client,
                 Some(io_stats),

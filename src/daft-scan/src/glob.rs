@@ -173,13 +173,19 @@ impl GlobScanOperator {
                         delimiter,
                         has_headers,
                         double_quote,
+                        quote,
+                        escape_char,
+                        comment,
                         ..
                     }) => {
                         let (schema, _, _, _, _) = daft_csv::metadata::read_csv_schema(
                             first_filepath.as_str(),
                             *has_headers,
-                            Some(delimiter.as_bytes()[0]),
+                            *delimiter,
                             *double_quote,
+                            *quote,
+                            *escape_char,
+                            *comment,
                             None,
                             io_client,
                             Some(io_stats),
