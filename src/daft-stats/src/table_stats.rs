@@ -26,6 +26,14 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
+    /// Returns the associated Schema
+    ///
+    /// NOTE: Even if a given column's statistics are [`ColumnRangeStatistics::Missing`], we will still
+    /// return the column's field name and dtype appropriately
+    pub fn schema(&self) -> Schema {
+        todo!("Implement schema functionality for TableStatistics");
+    }
+
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self

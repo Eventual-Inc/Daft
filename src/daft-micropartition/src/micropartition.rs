@@ -275,16 +275,26 @@ fn materialize_scan_task(
 }
 
 impl MicroPartition {
+    /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
+    ///
+    /// Schema invariants:
+    /// 1. `schema` must be a strict subset of the `scan_task` schema (applying "column pruning")
+    /// 2. `schema` must be a strict subset of the `statistics` schema
     pub fn new_unloaded(
         schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        // TODO: Validate schemas on statistics
-        if statistics.columns.len() != schema.fields.len() {
-            panic!("MicroPartition: TableStatistics and Schema have differing lengths")
-        }
+        assert!(
+            schema.is_subset(&statistics.schema()),
+            "Unloaded MicroPartition's schema must be a subset of its statistics' schema"
+        );
+        assert!(
+            schema.is_subset(&scan_task.schema),
+            "Unloaded MicroPartition's schema must be a subset of its ScanTask's schema"
+        );
+
         if !statistics
             .columns
             .keys()
@@ -302,12 +312,30 @@ impl MicroPartition {
         }
     }
 
+    /// Create a new "loaded" MicroPartition using the materialized tables
+    ///
+    /// Schema invariants:
+    /// 1. `schema` must match each Table's schema exactly
+    /// 2. `schema` must be a strict subset of the `statistics` schema exactly, if provided
     pub fn new_loaded(
         schema: SchemaRef,
         tables: Arc<Vec<Table>>,
         statistics: Option<TableStatistics>,
     ) -> Self {
-        // TODO: Validate schemas on tables and statistics
+        assert!(
+            statistics
+                .as_ref()
+                .map(|stats| schema.is_subset(&stats.schema()))
+                .unwrap_or(true),
+            "Loaded MicroPartition's statistics' schema must be a subset of its statistics' schema"
+        );
+        for table in tables.iter() {
+            assert!(
+                table.schema == schema,
+                "Loaded MicroPartition's tables' schema must match its own schema exactly"
+            );
+        }
+
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
         MicroPartition {
             schema,

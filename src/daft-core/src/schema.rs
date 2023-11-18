@@ -86,6 +86,12 @@ impl Schema {
         }
     }
 
+    /// Checks if [`self`] is a strict subset of `other`
+    /// The types and names of each Field have to match exactly.
+    pub fn is_subset(&self, _other: &Schema) -> bool {
+        todo!("Implement Schema::is_subset");
+    }
+
     pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
         let arrow_fields: DaftResult<Vec<arrow2::datatypes::Field>> =
             self.fields.iter().map(|(_, f)| f.to_arrow()).collect();
