@@ -389,7 +389,6 @@ impl PyMicroPartition {
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
-
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();

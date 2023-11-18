@@ -29,7 +29,6 @@ use crate::metadata::read_csv_schema_single;
 use crate::{compression::CompressionCodec, ArrowSnafu, Error};
 use daft_decoding::deserialize::deserialize_column;
 
-
 pub fn char_to_byte(c: Option<char>) -> Result<Option<u8>, Error> {
     match c.map(u8::try_from).transpose() {
         Ok(b) => Ok(b),
@@ -624,7 +623,19 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None,None, None,None, None, None);
+            check_equal_local_arrow2(
+                file.as_ref(),
+                &table,
+                true,
+                None,
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
         }
 
         Ok(())
@@ -878,10 +889,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_escape() -> DaftResult<()> {
-        let file = format!(
-            "{}/test/iris_tiny_escape.csv",
-            env!("CARGO_MANIFEST_DIR"),
-        );
+        let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -938,10 +946,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_comment() -> DaftResult<()> {
-        let file = format!(
-            "{}/test/iris_tiny_comment.csv",
-            env!("CARGO_MANIFEST_DIR"),
-        );
+        let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1035,7 +1040,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None,None, None, None, None, Some(5));
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(5),
+        );
 
         Ok(())
     }
@@ -1198,7 +1215,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None,None, None, None, None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         Ok(())
     }
@@ -1243,7 +1272,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None,None, None, None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         Ok(())
     }
@@ -1288,7 +1329,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None,None,None, None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         Ok(())
     }
@@ -1333,7 +1386,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None,None, None, None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         Ok(())
     }
@@ -1504,7 +1569,19 @@ mod tests {
             ])?
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, true, None, true, None, None,None, None, None, None);
+        check_equal_local_arrow2(
+            file.as_ref(),
+            &table,
+            true,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         Ok(())
     }

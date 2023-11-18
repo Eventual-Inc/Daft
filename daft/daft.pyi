@@ -185,23 +185,23 @@ class CsvSourceConfig:
     Configuration of a CSV data source.
     """
 
-    delimiter: str
+    delimiter: str | None
     has_headers: bool
     double_quote: bool
-    quote: str
-    escape_char: str
-    comment: str
+    quote: str | None
+    escape_char: str | None
+    comment: str | None
     buffer_size: int | None
     chunk_size: int | None
 
     def __init__(
         self,
-        delimiter: str,
         has_headers: bool,
         double_quote: bool,
-        quote: str,
-        escape_char: str,
-        comment: str,
+        delimiter: str | None,
+        quote: str | None,
+        escape_char: str | None,
+        comment: str | None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
     ): ...

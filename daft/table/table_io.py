@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import IO, Union
 from uuid import uuid4
 
@@ -22,7 +22,6 @@ from daft.runners.partitioning import (
     TableReadOptions,
 )
 from daft.table import Table
-from collections.abc import Callable
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -184,11 +183,14 @@ class PACSVStreamHelper:
     def __iter__(self) -> PACSVStreamHelper:
         return self
 
+
 def skip_comment(comment: str | None) -> Callable | None:
     if comment is None:
         return None
     else:
-        return lambda row: 'skip' if row.text.startswith(comment) else 'error'
+        return lambda row: "skip" if row.text.startswith(comment) else "error"
+
+
 def read_csv(
     file: FileInput,
     schema: Schema,
@@ -243,7 +245,9 @@ def read_csv(
         from daft.utils import ARROW_VERSION
 
         if csv_options.comment is not None and ARROW_VERSION < (7, 0, 0):
-            raise ValueError("pyarrow < 7.0.0 doesn't support handling comments in CSVs, please upgrade pyarrow to 7.0.0+.")
+            raise ValueError(
+                "pyarrow < 7.0.0 doesn't support handling comments in CSVs, please upgrade pyarrow to 7.0.0+."
+            )
 
         parse_options = pacsv.ParseOptions(
             delimiter=csv_options.delimiter,
