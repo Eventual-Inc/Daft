@@ -625,7 +625,7 @@ pub(crate) fn read_parquet_into_micropartition(
         read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats).await
     })?;
 
-    // Retrieve a unioned Schema
+    // Deserialize and collect relevant TableStatistics
     let schemas = metadata
         .iter()
         .map(|m| {
@@ -634,10 +634,6 @@ pub(crate) fn read_parquet_into_micropartition(
             DaftResult::Ok(daft_schema)
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
-    let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
-
-    // Deserialize and collect relevant TableStatistics
     let any_stats_avail = metadata
         .iter()
         .flat_map(|m| m.row_groups.iter())
@@ -646,11 +642,11 @@ pub(crate) fn read_parquet_into_micropartition(
     let stats = if any_stats_avail {
         let stat_per_table = metadata
             .iter()
-            .flat_map(|fm| {
-                fm.row_groups.iter().map(|rgm| {
-                    // TODO: pass in each file's schema instead of unified schema
-                    daft_parquet::row_group_metadata_to_table_stats(rgm, &full_daft_schema)
-                })
+            .zip(schemas.iter())
+            .flat_map(|(fm, schema)| {
+                fm.row_groups
+                    .iter()
+                    .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
         stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
@@ -658,7 +654,9 @@ pub(crate) fn read_parquet_into_micropartition(
         None
     };
 
-    // Prune the schema using the specified `columns`
+    // Union and prune the schema using the specified `columns`
+    let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
+    let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
     let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
 
     // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
