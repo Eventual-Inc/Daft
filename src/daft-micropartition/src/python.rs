@@ -438,6 +438,7 @@ impl PyMicroPartition {
             crate::micropartition::read_parquet_into_micropartition(
                 [uri].as_ref(),
                 columns.as_deref(),
+                None,
                 start_offset,
                 num_rows,
                 row_groups.map(|rg| vec![Some(rg)]),
@@ -476,6 +477,7 @@ impl PyMicroPartition {
             crate::micropartition::read_parquet_into_micropartition(
                 uris.as_ref(),
                 columns.as_deref(),
+                None,
                 start_offset,
                 num_rows,
                 row_groups,

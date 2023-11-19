@@ -83,10 +83,8 @@ class LogicalPlanBuilder:
         cls,
         *,
         scan_operator: ScanOperatorHandle,
-        schema_hint: Schema | None,
     ) -> LogicalPlanBuilder:
-        pyschema = schema_hint._schema if schema_hint is not None else None
-        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator, pyschema)
+        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator)
         return cls(builder)
 
     @classmethod

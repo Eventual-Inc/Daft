@@ -77,14 +77,14 @@ pub mod pylib {
             glob_path: Vec<&str>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
-            schema: Option<PySchema>,
+            schema_hint: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
                     glob_path.as_slice(),
                     file_format_config.into(),
                     storage_config.into(),
-                    schema.map(|s| s.schema),
+                    schema_hint.map(|s| s.schema),
                 )?);
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),

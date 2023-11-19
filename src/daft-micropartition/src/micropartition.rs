@@ -348,6 +348,7 @@ impl MicroPartition {
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
+                    Some(schema),
                     None,
                     scan_task.pushdowns.limit,
                     row_groups,
@@ -615,6 +616,7 @@ pub(crate) fn read_csv_into_micropartition(
 pub(crate) fn read_parquet_into_micropartition(
     uris: &[&str],
     columns: Option<&[&str]>,
+    schema: Option<SchemaRef>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
@@ -659,8 +661,18 @@ pub(crate) fn read_parquet_into_micropartition(
     let schemas = metadata
         .iter()
         .map(|m| {
-            let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-            let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+            // if schema provided use schema, else use inferred schema
+            let daft_schema = match schema.as_ref() {
+                Some(s) => Schema {
+                    fields: s.fields.clone(),
+                },
+                None => {
+                    let inferred_schema =
+                        infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                    daft_core::schema::Schema::try_from(&inferred_schema)?
+                }
+            };
+
             DaftResult::Ok(daft_schema)
         })
         .collect::<DaftResult<Vec<_>>>()?;
