@@ -18,7 +18,7 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::{DaftCoreComputeSnafu};
+use crate::DaftCoreComputeSnafu;
 #[cfg(feature = "python")]
 use crate::PyIOSnafu;
 

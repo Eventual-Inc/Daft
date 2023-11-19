@@ -12,12 +12,13 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
+use crate::read::char_to_byte;
 use crate::{compression::CompressionCodec, schema::merge_schema};
 use daft_decoding::inference::infer;
-use crate::read::char_to_byte;
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_csv_schema(
     uri: &str,
     has_header: bool,
@@ -50,6 +51,7 @@ pub fn read_csv_schema(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn read_csv_schema_single(
     uri: &str,
     has_header: bool,
@@ -99,6 +101,7 @@ pub(crate) async fn read_csv_schema_single(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_schema_from_compressed_reader<R>(
     reader: R,
     compression_codec: Option<CompressionCodec>,
@@ -143,6 +146,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_schema_from_uncompressed_reader<R>(
     reader: R,
     has_header: bool,
@@ -177,6 +181,7 @@ where
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
     has_header: bool,
