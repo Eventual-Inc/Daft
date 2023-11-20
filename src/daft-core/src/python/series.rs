@@ -272,6 +272,10 @@ impl PySeries {
         Ok(self.series.dt_day()?.into())
     }
 
+    pub fn dt_hour(&self) -> PyResult<Self> {
+        Ok(self.series.dt_hour()?.into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         Ok(self.series.dt_month()?.into())
     }

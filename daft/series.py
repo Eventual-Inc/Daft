@@ -565,6 +565,9 @@ class SeriesDateNamespace(SeriesNamespace):
     def day(self) -> Series:
         return Series._from_pyseries(self._series.dt_day())
 
+    def hour(self) -> Series:
+        return Series._from_pyseries(self._series.dt_hour())
+
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
 

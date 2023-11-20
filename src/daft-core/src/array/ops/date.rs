@@ -6,7 +6,7 @@ use crate::{
     DataType,
 };
 use arrow2::compute::arithmetics::ArraySub;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Timelike};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
@@ -106,5 +106,41 @@ impl TimestampArray {
             Field::new(self.name(), DataType::Date),
             Int32Array::from((self.name(), Box::new(date_arrow))),
         ))
+    }
+
+    pub fn hour(&self) -> DaftResult<UInt32Array> {
+        let physical = self.physical.as_arrow();
+        let DataType::Timestamp(timeunit, tz) = self.data_type() else {
+            unreachable!("Timestamp array must have Timestamp datatype")
+        };
+        let tu = timeunit.to_arrow();
+        let date_arrow = match tz {
+            Some(tz) => match arrow2::temporal_conversions::parse_offset(tz) {
+                Ok(tz) => Ok(arrow2::array::UInt32Array::from_iter(physical.iter().map(
+                    |ts| {
+                        ts.map(|ts| {
+                            arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &tz).hour()
+                        })
+                    },
+                ))),
+                Err(e) => Err(DaftError::TypeError(format!(
+                    "Cannot parse timezone in Timestamp datatype: {}, error: {}",
+                    tz, e
+                ))),
+            },
+            None => Ok(arrow2::array::UInt32Array::from_iter(physical.iter().map(
+                |ts| {
+                    ts.map(|ts| {
+                        arrow2::temporal_conversions::timestamp_to_naive_datetime(*ts, tu).hour()
+                    })
+                },
+            ))),
+        }?;
+
+        Ok(UInt32Array::new(
+            std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
+            Box::new(date_arrow),
+        )
+        .unwrap_or(UInt32Array::from(("hour", vec![0]))))
     }
 }

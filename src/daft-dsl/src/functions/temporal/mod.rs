@@ -1,14 +1,15 @@
 mod date;
 mod day;
 mod day_of_week;
+mod hour;
 mod month;
 mod year;
 
 use serde::{Deserialize, Serialize};
 
 use crate::functions::temporal::{
-    date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, month::MonthEvaluator,
-    year::YearEvaluator,
+    date::DateEvaluator, day::DayEvaluator, day_of_week::DayOfWeekEvaluator, hour::HourEvaluator,
+    month::MonthEvaluator, year::YearEvaluator,
 };
 use crate::Expr;
 
@@ -17,6 +18,7 @@ use super::FunctionEvaluator;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TemporalExpr {
     Day,
+    Hour,
     Month,
     Year,
     DayOfWeek,
@@ -29,6 +31,7 @@ impl TemporalExpr {
         use TemporalExpr::*;
         match self {
             Day => &DayEvaluator {},
+            Hour => &HourEvaluator {},
             Month => &MonthEvaluator {},
             Year => &YearEvaluator {},
             DayOfWeek => &DayOfWeekEvaluator {},
@@ -47,6 +50,13 @@ pub fn date(input: &Expr) -> Expr {
 pub fn day(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Temporal(TemporalExpr::Day),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn hour(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Temporal(TemporalExpr::Hour),
         inputs: vec![input.clone()],
     }
 }
