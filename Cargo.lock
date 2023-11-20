@@ -238,7 +238,7 @@ dependencies = [
  "aws-http",
  "aws-sdk-sso",
  "aws-sdk-sts",
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-client",
  "aws-smithy-http",
  "aws-smithy-http-tower",
@@ -264,7 +264,7 @@ version = "0.55.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fcdb2f7acbc076ff5ad05e7864bdb191ca70a6fd07668dc3a1a8bcd051de5ae"
 dependencies = [
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-types",
  "fastrand 1.9.0",
  "tokio",
@@ -316,7 +316,7 @@ dependencies = [
  "aws-http",
  "aws-sig-auth",
  "aws-sigv4",
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-checksums",
  "aws-smithy-client",
  "aws-smithy-eventstream",
@@ -348,7 +348,7 @@ dependencies = [
  "aws-endpoint",
  "aws-http",
  "aws-sig-auth",
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-client",
  "aws-smithy-http",
  "aws-smithy-http-tower",
@@ -373,7 +373,7 @@ dependencies = [
  "aws-endpoint",
  "aws-http",
  "aws-sig-auth",
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-client",
  "aws-smithy-http",
  "aws-smithy-http-tower",
@@ -438,6 +438,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-async"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "133965d3038e4b79be8ceb7e0ccae2144ddf7b2abff5827d24dc451d559c56b9"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "aws-smithy-checksums"
 version = "0.55.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -464,7 +475,7 @@ version = "0.55.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a86aa6e21e86c4252ad6a0e3e74da9617295d8d6e374d552be7d3059c41cedd"
 dependencies = [
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-http",
  "aws-smithy-http-tower",
  "aws-smithy-types",
@@ -578,7 +589,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dd209616cc8d7bfb82f87811a5c655dc97537f592689b18743bddf5dc5c4829"
 dependencies = [
  "aws-credential-types",
- "aws-smithy-async",
+ "aws-smithy-async 0.55.3",
  "aws-smithy-client",
  "aws-smithy-http",
  "aws-smithy-types",
@@ -1176,7 +1187,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sig-auth",
  "aws-sigv4",
- "aws-smithy-async",
+ "aws-smithy-async 1.0.0",
  "aws-smithy-client",
  "azure_storage",
  "azure_storage_blobs",
