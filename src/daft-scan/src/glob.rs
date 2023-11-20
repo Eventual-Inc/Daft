@@ -8,12 +8,10 @@ use daft_io::{
 };
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
-use snafu::{ResultExt, Snafu};
-#[cfg(feature = "python")]
-use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
+use snafu::Snafu;
 
 use crate::{
-    file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
+    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
     DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
@@ -192,25 +190,13 @@ impl GlobScanOperator {
                 )?;
                 schema
             }
-            FileFormatConfig::Json(JsonSourceConfig {}) => {
-                // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
-                // a daft_json crate that gives us native JSON schema inference
-                match storage_config.as_ref() {
-                    StorageConfig::Native(_) => {
-                        todo!("Implement native JSON schema inference in a daft_json crate.")
-                    }
-                    #[cfg(feature = "python")]
-                    StorageConfig::Python(_) => Python::with_gil(|py| {
-                        crate::python::pylib::read_json_schema(
-                            py,
-                            first_filepath.as_str(),
-                            storage_config.clone().into(),
-                        )
-                        .and_then(|s| Ok(Schema::new(s.schema.fields.values().cloned().collect())?))
-                        .context(PyIOSnafu)
-                    })?,
-                }
-            }
+            FileFormatConfig::Json(_) => daft_json::metadata::read_json_schema(
+                first_filepath.as_str(),
+                None,
+                None,
+                io_client,
+                Some(io_stats),
+            )?,
         };
 
         let schema = match schema_hint {

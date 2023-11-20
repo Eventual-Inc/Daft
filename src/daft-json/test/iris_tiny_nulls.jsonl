@@ -1,0 +1,6 @@
+{"sepalLength": null, "sepalWidth": 3.5, "petalLength": 1.4, "petalWidth": 0.2, "species": "setosa"}
+{"sepalLength": 4.9, "sepalWidth": null, "petalLength": 1.4, "petalWidth": 0.2, "species": "setosa"}
+{"sepalLength": 4.7, "sepalWidth": 3.2, "petalLength": null, "petalWidth": 0.2, "species": "setosa"}
+{"sepalLength": 4.6, "sepalWidth": 3.1, "petalLength": 1.5, "petalWidth": null, "species": "setosa"}
+{"sepalLength": 5.0, "sepalWidth": 3.6, "petalLength": 1.4, "petalWidth": 0.2, "species": null}
+{"sepalLength": null, "sepalWidth": null, "petalLength": null, "petalWidth": null, "species": null}

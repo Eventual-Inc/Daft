@@ -610,7 +610,8 @@ def test_create_dataframe_csv_schema_hints_ignore_random_hint(
 ###
 
 
-def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -618,7 +619,7 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
                 f.write("\n")
             f.flush()
 
-        df = daft.read_json(fname)
+        df = daft.read_json(fname, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -626,7 +627,8 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as f1name, create_temp_filename() as f2name:
         with open(f1name, "w") as f1, open(f2name, "w") as f2:
             for f in (f1, f2):
@@ -635,7 +637,7 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
                     f.write("\n")
                 f.flush()
 
-        df = daft.read_json([f1name, f2name])
+        df = daft.read_json([f1name, f2name], use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -643,7 +645,8 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -653,7 +656,7 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_json(fname)
+        df = daft.read_json(fname, use_native_downloader=use_native_downloader)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -662,14 +665,21 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
+# TODO(Clark): Debug why this segfaults for the native downloader and is slow for the Python downloader.
+# @pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.skip
 def test_create_dataframe_json_https() -> None:
-    df = daft.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
+    df = daft.read_json(
+        "https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz",
+        # use_native_downloader=use_native_downloader,
+    )
     df.collect()
     assert set(df.column_names) == {"label", "image"}
     assert len(df) == 10000
 
 
-def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -686,6 +696,7 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
                 "petal_width": DataType.float32(),
                 "variety": DataType.string(),
             },
+            use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
 

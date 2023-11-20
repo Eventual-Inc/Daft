@@ -1,4 +1,4 @@
-use arrow2::datatypes::TimeUnit;
+use arrow2::datatypes::{DataType, TimeUnit};
 use chrono::Timelike;
 
 use crate::deserialize::{ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
@@ -16,7 +16,6 @@ use crate::deserialize::{ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
 /// * other utf8 is mapped to [`DataType::Utf8`]
 /// * invalid utf8 is mapped to [`DataType::Binary`]
 pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
-    use arrow2::datatypes::DataType;
     if is_null(bytes) {
         DataType::Null
     } else if is_boolean(bytes) {
@@ -26,20 +25,24 @@ pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
     } else if is_float(bytes) {
         DataType::Float64
     } else if let Ok(string) = simdutf8::basic::from_utf8(bytes) {
-        if is_date(string) {
-            DataType::Date32
-        } else if is_time(string) {
-            DataType::Time32(TimeUnit::Millisecond)
-        } else if let Some(time_unit) = is_naive_datetime(string) {
-            DataType::Timestamp(time_unit, None)
-        } else if let Some((time_unit, offset)) = is_datetime(string) {
-            DataType::Timestamp(time_unit, Some(offset))
-        } else {
-            DataType::Utf8
-        }
+        infer_string(string)
     } else {
         // invalid utf8
         DataType::Binary
+    }
+}
+
+pub fn infer_string(string: &str) -> DataType {
+    if is_date(string) {
+        DataType::Date32
+    } else if is_time(string) {
+        DataType::Time32(TimeUnit::Millisecond)
+    } else if let Some(time_unit) = is_naive_datetime(string) {
+        DataType::Timestamp(time_unit, None)
+    } else if let Some((time_unit, offset)) = is_datetime(string) {
+        DataType::Timestamp(time_unit, Some(offset))
+    } else {
+        DataType::Utf8
     }
 }
 

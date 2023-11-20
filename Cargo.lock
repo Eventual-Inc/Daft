@@ -104,8 +104,8 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.17.1"
-source = "git+https://github.com/Eventual-Inc/arrow2?rev=3a23c780d4d59ef0c9c8751675480e07f4e1c311#3a23c780d4d59ef0c9c8751675480e07f4e1c311"
+version = "0.17.4"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=d5685eebf1d65c3f3d854370ad39f93dcd91971a#d5685eebf1d65c3f3d854370ad39f93dcd91971a"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -124,7 +124,9 @@ dependencies = [
  "futures",
  "getrandom 0.2.10",
  "hash_hasher",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.1",
+ "indexmap 1.9.3",
+ "json-deserializer 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "lexical-core",
  "multiversion",
  "num-traits",
@@ -1103,6 +1105,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-io",
+ "daft-json",
  "daft-micropartition",
  "daft-parquet",
  "daft-plan",
@@ -1184,11 +1187,14 @@ name = "daft-decoding"
 version = "0.1.10"
 dependencies = [
  "arrow2",
+ "async-compression",
  "chrono",
  "chrono-tz",
  "csv-async",
  "lexical-core",
  "simdutf8",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1253,6 +1259,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-json"
+version = "0.1.10"
+dependencies = [
+ "arrow2",
+ "async-compat",
+ "async-compression",
+ "async-stream",
+ "bincode",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "common-error",
+ "daft-core",
+ "daft-decoding",
+ "daft-io",
+ "daft-table",
+ "futures",
+ "indexmap 2.1.0",
+ "json-deserializer 0.4.4 (git+https://github.com/Eventual-Inc/json-deserializer?rev=4be9205900888ff0767e0c37642884f2c912e22c)",
+ "lexical-core",
+ "log",
+ "num-traits",
+ "pyo3",
+ "pyo3-log",
+ "rayon",
+ "rstest",
+ "serde",
+ "simdutf8",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "daft-micropartition"
 version = "0.1.10"
 dependencies = [
@@ -1263,6 +1305,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-io",
+ "daft-json",
  "daft-parquet",
  "daft-scan",
  "daft-stats",
@@ -1338,6 +1381,7 @@ dependencies = [
  "daft-csv",
  "daft-dsl",
  "daft-io",
+ "daft-json",
  "daft-parquet",
  "daft-stats",
  "daft-table",
@@ -1831,15 +1875,12 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
-
-[[package]]
-name = "hashbrown"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dfda62a12f55daeae5015f81b0baea145391cb4520f86c248fc615d72640d12"
+dependencies = [
+ "ahash",
+]
 
 [[package]]
 name = "heck"
@@ -2118,6 +2159,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5f195fe497f702db0f318b07fdd68edb16955aed830df8363d837542f8f935a"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "json-deserializer"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f63b421e16eb4100beb677af56f0b4f3a4f08bab74ef2af079ce5bb92c2683f"
+dependencies = [
+ "indexmap 1.9.3",
+]
+
+[[package]]
+name = "json-deserializer"
+version = "0.4.4"
+source = "git+https://github.com/Eventual-Inc/json-deserializer?rev=4be9205900888ff0767e0c37642884f2c912e22c#4be9205900888ff0767e0c37642884f2c912e22c"
+dependencies = [
+ "indexmap 2.1.0",
 ]
 
 [[package]]

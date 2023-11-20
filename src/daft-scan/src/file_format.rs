@@ -157,15 +157,38 @@ impl_bincode_py_state_serialization!(CsvSourceConfig);
 /// Configuration for a JSON data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
-pub struct JsonSourceConfig {}
+pub struct JsonSourceConfig {
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
+}
+
+impl JsonSourceConfig {
+    pub fn new_internal(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
+        Self {
+            buffer_size,
+            chunk_size,
+        }
+    }
+}
+
+impl Default for JsonSourceConfig {
+    fn default() -> Self {
+        Self::new_internal(None, None)
+    }
+}
 
 #[cfg(feature = "python")]
 #[pymethods]
 impl JsonSourceConfig {
     /// Create a config for a JSON data source.
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
+    /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
-    fn new() -> Self {
-        Self {}
+    fn new(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
+        Self::new_internal(buffer_size, chunk_size)
     }
 }
 

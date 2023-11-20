@@ -6,10 +6,19 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_table
-from daft.daft import CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinType
+from daft.daft import (
+    CsvConvertOptions,
+    CsvParseOptions,
+    CsvReadOptions,
+    JoinType,
+    JsonConvertOptions,
+    JsonParseOptions,
+    JsonReadOptions,
+)
 from daft.daft import PyTable as _PyTable
 from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
+from daft.daft import read_json as _read_json
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
@@ -456,6 +465,27 @@ class Table:
     ) -> Table:
         return Table._from_pytable(
             _read_csv(
+                uri=path,
+                convert_options=convert_options,
+                parse_options=parse_options,
+                read_options=read_options,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )
+
+    @classmethod
+    def read_json(
+        cls,
+        path: str,
+        convert_options: JsonConvertOptions | None = None,
+        parse_options: JsonParseOptions | None = None,
+        read_options: JsonReadOptions | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> Table:
+        return Table._from_pytable(
+            _read_json(
                 uri=path,
                 convert_options=convert_options,
                 parse_options=parse_options,

@@ -1,0 +1,2 @@
+{"sepalLength": 5.1, "sepalWidth": false, "petalLength": 3, "petalWidth": 3, "species": "setosa"}
+{"sepalLength": "foo", "sepalWidth": 3.0, "petalLength": "bar", "petalWidth": 0.2, "species": false}

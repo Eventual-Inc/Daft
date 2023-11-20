@@ -153,7 +153,10 @@ fn deserialize_null<B: ByteRecordGeneric>(rows: &[B], _: usize) -> Box<dyn Array
 }
 
 #[inline]
-fn deserialize_naive_datetime(string: &str, fmt_idx: &mut usize) -> Option<chrono::NaiveDateTime> {
+pub fn deserialize_naive_datetime(
+    string: &str,
+    fmt_idx: &mut usize,
+) -> Option<chrono::NaiveDateTime> {
     // TODO(Clark): Parse as all candidate formats in a single pass.
     for i in 0..ALL_NAIVE_TIMESTAMP_FMTS.len() {
         let idx = (i + *fmt_idx) % ALL_NAIVE_TIMESTAMP_FMTS.len();
@@ -167,7 +170,7 @@ fn deserialize_naive_datetime(string: &str, fmt_idx: &mut usize) -> Option<chron
 }
 
 #[inline]
-fn deserialize_datetime<T: chrono::TimeZone>(
+pub fn deserialize_datetime<T: chrono::TimeZone>(
     string: &str,
     tz: &T,
     fmt_idx: &mut usize,

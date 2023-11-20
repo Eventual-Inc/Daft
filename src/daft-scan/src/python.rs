@@ -315,18 +315,6 @@ partitioning_keys:\n",
 
     impl_bincode_py_state_serialization!(PyScanTask);
 
-    pub(crate) fn read_json_schema(
-        py: Python,
-        uri: &str,
-        storage_config: PyStorageConfig,
-    ) -> PyResult<PySchema> {
-        py.import(pyo3::intern!(py, "daft.table.schema_inference"))?
-            .getattr(pyo3::intern!(py, "from_json"))?
-            .call1((uri, storage_config))?
-            .getattr(pyo3::intern!(py, "_schema"))?
-            .extract()
-    }
-
     #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyPartitionField(Arc<PartitionField>);

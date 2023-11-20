@@ -25,9 +25,9 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{compression::CompressionCodec, ArrowSnafu};
+use crate::ArrowSnafu;
 use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_decoding::deserialize::deserialize_column;
+use daft_decoding::{compression::CompressionCodec, deserialize::deserialize_column};
 
 trait ByteRecordChunkStream = Stream<Item = super::Result<Vec<ByteRecord>>>;
 trait ColumnArrayChunkStream = Stream<
@@ -1175,11 +1175,11 @@ mod tests {
             file.as_ref(),
             None,
             None,
-            None,
+            Some(CsvReadOptions::default().with_chunk_size(Some(5))),
             io_client,
             None,
             true,
-            Some(5),
+            Some(2),
         )?;
         assert_eq!(table.len(), 20);
         assert_eq!(
