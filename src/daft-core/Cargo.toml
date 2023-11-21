@@ -1,6 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["chrono-tz", "compute_take", "compute_cast", "compute_aggregate", "compute_if_then_else", "compute_sort", "compute_filter", "compute_temporal", "compute_comparison", "compute_arithmetics", "compute_concatenate", "io_ipc"]}
-base64 = "0.21.2"
+base64 = "0.21.5"
 bincode = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
