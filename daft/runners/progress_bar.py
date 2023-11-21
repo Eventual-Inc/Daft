@@ -14,6 +14,7 @@ class ProgressBar:
         self.use_ray_tqdm = use_ray_tqdm
         self.show_tasks_bar = show_tasks_bar
         self.tqdm_mod = tqdm
+        self._maxinterval = 5.0
         self.pbars: dict[int, tqdm] = dict()
         self.disable = (
             disable
@@ -26,7 +27,12 @@ class ProgressBar:
             self.pbars[stage_id] = self.tqdm_mod(total=1, desc=name, position=len(self.pbars))
         else:
             self.pbars[stage_id] = self.tqdm_mod(
-                total=1, desc=name, position=len(self.pbars), leave=False, mininterval=1.0, maxinterval=5.0
+                total=1,
+                desc=name,
+                position=len(self.pbars),
+                leave=False,
+                mininterval=1.0,
+                maxinterval=self._maxinterval,
             )
 
     def mark_task_start(self, step: PartitionTask[Any]) -> None:
@@ -49,7 +55,7 @@ class ProgressBar:
             pb.total += 1
             if hasattr(pb, "last_print_t"):
                 dt = time.time() - pb.last_print_t
-                if dt >= 5.0:
+                if dt >= self._maxinterval:
                     pb.refresh()
 
     def mark_task_done(self, step: PartitionTask[Any]) -> None:
