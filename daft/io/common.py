@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from daft.context import get_context
 from daft.daft import (
-    CsvSourceConfig,
     FileFormatConfig,
     NativeStorageConfig,
     PythonStorageConfig,
@@ -82,15 +81,7 @@ def _get_tabular_files_scan(
 
     # Apply hints from schema_hints if provided
     if schema_hint is not None:
-        # If CSV and no headers, then use the schema hint as the schema
-        if isinstance(file_format_config.config, CsvSourceConfig) and file_format_config.config.has_headers == False:
-            if len(schema) != len(schema_hint):
-                raise ValueError(
-                    f"For CSV with no headers, number of columns in schema hint ({len(schema_hint)} columns were provided) must match number of columns in data: {len(schema)}."
-                )
-            schema = schema_hint
-        else:
-            schema = schema.apply_hints(schema_hint)
+        schema = schema.apply_hints(schema_hint)
     # Construct plan
     builder = LogicalPlanBuilder.from_tabular_scan(
         file_infos=file_infos,

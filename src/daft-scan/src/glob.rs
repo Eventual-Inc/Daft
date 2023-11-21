@@ -212,21 +212,7 @@ impl GlobScanOperator {
 
         let schema = match schema_hint {
             None => Arc::new(inferred_schema),
-            Some(schema_hint) => match file_format_config.as_ref() {
-                FileFormatConfig::Csv(CsvSourceConfig { has_headers, .. }) => {
-                    if !*has_headers {
-                        if inferred_schema.fields.len() != schema_hint.fields.len() {
-                            return Err(DaftError::ValueError(format!(
-                                    "For CSV with no headers, number of columns in schema hint ({} columns were provided) must match number of columns in data: {}.", schema_hint.fields.len(), inferred_schema.fields.len()
-                                )));
-                        }
-                        schema_hint
-                    } else {
-                        Arc::new(inferred_schema.apply_hints(&schema_hint)?)
-                    }
-                }
-                _ => Arc::new(inferred_schema.apply_hints(&schema_hint)?),
-            },
+            Some(schema_hint) => Arc::new(inferred_schema.apply_hints(&schema_hint)?),
         };
 
         Ok(Self {

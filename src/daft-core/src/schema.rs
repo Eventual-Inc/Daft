@@ -87,14 +87,18 @@ impl Schema {
     }
 
     pub fn apply_hints(&self, hints: &Schema) -> DaftResult<Schema> {
-        let mut fields = IndexMap::new();
-        for (name, field) in self.fields.iter() {
-            match hints.fields.get(name) {
-                None => fields.insert(name.clone(), field.clone()),
-                Some(hint_field) => fields.insert(name.clone(), hint_field.clone()),
-            };
-        }
-        Ok(Schema { fields })
+        let applied_fields = self
+            .fields
+            .iter()
+            .map(|(name, field)| match hints.fields.get(name) {
+                None => (name.clone(), field.clone()),
+                Some(hint_field) => (name.clone(), hint_field.clone()),
+            })
+            .collect::<IndexMap<String, Field>>();
+
+        Ok(Schema {
+            fields: applied_fields,
+        })
     }
 
     pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
