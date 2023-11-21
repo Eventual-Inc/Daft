@@ -6,42 +6,62 @@ use common_error::DaftResult;
 use csv_async::ByteRecord;
 use daft_core::schema::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use futures::{StreamExt, TryStreamExt};
+use snafu::ResultExt;
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncRead, BufReader},
 };
 use tokio_util::io::StreamReader;
 
-use crate::read::char_to_byte;
-use crate::{compression::CompressionCodec, schema::merge_schema};
+use crate::{compression::CompressionCodec, schema::merge_schema, CsvParseOptions};
 use daft_decoding::inference::infer;
 
 const DEFAULT_COLUMN_PREFIX: &str = "column_";
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Debug, Clone)]
+pub struct CsvReadStats {
+    pub total_bytes_read: usize,
+    pub total_records_read: usize,
+    pub mean_record_size_bytes: f64,
+    pub stddev_record_size_bytes: f64,
+}
+
+impl CsvReadStats {
+    pub fn new(
+        total_bytes_read: usize,
+        total_records_read: usize,
+        mean_record_size_bytes: f64,
+        stddev_record_size_bytes: f64,
+    ) -> Self {
+        Self {
+            total_bytes_read,
+            total_records_read,
+            mean_record_size_bytes,
+            stddev_record_size_bytes,
+        }
+    }
+}
+
+impl Default for CsvReadStats {
+    fn default() -> Self {
+        Self::new(0, 0, 0f64, 0f64)
+    }
+}
+
 pub fn read_csv_schema(
     uri: &str,
-    has_header: bool,
-    delimiter: Option<char>,
-    double_quote: bool,
-    quote: Option<char>,
-    escape_char: Option<char>,
-    comment: Option<char>,
+    parse_options: Option<CsvParseOptions>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(Schema, usize, usize, f64, f64)> {
+) -> DaftResult<(Schema, CsvReadStats)> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
         read_csv_schema_single(
             uri,
-            has_header,
-            char_to_byte(delimiter)?,
-            double_quote,
-            char_to_byte(quote)?,
-            char_to_byte(escape_char)?,
-            char_to_byte(comment)?,
+            parse_options.unwrap_or_default(),
             // Default to 1 MiB.
             max_bytes.or(Some(1024 * 1024)),
             io_client,
@@ -51,19 +71,50 @@ pub fn read_csv_schema(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn read_csv_schema_single(
-    uri: &str,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+pub async fn read_csv_schema_bulk(
+    uris: &[&str],
+    parse_options: Option<CsvParseOptions>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(Schema, usize, usize, f64, f64)> {
+    num_parallel_tasks: usize,
+) -> DaftResult<Vec<(Schema, CsvReadStats)>> {
+    let runtime_handle = get_runtime(true)?;
+    let _rt_guard = runtime_handle.enter();
+    let result = runtime_handle
+        .block_on(async {
+            let task_stream = futures::stream::iter(uris.iter().map(|uri| {
+                let owned_string = uri.to_string();
+                let owned_client = io_client.clone();
+                let owned_io_stats = io_stats.clone();
+                let owned_parse_options = parse_options.clone();
+                tokio::spawn(async move {
+                    read_csv_schema_single(
+                        &owned_string,
+                        owned_parse_options.unwrap_or_default(),
+                        max_bytes,
+                        owned_client,
+                        owned_io_stats,
+                    )
+                    .await
+                })
+            }));
+            task_stream
+                .buffered(num_parallel_tasks)
+                .try_collect::<Vec<_>>()
+                .await
+        })
+        .context(super::JoinSnafu {})?;
+    result.into_iter().collect::<DaftResult<Vec<_>>>()
+}
+
+pub(crate) async fn read_csv_schema_single(
+    uri: &str,
+    parse_options: CsvParseOptions,
+    max_bytes: Option<usize>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<(Schema, CsvReadStats)> {
     let compression_codec = CompressionCodec::from_uri(uri);
     match io_client
         .single_url_get(uri.to_string(), None, io_stats)
@@ -73,12 +124,7 @@ pub(crate) async fn read_csv_schema_single(
             read_csv_schema_from_compressed_reader(
                 BufReader::new(File::open(file.path).await?),
                 compression_codec,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
+                parse_options,
                 max_bytes,
             )
             .await
@@ -87,12 +133,7 @@ pub(crate) async fn read_csv_schema_single(
             read_csv_schema_from_compressed_reader(
                 StreamReader::new(stream),
                 compression_codec,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
+                parse_options,
                 // Truncate max_bytes to size if both are set.
                 max_bytes.map(|m| size.map(|s| m.min(s)).unwrap_or(m)),
             )
@@ -105,14 +146,9 @@ pub(crate) async fn read_csv_schema_single(
 async fn read_csv_schema_from_compressed_reader<R>(
     reader: R,
     compression_codec: Option<CompressionCodec>,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(Schema, usize, usize, f64, f64)>
+) -> DaftResult<(Schema, CsvReadStats)>
 where
     R: AsyncBufRead + Unpin + Send + 'static,
 {
@@ -120,99 +156,50 @@ where
         Some(compression) => {
             read_csv_schema_from_uncompressed_reader(
                 compression.to_decoder(reader),
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
+                parse_options,
                 max_bytes,
             )
             .await
         }
-        None => {
-            read_csv_schema_from_uncompressed_reader(
-                reader,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                max_bytes,
-            )
-            .await
-        }
+        None => read_csv_schema_from_uncompressed_reader(reader, parse_options, max_bytes).await,
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn read_csv_schema_from_uncompressed_reader<R>(
     reader: R,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(Schema, usize, usize, f64, f64)>
+) -> DaftResult<(Schema, CsvReadStats)>
 where
     R: AsyncRead + Unpin + Send,
 {
-    let (schema, total_bytes_read, num_records_read, mean_size, std_size) =
-        read_csv_arrow_schema_from_uncompressed_reader(
-            reader,
-            has_header,
-            delimiter,
-            double_quote,
-            quote,
-            escape_char,
-            comment,
-            max_bytes,
-        )
-        .await?;
-    Ok((
-        Schema::try_from(&schema)?,
-        total_bytes_read,
-        num_records_read,
-        mean_size,
-        std_size,
-    ))
+    let (schema, read_stats) =
+        read_csv_arrow_schema_from_uncompressed_reader(reader, parse_options, max_bytes).await?;
+    Ok((Schema::try_from(&schema)?, read_stats))
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+    parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(arrow2::datatypes::Schema, usize, usize, f64, f64)>
+) -> DaftResult<(arrow2::datatypes::Schema, CsvReadStats)>
 where
     R: AsyncRead + Unpin + Send,
 {
     let mut reader = AsyncReaderBuilder::new()
-        .has_headers(has_header)
-        .delimiter(delimiter.unwrap_or(b','))
-        .double_quote(double_quote)
-        .quote(quote.unwrap_or(b'"'))
-        .escape(escape_char)
-        .comment(comment)
+        .has_headers(parse_options.has_header)
+        .delimiter(parse_options.delimiter)
+        .double_quote(parse_options.double_quote)
+        .quote(parse_options.quote)
+        .escape(parse_options.escape_char)
+        .comment(parse_options.comment)
         .buffer_capacity(max_bytes.unwrap_or(1 << 20).min(1 << 20))
         .create_reader(reader.compat());
-    let (fields, total_bytes_read, num_records_read, mean_size, std_size) =
-        infer_schema(&mut reader, None, max_bytes, has_header).await?;
-    Ok((
-        fields.into(),
-        total_bytes_read,
-        num_records_read,
-        mean_size,
-        std_size,
-    ))
+    let (fields, read_stats) =
+        infer_schema(&mut reader, None, max_bytes, parse_options.has_header).await?;
+    Ok((fields.into(), read_stats))
 }
 
 async fn infer_schema<R>(
@@ -220,7 +207,7 @@ async fn infer_schema<R>(
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     has_header: bool,
-) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, usize, usize, f64, f64)>
+) -> arrow2::error::Result<(Vec<arrow2::datatypes::Field>, CsvReadStats)>
 where
     R: futures::AsyncRead + Unpin + Send,
 {
@@ -240,7 +227,7 @@ where
     } else {
         // Save the csv reader position before reading headers
         if !reader.read_byte_record(&mut record).await? {
-            return Ok((vec![], 0, 0, 0f64, 0f64));
+            return Ok((vec![], Default::default()));
         }
         let first_record_count = record.len();
         (
@@ -292,7 +279,10 @@ where
     }
     let fields = merge_schema(&headers, &mut column_types);
     let std = (m2 / ((records_count - 1) as f64)).sqrt();
-    Ok((fields, total_bytes, records_count, mean, std))
+    Ok((
+        fields,
+        CsvReadStats::new(total_bytes, records_count, mean, std),
+    ))
 }
 
 #[cfg(test)]
@@ -303,6 +293,8 @@ mod tests {
     use daft_core::{datatypes::Field, schema::Schema, DataType};
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
+
+    use crate::CsvParseOptions;
 
     use super::read_csv_schema;
 
@@ -340,18 +332,8 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, read_stats) =
+            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -362,8 +344,8 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 328);
-        assert_eq!(num_records_read, 20);
+        assert_eq!(read_stats.total_bytes_read, 328);
+        assert_eq!(read_stats.total_records_read, 20);
 
         Ok(())
     }
@@ -379,14 +361,9 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
+        let (schema, read_stats) = read_csv_schema(
             file.as_ref(),
-            true,
-            Some('|'),
-            true,
-            None,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_delimiter(b'|')),
             None,
             io_client.clone(),
             None,
@@ -401,8 +378,8 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 328);
-        assert_eq!(num_records_read, 20);
+        assert_eq!(read_stats.total_bytes_read, 328);
+        assert_eq!(read_stats.total_records_read, 20);
 
         Ok(())
     }
@@ -415,20 +392,9 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (_, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
-        assert_eq!(total_bytes_read, 328);
-        assert_eq!(num_records_read, 20);
+        let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        assert_eq!(read_stats.total_bytes_read, 328);
+        assert_eq!(read_stats.total_records_read, 20);
 
         Ok(())
     }
@@ -444,14 +410,9 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
+        let (schema, read_stats) = read_csv_schema(
             file.as_ref(),
-            false,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client.clone(),
             None,
@@ -466,8 +427,8 @@ mod tests {
                 Field::new("column_5", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 328);
-        assert_eq!(num_records_read, 20);
+        assert_eq!(read_stats.total_bytes_read, 328);
+        assert_eq!(read_stats.total_records_read, 20);
 
         Ok(())
     }
@@ -483,18 +444,8 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, read_stats) =
+            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -505,8 +456,8 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 49);
-        assert_eq!(num_records_read, 3);
+        assert_eq!(read_stats.total_bytes_read, 49);
+        assert_eq!(read_stats.total_records_read, 3);
 
         Ok(())
     }
@@ -519,18 +470,8 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, read_stats) =
+            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -541,8 +482,8 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 82);
-        assert_eq!(num_records_read, 6);
+        assert_eq!(read_stats.total_bytes_read, 82);
+        assert_eq!(read_stats.total_records_read, 6);
 
         Ok(())
     }
@@ -558,18 +499,8 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, read_stats) =
+            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -581,8 +512,8 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])?,
         );
-        assert_eq!(total_bytes_read, 33);
-        assert_eq!(num_records_read, 2);
+        assert_eq!(read_stats.total_bytes_read, 33);
+        assert_eq!(read_stats.total_records_read, 2);
 
         Ok(())
     }
@@ -595,18 +526,8 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, total_bytes_read, num_records_read, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            Some(100),
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, read_stats) =
+            read_csv_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -618,8 +539,16 @@ mod tests {
             ])?,
         );
         // Max bytes doesn't include header, so add 15 bytes to upper bound.
-        assert!(total_bytes_read <= 100 + 15, "{}", total_bytes_read);
-        assert!(num_records_read <= 10, "{}", num_records_read);
+        assert!(
+            read_stats.total_bytes_read <= 100 + 15,
+            "{}",
+            read_stats.total_bytes_read
+        );
+        assert!(
+            read_stats.total_records_read <= 10,
+            "{}",
+            read_stats.total_records_read
+        );
 
         Ok(())
     }
@@ -635,18 +564,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let err = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        );
+        let err = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None);
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
@@ -673,12 +591,7 @@ mod tests {
 
         let err = read_csv_schema(
             file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client.clone(),
             None,
@@ -729,18 +642,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, _, _, _, _) = read_csv_schema(
-            file.as_ref(),
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            io_client.clone(),
-            None,
-        )?;
+        let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

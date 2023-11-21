@@ -25,6 +25,9 @@ pub enum Error {
     #[snafu(display("Duplicate name found when evaluating expressions: {}", name))]
     DuplicatedField { name: String },
 
+    #[snafu(display("CSV error: {}", source))]
+    DaftCSV { source: daft_csv::Error },
+
     #[snafu(display(
         "Field: {} not found in Parquet File:  Available Fields: {:?}",
         field,

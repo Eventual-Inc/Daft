@@ -9,6 +9,7 @@ use daft_core::{
     schema::Schema,
     Series,
 };
+use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -369,46 +370,27 @@ impl PyMicroPartition {
         Ok(mp.into())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[staticmethod]
     pub fn read_csv(
         py: Python,
         uri: &str,
-        column_names: Option<Vec<&str>>,
-        include_columns: Option<Vec<&str>>,
-        num_rows: Option<usize>,
-        has_header: Option<bool>,
-        delimiter: Option<char>,
-        double_quote: Option<bool>,
-        quote: Option<char>,
-        escape_char: Option<char>,
-        comment: Option<char>,
+        convert_options: Option<CsvConvertOptions>,
+        parse_options: Option<CsvParseOptions>,
+        read_options: Option<CsvReadOptions>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-        schema: Option<PySchema>,
-        buffer_size: Option<usize>,
-        chunk_size: Option<usize>,
     ) -> PyResult<Self> {
         let mp = py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
             let io_config = io_config.unwrap_or_default().config.into();
             crate::micropartition::read_csv_into_micropartition(
                 [uri].as_ref(),
-                column_names,
-                include_columns,
-                num_rows,
-                has_header.unwrap_or(true),
-                delimiter,
-                double_quote.unwrap_or(true),
-                quote,
-                escape_char,
-                comment,
+                convert_options,
+                parse_options,
+                read_options,
                 io_config,
                 multithreaded_io.unwrap_or(true),
                 Some(io_stats),
-                schema.map(|s| s.schema),
-                buffer_size,
-                chunk_size,
             )
         })?;
         Ok(mp.into())
@@ -648,7 +630,6 @@ pub(crate) fn read_csv_into_py_table(
         .extract()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_parquet_into_py_table(
     py: Python,
     uri: &str,

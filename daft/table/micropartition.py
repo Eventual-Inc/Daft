@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 
-from daft.daft import IOConfig, JoinType
+from daft.daft import (
+    CsvConvertOptions,
+    CsvParseOptions,
+    CsvReadOptions,
+    IOConfig,
+    JoinType,
+)
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyTable as _PyTable
 from daft.daft import ScanTask as _ScanTask
@@ -352,37 +358,19 @@ class MicroPartition:
     def read_csv(
         cls,
         path: str,
-        column_names: list[str] | None = None,
-        include_columns: list[str] | None = None,
-        num_rows: int | None = None,
-        has_header: bool | None = None,
-        delimiter: str | None = None,
-        double_quote: bool | None = None,
-        quote: str | None = None,
-        escape_char: str | None = None,
-        comment: str | None = None,
+        convert_options: CsvConvertOptions,
+        parse_options: CsvParseOptions,
+        read_options: CsvReadOptions,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-        schema: Schema | None = None,
-        buffer_size: int | None = None,
-        chunk_size: int | None = None,
     ) -> MicroPartition:
         return MicroPartition._from_pymicropartition(
             _PyMicroPartition.read_csv(
                 uri=path,
-                column_names=column_names,
-                include_columns=include_columns,
-                num_rows=num_rows,
-                has_header=has_header,
-                delimiter=delimiter,
-                double_quote=double_quote,
-                quote=quote,
-                escape_char=escape_char,
-                comment=comment,
+                convert_options=convert_options,
+                parse_options=parse_options,
+                read_options=read_options,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
-                schema=schema._schema if schema is not None else None,
-                buffer_size=buffer_size,
-                chunk_size=chunk_size,
             )
         )
