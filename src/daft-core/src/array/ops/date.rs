@@ -137,10 +137,9 @@ impl TimestampArray {
             ))),
         }?;
 
-        Ok(UInt32Array::new(
+        UInt32Array::new(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(date_arrow),
         )
-        .unwrap_or(UInt32Array::from(("hour", vec![0]))))
     }
 }
