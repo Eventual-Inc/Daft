@@ -39,7 +39,7 @@ def test_show_from_cached_collect(valid_data):
 
 def test_show_from_cached_collect_prefix(valid_data):
     df = daft.from_pylist(valid_data)
-    df = df.collect()
+    df = df.collect(3)
     df_display = df.show(2)
 
     assert df_display.schema == df.schema()
@@ -47,3 +47,17 @@ def test_show_from_cached_collect_prefix(valid_data):
     # Check that a prefix of the cached preview from df.collect() was used, so dataframe_num_rows should be set.
     assert df_display.preview.dataframe_num_rows == 3
     assert df_display.num_rows == 2
+
+
+def test_show_not_from_cached_collect(valid_data):
+    df = daft.from_pylist(valid_data)
+    df = df.collect(2)
+    collected_preview = df._preview
+    df_display = df.show()
+
+    # Check that cached preview from df.collect() was NOT used, since it didn't have enough rows.
+    assert df_display.preview != collected_preview
+    assert df_display.schema == df.schema()
+    assert len(df_display.preview.preview_partition) == len(valid_data)
+    assert df_display.preview.dataframe_num_rows is None
+    assert df_display.num_rows == 8
