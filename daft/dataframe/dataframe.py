@@ -5,6 +5,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import pathlib
+import sys
 import warnings
 from dataclasses import dataclass
 from functools import reduce
@@ -17,6 +18,7 @@ from typing import (
     List,
     Optional,
     Set,
+    TextIO,
     Tuple,
     TypeVar,
     Union,
@@ -26,7 +28,7 @@ from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
 from daft.daft import FileFormat, IOConfig, JoinType, PartitionScheme, ResourceRequest
-from daft.dataframe.preview import DataFramePreview
+from daft.dataframe.preview import DataFramePreview, is_interactive_session
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
