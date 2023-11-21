@@ -268,7 +268,7 @@ class CsvParseOptions:
     """
 
     has_header: bool
-    delimiter: str
+    delimiter: str | None
     double_quote: bool
     quote: str | None
     escape_char: str | None
@@ -277,7 +277,7 @@ class CsvParseOptions:
     def __init__(
         self,
         has_header: bool = True,
-        delimiter: str = ",",
+        delimiter: str | None = None,
         double_quote: bool = True,
         quote: str | None = None,
         escape_char: str | None = None,

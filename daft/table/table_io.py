@@ -234,7 +234,12 @@ def read_csv(
                 schema=schema._schema if schema is not None else None,
             )
             csv_parse_options = CsvParseOptions(
-                has_header=has_header, delimiter=csv_options.delimiter, double_quote=csv_options.double_quote
+                has_header=has_header,
+                delimiter=csv_options.delimiter,
+                double_quote=csv_options.double_quote,
+                quote=csv_options.quote,
+                escape_char=csv_options.escape_char,
+                comment=csv_options.comment,
             )
             csv_read_options = CsvReadOptions(buffer_size=csv_options.buffer_size, chunk_size=csv_options.chunk_size)
             tbl = Table.read_csv(

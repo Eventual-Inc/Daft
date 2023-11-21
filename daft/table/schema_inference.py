@@ -47,7 +47,12 @@ def from_csv(
             return Schema.from_csv(
                 str(file),
                 parse_options=CsvParseOptions(
-                    has_header=csv_options.header_index is not None, delimiter=csv_options.delimiter
+                    has_header=csv_options.header_index is not None,
+                    delimiter=csv_options.delimiter,
+                    double_quote=csv_options.double_quote,
+                    quote=csv_options.quote,
+                    escape_char=csv_options.escape_char,
+                    comment=csv_options.comment,
                 ),
                 io_config=io_config,
             )
