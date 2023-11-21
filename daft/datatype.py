@@ -18,7 +18,7 @@ try:
 except ImportError:
     _RAY_DATA_EXTENSIONS_AVAILABLE = False
 else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
     try:
         # Variable-shaped tensor column support was added in Ray 2.1.0.
         if _RAY_VERSION >= (2, 2, 0):
