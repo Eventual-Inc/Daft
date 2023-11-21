@@ -9,8 +9,8 @@ def test_show_default(valid_data):
 
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == len(valid_data)
-    assert df_display.preview.dataframe_num_rows is None
-    assert df_display.num_rows == 8
+    assert df_display.preview.dataframe_num_rows == 3
+    assert df_display.num_rows == 3
 
 
 def test_show_some(valid_data):
@@ -19,6 +19,7 @@ def test_show_some(valid_data):
 
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == 1
+    # Limit is less than DataFrame length, so we don't know the full DataFrame length.
     assert df_display.preview.dataframe_num_rows is None
     assert df_display.num_rows == 1
 
@@ -34,7 +35,7 @@ def test_show_from_cached_collect(valid_data):
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == len(valid_data)
     assert df_display.preview.dataframe_num_rows == 3
-    assert df_display.num_rows == 8
+    assert df_display.num_rows == 3
 
 
 def test_show_from_cached_collect_prefix(valid_data):
@@ -59,5 +60,5 @@ def test_show_not_from_cached_collect(valid_data):
     assert df_display.preview != collected_preview
     assert df_display.schema == df.schema()
     assert len(df_display.preview.preview_partition) == len(valid_data)
-    assert df_display.preview.dataframe_num_rows is None
-    assert df_display.num_rows == 8
+    assert df_display.preview.dataframe_num_rows == 3
+    assert df_display.num_rows == 3

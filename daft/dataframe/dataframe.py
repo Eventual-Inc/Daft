@@ -1026,9 +1026,12 @@ class DataFrame:
         """
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
-        if preview_partition is None or (
-            n > len(preview_partition) and (total_rows is None or len(preview_partition) < total_rows)
-        ):
+
+        # Truncate n to the length of the DataFrame, if we have it.
+        if total_rows is not None and n > total_rows:
+            n = total_rows
+
+        if preview_partition is None or len(preview_partition) < n:
             # Preview partition doesn't exist or doesn't contain enough rows, so we need to compute a
             # new one from scratch.
             builder = self._builder.limit(n, eager=True)
@@ -1043,17 +1046,21 @@ class DataFrame:
                     break
 
             preview_partition = Table.concat(tables)
-            preview_partition = preview_partition if len(preview_partition) <= n else preview_partition.slice(0, n)
+            if len(preview_partition) > n:
+                preview_partition = preview_partition.slice(0, n)
+            elif len(preview_partition) < n:
+                # Iterator short-circuited before reaching n, so we know that we have the full DataFrame.
+                total_rows = n = len(preview_partition)
             preview = DataFramePreview(
                 preview_partition=preview_partition,
-                # We do not know the size of the entire (un-limited) dataframe when showing
-                dataframe_num_rows=None,
+                dataframe_num_rows=total_rows,
             )
         elif len(preview_partition) > n:
             # Preview partition is cached but has more rows that we need, so use the appropriate slice.
             truncated_preview_partition = preview_partition.slice(0, n)
             preview = DataFramePreview(preview_partition=truncated_preview_partition, dataframe_num_rows=total_rows)
         else:
+            assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
             preview = self._preview
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
