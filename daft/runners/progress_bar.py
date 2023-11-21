@@ -69,5 +69,6 @@ class ProgressBar:
 
     def close(self) -> None:
         for p in self.pbars.values():
+            p.clear()
             p.close()
             del p
