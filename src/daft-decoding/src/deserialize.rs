@@ -176,10 +176,6 @@ fn deserialize_datetime<T: chrono::TimeZone>(
     for i in 0..ALL_TIMESTAMP_FMTS.len() {
         let idx = (i + *fmt_idx) % ALL_TIMESTAMP_FMTS.len();
         let fmt = ALL_TIMESTAMP_FMTS[idx];
-        println!(
-            "Deserializing dt: {string} with {fmt} as {:?}",
-            chrono::DateTime::parse_from_str(string, fmt)
-        );
         if let Ok(dt) = chrono::DateTime::parse_from_str(string, fmt) {
             *fmt_idx = idx;
             return Some(dt.with_timezone(tz));

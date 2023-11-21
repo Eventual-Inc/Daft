@@ -1,5 +1,3 @@
-use pyo3::prelude::*;
-
 pub mod pylib {
     use std::sync::Arc;
 
@@ -8,25 +6,17 @@ pub mod pylib {
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
 
+    use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+
     #[pyfunction]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_csv(
         py: Python,
         uri: &str,
-        column_names: Option<Vec<&str>>,
-        include_columns: Option<Vec<&str>>,
-        num_rows: Option<usize>,
-        has_header: Option<bool>,
-        delimiter: Option<char>,
-        double_quote: Option<bool>,
-        quote: Option<char>,
-        escape_char: Option<char>,
-        comment: Option<char>,
+        convert_options: Option<CsvConvertOptions>,
+        parse_options: Option<CsvParseOptions>,
+        read_options: Option<CsvReadOptions>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
-        schema: Option<PySchema>,
-        buffer_size: Option<usize>,
-        chunk_size: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_csv: for uri {uri}"));
@@ -37,21 +27,12 @@ pub mod pylib {
             )?;
             Ok(crate::read::read_csv(
                 uri,
-                column_names,
-                include_columns,
-                num_rows,
-                has_header.unwrap_or(true),
-                delimiter,
-                double_quote.unwrap_or(true),
-                quote,
-                escape_char,
-                comment,
+                convert_options,
+                parse_options,
+                read_options,
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
-                schema.map(|s| s.schema),
-                buffer_size,
-                chunk_size,
                 None,
             )?
             .into())
@@ -59,16 +40,10 @@ pub mod pylib {
     }
 
     #[pyfunction]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_csv_schema(
         py: Python,
         uri: &str,
-        has_header: Option<bool>,
-        delimiter: Option<char>,
-        double_quote: Option<bool>,
-        quote: Option<char>,
-        escape_char: Option<char>,
-        comment: Option<char>,
+        parse_options: Option<CsvParseOptions>,
         max_bytes: Option<usize>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
@@ -80,14 +55,9 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (schema, _, _, _, _) = crate::metadata::read_csv_schema(
+            let (schema, _) = crate::metadata::read_csv_schema(
                 uri,
-                has_header.unwrap_or(true),
-                delimiter,
-                double_quote.unwrap_or(true),
-                quote,
-                escape_char,
-                comment,
+                parse_options,
                 max_bytes,
                 io_client,
                 Some(io_stats),
@@ -95,10 +65,4 @@ pub mod pylib {
             Ok(Arc::new(schema).into())
         })
     }
-}
-
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_csv))?;
-    parent.add_wrapped(wrap_pyfunction!(pylib::read_csv_schema))?;
-    Ok(())
 }

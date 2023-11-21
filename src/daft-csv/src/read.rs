@@ -7,77 +7,60 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::DaftResult;
 use csv_async::AsyncReader;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
+use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::TryStreamExt;
+use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
-use snafu::{futures::TryFutureExt, ResultExt};
+use snafu::{
+    futures::{try_future::Context, TryFutureExt},
+    ResultExt,
+};
 use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncRead, BufReader},
+    task::JoinHandle,
 };
 use tokio_util::io::StreamReader;
 
-use crate::metadata::read_csv_schema_single;
-use crate::{compression::CompressionCodec, ArrowSnafu, Error};
+use crate::{compression::CompressionCodec, ArrowSnafu};
+use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_decoding::deserialize::deserialize_column;
 
-pub fn char_to_byte(c: Option<char>) -> Result<Option<u8>, Error> {
-    match c.map(u8::try_from).transpose() {
-        Ok(b) => Ok(b),
-        Err(e) => Err(Error::WrongChar {
-            source: e,
-            val: c.unwrap_or(' '),
-        }),
-    }
-}
+trait ByteRecordChunkStream = Stream<Item = super::Result<Vec<ByteRecord>>>;
+trait ColumnArrayChunkStream = Stream<
+    Item = super::Result<
+        Context<
+            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
+            super::JoinSnafu,
+            super::Error,
+        >,
+    >,
+>;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
     uri: &str,
-    column_names: Option<Vec<&str>>,
-    include_columns: Option<Vec<&str>>,
-    num_rows: Option<usize>,
-    has_header: bool,
-    delimiter: Option<char>,
-    double_quote: bool,
-    quote: Option<char>,
-    escape_char: Option<char>,
-    comment: Option<char>,
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
-    schema: Option<SchemaRef>,
-    buffer_size: Option<usize>,
-    chunk_size: Option<usize>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
     runtime_handle.block_on(async {
-        read_csv_single(
+        read_csv_single_into_table(
             uri,
-            column_names,
-            include_columns,
-            num_rows,
-            has_header,
-            char_to_byte(delimiter)?,
-            double_quote,
-            char_to_byte(quote)?,
-            char_to_byte(escape_char)?,
-            char_to_byte(comment)?,
+            convert_options,
+            parse_options,
+            read_options,
             io_client,
             io_stats,
-            schema,
-            buffer_size,
-            chunk_size,
             max_chunks_in_flight,
         )
         .await
@@ -85,295 +68,257 @@ pub fn read_csv(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn read_csv_single(
-    uri: &str,
-    column_names: Option<Vec<&str>>,
-    include_columns: Option<Vec<&str>>,
-    num_rows: Option<usize>,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
+pub fn read_csv_bulk(
+    uris: &[&str],
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    schema: Option<SchemaRef>,
-    buffer_size: Option<usize>,
-    chunk_size: Option<usize>,
+    multithreaded_io: bool,
+    max_chunks_in_flight: Option<usize>,
+    num_parallel_tasks: usize,
+) -> DaftResult<Vec<Table>> {
+    let runtime_handle = get_runtime(multithreaded_io)?;
+    let _rt_guard = runtime_handle.enter();
+    let tables = runtime_handle
+        .block_on(async move {
+            // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
+            let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
+                let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
+                    uri.to_string(),
+                    convert_options.clone(),
+                    parse_options.clone(),
+                    read_options.clone(),
+                    io_client.clone(),
+                    io_stats.clone(),
+                );
+                tokio::task::spawn(async move {
+                    let table = read_csv_single_into_table(
+                        uri.as_str(),
+                        convert_options,
+                        parse_options,
+                        read_options,
+                        io_client,
+                        io_stats,
+                        max_chunks_in_flight,
+                    )
+                    .await?;
+                    Ok((i, table))
+                })
+            }));
+            let mut remaining_rows = convert_options
+                .as_ref()
+                .and_then(|opts| opts.limit.map(|limit| limit as i64));
+            task_stream
+                // Each task is annotated with its position in the output, so we can use unordered buffering to help mitigate stragglers
+                // and sort the task results at the end.
+                .buffer_unordered(num_parallel_tasks)
+                // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
+                // num_parallel_tasks redundant files.
+                .try_take_while(|result| {
+                    match (result, remaining_rows) {
+                        // Limit has been met, early-teriminate.
+                        (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                        // Limit has not yet been met, update remaining limit slack and continue.
+                        (Ok((_, table)), Some(rows_left)) => {
+                            remaining_rows = Some(rows_left - table.len() as i64);
+                            futures::future::ready(Ok(true))
+                        }
+                        // (1) No limit, never early-terminate.
+                        // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                        (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+                    }
+                })
+                .try_collect::<Vec<_>>()
+                .await
+        })
+        .context(super::JoinSnafu {})?;
+
+    // Sort the task results by task index, yielding tables whose order matches the input URI order.
+    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    collected.sort_by_key(|(idx, _)| *idx);
+    Ok(collected.into_iter().map(|(_, v)| v).collect())
+}
+
+async fn read_csv_single_into_table(
+    uri: &str,
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let (schema, estimated_mean_row_size, estimated_std_row_size) = match schema {
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
+    let (chunk_stream, fields) = read_csv_single_into_stream(
+        uri,
+        convert_options.unwrap_or_default(),
+        parse_options.unwrap_or_default(),
+        read_options,
+        io_client,
+        io_stats,
+    )
+    .await?;
+    // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
+    // with the parsing of chunks on the rayon threadpool.
+    let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .unwrap_or(NonZeroUsize::new(2).unwrap())
+            .checked_mul(2.try_into().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap()
+    });
+    // Collect all chunks in chunk x column form.
+    let chunks = chunk_stream
+        // Limit the number of chunks we have in flight at any given time.
+        .try_buffered(max_chunks_in_flight)
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect::<DaftResult<Vec<_>>>()?;
+    // Handle empty table case.
+    if chunks.is_empty() {
+        let schema: arrow2::datatypes::Schema = fields.into();
+        let daft_schema = Arc::new(Schema::try_from(&schema)?);
+        return Table::empty(Some(daft_schema));
+    }
+    // Transpose chunk x column into column x chunk.
+    let mut column_arrays = vec![Vec::with_capacity(chunks.len()); chunks[0].len()];
+    for chunk in chunks.into_iter() {
+        for (idx, col) in chunk.into_iter().enumerate() {
+            column_arrays[idx].push(col);
+        }
+    }
+    // Build table from chunks.
+    // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
+    chunks_to_table(column_arrays, include_columns, fields)
+}
+
+async fn read_csv_single_into_stream(
+    uri: &str,
+    convert_options: CsvConvertOptions,
+    parse_options: CsvParseOptions,
+    read_options: Option<CsvReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<(impl ColumnArrayChunkStream + Send, Vec<Field>)> {
+    let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
+    {
         Some(schema) => (schema.to_arrow()?, None, None),
         None => {
-            let (schema, _, _, mean, std) = read_csv_schema_single(
+            let (schema, read_stats) = read_csv_schema_single(
                 uri,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
+                parse_options.clone(),
                 // Read at most 1 MiB when doing schema inference.
                 Some(1024 * 1024),
                 io_client.clone(),
                 io_stats.clone(),
             )
             .await?;
-            (schema.to_arrow()?, Some(mean), Some(std))
+            (
+                schema.to_arrow()?,
+                Some(read_stats.mean_record_size_bytes),
+                Some(read_stats.stddev_record_size_bytes),
+            )
         }
     };
-    let compression_codec = CompressionCodec::from_uri(uri);
-    match io_client
-        .single_url_get(uri.to_string(), None, io_stats)
-        .await?
-    {
-        GetResult::File(file) => {
-            read_csv_from_compressed_reader(
-                BufReader::new(File::open(file.path).await?),
-                compression_codec,
-                column_names,
-                include_columns,
-                num_rows,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                schema,
-                // Default buffer size of 512 KiB.
-                buffer_size.unwrap_or(512 * 1024),
-                // Default chunk size of 64 KiB.
-                chunk_size.unwrap_or(64 * 1024),
-                // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
-                // with the parsing of chunks on the rayon threadpool.
-                max_chunks_in_flight.unwrap_or(
-                    std::thread::available_parallelism()
-                        .unwrap_or(NonZeroUsize::new(2).unwrap())
-                        .checked_mul(2.try_into().unwrap())
-                        .unwrap()
-                        .try_into()
-                        .unwrap(),
-                ),
-                estimated_mean_row_size,
-                estimated_std_row_size,
-            )
-            .await
-        }
-        GetResult::Stream(stream, _, _) => {
-            read_csv_from_compressed_reader(
-                StreamReader::new(stream),
-                compression_codec,
-                column_names,
-                include_columns,
-                num_rows,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                schema,
-                // Default buffer size of 512 KiB.
-                buffer_size.unwrap_or(512 * 1024),
-                // Default chunk size of 64 KiB.
-                chunk_size.unwrap_or(64 * 1024),
-                // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
-                // with the parsing of chunks on the rayon threadpool.
-                max_chunks_in_flight.unwrap_or(
-                    std::thread::available_parallelism()
-                        .unwrap_or(NonZeroUsize::new(2).unwrap())
-                        .checked_mul(2.try_into().unwrap())
-                        .unwrap()
-                        .try_into()
-                        .unwrap(),
-                ),
-                estimated_mean_row_size,
-                estimated_std_row_size,
-            )
-            .await
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn read_csv_from_compressed_reader<R>(
-    reader: R,
-    compression_codec: Option<CompressionCodec>,
-    column_names: Option<Vec<&str>>,
-    include_columns: Option<Vec<&str>>,
-    num_rows: Option<usize>,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
-    schema: arrow2::datatypes::Schema,
-    buffer_size: usize,
-    chunk_size: usize,
-    max_chunks_in_flight: usize,
-    estimated_mean_row_size: Option<f64>,
-    estimated_std_row_size: Option<f64>,
-) -> DaftResult<Table>
-where
-    R: AsyncBufRead + Unpin + Send + 'static,
-{
-    match compression_codec {
-        Some(compression) => {
-            read_csv_from_uncompressed_reader(
-                compression.to_decoder(reader),
-                column_names,
-                include_columns,
-                num_rows,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                schema,
-                buffer_size,
-                chunk_size,
-                max_chunks_in_flight,
-                estimated_mean_row_size,
-                estimated_std_row_size,
-            )
-            .await
-        }
-        None => {
-            read_csv_from_uncompressed_reader(
-                reader,
-                column_names,
-                include_columns,
-                num_rows,
-                has_header,
-                delimiter,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                schema,
-                buffer_size,
-                chunk_size,
-                max_chunks_in_flight,
-                estimated_mean_row_size,
-                estimated_std_row_size,
-            )
-            .await
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn read_csv_from_uncompressed_reader<R>(
-    stream_reader: R,
-    column_names: Option<Vec<&str>>,
-    include_columns: Option<Vec<&str>>,
-    num_rows: Option<usize>,
-    has_header: bool,
-    delimiter: Option<u8>,
-    double_quote: bool,
-    quote: Option<u8>,
-    escape_char: Option<u8>,
-    comment: Option<u8>,
-    schema: arrow2::datatypes::Schema,
-    buffer_size: usize,
-    chunk_size: usize,
-    max_chunks_in_flight: usize,
-    estimated_mean_row_size: Option<f64>,
-    estimated_std_row_size: Option<f64>,
-) -> DaftResult<Table>
-where
-    R: AsyncRead + Unpin + Send,
-{
-    let reader = AsyncReaderBuilder::new()
-        .has_headers(has_header)
-        .delimiter(delimiter.unwrap_or(b','))
-        .double_quote(double_quote)
-        .quote(quote.unwrap_or(b'"'))
-        .escape(escape_char)
-        .comment(comment)
-        .buffer_capacity(buffer_size)
-        .create_reader(stream_reader.compat());
-    let mut fields = schema.fields;
     // Rename fields, if necessary.
-    if let Some(column_names) = column_names {
-        fields = fields
+    if let Some(column_names) = convert_options.column_names {
+        schema = schema
+            .fields
             .into_iter()
             .zip(column_names.iter())
             .map(|(field, name)| {
-                Field::new(*name, field.data_type, field.is_nullable).with_metadata(field.metadata)
+                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
             })
-            .collect();
+            .collect::<Vec<_>>()
+            .into();
     }
-    // Read CSV into Arrow2 column chunks.
-    let column_chunks = read_into_column_chunks(
+    let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
+        match io_client
+            .single_url_get(uri.to_string(), None, io_stats)
+            .await?
+        {
+            GetResult::File(file) => {
+                (
+                    Box::new(BufReader::new(File::open(file.path).await?)),
+                    // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
+                    read_options
+                        .as_ref()
+                        .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                        .unwrap_or(512 * 1024),
+                    read_options
+                        .as_ref()
+                        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                        .unwrap_or(64 * 1024),
+                )
+            }
+            GetResult::Stream(stream, _, _) => (
+                Box::new(StreamReader::new(stream)),
+                read_options
+                    .as_ref()
+                    .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                    .unwrap_or(512 * 1024),
+                read_options
+                    .as_ref()
+                    .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                    .unwrap_or(64 * 1024),
+            ),
+        };
+    let reader: Box<dyn AsyncRead + Unpin + Send> = match CompressionCodec::from_uri(uri) {
+        Some(compression) => Box::new(compression.to_decoder(reader)),
+        None => reader,
+    };
+    let reader = AsyncReaderBuilder::new()
+        .has_headers(parse_options.has_header)
+        .delimiter(parse_options.delimiter)
+        .double_quote(parse_options.double_quote)
+        .quote(parse_options.quote)
+        .escape(parse_options.escape_char)
+        .comment(parse_options.comment)
+        .buffer_capacity(buffer_size)
+        .create_reader(reader.compat());
+    let read_stream = read_into_byterecord_chunk_stream(
         reader,
-        fields.clone().into(),
-        fields_to_projection_indices(&fields, &include_columns),
-        num_rows,
+        schema.fields.len(),
+        convert_options.limit,
         chunk_size,
-        max_chunks_in_flight,
         estimated_mean_row_size,
         estimated_std_row_size,
-    )
-    .await?;
-    // Truncate fields to only contain projected columns.
-    if let Some(include_columns) = include_columns {
-        let field_map = fields
-            .into_iter()
-            .map(|field| (field.name.clone(), field))
-            .collect::<HashMap<String, Field>>();
-        fields = include_columns
-            .into_iter()
-            .map(|col| field_map[col].clone())
-            .collect::<Vec<_>>();
-    }
-    // Concatenate column chunks and convert into Daft Series.
-    // Note that this concatenation is done in parallel on the rayon threadpool.
-    let columns_series = column_chunks
-        .into_par_iter()
-        .zip(&fields)
-        .map(|(mut arrays, field)| {
-            let array = if arrays.len() > 1 {
-                // Concatenate all array chunks.
-                let unboxed_arrays = arrays.iter().map(Box::as_ref).collect::<Vec<_>>();
-                arrow2::compute::concatenate::concatenate(unboxed_arrays.as_slice())?
-            } else {
-                // Return single array chunk directly.
-                arrays.pop().unwrap()
-            };
-            Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
-        })
-        .collect::<DaftResult<Vec<Series>>>()?;
-    // Build Daft Table.
-    let schema: arrow2::datatypes::Schema = fields.into();
-    let daft_schema = Schema::try_from(&schema)?;
-    Table::new(daft_schema, columns_series)
+    );
+    let projection_indices =
+        fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
+    let fields = schema.fields;
+    Ok((
+        parse_into_column_array_chunk_stream(
+            read_stream,
+            Arc::new(fields.clone()),
+            projection_indices,
+        ),
+        fields,
+    ))
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn read_into_column_chunks<R>(
+fn read_into_byterecord_chunk_stream<R>(
     mut reader: AsyncReader<Compat<R>>,
-    fields: Arc<Vec<arrow2::datatypes::Field>>,
-    projection_indices: Arc<Vec<usize>>,
+    num_fields: usize,
     num_rows: Option<usize>,
     chunk_size: usize,
-    max_chunks_in_flight: usize,
     estimated_mean_row_size: Option<f64>,
     estimated_std_row_size: Option<f64>,
-) -> DaftResult<Vec<Vec<Box<dyn arrow2::array::Array>>>>
+) -> impl ByteRecordChunkStream + Send
 where
-    R: AsyncRead + Unpin + Send,
+    R: AsyncRead + Unpin + Send + 'static,
 {
-    let num_fields = fields.len();
     let num_rows = num_rows.unwrap_or(usize::MAX);
     let mut estimated_mean_row_size = estimated_mean_row_size.unwrap_or(200f64);
     let mut estimated_std_row_size = estimated_std_row_size.unwrap_or(20f64);
     // Stream of unparsed CSV byte record chunks.
-    let read_stream = async_stream::try_stream! {
+    async_stream::try_stream! {
         // Number of rows read in last read.
         let mut rows_read = 1;
         // Total number of rows read across all reads.
@@ -413,12 +358,18 @@ where
             chunk_buffer.truncate(rows_read);
             yield chunk_buffer
         }
-    };
+    }
+}
+
+fn parse_into_column_array_chunk_stream(
+    stream: impl ByteRecordChunkStream + Send,
+    fields: Arc<Vec<arrow2::datatypes::Field>>,
+    projection_indices: Arc<Vec<usize>>,
+) -> impl ColumnArrayChunkStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    let parse_stream = read_stream.map_ok(|record| {
-        let fields = fields.clone();
-        let projection_indices = projection_indices.clone();
+    stream.map_ok(move |record| {
+        let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
@@ -433,36 +384,60 @@ where
                                 0,
                             )
                         })
-                        .collect::<arrow2::error::Result<Vec<Box<dyn arrow2::array::Array>>>>()?;
-                    DaftResult::Ok(chunk)
+                        .collect::<arrow2::error::Result<Vec<Box<dyn arrow2::array::Array>>>>()
+                        .context(ArrowSnafu)?;
+                    Ok(chunk)
                 })();
                 let _ = send.send(result);
             });
             recv.await.context(super::OneShotRecvSnafu {})?
         })
         .context(super::JoinSnafu {})
-    });
-    // Collect all chunks in chunk x column form.
-    let chunks = parse_stream
-        // Limit the number of chunks we have in flight at any given time.
-        .try_buffered(max_chunks_in_flight)
-        .try_collect::<Vec<_>>()
-        .await?
-        .into_iter()
-        .collect::<DaftResult<Vec<_>>>()?;
-    // Transpose chunk x column into column x chunk.
-    let mut column_arrays = vec![Vec::with_capacity(chunks.len()); projection_indices.len()];
-    for chunk in chunks.into_iter() {
-        for (idx, col) in chunk.into_iter().enumerate() {
-            column_arrays[idx].push(col);
-        }
+    })
+}
+
+fn chunks_to_table(
+    chunks: Vec<Vec<Box<dyn arrow2::array::Array>>>,
+    include_columns: Option<Vec<String>>,
+    mut fields: Vec<arrow2::datatypes::Field>,
+) -> DaftResult<Table> {
+    // Truncate fields to only contain projected columns.
+    if let Some(include_columns) = include_columns {
+        let field_map = fields
+            .into_iter()
+            .map(|field| (field.name.clone(), field))
+            .collect::<HashMap<String, Field>>();
+        fields = include_columns
+            .into_iter()
+            .map(|col| field_map[&col].clone())
+            .collect::<Vec<_>>();
     }
-    Ok(column_arrays)
+    // Concatenate column chunks and convert into Daft Series.
+    // Note that this concatenation is done in parallel on the rayon threadpool.
+    let columns_series = chunks
+        .into_par_iter()
+        .zip(&fields)
+        .map(|(mut arrays, field)| {
+            let array = if arrays.len() > 1 {
+                // Concatenate all array chunks.
+                let unboxed_arrays = arrays.iter().map(Box::as_ref).collect::<Vec<_>>();
+                arrow2::compute::concatenate::concatenate(unboxed_arrays.as_slice())?
+            } else {
+                // Return single array chunk directly.
+                arrays.pop().unwrap()
+            };
+            Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
+        })
+        .collect::<DaftResult<Vec<Series>>>()?;
+    // Build Daft Table.
+    let schema: arrow2::datatypes::Schema = fields.into();
+    let daft_schema = Schema::try_from(&schema)?;
+    Table::new(daft_schema, columns_series)
 }
 
 fn fields_to_projection_indices(
     fields: &Vec<arrow2::datatypes::Field>,
-    include_columns: &Option<Vec<&str>>,
+    include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields
         .iter()
@@ -475,7 +450,7 @@ fn fields_to_projection_indices(
             || (0..fields.len()).collect(),
             |cols| {
                 cols.iter()
-                    .map(|c| field_name_to_idx[c])
+                    .map(|c| field_name_to_idx[c.as_str()])
                     .collect::<Vec<_>>()
             },
         )
@@ -502,7 +477,9 @@ mod tests {
     use daft_table::Table;
     use rstest::rstest;
 
-    use super::{char_to_byte, read_csv};
+    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+
+    use super::read_csv;
 
     fn check_equal_local_arrow2(
         path: &str,
@@ -591,25 +568,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let table = read_csv(file.as_ref(), None, None, None, io_client, None, true, None)?;
         assert_eq!(table.len(), 20);
         assert_eq!(
             table.schema,
@@ -662,21 +621,15 @@ mod tests {
         ];
         let table = read_csv(
             file.as_ref(),
-            Some(column_names.clone()),
-            None,
-            None,
-            false,
-            None,
-            true,
-            None,
-            None,
+            Some(
+                CsvConvertOptions::default()
+                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
+            ),
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -723,23 +676,14 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
-            None,
-            Some(5),
-            true,
-            Some('|'),
-            true,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_delimiter(b'|')),
             None,
             io_client,
             None,
             true,
             None,
-            None,
-            None,
-            None,
         )?;
-        assert_eq!(table.len(), 5);
+        assert_eq!(table.len(), 20);
         assert_eq!(
             table.schema,
             Schema::new(vec![
@@ -762,7 +706,7 @@ mod tests {
             None,
             None,
             None,
-            Some(5),
+            None,
         );
 
         Ok(())
@@ -783,23 +727,14 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
-            None,
-            Some(5),
-            true,
-            None,
-            false,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_double_quote(false)),
             None,
             io_client,
             None,
             true,
             None,
-            None,
-            None,
-            None,
         )?;
-        assert_eq!(table.len(), 5);
+        assert_eq!(table.len(), 19);
         assert_eq!(
             table.schema,
             Schema::new(vec![
@@ -822,7 +757,7 @@ mod tests {
             None,
             None,
             None,
-            Some(5),
+            None,
         );
 
         Ok(())
@@ -842,23 +777,14 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
-            None,
-            Some(5),
-            true,
-            None,
-            true,
-            Some('\''), // Testing with single quote
-            None,
+            Some(CsvParseOptions::default().with_quote(b'\'')),
             None,
             io_client,
             None,
             true,
             None,
-            None,
-            None,
-            None,
         )?;
-        assert_eq!(table.len(), 5);
+        assert_eq!(table.len(), 20);
         assert_eq!(
             table.schema,
             Schema::new(vec![
@@ -881,7 +807,7 @@ mod tests {
             None,
             None,
             None,
-            Some(5),
+            None,
         );
 
         Ok(())
@@ -899,23 +825,14 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
-            None,
-            Some(5),
-            true,
-            None,
-            true,
-            None,
-            Some('\\'), //testing with '\' as escape character
+            Some(CsvParseOptions::default().with_escape_char(Some(b'\\'))),
             None,
             io_client,
             None,
             true,
             None,
-            None,
-            None,
-            None,
         )?;
-        assert_eq!(table.len(), 5);
+        assert_eq!(table.len(), 20);
         assert_eq!(
             table.schema,
             Schema::new(vec![
@@ -938,7 +855,7 @@ mod tests {
             None,
             None,
             None,
-            Some(5),
+            None,
         );
 
         Ok(())
@@ -956,23 +873,14 @@ mod tests {
         let table = read_csv(
             file.as_ref(),
             None,
+            Some(CsvParseOptions::default().with_comment(Some(b'#'))),
             None,
-            Some(5),
-            true,
-            None,
-            true,
-            None,
-            None,
-            Some('#'),
             io_client,
             None,
             true,
             None,
-            None,
-            None,
-            None,
         )?;
-        assert_eq!(table.len(), 5);
+        assert_eq!(table.len(), 19);
         assert_eq!(
             table.schema,
             Schema::new(vec![
@@ -995,7 +903,7 @@ mod tests {
             Some('#'),
             None,
             None,
-            Some(5),
+            None,
         );
 
         Ok(())
@@ -1011,21 +919,12 @@ mod tests {
 
         let table = read_csv(
             file.as_ref(),
-            None,
-            None,
-            Some(5),
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_limit(Some(5))),
             None,
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 5);
@@ -1068,21 +967,15 @@ mod tests {
 
         let table = read_csv(
             file.as_ref(),
-            None,
-            Some(vec!["petal.length", "petal.width"]),
-            None,
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_include_columns(Some(vec![
+                "petal.length".to_string(),
+                "petal.width".to_string(),
+            ]))),
             None,
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -1132,21 +1025,19 @@ mod tests {
         ];
         let table = read_csv(
             file.as_ref(),
-            Some(column_names.clone()),
-            Some(vec!["petal.length", "petal.width"]),
-            None,
-            false,
-            None,
-            true,
-            None,
-            None,
+            Some(
+                CsvConvertOptions::default()
+                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_include_columns(Some(vec![
+                        "petal.length".to_string(),
+                        "petal.width".to_string(),
+                    ])),
+            ),
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -1188,19 +1079,10 @@ mod tests {
             file.as_ref(),
             None,
             None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvReadOptions::default().with_buffer_size(Some(128))),
             io_client,
             None,
             true,
-            None,
-            Some(128),
-            None,
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -1245,19 +1127,10 @@ mod tests {
             file.as_ref(),
             None,
             None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvReadOptions::default().with_chunk_size(Some(100))),
             io_client,
             None,
             true,
-            None,
-            None,
-            Some(100),
             None,
         )?;
         assert_eq!(table.len(), 20);
@@ -1303,18 +1176,9 @@ mod tests {
             None,
             None,
             None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             Some(5),
         )?;
         assert_eq!(table.len(), 20);
@@ -1355,25 +1219,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let table = read_csv(file.as_ref(), None, None, None, io_client, None, true, None)?;
         assert_eq!(table.len(), 6);
         assert_eq!(
             table.schema,
@@ -1415,25 +1261,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let table = read_csv(file.as_ref(), None, None, None, io_client, None, true, None)?;
         assert_eq!(table.len(), 6);
         assert_eq!(
             table.schema,
@@ -1482,21 +1310,12 @@ mod tests {
 
         let table = read_csv(
             file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_schema(Some(schema.into()))),
             None,
             None,
             io_client,
             None,
             true,
-            Some(schema.into()),
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 6);
@@ -1538,25 +1357,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let table = read_csv(file.as_ref(), None, None, None, io_client, None, true, None)?;
         assert_eq!(table.len(), 3);
         assert_eq!(
             table.schema,
@@ -1605,21 +1406,12 @@ mod tests {
         ])?;
         let table = read_csv(
             file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_schema(Some(schema.into()))),
             None,
             None,
             io_client,
             None,
             true,
-            Some(schema.into()),
-            None,
-            None,
             None,
         )?;
         let num_rows = table.len();
@@ -1645,25 +1437,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let err = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        );
+        let err = read_csv(file.as_ref(), None, None, None, io_client, None, true, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
@@ -1692,20 +1466,11 @@ mod tests {
         let err = read_csv(
             file.as_ref(),
             None,
-            None,
-            None,
-            false,
-            None,
-            true,
-            None,
-            None,
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         );
         assert!(err.is_err());
@@ -1755,25 +1520,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file.as_ref(),
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-        )?;
+        let table = read_csv(file.as_ref(), None, None, None, io_client, None, true, None)?;
         assert_eq!(table.len(), 100);
         assert_eq!(
             table.schema,
@@ -1799,21 +1546,15 @@ mod tests {
         let column_names = vec!["a", "b"];
         let table = read_csv(
             file,
-            Some(column_names.clone()),
-            None,
-            None,
-            false,
-            None,
-            true,
-            None,
-            None,
+            Some(
+                CsvConvertOptions::default()
+                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
+            ),
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 100);
@@ -1841,21 +1582,16 @@ mod tests {
         let column_names = vec!["a", "b"];
         let table = read_csv(
             file,
-            Some(column_names.clone()),
-            Some(vec!["b"]),
-            None,
-            false,
-            None,
-            true,
-            None,
-            None,
+            Some(
+                CsvConvertOptions::default()
+                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_include_columns(Some(vec!["b".to_string()])),
+            ),
+            Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 100);
@@ -1878,21 +1614,12 @@ mod tests {
 
         let table = read_csv(
             file,
-            None,
-            None,
-            Some(10),
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_limit(Some(10))),
             None,
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 10);
@@ -1919,21 +1646,12 @@ mod tests {
 
         let table = read_csv(
             file,
-            None,
-            Some(vec!["b"]),
-            None,
-            true,
-            None,
-            true,
-            None,
+            Some(CsvConvertOptions::default().with_include_columns(Some(vec!["b".to_string()]))),
             None,
             None,
             io_client,
             None,
             true,
-            None,
-            None,
-            None,
             None,
         )?;
         assert_eq!(table.len(), 100);
@@ -1958,19 +1676,10 @@ mod tests {
             file,
             None,
             None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvReadOptions::default().with_buffer_size(Some(100))),
             io_client,
             None,
             true,
-            None,
-            Some(100),
-            None,
             None,
         )?;
         assert_eq!(table.len(), 5000);
@@ -1991,19 +1700,10 @@ mod tests {
             file,
             None,
             None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
+            Some(CsvReadOptions::default().with_chunk_size(Some(100))),
             io_client,
             None,
             true,
-            None,
-            None,
-            Some(100),
             None,
         )?;
         assert_eq!(table.len(), 5000);
@@ -2020,25 +1720,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let table = read_csv(
-            file,
-            None,
-            None,
-            None,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            true,
-            None,
-            None,
-            None,
-            Some(5),
-        )?;
+        let table = read_csv(file, None, None, None, io_client, None, true, Some(5))?;
         assert_eq!(table.len(), 5000);
 
         Ok(())

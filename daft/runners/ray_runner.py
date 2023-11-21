@@ -69,7 +69,7 @@ except ImportError:
 
 from daft.logical.schema import Schema
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 
 @ray.remote

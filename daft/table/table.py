@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_table
-from daft.daft import JoinType
+from daft.daft import CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinType
 from daft.daft import PyTable as _PyTable
 from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
@@ -448,38 +448,20 @@ class Table:
     def read_csv(
         cls,
         path: str,
-        column_names: list[str] | None = None,
-        include_columns: list[str] | None = None,
-        num_rows: int | None = None,
-        has_header: bool | None = None,
-        delimiter: str | None = None,
-        double_quote: bool | None = None,
-        quote: str | None = None,
-        escape_char: str | None = None,
-        comment: str | None = None,
+        convert_options: CsvConvertOptions | None = None,
+        parse_options: CsvParseOptions | None = None,
+        read_options: CsvReadOptions | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-        schema: Schema | None = None,
-        buffer_size: int | None = None,
-        chunk_size: int | None = None,
     ) -> Table:
         return Table._from_pytable(
             _read_csv(
                 uri=path,
-                column_names=column_names,
-                include_columns=include_columns,
-                num_rows=num_rows,
-                has_header=has_header,
-                delimiter=delimiter,
-                double_quote=double_quote,
-                quote=quote,
-                escape_char=escape_char,
-                comment=comment,
+                convert_options=convert_options,
+                parse_options=parse_options,
+                read_options=read_options,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
-                schema=schema._schema if schema is not None else None,
-                buffer_size=buffer_size,
-                chunk_size=chunk_size,
             )
         )
 
@@ -529,7 +511,7 @@ def read_parquet_into_pyarrow(
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
     schema = pa.schema(fields, metadata=metadata)
-    columns = [pa.chunked_array(c) for c in columns]  # type: ignore
+    columns = [pa.chunked_array(c, type=f.type) for f, c in zip(schema, columns)]  # type: ignore
     return pa.table(columns, schema=schema)
 
 
@@ -556,6 +538,6 @@ def read_parquet_into_pyarrow_bulk(
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
     )
     return [
-        pa.table([pa.chunked_array(c) for c in columns], schema=pa.schema(fields, metadata=metadata))  # type: ignore
+        pa.table([pa.chunked_array(c, type=f.type) for f, c in zip(fields, columns)], schema=pa.schema(fields, metadata=metadata))  # type: ignore
         for fields, metadata, columns in bulk_result
     ]

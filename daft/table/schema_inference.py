@@ -6,7 +6,12 @@ import pyarrow.csv as pacsv
 import pyarrow.json as pajson
 import pyarrow.parquet as papq
 
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
+from daft.daft import (
+    CsvParseOptions,
+    NativeStorageConfig,
+    PythonStorageConfig,
+    StorageConfig,
+)
 from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -41,8 +46,14 @@ def from_csv(
             io_config = config.io_config
             return Schema.from_csv(
                 str(file),
-                has_header=csv_options.header_index is not None,
-                delimiter=csv_options.delimiter,
+                parse_options=CsvParseOptions(
+                    has_header=csv_options.header_index is not None,
+                    delimiter=csv_options.delimiter,
+                    double_quote=csv_options.double_quote,
+                    quote=csv_options.quote,
+                    escape_char=csv_options.escape_char,
+                    comment=csv_options.comment,
+                ),
                 io_config=io_config,
             )
 

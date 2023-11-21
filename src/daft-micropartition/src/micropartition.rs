@@ -7,7 +7,7 @@ use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
-use daft_csv::read::read_csv;
+use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
@@ -18,9 +18,9 @@ use daft_table::Table;
 
 use snafu::ResultExt;
 
-use crate::DaftCoreComputeSnafu;
 #[cfg(feature = "python")]
 use crate::PyIOSnafu;
+use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{IOConfig, IOStatsRef};
 use daft_stats::TableMetadata;
@@ -143,29 +143,40 @@ fn materialize_scan_task(
                     } else {
                         None
                     };
-                    urls.map(|url| {
-                        daft_csv::read::read_csv(
-                            url,
-                            col_names.clone(),
-                            column_names.clone(),
-                            scan_task.pushdowns.limit,
-                            cfg.has_headers,
-                            cfg.delimiter,
-                            cfg.double_quote,
-                            cfg.quote,
-                            cfg.escape_char,
-                            cfg.comment,
-                            io_client.clone(),
-                            io_stats.clone(),
-                            native_storage_config.multithreaded_io,
-                            None, // Allow read_csv to perform its own schema inference
-                            cfg.buffer_size,
-                            cfg.chunk_size,
-                            None, // max_chunks_in_flight
-                        )
-                        .context(DaftCoreComputeSnafu)
-                    })
-                    .collect::<crate::Result<Vec<Table>>>()?
+                    let convert_options = CsvConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        col_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        None,
+                    );
+                    let parse_options = CsvParseOptions::new_with_defaults(
+                        cfg.has_headers,
+                        cfg.delimiter,
+                        cfg.double_quote,
+                        cfg.quote,
+                        cfg.escape_char,
+                        cfg.comment,
+                    )
+                    .context(DaftCSVSnafu)?;
+                    let read_options =
+                        CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+                    let uris = urls.collect::<Vec<_>>();
+                    daft_csv::read_csv_bulk(
+                        uris.as_slice(),
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        native_storage_config.multithreaded_io,
+                        None,
+                        8,
+                    )
+                    .context(DaftCoreComputeSnafu)?
                 }
 
                 // ****************
@@ -543,60 +554,33 @@ fn parquet_sources_to_row_groups(sources: &[DataFileSource]) -> Option<Vec<Optio
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn read_csv_into_micropartition(
     uris: &[&str],
-    column_names: Option<Vec<&str>>,
-    include_columns: Option<Vec<&str>>,
-    num_rows: Option<usize>,
-    has_header: bool,
-    delimiter: Option<char>,
-    double_quote: bool,
-    quote: Option<char>,
-    escape_char: Option<char>,
-    comment: Option<char>,
+    convert_options: Option<CsvConvertOptions>,
+    parse_options: Option<CsvParseOptions>,
+    read_options: Option<CsvReadOptions>,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
-    schema: Option<SchemaRef>,
-    buffer_size: Option<usize>,
-    chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-    let mut remaining_rows = num_rows;
 
     match uris {
         [] => Ok(MicroPartition::empty(None)),
         uris => {
-            // Naively load CSVs from URIs
-            let mut tables = vec![];
-            for uri in uris {
-                // Terminate early if we have read enough rows already
-                if remaining_rows.map(|rr| rr == 0).unwrap_or(false) {
-                    break;
-                }
-                let table = read_csv(
-                    uri,
-                    column_names.clone(),
-                    include_columns.clone(),
-                    remaining_rows,
-                    has_header,
-                    delimiter,
-                    double_quote,
-                    quote,
-                    escape_char,
-                    comment,
-                    io_client.clone(),
-                    io_stats.clone(),
-                    multithreaded_io,
-                    schema.clone(),
-                    buffer_size,
-                    chunk_size,
-                    None,
-                )?;
-                remaining_rows = remaining_rows.map(|rr| rr - table.len());
-                tables.push(table);
-            }
+            // Perform a bulk read of URIs, materializing a table per URI.
+            let tables = daft_csv::read_csv_bulk(
+                uris,
+                convert_options,
+                parse_options,
+                read_options,
+                io_client,
+                io_stats,
+                multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?;
 
             // Union all schemas and cast all tables to the same schema
             let unioned_schema = tables
@@ -810,5 +794,6 @@ impl Display for MicroPartition {
         Ok(())
     }
 }
+
 #[cfg(test)]
 mod test {}

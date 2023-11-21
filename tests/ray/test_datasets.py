@@ -13,7 +13,7 @@ import daft
 from daft import DataType
 from daft.context import get_context
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split("."))
+RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 
 class MyObj:

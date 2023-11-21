@@ -15,7 +15,13 @@ from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
-from daft.table import Table, schema_inference, table_io
+from daft.table import (
+    Table,
+    read_parquet_into_pyarrow,
+    read_parquet_into_pyarrow_bulk,
+    schema_inference,
+    table_io,
+)
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
@@ -317,7 +323,7 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
 
 
 @pytest.mark.parametrize("n_bytes", [0, 1, 2, 7])
-def test_read_empty_parquet_file(tmpdir, n_bytes):
+def test_read_too_small_parquet_file(tmpdir, n_bytes):
 
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
@@ -326,3 +332,36 @@ def test_read_empty_parquet_file(tmpdir, n_bytes):
             f.write(b"0")
     with pytest.raises(ValueError, match="smaller than the minimum size of 12 bytes"):
         Table.read_parquet(file_path.as_posix())
+
+
+def test_read_empty_parquet_file_with_table(tmpdir):
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([], type=pa.int64())})
+    with open(file_path, "wb") as f:
+        papq.write_table(tab, file_path.as_posix())
+    read_back = Table.read_parquet(file_path.as_posix()).to_arrow()
+    assert tab == read_back
+
+
+def test_read_empty_parquet_file_with_pyarrow(tmpdir):
+
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([], type=pa.int64())})
+    with open(file_path, "wb") as f:
+        papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow(file_path.as_posix())
+    assert tab == read_back
+
+
+def test_read_empty_parquet_file_with_pyarrow_bulk(tmpdir):
+
+    tmpdir = pathlib.Path(tmpdir)
+    file_path = tmpdir / "file.parquet"
+    tab = pa.table({"x": pa.array([], type=pa.int64())})
+    with open(file_path, "wb") as f:
+        papq.write_table(tab, file_path.as_posix())
+    read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()])
+    assert len(read_back) == 1
+    assert tab == read_back[0]
