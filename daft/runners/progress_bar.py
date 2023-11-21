@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 from tqdm.auto import tqdm
@@ -25,7 +26,7 @@ class ProgressBar:
             self.pbars[stage_id] = self.tqdm_mod(total=1, desc=name, position=len(self.pbars))
         else:
             self.pbars[stage_id] = self.tqdm_mod(
-                total=1, desc=name, position=len(self.pbars), leave=False, mininterval=1.0
+                total=1, desc=name, position=len(self.pbars), leave=False, mininterval=1.0, maxinterval=5.0
             )
 
     def mark_task_start(self, step: PartitionTask[Any]) -> None:
@@ -46,6 +47,10 @@ class ProgressBar:
         else:
             pb = self.pbars[stage_id]
             pb.total += 1
+            if hasattr(pb, "last_print_t"):
+                dt = time.time() - pb.last_print_t
+                if dt >= 5.0:
+                    pb.refresh()
 
     def mark_task_done(self, step: PartitionTask[Any]) -> None:
         if self.disable:
