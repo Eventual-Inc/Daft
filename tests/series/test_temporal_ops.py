@@ -106,6 +106,25 @@ def test_series_timestamp_day_operation(tz) -> None:
     assert expected == days.to_pylist()
 
 
+def test_series_timestamp_hour() -> None:
+    from datetime import datetime
+
+    def ts_maker(h):
+        if h is None:
+            return None
+        return datetime(2023, 1, 26, h, 1, 1)
+
+    input = [1, 5, 14, None, 23, None, 21]
+
+    input_ts = list(map(ts_maker, input))
+    s = Series.from_pylist(input_ts).cast(DataType.timestamp(TimeUnit.ms()))
+    days = s.dt.hour()
+
+    assert days.datatype() == DataType.uint32()
+
+    assert input == days.to_pylist()
+
+
 @pytest.mark.parametrize("tz", [None, "UTC", "+08:00", "Asia/Singapore"])
 def test_series_timestamp_month_operation(tz) -> None:
     from datetime import datetime
