@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.9']
-        ray-version: [2.5.1, 2.4.0, 2.3.0, 2.2.0, 2.1.0, 2.0.0]
+        ray-version: [==2.5.1, ==2.4.0, ==2.3.0, ==2.2.0, ==2.1.0, ==2.0.0, '@https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp39-cp39-manylinux2014_x86_64.whl']
 
     steps:
     - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
       run: pip install --upgrade pip
 
     - name: Install to pin Ray versions
-      run: pip install ray[data,default]==${{ matrix.ray-version }}
+      run: pip install ray[data,default]${{ matrix.ray-version }}
 
     # Ray requires a pinned protobuf<4.0 for versions of Ray <1.13 (see: https://github.com/ray-project/ray/pull/25211)
     - name: Install to pin Protobuf version (for Ray <1.13)
