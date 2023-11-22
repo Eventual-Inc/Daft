@@ -4,7 +4,7 @@ import sys
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
 import pyarrow as pa
@@ -92,29 +92,33 @@ class PartitionMetadata(PartialPartitionMetadata):
 PartitionT = TypeVar("PartitionT")
 
 
-@runtime_checkable
-class MaterializedResult(Protocol[PartitionT]):
+class MaterializedResult(Generic[PartitionT]):
     """A protocol for accessing the result partition of a PartitionTask.
 
     Different Runners can fill in their own implementation here.
     """
 
+    @abstractmethod
     def partition(self) -> PartitionT:
         """Get the partition of this result."""
         ...
 
+    @abstractmethod
     def vpartition(self) -> Table:
         """Get the vPartition of this result."""
         ...
 
+    @abstractmethod
     def metadata(self) -> PartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
 
+    @abstractmethod
     def cancel(self) -> None:
         """If possible, cancel execution of this PartitionTask."""
         ...
 
+    @abstractmethod
     def _noop(self, _: PartitionT) -> None:
         """Implement this as a no-op.
         https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
