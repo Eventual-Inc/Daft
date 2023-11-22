@@ -1064,7 +1064,7 @@ class DataFrame:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
             preview = self._preview
-    
+
         # Display the `DataFrameDisplay`:
         # Attempt to use `display` from IPython if available, otherwise fall-back onto `print`
         dataframe_display = DataFrameDisplay(preview, self.schema(), num_rows=n)
@@ -1073,7 +1073,7 @@ class DataFrame:
 
             display(dataframe_display)
         except ImportError:
-            print(display)
+            print(dataframe_display)
 
         return None
 
