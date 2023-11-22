@@ -1011,19 +1011,8 @@ class DataFrame:
 
         return self
 
-    @DataframePublicAPI
-    def show(self, n: int = 8) -> "DataFrameDisplay":
-        """Executes enough of the DataFrame in order to display the first ``n`` rows
-
-        .. NOTE::
-            This call is **blocking** and will execute the DataFrame when called
-
-        Args:
-            n: number of rows to show. Defaults to 8.
-
-        Returns:
-            DataFrameDisplay: object that has a rich tabular display
-        """
+    def _construct_show_display(self, n: int) -> "DataFrameDisplay":
+        """Helper for .show() which will construct the underlying DataFrameDisplay object"""
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 
@@ -1031,6 +1020,7 @@ class DataFrame:
         if total_rows is not None and n > total_rows:
             n = total_rows
 
+        # Construct the PreviewPartition
         if preview_partition is None or len(preview_partition) < n:
             # Preview partition doesn't exist or doesn't contain enough rows, so we need to compute a
             # new one from scratch.
@@ -1063,7 +1053,30 @@ class DataFrame:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
             preview = self._preview
+
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
+
+    @DataframePublicAPI
+    def show(self, n: int = 8) -> None:
+        """Executes enough of the DataFrame in order to display the first ``n`` rows
+
+        If IPython is installed, this will use IPython's `display` utility to pretty-print in a
+        notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
+
+        Args:
+            n: number of rows to show. Defaults to 8.
+        """
+        dataframe_display = self._construct_show_display(n)
+        try:
+            from IPython.display import display
+
+            display(dataframe_display)
+        except ImportError:
+            print(dataframe_display)
+        return None
 
     def __len__(self):
         """Returns the count of rows when dataframe is materialized.
