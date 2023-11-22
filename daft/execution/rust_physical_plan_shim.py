@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, TypeVar, cast
+from typing import Iterator, cast
 
 from daft.daft import (
     FileFormat,
@@ -19,10 +19,8 @@ from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartialPartitionMetadata
+from daft.runners.partitioning import PartialPartitionMetadata, PartitionT
 from daft.table import Table
-
-PartitionT = TypeVar("PartitionT")
 
 
 def scan_with_tasks(

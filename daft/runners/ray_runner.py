@@ -36,7 +36,6 @@ from daft.datatype import DataType
 from daft.execution.execution_step import (
     FanoutInstruction,
     Instruction,
-    MaterializedResult,
     MultiOutputPartitionTask,
     PartitionTask,
     ReduceInstruction,
@@ -45,6 +44,7 @@ from daft.execution.execution_step import (
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
@@ -121,11 +121,6 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
 
 
 @ray.remote
-def remote_len_partition(p: Table) -> int:
-    return len(p)
-
-
-@ray.remote
 def sample_schema_from_filepath(
     first_file_path: str,
     file_format_config: FileFormatConfig,
@@ -138,10 +133,10 @@ def sample_schema_from_filepath(
 
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
-    _partitions: dict[PartID, ray.ObjectRef]
+    _results: dict[PartID, RayMaterializedResult]
 
     def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
-        return sorted(self._partitions.items())
+        return [(pid, result.partition()) for pid, result in sorted(self._results.items())]
 
     def _get_merged_vpartition(self) -> Table:
         ids_and_partitions = self.items()
@@ -156,7 +151,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
                 "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
             )
 
-        blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
+        blocks = [_make_ray_block_from_vpartition.remote(self._results[k].partition()) for k in self._results.keys()]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
@@ -176,36 +171,31 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
             return partition.to_pandas()
 
         ddf_parts = [
-            _make_dask_dataframe_partition_from_vpartition(self._partitions[k]) for k in self._partitions.keys()
+            _make_dask_dataframe_partition_from_vpartition(self._results[k].partition()) for k in self._results.keys()
         ]
         return dd.from_delayed(ddf_parts, meta=meta)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
-        return self._partitions[idx]
+        return self._results[idx].partition()
 
-    def set_partition(self, idx: PartID, part: ray.ObjectRef) -> None:
-        self._partitions[idx] = part
+    def set_partition(self, idx: PartID, result: MaterializedResult[ray.ObjectRef]) -> None:
+        assert isinstance(result, RayMaterializedResult)
+        self._results[idx] = result
 
     def delete_partition(self, idx: PartID) -> None:
-        del self._partitions[idx]
+        del self._results[idx]
 
     def has_partition(self, idx: PartID) -> bool:
-        return idx in self._partitions
+        return idx in self._results
 
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    def len_of_partitions(self) -> list[int]:
-        partition_ids = sorted(list(self._partitions.keys()))
-
-        result: list[int] = ray.get([remote_len_partition.remote(self._partitions[pid]) for pid in partition_ids])
-        return result
+        return sum([self._results[pid].metadata().num_rows for pid in self._results])
 
     def num_partitions(self) -> int:
-        return len(self._partitions)
+        return len(self._results)
 
     def wait(self) -> None:
-        deduped_object_refs = set(self._partitions.values())
+        deduped_object_refs = {r.partition() for r in self._results.values()}
         ray.wait(list(deduped_object_refs))
 
 
@@ -274,7 +264,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         daft_vpartitions = [
             _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
         ]
-        return RayPartitionSet(dict(enumerate(daft_vpartitions))), daft_schema
+        return RayPartitionSet({i: RayMaterializedResult(obj) for i, obj in enumerate(daft_vpartitions)}), daft_schema
 
     def partition_set_from_dask_dataframe(
         self,
@@ -296,7 +286,7 @@ class RayRunnerIO(runner_io.RunnerIO):
                 "Can't convert a Dask DataFrame with inconsistent schemas across partitions to a Daft DataFrame:",
                 schemas,
             )
-        return RayPartitionSet(dict(enumerate(daft_vpartitions))), schemas[0]
+        return RayPartitionSet({i: RayMaterializedResult(obj) for i, obj in enumerate(daft_vpartitions)}), schemas[0]
 
 
 def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
@@ -406,7 +396,7 @@ class Scheduler:
 
         self.use_ray_tqdm = use_ray_tqdm
 
-    def next(self, result_uuid: str) -> ray.ObjectRef | StopIteration:
+    def next(self, result_uuid: str) -> RayMaterializedResult | StopIteration:
         # Case: thread is terminated and no longer exists.
         # Should only be hit for repeated calls to next() after StopIteration.
         if result_uuid not in self.threads_by_df:
@@ -495,7 +485,7 @@ class Scheduler:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break
 
-                            elif isinstance(next_step, ray.ObjectRef):
+                            elif isinstance(next_step, MaterializedResult):
                                 # A final result.
                                 self.results_by_df[result_uuid].put(next_step)
                                 next_step = next(tasks)
@@ -650,7 +640,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         else:
             return self.scheduler.active_plans()
 
-    def run_iter(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[ray.ObjectRef]:
+    def run_iter(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[RayMaterializedResult]:
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
@@ -701,16 +693,16 @@ class RayRunner(Runner[ray.ObjectRef]):
                 self.scheduler.stop_plan(result_uuid)
 
     def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
-        for ref in self.run_iter(builder, results_buffer_size=results_buffer_size):
-            yield ray.get(ref)
+        for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
+            yield ray.get(result.partition())
 
     def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
         result_pset = RayPartitionSet({})
 
-        partitions_iter = self.run_iter(builder)
+        results_iter = self.run_iter(builder)
 
-        for i, partition in enumerate(partitions_iter):
-            result_pset.set_partition(i, partition)
+        for i, result in enumerate(results_iter):
+            result_pset.set_partition(i, result)
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
 
@@ -718,7 +710,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
-            pset = RayPartitionSet({pid: ray.put(val) for pid, val in pset._partitions.items()})
+            pset = RayPartitionSet({pid: RayMaterializedResult(ray.put(val)) for pid, val in pset._partitions.items()})
 
         return self._part_set_cache.put_partition_set(pset=pset)
 

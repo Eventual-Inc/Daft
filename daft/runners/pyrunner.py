@@ -16,13 +16,14 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.execution import physical_plan
-from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
+from daft.execution.execution_step import Instruction, PartitionTask
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
@@ -52,8 +53,8 @@ class LocalPartitionSet(PartitionSet[Table]):
     def get_partition(self, idx: PartID) -> Table:
         return self._partitions[idx]
 
-    def set_partition(self, idx: PartID, part: Table) -> None:
-        self._partitions[idx] = part
+    def set_partition(self, idx: PartID, part: MaterializedResult[Table]) -> None:
+        self._partitions[idx] = part.partition()
 
     def delete_partition(self, idx: PartID) -> None:
         del self._partitions[idx]
@@ -62,11 +63,7 @@ class LocalPartitionSet(PartitionSet[Table]):
         return idx in self._partitions
 
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    def len_of_partitions(self) -> list[int]:
-        partition_ids = sorted(list(self._partitions.keys()))
-        return [len(self._partitions[pid]) for pid in partition_ids]
+        return sum([len(self._partitions[pid]) for pid in self._partitions])
 
     def num_partitions(self) -> int:
         return len(self._partitions)
@@ -119,11 +116,11 @@ class PyRunner(Runner[Table]):
         return PyRunnerIO()
 
     def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        partitions = list(self.run_iter(builder))
+        results = list(self.run_iter(builder))
 
         result_pset = LocalPartitionSet({})
-        for i, partition in enumerate(partitions):
-            result_pset.set_partition(i, partition)
+        for i, result in enumerate(results):
+            result_pset.set_partition(i, result)
 
         pset_entry = self.put_partition_set_into_cache(result_pset)
         return pset_entry
@@ -133,7 +130,7 @@ class PyRunner(Runner[Table]):
         builder: LogicalPlanBuilder,
         # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
-    ) -> Iterator[Table]:
+    ) -> Iterator[PyMaterializedResult]:
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
@@ -147,13 +144,16 @@ class PyRunner(Runner[Table]):
         # Get executable tasks from planner.
         tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=False)
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
-            partitions_gen = self._physical_plan_to_partitions(tasks)
-            yield from partitions_gen
+            results_gen = self._physical_plan_to_partitions(tasks)
+            yield from results_gen
 
     def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
-        return self.run_iter(builder, results_buffer_size=results_buffer_size)
+        for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
+            yield result.partition()
 
-    def _physical_plan_to_partitions(self, plan: physical_plan.MaterializedPhysicalPlan) -> Iterator[Table]:
+    def _physical_plan_to_partitions(
+        self, plan: physical_plan.MaterializedPhysicalPlan[Table]
+    ) -> Iterator[PyMaterializedResult]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
         future_to_task: dict[futures.Future, str] = dict()
@@ -171,7 +171,9 @@ class PyRunner(Runner[Table]):
                             # Blocked on already dispatched tasks; await some tasks.
                             break
 
-                        elif isinstance(next_step, Table):
+                        elif isinstance(next_step, MaterializedResult):
+                            assert isinstance(next_step, PyMaterializedResult)
+
                             # A final result.
                             yield next_step
                             next_step = next(plan)

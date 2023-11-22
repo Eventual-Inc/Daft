@@ -92,6 +92,40 @@ class PartitionMetadata(PartialPartitionMetadata):
 PartitionT = TypeVar("PartitionT")
 
 
+class MaterializedResult(Generic[PartitionT]):
+    """A protocol for accessing the result partition of a PartitionTask.
+
+    Different Runners can fill in their own implementation here.
+    """
+
+    @abstractmethod
+    def partition(self) -> PartitionT:
+        """Get the partition of this result."""
+        ...
+
+    @abstractmethod
+    def vpartition(self) -> Table:
+        """Get the vPartition of this result."""
+        ...
+
+    @abstractmethod
+    def metadata(self) -> PartitionMetadata:
+        """Get the metadata of the partition in this result."""
+        ...
+
+    @abstractmethod
+    def cancel(self) -> None:
+        """If possible, cancel execution of this PartitionTask."""
+        ...
+
+    @abstractmethod
+    def _noop(self, _: PartitionT) -> None:
+        """Implement this as a no-op.
+        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
+        """
+        ...
+
+
 class PartitionSet(Generic[PartitionT]):
     def _get_merged_vpartition(self) -> Table:
         raise NotImplementedError()
@@ -126,7 +160,7 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
     @abstractmethod
-    def set_partition(self, idx: PartID, part: PartitionT) -> None:
+    def set_partition(self, idx: PartID, part: MaterializedResult[PartitionT]) -> None:
         raise NotImplementedError()
 
     @abstractmethod
@@ -139,10 +173,6 @@ class PartitionSet(Generic[PartitionT]):
 
     @abstractmethod
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    @abstractmethod
-    def len_of_partitions(self) -> list[int]:
         raise NotImplementedError()
 
     @abstractmethod

@@ -4,7 +4,7 @@ import itertools
 import pathlib
 import sys
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import Generic
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -26,14 +26,15 @@ from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartialPartitionMetadata,
     PartitionMetadata,
+    PartitionT,
     TableParseCSVOptions,
     TableReadOptions,
 )
 from daft.table import Table, table_io
 
-PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
 
 
@@ -175,28 +176,29 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
     def done(self) -> bool:
         return self._result is not None
 
+    def result(self) -> MaterializedResult[PartitionT]:
+        assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
+        return self._result
+
     def cancel(self) -> None:
         # Currently only implemented for Ray tasks.
-        if self._result is not None:
-            self._result.cancel()
+        if self.done():
+            self.result().cancel()
 
     def partition(self) -> PartitionT:
         """Get the PartitionT resulting from running this PartitionTask."""
-        assert self._result is not None
-        return self._result.partition()
+        return self.result().partition()
 
     def partition_metadata(self) -> PartitionMetadata:
         """Get the metadata of the result partition.
 
         (Avoids retrieving the actual partition itself if possible.)
         """
-        assert self._result is not None
-        return self._result.metadata()
+        return self.result().metadata()
 
     def vpartition(self) -> Table:
         """Get the raw vPartition of the result."""
-        assert self._result is not None
-        return self._result.vpartition()
+        return self.result().vpartition()
 
     def __str__(self) -> str:
         return super().__str__()
@@ -249,35 +251,6 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
 
     def __repr__(self) -> str:
         return super().__str__()
-
-
-class MaterializedResult(Protocol[PartitionT]):
-    """A protocol for accessing the result partition of a PartitionTask.
-
-    Different Runners can fill in their own implementation here.
-    """
-
-    def partition(self) -> PartitionT:
-        """Get the partition of this result."""
-        ...
-
-    def vpartition(self) -> Table:
-        """Get the vPartition of this result."""
-        ...
-
-    def metadata(self) -> PartitionMetadata:
-        """Get the metadata of the partition in this result."""
-        ...
-
-    def cancel(self) -> None:
-        """If possible, cancel execution of this PartitionTask."""
-        ...
-
-    def _noop(self, _: PartitionT) -> None:
-        """Implement this as a no-op.
-        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
-        """
-        ...
 
 
 class Instruction(Protocol):
