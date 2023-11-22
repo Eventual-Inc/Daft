@@ -16,13 +16,14 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.execution import physical_plan
-from daft.execution.execution_step import Instruction, MaterializedResult, PartitionTask
+from daft.execution.execution_step import Instruction, PartitionTask
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
@@ -52,8 +53,8 @@ class LocalPartitionSet(PartitionSet[Table]):
     def get_partition(self, idx: PartID) -> Table:
         return self._partitions[idx]
 
-    def set_partition(self, idx: PartID, part: Table) -> None:
-        self._partitions[idx] = part
+    def set_partition(self, idx: PartID, part: MaterializedResult[Table]) -> None:
+        self._partitions[idx] = part.partition()
 
     def delete_partition(self, idx: PartID) -> None:
         del self._partitions[idx]

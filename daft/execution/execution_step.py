@@ -26,6 +26,7 @@ from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartialPartitionMetadata,
     PartitionMetadata,
     TableParseCSVOptions,
@@ -249,35 +250,6 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
 
     def __repr__(self) -> str:
         return super().__str__()
-
-
-class MaterializedResult(Protocol[PartitionT]):
-    """A protocol for accessing the result partition of a PartitionTask.
-
-    Different Runners can fill in their own implementation here.
-    """
-
-    def partition(self) -> PartitionT:
-        """Get the partition of this result."""
-        ...
-
-    def vpartition(self) -> Table:
-        """Get the vPartition of this result."""
-        ...
-
-    def metadata(self) -> PartitionMetadata:
-        """Get the metadata of the partition in this result."""
-        ...
-
-    def cancel(self) -> None:
-        """If possible, cancel execution of this PartitionTask."""
-        ...
-
-    def _noop(self, _: PartitionT) -> None:
-        """Implement this as a no-op.
-        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
-        """
-        ...
 
 
 class Instruction(Protocol):

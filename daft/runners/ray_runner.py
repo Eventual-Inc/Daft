@@ -36,7 +36,6 @@ from daft.datatype import DataType
 from daft.execution.execution_step import (
     FanoutInstruction,
     Instruction,
-    MaterializedResult,
     MultiOutputPartitionTask,
     PartitionTask,
     ReduceInstruction,
@@ -45,6 +44,7 @@ from daft.execution.execution_step import (
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartID,
     PartitionCacheEntry,
     PartitionMetadata,
@@ -183,8 +183,8 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
         return self._partitions[idx]
 
-    def set_partition(self, idx: PartID, part: ray.ObjectRef) -> None:
-        self._partitions[idx] = part
+    def set_partition(self, idx: PartID, part: MaterializedResult[ray.ObjectRef]) -> None:
+        self._partitions[idx] = part.partition()
 
     def delete_partition(self, idx: PartID) -> None:
         del self._partitions[idx]
