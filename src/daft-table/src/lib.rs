@@ -468,32 +468,69 @@ impl Table {
         res
     }
 
-    pub fn to_prettytable(&self, max_col_width: Option<usize>) -> prettytable::Table {
-        let mut table = prettytable::Table::new();
-        let header = self
-            .schema
-            .fields
-            .iter()
-            .map(|(name, field)| {
-                prettytable::Cell::new(format!("{}\n{}", name, field.dtype).as_str())
-                    .with_style(prettytable::Attr::Bold)
-            })
-            .collect();
-        table.add_row(header);
+    pub fn to_comfytable(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+        let mut table = comfy_table::Table::new();
 
+        table.load_preset(comfy_table::presets::UTF8_FULL)
+            .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+            .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+            // .set_width(100);
+
+
+        const DOTS: &str = "…";
+
+        const TOTAL_ROWS: usize = 10;
         let head_rows;
         let tail_rows;
 
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        if self.len() > TOTAL_ROWS {
+            head_rows = TOTAL_ROWS / 2;
+            tail_rows = TOTAL_ROWS / 2;
         } else {
             head_rows = self.len();
             tail_rows = 0;
         }
+        const MAX_COLS: usize = 8;
+
+        let head_cols;
+        let tail_cols;
+        let total_cols;
+        if self.num_columns() > MAX_COLS {
+            head_cols = (MAX_COLS + 1) / 2;
+            tail_cols = MAX_COLS / 2;
+            total_cols = head_cols + tail_cols + 1;
+        } else {
+            head_cols = self.num_columns();
+            tail_cols = 0;
+            total_cols = head_cols;
+        }
+        let mut header = self
+            .schema
+            .fields
+            .iter()
+            .take(head_cols)
+            .map(|(name, field)| {
+                comfy_table::Cell::new(format!("{}\n┈\n{}", name, field.dtype).as_str())
+                    .add_attribute(comfy_table::Attribute::Bold)
+            }).collect::<Vec<_>>();
+        if tail_cols > 0 {
+            header.push(comfy_table::Cell::new(DOTS));
+            header.extend(
+                self
+                .schema
+                .fields
+                .iter()
+                .skip(self.num_columns() - tail_cols)
+                .map(|(name, field)| {
+                    comfy_table::Cell::new(format!("{}\n┈\n{}", name, field.dtype).as_str())
+                        .add_attribute(comfy_table::Attribute::Bold)
+                })    
+            )
+        }            
+        table.add_row(header);
 
         for i in 0..head_rows {
-            let row = self
+            let all_cols  = self
                 .columns
                 .iter()
                 .map(|s| {
@@ -501,40 +538,65 @@ impl Table {
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width {
                             str_val = format!(
-                                "{}...",
-                                &str_val
-                                    .char_indices()
-                                    .take(max_col_width - 3)
-                                    .map(|(_, c)| c)
-                                    .collect::<String>()
+                                "{}{DOTS}",
+                                &str_val[..max_col_width - 3]
                             );
                         }
                     }
                     str_val
-                })
-                .collect::<Vec<String>>();
-            table.add_row(row.into());
+                }).collect::<Vec<_>>();
+
+            if tail_cols > 0 {
+                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
+                final_row.push(DOTS.into());
+                final_row.extend(
+                    all_cols
+                    .iter()
+                    .skip(self.num_columns() - tail_cols)
+                    .cloned()
+                );
+                table.add_row(final_row);
+
+            } else {
+                table.add_row(all_cols);
+            }
+        
+
         }
         if tail_rows != 0 {
-            let row: prettytable::Row = (0..self.num_columns()).map(|_| "...").collect();
-            table.add_row(row);
+            table.add_row((0..total_cols).map(|_| DOTS).collect::<Vec<_>>());
         }
 
         for i in (self.len() - tail_rows)..(self.len()) {
-            let row = self
+            let all_cols  = self
                 .columns
                 .iter()
                 .map(|s| {
                     let mut str_val = s.str_value(i).unwrap();
                     if let Some(max_col_width) = max_col_width {
                         if str_val.len() > max_col_width {
-                            str_val = format!("{}...", &str_val[..max_col_width - 3]);
+                            str_val = format!(
+                                "{}{DOTS}",
+                                &str_val[..max_col_width - 3]
+                            );
                         }
                     }
                     str_val
-                })
-                .collect::<Vec<String>>();
-            table.add_row(row.into());
+                }).collect::<Vec<_>>();
+
+            if tail_cols > 0 {
+                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
+                final_row.push(DOTS.into());
+                final_row.extend(
+                    all_cols
+                    .iter()
+                    .skip(self.num_columns() - tail_cols)
+                    .cloned()
+                );
+                table.add_row(final_row);
+            } else {
+                table.add_row(all_cols);
+            }        
         }
 
         table
@@ -544,7 +606,7 @@ impl Table {
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_prettytable(Some(32));
+        let table = self.to_comfytable(Some(32));
         write!(f, "{table}")
     }
 }
