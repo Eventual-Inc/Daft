@@ -121,11 +121,6 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
 
 
 @ray.remote
-def remote_len_partition(p: Table) -> int:
-    return len(p)
-
-
-@ray.remote
 def sample_schema_from_filepath(
     first_file_path: str,
     file_format_config: FileFormatConfig,
