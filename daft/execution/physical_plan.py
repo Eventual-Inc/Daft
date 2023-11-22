@@ -741,7 +741,7 @@ def materialize(
         # Check if any inputs finished executing.
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
-            yield done_task._result
+            yield done_task.result()
 
         # Materialize a single dependency.
         try:
