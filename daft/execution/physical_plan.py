@@ -111,7 +111,7 @@ def file_read(
             for i in range(len(vpartition)):
                 file_read_step = PartitionTaskBuilder[PartitionT](
                     inputs=[done_task.partition()],
-                    partial_metadatas=[done_task.partition_metadata()],
+                    partial_metadatas=None,  # Child's metadata doesn't really matter for a file read
                 ).add_instruction(
                     instruction=execution_step.ReadFile(
                         index=i,
