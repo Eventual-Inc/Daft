@@ -198,8 +198,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter(self._builder)
-            yield from partitions_iter
+            results_iter = context.runner().run_iter(self._builder)
+            for result in results_iter:
+                yield result.partition()
 
     @DataframePublicAPI
     def __repr__(self) -> str:

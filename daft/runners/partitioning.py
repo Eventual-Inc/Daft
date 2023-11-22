@@ -4,7 +4,7 @@ import sys
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
 from uuid import uuid4
 
 import pyarrow as pa
@@ -92,6 +92,7 @@ class PartitionMetadata(PartialPartitionMetadata):
 PartitionT = TypeVar("PartitionT")
 
 
+@runtime_checkable
 class MaterializedResult(Protocol[PartitionT]):
     """A protocol for accessing the result partition of a PartitionTask.
 

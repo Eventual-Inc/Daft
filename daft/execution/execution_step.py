@@ -4,7 +4,7 @@ import itertools
 import pathlib
 import sys
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import Generic
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -29,12 +29,12 @@ from daft.runners.partitioning import (
     MaterializedResult,
     PartialPartitionMetadata,
     PartitionMetadata,
+    PartitionT,
     TableParseCSVOptions,
     TableReadOptions,
 )
 from daft.table import Table, table_io
 
-PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
 
 
