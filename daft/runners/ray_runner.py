@@ -138,10 +138,10 @@ def sample_schema_from_filepath(
 
 @dataclass
 class RayPartitionSet(PartitionSet[ray.ObjectRef]):
-    _partitions: dict[PartID, ray.ObjectRef]
+    _results: dict[PartID, RayMaterializedResult]
 
     def items(self) -> list[tuple[PartID, ray.ObjectRef]]:
-        return sorted(self._partitions.items())
+        return [(pid, result.partition()) for pid, result in sorted(self._results.items())]
 
     def _get_merged_vpartition(self) -> Table:
         ids_and_partitions = self.items()
@@ -156,7 +156,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
                 "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
             )
 
-        blocks = [_make_ray_block_from_vpartition.remote(self._partitions[k]) for k in self._partitions.keys()]
+        blocks = [_make_ray_block_from_vpartition.remote(self._results[k].partition()) for k in self._results.keys()]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
@@ -176,36 +176,34 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
             return partition.to_pandas()
 
         ddf_parts = [
-            _make_dask_dataframe_partition_from_vpartition(self._partitions[k]) for k in self._partitions.keys()
+            _make_dask_dataframe_partition_from_vpartition(self._results[k].partition()) for k in self._results.keys()
         ]
         return dd.from_delayed(ddf_parts, meta=meta)
 
     def get_partition(self, idx: PartID) -> ray.ObjectRef:
-        return self._partitions[idx]
+        return self._results[idx].partition()
 
-    def set_partition(self, idx: PartID, part: MaterializedResult[ray.ObjectRef]) -> None:
-        self._partitions[idx] = part.partition()
+    def set_partition(self, idx: PartID, result: MaterializedResult[ray.ObjectRef]) -> None:
+        self._results[idx] = result
 
     def delete_partition(self, idx: PartID) -> None:
-        del self._partitions[idx]
+        del self._results[idx]
 
     def has_partition(self, idx: PartID) -> bool:
-        return idx in self._partitions
+        return idx in self._results
 
     def __len__(self) -> int:
         return sum(self.len_of_partitions())
 
     def len_of_partitions(self) -> list[int]:
-        partition_ids = sorted(list(self._partitions.keys()))
-
-        result: list[int] = ray.get([remote_len_partition.remote(self._partitions[pid]) for pid in partition_ids])
-        return result
+        ids = sorted(list(self._results.keys()))
+        return [self._results[pid].metadata().num_rows for pid in ids]
 
     def num_partitions(self) -> int:
-        return len(self._partitions)
+        return len(self._results)
 
     def wait(self) -> None:
-        deduped_object_refs = set(self._partitions.values())
+        deduped_object_refs = {r.partition() for r in self._results.values()}
         ray.wait(list(deduped_object_refs))
 
 
