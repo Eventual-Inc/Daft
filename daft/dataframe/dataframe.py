@@ -1015,6 +1015,9 @@ class DataFrame:
     def show(self, n: int = 8) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows
 
+        If IPython is installed, this will use IPython's `display` utility to pretty-print in a
+        notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
+
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
