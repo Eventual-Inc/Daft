@@ -173,10 +173,6 @@ class PartitionSet(Generic[PartitionT]):
 
     @abstractmethod
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    @abstractmethod
-    def len_of_partitions(self) -> list[int]:
         raise NotImplementedError()
 
     @abstractmethod

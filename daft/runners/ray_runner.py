@@ -189,11 +189,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return idx in self._results
 
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    def len_of_partitions(self) -> list[int]:
-        ids = sorted(list(self._results.keys()))
-        return [self._results[pid].metadata().num_rows for pid in ids]
+        return sum([self._results[pid].metadata().num_rows for pid in self._results])
 
     def num_partitions(self) -> int:
         return len(self._results)

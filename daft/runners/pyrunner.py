@@ -63,11 +63,7 @@ class LocalPartitionSet(PartitionSet[Table]):
         return idx in self._partitions
 
     def __len__(self) -> int:
-        return sum(self.len_of_partitions())
-
-    def len_of_partitions(self) -> list[int]:
-        partition_ids = sorted(list(self._partitions.keys()))
-        return [len(self._partitions[pid]) for pid in partition_ids]
+        return sum([len(self._partitions[pid]) for pid in self._partitions])
 
     def num_partitions(self) -> int:
         return len(self._partitions)
