@@ -83,7 +83,7 @@ impl Series {
         make_comfy_table(
             vec![Cow::Borrowed(self.field())].as_slice(),
             Some([self].as_slice()),
-            Some(32),
+            Some(80),
         )
     }
 }
