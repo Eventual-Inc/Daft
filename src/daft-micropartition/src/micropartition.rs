@@ -278,8 +278,8 @@ impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
     /// Schema invariants:
-    /// 1. `schema` must be a strict subset of the `scan_task` schema (applying "column pruning")
-    /// 2. Check that each Loaded column in the statistics is compatible with the MicroPartition's schema
+    /// 1. All columns in `schema` must be exist in the `scan_task` schema
+    /// 2. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
         schema: SchemaRef,
         scan_task: Arc<ScanTask>,
@@ -311,7 +311,7 @@ impl MicroPartition {
     ///
     /// Schema invariants:
     /// 1. `schema` must match each Table's schema exactly
-    /// 2. If `statistics` is provided, we check that each Loaded column in the statistics is compatible with the MicroPartition's schema
+    /// 2. If `statistics` is provided, each Loaded column statistic must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_loaded(
         schema: SchemaRef,
         tables: Arc<Vec<Table>>,
