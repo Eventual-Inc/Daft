@@ -7,22 +7,37 @@ pub fn make_comfy_table<F: AsRef<Field>>(
 ) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
-    let default_width_if_no_tty = 120;
+    let default_width_if_no_tty = 120usize;
 
     table
         .load_preset(comfy_table::presets::UTF8_FULL)
         .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
         .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
     if table.width().is_none() && !table.is_tty() {
-        table.set_width(default_width_if_no_tty);
+        table.set_width(default_width_if_no_tty as u16);
     }
     let terminal_width = table
         .width()
-        .expect("should have already been set with default");
+        .expect("should have already been set with default") as usize;
 
-    const EXPECTED_COL_WIDTH: u16 = 24;
+    let expected_col_width: usize = if columns.is_some() || fields.is_empty() {
+        24usize
+    } else {
+        let mut all_lens = fields
+            .iter()
+            .map(|f| f.as_ref().name.len() + 3)
+            .collect::<Vec<_>>();
+        all_lens.sort();
 
-    let max_cols = ((terminal_width + EXPECTED_COL_WIDTH - 1) / EXPECTED_COL_WIDTH) as usize;
+        // get 90 percentile
+        let index = ((9 * all_lens.len()) / 10).min(all_lens.len() - 1);
+        let expected_len = all_lens
+            .get(index)
+            .expect("we clamped so this shouldnt happen");
+        *expected_len
+    };
+
+    let max_cols = ((terminal_width + expected_col_width - 1) / expected_col_width);
     const DOTS: &str = "…";
     let num_columns = fields.len();
 
@@ -57,9 +72,9 @@ pub fn make_comfy_table<F: AsRef<Field>>(
             .add_attribute(comfy_table::Attribute::Bold)
         }))
     }
-    table.add_row(header);
 
     if let Some(columns) = columns && !columns.is_empty() {
+        table.set_header(header);
         let len = columns.first().unwrap().len();
         const TOTAL_ROWS: usize = 10;
         let head_rows;
@@ -142,6 +157,8 @@ pub fn make_comfy_table<F: AsRef<Field>>(
                 table.add_row(all_cols);
             }
         }
+    } else {
+        table.add_row(header);
     }
     table
 }
