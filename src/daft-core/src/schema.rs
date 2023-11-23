@@ -9,7 +9,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{datatypes::Field, utils::display_table::make_comfy_table, Series};
+use crate::{datatypes::Field, utils::display_table::make_comfy_table};
 
 use common_error::{DaftError, DaftResult};
 
@@ -171,7 +171,7 @@ impl Display for Schema {
         let table = make_comfy_table(
             self.fields
                 .values()
-                .map(|f| Cow::Borrowed(f))
+                .map(Cow::Borrowed)
                 .collect::<Vec<_>>()
                 .as_slice(),
             None,

@@ -59,7 +59,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
     }
     table.add_row(header);
 
-    if let Some(columns) = columns && columns.len() > 0 {
+    if let Some(columns) = columns && !columns.is_empty() {
         let len = columns.first().unwrap().len();
         const TOTAL_ROWS: usize = 10;
         let head_rows;

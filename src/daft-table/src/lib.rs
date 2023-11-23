@@ -475,10 +475,10 @@ impl Table {
             self.schema
                 .fields
                 .values()
-                .map(|f| Cow::Borrowed(f))
+                .map(Cow::Borrowed)
                 .collect::<Vec<_>>()
                 .as_slice(),
-            Some(&self.columns.iter().collect::<Vec<_>>().as_slice()),
+            Some(self.columns.iter().collect::<Vec<_>>().as_slice()),
             max_col_width,
         )
     }
