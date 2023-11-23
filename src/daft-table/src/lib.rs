@@ -471,12 +471,19 @@ impl Table {
     pub fn to_comfytable(&self, max_col_width: Option<usize>) -> comfy_table::Table {
         let mut table = comfy_table::Table::new();
 
+        let default_width_if_no_tty = 120;
+
         table.load_preset(comfy_table::presets::UTF8_FULL)
             .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
             .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
-            // .set_width(100);
+        if table.width().is_none() && !table.is_tty() {
+            table.set_width(default_width_if_no_tty);
+        }
+        let terminal_width = table.width().expect("should have already been set with default");
 
+        const EXPECTED_COL_WIDTH: u16 = 24;
 
+        let max_cols = ((terminal_width + EXPECTED_COL_WIDTH - 1) / EXPECTED_COL_WIDTH) as usize;
         const DOTS: &str = "…";
 
         const TOTAL_ROWS: usize = 10;
@@ -490,14 +497,13 @@ impl Table {
             head_rows = self.len();
             tail_rows = 0;
         }
-        const MAX_COLS: usize = 8;
 
         let head_cols;
         let tail_cols;
         let total_cols;
-        if self.num_columns() > MAX_COLS {
-            head_cols = (MAX_COLS + 1) / 2;
-            tail_cols = MAX_COLS / 2;
+        if self.num_columns() > max_cols {
+            head_cols = (max_cols + 1) / 2;
+            tail_cols = max_cols / 2;
             total_cols = head_cols + tail_cols + 1;
         } else {
             head_cols = self.num_columns();
@@ -510,7 +516,7 @@ impl Table {
             .iter()
             .take(head_cols)
             .map(|(name, field)| {
-                comfy_table::Cell::new(format!("{}\n┈\n{}", name, field.dtype).as_str())
+                comfy_table::Cell::new(format!("{}\n---\n{}", name, field.dtype).as_str())
                     .add_attribute(comfy_table::Attribute::Bold)
             }).collect::<Vec<_>>();
         if tail_cols > 0 {
@@ -522,7 +528,7 @@ impl Table {
                 .iter()
                 .skip(self.num_columns() - tail_cols)
                 .map(|(name, field)| {
-                    comfy_table::Cell::new(format!("{}\n┈\n{}", name, field.dtype).as_str())
+                    comfy_table::Cell::new(format!("{}\n---\n{}", name, field.dtype).as_str())
                         .add_attribute(comfy_table::Attribute::Bold)
                 })    
             )
@@ -536,10 +542,10 @@ impl Table {
                 .map(|s| {
                     let mut str_val = s.str_value(i).unwrap();
                     if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width {
+                        if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
                                 "{}{DOTS}",
-                                &str_val[..max_col_width - 3]
+                                &str_val[..max_col_width - DOTS.len()]
                             );
                         }
                     }
@@ -574,10 +580,10 @@ impl Table {
                 .map(|s| {
                     let mut str_val = s.str_value(i).unwrap();
                     if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width {
+                        if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
                                 "{}{DOTS}",
-                                &str_val[..max_col_width - 3]
+                                &str_val[..max_col_width - DOTS.len()]
                             );
                         }
                     }
