@@ -23,8 +23,8 @@ use crate::PyIOSnafu;
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{IOConfig, IOStatsRef};
+use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
-use daft_stats::{ColumnRangeStatistics, TableMetadata};
 
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
@@ -274,33 +274,6 @@ fn materialize_scan_task(
     Ok((casted_table_values, cast_to_schema))
 }
 
-/// Helper that validates [`TableStatistics`] against a MicroPartition's schema
-///
-/// If any columns in `statistics` are "Loaded", and there is a match with a field in the MicroPartition's schema,
-/// we need to assert that the types are compatible.
-fn _validate_statistics(statistics: &TableStatistics, schema: &Schema) {
-    for (stats_col_name, stats) in statistics.columns.iter() {
-        match (stats, schema.fields.get(stats_col_name)) {
-            // Missing stats: statistics are trivially redundant
-            (ColumnRangeStatistics::Missing, _) => (),
-            // No column name matched for provided statistic: the statistic is redundant
-            (_, None) => (),
-            // Both statistics and MicroPartition field exist: we assert type compatibility
-            (ColumnRangeStatistics::Loaded(l, r), Some(mp_schema_field)) => {
-                for stats_data in [l, r] {
-                    assert!(
-                        // TODO: Is this too strict of a bound/is there a different criteria for compatibility?
-                        stats_data.data_type() == &mp_schema_field.dtype,
-                        "Unloaded MicroPartition's schema must be be compatible with statistics' types: expected field {} but received type {}",
-                        mp_schema_field,
-                        stats_data.data_type(),
-                    );
-                }
-            }
-        }
-    }
-}
-
 impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
@@ -313,27 +286,24 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        // Check and validate invariants with asserts
-        _validate_statistics(&statistics, schema.as_ref());
         assert!(
-            schema.is_subset(&scan_task.schema),
-            "Unloaded MicroPartition's schema must be a subset of its ScanTask's schema"
+            schema
+                .fields
+                .keys()
+                .collect::<HashSet<_>>()
+                .is_subset(&scan_task.schema.fields.keys().collect::<HashSet<_>>()),
+            "Unloaded MicroPartition's schema names must be a subset of its ScanTask's schema"
         );
 
-        if !statistics
-            .columns
-            .keys()
-            .zip(schema.fields.keys())
-            .all(|(l, r)| l == r)
-        {
-            panic!("MicroPartition: TableStatistics and Schema have different column names\nTableStats:\n{},\nSchema\n{}", statistics, schema);
-        }
-
         MicroPartition {
-            schema,
+            schema: schema.clone(),
             state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
-            statistics: Some(statistics),
+            statistics: Some(
+                statistics
+                    .cast_to_schema(schema)
+                    .expect("Statistics cannot be casted to schema"),
+            ),
         }
     }
 
@@ -348,9 +318,6 @@ impl MicroPartition {
         statistics: Option<TableStatistics>,
     ) -> Self {
         // Check and validate invariants with asserts
-        if let Some(statistics) = &statistics {
-            _validate_statistics(statistics, schema.as_ref());
-        }
         for table in tables.iter() {
             assert!(
                 table.schema == schema,
@@ -358,7 +325,13 @@ impl MicroPartition {
             );
         }
 
+        let statistics = statistics.map(|stats| {
+            stats
+                .cast_to_schema(schema.clone())
+                .expect("Statistics cannot be casted to schema")
+        });
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
+
         MicroPartition {
             schema,
             state: Mutex::new(TableState::Loaded(tables)),
