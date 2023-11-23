@@ -1,9 +1,11 @@
 #![feature(hash_raw_entry)]
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
+use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;
@@ -469,143 +471,16 @@ impl Table {
     }
 
     pub fn to_comfytable(&self, max_col_width: Option<usize>) -> comfy_table::Table {
-        let mut table = comfy_table::Table::new();
-
-        let default_width_if_no_tty = 120;
-
-        table.load_preset(comfy_table::presets::UTF8_FULL)
-            .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
-            .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
-        if table.width().is_none() && !table.is_tty() {
-            table.set_width(default_width_if_no_tty);
-        }
-        let terminal_width = table.width().expect("should have already been set with default");
-
-        const EXPECTED_COL_WIDTH: u16 = 24;
-
-        let max_cols = ((terminal_width + EXPECTED_COL_WIDTH - 1) / EXPECTED_COL_WIDTH) as usize;
-        const DOTS: &str = "…";
-
-        const TOTAL_ROWS: usize = 10;
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > TOTAL_ROWS {
-            head_rows = TOTAL_ROWS / 2;
-            tail_rows = TOTAL_ROWS / 2;
-        } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
-
-        let head_cols;
-        let tail_cols;
-        let total_cols;
-        if self.num_columns() > max_cols {
-            head_cols = (max_cols + 1) / 2;
-            tail_cols = max_cols / 2;
-            total_cols = head_cols + tail_cols + 1;
-        } else {
-            head_cols = self.num_columns();
-            tail_cols = 0;
-            total_cols = head_cols;
-        }
-        let mut header = self
-            .schema
-            .fields
-            .iter()
-            .take(head_cols)
-            .map(|(name, field)| {
-                comfy_table::Cell::new(format!("{}\n---\n{}", name, field.dtype).as_str())
-                    .add_attribute(comfy_table::Attribute::Bold)
-            }).collect::<Vec<_>>();
-        if tail_cols > 0 {
-            header.push(comfy_table::Cell::new(DOTS));
-            header.extend(
-                self
-                .schema
+        make_comfy_table(
+            self.schema
                 .fields
-                .iter()
-                .skip(self.num_columns() - tail_cols)
-                .map(|(name, field)| {
-                    comfy_table::Cell::new(format!("{}\n---\n{}", name, field.dtype).as_str())
-                        .add_attribute(comfy_table::Attribute::Bold)
-                })    
-            )
-        }            
-        table.add_row(header);
-
-        for i in 0..head_rows {
-            let all_cols  = self
-                .columns
-                .iter()
-                .map(|s| {
-                    let mut str_val = s.str_value(i).unwrap();
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width - DOTS.len() {
-                            str_val = format!(
-                                "{}{DOTS}",
-                                &str_val[..max_col_width - DOTS.len()]
-                            );
-                        }
-                    }
-                    str_val
-                }).collect::<Vec<_>>();
-
-            if tail_cols > 0 {
-                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
-                final_row.push(DOTS.into());
-                final_row.extend(
-                    all_cols
-                    .iter()
-                    .skip(self.num_columns() - tail_cols)
-                    .cloned()
-                );
-                table.add_row(final_row);
-
-            } else {
-                table.add_row(all_cols);
-            }
-        
-
-        }
-        if tail_rows != 0 {
-            table.add_row((0..total_cols).map(|_| DOTS).collect::<Vec<_>>());
-        }
-
-        for i in (self.len() - tail_rows)..(self.len()) {
-            let all_cols  = self
-                .columns
-                .iter()
-                .map(|s| {
-                    let mut str_val = s.str_value(i).unwrap();
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width - DOTS.len() {
-                            str_val = format!(
-                                "{}{DOTS}",
-                                &str_val[..max_col_width - DOTS.len()]
-                            );
-                        }
-                    }
-                    str_val
-                }).collect::<Vec<_>>();
-
-            if tail_cols > 0 {
-                let mut final_row = all_cols.iter().take(head_cols).cloned().collect::<Vec<_>>();
-                final_row.push(DOTS.into());
-                final_row.extend(
-                    all_cols
-                    .iter()
-                    .skip(self.num_columns() - tail_cols)
-                    .cloned()
-                );
-                table.add_row(final_row);
-            } else {
-                table.add_row(all_cols);
-            }        
-        }
-
-        table
+                .values()
+                .map(|f| Cow::Borrowed(f))
+                .collect::<Vec<_>>()
+                .as_slice(),
+            Some(&self.columns.iter().collect::<Vec<_>>().as_slice()),
+            max_col_width,
+        )
     }
 }
 

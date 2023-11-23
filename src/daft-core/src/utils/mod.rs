@@ -1,4 +1,5 @@
 pub mod arrow;
+pub mod display_table;
 pub mod hashable_float_wrapper;
 pub mod supertype;
 
