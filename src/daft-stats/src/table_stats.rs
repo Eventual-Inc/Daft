@@ -4,13 +4,12 @@ use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
 
-use crate::{column_stats::ColumnRangeStatistics, DaftCoreComputeSnafu};
+use crate::column_stats::ColumnRangeStatistics;
 
 use daft_core::{
     array::ops::DaftCompare,
     schema::{Schema, SchemaRef},
 };
-use snafu::ResultExt;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
@@ -30,14 +29,6 @@ impl TableStatistics {
 }
 
 impl TableStatistics {
-    /// Returns the associated Schema
-    ///
-    /// NOTE: Even if a given column's statistics are [`ColumnRangeStatistics::Missing`], we will still
-    /// return the column's field name and dtype appropriately
-    pub fn schema(&self) -> Schema {
-        todo!("Implement schema functionality for TableStatistics");
-    }
-
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self
@@ -121,11 +112,8 @@ impl TableStatistics {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
             let crs = match self.columns.get(field_name) {
-                Some(ColumnRangeStatistics::Loaded(low, high)) => ColumnRangeStatistics::Loaded(
-                    low.cast(&field.dtype).context(DaftCoreComputeSnafu)?,
-                    high.cast(&field.dtype).context(DaftCoreComputeSnafu)?,
-                ),
-                Some(ColumnRangeStatistics::Missing) | None => ColumnRangeStatistics::Missing,
+                Some(column_stat) => column_stat.cast(&field.dtype)?,
+                None => ColumnRangeStatistics::Missing,
             };
             columns.insert(field_name.clone(), crs);
         }

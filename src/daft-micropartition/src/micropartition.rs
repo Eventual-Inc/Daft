@@ -382,7 +382,6 @@ impl MicroPartition {
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
 
-                // TODO: validate schema
                 read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
