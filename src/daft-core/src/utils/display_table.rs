@@ -37,7 +37,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
         *expected_len
     };
 
-    let max_cols = ((terminal_width + expected_col_width - 1) / expected_col_width);
+    let max_cols = (terminal_width + expected_col_width - 1) / expected_col_width;
     const DOTS: &str = "…";
     let num_columns = fields.len();
 
