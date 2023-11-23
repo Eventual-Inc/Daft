@@ -470,7 +470,7 @@ impl Table {
         res
     }
 
-    pub fn to_comfytable(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+    pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
         make_comfy_table(
             self.schema
                 .fields
@@ -487,7 +487,7 @@ impl Table {
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_comfytable(Some(32));
+        let table = self.to_comfy_table(Some(32));
         write!(f, "{table}")
     }
 }
