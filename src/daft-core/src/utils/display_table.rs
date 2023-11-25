@@ -20,22 +20,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
         .width()
         .expect("should have already been set with default") as usize;
 
-    let expected_col_width: usize = if columns.is_some() || fields.is_empty() {
-        24usize
-    } else {
-        let mut all_lens = fields
-            .iter()
-            .map(|f| f.as_ref().name.len() + 3)
-            .collect::<Vec<_>>();
-        all_lens.sort();
-
-        // get 90 percentile
-        let index = ((9 * all_lens.len()) / 10).min(all_lens.len() - 1);
-        let expected_len = all_lens
-            .get(index)
-            .expect("we clamped so this shouldnt happen");
-        *expected_len
-    };
+    let expected_col_width = 24usize;
 
     let max_cols = (terminal_width + expected_col_width - 1) / expected_col_width;
     const DOTS: &str = "…";
