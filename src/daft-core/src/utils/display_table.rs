@@ -20,7 +20,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
         .width()
         .expect("should have already been set with default") as usize;
 
-    let expected_col_width = 24usize;
+    let expected_col_width = 18usize;
 
     let max_cols = (terminal_width + expected_col_width - 1) / expected_col_width;
     const DOTS: &str = "…";

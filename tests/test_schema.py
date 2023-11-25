@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import re
 
 import pyarrow as pa
 import pytest
@@ -20,7 +19,8 @@ DATA = {
 
 TABLE = Table.from_pydict({k: data for k, (data, _) in DATA.items()})
 EXPECTED_TYPES = {k: t for k, (_, t) in DATA.items()}
-ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+from tests.utils import ANSI_ESCAPE
 
 
 def test_schema_len():
