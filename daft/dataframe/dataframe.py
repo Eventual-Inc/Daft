@@ -1074,7 +1074,7 @@ class DataFrame:
         try:
             from IPython.display import display
 
-            display(dataframe_display)
+            display(dataframe_display, clear=True)
         except ImportError:
             print(dataframe_display)
         return None

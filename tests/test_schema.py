@@ -20,6 +20,8 @@ DATA = {
 TABLE = Table.from_pydict({k: data for k, (data, _) in DATA.items()})
 EXPECTED_TYPES = {k: t for k, (_, t) in DATA.items()}
 
+from tests.utils import ANSI_ESCAPE
+
 
 def test_schema_len():
     schema = TABLE.schema()
@@ -63,12 +65,15 @@ def test_schema_to_name_set():
 
 def test_repr():
     schema = TABLE.schema()
+    out_repr = repr(schema)
+    without_escape = ANSI_ESCAPE.sub("", out_repr)
     assert (
-        repr(schema).replace("\r", "")
-        == """+-------+---------+--------+---------+
-| int   | float   | string | bool    |
-| Int64 | Float64 | Utf8   | Boolean |
-+-------+---------+--------+---------+
+        without_escape.replace("\r", "")
+        == """╭───────┬─────────┬────────┬─────────╮
+│ int   ┆ float   ┆ string ┆ bool    │
+│ ---   ┆ ---     ┆ ---    ┆ ---     │
+│ Int64 ┆ Float64 ┆ Utf8   ┆ Boolean │
+╰───────┴─────────┴────────┴─────────╯
 """
     )
 

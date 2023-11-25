@@ -1,9 +1,11 @@
 #![feature(hash_raw_entry)]
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
+use daft_core::utils::display_table::make_comfy_table;
 use num_traits::ToPrimitive;
 
 use daft_core::array::ops::GroupIndices;
@@ -468,84 +470,25 @@ impl Table {
         res
     }
 
-    pub fn to_prettytable(&self, max_col_width: Option<usize>) -> prettytable::Table {
-        let mut table = prettytable::Table::new();
-        let header = self
-            .schema
-            .fields
-            .iter()
-            .map(|(name, field)| {
-                prettytable::Cell::new(format!("{}\n{}", name, field.dtype).as_str())
-                    .with_style(prettytable::Attr::Bold)
-            })
-            .collect();
-        table.add_row(header);
-
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
-        } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
-
-        for i in 0..head_rows {
-            let row = self
-                .columns
-                .iter()
-                .map(|s| {
-                    let mut str_val = s.str_value(i).unwrap();
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width {
-                            str_val = format!(
-                                "{}...",
-                                &str_val
-                                    .char_indices()
-                                    .take(max_col_width - 3)
-                                    .map(|(_, c)| c)
-                                    .collect::<String>()
-                            );
-                        }
-                    }
-                    str_val
-                })
-                .collect::<Vec<String>>();
-            table.add_row(row.into());
-        }
-        if tail_rows != 0 {
-            let row: prettytable::Row = (0..self.num_columns()).map(|_| "...").collect();
-            table.add_row(row);
-        }
-
-        for i in (self.len() - tail_rows)..(self.len()) {
-            let row = self
-                .columns
-                .iter()
-                .map(|s| {
-                    let mut str_val = s.str_value(i).unwrap();
-                    if let Some(max_col_width) = max_col_width {
-                        if str_val.len() > max_col_width {
-                            str_val = format!("{}...", &str_val[..max_col_width - 3]);
-                        }
-                    }
-                    str_val
-                })
-                .collect::<Vec<String>>();
-            table.add_row(row.into());
-        }
-
-        table
+    pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+        make_comfy_table(
+            self.schema
+                .fields
+                .values()
+                .map(Cow::Borrowed)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            Some(self.columns.iter().collect::<Vec<_>>().as_slice()),
+            max_col_width,
+        )
     }
 }
 
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_prettytable(Some(32));
-        write!(f, "{table}")
+        let table = self.to_comfy_table(Some(32));
+        writeln!(f, "{table}")
     }
 }
 

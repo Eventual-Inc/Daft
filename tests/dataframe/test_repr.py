@@ -7,8 +7,9 @@ import pandas as pd
 from PIL import Image
 
 import daft
+from tests.utils import ANSI_ESCAPE
 
-ROW_DIVIDER_REGEX = re.compile(r"\+-+\+")
+ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
@@ -18,8 +19,10 @@ TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:a
 def parse_str_table(
     table: str, expected_user_msg_regex: re.Pattern = SHOWING_N_ROWS_REGEX
 ) -> dict[str, tuple[str, list[str]]]:
+    table = ANSI_ESCAPE.sub("", table)
+
     def _split_table_row(row: str) -> list[str]:
-        return [cell.strip() for cell in row.split("|")[1:-1]]
+        return [cell.strip() for cell in re.split("┆|│", row)[1:-1]]
 
     lines = table.split("\n")
     assert len(lines) > 4
@@ -27,15 +30,15 @@ def parse_str_table(
     assert expected_user_msg_regex.match(lines[-1])
 
     column_names = _split_table_row(lines[1])
-    column_types = _split_table_row(lines[2])
+    column_types = _split_table_row(lines[3])
 
     data = []
-    for line in lines[4:-2]:
+    for line in lines[5:-3]:
         if ROW_DIVIDER_REGEX.match(line):
             continue
         data.append(_split_table_row(line))
-
-    return {column_names[i]: (column_types[i], [row[i] for row in data]) for i in range(len(column_names))}
+    val = {column_names[i]: (column_types[i], [row[i] for row in data]) for i in range(len(column_names))}
+    return val
 
 
 def parse_html_table(
@@ -200,23 +203,24 @@ def test_repr_html_custom_hooks():
     df.collect()
 
     assert (
-        df.__repr__().replace("\r", "")
-        == """+-------------------+-------------+----------------------------------+
-| objects           | np          | pil                              |
-| Python            | Python      | Python                           |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
+        ANSI_ESCAPE.sub("", df.__repr__()).replace("\r", "")
+        == """╭───────────────────┬─────────────┬────────────────────────────────╮
+│ objects           ┆ np          ┆ pil                            │
+│ ---               ┆ ---         ┆ ---                            │
+│ Python            ┆ Python      ┆ Python                         │
+╞═══════════════════╪═════════════╪════════════════════════════════╡
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+╰───────────────────┴─────────────┴────────────────────────────────╯
 
 (Showing first 3 of 3 rows)"""
     )
