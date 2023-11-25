@@ -1078,7 +1078,7 @@ class DataFrame:
         except ImportError:
             print(dataframe_display)
         return None
-    
+
     def __len__(self):
         """Returns the count of rows when dataframe is materialized.
         If dataframe is not materialized yet, raises a runtime error.
