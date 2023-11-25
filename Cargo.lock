@@ -1232,6 +1232,7 @@ dependencies = [
  "openssl-sys",
  "pyo3",
  "pyo3-log",
+ "rand 0.8.5",
  "regex",
  "reqwest",
  "serde",
