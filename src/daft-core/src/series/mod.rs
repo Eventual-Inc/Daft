@@ -92,7 +92,7 @@ impl Display for Series {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
         let table = self.to_comfy_table();
-        write!(f, "{table}")
+        writeln!(f, "{table}")
     }
 }
 

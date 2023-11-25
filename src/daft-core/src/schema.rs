@@ -177,7 +177,7 @@ impl Display for Schema {
             None,
             None,
         );
-        write!(f, "{table}")
+        writeln!(f, "{table}")
     }
 }
 
