@@ -84,7 +84,11 @@ pub fn make_comfy_table<F: AsRef<Field>>(
                         if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
                                 "{}{DOTS}",
-                                &str_val[..max_col_width - DOTS.len()]
+                                &str_val
+                                    .char_indices()
+                                    .take(max_col_width - DOTS.len())
+                                    .map(|(_, c)| c)
+                                    .collect::<String>()
                             );
                         }
                     }
@@ -121,7 +125,11 @@ pub fn make_comfy_table<F: AsRef<Field>>(
                         if str_val.len() > max_col_width - DOTS.len() {
                             str_val = format!(
                                 "{}{DOTS}",
-                                &str_val[..max_col_width - DOTS.len()]
+                                &str_val
+                                    .char_indices()
+                                    .take(max_col_width - DOTS.len())
+                                    .map(|(_, c)| c)
+                                    .collect::<String>()
                             );
                         }
                     }

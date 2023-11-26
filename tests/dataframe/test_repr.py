@@ -173,6 +173,54 @@ def test_alias_repr():
     )
 
 
+def test_repr_with_unicode():
+    df = daft.from_pydict({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
+
+    expected_data = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
+    assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+</table>
+<small>(No data to display: Dataframe not materialized)</small>
+</div>"""
+    )
+
+    df.collect()
+
+    expected_data = {
+        "🔥": (
+            "Int64",
+            ["1", "2", "3"],
+        ),
+        "🦁": (
+            "Utf8",
+            ["🔥a", "b🔥", "🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁…"],
+        ),
+    }
+    expected_data_html = {
+        **expected_data,
+    }
+    string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
+    assert parse_str_table(df.__repr__()) == expected_data
+    assert (
+        df._repr_html_()
+        == f"""<div>
+<table class="dataframe">
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+<tbody>
+<tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>{string_array[0]}</div></td></tr>
+<tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>{string_array[1]}</div></td></tr>
+<tr><td><div {TD_STYLE}>3</div></td><td><div {TD_STYLE}>{string_array[2]}</div></td></tr>
+</tbody>
+</table>
+<small>(Showing first 3 of 3 rows)</small>
+</div>"""
+    )
+
+
 def test_repr_with_html_string():
     df = daft.from_pydict({"A": [f"<div>body{i}</div>" for i in range(3)]})
     df.collect()
