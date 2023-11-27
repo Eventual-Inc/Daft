@@ -1123,7 +1123,7 @@ dependencies = [
  "fnv",
  "html-escape",
  "image",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "lazy_static",
  "log",
  "ndarray",
@@ -1193,7 +1193,7 @@ dependencies = [
  "common-io-config",
  "daft-core",
  "daft-io",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "pyo3",
  "pyo3-log",
  "serde",
@@ -1259,7 +1259,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "log",
  "parquet2",
  "pyo3",
@@ -1282,7 +1282,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "itertools",
  "log",
  "parquet2",
@@ -1308,7 +1308,7 @@ dependencies = [
  "daft-dsl",
  "daft-scan",
  "daft-table",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "log",
  "pyo3",
  "pyo3-log",
@@ -1349,7 +1349,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
- "indexmap 2.0.2",
+ "indexmap 2.1.0",
  "pyo3",
  "pyo3-log",
  "serde",
@@ -2033,9 +2033,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.0.2"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8adf3ddd720272c6ea8bf59463c04e0f93d0bbf7c5439b691bca2987e0270897"
+checksum = "d530e1a18b1cb4c484e6e34556a0d948706958449fca0cab753d649f2bce3d1f"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.1",
