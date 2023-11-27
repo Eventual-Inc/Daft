@@ -51,7 +51,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
     if tail_cols > 0 {
         let unseen_cols = num_columns - (head_cols + tail_cols);
         header.push(
-            comfy_table::Cell::new(format!("{DOTS}\n\n{unseen_cols} hidden"))
+            comfy_table::Cell::new(format!("{DOTS}\n\n({unseen_cols} hidden)"))
                 .add_attribute(comfy_table::Attribute::Bold)
                 .set_alignment(comfy_table::CellAlignment::Center),
         );
