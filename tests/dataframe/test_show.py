@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 
-
 def test_show_default(make_df, valid_data):
     df = make_df(valid_data)
     df_display = df._construct_show_display(8)

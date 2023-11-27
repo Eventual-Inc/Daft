@@ -17,6 +17,6 @@ def test_concat_schema_mismatch(make_df):
         df1.concat(df2)
 
 
-def test_self_concat():
-    df = daft.from_pydict({"foo": [1, 2, 3]})
+def test_self_concat(make_df):
+    df = make_df({"foo": [1, 2, 3]})
     assert df.concat(df).to_pydict() == {"foo": [1, 2, 3, 1, 2, 3]}
