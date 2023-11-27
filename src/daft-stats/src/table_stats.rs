@@ -6,7 +6,10 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::column_stats::ColumnRangeStatistics;
 
-use daft_core::{array::ops::DaftCompare, schema::Schema};
+use daft_core::{
+    array::ops::DaftCompare,
+    schema::{Schema, SchemaRef},
+};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
@@ -103,6 +106,20 @@ impl TableStatistics {
             }
             _ => Ok(ColumnRangeStatistics::Missing),
         }
+    }
+
+    pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
+        let mut columns = IndexMap::new();
+        for (field_name, field) in schema.fields.iter() {
+            let crs = match self.columns.get(field_name) {
+                Some(column_stat) => column_stat
+                    .cast(&field.dtype)
+                    .unwrap_or(ColumnRangeStatistics::Missing),
+                None => ColumnRangeStatistics::Missing,
+            };
+            columns.insert(field_name.clone(), crs);
+        }
+        Ok(TableStatistics { columns })
     }
 }
 
