@@ -112,7 +112,9 @@ impl TableStatistics {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
             let crs = match self.columns.get(field_name) {
-                Some(column_stat) => column_stat.cast(&field.dtype)?,
+                Some(column_stat) => column_stat
+                    .cast(&field.dtype)
+                    .unwrap_or(ColumnRangeStatistics::Missing),
                 None => ColumnRangeStatistics::Missing,
             };
             columns.insert(field_name.clone(), crs);
