@@ -22,7 +22,7 @@ pub fn make_comfy_table<F: AsRef<Field>>(
 
     let expected_col_width = 18usize;
 
-    let max_cols = (terminal_width + expected_col_width - 1) / expected_col_width;
+    let max_cols = (((terminal_width + expected_col_width - 1) / expected_col_width) - 1).max(1);
     const DOTS: &str = "…";
     let num_columns = fields.len();
 
@@ -49,7 +49,12 @@ pub fn make_comfy_table<F: AsRef<Field>>(
         })
         .collect::<Vec<_>>();
     if tail_cols > 0 {
-        header.push(comfy_table::Cell::new(DOTS));
+        let unseen_cols = num_columns - (head_cols + tail_cols);
+        header.push(
+            comfy_table::Cell::new(format!("{DOTS}\n\n{unseen_cols} hidden"))
+                .add_attribute(comfy_table::Attribute::Bold)
+                .set_alignment(comfy_table::CellAlignment::Center),
+        );
         header.extend(fields.iter().skip(num_columns - tail_cols).map(|field| {
             comfy_table::Cell::new(
                 format!("{}\n---\n{}", field.as_ref().name, field.as_ref().dtype).as_str(),
