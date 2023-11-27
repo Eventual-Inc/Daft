@@ -43,8 +43,13 @@ impl ColumnRangeStatistics {
             (Some(l), Some(u)) => {
                 assert_eq!(l.len(), 1);
                 assert_eq!(u.len(), 1);
-                assert_eq!(l.data_type(), u.data_type());
-                assert!(ColumnRangeStatistics::supports_dtype(l.data_type()));
+                assert_eq!(l.data_type(), u.data_type(), "");
+
+                // If creating on incompatible types, default to `Missing`
+                if !ColumnRangeStatistics::supports_dtype(l.data_type()) {
+                    return Ok(ColumnRangeStatistics::Missing);
+                }
+
                 Ok(ColumnRangeStatistics::Loaded(l, u))
             }
             _ => Ok(ColumnRangeStatistics::Missing),
