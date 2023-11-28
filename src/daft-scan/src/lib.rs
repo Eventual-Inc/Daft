@@ -188,35 +188,23 @@ impl ScanTask {
 pub struct PartitionField {
     field: Field,
     source_field: Option<Field>,
-    transform: Option<Expr>,
+    transform: Option<PartitionTransform>,
 }
 
 impl PartitionField {
     pub fn new(
         field: Field,
         source_field: Option<Field>,
-        transform: Option<Expr>,
+        transform: Option<PartitionTransform>,
     ) -> DaftResult<Self> {
         match (&source_field, &transform) {
-            (Some(sf), Some(tfm)) => {
-                let req_columns = get_required_columns(tfm);
-                match req_columns.as_slice() {
-                    [col] => {
-                        if col == &sf.name {
-                            Ok(PartitionField {
-                                field,
-                                source_field,
-                                transform,
-                            })
-                        } else {
-                            Err(DaftError::ValueError(format!("PartitionField transform's required column and source_field differ: {} vs {}" , col, sf.name)))
-                        }
-                    }
-                    _ => Err(DaftError::ValueError(format!(
-                        "PartitionField only supports unary transforms but received {}",
-                        tfm
-                    ))),
-                }
+            (Some(_), Some(_)) => {
+                // TODO ADD VALIDATION OF TRANSFORM based on types
+                Ok(PartitionField {
+                    field,
+                    source_field,
+                    transform,
+                })
             }
             (None, Some(tfm)) => Err(DaftError::ValueError(format!(
                 "transform set in PartitionField: {} but source_field not set",
@@ -234,10 +222,36 @@ impl PartitionField {
 impl Display for PartitionField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(tfm) = &self.transform {
-            write!(f, "PartitionField({}, {})", self.field, tfm)
+            write!(
+                f,
+                "PartitionField({}, src={}, tfm={})",
+                self.field,
+                self.source_field.as_ref().unwrap(),
+                tfm
+            )
         } else {
             write!(f, "PartitionField({})", self.field)
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum PartitionTransform {
+    /// https://iceberg.apache.org/spec/#partitioning
+    /// For Delta, Hudi and Hive, it should always be `Identity`.
+    Identity,
+    Bucket(u64),
+    Truncate(u64),
+    Year,
+    Month,
+    Day,
+    Hour,
+    Void,
+}
+
+impl Display for PartitionTransform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 

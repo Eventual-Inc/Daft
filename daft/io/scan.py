@@ -3,18 +3,17 @@ from __future__ import annotations
 import abc
 from collections.abc import Iterator
 
-from daft.daft import PartitionField, Pushdowns, ScanTask
-from daft.expressions.expressions import Expression
+from daft.daft import PartitionField, PartitionTransform, Pushdowns, ScanTask
 from daft.logical.schema import Field, Schema
 
 
 def make_partition_field(
-    field: Field, source_field: Field | None = None, transform: Expression | None = None
+    field: Field, source_field: Field | None = None, transform: PartitionTransform | None = None
 ) -> PartitionField:
     return PartitionField(
         field._field,
         source_field._field if source_field is not None else None,
-        transform._expr if transform is not None else None,
+        transform,
     )
 
 

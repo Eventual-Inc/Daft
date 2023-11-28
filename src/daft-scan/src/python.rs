@@ -337,14 +337,55 @@ partitioning_keys:\n",
         fn new(
             field: PyField,
             source_field: Option<PyField>,
-            transform: Option<PyExpr>,
+            transform: Option<PyPartitionTransform>,
         ) -> PyResult<Self> {
             let p_field = PartitionField::new(
                 field.field,
                 source_field.map(|f| f.into()),
-                transform.map(|e| e.expr),
+                transform.map(|e| e.0),
             )?;
             Ok(PyPartitionField(Arc::new(p_field)))
+        }
+
+        pub fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("{}", self.0))
+        }
+
+        #[getter]
+        pub fn field(&self) -> PyResult<PyField> {
+            Ok(self.0.field.clone().into())
+        }
+    }
+
+    #[pyclass(module = "daft.daft", name = "PartitionTransform", frozen)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PyPartitionTransform(crate::PartitionTransform);
+
+    #[pymethods]
+    impl PyPartitionTransform {
+        #[staticmethod]
+        pub fn identity() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Identity))
+        }
+
+        #[staticmethod]
+        pub fn year() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Year))
+        }
+
+        #[staticmethod]
+        pub fn month() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Month))
+        }
+
+        #[staticmethod]
+        pub fn day() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Day))
+        }
+
+        #[staticmethod]
+        pub fn void() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Void))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {
@@ -382,6 +423,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;
+    parent.add_class::<pylib::PyPartitionTransform>()?;
     parent.add_class::<pylib::PyPushdowns>()?;
     Ok(())
 }

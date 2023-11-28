@@ -8,16 +8,18 @@ from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import Table
+from pyiceberg.typedef import Record
 
+import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PartitionTransform,
     Pushdowns,
     ScanTask,
     StorageConfig,
 )
 from daft.datatype import DataType
-from daft.expressions.expressions import col
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -37,7 +39,6 @@ def _iceberg_partition_field_to_daft_partition_field(
     arrow_result_type = schema_to_pyarrow(iceberg_result_type)
     daft_result_type = DataType.from_arrow_type(arrow_result_type)
     result_field = Field.create(name, daft_result_type)
-
     from pyiceberg.transforms import (
         DayTransform,
         HourTransform,
@@ -46,25 +47,22 @@ def _iceberg_partition_field_to_daft_partition_field(
         YearTransform,
     )
 
-    expr = None
+    tfm = None
     if isinstance(transform, IdentityTransform):
-        expr = col(source_name)
-        if source_name != name:
-            expr = expr.alias(name)
+        tfm = PartitionTransform.identity()
     elif isinstance(transform, YearTransform):
-        expr = col(source_name).dt.year().alias(name)
+        tfm = PartitionTransform.year()
     elif isinstance(transform, MonthTransform):
-        expr = col(source_name).dt.month().alias(name)
+        tfm = PartitionTransform.month()
     elif isinstance(transform, DayTransform):
-        expr = col(source_name).dt.day().alias(name)
+        tfm = PartitionTransform.day()
     elif isinstance(transform, HourTransform):
         warnings.warn(
             "HourTransform not implemented, Please make a comment: https://github.com/Eventual-Inc/Daft/issues/1606"
         )
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
-
-    return make_partition_field(result_field, daft_field, transform=expr)
+    return make_partition_field(result_field, daft_field, transform=tfm)
 
 
 def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
@@ -79,12 +77,27 @@ class IcebergScanOperator(ScanOperator):
         arrow_schema = schema_to_pyarrow(iceberg_table.schema())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
+        print(self._partition_keys)
 
     def schema(self) -> Schema:
         return self._schema
 
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
+
+    def _iceberg_record_to_partition_spec(self, record: Record) -> daft.table.Table | None:
+        arrays = dict()
+        for name, value, pfield in zip(record._position_to_field_name, record.record_fields(), self._partition_keys):
+            field = Field._from_pyfield(pfield.field)
+            field_name = field.name
+            field_dtype = field.dtype
+            assert name == field_name
+            arrays[name] = daft.Series.from_pylist([value], name=name).cast(field_dtype)
+
+        if len(arrays) > 0:
+            return daft.table.LegacyTable.from_pydict(arrays)
+        else:
+            return None
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
@@ -116,7 +129,7 @@ class IcebergScanOperator(ScanOperator):
 
             # TODO: Thread in PartitionSpec to each ScanTask: P1
             # TODO: Thread in Statistics to each ScanTask: P2
-
+            self._iceberg_record_to_partition_spec(file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
