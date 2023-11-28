@@ -920,6 +920,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-treenode"
+version = "0.1.10"
+dependencies = [
+ "common-error",
+ "pyo3",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1191,6 +1199,7 @@ dependencies = [
  "bincode",
  "common-error",
  "common-io-config",
+ "common-treenode",
  "daft-core",
  "daft-io",
  "indexmap 2.0.2",
