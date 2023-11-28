@@ -11,7 +11,7 @@ impl TreeNode for Expr {
         use Expr::*;
         let children = match self {
             Alias(expr, _) | Cast(expr, _) | Not(expr) | IsNull(expr) => {
-                vec![expr.as_ref().clone()]
+                vec![expr.as_ref()]
             }
             Agg(agg_expr) => {
                 use crate::AggExpr::*;
@@ -22,23 +22,19 @@ impl TreeNode for Expr {
                     | Min(expr)
                     | Max(expr)
                     | List(expr)
-                    | Concat(expr) => vec![expr.as_ref().clone()],
+                    | Concat(expr) => vec![expr.as_ref()],
                 }
             }
-            BinaryOp { op: _, left, right } => vec![left.as_ref().clone(), right.as_ref().clone()],
+            BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
             Column(_) | Literal(_) => vec![],
-            Function { func: _, inputs } => inputs.clone(),
+            Function { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
             IfElse {
                 if_true,
                 if_false,
                 predicate,
-            } => vec![
-                if_true.as_ref().clone(),
-                if_false.as_ref().clone(),
-                predicate.as_ref().clone(),
-            ],
+            } => vec![if_true.as_ref(), if_false.as_ref(), predicate.as_ref()],
         };
-        for child in children.iter() {
+        for child in children.into_iter() {
             match op(child)? {
                 VisitRecursion::Continue => {}
                 VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
@@ -56,9 +52,9 @@ impl TreeNode for Expr {
 
         use Expr::*;
         Ok(match self {
-            Alias(expr, name) => transform(expr.as_ref().clone())?.alias(name),
+            Alias(expr, name) => Alias(transform(expr.as_ref().clone())?.into(), name),
             Column(_) | Literal(_) => self,
-            Cast(expr, dtype) => transform(expr.as_ref().clone())?.cast(&dtype),
+            Cast(expr, dtype) => Cast(transform(expr.as_ref().clone())?.into(), dtype),
             Agg(agg_expr) => {
                 use crate::AggExpr::*;
                 match agg_expr {
@@ -71,8 +67,8 @@ impl TreeNode for Expr {
                     Concat(expr) => transform(expr.as_ref().clone())?.agg_concat(),
                 }
             }
-            Not(expr) => transform(expr.as_ref().clone())?.not(),
-            IsNull(expr) => transform(expr.as_ref().clone())?.is_null(),
+            Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
+            IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
             IfElse {
                 if_true,
                 if_false,
