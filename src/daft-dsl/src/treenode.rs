@@ -61,7 +61,6 @@ impl TreeNode for Expr {
             Cast(expr, dtype) => transform(expr.as_ref().clone())?.cast(&dtype),
             Agg(agg_expr) => {
                 use crate::AggExpr::*;
-                // TODO implement vistor for agg expr
                 match agg_expr {
                     Count(expr, mode) => transform(expr.as_ref().clone())?.count(mode),
                     Sum(expr) => transform(expr.as_ref().clone())?.sum(),
