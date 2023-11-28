@@ -1,31 +1,20 @@
 use std::collections::HashMap;
 
 use common_error::DaftResult;
-use common_treenode::{
-    RewriteRecursion, TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion,
-};
+use common_treenode::{RewriteRecursion, Transformed, TreeNode, TreeNodeRewriter, VisitRecursion};
 
 use super::expr::Expr;
 
-struct RequiredColumnVisitor {
-    required: Vec<String>,
-}
-
-impl TreeNodeVisitor for RequiredColumnVisitor {
-    type N = Expr;
-    fn pre_visit(&mut self, node: &Self::N) -> DaftResult<VisitRecursion> {
-        if let Expr::Column(name) = node {
-            self.required.push(name.as_ref().into());
-        };
-        Ok(VisitRecursion::Continue)
-    }
-}
-
 pub fn get_required_columns(e: &Expr) -> Vec<String> {
-    let mut visitor = RequiredColumnVisitor { required: vec![] };
-    e.visit(&mut visitor)
-        .expect("Error occurred when visiting for required columns");
-    visitor.required
+    let mut cols = vec![];
+    e.apply(&mut |expr| {
+        if let Expr::Column(name) = expr {
+            cols.push(name.as_ref().into());
+        }
+        Ok(VisitRecursion::Continue)
+    })
+    .expect("Error occurred when visiting for required columns");
+    cols
 }
 
 pub fn requires_computation(e: &Expr) -> bool {
@@ -66,10 +55,13 @@ impl<'a> TreeNodeRewriter for ColumnExpressionRewriter<'a> {
 }
 
 pub fn replace_columns_with_expressions(expr: &Expr, replace_map: &HashMap<String, Expr>) -> Expr {
-    let mut column_rewriter = ColumnExpressionRewriter {
-        mapping: replace_map,
-    };
     expr.clone()
-        .rewrite(&mut column_rewriter)
+        .transform(&|e| {
+            if let Expr::Column(ref name) = e && let Some(tgt) = replace_map.get(name.as_ref()) {
+            Ok(Transformed::Yes(tgt.clone()))
+        } else {
+            Ok(Transformed::No(e))
+        }
+        })
         .expect("Error occurred when rewriting column expressions")
 }
