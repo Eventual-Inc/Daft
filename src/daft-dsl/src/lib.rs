@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod arithmetic;
 mod expr;
 pub mod functions;
