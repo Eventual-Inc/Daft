@@ -116,12 +116,6 @@ impl PyExpr {
         Ok(matches!(self.expr, Expr::Column(..)))
     }
 
-    pub fn _replace_column_with_expression(&self, column: &str, new_expr: &Self) -> PyResult<Self> {
-        Ok(PyExpr {
-            expr: optimization::replace_column_with_expression(&self.expr, column, &new_expr.expr),
-        })
-    }
-
     pub fn alias(&self, name: &str) -> PyResult<Self> {
         Ok(self.expr.alias(name).into())
     }

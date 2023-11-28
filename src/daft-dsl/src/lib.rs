@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod arithmetic;
 mod expr;
 pub mod functions;
@@ -7,6 +8,7 @@ pub mod optimization;
 mod pyobject;
 #[cfg(feature = "python")]
 pub mod python;
+mod treenode;
 pub use expr::binary_op;
 pub use expr::col;
 pub use expr::{AggExpr, Expr, ExprRef, Operator};

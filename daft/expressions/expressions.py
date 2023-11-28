@@ -398,9 +398,6 @@ class Expression:
     def _is_column(self) -> bool:
         return self._expr._is_column()
 
-    def _replace_column_with_expression(self, column: builtins.str, new_expr: Expression) -> Expression:
-        return Expression._from_pyexpr(self._expr._replace_column_with_expression(column, new_expr._expr))
-
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
 

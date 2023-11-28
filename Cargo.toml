@@ -68,6 +68,7 @@ tikv-jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls"]}
 members = [
   "src/common/error",
   "src/common/io-config",
+  "src/common/treenode",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",
