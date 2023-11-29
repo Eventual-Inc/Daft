@@ -275,6 +275,26 @@ impl PyExpr {
         Ok(day_of_week(&self.expr).into())
     }
 
+    pub fn partitioning_days(&self) -> PyResult<Self> {
+        use functions::partitioning::days;
+        Ok(days(&self.expr).into())
+    }
+
+    pub fn partitioning_hours(&self) -> PyResult<Self> {
+        use functions::partitioning::hours;
+        Ok(hours(&self.expr).into())
+    }
+
+    pub fn partitioning_months(&self) -> PyResult<Self> {
+        use functions::partitioning::months;
+        Ok(months(&self.expr).into())
+    }
+
+    pub fn partitioning_years(&self) -> PyResult<Self> {
+        use functions::partitioning::years;
+        Ok(years(&self.expr).into())
+    }
+
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::endswith;
         Ok(endswith(&self.expr, &pattern.expr).into())
