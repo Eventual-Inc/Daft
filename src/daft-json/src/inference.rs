@@ -71,7 +71,7 @@ fn infer_array(values: &[Value]) -> Result<DataType> {
 
     let dt = if !types.is_empty() {
         let types = types.into_iter().collect::<Vec<_>>();
-        coerce_data_type(&types)
+        coerce_data_type(types)
     } else {
         DataType::Null
     };
@@ -101,7 +101,7 @@ pub(crate) fn column_types_map_to_fields(
         .map(|(name, dtype_set)| {
             let dtypes = dtype_set.into_iter().collect::<Vec<_>>();
             // Get consolidated dtype for column.
-            let dtype = coerce_data_type(dtypes.as_slice());
+            let dtype = coerce_data_type(dtypes);
             arrow2::datatypes::Field::new(name, dtype, true)
         })
         .collect::<Vec<_>>()
@@ -113,10 +113,10 @@ pub(crate) fn column_types_map_to_fields(
 /// * Lists and scalars are coerced to a list of a compatible scalar
 /// * Structs contain the union of all fields
 /// * All other types are coerced to `Utf8`
-pub(crate) fn coerce_data_type<A: Borrow<DataType> + std::fmt::Debug>(datatypes: &[A]) -> DataType {
+pub(crate) fn coerce_data_type(datatypes: Vec<DataType>) -> DataType {
     // Drop null dtype from the dtype set.
     let datatypes = datatypes
-        .iter()
+        .into_iter()
         .filter(|dt| !matches!((*dt).borrow(), DataType::Null))
         .collect::<Vec<_>>();
 
@@ -124,10 +124,10 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType> + std::fmt::Debug>(datatypes:
         return DataType::Null;
     }
 
-    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+    let are_all_equal = datatypes.windows(2).all(|w| w[0] == w[1]);
 
     if are_all_equal {
-        return datatypes[0].borrow().clone();
+        return datatypes.into_iter().next().unwrap();
     }
 
     let are_all_structs = datatypes
@@ -136,23 +136,23 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType> + std::fmt::Debug>(datatypes:
 
     if are_all_structs {
         // All structs => union of all field dtypes (these may have equal names).
-        let fields = datatypes.iter().fold(vec![], |mut acc, dt| {
-            if let DataType::Struct(new_fields) = (*dt).borrow() {
+        let fields = datatypes.into_iter().fold(vec![], |mut acc, dt| {
+            if let DataType::Struct(new_fields) = dt {
                 acc.extend(new_fields);
             };
             acc
         });
         // Group fields by unique names.
-        let fields = fields.iter().fold(
-            IndexMap::<&String, HashSet<&DataType>>::new(),
+        let fields = fields.into_iter().fold(
+            IndexMap::<String, HashSet<DataType>>::new(),
             |mut acc, field| {
-                match acc.entry(&field.name) {
+                match acc.entry(field.name) {
                     indexmap::map::Entry::Occupied(mut v) => {
-                        v.get_mut().insert(&field.data_type);
+                        v.get_mut().insert(field.data_type);
                     }
                     indexmap::map::Entry::Vacant(v) => {
                         let mut a = HashSet::new();
-                        a.insert(&field.data_type);
+                        a.insert(field.data_type);
                         v.insert(a);
                     }
                 }
@@ -164,32 +164,76 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType> + std::fmt::Debug>(datatypes:
             .into_iter()
             .map(|(name, dts)| {
                 let dts = dts.into_iter().collect::<Vec<_>>();
-                Field::new(name, coerce_data_type(&dts), true)
+                Field::new(name, coerce_data_type(dts), true)
             })
             .collect();
         return DataType::Struct(fields);
-    } else if datatypes.len() > 2 {
-        // TODO(Clark): Return an error for uncoercible types.
-        return DataType::Utf8;
     }
-    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+    datatypes
+        .into_iter()
+        .reduce(|lhs, rhs| {
+            match (lhs, rhs) {
+                (lhs, rhs) if lhs == rhs => lhs,
+                (DataType::Utf8, _) | (_, DataType::Utf8) => DataType::Utf8,
+                (DataType::List(lhs), DataType::List(rhs)) => {
+                    let inner =
+                        coerce_data_type(vec![lhs.data_type().clone(), rhs.data_type().clone()]);
+                    DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
+                }
+                (scalar, DataType::List(list)) | (DataType::List(list), scalar) => {
+                    let inner = coerce_data_type(vec![scalar, list.data_type().clone()]);
+                    DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
+                }
+                (DataType::Float64, DataType::Int64) | (DataType::Int64, DataType::Float64) => {
+                    DataType::Float64
+                }
+                (DataType::Int64, DataType::Boolean) | (DataType::Boolean, DataType::Int64) => {
+                    DataType::Int64
+                }
+                (DataType::Time32(left_tu), DataType::Time32(right_tu)) => {
+                    // Set unified time unit to the highest granularity time unit.
+                    let unified_tu = if left_tu == right_tu
+                        || time_unit_to_ordinal(&left_tu) > time_unit_to_ordinal(&right_tu)
+                    {
+                        left_tu
+                    } else {
+                        right_tu
+                    };
+                    DataType::Time32(unified_tu)
+                }
+                (
+                    DataType::Timestamp(left_tu, left_tz),
+                    DataType::Timestamp(right_tu, right_tz),
+                ) => {
+                    // Set unified time unit to the highest granularity time unit.
+                    let unified_tu = if left_tu == right_tu
+                        || time_unit_to_ordinal(&left_tu) > time_unit_to_ordinal(&right_tu)
+                    {
+                        left_tu
+                    } else {
+                        right_tu
+                    };
+                    // Set unified time zone to UTC.
+                    let unified_tz = if left_tz == right_tz {
+                        left_tz.clone()
+                    } else {
+                        Some("Z".to_string())
+                    };
+                    DataType::Timestamp(unified_tu, unified_tz)
+                }
+                (_, _) => DataType::Utf8,
+            }
+        })
+        .unwrap()
+}
 
-    return match (lhs, rhs) {
-        (lhs, rhs) if lhs == rhs => lhs.clone(),
-        (DataType::List(lhs), DataType::List(rhs)) => {
-            let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
-            DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
-        }
-        (scalar, DataType::List(list)) | (DataType::List(list), scalar) => {
-            let inner = coerce_data_type(&[scalar, list.data_type()]);
-            DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
-        }
-        (DataType::Float64, DataType::Int64) | (DataType::Int64, DataType::Float64) => {
-            DataType::Float64
-        }
-        (DataType::Int64, DataType::Boolean) | (DataType::Boolean, DataType::Int64) => {
-            DataType::Int64
-        }
-        (_, _) => DataType::Utf8,
-    };
+fn time_unit_to_ordinal(tu: &arrow2::datatypes::TimeUnit) -> usize {
+    use arrow2::datatypes::TimeUnit;
+
+    match tu {
+        TimeUnit::Second => 0,
+        TimeUnit::Millisecond => 1,
+        TimeUnit::Microsecond => 2,
+        TimeUnit::Nanosecond => 3,
+    }
 }

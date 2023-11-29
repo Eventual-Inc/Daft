@@ -200,7 +200,11 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::{
+        datatypes::{Field, TimeUnit},
+        schema::Schema,
+        DataType,
+    };
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 
@@ -251,6 +255,69 @@ mod tests {
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
             ])?,
+        );
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_json_schema_local_dtypes() -> DaftResult<()> {
+        let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("int", DataType::Int64),
+                Field::new("float", DataType::Float64),
+                Field::new("bool", DataType::Boolean),
+                Field::new("str", DataType::Utf8),
+                Field::new("null", DataType::Null),
+                Field::new("date", DataType::Date),
+                // TODO(Clark): Add coverage for time parsing once we add support for representing time series in Daft.
+                // // Timezone should be finest granularity found in file, i.e. nanoseconds.
+                // Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
+                // Timezone should be finest granularity found in file, i.e. microseconds.
+                Field::new(
+                    "naive_timestamp",
+                    DataType::Timestamp(TimeUnit::Microseconds, None)
+                ),
+                // Timezone should be UTC due to field having multiple different timezones across records.
+                Field::new(
+                    "timestamp",
+                    DataType::Timestamp(TimeUnit::Milliseconds, Some("Z".to_string()))
+                ),
+                Field::new("list", DataType::List(Box::new(DataType::Int64))),
+                Field::new(
+                    "obj",
+                    DataType::Struct(vec![
+                        Field::new("a", DataType::Int64),
+                        Field::new("b", DataType::Boolean)
+                    ])
+                ),
+                Field::new(
+                    "nested_list",
+                    DataType::List(Box::new(DataType::List(Box::new(DataType::Struct(vec![
+                        Field::new("a", DataType::Utf8),
+                    ])))))
+                ),
+                Field::new(
+                    "nested_obj",
+                    DataType::Struct(vec![
+                        Field::new(
+                            "obj",
+                            DataType::Struct(vec![Field::new("a", DataType::Int64)])
+                        ),
+                        Field::new("list", DataType::List(Box::new(DataType::Int64))),
+                    ])
+                ),
+            ])?
+            .into(),
         );
 
         Ok(())

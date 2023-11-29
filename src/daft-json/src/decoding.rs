@@ -10,7 +10,11 @@ use arrow2::error::{Error, Result};
 use arrow2::offset::Offsets;
 use arrow2::temporal_conversions;
 use arrow2::types::{f16, NativeType, Offset};
-use daft_decoding::deserialize::{deserialize_datetime, deserialize_naive_datetime};
+use chrono::{Datelike, Timelike};
+use daft_decoding::deserialize::{
+    deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
+    get_factor_from_timeunit,
+};
 use indexmap::IndexMap;
 use json_deserializer::{Number, Value};
 
@@ -135,20 +139,20 @@ fn deserialize_into<'a, A: Borrow<Value<'a>>>(target: &mut Box<dyn MutableArray>
         }
         DataType::Int8 => deserialize_primitive_into::<_, i8>(target, rows, deserialize_int_into),
         DataType::Int16 => deserialize_primitive_into::<_, i16>(target, rows, deserialize_int_into),
-        DataType::Int32
-        | DataType::Date32
-        | DataType::Time32(_)
-        | DataType::Interval(IntervalUnit::YearMonth) => {
+        DataType::Int32 | DataType::Interval(IntervalUnit::YearMonth) => {
             deserialize_primitive_into::<_, i32>(target, rows, deserialize_int_into)
+        }
+        DataType::Date32 | DataType::Time32(_) => {
+            deserialize_primitive_into::<_, i32>(target, rows, deserialize_date_into)
         }
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         }
-        DataType::Int64 | DataType::Date64 | DataType::Time64(_) | DataType::Duration(_) => {
+        DataType::Int64 | DataType::Duration(_) => {
             deserialize_primitive_into::<_, i64>(target, rows, deserialize_int_into)
         }
-        DataType::Timestamp(..) => {
-            deserialize_primitive_into::<_, i64>(target, rows, deserialize_timestamp_into)
+        DataType::Timestamp(..) | DataType::Date64 | DataType::Time64(_) => {
+            deserialize_primitive_into::<_, i64>(target, rows, deserialize_datetime_into)
         }
         DataType::UInt8 => deserialize_primitive_into::<_, u8>(target, rows, deserialize_int_into),
         DataType::UInt16 => {
@@ -369,7 +373,34 @@ where
     }
 }
 
-fn deserialize_timestamp_into<'a, A: Borrow<Value<'a>>>(
+fn deserialize_date_into<'a, A: Borrow<Value<'a>>>(
+    target: &mut MutablePrimitiveArray<i32>,
+    rows: &[A],
+) {
+    let dtype = target.data_type().clone();
+    let mut last_fmt_idx = 0;
+    let iter = rows.iter().map(|row| match row.borrow() {
+        Value::Number(v) => Some(deserialize_int_single(*v)),
+        Value::String(v) => match dtype {
+            DataType::Time32(tu) => {
+                let factor = get_factor_from_timeunit(tu);
+                v.parse::<chrono::NaiveTime>().ok().map(|x| {
+                    (x.hour() * 3_600 * factor
+                        + x.minute() * 60 * factor
+                        + x.second() * factor
+                        + x.nanosecond() / (1_000_000_000 / factor)) as i32
+                })
+            }
+            DataType::Date32 => deserialize_naive_date(v, &mut last_fmt_idx)
+                .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE),
+            _ => unreachable!(),
+        },
+        _ => None,
+    });
+    target.extend_trusted_len(iter);
+}
+
+fn deserialize_datetime_into<'a, A: Borrow<Value<'a>>>(
     target: &mut MutablePrimitiveArray<i64>,
     rows: &[A],
 ) {
@@ -378,6 +409,19 @@ fn deserialize_timestamp_into<'a, A: Borrow<Value<'a>>>(
     let iter = rows.iter().map(|row| match row.borrow() {
         Value::Number(v) => Some(deserialize_int_single(*v)),
         Value::String(v) => match dtype {
+            DataType::Time64(tu) => {
+                let factor = get_factor_from_timeunit(tu) as u64;
+                v.parse::<chrono::NaiveTime>().ok().map(|x| {
+                    (x.hour() as u64 * 3_600 * factor
+                        + x.minute() as u64 * 60 * factor
+                        + x.second() as u64 * factor
+                        + x.nanosecond() as u64 / (1_000_000_000 / factor))
+                        as i64
+                })
+            }
+            DataType::Date64 => {
+                deserialize_naive_datetime(v, &mut last_fmt_idx).map(|x| x.timestamp_millis())
+            }
             DataType::Timestamp(tu, None) => deserialize_naive_datetime(v, &mut last_fmt_idx)
                 .and_then(|dt| match tu {
                     TimeUnit::Second => Some(dt.timestamp()),
@@ -386,6 +430,7 @@ fn deserialize_timestamp_into<'a, A: Borrow<Value<'a>>>(
                     TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
                 }),
             DataType::Timestamp(tu, Some(ref tz)) => {
+                let tz = if tz == "Z" { "UTC" } else { tz };
                 let tz = temporal_conversions::parse_offset(tz).unwrap();
                 deserialize_datetime(v, &tz, &mut last_fmt_idx).and_then(|dt| match tu {
                     TimeUnit::Second => Some(dt.timestamp()),

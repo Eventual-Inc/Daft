@@ -1,7 +1,7 @@
 use arrow2::datatypes::{DataType, TimeUnit};
 use chrono::Timelike;
 
-use crate::deserialize::{ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
+use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
 
 /// Infers [`DataType`] from `bytes`
 /// # Implementation
@@ -35,12 +35,15 @@ pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
 pub fn infer_string(string: &str) -> DataType {
     if is_date(string) {
         DataType::Date32
-    } else if is_time(string) {
-        DataType::Time32(TimeUnit::Millisecond)
+    } else if let Some(time_unit) = is_time(string) {
+        DataType::Time32(time_unit)
+    } else if let Some((time_unit, offset)) = is_datetime(string) {
+        // NOTE: We try to parse as a non-naive datatime (with timezone information) first,
+        // since is_datetime() will return false if timezone information is not present in the string,
+        // while is_naive_datetime() will ignore timezone information in the string.
+        DataType::Timestamp(time_unit, Some(offset))
     } else if let Some(time_unit) = is_naive_datetime(string) {
         DataType::Timestamp(time_unit, None)
-    } else if let Some((time_unit, offset)) = is_datetime(string) {
-        DataType::Timestamp(time_unit, Some(offset))
     } else {
         DataType::Utf8
     }
@@ -63,11 +66,20 @@ fn is_integer(bytes: &[u8]) -> bool {
 }
 
 fn is_date(string: &str) -> bool {
-    string.parse::<chrono::NaiveDate>().is_ok()
+    for fmt in ALL_NAIVE_DATE_FMTS {
+        if chrono::NaiveDate::parse_from_str(string, fmt).is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
-fn is_time(string: &str) -> bool {
-    string.parse::<chrono::NaiveTime>().is_ok()
+fn is_time(string: &str) -> Option<TimeUnit> {
+    if let Ok(t) = string.parse::<chrono::NaiveTime>() {
+        let time_unit = nanoseconds_to_time_unit(t.nanosecond());
+        return Some(time_unit);
+    }
+    None
 }
 
 fn is_naive_datetime(string: &str) -> Option<TimeUnit> {

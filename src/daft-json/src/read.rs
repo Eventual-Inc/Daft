@@ -368,7 +368,7 @@ mod tests {
     use common_error::DaftResult;
 
     use daft_core::{
-        datatypes::Field,
+        datatypes::{Field, TimeUnit},
         schema::Schema,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
         DataType,
@@ -534,6 +534,20 @@ mod tests {
                 Field::new("bool", DataType::Boolean),
                 Field::new("str", DataType::Utf8),
                 Field::new("null", DataType::Null),
+                Field::new("date", DataType::Date),
+                // TODO(Clark): Add coverage for time parsing once we add support for representing time series in Daft.
+                // // Timezone should be finest granularity found in file, i.e. nanoseconds.
+                // Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
+                // Timezone should be finest granularity found in file, i.e. microseconds.
+                Field::new(
+                    "naive_timestamp",
+                    DataType::Timestamp(TimeUnit::Microseconds, None)
+                ),
+                // Timezone should be UTC due to field having multiple different timezones across records.
+                Field::new(
+                    "timestamp",
+                    DataType::Timestamp(TimeUnit::Milliseconds, Some("Z".to_string()))
+                ),
                 Field::new("list", DataType::List(Box::new(DataType::Int64))),
                 Field::new(
                     "obj",
