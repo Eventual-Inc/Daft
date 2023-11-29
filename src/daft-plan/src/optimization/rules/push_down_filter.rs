@@ -9,9 +9,11 @@ use daft_dsl::{
     optimization::{get_required_columns, replace_columns_with_expressions},
     Expr,
 };
+use daft_scan::ScanExternalInfo;
 
 use crate::{
-    logical_ops::{Concat, Filter, Project},
+    logical_ops::{Concat, Filter, Project, Source},
+    source_info::{ExternalInfo, SourceInfo},
     LogicalPlan,
 };
 
@@ -42,6 +44,29 @@ impl OptimizerRule for PushDownFilter {
         };
         let child_plan = filter.input.as_ref();
         let new_plan = match child_plan {
+            LogicalPlan::Source(Source {
+                output_schema,
+                source_info
+            }) if let SourceInfo::ExternalInfo(ext_info) = source_info.as_ref() => {
+                // Push Filter into Scan.
+                //
+                // Filter-Scan --> Filter-Scan
+                // TODO: We can drop The Filter if the Scan absorbs it
+                let pred = &filter.predicate;
+
+                let new_filters = if let Some(filters) = &ext_info.pushdowns().filters {
+                    // TODO ONLY PUSH IF DOESNT EXIST
+                    let mut filters = filters.as_ref().clone();
+                    filters.push(pred.clone().into());
+                    filters
+                } else {
+                    vec![Arc::new(pred.clone())]
+                };
+                let pushdowns = ext_info.pushdowns().with_filters(Some(Arc::new(new_filters)));
+                let new_ext_info = ext_info.with_pushdowns(pushdowns);
+                let new_scan = Arc::new(LogicalPlan::Source(Source::new(output_schema.clone(), SourceInfo::ExternalInfo(new_ext_info).into())));
+                plan.with_new_children(&[new_scan])
+            },
             LogicalPlan::Filter(child_filter) => {
                 // Combine filters.
                 //

@@ -33,6 +33,7 @@ pub mod pylib {
     use crate::ScanOperatorRef;
     use crate::ScanTask;
 
+    use crate::expr_rewriter::rewrite_predicate_for_partitioning;
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
@@ -213,6 +214,17 @@ partitioning_keys:\n",
         ) -> common_error::DaftResult<
             Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTaskRef>>>,
         > {
+            println!("{:?}", pushdowns.filters);
+            if let Some(pred) = pushdowns.filters.as_deref() {
+                for p in pred {
+                    let transformed = rewrite_predicate_for_partitioning(
+                        p.as_ref().clone(),
+                        self.partitioning_keys.as_slice(),
+                    )?;
+                    println!("before {} after {}", p, transformed);
+                }
+            }
+
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.into()).into_py(py);
                 let pyiter =

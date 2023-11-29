@@ -1,3 +1,5 @@
+#![feature(if_let_guard)]
+#![feature(let_chains)]
 use std::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},

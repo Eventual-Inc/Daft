@@ -16,7 +16,7 @@ macro_rules! impl_func_evaluator_for_partitioning {
 
         impl FunctionEvaluator for $name {
             fn fn_name(&self) -> &'static str {
-                "$op"
+                stringify!($op)
             }
 
             fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
@@ -26,7 +26,8 @@ macro_rules! impl_func_evaluator_for_partitioning {
                             Ok(Field::new(field.name, DataType::Int32))
                         }
                         Ok(field) => Err(DaftError::TypeError(format!(
-                            "Expected input to $op to be temporal, got {}",
+                            "Expected input to {} to be temporal, got {}",
+                            stringify!($op),
                             field.dtype
                         ))),
                         Err(e) => Err(e),
@@ -42,7 +43,8 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 match inputs {
                     [input] => input.$kernel(),
                     _ => Err(DaftError::ValueError(format!(
-                        "Expected 1 input arg, got {}",
+                        "Expected 1 input arg for {}, got {}",
+                        stringify!($op),
                         inputs.len()
                     ))),
                 }
