@@ -2,6 +2,7 @@ pub mod float;
 pub mod image;
 pub mod list;
 pub mod numeric;
+pub mod partitioning;
 pub mod temporal;
 pub mod uri;
 pub mod utf8;
@@ -9,6 +10,7 @@ pub mod utf8;
 use self::image::ImageExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
+use self::partitioning::PartitioningExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
 use self::{float::FloatExpr, uri::UriExpr};
@@ -33,6 +35,7 @@ pub enum FunctionExpr {
     Image(ImageExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
+    Partitioning(PartitioningExpr),
     Uri(UriExpr),
 }
 
@@ -56,6 +59,7 @@ impl FunctionExpr {
             Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]
             Python(expr) => expr,
+            Partitioning(expr) => expr.get_evaluator(),
         }
     }
 }

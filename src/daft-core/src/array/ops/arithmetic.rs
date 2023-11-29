@@ -4,7 +4,7 @@ use arrow2::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use crate::{
     array::DataArray,
-    datatypes::{DaftNumericType, Float64Array, Utf8Array},
+    datatypes::{DaftNumericType, Float64Array, Int64Array, Utf8Array},
     kernels::utf8::add_utf8_arrays,
 };
 
@@ -116,6 +116,13 @@ where
 
 impl Div for &Float64Array {
     type Output = DaftResult<Float64Array>;
+    fn div(self, rhs: Self) -> Self::Output {
+        arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
+    }
+}
+
+impl Div for &Int64Array {
+    type Output = DaftResult<Int64Array>;
     fn div(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
     }

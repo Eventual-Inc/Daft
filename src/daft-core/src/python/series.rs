@@ -288,6 +288,22 @@ impl PySeries {
         Ok(self.series.dt_day_of_week()?.into())
     }
 
+    pub fn partitioning_days(&self) -> PyResult<Self> {
+        Ok(self.series.partitioning_days()?.into())
+    }
+
+    pub fn partitioning_hours(&self) -> PyResult<Self> {
+        Ok(self.series.partitioning_hours()?.into())
+    }
+
+    pub fn partitioning_months(&self) -> PyResult<Self> {
+        Ok(self.series.partitioning_months()?.into())
+    }
+
+    pub fn partitioning_years(&self) -> PyResult<Self> {
+        Ok(self.series.partitioning_years()?.into())
+    }
+
     pub fn list_lengths(&self) -> PyResult<Self> {
         Ok(self.series.list_lengths()?.into_series().into())
     }

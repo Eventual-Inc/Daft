@@ -22,6 +22,7 @@ pub mod len;
 pub mod list;
 pub mod not;
 pub mod null;
+pub mod partitioning;
 pub mod search_sorted;
 pub mod sort;
 pub mod take;
