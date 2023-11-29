@@ -343,7 +343,7 @@ async fn build_s3_client(
                 Err(err @  ProviderTimedOut(..)) => {
                     let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
                     if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
-                        let jitter = rand::thread_rng().gen_range(0..((2<<attempt) * JITTER_MS)) as u64;
+                        let jitter = rand::thread_rng().gen_range(0..((1<<attempt) * JITTER_MS)) as u64;
                         let jitter = jitter.min(MAX_BACKOFF_MS);
                         log::warn!("S3 Credentials Provider timed out when making client for {}! Attempt {attempt} out of {CRED_TRIES} tries. Trying again in {jitter}ms. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
                         tokio::time::sleep(Duration::from_millis(jitter)).await;
