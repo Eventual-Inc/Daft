@@ -3,8 +3,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Iterator
 
-from daft.daft import CsvParseOptions
-from daft.daft import JsonParseOptions
+from daft.daft import CsvParseOptions, JsonParseOptions
 from daft.daft import PyField as _PyField
 from daft.daft import PySchema as _PySchema
 from daft.daft import read_csv_schema as _read_csv_schema

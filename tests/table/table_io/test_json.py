@@ -1,17 +1,16 @@
 from __future__ import annotations
-import contextlib
 
-import io
+import contextlib
 import json
 import os
 import pathlib
 import tempfile
 from typing import Any
-from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 
 import pytest
 
 import daft
+from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableReadOptions
