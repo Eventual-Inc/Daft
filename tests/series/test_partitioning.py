@@ -19,6 +19,7 @@ from daft.series import Series
         ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [17501]),
         ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [-1]),
         ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [-1]),
+        ([-13 * 3_600_000_000], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-12:00"), [-1]),
     ],
 )
 def test_partitioning_days(input, dtype, expected):
@@ -39,6 +40,11 @@ def test_partitioning_days(input, dtype, expected):
         ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [575]),
         ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [-1]),
         ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [-1]),
+        (
+            [(-24 * 31 + 11) * 3_600_000_000],
+            DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-12:00"),
+            [-1],
+        ),
     ],
 )
 def test_partitioning_months(input, dtype, expected):
