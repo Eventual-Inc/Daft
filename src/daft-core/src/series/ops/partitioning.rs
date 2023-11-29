@@ -18,8 +18,9 @@ impl Series {
         let years_since_1970 = self.partitioning_years()?;
         let months_of_this_year = self.dt_month()?;
         let months_in_year = Int32Array::from(("months", vec![12])).into_series();
+        let month_of_epoch = Int32Array::from(("months", vec![1])).into_series();
 
-        (&years_since_1970 * &months_in_year)? + months_of_this_year
+        ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
