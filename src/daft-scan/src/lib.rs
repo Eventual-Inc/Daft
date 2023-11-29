@@ -26,7 +26,7 @@ use pyo3::PyErr;
 pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
-
+mod expr_rewriter;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
