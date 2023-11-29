@@ -9,18 +9,45 @@ use common_error::{DaftError, DaftResult};
 
 impl Series {
     pub fn partitioning_years(&self) -> DaftResult<Self> {
-        let years_since_ce = self.dt_year()?;
         let epoch_year = Int32Array::from(("1970", vec![1970])).into_series();
-        &years_since_ce - &epoch_year
+
+        match self.data_type() {
+            DataType::Date | DataType::Timestamp(_, None) => {
+                let years_since_ce = self.dt_year()?;
+                &years_since_ce - &epoch_year
+            }
+            DataType::Timestamp(tu, Some(_)) => {
+                let array = self.cast(&DataType::Timestamp(*tu, None))?;
+                let years_since_ce = array.dt_year()?;
+                &years_since_ce - &epoch_year
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run partitioning_years() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
     }
 
     pub fn partitioning_months(&self) -> DaftResult<Self> {
-        let years_since_1970 = self.partitioning_years()?;
-        let months_of_this_year = self.dt_month()?;
         let months_in_year = Int32Array::from(("months", vec![12])).into_series();
         let month_of_epoch = Int32Array::from(("months", vec![1])).into_series();
-
-        ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
+        match self.data_type() {
+            DataType::Date | DataType::Timestamp(_, None) => {
+                let years_since_1970 = self.partitioning_years()?;
+                let months_of_this_year = self.dt_month()?;
+                ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
+            }
+            DataType::Timestamp(tu, Some(_)) => {
+                let array = self.cast(&DataType::Timestamp(*tu, None))?;
+                let years_since_1970 = array.partitioning_years()?;
+                let months_of_this_year = array.dt_month()?;
+                ((&years_since_1970 * &months_in_year)? + months_of_this_year)? - month_of_epoch
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run partitioning_years() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
@@ -29,16 +56,24 @@ impl Series {
                 let downcasted = self.downcast::<DateArray>()?;
                 downcasted.cast(&DataType::Int32)
             }
-            DataType::Timestamp(..) => {
+            DataType::Timestamp(_, None) => {
                 let ts_array = self.downcast::<TimestampArray>()?;
                 ts_array.date()?.cast(&DataType::Int32)
             }
+
+            DataType::Timestamp(tu, Some(_)) => {
+                let array = self.cast(&DataType::Timestamp(*tu, None))?;
+                let ts_array = array.downcast::<TimestampArray>()?;
+                ts_array.date()?.cast(&DataType::Int32)
+            }
+
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_days() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }
     }
+
     pub fn partitioning_hours(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(unit, _) => {
