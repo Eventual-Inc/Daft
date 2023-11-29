@@ -488,7 +488,7 @@ class Series:
         return SeriesImageNamespace.from_series(self)
 
     @property
-    def part(self) -> SeriesPartitioningNamespace:
+    def partitioning(self) -> SeriesPartitioningNamespace:
         return SeriesPartitioningNamespace.from_series(self)
 
     def __reduce__(self) -> tuple:

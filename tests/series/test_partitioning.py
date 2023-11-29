@@ -24,7 +24,7 @@ from daft.series import Series
 )
 def test_partitioning_days(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.part.days().to_pylist() == expected
+    assert s.partitioning.days().to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -49,7 +49,7 @@ def test_partitioning_days(input, dtype, expected):
 )
 def test_partitioning_months(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.part.months().to_pylist() == expected
+    assert s.partitioning.months().to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -70,7 +70,7 @@ def test_partitioning_months(input, dtype, expected):
 )
 def test_partitioning_years(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.part.years().to_pylist() == expected
+    assert s.partitioning.years().to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -91,4 +91,4 @@ def test_partitioning_years(input, dtype, expected):
 )
 def test_partitioning_hours(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.part.hours().to_pylist() == expected
+    assert s.partitioning.hours().to_pylist() == expected
