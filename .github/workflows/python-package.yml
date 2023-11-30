@@ -387,7 +387,7 @@ jobs:
       run: |
         docker buildx create --use --driver=docker-container
         pushd ./tests/integration/iceberg/docker-compose/
-        docker buildx bake -f ./docker-compose.yml --set *.cache-to="type=gha,mode=max" --set *.cache-from="type=gha" --load
+        docker buildx bake -f ./docker-compose.yml --set *.cache-to="type=gha,mode=min" --set *.cache-from="type=gha" --load
         popd
     - name: Spin up services
       run: |
