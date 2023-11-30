@@ -9,7 +9,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.logical.schema import Schema
-from daft.table import LegacyTable, MicroPartition
+from daft.table import MicroPartition, Table
 
 daft_int_types = [
     DataType.int8(),
@@ -67,7 +67,7 @@ def test_partitioning_micropartitions_hash(mp) -> None:
     ],
 )
 def test_partitioning_micropartitions_range_empty(mp) -> None:
-    boundaries = LegacyTable.from_pydict({"a": np.linspace(0, 10, 3)[1:]}).eval_expression_list(
+    boundaries = Table.from_pydict({"a": np.linspace(0, 10, 3)[1:]}).eval_expression_list(
         [col("a").cast(DataType.int64())]
     )
     split_tables = mp.partition_by_range([col("a")], boundaries, [True])
@@ -85,7 +85,7 @@ def test_partitioning_micropartitions_range_empty(mp) -> None:
     ],
 )
 def test_partitioning_micropartitions_range_boundaries_empty(mp) -> None:
-    boundaries = LegacyTable.from_pydict({"a": [], "b": []}).eval_expression_list([col("a").cast(DataType.int64())])
+    boundaries = Table.from_pydict({"a": [], "b": []}).eval_expression_list([col("a").cast(DataType.int64())])
     split_tables = mp.partition_by_range([col("a"), col("b")], boundaries, [False, False])
     assert len(split_tables) == 1
     assert split_tables[0].to_pydict() == {"a": [], "b": []}
@@ -105,7 +105,7 @@ def test_partitioning_micropartitions_range_boundaries_empty(mp) -> None:
     ],
 )
 def test_partitioning_micropartitions_range(mp) -> None:
-    boundaries = LegacyTable.from_pydict({"a": np.linspace(0, 5, 3)[1:]}).eval_expression_list(
+    boundaries = Table.from_pydict({"a": np.linspace(0, 5, 3)[1:]}).eval_expression_list(
         [col("a").cast(DataType.int64())]
     )
     split_tables = mp.partition_by_range([col("a")], boundaries, [True])
@@ -251,7 +251,7 @@ def test_table_partition_by_range_single_column(size, k, desc) -> None:
     if desc:
         input_boundaries = input_boundaries[::-1]
 
-    boundaries = LegacyTable.from_pydict({"x": input_boundaries}).eval_expression_list(
+    boundaries = Table.from_pydict({"x": input_boundaries}).eval_expression_list(
         [col("x").cast(table.get_column("x").datatype())]
     )
 
@@ -286,7 +286,7 @@ def test_table_partition_by_range_multi_column(size, k, desc) -> None:
     if desc:
         input_boundaries = input_boundaries[::-1]
 
-    boundaries = LegacyTable.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
+    boundaries = Table.from_pydict({"x": np.ones(k - 1), "y": input_boundaries}).eval_expression_list(
         [col("x").cast(table.get_column("x").datatype()), col("y").cast(table.get_column("y").datatype())]
     )
 
@@ -310,7 +310,7 @@ def test_table_partition_by_range_multi_column(size, k, desc) -> None:
 
 def test_table_partition_by_range_multi_column_string() -> None:
     table = MicroPartition.from_pydict({"x": ["a", "c", "a", "c"], "y": ["1", "2", "3", "4"]})
-    boundaries = LegacyTable.from_pydict({"x": ["b"], "y": ["1"]})
+    boundaries = Table.from_pydict({"x": ["b"], "y": ["1"]})
     split_tables = table.partition_by_range([col("x"), col("y")], boundaries, [False, False])
     assert len(split_tables) == 2
 
@@ -326,7 +326,7 @@ def test_table_partition_by_range_multi_column_string() -> None:
 def test_table_partition_by_range_input() -> None:
     data = {"x": [1, 2, 3], "b": [0, 1, 2]}
     table_cls = MicroPartition.from_pydict(data)
-    boundaries = LegacyTable.from_pydict(data)
+    boundaries = Table.from_pydict(data)
 
     with pytest.raises(ValueError, match="Schema Mismatch"):
         table_cls.partition_by_range([col("x")], boundaries, [False])
