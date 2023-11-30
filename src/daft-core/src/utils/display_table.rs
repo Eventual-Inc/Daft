@@ -1,4 +1,39 @@
-use crate::{datatypes::Field, Series};
+use crate::{
+    datatypes::{Field, TimeUnit},
+    Series,
+};
+
+pub fn display_date32(val: i32) -> String {
+    let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let date = if val.is_positive() {
+        epoch_date + chrono::naive::Days::new(val as u64)
+    } else {
+        epoch_date - chrono::naive::Days::new(val.unsigned_abs() as u64)
+    };
+    format!("{date}")
+}
+
+pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -> String {
+    use crate::array::ops::cast::{
+        timestamp_to_str_naive, timestamp_to_str_offset, timestamp_to_str_tz,
+    };
+
+    timezone.as_ref().map_or_else(
+        || timestamp_to_str_naive(val, unit),
+        |timezone| {
+            // In arrow, timezone string can be either:
+            // 1. a fixed offset "-07:00", parsed using parse_offset, or
+            // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
+            if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                timestamp_to_str_offset(val, unit, &offset)
+            } else if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(timezone) {
+                timestamp_to_str_tz(val, unit, &tz)
+            } else {
+                panic!("Unable to parse timezone string {}", timezone)
+            }
+        },
+    )
+}
 
 pub fn make_comfy_table<F: AsRef<Field>>(
     fields: &[F],
