@@ -386,10 +386,14 @@ jobs:
     - name: Build images
       run: |
         docker buildx create --use --driver=docker-container
-        docker buildx bake -f ./tests/integration/iceberg/docker-compose/docker-compose.yml --set *.cache-to="type=gha,mode=max" --set *.cache-from="type=gha" --load
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker buildx bake -f ./docker-compose.yml --set *.cache-to="type=gha,mode=max" --set *.cache-from="type=gha" --load
+        popd
     - name: Spin up services
       run: |
-        docker-compose -f ./tests/integration/iceberg/docker-compose/docker-compose.yml up -d
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker-compose -f ./docker-compose.yml up -d
+        popd
     - name: Run IO integration tests
       run: |
         pytest tests/integration/iceberg -m 'integration' --durations=50
