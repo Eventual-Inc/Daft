@@ -4,7 +4,7 @@ from abc import abstractmethod
 
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 class MapPartitionOp:
@@ -13,7 +13,7 @@ class MapPartitionOp:
         """Returns the output schema after running this MapPartitionOp"""
 
     @abstractmethod
-    def run(self, input_partition: Table) -> Table:
+    def run(self, input_partition: MicroPartition) -> MicroPartition:
         """Runs this MapPartitionOp on the supplied vPartition"""
 
 
@@ -39,5 +39,5 @@ class ExplodeOp(MapPartitionOp):
     def get_output_schema(self) -> Schema:
         return self.output_schema
 
-    def run(self, input_partition: Table) -> Table:
+    def run(self, input_partition: MicroPartition) -> MicroPartition:
         return input_partition.explode(self.explode_columns)

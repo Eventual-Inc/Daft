@@ -29,7 +29,7 @@ from daft.runners.partitioning import (
     TableParseParquetOptions,
     TableReadOptions,
 )
-from daft.table import Table
+from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -50,14 +50,14 @@ def _open_stream(
         yield file
 
 
-def _cast_table_to_schema(table: Table, read_options: TableReadOptions, schema: Schema) -> pa.Table:
-    """Performs a cast of a Daft Table to the requested Schema/Data. This is required because:
+def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions, schema: Schema) -> pa.Table:
+    """Performs a cast of a Daft MicroPartition to the requested Schema/Data. This is required because:
 
     1. Data read from the datasource may have types that do not match the inferred global schema
     2. Data read from the datasource may have columns that are out-of-order with the inferred schema
     3. We may need only a subset of columns, or differently-ordered columns, in `read_options`
 
-    This helper function takes care of all that, ensuring that the resulting Table has all column types matching
+    This helper function takes care of all that, ensuring that the resulting MicroPartition has all column types matching
     their corresponding dtype in `schema`, and column ordering/inclusion matches `read_options.column_names` (if provided).
     """
     pruned_schema = schema
@@ -75,8 +75,8 @@ def read_json(
     schema: Schema,
     storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
-) -> Table:
-    """Reads a Table from a JSON file
+) -> MicroPartition:
+    """Reads a MicroPartition from a JSON file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -85,7 +85,7 @@ def read_json(
         read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
-        Table: Parsed Table from JSON
+        MicroPartition: Parsed MicroPartition from JSON
     """
     io_config = None
     if storage_config is not None:
@@ -103,7 +103,7 @@ def read_json(
     if read_options.num_rows is not None:
         table = table[: read_options.num_rows]
 
-    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
+    return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
 
 
 def read_parquet(
@@ -112,8 +112,8 @@ def read_parquet(
     storage_config: StorageConfig | None = None,
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
-) -> Table:
-    """Reads a Table from a Parquet file
+) -> MicroPartition:
+    """Reads a MicroPartition from a Parquet file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -122,7 +122,7 @@ def read_parquet(
         read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
-        Table: Parsed Table from Parquet
+        MicroPartition: Parsed MicroPartition from Parquet
     """
     io_config = None
     if storage_config is not None:
@@ -131,7 +131,7 @@ def read_parquet(
             assert isinstance(
                 file, (str, pathlib.Path)
             ), "Native downloader only works on string inputs to read_parquet"
-            tbl = Table.read_parquet(
+            tbl = MicroPartition.read_parquet(
                 str(file),
                 columns=read_options.column_names,
                 num_rows=read_options.num_rows,
@@ -178,7 +178,7 @@ def read_parquet(
             coerce_int96_timestamp_unit=str(parquet_options.coerce_int96_timestamp_unit),
         )
 
-    return _cast_table_to_schema(Table.from_arrow(table), read_options=read_options, schema=schema)
+    return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
 
 
 class PACSVStreamHelper:
@@ -205,8 +205,8 @@ def read_csv(
     storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
-) -> Table:
-    """Reads a Table from a CSV file
+) -> MicroPartition:
+    """Reads a MicroPartition from a CSV file
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -217,7 +217,7 @@ def read_csv(
         read_options (TableReadOptions, optional): Options for reading the file
 
     Returns:
-        Table: Parsed Table from CSV
+        MicroPartition: Parsed MicroPartition from CSV
     """
     io_config = None
     if storage_config is not None:
@@ -242,7 +242,7 @@ def read_csv(
                 comment=csv_options.comment,
             )
             csv_read_options = CsvReadOptions(buffer_size=csv_options.buffer_size, chunk_size=csv_options.chunk_size)
-            tbl = Table.read_csv(
+            tbl = MicroPartition.read_csv(
                 str(file),
                 convert_options=csv_convert_options,
                 parse_options=csv_parse_options,
@@ -308,18 +308,18 @@ def read_csv(
             if pa_schema is None:
                 pa_schema = pa.schema([])
 
-            daft_table = Table.from_arrow_record_batches(pa_batches, pa_schema)
+            daft_table = MicroPartition.from_arrow_record_batches(pa_batches, pa_schema)
             assert len(daft_table) <= read_options.num_rows
 
         else:
             pa_table = pacsv_stream.read_all()
-            daft_table = Table.from_arrow(pa_table)
+            daft_table = MicroPartition.from_arrow(pa_table)
 
     return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
 
 
 def write_csv(
-    table: Table,
+    table: MicroPartition,
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
@@ -336,7 +336,7 @@ def write_csv(
 
 
 def write_parquet(
-    table: Table,
+    table: MicroPartition,
     path: str | pathlib.Path,
     compression: str | None = None,
     partition_cols: ExpressionsProjection | None = None,
@@ -353,7 +353,7 @@ def write_parquet(
 
 
 def _to_file(
-    table: Table,
+    table: MicroPartition,
     file_format: str,
     path: str | pathlib.Path,
     partition_cols: ExpressionsProjection | None = None,

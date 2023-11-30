@@ -9,7 +9,7 @@ import pytz
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 @pytest.mark.parametrize(
@@ -31,7 +31,7 @@ from daft.table import Table
 def test_make_lit(data, expected_dtype) -> None:
     l = lit(data)
     assert l.name() == "literal"
-    empty_table = Table.empty()
+    empty_table = MicroPartition.empty()
     lit_table = empty_table.eval_expression_list([l])
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype

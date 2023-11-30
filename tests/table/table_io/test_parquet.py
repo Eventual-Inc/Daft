@@ -16,7 +16,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import (
-    Table,
+    MicroPartition,
     read_parquet_into_pyarrow,
     read_parquet_into_pyarrow_bulk,
     schema_inference,
@@ -98,7 +98,7 @@ def test_parquet_infer_schema(data, expected_dtype, use_native_downloader):
 def test_parquet_read_empty(use_native_downloader):
     with _parquet_write_helper(pa.Table.from_pydict({"foo": pa.array([], type=pa.int64())})) as f:
         schema = Schema._from_field_name_and_types([("foo", DataType.int64())])
-        expected = Table.from_pydict({"foo": pa.array([], type=pa.int64())})
+        expected = MicroPartition.from_pydict({"foo": pa.array([], type=pa.int64())})
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(f, schema, storage_config=storage_config)
         assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
@@ -134,7 +134,7 @@ def test_parquet_read_data(data, expected_data_series, use_native_downloader):
         schema = Schema._from_field_name_and_types(
             [("id", DataType.int64()), ("data", expected_data_series.datatype())]
         )
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": expected_data_series,
@@ -158,7 +158,7 @@ def test_parquet_read_data_limit_rows(row_group_size, use_native_downloader):
         row_group_size=row_group_size,
     ) as f:
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2],
                 "data": [1, 2],
@@ -173,8 +173,8 @@ def test_parquet_read_data_limit_rows(row_group_size, use_native_downloader):
 
 def test_parquet_read_data_multi_row_groups():
     path = "tests/assets/parquet-data/mvp.parquet"
-    table = Table.read_parquet(path)
-    expected = Table.from_arrow(papq.read_table(path))
+    table = MicroPartition.read_parquet(path)
+    expected = MicroPartition.from_arrow(papq.read_table(path))
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
@@ -189,7 +189,7 @@ def test_parquet_read_data_select_columns(use_native_downloader):
         )
     ) as f:
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "data": [1, 2, None],
             }
@@ -234,7 +234,7 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps, use_nati
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
-        expected = Table.from_pydict(data)
+        expected = MicroPartition.from_pydict(data)
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
             f,
@@ -272,7 +272,7 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to, use_native_downloader
         papq_write_table_kwargs=papq_write_table_kwargs,
     ) as f:
         schema = Schema._from_field_name_and_types(schema)
-        expected = Table.from_pydict(data)
+        expected = MicroPartition.from_pydict(data)
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
         table = table_io.read_parquet(
             f,
@@ -331,7 +331,7 @@ def test_read_too_small_parquet_file(tmpdir, n_bytes):
         for _ in range(n_bytes):
             f.write(b"0")
     with pytest.raises(ValueError, match="smaller than the minimum size of 12 bytes"):
-        Table.read_parquet(file_path.as_posix())
+        MicroPartition.read_parquet(file_path.as_posix())
 
 
 def test_read_empty_parquet_file_with_table(tmpdir):
@@ -340,7 +340,7 @@ def test_read_empty_parquet_file_with_table(tmpdir):
     tab = pa.table({"x": pa.array([], type=pa.int64())})
     with open(file_path, "wb") as f:
         papq.write_table(tab, file_path.as_posix())
-    read_back = Table.read_parquet(file_path.as_posix()).to_arrow()
+    read_back = MicroPartition.read_parquet(file_path.as_posix()).to_arrow()
     assert tab == read_back
 
 

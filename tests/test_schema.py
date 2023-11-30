@@ -8,7 +8,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection, col
 from daft.logical.schema import Schema
-from daft.table import Table
+from daft.table import MicroPartition
 
 DATA = {
     "int": ([1, 2, None], DataType.int64()),
@@ -17,7 +17,7 @@ DATA = {
     "bool": ([True, True, None], DataType.bool()),
 }
 
-TABLE = Table.from_pydict({k: data for k, (data, _) in DATA.items()})
+TABLE = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()})
 EXPECTED_TYPES = {k: t for k, (_, t) in DATA.items()}
 
 from tests.utils import ANSI_ESCAPE
@@ -48,13 +48,13 @@ def test_schema_iter():
 
 
 def test_schema_eq():
-    t1, t2 = Table.from_pydict({k: data for k, (data, _) in DATA.items()}), Table.from_pydict(
+    t1, t2 = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}), MicroPartition.from_pydict(
         {k: data for k, (data, _) in DATA.items()}
     )
     s1, s2 = t1.schema(), t2.schema()
     assert s1 == s2
 
-    t_empty = Table.empty()
+    t_empty = MicroPartition.empty()
     assert s1 != t_empty.schema()
 
 
@@ -94,7 +94,7 @@ def test_union():
         schema.union(schema)
 
     new_data = {f"{k}_": d for k, (d, _) in DATA.items()}
-    new_table = Table.from_pydict(new_data)
+    new_table = MicroPartition.from_pydict(new_data)
     unioned_schema = schema.union(new_table.schema())
 
     assert unioned_schema.column_names() == list(DATA.keys()) + list(new_data.keys())
@@ -122,7 +122,7 @@ def test_field_pickling():
 
 
 def test_schema_pickling():
-    t1, t2 = Table.from_pydict({k: data for k, (data, _) in DATA.items()}), Table.from_pydict(
+    t1, t2 = MicroPartition.from_pydict({k: data for k, (data, _) in DATA.items()}), MicroPartition.from_pydict(
         {k: data for k, (data, _) in DATA.items()}
     )
 
@@ -132,7 +132,7 @@ def test_schema_pickling():
 
     assert s1 == s2
 
-    t_empty = Table.empty()
+    t_empty = MicroPartition.empty()
     assert s1 != t_empty.schema()
     t_empty_schema_copy = copy.deepcopy(t_empty.schema())
     assert t_empty.schema() == t_empty_schema_copy

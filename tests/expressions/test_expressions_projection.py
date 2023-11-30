@@ -4,7 +4,7 @@ import pytest
 
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.expressions.testing import expr_structurally_equal
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 def test_expressions_projection_error_dup_name():
@@ -156,7 +156,7 @@ def test_expressions_projection_indexing():
 
 
 def test_resolve_schema():
-    tbl = Table.from_pydict(
+    tbl = MicroPartition.from_pydict(
         {
             "foo": [1, 2, 3],
         }
@@ -167,7 +167,7 @@ def test_resolve_schema():
 
 
 def test_resolve_schema_invalid_type():
-    tbl = Table.from_pydict(
+    tbl = MicroPartition.from_pydict(
         {
             "foo": ["a", "b", "c"],
         }
@@ -178,7 +178,7 @@ def test_resolve_schema_invalid_type():
 
 
 def test_resolve_schema_missing_col():
-    tbl = Table.from_pydict(
+    tbl = MicroPartition.from_pydict(
         {
             "foo": ["a", "b", "c"],
         }

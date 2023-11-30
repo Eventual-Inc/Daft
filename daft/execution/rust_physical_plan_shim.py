@@ -20,7 +20,7 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartialPartitionMetadata, PartitionT
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 def scan_with_tasks(
@@ -46,12 +46,12 @@ def scan_with_tasks(
 class ScanWithTask(execution_step.SingleOutputInstruction):
     scan_task: ScanTask
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._scan(inputs)
 
-    def _scan(self, inputs: list[Table]) -> list[Table]:
+    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         assert len(inputs) == 0
-        return [Table._from_scan_task(self.scan_task)]
+        return [MicroPartition._from_scan_task(self.scan_task)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 0
@@ -74,7 +74,7 @@ def tabular_scan(
     is_ray_runner: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     # TODO(Clark): Fix this Ray runner hack.
-    part = Table._from_pytable(file_info_table)
+    part = MicroPartition._from_pytable(file_info_table)
     if is_ray_runner:
         import ray
 
@@ -114,7 +114,7 @@ class ShimExplodeOp(MapPartitionOp):
     def get_output_schema(self) -> Schema:
         raise NotImplementedError("Output schema shouldn't be needed at execution time")
 
-    def run(self, input_partition: Table) -> Table:
+    def run(self, input_partition: MicroPartition) -> MicroPartition:
         return input_partition.explode(self.explode_columns)
 
 

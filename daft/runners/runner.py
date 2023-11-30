@@ -12,7 +12,7 @@ from daft.runners.partitioning import (
     PartitionT,
 )
 from daft.runners.runner_io import RunnerIO
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 class Runner(Generic[PartitionT]):
@@ -47,8 +47,10 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
-        """Similar to run_iter(), but always dereference and yield Table objects.
+    def run_iter_tables(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[MicroPartition]:
+        """Similar to run_iter(), but always dereference and yield MicroPartition objects.
 
         Args:
             builder: the builder for the LogicalPlan that is to be executed
