@@ -41,6 +41,8 @@ def aws_public_s3_config() -> daft.io.IOConfig:
         s3=daft.io.S3Config(
             # NOTE: no keys or endpoints specified for an AWS public s3 bucket
             region_name="us-west-2",
+            # Use anonymous mode to avoid having to search for credentials in the Github Runner
+            anonymous=True,
         )
     )
 

@@ -258,11 +258,6 @@ jobs:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
         micropartitions: [1, 0]
-    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
-    # This is used in the step "Assume GitHub Actions AWS Credentials"
-    permissions:
-      id-token: write
-      contents: read
     steps:
     - uses: actions/checkout@v4
       with:
@@ -295,20 +290,6 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: DaftPythonPackageGitHubWorkflow
-    - name: Assume GitHub Actions GCloud Credentials
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
-        # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
-        # See issue: https://github.com/yoshidan/google-cloud-rust/issues/171#issuecomment-1730511655
-        # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
-        # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
       uses: isbang/compose-action@v1.5.1
       with:
