@@ -221,7 +221,11 @@ partitioning_keys:\n",
                         p.as_ref().clone(),
                         self.partitioning_keys.as_slice(),
                     )?;
-                    println!("before {} after {}", p, transformed);
+                    println!("before {}", p);
+                    for t in transformed {
+                        println!(" {t}");
+                    }
+
                 }
             }
 

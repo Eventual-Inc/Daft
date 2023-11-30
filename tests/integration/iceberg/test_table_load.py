@@ -52,6 +52,9 @@ def test_daft_iceberg_table_show(table_name, local_iceberg_catalog):
 def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.{table_name}")
     df = daft.read_iceberg(tab)
+    import ipdb
+
+    ipdb.set_trace()
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()

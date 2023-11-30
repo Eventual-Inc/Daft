@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use daft_dsl::{
     col,
-    optimization::{get_required_columns, replace_columns_with_expressions},
+    optimization::{get_required_columns, replace_columns_with_expressions, conjuct, split_conjuction},
     Expr,
 };
 use daft_scan::ScanExternalInfo;
@@ -18,7 +18,6 @@ use crate::{
 };
 
 use super::{
-    utils::{conjuct, split_conjuction},
     ApplyOrder, OptimizerRule, Transformed,
 };
 
@@ -55,7 +54,12 @@ impl OptimizerRule for PushDownFilter {
                 let pred = &filter.predicate;
 
                 let new_filters = if let Some(filters) = &ext_info.pushdowns().filters {
-                    // TODO ONLY PUSH IF DOESNT EXIST
+                    let pred_sem_id = pred.semantic_id(&output_schema);
+                    for f in filters.iter() {
+                        if f.semantic_id(&output_schema) == pred_sem_id  {
+                            return Ok(Transformed::No(plan));
+                        }
+                    }
                     let mut filters = filters.as_ref().clone();
                     filters.push(pred.clone().into());
                     filters
