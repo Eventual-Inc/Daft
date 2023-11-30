@@ -2,9 +2,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
+use daft_core::python::datatype::PyTimeUnit;
 use serde::{Deserialize, Serialize};
 
-use crate::{functions, optimization, Expr};
+use crate::{functions, optimization, Expr, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
     datatypes::ImageFormat,
@@ -24,6 +25,18 @@ use pyo3::{
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
     Ok(PyExpr::from(crate::col(name)))
+}
+
+#[pyfunction]
+pub fn date_lit(item: i32) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Date(item));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    Ok(expr.into())
 }
 
 #[pyfunction]
