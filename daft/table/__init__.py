@@ -10,7 +10,7 @@ from .micropartition import MicroPartition as _MicroPartition  # isort:skip
 
 # Use $DAFT_MICROPARTITIONS envvar as a feature flag to turn on MicroPartitions
 LegacyTable = Table
-if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
+if os.getenv("DAFT_MICROPARTITIONS", "1") == "1":
     Table = _MicroPartition  # type: ignore
 
 

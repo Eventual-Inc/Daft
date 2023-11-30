@@ -48,7 +48,7 @@ def _get_tabular_files_scan(
     ### FEATURE_FLAG: $DAFT_MICROPARTITIONS
     #
     # This environment variable will make Daft use the new "v2 scans" and MicroPartitions when building Daft logical plans
-    if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
+    if os.getenv("DAFT_MICROPARTITIONS", "1") == "1":
         scan_op: ScanOperatorHandle
         if isinstance(path, list):
             scan_op = ScanOperatorHandle.glob_scan(
