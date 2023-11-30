@@ -5,7 +5,7 @@ mod arithmetic;
 pub mod arrow2;
 pub mod as_arrow;
 pub(crate) mod broadcast;
-mod cast;
+pub(crate) mod cast;
 mod compare_agg;
 mod comparison;
 mod concat;

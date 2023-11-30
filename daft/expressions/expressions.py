@@ -11,7 +11,9 @@ from daft import context
 from daft.daft import CountMode, ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
+from daft.daft import date_lit as _date_lit
 from daft.daft import lit as _lit
+from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
@@ -39,18 +41,16 @@ def lit(value: object) -> Expression:
         Expression: Expression representing the value provided
     """
     if isinstance(value, datetime):
+        # pyo3 datetime (PyDateTime) is not available when running in abi3 mode, workaround
         pa_timestamp = pa.scalar(value)
         i64_value = pa_timestamp.cast(pa.int64()).as_py()
-        return lit(i64_value).cast(
-            DataType.timestamp(
-                TimeUnit.from_str(pa_timestamp.type.unit),
-                pa_timestamp.type.tz,
-            )
-        )
-
+        time_unit = TimeUnit.from_str(pa_timestamp.type.unit)._timeunit
+        tz = pa_timestamp.type.tz
+        lit_value = _timestamp_lit(i64_value, time_unit, tz)
     elif isinstance(value, date):
+        # pyo3 date (PyDate) is not available when running in abi3 mode, workaround
         epoch_time = value - date(1970, 1, 1)
-        return lit(epoch_time.days).cast(DataType.date())
+        lit_value = _date_lit(epoch_time.days)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)

@@ -306,7 +306,7 @@ pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String 
     }
 }
 
-pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts =
         { arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow()) };
     let format_str = match unit {
@@ -318,7 +318,7 @@ pub(super) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     chrono_ts.format(format_str).to_string()
 }
 
-pub(super) fn timestamp_to_str_offset(
+pub(crate) fn timestamp_to_str_offset(
     val: i64,
     unit: &TimeUnit,
     offset: &chrono::FixedOffset,
@@ -333,7 +333,7 @@ pub(super) fn timestamp_to_str_offset(
         .to_rfc3339_opts(seconds_format, false)
 }
 
-pub(super) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
     let seconds_format = match unit {
         TimeUnit::Seconds => chrono::SecondsFormat::Secs,
         TimeUnit::Milliseconds => chrono::SecondsFormat::Millis,

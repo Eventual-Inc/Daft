@@ -4,9 +4,16 @@ use std::{
 };
 
 use crate::expr::Expr;
-use daft_core::series::Series;
 use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
+use daft_core::{
+    datatypes::{
+        logical::{DateArray, TimestampArray},
+        TimeUnit,
+    },
+    series::Series,
+    utils::display_table::{display_date32, display_timestamp},
+};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -31,6 +38,23 @@ pub enum LiteralValue {
     Int64(i64),
     /// A 64-bit unsigned integer number.
     UInt64(u64),
+    /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
+    ///
+    /// Time is measured as a Unix epoch, counting the seconds from
+    /// 00:00:00.000 on 1 January 1970, excluding leap seconds,
+    /// as a 64-bit signed integer.
+    ///
+    /// The time zone is a string indicating the name of a time zone, one of:
+    ///
+    /// * As used in the Olson time zone database (the "tz database" or
+    ///   "tzdata"), such as "America/New_York"
+    /// * An absolute time zone offset of the form +XX:XX or -XX:XX, such as +07:30
+    /// When the timezone is not specified, the timestamp is considered to have no timezone
+    /// and is represented _as is_
+    Timestamp(i64, TimeUnit, Option<String>),
+    /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
+    /// in days.
+    Date(i32),
     /// A 64-bit floating point number.
     Float64(f64),
     /// Python object.
@@ -54,6 +78,12 @@ impl Hash for LiteralValue {
             UInt32(n) => n.hash(state),
             Int64(n) => n.hash(state),
             UInt64(n) => n.hash(state),
+            Date(n) => n.hash(state),
+            Timestamp(n, tu, tz) => {
+                n.hash(state);
+                tu.hash(state);
+                tz.hash(state);
+            }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
             #[cfg(feature = "python")]
@@ -75,6 +105,8 @@ impl Display for LiteralValue {
             UInt32(val) => write!(f, "{val}"),
             Int64(val) => write!(f, "{val}"),
             UInt64(val) => write!(f, "{val}"),
+            Date(val) => write!(f, "{}", display_date32(*val)),
+            Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
@@ -102,6 +134,8 @@ impl LiteralValue {
             UInt32(_) => DataType::UInt32,
             Int64(_) => DataType::Int64,
             UInt64(_) => DataType::UInt64,
+            Date(_) => DataType::Date,
+            Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Float64(_) => DataType::Float64,
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
@@ -121,6 +155,14 @@ impl LiteralValue {
             UInt32(val) => UInt32Array::from(("literal", [*val].as_slice())).into_series(),
             Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
             UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
+            Date(val) => {
+                let physical = Int32Array::from(("literal", [*val].as_slice()));
+                DateArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
+            Timestamp(val, ..) => {
+                let physical = Int64Array::from(("literal", [*val].as_slice()));
+                TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             #[cfg(feature = "python")]
             Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
