@@ -8,6 +8,7 @@ pub mod pylib {
 
     use crate::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 
+    #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_json(
         py: Python,
@@ -17,6 +18,7 @@ pub mod pylib {
         read_options: Option<JsonReadOptions>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
+        max_chunks_in_flight: Option<usize>,
     ) -> PyResult<PyTable> {
         py.allow_threads(|| {
             let io_stats = IOStatsContext::new(format!("read_json: for uri {uri}"));
@@ -33,7 +35,7 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
                 multithreaded_io.unwrap_or(true),
-                None,
+                max_chunks_in_flight,
             )?
             .into())
         })

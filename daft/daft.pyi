@@ -638,6 +638,7 @@ def read_json(
     read_options: JsonReadOptions | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
+    max_chunks_in_flight: int | None = None,
 ): ...
 def read_json_schema(
     uri: str,

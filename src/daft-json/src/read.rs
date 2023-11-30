@@ -221,8 +221,11 @@ async fn read_json_single_into_stream(
                 // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
                 let buffer_size = read_options
                     .as_ref()
-                    .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
-                    .unwrap_or(512 * 1024);
+                    .and_then(|opt| {
+                        opt.buffer_size
+                            .or_else(|| opt.chunk_size.map(|cs| (64 * cs).min(256 * 1024 * 1024)))
+                    })
+                    .unwrap_or(256 * 1024);
                 (
                     Box::new(BufReader::with_capacity(
                         buffer_size,
@@ -231,8 +234,11 @@ async fn read_json_single_into_stream(
                     buffer_size,
                     read_options
                         .as_ref()
-                        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-                        .unwrap_or(64 * 1024),
+                        .and_then(|opt| {
+                            opt.chunk_size
+                                .or_else(|| opt.buffer_size.map(|bs| (bs / 64).max(16)))
+                        })
+                        .unwrap_or(64),
                 )
             }
             GetResult::Stream(stream, _, _) => (
@@ -240,12 +246,18 @@ async fn read_json_single_into_stream(
                 // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
-                    .unwrap_or(512 * 1024),
+                    .and_then(|opt| {
+                        opt.buffer_size
+                            .or_else(|| opt.chunk_size.map(|cs| (256 * cs).min(256 * 1024 * 1024)))
+                    })
+                    .unwrap_or(8 * 1024 * 1024),
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-                    .unwrap_or(64 * 1024),
+                    .and_then(|opt| {
+                        opt.chunk_size
+                            .or_else(|| opt.buffer_size.map(|bs| (bs / 256).max(16)))
+                    })
+                    .unwrap_or(64),
             ),
         };
     // If file is compressed, wrap stream in decoding stream.

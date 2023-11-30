@@ -483,6 +483,7 @@ class Table:
         read_options: JsonReadOptions | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
+        max_chunks_in_flight: int | None = None,
     ) -> Table:
         return Table._from_pytable(
             _read_json(
@@ -492,6 +493,7 @@ class Table:
                 read_options=read_options,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
+                max_chunks_in_flight=max_chunks_in_flight,
             )
         )
 
