@@ -383,12 +383,18 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
-    - name: Spin up Iceberg services
-      uses: isbang/compose-action@v1.5.1
-      with:
-        compose-file: ./tests/integration/iceberg/docker-compose/docker-compose.yml
-        down-flags: --volumes
-    - name: Run IO integration tests
+    - name: Build images
+      run: |
+        docker buildx create --use --driver=docker-container
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker buildx bake -f ./docker-compose.yml --set *.cache-to="type=gha,mode=min" --set *.cache-from="type=gha" --load
+        popd
+    - name: Spin up services
+      run: |
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker-compose -f ./docker-compose.yml up -d
+        popd
+    - name: Run Iceberg integration tests
       run: |
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
