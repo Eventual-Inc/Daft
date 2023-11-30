@@ -1732,8 +1732,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-auth"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1087f1fbd2dd3f58c17c7574ddd99cd61cbbbc2c4dc81114b8687209b196cb"
+source = "git+https://github.com/yoshidan/google-cloud-rust?rev=6b067f3d14bd109af3705988e5cb28f620419d55#6b067f3d14bd109af3705988e5cb28f620419d55"
 dependencies = [
  "async-trait",
  "base64 0.21.5",
@@ -1754,8 +1753,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-metadata"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc279bfb50487d7bcd900e8688406475fc750fe474a835b2ab9ade9eb1fc90e2"
+source = "git+https://github.com/yoshidan/google-cloud-rust?rev=6b067f3d14bd109af3705988e5cb28f620419d55#6b067f3d14bd109af3705988e5cb28f620419d55"
 dependencies = [
  "reqwest",
  "thiserror",
@@ -1764,11 +1762,11 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-storage"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bea96059b656bc5f3332865c02cadc532238b269bd29b2fde64d8ecb878d1b13"
+version = "0.15.0"
+source = "git+https://github.com/yoshidan/google-cloud-rust?rev=6b067f3d14bd109af3705988e5cb28f620419d55#6b067f3d14bd109af3705988e5cb28f620419d55"
 dependencies = [
  "async-stream",
+ "async-trait",
  "base64 0.21.5",
  "bytes",
  "futures-util",
@@ -1794,9 +1792,8 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-token"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fcd62eb34e3de2f085bcc33a09c3e17c4f65650f36d53eb328b00d63bcb536a"
+version = "0.1.2"
+source = "git+https://github.com/yoshidan/google-cloud-rust?rev=6b067f3d14bd109af3705988e5cb28f620419d55#6b067f3d14bd109af3705988e5cb28f620419d55"
 dependencies = [
  "async-trait",
 ]

@@ -19,7 +19,6 @@ use crate::object_io::FileMetadata;
 use crate::object_io::FileType;
 use crate::object_io::LSResult;
 use crate::object_io::ObjectSource;
-use crate::s3_like;
 use crate::stats::IOStatsRef;
 use crate::stream_utils::io_stats_on_bytestream;
 use crate::GetResult;
@@ -109,10 +108,7 @@ impl From<Error> for super::Error {
     }
 }
 
-enum GCSClientWrapper {
-    Native(Client),
-    S3Compat(Arc<s3_like::S3LikeSource>),
-}
+struct GCSClientWrapper(Client);
 
 fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
     let bucket = match uri.host_str() {
@@ -136,79 +132,65 @@ impl GCSClientWrapper {
     ) -> super::Result<GetResult> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
-        match self {
-            GCSClientWrapper::Native(client) => {
-                let req = GetObjectRequest {
-                    bucket: bucket.into(),
-                    object: key.into(),
-                    ..Default::default()
-                };
-                use google_cloud_storage::http::objects::download::Range as GRange;
-                let (grange, size) = if let Some(range) = range {
-                    (
-                        GRange(Some(range.start as u64), Some(range.end as u64)),
-                        Some(range.len()),
-                    )
-                } else {
-                    (GRange::default(), None)
-                };
-                let owned_uri = uri.to_string();
-                let response = client
-                    .download_streamed_object(&req, &grange)
-                    .await
-                    .context(UnableToOpenFileSnafu {
-                        path: uri.to_string(),
-                    })?;
-                let response = response.map_err(move |e| {
-                    UnableToReadBytesSnafu::<String> {
-                        path: owned_uri.clone(),
-                    }
-                    .into_error(e)
-                    .into()
-                });
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_get_requests(1)
-                }
-                Ok(GetResult::Stream(
-                    io_stats_on_bytestream(response, io_stats),
-                    size,
-                    None,
-                ))
+        let client = &self.0;
+        let req = GetObjectRequest {
+            bucket: bucket.into(),
+            object: key.into(),
+            ..Default::default()
+        };
+        use google_cloud_storage::http::objects::download::Range as GRange;
+        let (grange, size) = if let Some(range) = range {
+            (
+                GRange(Some(range.start as u64), Some(range.end as u64)),
+                Some(range.len()),
+            )
+        } else {
+            (GRange::default(), None)
+        };
+        let owned_uri = uri.to_string();
+        let response = client
+            .download_streamed_object(&req, &grange)
+            .await
+            .context(UnableToOpenFileSnafu {
+                path: uri.to_string(),
+            })?;
+        let response = response.map_err(move |e| {
+            UnableToReadBytesSnafu::<String> {
+                path: owned_uri.clone(),
             }
-            GCSClientWrapper::S3Compat(client) => {
-                let uri = format!("s3://{}/{}", bucket, key);
-                client.get(&uri, range, io_stats).await
-            }
+            .into_error(e)
+            .into()
+        });
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_get_requests(1)
         }
+        Ok(GetResult::Stream(
+            io_stats_on_bytestream(response, io_stats),
+            size,
+            None,
+        ))
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
-        match self {
-            GCSClientWrapper::Native(client) => {
-                let req = GetObjectRequest {
-                    bucket: bucket.into(),
-                    object: key.into(),
-                    ..Default::default()
-                };
+        let client = &self.0;
+        let req = GetObjectRequest {
+            bucket: bucket.into(),
+            object: key.into(),
+            ..Default::default()
+        };
 
-                let response = client
-                    .get_object(&req)
-                    .await
-                    .context(UnableToOpenFileSnafu {
-                        path: uri.to_string(),
-                    })?;
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_head_requests(1)
-                }
-                Ok(response.size as usize)
-            }
-            GCSClientWrapper::S3Compat(client) => {
-                let uri = format!("s3://{}/{}", bucket, key);
-                client.get_size(&uri, io_stats).await
-            }
+        let response = client
+            .get_object(&req)
+            .await
+            .context(UnableToOpenFileSnafu {
+                path: uri.to_string(),
+            })?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1)
         }
+        Ok(response.size as usize)
     }
     #[allow(clippy::too_many_arguments)]
     async fn _ls_impl(
@@ -271,76 +253,69 @@ impl GCSClientWrapper {
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
-        match self {
-            GCSClientWrapper::Native(client) => {
-                if posix {
-                    // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
-                    let forced_directory_key = if key.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
-                    };
-                    let forced_directory_ls_result = self
-                        ._ls_impl(
-                            client,
-                            bucket,
-                            forced_directory_key.as_str(),
-                            Some(GCS_DELIMITER),
-                            continuation_token,
-                            page_size,
-                            io_stats.as_ref(),
-                        )
-                        .await?;
+        let client = &self.0;
 
-                    // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-                    // details as the one-and-only-one entry
-                    if forced_directory_ls_result.files.is_empty() {
-                        let mut file_result = self
-                            ._ls_impl(
-                                client,
-                                bucket,
-                                key,
-                                Some(GCS_DELIMITER),
-                                continuation_token,
-                                page_size,
-                                io_stats.as_ref(),
-                            )
-                            .await?;
+        if posix {
+            // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
+            let forced_directory_key = if key.is_empty() {
+                "".to_string()
+            } else {
+                format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
+            };
+            let forced_directory_ls_result = self
+                ._ls_impl(
+                    client,
+                    bucket,
+                    forced_directory_key.as_str(),
+                    Some(GCS_DELIMITER),
+                    continuation_token,
+                    page_size,
+                    io_stats.as_ref(),
+                )
+                .await?;
 
-                        // Only retain exact matches (since the API does prefix lists by default)
-                        let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
-                        file_result.files.retain(|fm| fm.filepath == target_path);
-
-                        // Not dir and not file, so it is missing
-                        if file_result.files.is_empty() {
-                            return Err(Error::NotFound {
-                                path: path.to_string(),
-                            }
-                            .into());
-                        }
-
-                        Ok(file_result)
-                    } else {
-                        Ok(forced_directory_ls_result)
-                    }
-                } else {
-                    self._ls_impl(
+            // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
+            // details as the one-and-only-one entry
+            if forced_directory_ls_result.files.is_empty() {
+                let mut file_result = self
+                    ._ls_impl(
                         client,
                         bucket,
                         key,
-                        None, // Force a prefix-listing
+                        Some(GCS_DELIMITER),
                         continuation_token,
                         page_size,
                         io_stats.as_ref(),
                     )
-                    .await
+                    .await?;
+
+                // Only retain exact matches (since the API does prefix lists by default)
+                let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
+                file_result.files.retain(|fm| fm.filepath == target_path);
+
+                // Not dir and not file, so it is missing
+                if file_result.files.is_empty() {
+                    return Err(Error::NotFound {
+                        path: path.to_string(),
+                    }
+                    .into());
                 }
+
+                Ok(file_result)
+            } else {
+                Ok(forced_directory_ls_result)
             }
-            GCSClientWrapper::S3Compat(client) => {
-                client
-                    .ls(path, posix, continuation_token, page_size, io_stats)
-                    .await
-            }
+        } else {
+            self._ls_impl(
+                client,
+                bucket,
+                key,
+                None, // Force a prefix-listing
+                continuation_token,
+                page_size,
+                io_stats.as_ref(),
+            )
+            .await
         }
     }
 }
@@ -350,40 +325,29 @@ pub(crate) struct GCSSource {
 }
 
 impl GCSSource {
-    async fn build_s3_compat_client() -> super::Result<Arc<Self>> {
-        let s3_config = common_io_config::S3Config {
-            anonymous: true,
-            endpoint_url: Some("https://storage.googleapis.com".to_string()),
-            ..Default::default()
-        };
-        let s3_client = s3_like::S3LikeSource::get_client(&s3_config).await?;
-        Ok(GCSSource {
-            client: GCSClientWrapper::S3Compat(s3_client),
-        }
-        .into())
-    }
     pub async fn get_client(config: &GCSConfig) -> super::Result<Arc<Self>> {
-        if config.anonymous {
-            GCSSource::build_s3_compat_client().await
-        } else {
-            let config = ClientConfig::default()
+        let config = if !config.anonymous {
+            let attempted = ClientConfig::default()
                 .with_auth()
                 .await
                 .context(UnableToLoadCredentialsSnafu {});
-            match config {
-                Ok(config) => {
-                    let client = Client::new(config);
-                    Ok(GCSSource {
-                        client: GCSClientWrapper::Native(client),
-                    }
-                    .into())
-                }
+
+            match attempted {
+                Ok(attempt) => attempt,
                 Err(err) => {
                     log::warn!("Google Cloud Storage Credentials not provided or found when making client. Reverting to Anonymous mode.\nDetails\n{err}");
-                    GCSSource::build_s3_compat_client().await
+                    ClientConfig::default().anonymous()
                 }
             }
+        } else {
+            ClientConfig::default().anonymous()
+        };
+
+        let client = Client::new(config);
+        Ok(GCSSource {
+            client: GCSClientWrapper(client),
         }
+        .into())
     }
 }
 
