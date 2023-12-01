@@ -345,8 +345,8 @@ jobs:
     if: ${{ github.triggering_actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs:
-    - integration-test-build
+    # needs:
+    # - integration-test-build
     env:
       package-name: getdaft
     strategy:
@@ -360,6 +360,13 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - uses: docker/setup-buildx-action@v3
+    - uses: docker/build-push-action@v5
+      with:
+        context: ./tests/integration/iceberg/docker-compose/
+        file: ./tests/integration/iceberg/docker-compose/Dockerfile
+        cache-from: type=gha
+        cache-to: type=gha,mode=min
     - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
@@ -368,7 +375,6 @@ jobs:
         cache-dependency-path: |
           pyproject.toml
           requirements-dev.txt
-
     - name: Download built wheels
       uses: actions/download-artifact@v3
       with:
@@ -383,12 +389,7 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
-    - name: Build images
-      run: |
-        docker buildx create --use --driver=docker-container
-        pushd ./tests/integration/iceberg/docker-compose/
-        docker buildx bake -f ./docker-compose.yml --set *.cache-to="type=gha,mode=min" --set *.cache-from="type=gha" --load
-        popd
+
     - name: Spin up services
       run: |
         pushd ./tests/integration/iceberg/docker-compose/
