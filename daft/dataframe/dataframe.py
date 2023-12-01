@@ -33,7 +33,7 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -184,7 +184,7 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[Table, "RayObjectRef"]]:
+    def iter_partitions(self) -> Iterator[Union[MicroPartition, "RayObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
@@ -198,8 +198,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter(self._builder)
-            yield from partitions_iter
+            results_iter = context.runner().run_iter(self._builder)
+            for result in results_iter:
+                yield result.partition()
 
     @DataframePublicAPI
     def __repr__(self) -> str:
@@ -235,7 +236,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = Table.from_pydict(data)
+        data_vpartition = MicroPartition.from_pydict(data)
         return cls._from_tables(data_vpartition)
 
     @classmethod
@@ -243,7 +244,7 @@ class DataFrame:
         """Creates a DataFrame from a pyarrow Table."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_arrow(table) for table in data]
+        data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
@@ -251,11 +252,11 @@ class DataFrame:
         """Creates a Daft DataFrame from a pandas DataFrame."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_pandas(df) for df in data]
+        data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    def _from_tables(cls, *parts: Table) -> "DataFrame":
+    def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
         """Creates a Daft DataFrame from a single Table.
 
         Args:
@@ -1011,19 +1012,8 @@ class DataFrame:
 
         return self
 
-    @DataframePublicAPI
-    def show(self, n: int = 8) -> "DataFrameDisplay":
-        """Executes enough of the DataFrame in order to display the first ``n`` rows
-
-        .. NOTE::
-            This call is **blocking** and will execute the DataFrame when called
-
-        Args:
-            n: number of rows to show. Defaults to 8.
-
-        Returns:
-            DataFrameDisplay: object that has a rich tabular display
-        """
+    def _construct_show_display(self, n: int) -> "DataFrameDisplay":
+        """Helper for .show() which will construct the underlying DataFrameDisplay object"""
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 
@@ -1031,6 +1021,7 @@ class DataFrame:
         if total_rows is not None and n > total_rows:
             n = total_rows
 
+        # Construct the PreviewPartition
         if preview_partition is None or len(preview_partition) < n:
             # Preview partition doesn't exist or doesn't contain enough rows, so we need to compute a
             # new one from scratch.
@@ -1045,7 +1036,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = Table.concat(tables)
+            preview_partition = MicroPartition.concat(tables)
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
@@ -1063,7 +1054,30 @@ class DataFrame:
             assert len(preview_partition) == n
             # Preview partition is cached and has exactly the number of rows that we need, so use it directly.
             preview = self._preview
+
         return DataFrameDisplay(preview, self.schema(), num_rows=n)
+
+    @DataframePublicAPI
+    def show(self, n: int = 8) -> None:
+        """Executes enough of the DataFrame in order to display the first ``n`` rows
+
+        If IPython is installed, this will use IPython's `display` utility to pretty-print in a
+        notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
+
+        Args:
+            n: number of rows to show. Defaults to 8.
+        """
+        dataframe_display = self._construct_show_display(n)
+        try:
+            from IPython.display import display
+
+            display(dataframe_display, clear=True)
+        except ImportError:
+            print(dataframe_display)
+        return None
 
     def __len__(self):
         """Returns the count of rows when dataframe is materialized.

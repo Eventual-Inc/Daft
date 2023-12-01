@@ -10,11 +10,11 @@ class MockException(Exception):
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_rows(materialized):
+def test_iter_rows(make_df, materialized):
     # Test that df.__iter__ produces the correct rows in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
-    df = daft.from_pydict({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
+    df = make_df({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
     if materialized:
         df = df.collect()
 
@@ -23,11 +23,11 @@ def test_iter_rows(materialized):
 
 
 @pytest.mark.parametrize("materialized", [False, True])
-def test_iter_partitions(materialized):
+def test_iter_partitions(make_df, materialized):
     # Test that df.iter_partitions() produces partitions in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
-    df = daft.from_pydict({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
+    df = make_df({"a": list(range(10))}).into_partitions(5).with_column("b", daft.col("a") + 100)
 
     if materialized:
         df = df.collect()
@@ -48,7 +48,7 @@ def test_iter_partitions(materialized):
     ]
 
 
-def test_iter_exception():
+def test_iter_exception(make_df):
     # Test that df.__iter__ actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
@@ -60,7 +60,7 @@ def test_iter_exception():
         else:
             return s
 
-    df = daft.from_pydict({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
+    df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
     it = iter(df)
     assert next(it) == {"a": 0, "b": 0}
@@ -70,7 +70,7 @@ def test_iter_exception():
         list(it)
 
 
-def test_iter_partitions_exception():
+def test_iter_partitions_exception(make_df):
     # Test that df.iter_partitions actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
@@ -82,7 +82,7 @@ def test_iter_partitions_exception():
         else:
             return s
 
-    df = daft.from_pydict({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
+    df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
     it = df.iter_partitions()
     part = next(it)

@@ -487,6 +487,10 @@ class Series:
     def image(self) -> SeriesImageNamespace:
         return SeriesImageNamespace.from_series(self)
 
+    @property
+    def partitioning(self) -> SeriesPartitioningNamespace:
+        return SeriesPartitioningNamespace.from_series(self)
+
     def __reduce__(self) -> tuple:
         if self.datatype()._is_python_type():
             return (Series.from_pylist, (self.to_pylist(), self.name(), "force"))
@@ -565,6 +569,9 @@ class SeriesDateNamespace(SeriesNamespace):
     def day(self) -> Series:
         return Series._from_pyseries(self._series.dt_day())
 
+    def hour(self) -> Series:
+        return Series._from_pyseries(self._series.dt_hour())
+
     def month(self) -> Series:
         return Series._from_pyseries(self._series.dt_month())
 
@@ -573,6 +580,20 @@ class SeriesDateNamespace(SeriesNamespace):
 
     def day_of_week(self) -> Series:
         return Series._from_pyseries(self._series.dt_day_of_week())
+
+
+class SeriesPartitioningNamespace(SeriesNamespace):
+    def days(self) -> Series:
+        return Series._from_pyseries(self._series.partitioning_days())
+
+    def hours(self) -> Series:
+        return Series._from_pyseries(self._series.partitioning_hours())
+
+    def months(self) -> Series:
+        return Series._from_pyseries(self._series.partitioning_months())
+
+    def years(self) -> Series:
+        return Series._from_pyseries(self._series.partitioning_years())
 
 
 class SeriesListNamespace(SeriesNamespace):

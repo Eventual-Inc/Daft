@@ -3,19 +3,19 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-import daft
 from daft.datatype import DataType
 from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_nulls(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_nulls(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [1, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.distinct()
 
     expected = {
@@ -28,13 +28,14 @@ def test_distinct_with_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_all_nulls(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_all_nulls(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [None, None, None, None],
             "values": ["a1", "b1", "b1", "c1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.select(daft_df["id"].cast(DataType.int64()), daft_df["values"]).distinct()
 
     expected = {
@@ -47,13 +48,14 @@ def test_distinct_with_all_nulls(repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
-def test_distinct_with_empty(repartition_nparts):
-    daft_df = daft.from_pydict(
+def test_distinct_with_empty(make_df, repartition_nparts):
+    daft_df = make_df(
         {
             "id": [1],
             "values": ["a1"],
-        }
-    ).repartition(repartition_nparts)
+        },
+        repartition=repartition_nparts,
+    )
     daft_df = daft_df.where(daft_df["id"] != 1).distinct()
     daft_df.collect()
 

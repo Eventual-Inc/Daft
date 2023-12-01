@@ -8,8 +8,11 @@ from daft.io import IOConfig, S3Config
 
 
 @pytest.fixture(scope="session")
-def io_config() -> IOConfig:
+def io_config(pytestconfig) -> IOConfig:
     """Create IOConfig with botocore's current session"""
+    if not (pytestconfig.getoption("--credentials") is True):
+        pytest.skip("Test can only run in a credentialled environment, and when run with the `--credentials` flag")
+
     sess = session.Session()
     creds = sess.get_credentials()
 

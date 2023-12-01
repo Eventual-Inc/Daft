@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import copy
-from datetime import date
+from datetime import date, datetime
 
 import pytest
+import pytz
 
-from daft.datatype import DataType
+from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 @pytest.mark.parametrize(
@@ -23,20 +24,21 @@ from daft.table import Table
         (True, DataType.bool()),
         (None, DataType.null()),
         (date(2023, 1, 1), DataType.date()),
+        (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
+        (datetime(2022, 1, 1, tzinfo=pytz.utc), DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="UTC")),
     ],
 )
 def test_make_lit(data, expected_dtype) -> None:
     l = lit(data)
     assert l.name() == "literal"
-    empty_table = Table.empty()
+    empty_table = MicroPartition.empty()
     lit_table = empty_table.eval_expression_list([l])
     series = lit_table.get_column("literal")
     assert series.datatype() == expected_dtype
     repr_out = repr(l)
 
-    if expected_dtype != DataType.date():
-        assert repr_out.startswith("lit(")
-        assert repr_out.endswith(")")
+    assert repr_out.startswith("lit(")
+    assert repr_out.endswith(")")
     copied = copy.deepcopy(l)
     assert repr_out == repr(copied)
 
@@ -141,3 +143,33 @@ def test_float_is_nan() -> None:
     c = a.float.is_nan()
     output = repr(c)
     assert output == "is_nan(col(a))"
+
+
+def test_date_lit_post_epoch() -> None:
+    d = lit(date(2022, 1, 1))
+    output = repr(d)
+    assert output == "lit(2022-01-01)"
+
+
+def test_date_lit_pre_epoch() -> None:
+    d = lit(date(1950, 1, 1))
+    output = repr(d)
+    assert output == "lit(1950-01-01)"
+
+
+def test_datetime_lit_post_epoch() -> None:
+    d = lit(datetime(2022, 1, 1))
+    output = repr(d)
+    assert output == "lit(2022-01-01T00:00:00.000000)"
+
+
+def test_datetime_tz_lit_post_epoch() -> None:
+    d = lit(datetime(2022, 1, 1, tzinfo=pytz.utc))
+    output = repr(d)
+    assert output == "lit(2022-01-01T00:00:00.000000+00:00)"
+
+
+def test_datetime_lit_pre_epoch() -> None:
+    d = lit(datetime(1950, 1, 1))
+    output = repr(d)
+    assert output == "lit(1950-01-01T00:00:00.000000)"

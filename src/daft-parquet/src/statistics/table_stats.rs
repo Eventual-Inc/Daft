@@ -1,37 +1,51 @@
 use common_error::DaftResult;
+use daft_core::schema::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
-use super::Wrap;
+use super::column_range::parquet_statistics_to_column_range_statistics;
 
 use indexmap::IndexMap;
 
-impl TryFrom<&crate::metadata::RowGroupMetaData> for Wrap<TableStatistics> {
-    type Error = super::Error;
-    fn try_from(value: &crate::metadata::RowGroupMetaData) -> Result<Self, Self::Error> {
-        let _num_rows = value.num_rows();
-        let mut columns = IndexMap::new();
-        for col in value.columns() {
-            let stats = col
-                .statistics()
-                .transpose()
-                .context(super::UnableToParseParquetColumnStatisticsSnafu)?;
-            let col_stats: Option<Wrap<ColumnRangeStatistics>> =
-                stats.and_then(|v| v.as_ref().try_into().ok());
-            let col_stats = col_stats.unwrap_or(ColumnRangeStatistics::Missing.into());
-            columns.insert(
-                col.descriptor().path_in_schema.get(0).unwrap().clone(),
-                col_stats.0,
-            );
-        }
-
-        Ok(TableStatistics { columns }.into())
-    }
-}
-
 pub fn row_group_metadata_to_table_stats(
     metadata: &crate::metadata::RowGroupMetaData,
+    schema: &Schema,
 ) -> DaftResult<TableStatistics> {
-    let result = Wrap::<TableStatistics>::try_from(metadata)?;
-    Ok(result.0)
+    // Create a map from {field_name: statistics} from the RowGroupMetaData for easy access
+    let mut parquet_column_metadata: IndexMap<_, _> = metadata
+        .columns()
+        .iter()
+        .map(|col| {
+            let top_level_column_name = col
+                .descriptor()
+                .path_in_schema
+                .first()
+                .expect("Parquet schema should have at least one entry in path_in_schema");
+            (top_level_column_name, col.statistics())
+        })
+        .collect();
+
+    // Iterate through the schema and construct ColumnRangeStatistics per field
+    let columns = schema
+        .fields
+        .iter()
+        .map(|(field_name, field)| {
+            if ColumnRangeStatistics::supports_dtype(&field.dtype) {
+                let stats: ColumnRangeStatistics = parquet_column_metadata
+                    .remove(field_name)
+                    .expect("Cannot find parsed Daft field in Parquet rowgroup metadata")
+                    .transpose()
+                    .context(super::UnableToParseParquetColumnStatisticsSnafu)?
+                    .and_then(|v| {
+                        parquet_statistics_to_column_range_statistics(v.as_ref(), &field.dtype).ok()
+                    })
+                    .unwrap_or(ColumnRangeStatistics::Missing);
+                Ok((field_name.clone(), stats))
+            } else {
+                Ok((field_name.clone(), ColumnRangeStatistics::Missing))
+            }
+        })
+        .collect::<DaftResult<IndexMap<_, _>>>()?;
+
+    Ok(TableStatistics { columns })
 }

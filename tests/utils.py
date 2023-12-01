@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import re
+
 import pyarrow as pa
 import pyarrow.compute as pac
+
+ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def sort_arrow_table(tbl: pa.Table, sort_by: str):

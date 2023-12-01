@@ -16,7 +16,7 @@ from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.table.table_io import FileInput, _open_stream
 
 
@@ -96,7 +96,7 @@ def from_json(
     with _open_stream(file, io_config) as f:
         table = pajson.read_json(f)
 
-    return Table.from_arrow(table).schema()
+    return MicroPartition.from_arrow(table).schema()
 
 
 def from_parquet(

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Generic, Iterator, TypeVar
+from typing import Generic, Iterator
 
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartitionCacheEntry,
     PartitionSet,
     PartitionSetCache,
+    PartitionT,
 )
 from daft.runners.runner_io import RunnerIO
-from daft.table import Table
-
-PartitionT = TypeVar("PartitionT")
+from daft.table import MicroPartition
 
 
 class Runner(Generic[PartitionT]):
@@ -34,7 +34,9 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def run_iter(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[PartitionT]:
+    def run_iter(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[MaterializedResult[PartitionT]]:
         """Similar to run(), but yield the individual partitions as they are completed.
 
         Args:
@@ -45,8 +47,10 @@ class Runner(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
-        """Similar to run_iter(), but always dereference and yield Table objects.
+    def run_iter_tables(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[MicroPartition]:
+        """Similar to run_iter(), but always dereference and yield MicroPartition objects.
 
         Args:
             builder: the builder for the LogicalPlan that is to be executed

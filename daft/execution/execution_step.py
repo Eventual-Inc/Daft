@@ -4,7 +4,7 @@ import itertools
 import pathlib
 import sys
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import Generic
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -26,14 +26,15 @@ from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
+    MaterializedResult,
     PartialPartitionMetadata,
     PartitionMetadata,
+    PartitionT,
     TableParseCSVOptions,
     TableReadOptions,
 )
-from daft.table import Table, table_io
+from daft.table import MicroPartition, table_io
 
-PartitionT = TypeVar("PartitionT")
 ID_GEN = itertools.count()
 
 
@@ -175,28 +176,29 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
     def done(self) -> bool:
         return self._result is not None
 
+    def result(self) -> MaterializedResult[PartitionT]:
+        assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
+        return self._result
+
     def cancel(self) -> None:
         # Currently only implemented for Ray tasks.
-        if self._result is not None:
-            self._result.cancel()
+        if self.done():
+            self.result().cancel()
 
     def partition(self) -> PartitionT:
         """Get the PartitionT resulting from running this PartitionTask."""
-        assert self._result is not None
-        return self._result.partition()
+        return self.result().partition()
 
     def partition_metadata(self) -> PartitionMetadata:
         """Get the metadata of the result partition.
 
         (Avoids retrieving the actual partition itself if possible.)
         """
-        assert self._result is not None
-        return self._result.metadata()
+        return self.result().metadata()
 
-    def vpartition(self) -> Table:
+    def vpartition(self) -> MicroPartition:
         """Get the raw vPartition of the result."""
-        assert self._result is not None
-        return self._result.vpartition()
+        return self.result().vpartition()
 
     def __str__(self) -> str:
         return super().__str__()
@@ -239,7 +241,7 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._results is not None
         return [result.metadata() for result in self._results]
 
-    def vpartition(self, index: int) -> Table:
+    def vpartition(self, index: int) -> MicroPartition:
         """Get the raw vPartition of the result."""
         assert self._results is not None
         return self._results[index].vpartition()
@@ -251,35 +253,6 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         return super().__str__()
 
 
-class MaterializedResult(Protocol[PartitionT]):
-    """A protocol for accessing the result partition of a PartitionTask.
-
-    Different Runners can fill in their own implementation here.
-    """
-
-    def partition(self) -> PartitionT:
-        """Get the partition of this result."""
-        ...
-
-    def vpartition(self) -> Table:
-        """Get the vPartition of this result."""
-        ...
-
-    def metadata(self) -> PartitionMetadata:
-        """Get the metadata of the partition in this result."""
-        ...
-
-    def cancel(self) -> None:
-        """If possible, cancel execution of this PartitionTask."""
-        ...
-
-    def _noop(self, _: PartitionT) -> None:
-        """Implement this as a no-op.
-        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
-        """
-        ...
-
-
 class Instruction(Protocol):
     """An instruction is a function to run over a list of partitions.
 
@@ -289,7 +262,7 @@ class Instruction(Protocol):
     To accomodate these, instructions are typed as list[Table] -> list[Table].
     """
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         """Run the Instruction over the input partitions.
 
         Note: Dispatching a descriptively named helper here will aid profiling.
@@ -322,10 +295,10 @@ class ReadFile(SingleOutputInstruction):
     columns_to_read: list[str] | None
     file_format_config: FileFormatConfig
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._read_file(inputs)
 
-    def _read_file(self, inputs: list[Table]) -> list[Table]:
+    def _read_file(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         assert len(inputs) == 1
         [filepaths_partition] = inputs
         partition = self._handle_tabular_files_scan(
@@ -350,8 +323,8 @@ class ReadFile(SingleOutputInstruction):
 
     def _handle_tabular_files_scan(
         self,
-        filepaths_partition: Table,
-    ) -> Table:
+        filepaths_partition: MicroPartition,
+    ) -> MicroPartition:
         data = filepaths_partition.to_pydict()
         filepaths = data["path"]
 
@@ -368,7 +341,7 @@ class ReadFile(SingleOutputInstruction):
         format_config = self.file_format_config.config
         if file_format == FileFormat.Csv:
             assert isinstance(format_config, CsvSourceConfig)
-            table = Table.concat(
+            table = MicroPartition.concat(
                 [
                     table_io.read_csv(
                         file=fp,
@@ -391,7 +364,7 @@ class ReadFile(SingleOutputInstruction):
             )
         elif file_format == FileFormat.Json:
             assert isinstance(format_config, JsonSourceConfig)
-            table = Table.concat(
+            table = MicroPartition.concat(
                 [
                     table_io.read_json(
                         file=fp,
@@ -404,7 +377,7 @@ class ReadFile(SingleOutputInstruction):
             )
         elif file_format == FileFormat.Parquet:
             assert isinstance(format_config, ParquetSourceConfig)
-            table = Table.concat(
+            table = MicroPartition.concat(
                 [
                     table_io.read_parquet(
                         file=fp,
@@ -438,10 +411,10 @@ class WriteFile(SingleOutputInstruction):
     partition_cols: ExpressionsProjection | None
     io_config: IOConfig | None
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_file(inputs)
 
-    def _write_file(self, inputs: list[Table]) -> list[Table]:
+    def _write_file(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         partition = self._handle_file_write(
             input=input,
@@ -457,7 +430,7 @@ class WriteFile(SingleOutputInstruction):
             )
         ]
 
-    def _handle_file_write(self, input: Table) -> Table:
+    def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
         if self.file_format == FileFormat.Parquet:
             file_names = table_io.write_parquet(
                 input,
@@ -480,7 +453,7 @@ class WriteFile(SingleOutputInstruction):
             )
 
         assert len(self.schema) == 1
-        return Table.from_pydict(
+        return MicroPartition.from_pydict(
             {
                 self.schema.column_names()[0]: file_names,
             }
@@ -491,10 +464,10 @@ class WriteFile(SingleOutputInstruction):
 class Filter(SingleOutputInstruction):
     predicate: ExpressionsProjection
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._filter(inputs)
 
-    def _filter(self, inputs: list[Table]) -> list[Table]:
+    def _filter(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [input.filter(self.predicate)]
 
@@ -512,10 +485,10 @@ class Filter(SingleOutputInstruction):
 class Project(SingleOutputInstruction):
     projection: ExpressionsProjection
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._project(inputs)
 
-    def _project(self, inputs: list[Table]) -> list[Table]:
+    def _project(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
@@ -533,12 +506,12 @@ class Project(SingleOutputInstruction):
 class LocalCount(SingleOutputInstruction):
     schema: Schema
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._count(inputs)
 
-    def _count(self, inputs: list[Table]) -> list[Table]:
+    def _count(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
-        partition = Table.from_pydict({"count": [len(input)]})
+        partition = MicroPartition.from_pydict({"count": [len(input)]})
         assert partition.schema() == self.schema
         return [partition]
 
@@ -555,10 +528,10 @@ class LocalCount(SingleOutputInstruction):
 class LocalLimit(SingleOutputInstruction):
     limit: int
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._limit(inputs)
 
-    def _limit(self, inputs: list[Table]) -> list[Table]:
+    def _limit(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [input.head(self.limit)]
 
@@ -581,10 +554,10 @@ class GlobalLimit(LocalLimit):
 class MapPartition(SingleOutputInstruction):
     map_op: MapPartitionOp
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._map_partition(inputs)
 
-    def _map_partition(self, inputs: list[Table]) -> list[Table]:
+    def _map_partition(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [self.map_op.run(input)]
 
@@ -603,10 +576,10 @@ class Sample(SingleOutputInstruction):
     sort_by: ExpressionsProjection
     num_samples: int = 20
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._sample(inputs)
 
-    def _sample(self, inputs: list[Table]) -> list[Table]:
+    def _sample(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         result = (
             input.sample(self.num_samples)
@@ -630,10 +603,10 @@ class Aggregate(SingleOutputInstruction):
     to_agg: list[Expression]
     group_by: ExpressionsProjection | None
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._aggregate(inputs)
 
-    def _aggregate(self, inputs: list[Table]) -> list[Table]:
+    def _aggregate(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
 
@@ -653,10 +626,10 @@ class Join(SingleOutputInstruction):
     right_on: ExpressionsProjection
     how: JoinType
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._join(inputs)
 
-    def _join(self, inputs: list[Table]) -> list[Table]:
+    def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [left, right] = inputs
         result = left.join(
             right,
@@ -682,11 +655,11 @@ class ReduceInstruction(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class ReduceMerge(ReduceInstruction):
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge(inputs)
 
-    def _reduce_merge(self, inputs: list[Table]) -> list[Table]:
-        return [Table.concat(inputs)]
+    def _reduce_merge(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return [MicroPartition.concat(inputs)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]
@@ -704,11 +677,11 @@ class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge_and_sort(inputs)
 
-    def _reduce_merge_and_sort(self, inputs: list[Table]) -> list[Table]:
-        partition = Table.concat(inputs).sort(self.sort_by, descending=self.descending)
+    def _reduce_merge_and_sort(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
@@ -728,11 +701,11 @@ class ReduceToQuantiles(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_to_quantiles(inputs)
 
-    def _reduce_to_quantiles(self, inputs: list[Table]) -> list[Table]:
-        merged = Table.concat(inputs)
+    def _reduce_to_quantiles(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        merged = MicroPartition.concat(inputs)
 
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
         merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
@@ -771,10 +744,10 @@ class FanoutInstruction(Instruction):
 class FanoutRandom(FanoutInstruction):
     seed: int
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._fanout_random(inputs)
 
-    def _fanout_random(self, inputs: list[Table]) -> list[Table]:
+    def _fanout_random(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return input.partition_by_random(num_partitions=self._num_outputs, seed=self.seed)
 
@@ -783,10 +756,10 @@ class FanoutRandom(FanoutInstruction):
 class FanoutHash(FanoutInstruction):
     partition_by: ExpressionsProjection
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._fanout_hash(inputs)
 
-    def _fanout_hash(self, inputs: list[Table]) -> list[Table]:
+    def _fanout_hash(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         return input.partition_by_hash(self.partition_by, num_partitions=self._num_outputs)
 
@@ -796,23 +769,23 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
     sort_by: ExpressionsProjection
     descending: list[bool]
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._fanout_range(inputs)
 
-    def _fanout_range(self, inputs: list[Table]) -> list[Table]:
+    def _fanout_range(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [boundaries, input] = inputs
         if self._num_outputs == 1:
             return [input]
 
-        boundaries = boundaries.to_table()
-        partitioned_tables = input.partition_by_range(self.sort_by, boundaries, self.descending)
+        table_boundaries = boundaries.to_table()
+        partitioned_tables = input.partition_by_range(self.sort_by, table_boundaries, self.descending)
 
         # Pad the partitioned_tables with empty tables if fewer than self._num_outputs were returned
         # This can happen when all values are null or empty, which leads to an empty `boundaries` input
         assert len(partitioned_tables) >= 1, "Should have at least one returned table"
         schema = partitioned_tables[0].schema()
         partitioned_tables = partitioned_tables + [
-            Table.empty(schema=schema) for _ in range(self._num_outputs - len(partitioned_tables))
+            MicroPartition.empty(schema=schema) for _ in range(self._num_outputs - len(partitioned_tables))
         ]
 
         return partitioned_tables
@@ -822,10 +795,10 @@ class FanoutRange(FanoutInstruction, Generic[PartitionT]):
 class FanoutSlices(FanoutInstruction):
     slices: list[tuple[int, int]]  # start inclusive, end exclusive
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._multislice(inputs)
 
-    def _multislice(self, inputs: list[Table]) -> list[Table]:
+    def _multislice(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         results = []
 

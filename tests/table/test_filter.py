@@ -5,12 +5,12 @@ import pyarrow as pa
 import pytest
 
 from daft import col, lit
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 def test_table_filter_all_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -33,7 +33,7 @@ def test_table_filter_all_pass() -> None:
 
 def test_table_filter_some_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -56,7 +56,7 @@ def test_table_filter_some_pass() -> None:
 
 def test_table_filter_none_pass() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -79,7 +79,7 @@ def test_table_filter_none_pass() -> None:
 
 def test_table_filter_bad_expression() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -99,7 +99,7 @@ def test_table_filter_with_dates() -> None:
 
     days = list(map(date_maker, [5, 4, 1, None, 2, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 6
     assert daft_table.column_names() == ["days", "enum"]
 
@@ -122,7 +122,7 @@ def test_table_filter_with_date_days() -> None:
 
     days = list(map(date_maker, [3, 28, None, 9, 18, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 6
     assert daft_table.column_names() == ["days", "enum"]
 
@@ -145,7 +145,7 @@ def test_table_filter_with_date_months() -> None:
 
     days = list(map(date_maker, [2, 6, None, 4, 11, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 6
     assert daft_table.column_names() == ["days", "enum"]
 
@@ -168,7 +168,7 @@ def test_table_filter_with_date_years() -> None:
 
     days = list(map(date_maker, [5, 4000, 1, None, 2022, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 6
     assert daft_table.column_names() == ["days", "enum"]
 
@@ -192,7 +192,7 @@ def test_table_filter_with_date_days_of_week() -> None:
     # 04/03/2023 is a Monday.
     days = list(map(date_maker, [8, 5, None, 15, 12, None]))
     pa_table = pa.Table.from_pydict({"days": days, "enum": [0, 1, 2, 3, 4, 5]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 6
     assert daft_table.column_names() == ["days", "enum"]
 
@@ -206,13 +206,15 @@ def test_table_filter_with_date_days_of_week() -> None:
 
 
 def test_table_float_is_nan() -> None:
-    table = Table.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
+    table = MicroPartition.from_pydict({"a": [1.0, np.nan, 3.0, None, float("nan")]})
     result_table = table.eval_expression_list([col("a").float.is_nan()])
     # Note that null entries are _not_ treated as float NaNs.
     assert result_table.to_pydict() == {"a": [False, True, False, None, True]}
 
 
 def test_table_if_else() -> None:
-    table = Table.from_arrow(pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]}))
+    table = MicroPartition.from_arrow(
+        pa.Table.from_pydict({"ones": [1, 1, 1], "zeros": [0, 0, 0], "pred": [True, False, None]})
+    )
     result_table = table.eval_expression_list([col("pred").if_else(col("ones"), col("zeros"))])
     assert result_table.to_pydict() == {"ones": [1, 0, None]}

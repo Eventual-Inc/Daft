@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{hash_map::DefaultHasher, HashSet},
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -8,7 +9,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::datatypes::Field;
+use crate::{datatypes::Field, utils::display_table::make_comfy_table};
 
 use common_error::{DaftError, DaftResult};
 
@@ -182,15 +183,16 @@ impl Default for Schema {
 impl Display for Schema {
     // Produces an ASCII table.
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let mut table = prettytable::Table::new();
-
-        let header = self
-            .fields
-            .iter()
-            .map(|(name, field)| format!("{}\n{}", name, field.dtype))
-            .collect();
-        table.add_row(header);
-        write!(f, "{table}")
+        let table = make_comfy_table(
+            self.fields
+                .values()
+                .map(Cow::Borrowed)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            None,
+            None,
+        );
+        writeln!(f, "{table}")
     }
 }
 

@@ -9,7 +9,7 @@ from daft.daft import IOConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 @PublicAPI
@@ -45,7 +45,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     context = get_context()
     runner_io = context.runner().runner_io()
     file_infos = runner_io.glob_paths_details([path], io_config=io_config)
-    file_infos_table = Table._from_pytable(file_infos.to_table())
+    file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet({0: file_infos_table})
     cache_entry = context.runner().put_partition_set_into_cache(partition)
     builder = LogicalPlanBuilder.from_in_memory_scan(

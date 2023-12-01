@@ -7,8 +7,9 @@ import pandas as pd
 from PIL import Image
 
 import daft
+from tests.utils import ANSI_ESCAPE
 
-ROW_DIVIDER_REGEX = re.compile(r"\+-+\+")
+ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
@@ -18,8 +19,10 @@ TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:a
 def parse_str_table(
     table: str, expected_user_msg_regex: re.Pattern = SHOWING_N_ROWS_REGEX
 ) -> dict[str, tuple[str, list[str]]]:
+    table = ANSI_ESCAPE.sub("", table)
+
     def _split_table_row(row: str) -> list[str]:
-        return [cell.strip() for cell in row.split("|")[1:-1]]
+        return [cell.strip() for cell in re.split("┆|│", row)[1:-1]]
 
     lines = table.split("\n")
     assert len(lines) > 4
@@ -27,15 +30,15 @@ def parse_str_table(
     assert expected_user_msg_regex.match(lines[-1])
 
     column_names = _split_table_row(lines[1])
-    column_types = _split_table_row(lines[2])
+    column_types = _split_table_row(lines[3])
 
     data = []
-    for line in lines[4:-2]:
+    for line in lines[5:-3]:
         if ROW_DIVIDER_REGEX.match(line):
             continue
         data.append(_split_table_row(line))
-
-    return {column_names[i]: (column_types[i], [row[i] for row in data]) for i in range(len(column_names))}
+    val = {column_names[i]: (column_types[i], [row[i] for row in data]) for i in range(len(column_names))}
+    return val
 
 
 def parse_html_table(
@@ -71,7 +74,8 @@ def parse_html_table(
     return result
 
 
-def test_empty_repr():
+def test_empty_repr(make_df):
+    df = daft.from_pydict({})
     df = daft.from_pydict({})
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
@@ -81,8 +85,8 @@ def test_empty_repr():
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
 
 
-def test_empty_df_repr():
-    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+def test_empty_df_repr(make_df):
+    df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.where(df["A"] > 10)
     expected_data = {"A": ("Int64", []), "B": ("Utf8", [])}
 
@@ -122,8 +126,8 @@ def test_empty_df_repr():
     )
 
 
-def test_alias_repr():
-    df = daft.from_pydict({"A": [1, 2, 3], "B": ["a", "b", "c"]})
+def test_alias_repr(make_df):
+    df = make_df({"A": [1, 2, 3], "B": ["a", "b", "c"]})
     df = df.select(df["A"].alias("A2"), df["B"])
 
     expected_data = {"A2": ("Int64", []), "B": ("Utf8", [])}
@@ -170,6 +174,54 @@ def test_alias_repr():
     )
 
 
+def test_repr_with_unicode(make_df):
+    df = make_df({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
+
+    expected_data = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
+    assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
+    assert (
+        df._repr_html_()
+        == """<div>
+<table class="dataframe">
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+</table>
+<small>(No data to display: Dataframe not materialized)</small>
+</div>"""
+    )
+
+    df.collect()
+
+    expected_data = {
+        "🔥": (
+            "Int64",
+            ["1", "2", "3"],
+        ),
+        "🦁": (
+            "Utf8",
+            ["🔥a", "b🔥", "🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁…"],
+        ),
+    }
+    expected_data_html = {
+        **expected_data,
+    }
+    string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
+    assert parse_str_table(df.__repr__()) == expected_data
+    assert (
+        df._repr_html_()
+        == f"""<div>
+<table class="dataframe">
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+<tbody>
+<tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>{string_array[0]}</div></td></tr>
+<tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>{string_array[1]}</div></td></tr>
+<tr><td><div {TD_STYLE}>3</div></td><td><div {TD_STYLE}>{string_array[2]}</div></td></tr>
+</tbody>
+</table>
+<small>(Showing first 3 of 3 rows)</small>
+</div>"""
+    )
+
+
 def test_repr_with_html_string():
     df = daft.from_pydict({"A": [f"<div>body{i}</div>" for i in range(3)]})
     df.collect()
@@ -200,23 +252,24 @@ def test_repr_html_custom_hooks():
     df.collect()
 
     assert (
-        df.__repr__().replace("\r", "")
-        == """+-------------------+-------------+----------------------------------+
-| objects           | np          | pil                              |
-| Python            | Python      | Python                           |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
-| myobj-custom-repr | [[1. 1. 1.] | <PIL.Image.Image image mode=L... |
-|                   |  [1. 1. 1.] |                                  |
-|                   |  [1. ...    |                                  |
-+-------------------+-------------+----------------------------------+
+        ANSI_ESCAPE.sub("", df.__repr__()).replace("\r", "")
+        == """╭───────────────────┬─────────────┬────────────────────────────────╮
+│ objects           ┆ np          ┆ pil                            │
+│ ---               ┆ ---         ┆ ---                            │
+│ Python            ┆ Python      ┆ Python                         │
+╞═══════════════════╪═════════════╪════════════════════════════════╡
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ myobj-custom-repr ┆ [[1. 1. 1.] ┆ <PIL.Image.Image image mode=L… │
+│                   ┆  [1. 1. 1.] ┆                                │
+│                   ┆  [1. …      ┆                                │
+╰───────────────────┴─────────────┴────────────────────────────────╯
 
 (Showing first 3 of 3 rows)"""
     )

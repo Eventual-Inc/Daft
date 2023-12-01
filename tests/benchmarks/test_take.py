@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft import DataFrame, Series
+from daft.table import MicroPartition
 
 NUM_ROWS = 10_000_000
 
@@ -97,7 +98,7 @@ def generate_list_int64_take_reversed() -> tuple[dict, daft.Expression, list]:
 def test_take(test_data_generator, benchmark) -> None:
     """If_else between NUM_ROWS values"""
     data, idx, expected = test_data_generator()
-    table = daft.table.Table.from_pydict(data)
+    table = MicroPartition.from_pydict(data)
 
     def bench_take() -> DataFrame:
         return table.take(idx)

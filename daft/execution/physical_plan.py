@@ -38,11 +38,14 @@ from daft.execution.execution_step import (
 )
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartialPartitionMetadata
+from daft.runners.partitioning import (
+    MaterializedResult,
+    PartialPartitionMetadata,
+    PartitionT,
+)
 
 logger = logging.getLogger(__name__)
 
-PartitionT = TypeVar("PartitionT")
 T = TypeVar("T")
 
 
@@ -50,7 +53,7 @@ T = TypeVar("T")
 InProgressPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionTaskBuilder[PartitionT]]]
 
 # A PhysicalPlan that is complete and will only yield PartitionTasks or final PartitionTs.
-MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], PartitionT]]
+MaterializedPhysicalPlan = Iterator[Union[None, PartitionTask[PartitionT], MaterializedResult[PartitionT]]]
 
 
 def _stage_id_counter():
@@ -108,7 +111,7 @@ def file_read(
             for i in range(len(vpartition)):
                 file_read_step = PartitionTaskBuilder[PartitionT](
                     inputs=[done_task.partition()],
-                    partial_metadatas=[done_task.partition_metadata()],
+                    partial_metadatas=None,  # Child's metadata doesn't really matter for a file read
                 ).add_instruction(
                     instruction=execution_step.ReadFile(
                         index=i,
@@ -738,7 +741,7 @@ def materialize(
         # Check if any inputs finished executing.
         while len(materializations) > 0 and materializations[0].done():
             done_task = materializations.popleft()
-            yield done_task.partition()
+            yield done_task.result()
 
         # Materialize a single dependency.
         try:

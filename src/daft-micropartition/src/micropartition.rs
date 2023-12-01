@@ -275,38 +275,63 @@ fn materialize_scan_task(
 }
 
 impl MicroPartition {
+    /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
+    ///
+    /// Schema invariants:
+    /// 1. All columns in `schema` must be exist in the `scan_task` schema
+    /// 2. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
         schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        if statistics.columns.len() != schema.fields.len() {
-            panic!("MicroPartition: TableStatistics and Schema have differing lengths")
-        }
-        if !statistics
-            .columns
-            .keys()
-            .zip(schema.fields.keys())
-            .all(|(l, r)| l == r)
-        {
-            panic!("MicroPartition: TableStatistics and Schema have different column names\nTableStats:\n{},\nSchema\n{}", statistics, schema);
-        }
+        assert!(
+            schema
+                .fields
+                .keys()
+                .collect::<HashSet<_>>()
+                .is_subset(&scan_task.schema.fields.keys().collect::<HashSet<_>>()),
+            "Unloaded MicroPartition's schema names must be a subset of its ScanTask's schema"
+        );
 
         MicroPartition {
-            schema,
+            schema: schema.clone(),
             state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
-            statistics: Some(statistics),
+            statistics: Some(
+                statistics
+                    .cast_to_schema(schema)
+                    .expect("Statistics cannot be casted to schema"),
+            ),
         }
     }
 
+    /// Create a new "loaded" MicroPartition using the materialized tables
+    ///
+    /// Schema invariants:
+    /// 1. `schema` must match each Table's schema exactly
+    /// 2. If `statistics` is provided, each Loaded column statistic must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_loaded(
         schema: SchemaRef,
         tables: Arc<Vec<Table>>,
         statistics: Option<TableStatistics>,
     ) -> Self {
+        // Check and validate invariants with asserts
+        for table in tables.iter() {
+            assert!(
+                table.schema == schema,
+                "Loaded MicroPartition's tables' schema must match its own schema exactly"
+            );
+        }
+
+        let statistics = statistics.map(|stats| {
+            stats
+                .cast_to_schema(schema.clone())
+                .expect("Statistics cannot be casted to schema")
+        });
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
+
         MicroPartition {
             schema,
             state: Mutex::new(TableState::Loaded(tables)),
@@ -620,34 +645,16 @@ pub(crate) fn read_parquet_into_micropartition(
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
     }
 
+    // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
-
     let metadata = runtime_handle.block_on(async move {
         read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats).await
     })?;
-    let any_stats_avail = metadata
-        .iter()
-        .flat_map(|m| m.row_groups.iter())
-        .flat_map(|rg| rg.columns().iter())
-        .any(|col| col.statistics().is_some());
-    let stats = if any_stats_avail {
-        let stat_per_table = metadata
-            .iter()
-            .flat_map(|fm| {
-                fm.row_groups
-                    .iter()
-                    .map(daft_parquet::row_group_metadata_to_table_stats)
-            })
-            .collect::<DaftResult<Vec<TableStatistics>>>()?;
-        stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
-    } else {
-        None
-    };
 
+    // Deserialize and collect relevant TableStatistics
     let schemas = metadata
         .iter()
         .map(|m| {
@@ -656,12 +663,30 @@ pub(crate) fn read_parquet_into_micropartition(
             DaftResult::Ok(daft_schema)
         })
         .collect::<DaftResult<Vec<_>>>()?;
+    let any_stats_avail = metadata
+        .iter()
+        .flat_map(|m| m.row_groups.iter())
+        .flat_map(|rg| rg.columns().iter())
+        .any(|col| col.statistics().is_some());
+    let stats = if any_stats_avail {
+        let stat_per_table = metadata
+            .iter()
+            .zip(schemas.iter())
+            .flat_map(|(fm, schema)| {
+                fm.row_groups
+                    .iter()
+                    .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
+            })
+            .collect::<DaftResult<Vec<TableStatistics>>>()?;
+        stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
+    } else {
+        None
+    };
 
+    // Union and prune the schema using the specified `columns`
     let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
-
-    let daft_schema = unioned_schema.expect("we need at least 1 schema");
-
-    let daft_schema = prune_fields_from_schema(daft_schema, columns)?;
+    let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
+    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
 
     // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
     let total_rows_no_limit = match &row_groups {
@@ -685,7 +710,7 @@ pub(crate) fn read_parquet_into_micropartition(
     if let Some(stats) = stats {
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
-        let daft_schema = Arc::new(daft_schema);
+        let daft_schema = Arc::new(pruned_daft_schema);
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {
@@ -758,10 +783,10 @@ pub(crate) fn read_parquet_into_micropartition(
         )?;
         let all_tables = all_tables
             .into_iter()
-            .map(|t| t.cast_to_schema(&daft_schema))
+            .map(|t| t.cast_to_schema(&pruned_daft_schema))
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(MicroPartition::new_loaded(
-            Arc::new(daft_schema),
+            Arc::new(pruned_daft_schema),
             all_tables.into(),
             None,
         ))

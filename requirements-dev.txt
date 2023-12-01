@@ -11,7 +11,7 @@ viztracer==0.15.6
 
 # Testing frameworks
 hypothesis==6.79.2
-pytest==7.4.1
+pytest==7.4.3
 pytest-benchmark==4.0.0
 pytest-cov==4.1.0
 
@@ -23,7 +23,8 @@ dask==2023.6.0; python_version >= '3.9'
 numpy; python_version < '3.9'
 numpy==1.26.2; python_version >= '3.9'
 pandas==1.3.5; python_version < '3.8'
-pandas==2.0.3; python_version >= '3.8'
+pandas==2.0.3; python_version == '3.8'
+pandas==2.1.3; python_version >= '3.9'
 xxhash>=3.0.0
 Pillow==9.5.0
 opencv-python==4.8.1.78
@@ -32,7 +33,9 @@ opencv-python==4.8.1.78
 pyarrow==12; platform_system != "Windows"
 pyarrow==6.0.1; platform_system === "Windows"
 # Ray
-ray[data, client]==2.6.3
+ray[data, client]==2.7.1; python_version < '3.8'
+ray[data, client]==2.7.1; python_version >= '3.8'
+
 
 #Iceberg
 pyiceberg==0.5.1; python_version >= '3.8'

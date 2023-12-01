@@ -2,6 +2,7 @@
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 indexmap = {workspace = true}
@@ -12,7 +13,7 @@ serde_json = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "common-io-config/python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "common-io-config/python", "common-treenode/python"]
 
 [package]
 edition = {workspace = true}

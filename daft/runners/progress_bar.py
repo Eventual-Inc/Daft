@@ -4,17 +4,25 @@ import os
 import time
 from typing import Any
 
-from tqdm.auto import tqdm
-
 from daft.execution.execution_step import PartitionTask
 
 
 class ProgressBar:
     def __init__(self, use_ray_tqdm: bool, show_tasks_bar: bool = False, disable: bool = False) -> None:
-        self.use_ray_tqdm = use_ray_tqdm
         self.show_tasks_bar = show_tasks_bar
-        self.tqdm_mod = tqdm
         self._maxinterval = 5.0
+
+        # Choose the appropriate tqdm module depending on whether we need to use Ray's tqdm
+        self.use_ray_tqdm = use_ray_tqdm
+        if use_ray_tqdm:
+            from ray.experimental.tqdm_ray import tqdm
+
+            self.tqdm_mod = tqdm
+        else:
+            from tqdm.auto import tqdm
+
+            self.tqdm_mod = tqdm
+
         self.pbars: dict[int, tqdm] = dict()
         self.disable = (
             disable
@@ -69,5 +77,7 @@ class ProgressBar:
 
     def close(self) -> None:
         for p in self.pbars.values():
+            if not self.use_ray_tqdm:
+                p.clear()
             p.close()
             del p

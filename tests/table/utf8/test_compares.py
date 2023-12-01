@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from daft.expressions import col, lit
-from daft.table import Table
+from daft.table import MicroPartition
 
 ENDSWITH_DATA = ["x_foo", "y_foo", "z_bar"]
 STARTSWITH_DATA = ["foo_x", "foo_y", "bar_z"]
@@ -25,6 +25,6 @@ CONTAINS_DATA = ["x_foo_x", "y_foo_y", "z_bar_z"]
     ],
 )
 def test_utf8_substrs(expr, data):
-    table = Table.from_pydict({"col": data, "emptystrings": ["", "", ""]})
+    table = MicroPartition.from_pydict({"col": data, "emptystrings": ["", "", ""]})
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"col": [True, True, False]}

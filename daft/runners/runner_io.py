@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from daft.daft import (
     CsvSourceConfig,
@@ -19,8 +19,6 @@ from daft.table import schema_inference
 
 if TYPE_CHECKING:
     pass
-
-PartitionT = TypeVar("PartitionT")
 
 
 class RunnerIO:

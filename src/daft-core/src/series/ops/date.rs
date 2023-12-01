@@ -38,6 +38,19 @@ impl Series {
         }
     }
 
+    pub fn dt_hour(&self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.downcast::<TimestampArray>()?;
+                Ok(ts_array.hour()?.into_series())
+            }
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run day() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+
     pub fn dt_month(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Date => {

@@ -7,7 +7,7 @@ use std::string::FromUtf8Error;
 use daft_core::{
     array::ops::full::FullNull,
     datatypes::{BooleanArray, NullArray},
-    IntoSeries, Series,
+    DataType, IntoSeries, Series,
 };
 use snafu::{ResultExt, Snafu};
 
@@ -43,10 +43,41 @@ impl ColumnRangeStatistics {
             (Some(l), Some(u)) => {
                 assert_eq!(l.len(), 1);
                 assert_eq!(u.len(), 1);
-                assert_eq!(l.data_type(), u.data_type());
+                assert_eq!(l.data_type(), u.data_type(), "");
+
+                // If creating on incompatible types, default to `Missing`
+                if !ColumnRangeStatistics::supports_dtype(l.data_type()) {
+                    return Ok(ColumnRangeStatistics::Missing);
+                }
+
                 Ok(ColumnRangeStatistics::Loaded(l, u))
             }
             _ => Ok(ColumnRangeStatistics::Missing),
+        }
+    }
+
+    pub fn supports_dtype(dtype: &DataType) -> bool {
+        match dtype {
+            // SUPPORTED TYPES:
+            // Null
+            DataType::Null |
+
+            // Numeric types
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128 |
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+            DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
+
+            // String types
+            DataType::Utf8 | DataType::Binary |
+
+            // Temporal types
+            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) => true,
+
+            // UNSUPPORTED TYPES:
+            // Types that don't support comparisons and can't be used as ColumnRangeStatistics
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => false,
+            #[cfg(feature = "python")]
+            DataType::Python => false,
         }
     }
 
@@ -115,6 +146,59 @@ impl ColumnRangeStatistics {
             .unwrap() as usize;
         let _num_bytes = series.size_bytes().unwrap();
         Self::Loaded(lower, upper)
+    }
+
+    /// Casts the internal [`Series`] objects to the specified DataType
+    pub fn cast(&self, dtype: &DataType) -> crate::Result<Self> {
+        match self {
+            // `Missing` is casted to `Missing`
+            ColumnRangeStatistics::Missing => Ok(ColumnRangeStatistics::Missing),
+
+            // If the type to cast to matches the current type exactly, short-circuit the logic here. This should be the
+            // most common case (e.g. parsing a Parquet file with the same types as the inferred types)
+            ColumnRangeStatistics::Loaded(l, r) if l.data_type() == dtype => {
+                Ok(ColumnRangeStatistics::Loaded(l.clone(), r.clone()))
+            }
+
+            // Only certain types are allowed to be casted in the context of ColumnRangeStatistics
+            // as casting may not correctly preserve ordering of elements. We allow-list some type combinations
+            // but for most combinations, we will default to `ColumnRangeStatistics::Missing`.
+            ColumnRangeStatistics::Loaded(l, r) => {
+                match (l.data_type(), dtype) {
+                    // Int casting to higher bitwidths
+                    (DataType::Int8, DataType::Int16) |
+                    (DataType::Int8, DataType::Int32) |
+                    (DataType::Int8, DataType::Int64) |
+                    (DataType::Int16, DataType::Int32) |
+                    (DataType::Int16, DataType::Int64) |
+                    (DataType::Int32, DataType::Int64) |
+                    // UInt casting to higher bitwidths
+                    (DataType::UInt8, DataType::UInt16) |
+                    (DataType::UInt8, DataType::UInt32) |
+                    (DataType::UInt8, DataType::UInt64) |
+                    (DataType::UInt16, DataType::UInt32) |
+                    (DataType::UInt16, DataType::UInt64) |
+                    (DataType::UInt32, DataType::UInt64) |
+                    // Float casting to higher bitwidths
+                    (DataType::Float32, DataType::Float64) |
+                    // Numeric to temporal casting from smaller-than-eq bitwidths
+                    (DataType::Int8, DataType::Date) |
+                    (DataType::Int16, DataType::Date) |
+                    (DataType::Int32, DataType::Date) |
+                    (DataType::Int8, DataType::Timestamp(..)) |
+                    (DataType::Int16, DataType::Timestamp(..)) |
+                    (DataType::Int32, DataType::Timestamp(..)) |
+                    (DataType::Int64, DataType::Timestamp(..)) |
+                    // Binary to Utf8
+                    (DataType::Binary, DataType::Utf8)
+                    => Ok(ColumnRangeStatistics::Loaded(
+                        l.cast(dtype).context(DaftCoreComputeSnafu)?,
+                        r.cast(dtype).context(DaftCoreComputeSnafu)?,
+                    )),
+                    _ => Ok(ColumnRangeStatistics::Missing)
+                }
+            }
+        }
     }
 }
 

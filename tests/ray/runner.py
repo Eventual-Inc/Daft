@@ -46,3 +46,15 @@ def test_active_plan_multiple_iter_partitions():
 
     del iter2
     assert len(runner.active_plans()) == 0
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+def test_active_plan_with_show_and_write_parquet(tmpdir):
+    df = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
+    df = df.into_partitions(8)
+    df = df.join(df, on="a")
+    df.show()
+    runner = get_context().runner()
+    assert len(runner.active_plans()) == 0
+    df.write_parquet(tmpdir.dirname)
+    assert len(runner.active_plans()) == 0

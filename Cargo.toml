@@ -68,6 +68,7 @@ tikv-jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls"]}
 members = [
   "src/common/error",
   "src/common/io-config",
+  "src/common/treenode",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",
@@ -85,14 +86,14 @@ async-compression = {version = "0.4.5", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.4.0"
 chrono = "0.4.26"
-chrono-tz = "0.8.3"
+chrono-tz = "0.8.4"
+comfy-table = "7.1.0"
 futures = "0.3.28"
 html-escape = "0.2.13"
-indexmap = "2.0.0"
+indexmap = "2.1.0"
 itertools = "0.11"
 num-derive = "0.3.3"
 num-traits = "0.2"
-prettytable-rs = "0.10"
 rand = "^0.8"
 rayon = "1.7.0"
 rstest = "0.18.2"

@@ -2,9 +2,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
+use daft_core::python::datatype::PyTimeUnit;
 use serde::{Deserialize, Serialize};
 
-use crate::{functions, optimization, Expr};
+use crate::{functions, optimization, Expr, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
     datatypes::ImageFormat,
@@ -24,6 +25,18 @@ use pyo3::{
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
     Ok(PyExpr::from(crate::col(name)))
+}
+
+#[pyfunction]
+pub fn date_lit(item: i32) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Date(item));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    Ok(expr.into())
 }
 
 #[pyfunction]
@@ -114,12 +127,6 @@ impl PyExpr {
 
     pub fn _is_column(&self) -> PyResult<bool> {
         Ok(matches!(self.expr, Expr::Column(..)))
-    }
-
-    pub fn _replace_column_with_expression(&self, column: &str, new_expr: &Self) -> PyResult<Self> {
-        Ok(PyExpr {
-            expr: optimization::replace_column_with_expression(&self.expr, column, &new_expr.expr),
-        })
     }
 
     pub fn alias(&self, name: &str) -> PyResult<Self> {
@@ -261,6 +268,11 @@ impl PyExpr {
         Ok(day(&self.expr).into())
     }
 
+    pub fn dt_hour(&self) -> PyResult<Self> {
+        use functions::temporal::hour;
+        Ok(hour(&self.expr).into())
+    }
+
     pub fn dt_month(&self) -> PyResult<Self> {
         use functions::temporal::month;
         Ok(month(&self.expr).into())
@@ -274,6 +286,26 @@ impl PyExpr {
     pub fn dt_day_of_week(&self) -> PyResult<Self> {
         use functions::temporal::day_of_week;
         Ok(day_of_week(&self.expr).into())
+    }
+
+    pub fn partitioning_days(&self) -> PyResult<Self> {
+        use functions::partitioning::days;
+        Ok(days(&self.expr).into())
+    }
+
+    pub fn partitioning_hours(&self) -> PyResult<Self> {
+        use functions::partitioning::hours;
+        Ok(hours(&self.expr).into())
+    }
+
+    pub fn partitioning_months(&self) -> PyResult<Self> {
+        use functions::partitioning::months;
+        Ok(months(&self.expr).into())
+    }
+
+    pub fn partitioning_years(&self) -> PyResult<Self> {
+        use functions::partitioning::years;
+        Ok(years(&self.expr).into())
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {

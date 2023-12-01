@@ -10,6 +10,7 @@ from daft.datatype import DaftExtension, DataType
 from daft.series import Series
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
+from tests.utils import ANSI_ESCAPE
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -122,20 +123,20 @@ def test_tensor_repr():
     arr = np.arange(np.prod((2, 2)), dtype=np.int64).reshape((2, 2))
     arrs = [arr, arr, None]
     s = Series.from_pylist(arrs, pyobj="allow")
+
+    out_repr = ANSI_ESCAPE.sub("", repr(s))
     assert (
-        repr(s).replace("\r", "")
-        == """
-+-----------------------+
-| list_series           |
-| Tensor(Int64)         |
-+-----------------------+
-| <Tensor shape=(2, 2)> |
-+-----------------------+
-| <Tensor shape=(2, 2)> |
-+-----------------------+
-| None                  |
-+-----------------------+
-"""[
-            1:
-        ]
+        out_repr.replace("\r", "")
+        == """╭───────────────────────╮
+│ list_series           │
+│ ---                   │
+│ Tensor(Int64)         │
+╞═══════════════════════╡
+│ <Tensor shape=(2, 2)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ <Tensor shape=(2, 2)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ None                  │
+╰───────────────────────╯
+"""
     )

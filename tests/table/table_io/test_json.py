@@ -11,7 +11,7 @@ import daft
 from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableReadOptions
-from daft.table import Table, schema_inference, table_io
+from daft.table import MicroPartition, schema_inference, table_io
 
 
 def test_read_input(tmpdir):
@@ -94,7 +94,7 @@ def test_json_read_data(data, expected_data_series):
     )
 
     schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", expected_data_series.datatype())])
-    expected = Table.from_pydict(
+    expected = MicroPartition.from_pydict(
         {
             "id": [1, 2, 3],
             "data": expected_data_series,
@@ -113,7 +113,7 @@ def test_json_read_data_limit_rows():
     )
 
     schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-    expected = Table.from_pydict(
+    expected = MicroPartition.from_pydict(
         {
             "id": [1, 2],
             "data": [1, 2],
@@ -132,7 +132,7 @@ def test_json_read_data_select_columns():
     )
 
     schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-    expected = Table.from_pydict(
+    expected = MicroPartition.from_pydict(
         {
             "data": [1, 2, None],
         }

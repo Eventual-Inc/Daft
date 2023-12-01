@@ -1543,7 +1543,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let column_names = vec!["a", "b"];
+        let column_names = ["a", "b"];
         let table = read_csv(
             file,
             Some(
@@ -1579,7 +1579,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let column_names = vec!["a", "b"];
+        let column_names = ["a", "b"];
         let table = read_csv(
             file,
             Some(
