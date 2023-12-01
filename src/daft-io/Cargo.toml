@@ -37,10 +37,10 @@ url = {workspace = true}
 [dependencies.google-cloud-storage]
 default-features = false
 features = ["default-tls", "auth"]
-# branch = "anonymouse_storage_access"
+# branch = "main"
 git = "https://github.com/yoshidan/google-cloud-rust"
 package = "google-cloud-storage"
-rev = "6b067f3d14bd109af3705988e5cb28f620419d55"
+rev = "65251957f6aed2eb8adb62b9a9a1b9996150d265"
 version = "0.15.0"
 
 [dependencies.reqwest]
