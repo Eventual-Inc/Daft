@@ -19,6 +19,14 @@ T = TypeVar("T")
 YieldFixture = Generator[T, None, None]
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--credentials",
+        action="store_true",
+        help="Whether or not the current environment has access to remote storage credentials",
+    )
+
+
 ###
 # Config fixtures
 ###
@@ -36,13 +44,26 @@ def minio_io_config() -> daft.io.IOConfig:
 
 
 @pytest.fixture(scope="session")
-def aws_public_s3_config() -> daft.io.IOConfig:
+def aws_public_s3_config(request) -> daft.io.IOConfig:
+    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
+    anonymous = None if request.config.getoption("--credentials") else True
+
     return daft.io.IOConfig(
         s3=daft.io.S3Config(
             # NOTE: no keys or endpoints specified for an AWS public s3 bucket
             region_name="us-west-2",
+            anonymous=anonymous,
         )
     )
+
+
+@pytest.fixture(scope="session")
+def gcs_public_config(request) -> daft.io.IOConfig:
+    # Use anonymous mode to avoid having to search for credentials in the Github Runner
+    # If pytest is run with `--credentials` then we set anonymous=None to go down the credentials chain
+    anonymous = None if request.config.getoption("--credentials") else True
+    return daft.io.IOConfig(gcs=daft.io.GCSConfig(project_id=None, anonymous=anonymous))
 
 
 @pytest.fixture(scope="session")
