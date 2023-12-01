@@ -120,7 +120,7 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
     return _get_df
 
 
-def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None):
+def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None, ray_job: bool):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     daft_context = get_context()
@@ -131,11 +131,35 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
             logger.warning(f"Skipping TPC-H q{i}")
             continue
 
-        answer = getattr(answers, f"q{i}")
-        daft_df = answer(get_df)
+        if ray_job:
+            import os
+            import pathlib
 
-        with metrics_builder.collect_metrics(i):
-            daft_df.collect()
+            from benchmarking.tpch import ray_job_runner
+
+            working_dir = pathlib.Path(os.path.dirname(__file__))
+            entrypoint = working_dir / "ray_job_runner.py"
+            job_params = ray_job_runner.ray_job_params(
+                parquet_folder_path=parquet_folder,
+                tpch_qnum=i,
+                working_dir=working_dir,
+                entrypoint=entrypoint,
+                # runtime_env_pip: list[str],
+                # runtime_env_env_vars: dict[str, str] = {},
+                # runtime_env_py_modules: list[Any] | None = None,
+            )
+            with metrics_builder.collect_metrics(i):
+                ray_job_runner.run_on_ray(
+                    os.env["DAFT_RAY_ADDRESS"],
+                    job_params,
+                )
+
+        else:
+            answer = getattr(answers, f"q{i}")
+            daft_df = answer(get_df)
+
+            with metrics_builder.collect_metrics(i):
+                daft_df.collect()
 
     if csv_output_location:
         logger.info(f"Writing CSV to: {csv_output_location}")
@@ -238,6 +262,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip warming up data before benchmark",
     )
+    parser.add_argument(
+        "--ray_job",
+        action="store_true",
+        help="Submit jobs to Ray instead of using Ray client, most useful when running on a remote cluster",
+    )
 
     args = parser.parse_args()
     if args.output_csv_headers:
@@ -264,4 +293,5 @@ if __name__ == "__main__":
         parquet_folder,
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
+        ray_job=args.ray_job,
     )
