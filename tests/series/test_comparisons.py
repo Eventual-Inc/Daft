@@ -682,3 +682,43 @@ def test_logicalops_pyobjects(op, expected, expected_self) -> None:
     assert op(custom_falses, values).datatype() == DataType.bool()
     assert op(custom_falses, values).to_pylist() == expected
     assert op(custom_falses, custom_falses).to_pylist() == expected_self
+
+
+def test_compare_timestamps_no_tz():
+    from datetime import datetime
+
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    assert (tz1 == tz1).to_pylist() == [True]
+
+
+def test_compare_timestamps_one_tz():
+    from datetime import datetime
+
+    import pytz
+
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    with pytest.raises(ValueError, match="Cannot perform comparison on types"):
+        assert (tz1 == tz2).to_pylist() == [True]
+
+
+def test_compare_timestamps_same_tz():
+    from datetime import datetime
+
+    import pytz
+
+    tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    assert (tz1 == tz2).to_pylist() == [True]
+
+
+def test_compare_timestamps_diff_tz():
+    from datetime import datetime
+
+    import pytz
+
+    utc = datetime(2022, 1, 1, tzinfo=pytz.utc)
+    eastern = utc.astimezone(pytz.timezone("US/Eastern"))
+    tz1 = Series.from_pylist([utc])
+    tz2 = Series.from_pylist([eastern])
+    assert (tz1 == tz2).to_pylist() == [True]
