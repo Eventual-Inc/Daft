@@ -40,21 +40,6 @@ ALL_DTYPES = [
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
 
 
-@pytest.fixture(
-    scope="module",
-    params=ALL_DATATYPES_BINARY_PAIRS,
-    ids=[f"{dt1}-{dt2}" for (dt1, _), (dt2, _) in ALL_DATATYPES_BINARY_PAIRS],
-)
-def binary_data_fixture(request) -> tuple[Series, Series]:
-    """Returns binary permutation of Series' of all DataType pairs"""
-    (dt1, data1), (dt2, data2) = request.param
-    s1 = Series.from_arrow(data1, name="lhs")
-    assert s1.datatype() == dt1
-    s2 = Series.from_arrow(data2, name="rhs")
-    assert s2.datatype() == dt2
-    return (s1, s2)
-
-
 ALL_TEMPORAL_DTYPES = [
     (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
     *[
@@ -94,6 +79,8 @@ ALL_TEMPORAL_DTYPES = [
     ],
 ]
 
+ALL_DTYPES += ALL_TEMPORAL_DTYPES
+
 ALL_TEMPORAL_DATATYPES_BINARY_PAIRS = [
     ((dt1, data1), (dt2, data2))
     for (dt1, data1), (dt2, data2) in itertools.product(ALL_TEMPORAL_DTYPES, repeat=2)
@@ -104,13 +91,15 @@ ALL_TEMPORAL_DATATYPES_BINARY_PAIRS = [
     )
 ]
 
+ALL_DATATYPES_BINARY_PAIRS += ALL_TEMPORAL_DATATYPES_BINARY_PAIRS
+
 
 @pytest.fixture(
     scope="module",
-    params=ALL_TEMPORAL_DATATYPES_BINARY_PAIRS,
-    ids=[f"{dt1}-{dt2}" for (dt1, _), (dt2, _) in ALL_TEMPORAL_DATATYPES_BINARY_PAIRS],
+    params=ALL_DATATYPES_BINARY_PAIRS,
+    ids=[f"{dt1}-{dt2}" for (dt1, _), (dt2, _) in ALL_DATATYPES_BINARY_PAIRS],
 )
-def binary_temporal_data_fixture(request) -> tuple[Series, Series]:
+def binary_data_fixture(request) -> tuple[Series, Series]:
     """Returns binary permutation of Series' of all DataType pairs"""
     (dt1, data1), (dt2, data2) = request.param
     s1 = Series.from_arrow(data1, name="lhs")
@@ -122,8 +111,8 @@ def binary_temporal_data_fixture(request) -> tuple[Series, Series]:
 
 @pytest.fixture(
     scope="module",
-    params=ALL_DTYPES + ALL_TEMPORAL_DTYPES,
-    ids=[f"{dt}" for (dt, _) in ALL_DTYPES + ALL_TEMPORAL_DTYPES],
+    params=ALL_DTYPES,
+    ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
 )
 def unary_data_fixture(request) -> Series:
     """Returns unary permutation of Series' of all DataType pairs"""
