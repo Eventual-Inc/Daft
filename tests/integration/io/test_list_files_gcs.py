@@ -3,10 +3,9 @@ from __future__ import annotations
 import gcsfs
 import pytest
 
-from daft.daft import GCSConfig, IOConfig, io_glob
+from daft.daft import io_glob
 
 BUCKET = "daft-public-data-gs"
-ANON_GCS_CONFIG = GCSConfig(project_id=None, anonymous=True)
 
 
 def gcsfs_recursive_list(fs, path) -> list:
@@ -51,26 +50,26 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
 )
 @pytest.mark.parametrize("recursive", [False, True])
 @pytest.mark.parametrize("fanout_limit", [None, 1])
-def test_gs_flat_directory_listing(path, recursive, fanout_limit):
+def test_gs_flat_directory_listing(gcs_public_config, path, recursive, fanout_limit):
     fs = gcsfs.GCSFileSystem()
     glob_path = path.rstrip("/") + "/**" if recursive else path
-    daft_ls_result = io_glob(glob_path, io_config=IOConfig(gcs=ANON_GCS_CONFIG), fanout_limit=fanout_limit)
+    daft_ls_result = io_glob(glob_path, io_config=gcs_public_config, fanout_limit=fanout_limit)
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("recursive", [False, True])
-def test_gs_single_file_listing(recursive):
+def test_gs_single_file_listing(gcs_public_config, recursive):
     path = f"gs://{BUCKET}/test_ls/file.txt"
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_glob(path, io_config=IOConfig(gcs=ANON_GCS_CONFIG))
+    daft_ls_result = io_glob(path, io_config=gcs_public_config)
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
-def test_gs_notfound():
+def test_gs_notfound(gcs_public_config):
     path = f"gs://{BUCKET}/test_"
     with pytest.raises(FileNotFoundError, match=path):
-        io_glob(path, io_config=IOConfig(gcs=ANON_GCS_CONFIG))
+        io_glob(path, io_config=gcs_public_config)
