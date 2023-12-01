@@ -26,3 +26,14 @@ def test_comparable(binary_data_fixture, op):
         run_kernel=lambda: op(lhs, rhs),
         resolvable=comparable_type_validation(lhs.datatype(), rhs.datatype()),
     )
+
+
+@pytest.mark.parametrize("op", [ops.eq, ops.ne, ops.lt, ops.le, ops.gt, ops.ge])
+def test_temporal_comparable(binary_temporal_data_fixture, op):
+    lhs, rhs = binary_temporal_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=binary_temporal_data_fixture,
+        expr=op(col(lhs.name()), col(rhs.name())),
+        run_kernel=lambda: op(lhs, rhs),
+        resolvable=comparable_type_validation(lhs.datatype(), rhs.datatype()),
+    )

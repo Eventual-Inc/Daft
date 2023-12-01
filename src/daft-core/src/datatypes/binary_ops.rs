@@ -40,12 +40,6 @@ impl DataType {
                 (s, o) if s.is_physical() && o.is_physical() => {
                     Ok((Boolean, None, try_physical_supertype(s, o)?))
                 }
-                // To maintain existing behaviour. TODO: cleanup
-                (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => Ok((
-                    Boolean,
-                    None,
-                    try_physical_supertype(&Date.to_physical(), o)?,
-                )),
                 (Timestamp(..) | Date, Timestamp(..) | Date) => {
                     let intermediate_type = try_get_supertype(self, other)?;
                     let pt = intermediate_type.to_physical();
