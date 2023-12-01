@@ -225,7 +225,6 @@ partitioning_keys:\n",
                     for t in transformed {
                         println!(" {t}");
                     }
-
                 }
             }
 

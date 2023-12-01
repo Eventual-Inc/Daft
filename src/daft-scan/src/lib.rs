@@ -251,6 +251,21 @@ pub enum PartitionTransform {
     Void,
 }
 
+impl PartitionTransform {
+    pub fn supports_equals(&self) -> bool {
+        true
+    }
+
+    pub fn supports_not_equals(&self) -> bool {
+        matches!(self, Self::Identity)
+    }
+
+    pub fn supports_comparison(&self) -> bool {
+        use PartitionTransform::*;
+        matches!(self, Identity | Truncate(_) | Year | Month | Day | Hour)
+    }
+}
+
 impl Display for PartitionTransform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")

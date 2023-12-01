@@ -6,7 +6,9 @@ use std::{
 use common_error::DaftResult;
 use daft_dsl::{
     col,
-    optimization::{get_required_columns, replace_columns_with_expressions, conjuct, split_conjuction},
+    optimization::{
+        conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
+    },
     Expr,
 };
 use daft_scan::ScanExternalInfo;
@@ -17,9 +19,7 @@ use crate::{
     LogicalPlan,
 };
 
-use super::{
-    ApplyOrder, OptimizerRule, Transformed,
-};
+use super::{ApplyOrder, OptimizerRule, Transformed};
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
