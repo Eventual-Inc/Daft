@@ -120,7 +120,12 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
     return _get_df
 
 
-def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None, ray_job: bool):
+def run_all_benchmarks(
+    parquet_folder: str,
+    skip_questions: set[int],
+    csv_output_location: str | None,
+    ray_job_dashboard_url: str | None = None,
+):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     daft_context = get_context()
@@ -131,7 +136,8 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
             logger.warning(f"Skipping TPC-H q{i}")
             continue
 
-        if ray_job:
+        # Run as a Ray Job if dashboard URL is provided
+        if ray_job_dashboard_url is not None:
             import os
             import pathlib
 
@@ -150,10 +156,11 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
             )
             with metrics_builder.collect_metrics(i):
                 ray_job_runner.run_on_ray(
-                    os.env["DAFT_RAY_ADDRESS"],
+                    ray_job_dashboard_url,
                     job_params,
                 )
 
+        # Run locally (potentially on a local Ray cluster)
         else:
             answer = getattr(answers, f"q{i}")
             daft_df = answer(get_df)
@@ -263,9 +270,9 @@ if __name__ == "__main__":
         help="Skip warming up data before benchmark",
     )
     parser.add_argument(
-        "--ray_job",
-        action="store_true",
-        help="Submit jobs to Ray instead of using Ray client, most useful when running on a remote cluster",
+        "--ray_job_dashboard_url",
+        default=None,
+        help="Ray Dashboard URL to submit jobs instead of using Ray client, most useful when running on a remote cluster",
     )
 
     args = parser.parse_args()
@@ -293,5 +300,5 @@ if __name__ == "__main__":
         parquet_folder,
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
-        ray_job=args.ray_job,
+        ray_job_dashboard_url=args.ray_job_dashboard_url,
     )
