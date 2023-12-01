@@ -499,7 +499,7 @@ def test_create_dataframe_csv_specify_schema_no_headers(
             "column_5": DataType.string(),
         }
 
-        if use_native_downloader == False and os.environ.get("DAFT_MICROPARTITIONS", "0") == "0":
+        if use_native_downloader == False and os.environ.get("DAFT_MICROPARTITIONS") == "0":
             schema_hints_for_csv_without_headers = {
                 "f0": DataType.float64(),
                 "f1": DataType.float64(),
