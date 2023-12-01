@@ -4,6 +4,8 @@ import datetime
 import itertools
 import sys
 
+import pytz
+
 if sys.version_info < (3, 8):
     pass
 else:
@@ -33,15 +35,63 @@ ALL_DTYPES = [
     (DataType.bool(), pa.array([True, False, None], type=pa.bool_())),
     (DataType.null(), pa.array([None, None, None], type=pa.null())),
     (DataType.binary(), pa.array([b"1", b"2", None], type=pa.binary())),
-    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
-    # TODO(jay): Some of the fixtures are broken/become very complicated when testing against timestamps
-    # (
-    #     DataType.timestamp(TimeUnit.ms()),
-    #     pa.array([datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None], type=pa.timestamp("ms")),
-    # ),
 ]
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
+
+
+ALL_TEMPORAL_DTYPES = [
+    (DataType.date(), pa.array([datetime.date(2021, 1, 1), datetime.date(2021, 1, 2), None], type=pa.date32())),
+    *[
+        (
+            DataType.timestamp(unit),
+            pa.array([datetime.datetime(2021, 1, 1), datetime.datetime(2021, 1, 2), None], type=pa.timestamp(unit)),
+        )
+        for unit in ["ns", "us", "ms"]
+    ],
+    *[
+        (
+            DataType.timestamp(unit, "US/Eastern"),
+            pa.array(
+                [
+                    datetime.datetime(2021, 1, 1).astimezone(pytz.timezone("US/Eastern")),
+                    datetime.datetime(2021, 1, 2).astimezone(pytz.timezone("US/Eastern")),
+                    None,
+                ],
+                type=pa.timestamp(unit, "US/Eastern"),
+            ),
+        )
+        for unit in ["ns", "us", "ms"]
+    ],
+    *[
+        (
+            DataType.timestamp(unit, "Africa/Accra"),
+            pa.array(
+                [
+                    datetime.datetime(2021, 1, 1).astimezone(pytz.timezone("Africa/Accra")),
+                    datetime.datetime(2021, 1, 2).astimezone(pytz.timezone("Africa/Accra")),
+                    None,
+                ],
+                type=pa.timestamp(unit, "Africa/Accra"),
+            ),
+        )
+        for unit in ["ns", "us", "ms"]
+    ],
+]
+
+ALL_DTYPES += ALL_TEMPORAL_DTYPES
+
+ALL_TEMPORAL_DATATYPES_BINARY_PAIRS = [
+    ((dt1, data1), (dt2, data2))
+    for (dt1, data1), (dt2, data2) in itertools.product(ALL_TEMPORAL_DTYPES, repeat=2)
+    if not (
+        pa.types.is_timestamp(data1.type)
+        and pa.types.is_timestamp(data2.type)
+        and (data1.type.tz is None) ^ (data2.type.tz is None)
+    )
+]
+
+ALL_DATATYPES_BINARY_PAIRS += ALL_TEMPORAL_DATATYPES_BINARY_PAIRS
 
 
 @pytest.fixture(

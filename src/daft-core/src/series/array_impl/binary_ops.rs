@@ -114,17 +114,24 @@ macro_rules! physical_logic_op {
 
 macro_rules! physical_compare_op {
     ($self:expr, $rhs:expr, $op:ident, $pyop:expr) => {{
-        let (output_type, comp_type) = ($self.data_type().comparison_op($rhs.data_type()))?;
+        let (output_type, intermediate, comp_type) =
+            ($self.data_type().comparison_op($rhs.data_type()))?;
         let lhs = $self.into_series();
+        let (lhs, rhs) = if let Some(ref it) = intermediate {
+            (lhs.cast(it)?, $rhs.cast(it)?)
+        } else {
+            (lhs, $rhs.clone())
+        };
+
         use DataType::*;
         if let Boolean = output_type {
             match comp_type {
                 #[cfg(feature = "python")]
-                Python => py_binary_op_bool!(lhs, $rhs, $pyop)
+                Python => py_binary_op_bool!(lhs, rhs, $pyop)
                     .downcast::<BooleanArray>()
                     .cloned(),
                 _ => with_match_comparable_daft_types!(comp_type, |$T| {
-                    cast_downcast_op!(lhs, $rhs, &comp_type, <$T as DaftDataType>::ArrayType, $op)
+                    cast_downcast_op!(lhs, rhs, &comp_type, <$T as DaftDataType>::ArrayType, $op)
                 }),
             }
         } else {
