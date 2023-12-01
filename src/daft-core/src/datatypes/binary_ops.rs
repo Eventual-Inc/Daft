@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::{DaftError, DaftResult};
 
-use crate::impl_binary_trait_by_reference;
+use crate::{impl_binary_trait_by_reference, utils::supertype::try_get_supertype};
 
 use super::DataType;
 
@@ -24,27 +24,43 @@ impl DataType {
             ))
         })
     }
-    pub fn comparison_op(&self, other: &Self) -> DaftResult<(DataType, DataType)> {
+    pub fn comparison_op(
+        &self,
+        other: &Self,
+    ) -> DaftResult<(DataType, Option<DataType>, DataType)> {
         // Whether a comparison op is supported between the two types.
         // Returns:
         // - the output type,
+        // - an optional intermediate type
         // - the type at which the comparison should be performed.
-        use DataType::*;
-        match (self, other) {
-            (s, o) if s == o => Ok(s.to_physical()),
-            (s, o) if s.is_physical() && o.is_physical() => {
-                try_physical_supertype(s, o).map_err(|_| ())
+        let evaluator = || {
+            use DataType::*;
+            match (self, other) {
+                (s, o) if s == o => Ok((Boolean, None, s.to_physical())),
+                (s, o) if s.is_physical() && o.is_physical() => {
+                    Ok((Boolean, None, try_physical_supertype(s, o)?))
+                }
+                // To maintain existing behaviour. TODO: cleanup
+                (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => Ok((
+                    Boolean,
+                    None,
+                    try_physical_supertype(&Date.to_physical(), o)?,
+                )),
+                (Timestamp(..) | Date, Timestamp(..) | Date) => {
+                    let intermediate_type = try_get_supertype(self, other)?;
+                    let pt = intermediate_type.to_physical();
+                    Ok((Boolean, Some(intermediate_type), pt))
+                }
+                _ => Err(DaftError::TypeError(format!(
+                    "Cannot perform comparison on types: {}, {}",
+                    self, other
+                ))),
             }
-            // To maintain existing behaviour. TODO: cleanup
-            (Date, o) | (o, Date) if o.is_physical() && o.clone() != Boolean => {
-                try_physical_supertype(&Date.to_physical(), o).map_err(|_| ())
-            }
-            _ => Err(()),
-        }
-        .map(|comp_type| (Boolean, comp_type))
-        .map_err(|()| {
+        };
+
+        evaluator().map_err(|err| {
             DaftError::TypeError(format!(
-                "Cannot perform comparison on types: {}, {}",
+                "Cannot perform comparison on types: {}, {}\nDetails:\n{err}",
                 self, other
             ))
         })

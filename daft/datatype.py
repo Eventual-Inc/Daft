@@ -194,13 +194,17 @@ class DataType:
         return cls._from_pydatatype(PyDataType.date())
 
     @classmethod
-    def timestamp(cls, timeunit: TimeUnit, timezone: str | None = None) -> DataType:
+    def timestamp(cls, timeunit: TimeUnit | str, timezone: str | None = None) -> DataType:
         """Timestamp DataType."""
+        if isinstance(timeunit, str):
+            timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit, timezone))
 
     @classmethod
-    def duration(cls, timeunit: TimeUnit) -> DataType:
+    def duration(cls, timeunit: TimeUnit | str) -> DataType:
         """Duration DataType."""
+        if isinstance(timeunit, str):
+            timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
 
     @classmethod

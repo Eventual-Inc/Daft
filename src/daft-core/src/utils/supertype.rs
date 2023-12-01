@@ -168,20 +168,20 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             (Duration(_), Date) | (Date, Duration(_)) => Some(Date),
             (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
 
-            // None and Some("") timezones
+            // Some() timezones that are non equal
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
-            (Timestamp(tu_l, tz_l), Timestamp(tu_r, tz_r))
-                if (tz_l.is_none() || tz_l.as_deref() == Some(""))
-                    && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
+            (Timestamp(tu_l, Some(tz_l)), Timestamp(tu_r, Some(tz_r)))
+                if !tz_l.is_empty()
+                    && !tz_r.is_empty() && tz_l != tz_r =>
             {
                 let tu = get_time_units(tu_l, tu_r);
-                Some(Timestamp(tu, None))
+                Some(Timestamp(tu, Some("UTC".to_string())))
             }
             // None and Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
             (Timestamp(tu_l, tz_l), Timestamp(tu_r, tz_r)) if
                 // both are none
-                tz_l.is_none() && tz_r.is_some()
+                tz_l.is_none() && tz_r.is_none()
                 // both have the same time zone
                 || (tz_l.is_some() && (tz_l == tz_r)) => {
                 let tu = get_time_units(tu_l, tu_r);
