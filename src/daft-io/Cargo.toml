@@ -17,7 +17,7 @@ common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
 globset = "0.4"
-hyper = "0.14.27"
+hyper = "1.0.1"
 hyper-tls = "0.5.0"
 itertools = {workspace = true}
 lazy_static = {workspace = true}
