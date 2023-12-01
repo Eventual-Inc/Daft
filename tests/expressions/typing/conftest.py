@@ -16,7 +16,7 @@ import pytest
 from daft.datatype import DataType
 from daft.expressions import Expression, ExpressionsProjection
 from daft.series import Series
-from daft.table import Table
+from daft.table import MicroPartition
 
 ALL_DTYPES = [
     (DataType.int8(), pa.array([1, 2, None], type=pa.int8())),
@@ -93,11 +93,11 @@ def assert_typing_resolve_vs_runtime_behavior(
 
     Args:
         data: data to test against (generated using one of the provided fixtures, `{unary, binary}_data_fixture`)
-        expr (Expression): Expression used to run the kernel in a Table (use `.name()` of the generated data to refer to columns)
+        expr (Expression): Expression used to run the kernel in a MicroPartition (use `.name()` of the generated data to refer to columns)
         run_kernel (Callable): A lambda that will run the kernel directly on the generated Series' without going through the Expressions API
         resolvable (bool): Whether this kernel should be valid, given the datatypes of the generated Series'
     """
-    table = Table.from_pydict({s.name(): s for s in data})
+    table = MicroPartition.from_pydict({s.name(): s for s in data})
     projection = ExpressionsProjection([expr.alias("result")])
     if resolvable:
         # Check that schema resolution and Series runtime return the same datatype

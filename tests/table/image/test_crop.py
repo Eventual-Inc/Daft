@@ -5,7 +5,7 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft.table import Table
+from daft.table import MicroPartition
 
 MODES = ["L", "LA", "RGB", "RGBA"]
 MODE_TO_NP_DTYPE = {
@@ -79,7 +79,7 @@ def mixed_shape_data_fixture(request):
 
 
 def test_image_crop_mixed_shape_same_mode(mixed_shape_data_fixture):
-    table = Table.from_pydict({"images": mixed_shape_data_fixture})
+    table = MicroPartition.from_pydict({"images": mixed_shape_data_fixture})
     result = table.eval_expression_list([daft.col("images").image.crop((1, 1, 1, 1))])
     result = result.to_pydict()
 
@@ -93,7 +93,7 @@ def test_image_crop_mixed_shape_same_mode(mixed_shape_data_fixture):
 def test_image_crop_mixed_shape_same_mode_crop_col(mixed_shape_data_fixture):
     # TODO(jay): Need to fix nested casts -- for now we workaround by creating a nested uint32
     bboxes = pa.array([[1, 1, 1, 1], None, None], type=pa.list_(pa.uint32()))
-    table = Table.from_pydict(
+    table = MicroPartition.from_pydict(
         {
             "images": mixed_shape_data_fixture,
             "bboxes": bboxes,
@@ -110,7 +110,7 @@ def test_image_crop_mixed_shape_same_mode_crop_col(mixed_shape_data_fixture):
 
 
 def test_image_crop_fixed_shape_same_mode(fixed_shape_data_fixture):
-    table = Table.from_pydict({"images": fixed_shape_data_fixture})
+    table = MicroPartition.from_pydict({"images": fixed_shape_data_fixture})
     result = table.eval_expression_list([daft.col("images").image.crop((1, 1, 1, 1))])
     result = result.to_pydict()
 
@@ -124,7 +124,7 @@ def test_image_crop_fixed_shape_same_mode(fixed_shape_data_fixture):
 def test_image_crop_fixed_shape_same_mode_crop_col(fixed_shape_data_fixture):
     # TODO(jay): Need to fix nested casts -- for now we workaround by creating a nested uint32
     bboxes = pa.array([[1, 1, 1, 1], None, None], type=pa.list_(pa.uint32()))
-    table = Table.from_pydict(
+    table = MicroPartition.from_pydict(
         {
             "images": fixed_shape_data_fixture,
             "bboxes": bboxes,
@@ -141,7 +141,7 @@ def test_image_crop_fixed_shape_same_mode_crop_col(fixed_shape_data_fixture):
 
 
 def test_bad_expr_input():
-    table = Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+    table = MicroPartition.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
 
     # Test bad Expression calls
     with pytest.raises(ValueError):

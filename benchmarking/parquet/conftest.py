@@ -41,7 +41,7 @@ def boto3_get_object_read(path: str, columns: list[str] | None = None) -> pa.Tab
 
 
 def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
-    tbl = daft.table.Table.read_parquet(path, columns=columns)
+    tbl = daft.table.MicroPartition.read_parquet(path, columns=columns)
     return tbl.to_arrow()
 
 
@@ -76,7 +76,7 @@ def bulk_read_adapter(func):
 
 
 def daft_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[pa.Table]:
-    tables = daft.table.LegacyTable.read_parquet_bulk(paths, columns=columns)
+    tables = daft.table.Table.read_parquet_bulk(paths, columns=columns)
     return [t.to_arrow() for t in tables]
 
 

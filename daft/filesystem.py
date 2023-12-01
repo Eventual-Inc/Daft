@@ -19,7 +19,7 @@ from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
-from daft.table import Table
+from daft.table import MicroPartition
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,7 @@ def glob_path_with_stats(
 
     # Set number of rows if available.
     if file_format is not None and file_format == FileFormat.Parquet:
-        parquet_statistics = Table.read_parquet_statistics(
+        parquet_statistics = MicroPartition.read_parquet_statistics(
             list(filepaths_to_infos.keys()),
             io_config=io_config,
         ).to_pydict()

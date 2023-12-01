@@ -19,7 +19,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table import Table
+from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pandas as pd

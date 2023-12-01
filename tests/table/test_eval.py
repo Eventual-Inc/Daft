@@ -7,13 +7,13 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, col
-from daft.table import Table
+from daft.table import MicroPartition
 from tests.table import daft_numeric_types
 
 
 def test_table_eval_expressions() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -28,7 +28,7 @@ def test_table_eval_expressions() -> None:
 
 def test_table_eval_expressions_conflict() -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -48,7 +48,7 @@ def test_table_eval_expressions_conflict() -> None:
 )
 def test_table_expr_not(input, expr, expected) -> None:
     """Test logical not expression."""
-    daft_table = Table.from_pydict({"input": input})
+    daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([expr])
     pydict = daft_table.to_pydict()
 
@@ -56,7 +56,7 @@ def test_table_expr_not(input, expr, expected) -> None:
 
 
 def test_table_expr_not_wrong() -> None:
-    daft_table = Table.from_pydict({"input": [None, 0, 1]})
+    daft_table = MicroPartition.from_pydict({"input": [None, 0, 1]})
 
     with pytest.raises(ValueError):
         daft_table = daft_table.eval_expression_list([~col("input")])
@@ -73,7 +73,7 @@ def test_table_expr_not_wrong() -> None:
 )
 def test_table_expr_is_null(input, expected) -> None:
     """Test logical not expression."""
-    daft_table = Table.from_pydict({"input": input})
+    daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").is_null()])
     pydict = daft_table.to_pydict()
 
@@ -89,7 +89,7 @@ def test_table_numeric_expressions(data_dtype, op) -> None:
     a, b = [5, 6, 7, 8], [1, 2, 3, 4]
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     daft_table = daft_table.eval_expression_list(
         [op(col("a").cast(data_dtype), col("b").cast(data_dtype)).alias("result")]
     )
@@ -105,7 +105,7 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
     a, b = [5, 6, None, 8, None], [1, 2, 3, None, None]
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     daft_table = daft_table.eval_expression_list(
         [op(col("a").cast(data_dtype), col("b").cast(data_dtype)).alias("result")]
     )
@@ -119,7 +119,7 @@ def test_table_numeric_expressions_with_nulls(data_dtype, op) -> None:
 
 
 def test_table_numeric_abs() -> None:
-    table = Table.from_pydict({"a": [None, -1.0, 0, 2, 3, None], "b": [-1, -2, 3, 4, None, None]})
+    table = MicroPartition.from_pydict({"a": [None, -1.0, 0, 2, 3, None], "b": [-1, -2, 3, 4, None, None]})
 
     abs_table = table.eval_expression_list([abs(col("a")), col("b").abs()])
 
@@ -132,7 +132,7 @@ def test_table_numeric_abs() -> None:
 
 
 def test_table_abs_bad_input() -> None:
-    table = Table.from_pydict({"a": ["a", "b", "c"]})
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
 
     with pytest.raises(ValueError, match="Expected input to abs to be numeric"):
         table.eval_expression_list([abs(col("a"))])

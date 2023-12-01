@@ -33,7 +33,7 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -184,7 +184,7 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[Table, "RayObjectRef"]]:
+    def iter_partitions(self) -> Iterator[Union[MicroPartition, "RayObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
@@ -236,7 +236,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = Table.from_pydict(data)
+        data_vpartition = MicroPartition.from_pydict(data)
         return cls._from_tables(data_vpartition)
 
     @classmethod
@@ -244,7 +244,7 @@ class DataFrame:
         """Creates a DataFrame from a pyarrow Table."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_arrow(table) for table in data]
+        data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
@@ -252,11 +252,11 @@ class DataFrame:
         """Creates a Daft DataFrame from a pandas DataFrame."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_pandas(df) for df in data]
+        data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    def _from_tables(cls, *parts: Table) -> "DataFrame":
+    def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
         """Creates a Daft DataFrame from a single Table.
 
         Args:
@@ -1036,7 +1036,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = Table.concat(tables)
+            preview_partition = MicroPartition.concat(tables)
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:

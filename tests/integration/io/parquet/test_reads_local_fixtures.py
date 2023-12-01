@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from daft.table import Table
+from daft.table import MicroPartition
 
 BUCKETS = ["head-retries-parquet-bucket", "get-retries-parquet-bucket"]
 
@@ -16,7 +16,7 @@ def test_non_retryable_errors(retry_server_s3_config, status_code: tuple[int, st
     status_code, status_code_str = status_code
     data_path = f"s3://{bucket}/{status_code}/{status_code_str}/1/{uuid.uuid4()}"
     with pytest.raises((FileNotFoundError, ValueError)):
-        Table.read_parquet(data_path, io_config=retry_server_s3_config)
+        MicroPartition.read_parquet(data_path, io_config=retry_server_s3_config)
 
 
 @pytest.mark.integration()
@@ -48,4 +48,4 @@ def test_retryable_errors(retry_server_s3_config, status_code: tuple[int, str], 
     status_code, status_code_str = status_code
     data_path = f"s3://{bucket}/{status_code}/{status_code_str}/{NUM_ERRORS}/{uuid.uuid4()}"
 
-    Table.read_parquet(data_path, io_config=retry_server_s3_config)
+    MicroPartition.read_parquet(data_path, io_config=retry_server_s3_config)

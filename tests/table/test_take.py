@@ -8,15 +8,15 @@ import pytest
 from daft import col
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table import Table
+from daft.table import MicroPartition
 from tests.table import daft_int_types, daft_numeric_types
 
 
 @pytest.mark.parametrize(
     "mp",
     [
-        Table.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
-        Table.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
+        MicroPartition.from_pydict({"a": pa.array([], type=pa.int64())}),  # 1 empty table
+        MicroPartition.empty(Schema.from_pyarrow_schema(pa.schema({"a": pa.int64()}))),  # No tables
     ],
 )
 def test_micropartitions_take_empty(mp) -> None:
@@ -37,17 +37,17 @@ def test_micropartitions_take_empty(mp) -> None:
 @pytest.mark.parametrize(
     "mp",
     [
-        Table.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
-        Table.concat(
+        MicroPartition.from_pydict({"a": [1, 2, 3, 4]}),  # 1 table
+        MicroPartition.concat(
             [
-                Table.from_pydict({"a": pa.array([], type=pa.int64())}),
-                Table.from_pydict({"a": [1]}),
-                Table.from_pydict({"a": [2, 3, 4]}),
+                MicroPartition.from_pydict({"a": pa.array([], type=pa.int64())}),
+                MicroPartition.from_pydict({"a": [1]}),
+                MicroPartition.from_pydict({"a": [2, 3, 4]}),
             ]
         ),  # 3 tables
     ],
 )
-def test_micropartitions_take(mp: Table) -> None:
+def test_micropartitions_take(mp: MicroPartition) -> None:
     assert mp.column_names() == ["a"]
     assert len(mp) == 4
 
@@ -73,7 +73,7 @@ def test_micropartitions_take(mp: Table) -> None:
 @pytest.mark.parametrize("data_dtype, idx_dtype", itertools.product(daft_numeric_types, daft_int_types))
 def test_table_take_numeric(data_dtype, idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     daft_table = daft_table.eval_expression_list([col("a").cast(data_dtype), col("b")])
 
     assert len(daft_table) == 4
@@ -107,7 +107,7 @@ def test_table_take_numeric(data_dtype, idx_dtype) -> None:
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
 def test_table_take_str(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": ["1", "2", "3", "4"], "b": ["5", "6", "7", "8"]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -139,7 +139,7 @@ def test_table_take_str(idx_dtype) -> None:
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
 def test_table_take_bool(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [False, True, False, True], "b": [True, False, True, False]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -171,7 +171,7 @@ def test_table_take_bool(idx_dtype) -> None:
 @pytest.mark.parametrize("idx_dtype", daft_int_types)
 def test_table_take_null(idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [None, None, None, None], "b": [None, None, None, None]})
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 
@@ -186,7 +186,7 @@ def test_table_take_null(idx_dtype) -> None:
 
 def test_table_take_pyobject() -> None:
     objects = [object(), None, object(), object()]
-    daft_table = Table.from_pydict({"objs": objects})
+    daft_table = MicroPartition.from_pydict({"objs": objects})
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["objs"]
 
@@ -223,7 +223,7 @@ def test_table_take_fixed_size_list(idx_dtype) -> None:
             "b": pa.array([[4, 5], [6, None], None, [None, None]], type=pa.list_(pa.int64(), 2)),
         }
     )
-    daft_table = Table.from_arrow(pa_table)
+    daft_table = MicroPartition.from_arrow(pa_table)
     assert len(daft_table) == 4
     assert daft_table.column_names() == ["a", "b"]
 

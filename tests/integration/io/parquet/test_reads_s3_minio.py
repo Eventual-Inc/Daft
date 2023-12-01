@@ -38,7 +38,7 @@ def test_minio_parquet_read_no_files(minio_io_config):
 
         msg = (
             "Glob path had no matches:"
-            if os.getenv("DAFT_MICROPARTITIONS") == "1"
+            if os.getenv("DAFT_MICROPARTITIONS", "1") == "1"
             else "No files found at s3://data-engineering-prod/foo/\\*\\*.parquet"
         )
         with pytest.raises(FileNotFoundError, match=msg):
