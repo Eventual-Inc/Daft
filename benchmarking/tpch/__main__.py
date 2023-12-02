@@ -155,7 +155,7 @@ def run_all_benchmarks(
             # Run once as a warmup step
             ray_job_runner.run_on_ray(
                 ray_job_dashboard_url,
-                job_params,
+                {**job_params, "submission_id": job_params["submission_id"] + "-warmup"},
             )
 
             # Run second time to collect metrics
