@@ -6,6 +6,7 @@ import csv
 import logging
 import math
 import os
+import pathlib
 import platform
 import socket
 import subprocess
@@ -139,9 +140,6 @@ def run_all_benchmarks(
 
         # Run as a Ray Job if dashboard URL is provided
         if ray_job_dashboard_url is not None:
-            import os
-            import pathlib
-
             from benchmarking.tpch import ray_job_runner
 
             working_dir = pathlib.Path(os.path.dirname(__file__))
@@ -196,6 +194,7 @@ def get_ray_runtime_env(requirements: str | None) -> dict:
     runtime_env = {
         "py_modules": [daft],
         "eager_install": True,
+        "env_vars": {"DAFT_PROGRESS_BAR": "0"},
     }
     if requirements:
         runtime_env.update({"pip": requirements})

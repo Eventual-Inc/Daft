@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import Callable
 
-from ray.job_submission import JobSubmissionClient
+from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
 
@@ -42,7 +42,9 @@ def run_on_ray(ray_address: str, job_params: dict, timeout_s: int = 1500):
 
     status = client.get_job_status(job_id)
     assert status.is_terminal(), "Job should have terminated"
-    client.get_job_info(job_id)
+    if status != JobStatus.SUCCEEDED:
+        job_info = client.get_job_info(job_id)
+        raise RuntimeError(f"Job failed with {job_info.error_type} error: {job_info.message}")
     print(f"Job completed with {status}")
 
 
