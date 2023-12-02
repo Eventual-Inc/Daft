@@ -6,7 +6,7 @@ import os
 import pathlib
 import time
 import uuid
-from typing import Any, Callable
+from typing import Callable
 
 from ray.job_submission import JobSubmissionClient
 
@@ -51,18 +51,14 @@ def ray_job_params(
     tpch_qnum: int,
     working_dir: pathlib.Path,
     entrypoint: pathlib.Path,
-    runtime_env_pip: list[str] = [],
-    runtime_env_env_vars: dict[str, str] = {},
-    runtime_env_py_modules: list[Any] | None = None,
+    runtime_env: dict,
 ) -> dict:
     return dict(
         submission_id=f"tpch-q{tpch_qnum}-{str(uuid.uuid4())[:4]}",
         entrypoint=f"python {str(entrypoint.relative_to(working_dir))} --parquet-folder {parquet_folder_path} --question-number {tpch_qnum}",
         runtime_env={
             "working_dir": str(working_dir),
-            "pip": runtime_env_pip,
-            "env_vars": runtime_env_env_vars,
-            "py_modules": runtime_env_py_modules,
+            **runtime_env,
         },
     )
 

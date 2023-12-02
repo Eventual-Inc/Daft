@@ -125,6 +125,7 @@ def run_all_benchmarks(
     skip_questions: set[int],
     csv_output_location: str | None,
     ray_job_dashboard_url: str | None = None,
+    requirements: str | None = None,
 ):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
@@ -150,9 +151,7 @@ def run_all_benchmarks(
                 tpch_qnum=i,
                 working_dir=working_dir,
                 entrypoint=entrypoint,
-                # runtime_env_pip: list[str],
-                # runtime_env_env_vars: dict[str, str] = {},
-                # runtime_env_py_modules: list[Any] | None = None,
+                runtime_env=get_ray_runtime_env(requirements),
             )
             with metrics_builder.collect_metrics(i):
                 ray_job_runner.run_on_ray(
@@ -193,16 +192,22 @@ def get_daft_version() -> str:
     return daft.get_version()
 
 
+def get_ray_runtime_env(requirements: str | None) -> dict:
+    runtime_env = {
+        "py_modules": [daft],
+        "eager_install": True,
+    }
+    if requirements:
+        runtime_env.update({"pip": requirements})
+    return runtime_env
+
+
 def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
     if ctx.runner_config.name == "ray":
-        runtime_env = {"py_modules": [daft]}
-        if requirements:
-            runtime_env.update({"pip": requirements})
-        if runtime_env:
-            runtime_env.update({"eager_install": True})
+        runtime_env = get_ray_runtime_env(requirements)
 
         ray.init(
             address=ctx.runner_config.address,
@@ -301,4 +306,5 @@ if __name__ == "__main__":
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
         ray_job_dashboard_url=args.ray_job_dashboard_url,
+        requirements=args.requirements,
     )
