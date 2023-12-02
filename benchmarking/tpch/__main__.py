@@ -194,7 +194,10 @@ def get_ray_runtime_env(requirements: str | None) -> dict:
     runtime_env = {
         "py_modules": [daft],
         "eager_install": True,
-        "env_vars": {"DAFT_PROGRESS_BAR": "0"},
+        "env_vars": {
+            "DAFT_PROGRESS_BAR": "0",
+            "DAFT_MICROPARTITIONS": "0",
+        },
     }
     if requirements:
         runtime_env.update({"pip": requirements})
