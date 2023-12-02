@@ -64,7 +64,15 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         return idx in self._partitions
 
     def __len__(self) -> int:
-        return sum([len(self._partitions[pid]) for pid in self._partitions])
+        return sum(len(partition) for partition in self._partitions.values())
+
+    def size_bytes(self) -> int | None:
+        size_bytes_ = [partition.size_bytes() for partition in self._partitions.values()]
+        size_bytes: list[int] = [size for size in size_bytes_ if size is not None]
+        if len(size_bytes) != len(size_bytes_):
+            return None
+        else:
+            return sum(size_bytes)
 
     def num_partitions(self) -> int:
         return len(self._partitions)

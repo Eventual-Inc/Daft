@@ -48,9 +48,12 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet({0: file_infos_table})
     cache_entry = context.runner().put_partition_set_into_cache(partition)
+    size_bytes = partition.size_bytes()
+    assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
     builder = LogicalPlanBuilder.from_in_memory_scan(
         cache_entry,
         schema=file_infos_table.schema(),
         num_partitions=partition.num_partitions(),
+        size_bytes=size_bytes,
     )
     return DataFrame(builder)

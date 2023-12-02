@@ -629,12 +629,21 @@ class Join(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
     how: JoinType
+    is_swapped: bool
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._join(inputs)
 
     def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        [left, right] = inputs
+        *lefts, right = inputs
+        if len(lefts) > 1:
+            left = MicroPartition.concat(lefts)
+        else:
+            left = lefts[0]
+        if self.is_swapped:
+            # Swap left/right back.
+            # We don't need to swap left_on and right_on since those were never swapped in the first place.
+            left, right = right, left
         result = left.join(
             right,
             left_on=self.left_on,

@@ -176,6 +176,10 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
     @abstractmethod
+    def size_bytes(self) -> int | None:
+        raise NotImplementedError()
+
+    @abstractmethod
     def num_partitions(self) -> int:
         raise NotImplementedError()
 
@@ -207,6 +211,9 @@ class PartitionCacheEntry:
 
     def num_partitions(self) -> int | None:
         return self.value.num_partitions() if self.value is not None else None
+
+    def size_bytes(self) -> int | None:
+        return self.value.size_bytes() if self.value is not None else None
 
 
 class PartitionSetCache:

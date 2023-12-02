@@ -52,7 +52,8 @@ pub enum PhysicalPlan {
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Concat(Concat),
-    Join(Join),
+    HashJoin(HashJoin),
+    BroadcastJoin(BroadcastJoin),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -135,7 +136,7 @@ impl PhysicalPlan {
                 None,
             )
             .into(),
-            Self::Join(Join {
+            Self::HashJoin(HashJoin {
                 left,
                 right,
                 left_on,
@@ -159,9 +160,34 @@ impl PhysicalPlan {
                     .into(),
                 }
             }
+            Self::BroadcastJoin(BroadcastJoin { right, .. }) => right.partition_spec(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
+        }
+    }
+
+    pub fn approximate_size_bytes(&self) -> Option<usize> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
+                Some(in_memory_info.size_bytes)
+            }
+            Self::TabularScan(TabularScan { scan_tasks, .. }) => scan_tasks
+                .iter()
+                .map(|scan_task| scan_task.size_bytes())
+                .sum::<Option<usize>>(),
+            // Propagate child approximation for operations that don't affect cardinality.
+            Self::Coalesce(Coalesce { input, .. })
+            | Self::FanoutByHash(FanoutByHash { input, .. })
+            | Self::FanoutByRange(FanoutByRange { input, .. })
+            | Self::FanoutRandom(FanoutRandom { input, .. })
+            | Self::Flatten(Flatten { input, .. })
+            | Self::ReduceMerge(ReduceMerge { input, .. })
+            | Self::Sort(Sort { input, .. })
+            | Self::Split(Split { input, .. }) => input.approximate_size_bytes(),
+            // TODO(Clark): Add size bytes estimates for other operators.
+            _ => None,
         }
     }
 }
@@ -582,7 +608,7 @@ impl PhysicalPlan {
                     .call1((upstream_input_iter, upstream_other_iter))?;
                 Ok(py_iter.into())
             }
-            PhysicalPlan::Join(Join {
+            PhysicalPlan::HashJoin(HashJoin {
                 left,
                 right,
                 left_on,
@@ -602,13 +628,44 @@ impl PhysicalPlan {
                     .collect();
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                    .getattr(pyo3::intern!(py, "join"))?
+                    .getattr(pyo3::intern!(py, "hash_join"))?
                     .call1((
                         upstream_left_iter,
                         upstream_right_iter,
                         left_on_pyexprs,
                         right_on_pyexprs,
                         *join_type,
+                    ))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::BroadcastJoin(BroadcastJoin {
+                left,
+                right,
+                left_on,
+                right_on,
+                join_type,
+                is_swapped,
+            }) => {
+                let upstream_left_iter = left.to_partition_tasks(py, psets, is_ray_runner)?;
+                let upstream_right_iter = right.to_partition_tasks(py, psets, is_ray_runner)?;
+                let left_on_pyexprs: Vec<PyExpr> = left_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let right_on_pyexprs: Vec<PyExpr> = right_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "broadcast_join"))?
+                    .call1((
+                        upstream_left_iter,
+                        upstream_right_iter,
+                        left_on_pyexprs,
+                        right_on_pyexprs,
+                        *join_type,
+                        *is_swapped,
                     ))?;
                 Ok(py_iter.into())
             }

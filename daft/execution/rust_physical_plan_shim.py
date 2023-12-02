@@ -188,7 +188,7 @@ def reduce_merge(
     return physical_plan.reduce(input, reduce_instruction)
 
 
-def join(
+def hash_join(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
@@ -197,12 +197,32 @@ def join(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
-    return physical_plan.join(
+    return physical_plan.hash_join(
         left_plan=input,
         right_plan=right,
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+    )
+
+
+def broadcast_join(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    right: physical_plan.InProgressPhysicalPlan[PartitionT],
+    left_on: list[PyExpr],
+    right_on: list[PyExpr],
+    join_type: JoinType,
+    is_swapped: bool,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
+    right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
+    return physical_plan.broadcast_join(
+        broadcaster_plan=input,
+        reciever_plan=right,
+        left_on=left_on_expr_proj,
+        right_on=right_on_expr_proj,
+        how=join_type,
+        is_swapped=is_swapped,
     )
 
 

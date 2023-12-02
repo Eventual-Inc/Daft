@@ -195,6 +195,7 @@ def set_config(
     config: PyDaftConfig | None = None,
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
+    broadcast_join_size_bytes_threshold: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution
 
@@ -203,10 +204,12 @@ def set_config(
             that the old (current) config should be used.
         merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
-            which leads to bigger but fewer partitions. (Defaults to 64MB)
+            which leads to bigger but fewer partitions. (Defaults to 64 MiB)
         merge_scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
-            fewer partitions. (Defaults to 512MB)
+            fewer partitions. (Defaults to 512 MiB)
+        broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
+            Default is 10 MiB.
     """
     ctx = get_context()
     if ctx.disallow_set_runner:
@@ -220,6 +223,7 @@ def set_config(
     new_daft_config = old_daft_config.with_config_values(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
+        broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
     )
 
     ctx.daft_config = new_daft_config

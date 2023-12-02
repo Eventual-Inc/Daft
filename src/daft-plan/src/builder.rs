@@ -57,12 +57,14 @@ impl LogicalPlanBuilder {
         cache_entry: PyObject,
         schema: Arc<Schema>,
         num_partitions: usize,
+        size_bytes: usize,
     ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
             num_partitions,
+            size_bytes,
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
@@ -285,12 +287,14 @@ impl PyLogicalPlanBuilder {
         cache_entry: &PyAny,
         schema: PySchema,
         num_partitions: usize,
+        size_bytes: usize,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
             cache_entry.to_object(cache_entry.py()),
             schema.into(),
             num_partitions,
+            size_bytes,
         )?
         .into())
     }
