@@ -76,7 +76,7 @@ if __name__ == "__main__":
     parser.add_argument("--question-number", help="Question number to run", required=True)
     args = parser.parse_args()
 
-    from . import answers
+    import answers
 
     get_df = get_df_with_parquet_folder(args.parquet_folder)
     answer = getattr(answers, f"q{args.question_number}")
