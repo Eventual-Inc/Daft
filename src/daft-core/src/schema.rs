@@ -87,6 +87,21 @@ impl Schema {
         }
     }
 
+    pub fn apply_hints(&self, hints: &Schema) -> DaftResult<Schema> {
+        let applied_fields = self
+            .fields
+            .iter()
+            .map(|(name, field)| match hints.fields.get(name) {
+                None => (name.clone(), field.clone()),
+                Some(hint_field) => (name.clone(), hint_field.clone()),
+            })
+            .collect::<IndexMap<String, Field>>();
+
+        Ok(Schema {
+            fields: applied_fields,
+        })
+    }
+
     pub fn to_arrow(&self) -> DaftResult<arrow2::datatypes::Schema> {
         let arrow_fields: DaftResult<Vec<arrow2::datatypes::Field>> =
             self.fields.iter().map(|(_, f)| f.to_arrow()).collect();

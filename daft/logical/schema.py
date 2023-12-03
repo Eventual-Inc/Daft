@@ -141,6 +141,12 @@ class Schema:
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 
+    def apply_hints(self, other: Schema) -> Schema:
+        if not isinstance(other, Schema):
+            raise ValueError(f"Expected Schema, got other: {type(other)}")
+
+        return Schema._from_pyschema(self._schema.apply_hints(other._schema))
+
     def __reduce__(self) -> tuple:
         return Schema._from_pyschema, (self._schema,)
 

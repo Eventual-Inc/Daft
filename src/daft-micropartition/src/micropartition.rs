@@ -381,8 +381,7 @@ impl MicroPartition {
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
-
-                read_parquet_into_micropartition(
+                let mp = read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
                     None,
@@ -399,7 +398,15 @@ impl MicroPartition {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
                 )
-                .context(DaftCoreComputeSnafu)
+                .context(DaftCoreComputeSnafu)?;
+
+                let applied_schema = Arc::new(
+                    mp.schema
+                        .apply_hints(&schema)
+                        .context(DaftCoreComputeSnafu)?,
+                );
+                mp.cast_to_schema(applied_schema)
+                    .context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
