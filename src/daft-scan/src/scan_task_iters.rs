@@ -67,13 +67,13 @@ impl Iterator for MergeByFileSize {
                 match (should_merge, should_yield_merged_result) {
                     // Merge and yield the merged result immediately
                     (true, true) => Some(Ok(Arc::new(
-                        ScanTask::merge(child_item.as_ref(), accumulator.as_ref())
+                        ScanTask::merge(accumulator.as_ref(), child_item.as_ref())
                             .expect("ScanTasks should be mergeable in MergeByFileSize"),
                     ))),
                     // Merge and continue iterating and accumulating without yielding a result right now
                     (true, false) => {
                         self.accumulator = Some(Arc::new(
-                            ScanTask::merge(child_item.as_ref(), accumulator.as_ref())
+                            ScanTask::merge(accumulator.as_ref(), child_item.as_ref())
                                 .expect("ScanTasks should be mergeable in MergeByFileSize"),
                         ));
                         self.next()
