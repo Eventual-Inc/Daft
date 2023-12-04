@@ -16,7 +16,7 @@ pub mod file_format;
 mod glob;
 #[cfg(feature = "python")]
 pub mod py_object_serde;
-mod scan_task_iters;
+pub mod scan_task_iters;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -185,7 +185,7 @@ impl ScanTask {
         }
     }
 
-    pub fn merge(sc1: ScanTask, sc2: ScanTask) -> Result<ScanTask, Error> {
+    pub fn merge(sc1: &ScanTask, sc2: &ScanTask) -> Result<ScanTask, Error> {
         if sc1.partition_spec() != sc2.partition_spec() {
             return Err(Error::MergeScanTask {
                 msg: format!(
@@ -231,11 +231,15 @@ impl ScanTask {
             });
         }
         Ok(ScanTask::new(
-            [sc1.sources, sc2.sources].concat(),
-            sc1.file_format_config,
-            sc1.schema,
-            sc1.storage_config,
-            sc1.pushdowns,
+            sc1.sources
+                .clone()
+                .into_iter()
+                .chain(sc2.sources.clone())
+                .collect(),
+            sc1.file_format_config.clone(),
+            sc1.schema.clone(),
+            sc1.storage_config.clone(),
+            sc1.pushdowns.clone(),
         ))
     }
 

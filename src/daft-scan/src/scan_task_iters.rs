@@ -1,32 +1,36 @@
-use crate::ScanTask;
+use std::sync::Arc;
 
-trait ScanTaskIterator: Iterator<Item = ScanTask> + Sized {
-    /// Coalesces ScanTasks in the iterator by their filesize
-    fn merge_by_sizes(self, target_filesize: usize) -> MergeByFileSize<Self> {
-        MergeByFileSize {
-            iter: self,
-            target_filesize,
-            buffer: std::default::Default::default(),
-        }
-    }
+use common_error::DaftResult;
+
+use crate::{ScanTask, ScanTaskRef};
+
+type BoxScanTaskIter = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>;
+
+/// Coalesces ScanTasks by their filesizes
+pub fn merge_by_sizes(scan_tasks: BoxScanTaskIter, target_filesize: usize) -> BoxScanTaskIter {
+    Box::new(MergeByFileSize {
+        iter: scan_tasks,
+        target_filesize,
+        buffer: std::default::Default::default(),
+    })
 }
 
-struct MergeByFileSize<I: ScanTaskIterator> {
-    iter: I,
+struct MergeByFileSize {
+    iter: BoxScanTaskIter,
     target_filesize: usize,
 
     // HACK: we use a Vec instead of IndexMap because PartitionSpec is not Hashable
     // This might potentially be very slow. We should explore another option here?
     // Could be easier to make `PartitionSpec: Hash` if we don't use a `Table` under the hood.
-    buffer: Vec<ScanTask>,
+    buffer: Vec<ScanTaskRef>,
 }
 
-impl<I: ScanTaskIterator> Iterator for MergeByFileSize<I> {
-    type Item = ScanTask;
+impl Iterator for MergeByFileSize {
+    type Item = DaftResult<ScanTaskRef>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
-            Some(child_item) => {
+            Some(Ok(child_item)) => {
                 // Try to find matches in the buffer to perform merging operations
                 for (idx, buffered_item) in self.buffer.iter().enumerate() {
                     if child_item.partition_spec() == buffered_item.partition_spec()
@@ -43,17 +47,20 @@ impl<I: ScanTaskIterator> Iterator for MergeByFileSize<I> {
                             (Some(child_item_size), Some(buffered_item_size))
                                 if child_item_size + buffered_item_size <= self.target_filesize =>
                             {
-                                let merged_scan_task = ScanTask::merge(child_item, matched_item)
-                                    .expect(
+                                let merged_scan_task = ScanTask::merge(
+                                    child_item.as_ref(),
+                                    &matched_item,
+                                )
+                                .expect(
                                     "Should be able to merge ScanTasks if all invariants are met",
                                 );
-                                self.buffer.push(merged_scan_task);
+                                self.buffer.push(Arc::new(merged_scan_task));
                                 return self.next();
                             }
                             // Otherwise place the current child ScanTask into the buffer and yield the matched ScanTask
                             _ => {
                                 self.buffer.push(child_item);
-                                return Some(matched_item);
+                                return Some(Ok(matched_item));
                             }
                         }
                     }
@@ -62,10 +69,10 @@ impl<I: ScanTaskIterator> Iterator for MergeByFileSize<I> {
                 self.buffer.push(child_item);
                 self.next()
             }
+            // Bubble up errors from child iterator
+            Some(Err(e)) => Some(Err(e)),
             // Iterator ran out of elements, we now flush the buffer
-            None => self.buffer.pop(),
+            None => Ok(self.buffer.pop()).transpose(),
         }
     }
 }
-
-impl<I: ScanTaskIterator> ScanTaskIterator for MergeByFileSize<I> {}

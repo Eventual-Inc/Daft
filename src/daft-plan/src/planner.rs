@@ -76,11 +76,13 @@ pub fn plan(logical_plan: &LogicalPlan) -> DaftResult<PhysicalPlan> {
                 scan_op,
                 ..
             })) => {
-                let scan_tasks = scan_op
-                    .0
-                    .to_scan_tasks(pushdowns.clone())?
-                    .collect::<DaftResult<Vec<_>>>()?;
+                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
 
+                // Apply transformations on the ScanTasks to optimize
+                let scan_tasks =
+                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, 128 * 1024 * 1024);
+
+                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 let partition_spec = Arc::new(PartitionSpec::new_internal(
                     PartitionScheme::Unknown,
                     scan_tasks.len(),
