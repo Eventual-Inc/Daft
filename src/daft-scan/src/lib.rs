@@ -33,8 +33,45 @@ pub enum Error {
     #[cfg(feature = "python")]
     PyIO { source: PyErr },
 
-    #[snafu(display("Error when merging ScanTasks: {}", msg))]
-    MergeScanTask { msg: String },
+    #[snafu(display(
+        "PartitionSpecs were different during ScanTask::merge: {:?} vs {:?}",
+        ps1,
+        ps2
+    ))]
+    DifferingPartitionSpecsInScanTaskMerge {
+        ps1: Option<PartitionSpec>,
+        ps2: Option<PartitionSpec>,
+    },
+
+    #[snafu(display("Schemas were different during ScanTask::merge: {} vs {}", s1, s2))]
+    DifferingSchemasInScanTaskMerge { s1: SchemaRef, s2: SchemaRef },
+
+    #[snafu(display(
+        "FileFormatConfigs were different during ScanTask::merge: {:?} vs {:?}",
+        ffc1,
+        ffc2
+    ))]
+    DifferingFileFormatConfigsInScanTaskMerge {
+        ffc1: Arc<FileFormatConfig>,
+        ffc2: Arc<FileFormatConfig>,
+    },
+
+    #[snafu(display(
+        "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
+        sc1,
+        sc2
+    ))]
+    DifferingStorageConfigsInScanTaskMerge {
+        sc1: Arc<StorageConfig>,
+        sc2: Arc<StorageConfig>,
+    },
+
+    #[snafu(display(
+        "Pushdowns were different during ScanTask::merge: {:?} vs {:?}",
+        p1,
+        p2
+    ))]
+    DifferingPushdownsInScanTaskMerge { p1: Pushdowns, p2: Pushdowns },
 }
 
 impl From<Error> for DaftError {
@@ -186,47 +223,33 @@ impl ScanTask {
 
     pub fn merge(sc1: &ScanTask, sc2: &ScanTask) -> Result<ScanTask, Error> {
         if sc1.partition_spec() != sc2.partition_spec() {
-            return Err(Error::MergeScanTask {
-                msg: format!(
-                    "Cannot merge ScanTasks with differing PartitionSpecs: {:?} vs {:?}",
-                    sc1.partition_spec(),
-                    sc2.partition_spec()
-                ),
+            return Err(Error::DifferingPartitionSpecsInScanTaskMerge {
+                ps1: sc1.partition_spec().cloned(),
+                ps2: sc2.partition_spec().cloned(),
             });
         }
         if sc1.file_format_config != sc2.file_format_config {
-            return Err(Error::MergeScanTask {
-                msg: format!(
-                    "Cannot merge ScanTasks with differing FileFormatConfigs: {:?} vs {:?}",
-                    sc1.file_format_config.as_ref(),
-                    sc2.file_format_config.as_ref()
-                ),
+            return Err(Error::DifferingFileFormatConfigsInScanTaskMerge {
+                ffc1: sc1.file_format_config.clone(),
+                ffc2: sc2.file_format_config.clone(),
             });
         }
         if sc1.schema != sc2.schema {
-            return Err(Error::MergeScanTask {
-                msg: format!(
-                    "Cannot merge ScanTasks with differing Schema: {} vs {}",
-                    sc1.schema.as_ref(),
-                    sc2.schema.as_ref()
-                ),
+            return Err(Error::DifferingSchemasInScanTaskMerge {
+                s1: sc1.schema.clone(),
+                s2: sc2.schema.clone(),
             });
         }
         if sc1.storage_config != sc2.storage_config {
-            return Err(Error::MergeScanTask {
-                msg: format!(
-                    "Cannot merge ScanTasks with differing StorageConfigs: {:?} vs {:?}",
-                    sc1.storage_config.as_ref(),
-                    sc2.storage_config.as_ref()
-                ),
+            return Err(Error::DifferingStorageConfigsInScanTaskMerge {
+                sc1: sc1.storage_config.clone(),
+                sc2: sc2.storage_config.clone(),
             });
         }
         if sc1.pushdowns != sc2.pushdowns {
-            return Err(Error::MergeScanTask {
-                msg: format!(
-                    "Cannot merge ScanTasks with differing Pushdowns: {:?} vs {:?}",
-                    sc1.pushdowns, sc2.pushdowns
-                ),
+            return Err(Error::DifferingPushdownsInScanTaskMerge {
+                p1: sc1.pushdowns.clone(),
+                p2: sc2.pushdowns.clone(),
             });
         }
         Ok(ScanTask::new(
