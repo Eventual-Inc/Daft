@@ -16,6 +16,7 @@ pub mod file_format;
 mod glob;
 #[cfg(feature = "python")]
 pub mod py_object_serde;
+mod scan_task_iters;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -31,6 +32,9 @@ use storage_config::StorageConfig;
 pub enum Error {
     #[cfg(feature = "python")]
     PyIO { source: PyErr },
+
+    #[snafu(display("Error when merging ScanTasks: {}", msg))]
+    MergeScanTask { msg: String },
 }
 
 impl From<Error> for DaftError {
@@ -108,6 +112,13 @@ impl DataFileSource {
             | Self::CatalogDataFile { statistics, .. } => statistics.as_ref(),
         }
     }
+
+    pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
+        match self {
+            Self::AnonymousDataFile { partition_spec, .. } => partition_spec.as_ref(),
+            Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -132,6 +143,13 @@ impl ScanTask {
         pushdowns: Pushdowns,
     ) -> Self {
         assert!(!sources.is_empty());
+        let first_pspec = sources.first().unwrap().get_partition_spec();
+        assert!(
+            sources
+                .iter()
+                .all(|s| s.get_partition_spec() == first_pspec),
+            "ScanTask sources must all have the same PartitionSpec at construction",
+        );
         let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
@@ -167,6 +185,60 @@ impl ScanTask {
         }
     }
 
+    pub fn merge(sc1: ScanTask, sc2: ScanTask) -> Result<ScanTask, Error> {
+        if sc1.partition_spec() != sc2.partition_spec() {
+            return Err(Error::MergeScanTask {
+                msg: format!(
+                    "Cannot merge ScanTasks with differing PartitionSpecs: {:?} vs {:?}",
+                    sc1.partition_spec(),
+                    sc2.partition_spec()
+                ),
+            });
+        }
+        if sc1.file_format_config != sc2.file_format_config {
+            return Err(Error::MergeScanTask {
+                msg: format!(
+                    "Cannot merge ScanTasks with differing FileFormatConfigs: {:?} vs {:?}",
+                    sc1.file_format_config.as_ref(),
+                    sc2.file_format_config.as_ref()
+                ),
+            });
+        }
+        if sc1.schema != sc2.schema {
+            return Err(Error::MergeScanTask {
+                msg: format!(
+                    "Cannot merge ScanTasks with differing Schema: {} vs {}",
+                    sc1.schema.as_ref(),
+                    sc2.schema.as_ref()
+                ),
+            });
+        }
+        if sc1.storage_config != sc2.storage_config {
+            return Err(Error::MergeScanTask {
+                msg: format!(
+                    "Cannot merge ScanTasks with differing StorageConfigs: {:?} vs {:?}",
+                    sc1.storage_config.as_ref(),
+                    sc2.storage_config.as_ref()
+                ),
+            });
+        }
+        if sc1.pushdowns != sc2.pushdowns {
+            return Err(Error::MergeScanTask {
+                msg: format!(
+                    "Cannot merge ScanTasks with differing Pushdowns: {:?} vs {:?}",
+                    sc1.pushdowns, sc2.pushdowns
+                ),
+            });
+        }
+        Ok(ScanTask::new(
+            [sc1.sources, sc2.sources].concat(),
+            sc1.file_format_config,
+            sc1.schema,
+            sc1.storage_config,
+            sc1.pushdowns,
+        ))
+    }
+
     pub fn num_rows(&self) -> Option<usize> {
         self.metadata.as_ref().map(|m| m.length)
     }
@@ -181,6 +253,13 @@ impl ScanTask {
             })
             // Fall back on on-disk size.
             .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
+    }
+
+    pub fn partition_spec(&self) -> Option<&PartitionSpec> {
+        match self.sources.first() {
+            None => None,
+            Some(source) => source.get_partition_spec(),
+        }
     }
 }
 
