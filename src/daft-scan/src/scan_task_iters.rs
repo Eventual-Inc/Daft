@@ -48,8 +48,8 @@ impl Iterator for MergeByFileSize {
                                 if child_item_size + buffered_item_size <= self.target_filesize =>
                             {
                                 let merged_scan_task = ScanTask::merge(
-                                    child_item.as_ref(),
                                     &matched_item,
+                                    child_item.as_ref(),
                                 )
                                 .expect(
                                     "Should be able to merge ScanTasks if all invariants are met",
