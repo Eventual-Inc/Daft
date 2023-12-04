@@ -58,31 +58,27 @@ impl Iterator for MergeByFileSize {
                     );
                     child_matches_accumulator && smaller_than_max_filesize
                 };
-                // Whether or not we should immediately yield the merged result, or keep accumulating
-                let should_yield_merged_result = matches!(
-                    (child_item.size_bytes(), accumulator.size_bytes()),
-                    (Some(child_item_size), Some(buffered_item_size)) if child_item_size + buffered_item_size >= self.min_filesize
-                );
 
-                match (should_merge, should_yield_merged_result) {
-                    // Merge and yield the merged result immediately
-                    (true, true) => Some(Ok(Arc::new(
+                if should_merge {
+                    let merged_result = Some(Arc::new(
                         ScanTask::merge(accumulator.as_ref(), child_item.as_ref())
                             .expect("ScanTasks should be mergeable in MergeByFileSize"),
-                    ))),
-                    // Merge and continue iterating and accumulating without yielding a result right now
-                    (true, false) => {
-                        self.accumulator = Some(Arc::new(
-                            ScanTask::merge(accumulator.as_ref(), child_item.as_ref())
-                                .expect("ScanTasks should be mergeable in MergeByFileSize"),
-                        ));
+                    ));
+
+                    // Whether or not we should immediately yield the merged result, or keep accumulating
+                    let should_yield = matches!(
+                        (child_item.size_bytes(), accumulator.size_bytes()),
+                        (Some(child_item_size), Some(buffered_item_size)) if child_item_size + buffered_item_size >= self.min_filesize
+                    );
+                    if should_yield {
+                        Ok(merged_result).transpose()
+                    } else {
+                        self.accumulator = merged_result;
                         self.next()
                     }
-                    // Cannot merge: replace the accumulator and then yield the old accumulator
-                    (false, _) => {
-                        self.accumulator = Some(child_item);
-                        Some(Ok(accumulator))
-                    }
+                } else {
+                    self.accumulator = Some(child_item);
+                    Some(Ok(accumulator))
                 }
             }
             // Bubble up errors from child iterator, making sure to replace the accumulator which we moved
