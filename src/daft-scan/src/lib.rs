@@ -143,11 +143,10 @@ impl ScanTask {
         pushdowns: Pushdowns,
     ) -> Self {
         assert!(!sources.is_empty());
-        let first_pspec = sources.first().unwrap().get_partition_spec();
-        assert!(
+        debug_assert!(
             sources
                 .iter()
-                .all(|s| s.get_partition_spec() == first_pspec),
+                .all(|s| s.get_partition_spec() == sources.first().unwrap().get_partition_spec()),
             "ScanTask sources must all have the same PartitionSpec at construction",
         );
         let (length, size_bytes_on_disk, statistics) = sources
