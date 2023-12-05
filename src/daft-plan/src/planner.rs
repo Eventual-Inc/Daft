@@ -82,8 +82,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
                 // Apply transformations on the ScanTasks to optimize
                 let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(
                     scan_tasks,
-                    64 * 1024 * 1024,
-                    512 * 1024 * 1024,
+                    cfg.merge_scan_tasks_min_size_bytes,
+                    cfg.merge_scan_tasks_max_size_bytes,
                 );
 
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;

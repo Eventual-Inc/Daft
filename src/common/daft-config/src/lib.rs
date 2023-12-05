@@ -1,7 +1,7 @@
 #[derive(Clone)]
 pub struct DaftConfig {
-    merge_scan_tasks_min_size_bytes: usize,
-    merge_scan_tasks_max_size_bytes: usize,
+    pub merge_scan_tasks_min_size_bytes: usize,
+    pub merge_scan_tasks_max_size_bytes: usize,
 }
 
 impl Default for DaftConfig {
