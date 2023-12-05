@@ -19,9 +19,9 @@ use tokio_util::io::StreamReader;
 
 use crate::{decoding::deserialize_records, ArrowSnafu, ChunkSnafu};
 use crate::{
-    metadata::read_json_schema_single, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    schema::read_json_schema_single, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
 };
-use daft_decoding::compression::CompressionCodec;
+use daft_compression::CompressionCodec;
 
 trait LineChunkStream = Stream<Item = super::Result<Vec<String>>>;
 trait ColumnArrayChunkStream = Stream<
@@ -75,64 +75,63 @@ pub fn read_json_bulk(
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let _rt_guard = runtime_handle.enter();
-    let tables = runtime_handle
-        .block_on(async move {
-            // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
-            let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
-                let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                    uri.to_string(),
-                    convert_options.clone(),
-                    parse_options.clone(),
-                    read_options.clone(),
-                    io_client.clone(),
-                    io_stats.clone(),
-                );
-                tokio::task::spawn(async move {
-                    let table = read_json_single_into_table(
-                        uri.as_str(),
-                        convert_options,
-                        parse_options,
-                        read_options,
-                        io_client,
-                        io_stats,
-                        max_chunks_in_flight,
-                    )
-                    .await?;
-                    Ok((i, table))
-                })
-            }));
-            let mut remaining_rows = convert_options
-                .as_ref()
-                .and_then(|opts| opts.limit.map(|limit| limit as i64));
-            task_stream
-                // Each task is annotated with its position in the output, so we can use unordered buffering to help mitigate stragglers
-                // and sort the task results at the end.
-                .buffer_unordered(num_parallel_tasks)
-                // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
-                // num_parallel_tasks redundant files.
-                .try_take_while(|result| {
-                    match (result, remaining_rows) {
-                        // Limit has been met, early-teriminate.
-                        (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                        // Limit has not yet been met, update remaining limit slack and continue.
-                        (Ok((_, table)), Some(rows_left)) => {
-                            remaining_rows = Some(rows_left - table.len() as i64);
-                            futures::future::ready(Ok(true))
-                        }
-                        // (1) No limit, never early-terminate.
-                        // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                        (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+    let tables = runtime_handle.block_on(async move {
+        // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
+        let task_stream = futures::stream::iter(uris.iter().map(|uri| {
+            let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
+                uri.to_string(),
+                convert_options.clone(),
+                parse_options.clone(),
+                read_options.clone(),
+                io_client.clone(),
+                io_stats.clone(),
+            );
+            tokio::task::spawn(async move {
+                let table = read_json_single_into_table(
+                    uri.as_str(),
+                    convert_options,
+                    parse_options,
+                    read_options,
+                    io_client,
+                    io_stats,
+                    max_chunks_in_flight,
+                )
+                .await?;
+                DaftResult::Ok(table)
+            })
+            .context(crate::JoinSnafu)
+        }));
+        let mut remaining_rows = convert_options
+            .as_ref()
+            .and_then(|opts| opts.limit.map(|limit| limit as i64));
+        task_stream
+            // Limit the number of file reads we have in flight at any given time.
+            .buffered(num_parallel_tasks)
+            // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
+            // num_parallel_tasks redundant files.
+            .try_take_while(|result| {
+                match (result, remaining_rows) {
+                    // Limit has been met, early-teriminate.
+                    (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                    // Limit has not yet been met, update remaining limit slack and continue.
+                    (Ok(table), Some(rows_left)) => {
+                        remaining_rows = Some(rows_left - table.len() as i64);
+                        futures::future::ready(Ok(true))
                     }
-                })
-                .try_collect::<Vec<_>>()
-                .await
-        })
-        .context(super::JoinSnafu {})?;
+                    // (1) No limit, never early-terminate.
+                    // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                    (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+                }
+            })
+            .try_collect::<Vec<_>>()
+            .await
+    })?;
+    tables.into_iter().collect::<DaftResult<Vec<_>>>()
 
     // Sort the task results by task index, yielding tables whose order matches the input URI order.
-    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
-    collected.sort_by_key(|(idx, _)| *idx);
-    Ok(collected.into_iter().map(|(_, v)| v).collect())
+    // let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    // collected.sort_by_key(|(idx, _)| *idx);
+    // Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
 async fn read_json_single_into_table(
@@ -548,14 +547,15 @@ mod tests {
                 Field::new("null", DataType::Null),
                 Field::new("date", DataType::Date),
                 // TODO(Clark): Add coverage for time parsing once we add support for representing time series in Daft.
-                // // Timezone should be finest granularity found in file, i.e. nanoseconds.
+                // // Time unit should be coarest granularity found in file, i.e. seconds.
                 // Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
-                // Timezone should be finest granularity found in file, i.e. microseconds.
+                // Time unit should be coarsest granularity found in file, i.e. seconds due to naive date inclusion.
                 Field::new(
                     "naive_timestamp",
-                    DataType::Timestamp(TimeUnit::Microseconds, None)
+                    DataType::Timestamp(TimeUnit::Seconds, None)
                 ),
                 // Timezone should be UTC due to field having multiple different timezones across records.
+                // Time unit should be coarsest granularity found in file, i.e. milliseconds.
                 Field::new(
                     "timestamp",
                     DataType::Timestamp(TimeUnit::Milliseconds, Some("Z".to_string()))

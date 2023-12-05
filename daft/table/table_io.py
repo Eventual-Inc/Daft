@@ -152,7 +152,7 @@ def read_parquet(
         if isinstance(config, NativeStorageConfig):
             assert isinstance(
                 file, (str, pathlib.Path)
-            ), "Native downloader only works on string inputs to read_parquet"
+            ), "Native downloader only works on string or Path inputs to read_parquet"
             tbl = MicroPartition.read_parquet(
                 str(file),
                 columns=read_options.column_names,
@@ -245,7 +245,9 @@ def read_csv(
     if storage_config is not None:
         config = storage_config.config
         if isinstance(config, NativeStorageConfig):
-            assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_csv"
+            assert isinstance(
+                file, (str, pathlib.Path)
+            ), "Native downloader only works on string or Path inputs to read_csv"
             has_header = csv_options.header_index is not None
             csv_convert_options = CsvConvertOptions(
                 limit=read_options.num_rows,

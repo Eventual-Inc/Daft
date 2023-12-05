@@ -17,7 +17,7 @@ use crate::{
     inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
 };
-use daft_decoding::compression::CompressionCodec;
+use daft_compression::CompressionCodec;
 
 #[derive(Debug, Clone)]
 pub struct JsonReadStats {
@@ -280,14 +280,15 @@ mod tests {
                 Field::new("null", DataType::Null),
                 Field::new("date", DataType::Date),
                 // TODO(Clark): Add coverage for time parsing once we add support for representing time series in Daft.
-                // // Timezone should be finest granularity found in file, i.e. nanoseconds.
+                // // Time unit should be coarest granularity found in file, i.e. seconds.
                 // Field::new("time", DataType::Time(TimeUnit::Nanoseconds)),
-                // Timezone should be finest granularity found in file, i.e. microseconds.
+                // Time unit should be coarsest granularity found in file, i.e. seconds due to naive date inclusion.
                 Field::new(
                     "naive_timestamp",
-                    DataType::Timestamp(TimeUnit::Microseconds, None)
+                    DataType::Timestamp(TimeUnit::Seconds, None)
                 ),
                 // Timezone should be UTC due to field having multiple different timezones across records.
+                // Time unit should be coarsest granularity found in file, i.e. milliseconds.
                 Field::new(
                     "timestamp",
                     DataType::Timestamp(TimeUnit::Milliseconds, Some("Z".to_string()))
@@ -374,83 +375,75 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_json_schema_local_max_bytes() -> DaftResult<()> {
-    //     let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+    #[test]
+    fn test_json_schema_local_max_bytes() -> DaftResult<()> {
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
-    //     let mut io_config = IOConfig::default();
-    //     io_config.s3.anonymous = true;
-    //     let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-    //     let (schema, read_stats) =
-    //         read_json_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
-    //     assert_eq!(
-    //         schema,
-    //         Schema::new(vec![
-    //             Field::new("sepalLength", DataType::Float64),
-    //             Field::new("sepalWidth", DataType::Float64),
-    //             Field::new("petalLength", DataType::Float64),
-    //             Field::new("petalWidth", DataType::Float64),
-    //             Field::new("species", DataType::Utf8),
-    //         ])?,
-    //     );
-    //     // Max bytes doesn't include header, so add 15 bytes to upper bound.
-    //     assert!(
-    //         read_stats.total_bytes_read <= 100 + 15,
-    //         "{}",
-    //         read_stats.total_bytes_read
-    //     );
-    //     assert!(
-    //         read_stats.total_records_read <= 10,
-    //         "{}",
-    //         read_stats.total_records_read
-    //     );
+        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("sepalLength", DataType::Float64),
+                Field::new("sepalWidth", DataType::Float64),
+                Field::new("petalLength", DataType::Float64),
+                Field::new("petalWidth", DataType::Float64),
+                Field::new("species", DataType::Utf8),
+            ])?,
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    //     #[rstest]
-    //     fn test_json_schema_s3(
-    //         #[values(
-    //             // Uncompressed
-    //             None,
-    //             // brotli
-    //             Some("br"),
-    //             // bzip2
-    //             Some("bz2"),
-    //             // deflate
-    //             Some("deflate"),
-    //             // gzip
-    //             Some("gz"),
-    //             // lzma
-    //             Some("lzma"),
-    //             // xz
-    //             Some("xz"),
-    //             // zlib
-    //             Some("zl"),
-    //             // zstd
-    //             Some("zst"),
-    //         )]
-    //         compression: Option<&str>,
-    //     ) -> DaftResult<()> {
-    //         let file = format!(
-    //             "s3://daft-public-data/test_fixtures/json-dev/mvp.json{}",
-    //             compression.map_or("".to_string(), |ext| format!(".{}", ext))
-    //         );
+    #[rstest]
+    fn test_json_schema_s3(
+        #[values(
+                // Uncompressed
+                None,
+                // brotli
+                Some("br"),
+                // bzip2
+                Some("bz2"),
+                // TODO(Clark): Add deflate compressed JSON file to test data fixtures.
+                // deflate
+                // Some("deflate"),
+                // gzip
+                Some("gz"),
+                // lzma
+                Some("lzma"),
+                // xz
+                Some("xz"),
+                // zlib
+                Some("zl"),
+                // zstd
+                Some("zst"),
+            )]
+        compression: Option<&str>,
+    ) -> DaftResult<()> {
+        let file = format!(
+            "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl{}",
+            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+        );
 
-    //         let mut io_config = IOConfig::default();
-    //         io_config.s3.anonymous = true;
-    //         let io_client = Arc::new(IOClient::new(io_config.into())?);
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-    //         let (schema, _) = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
-    //         assert_eq!(
-    //             schema,
-    //             Schema::new(vec![
-    //                 Field::new("a", DataType::Int64),
-    //                 Field::new("b", DataType::Utf8)
-    //             ])?
-    //         );
+        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("sepalLength", DataType::Float64),
+                Field::new("sepalWidth", DataType::Float64),
+                Field::new("petalLength", DataType::Float64),
+                Field::new("petalWidth", DataType::Float64),
+                Field::new("species", DataType::Utf8),
+            ])?
+        );
 
-    //         Ok(())
-    //     }
+        Ok(())
+    }
 }

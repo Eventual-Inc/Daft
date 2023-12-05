@@ -57,7 +57,7 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema = crate::metadata::read_json_schema(
+            let schema = crate::schema::read_json_schema(
                 uri,
                 parse_options,
                 max_bytes,

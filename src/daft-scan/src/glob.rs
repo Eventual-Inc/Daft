@@ -190,7 +190,7 @@ impl GlobScanOperator {
                 )?;
                 schema
             }
-            FileFormatConfig::Json(_) => daft_json::metadata::read_json_schema(
+            FileFormatConfig::Json(_) => daft_json::schema::read_json_schema(
                 first_filepath.as_str(),
                 None,
                 None,

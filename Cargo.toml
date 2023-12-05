@@ -1,5 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
+daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}

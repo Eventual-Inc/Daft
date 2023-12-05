@@ -8,6 +8,7 @@ bytes = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
 daft-io = {path = "../daft-io", default-features = false}

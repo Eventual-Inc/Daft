@@ -1101,6 +1101,7 @@ name = "daft"
 version = "0.1.10"
 dependencies = [
  "common-daft-config",
+ "daft-compression",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1116,6 +1117,15 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-compression"
+version = "0.1.10"
+dependencies = [
+ "async-compression",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1162,6 +1172,7 @@ dependencies = [
  "chrono-tz",
  "common-error",
  "csv-async",
+ "daft-compression",
  "daft-core",
  "daft-decoding",
  "daft-io",
@@ -1271,6 +1282,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "common-error",
+ "daft-compression",
  "daft-core",
  "daft-decoding",
  "daft-io",

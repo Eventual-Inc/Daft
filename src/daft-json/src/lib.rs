@@ -8,11 +8,11 @@ use snafu::Snafu;
 
 mod decoding;
 mod inference;
-pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
+pub mod schema;
 
 // pub use metadata::read_json_schema_bulk;
 pub use options::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};

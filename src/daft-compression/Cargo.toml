@@ -1,0 +1,9 @@
+[dependencies]
+async-compression = {workspace = true}
+tokio = {workspace = true}
+url = {workspace = true}
+
+[package]
+edition = {workspace = true}
+name = "daft-compression"
+version = {workspace = true}

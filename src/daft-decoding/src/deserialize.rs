@@ -12,6 +12,8 @@ use csv_async::ByteRecord;
 pub(crate) const ISO8601: &str = "%+";
 pub(crate) const ISO8601_NO_TIME_ZONE: &str = "%Y-%m-%dT%H:%M:%S%.f";
 pub(crate) const ISO8601_NO_TIME_ZONE_NO_FRACTIONAL: &str = "%Y-%m-%dT%H:%M:%S";
+pub(crate) const ISO8601_DATE: &str = "%Y-%m-%d";
+pub(crate) const ISO8601_DATE_SLASHES: &str = "%Y/%m/%d";
 pub(crate) const RFC3339_WITH_SPACE: &str = "%Y-%m-%d %H:%M:%S%.f%:z";
 pub(crate) const RFC3339_WITH_SPACE_NO_TIME_ZONE: &str = "%Y-%m-%d %H:%M:%S%.f";
 pub(crate) const RFC3339_WITH_SPACE_NO_TIME_ZONE_NO_FRACTIONAL: &str = "%Y-%m-%d %H:%M:%S";
@@ -20,11 +22,10 @@ pub(crate) const ALL_NAIVE_TIMESTAMP_FMTS: &[&str] = &[
     ISO8601_NO_TIME_ZONE_NO_FRACTIONAL,
     RFC3339_WITH_SPACE_NO_TIME_ZONE,
     RFC3339_WITH_SPACE_NO_TIME_ZONE_NO_FRACTIONAL,
+    ISO8601_DATE,
+    ISO8601_DATE_SLASHES,
 ];
 pub(crate) const ALL_TIMESTAMP_FMTS: &[&str] = &[ISO8601, RFC3339_WITH_SPACE];
-
-pub(crate) const ISO8601_DATE: &str = "%Y-%m-%d";
-pub(crate) const ISO8601_DATE_SLASHES: &str = "%Y/%m/%d";
 pub(crate) const ALL_NAIVE_DATE_FMTS: &[&str] = &[ISO8601_DATE, ISO8601_DATE_SLASHES];
 
 // Ideally this trait should not be needed and both `csv` and `csv_async` crates would share
