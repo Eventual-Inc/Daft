@@ -147,6 +147,21 @@ pub enum Error {
         read_columns: usize,
     },
 
+    #[snafu(display(
+        "Parquet file: {} unable to convert row group metadata to stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToConvertRowGroupMetadataToStats { path: String, source: DaftError },
+
+    #[snafu(display(
+        "Parquet file: {} unable to evaluate predicate on stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToRunExpressionOnStats {
+        path: String,
+        source: daft_stats::Error,
+    },
+
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
     JoinError {
         path: String,

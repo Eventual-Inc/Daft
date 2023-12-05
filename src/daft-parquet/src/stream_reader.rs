@@ -1,8 +1,9 @@
+use core::num;
 use std::{collections::HashSet, fs::File};
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_table::Table;
 use itertools::Itertools;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
@@ -90,14 +91,18 @@ pub(crate) fn local_parquet_read_into_arrow(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns, uri)?;
+    let daft_schema = Schema::try_from(&schema).unwrap();
     let chunk_size = 128 * 1024;
-    let expected_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
+    let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
-    let num_expected_arrays = f32::ceil(expected_rows as f32 / chunk_size as f32) as usize;
+    let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
     let row_ranges = build_row_ranges(
-        expected_rows,
+        num_rows,
         start_offset.unwrap_or(0),
         row_groups,
+        // TODO THREAD IN PREDICATES
+        None,
+        &daft_schema,
         &metadata,
         uri,
     )?;

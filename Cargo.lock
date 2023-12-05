@@ -1277,6 +1277,7 @@ dependencies = [
  "bytes",
  "common-error",
  "daft-core",
+ "daft-dsl",
  "daft-io",
  "daft-stats",
  "daft-table",
