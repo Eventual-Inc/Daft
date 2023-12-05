@@ -125,7 +125,8 @@ class DataFrame:
         print(builder.pretty_print(simple))
 
     def num_partitions(self) -> int:
-        return self.__builder.to_physical_plan_scheduler().num_partitions()
+        daft_config = get_context().daft_config
+        return self.__builder.to_physical_plan_scheduler(daft_config).num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:

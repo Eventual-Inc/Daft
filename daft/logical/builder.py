@@ -14,6 +14,7 @@ from daft.daft import (
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import (
     PartitionScheme,
+    PyDaftConfig,
     ResourceRequest,
     ScanOperatorHandle,
     StorageConfig,
@@ -34,7 +35,7 @@ class LogicalPlanBuilder:
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
-    def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler:
+    def to_physical_plan_scheduler(self, daft_config: PyDaftConfig) -> PhysicalPlanScheduler:
         """
         Convert the underlying logical plan to a physical plan scheduler, which is
         used to generate executable tasks for the physical plan.
@@ -43,7 +44,7 @@ class LogicalPlanBuilder:
         """
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
-        return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler())
+        return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler(daft_config))
 
     def schema(self) -> Schema:
         """

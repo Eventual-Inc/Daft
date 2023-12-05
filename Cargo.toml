@@ -1,4 +1,5 @@
 [dependencies]
+common-daft-config = {path = "src/common/daft-config", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
@@ -26,7 +27,8 @@ python = [
   "daft-csv/python",
   "daft-micropartition/python",
   "daft-scan/python",
-  "daft-stats/python"
+  "daft-stats/python",
+  "common-daft-config/python"
 ]
 
 [lib]
@@ -69,6 +71,7 @@ members = [
   "src/common/error",
   "src/common/io-config",
   "src/common/treenode",
+  "src/common/daft-config",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",
