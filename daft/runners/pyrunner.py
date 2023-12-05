@@ -8,6 +8,7 @@ from typing import Iterable, Iterator
 
 import psutil
 
+from daft.context import get_context
 from daft.daft import (
     FileFormatConfig,
     FileInfos,
@@ -131,11 +132,13 @@ class PyRunner(Runner[MicroPartition]):
         # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
     ) -> Iterator[PyMaterializedResult]:
+        daft_config = get_context().daft_config
+
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler()
+        plan_scheduler = builder.to_physical_plan_scheduler(daft_config)
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()

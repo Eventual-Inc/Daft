@@ -6,6 +6,8 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
+from daft.daft import PyDaftConfig
+
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
 
@@ -59,6 +61,7 @@ _RUNNER: Runner | None = None
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
+    daft_config: PyDaftConfig = PyDaftConfig()
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
 
@@ -182,6 +185,37 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         old_ctx,
         runner_config=_PyRunnerConfig(use_thread_pool=use_thread_pool),
         disallow_set_runner=True,
+    )
+    _set_context(new_ctx)
+    return new_ctx
+
+
+def set_config(
+    merge_scan_tasks_min_size_bytes: int | None = None,
+    merge_scan_tasks_max_size_bytes: int | None = None,
+) -> DaftContext:
+    """Globally sets various configuration parameters which control various aspects of Daft execution
+
+    Args:
+        merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
+            Increasing this value will make Daft perform more merging of files into a single partition before yielding,
+            which leads to bigger but fewer partitions. (Defaults to 64MB)
+        merge_scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
+            Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
+            fewer partitions. (Defaults to 512MB)
+    """
+    old_ctx = get_context()
+
+    # Replace values in the DaftConfig with user-specified overrides
+    old_daft_config = old_ctx.daft_config
+    new_daft_config = old_daft_config.with_config_values(
+        merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
+        merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
+    )
+
+    new_ctx = dataclasses.replace(
+        old_ctx,
+        daft_config=new_daft_config,
     )
     _set_context(new_ctx)
     return new_ctx

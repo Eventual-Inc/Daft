@@ -901,6 +901,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-daft-config"
+version = "0.1.10"
+dependencies = [
+ "lazy_static",
+ "pyo3",
+]
+
+[[package]]
 name = "common-error"
 version = "0.1.10"
 dependencies = [
@@ -1090,6 +1098,7 @@ dependencies = [
 name = "daft"
 version = "0.1.10"
 dependencies = [
+ "common-daft-config",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1301,6 +1310,7 @@ version = "0.1.10"
 dependencies = [
  "arrow2",
  "bincode",
+ "common-daft-config",
  "common-error",
  "common-io-config",
  "daft-core",

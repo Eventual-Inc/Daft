@@ -1,0 +1,12 @@
+[dependencies]
+lazy_static = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "common-daft-config"
+version = {workspace = true}
