@@ -7,7 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
-use daft_dsl::ExprRef;
+use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
@@ -67,15 +67,28 @@ async fn read_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let pred_set = predicate.is_some();
-    if pred_set && num_rows.is_some() {
-        return Err(common_error::DaftError::ValueError("Parquet Reader Currently doesn't support having both `num_rows` and `predicate` set at the same time".to_string()));
+    let original_columns = columns;
+    let mut columns = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
+    let requested_columns = columns.as_ref().map(|v| v.len());
+    if let Some(ref pred) = predicate {
+        if num_rows.is_some() {
+            return Err(common_error::DaftError::ValueError("Parquet Reader Currently doesn't support having both `num_rows` and `predicate` set at the same time".to_string()));
+        }
+        if let Some(req_columns) = columns.as_mut() {
+            let needed_columns = get_required_columns(pred);
+            for c in needed_columns {
+                if !req_columns.contains(&c) {
+                    req_columns.push(c);
+                }
+            }
+        }
     }
     let (source_type, fixed_uri) = parse_url(uri)?;
+
     let (metadata, mut table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
-            columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+            columns,
             start_offset,
             num_rows,
             row_groups.clone(),
@@ -88,8 +101,8 @@ async fn read_parquet_single(
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
-            builder.prune_columns(columns)?
+        let builder = if let Some(columns) = columns.as_ref() {
+            builder.prune_columns(columns.as_slice())?
         } else {
             builder
         };
@@ -133,6 +146,9 @@ async fn read_parquet_single(
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concating, rather than after
         table = table.filter(&[predicate])?;
+        if let Some(oc) = original_columns {
+            table = table.get_columns(oc)?;
+        }
     } else if let Some(row_groups) = row_groups {
         let expected_rows: usize = row_groups
             .iter()
@@ -170,8 +186,9 @@ async fn read_parquet_single(
             _ => Ok(()),
         }?;
     }
-    let expected_num_columns = if let Some(columns) = columns {
-        columns.len()
+
+    let expected_num_columns = if let Some(columns) = requested_columns {
+        columns
     } else {
         metadata_num_columns
     };

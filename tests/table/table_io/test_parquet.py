@@ -5,6 +5,7 @@ import datetime
 import os
 import pathlib
 import tempfile
+from itertools import product
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -365,3 +366,29 @@ def test_read_empty_parquet_file_with_pyarrow_bulk(tmpdir):
     read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()])
     assert len(read_back) == 1
     assert tab == read_back[0]
+
+
+PRED_PUSHDOWN_FILES = [
+    "s3://daft-public-data/test_fixtures/parquet-dev/sampled-tpch-with-stats.parquet",
+    "tests/assets/parquet-data/sampled-tpch-with-stats.parquet",
+]
+
+
+@pytest.mark.parametrize(
+    "path, pred",
+    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
+)
+def test_parquet_filter_pushdowns(path, pred):
+    with_pushdown = MicroPartition.read_parquet(path, predicate=pred)
+    after = MicroPartition.read_parquet(path).filter([pred])
+    assert with_pushdown.to_arrow() == after.to_arrow()
+
+
+@pytest.mark.parametrize(
+    "path, pred",
+    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
+)
+def test_parquet_filter_pushdowns_disjoint_predicate(path, pred):
+    with_pushdown = MicroPartition.read_parquet(path, predicate=pred, columns=["L_QUANTITY"])
+    after = MicroPartition.read_parquet(path).filter([pred]).eval_expression_list([daft.col("L_QUANTITY")])
+    assert with_pushdown.to_arrow() == after.to_arrow()
