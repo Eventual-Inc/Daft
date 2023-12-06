@@ -654,13 +654,12 @@ pub(crate) fn read_parquet_into_micropartition(
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
     if let Some(predicate) = predicate {
-        // We have a predicate, so we will perform eager read with the predicate
-        // Since we currently
+        // We have a predicate, so we will perform eager read only reading what row groups we need.
         let all_tables = read_parquet_bulk(
             uris,
             columns,
             None,
-            None,
+            num_rows,
             row_groups,
             Some(predicate.clone()),
             io_client,
@@ -685,14 +684,12 @@ pub(crate) fn read_parquet_into_micropartition(
             .into_iter()
             .map(|t| t.cast_to_schema(&pruned_daft_schema))
             .collect::<DaftResult<Vec<_>>>()?;
-        let loaded =
-            MicroPartition::new_loaded(Arc::new(pruned_daft_schema), all_tables.into(), None);
-
-        if let Some(num_rows) = num_rows {
-            return loaded.head(num_rows);
-        } else {
-            return Ok(loaded);
-        }
+        // TODO: we can pass in stats here to optimize downstream workloads such as join
+        return Ok(MicroPartition::new_loaded(
+            Arc::new(pruned_daft_schema),
+            all_tables.into(),
+            None,
+        ));
     }
 
     let meta_io_client = io_client.clone();

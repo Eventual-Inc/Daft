@@ -68,11 +68,13 @@ async fn read_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
     let original_columns = columns;
+    let original_num_rows = num_rows;
+    let mut num_rows = num_rows;
     let mut columns = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
     let requested_columns = columns.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
         if num_rows.is_some() {
-            return Err(common_error::DaftError::ValueError("Parquet Reader Currently doesn't support having both `num_rows` and `predicate` set at the same time".to_string()));
+            num_rows = None;
         }
         if let Some(req_columns) = columns.as_mut() {
             let needed_columns = get_required_columns(pred);
@@ -148,6 +150,9 @@ async fn read_parquet_single(
         table = table.filter(&[predicate])?;
         if let Some(oc) = original_columns {
             table = table.get_columns(oc)?;
+        }
+        if let Some(nr) = original_num_rows {
+            table = table.head(nr)?;
         }
     } else if let Some(row_groups) = row_groups {
         let expected_rows: usize = row_groups
