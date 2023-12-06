@@ -73,13 +73,13 @@ async fn read_parquet_single(
     }
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, mut table) = if matches!(source_type, SourceType::File) {
-        // TODO thread predicate to local parquet read
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
             columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
             start_offset,
             num_rows,
             row_groups.clone(),
+            predicate.clone(),
             schema_infer_options,
         )
         .await
@@ -208,6 +208,7 @@ async fn read_parquet_single_into_arrow(
                 start_offset,
                 num_rows,
                 row_groups.clone(),
+                None,
                 schema_infer_options,
             )
             .await?;

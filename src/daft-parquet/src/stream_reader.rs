@@ -3,6 +3,7 @@ use std::{collections::HashSet, fs::File};
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_dsl::ExprRef;
 use daft_table::Table;
 use itertools::Itertools;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
@@ -51,6 +52,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(
     parquet2::metadata::FileMetaData,
@@ -100,7 +102,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         start_offset.unwrap_or(0),
         row_groups,
         // TODO THREAD IN PREDICATES
-        None,
+        predicate,
         &daft_schema,
         &metadata,
         uri,
@@ -177,6 +179,7 @@ pub(crate) async fn local_parquet_read_async(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<(parquet2::metadata::FileMetaData, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
@@ -189,6 +192,7 @@ pub(crate) async fn local_parquet_read_async(
                 start_offset,
                 num_rows,
                 row_groups.as_deref(),
+                predicate,
                 schema_infer_options,
             );
             let (metadata, schema, arrays) = v?;
@@ -225,6 +229,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(
     parquet2::metadata::FileMetaData,
@@ -240,6 +245,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
             start_offset,
             num_rows,
             row_groups.as_deref(),
+            predicate,
             schema_infer_options,
         );
         let _ = send.send(v);
