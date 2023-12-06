@@ -12,6 +12,7 @@ use snafu::ResultExt;
 use crate::{
     file::build_row_ranges,
     read::{ArrowChunk, ParquetSchemaInferenceOptions},
+    UnableToConvertSchemaToDaftSnafu,
 };
 
 use crate::stream_reader::read::schema::infer_schema_with_options;
@@ -92,7 +93,10 @@ pub(crate) fn local_parquet_read_into_arrow(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns, uri)?;
-    let daft_schema = Schema::try_from(&schema).unwrap();
+    let daft_schema =
+        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
+            path: uri.to_string(),
+        })?;
     let chunk_size = 128 * 1024;
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
@@ -101,7 +105,6 @@ pub(crate) fn local_parquet_read_into_arrow(
         num_rows,
         start_offset.unwrap_or(0),
         row_groups,
-        // TODO THREAD IN PREDICATES
         predicate,
         &daft_schema,
         &metadata,

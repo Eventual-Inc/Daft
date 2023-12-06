@@ -20,8 +20,8 @@ use crate::{
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics, JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
-    UnableToCreateParquetPageStreamSnafu, UnableToParseSchemaFromMetadataSnafu,
-    UnableToRunExpressionOnStatsSnafu,
+    UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
+    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
 
@@ -279,8 +279,10 @@ impl ParquetReaderBuilder {
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
-        // TODO: DONT UNWRAP
-        let daft_schema = Schema::try_from(&arrow_schema).unwrap();
+        let daft_schema =
+            Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
+                path: self.uri.to_string(),
+            })?;
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,

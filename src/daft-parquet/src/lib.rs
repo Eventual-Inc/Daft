@@ -70,6 +70,14 @@ pub enum Error {
         path: String,
         source: arrow2::error::Error,
     },
+
+    #[snafu(display(
+        "Unable to convert arrow schema to daft schema for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToConvertSchemaToDaft { path: String, source: DaftError },
+
     #[snafu(display(
         "Field: {} not found in Parquet File: {} Available Fields: {:?}",
         field,
