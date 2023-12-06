@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::ExprRef;
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };

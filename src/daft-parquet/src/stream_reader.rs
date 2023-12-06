@@ -1,4 +1,3 @@
-use core::num;
 use std::{collections::HashSet, fs::File};
 
 use arrow2::io::parquet::read;

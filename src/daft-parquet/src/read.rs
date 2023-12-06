@@ -1,4 +1,4 @@
-use std::{fmt::format, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 
@@ -7,7 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::ExprRef;
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
@@ -133,44 +133,42 @@ async fn read_parquet_single(
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concating, rather than after
         table = table.filter(&[predicate])?;
-    } else {
-        if let Some(row_groups) = row_groups {
-            let expected_rows: usize = row_groups
-                .iter()
-                .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-                .sum();
-            if expected_rows != table.len() {
-                return Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    metadata_num_rows: expected_rows,
-                    read_rows: table.len(),
-                }
-                .into());
+    } else if let Some(row_groups) = row_groups {
+        let expected_rows: usize = row_groups
+            .iter()
+            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+            .sum();
+        if expected_rows != table.len() {
+            return Err(super::Error::ParquetNumRowMismatch {
+                path: uri.into(),
+                metadata_num_rows: expected_rows,
+                read_rows: table.len(),
             }
-        } else {
-            match (start_offset, num_rows) {
-                (None, None) if metadata_num_rows != table.len() => {
-                    Err(super::Error::ParquetNumRowMismatch {
-                        path: uri.into(),
-                        metadata_num_rows,
-                        read_rows: table.len(),
-                    })
-                }
-                (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
-                    Err(super::Error::ParquetNumRowMismatch {
-                        path: uri.into(),
-                        metadata_num_rows: metadata_num_rows.saturating_sub(s),
-                        read_rows: table.len(),
-                    })
-                }
-                (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
+            .into());
+        }
+    } else {
+        match (start_offset, num_rows) {
+            (None, None) if metadata_num_rows != table.len() => {
+                Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: n.min(metadata_num_rows),
+                    metadata_num_rows,
                     read_rows: table.len(),
-                }),
-                _ => Ok(()),
-            }?;
-        };
+                })
+            }
+            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+                Err(super::Error::ParquetNumRowMismatch {
+                    path: uri.into(),
+                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                    read_rows: table.len(),
+                })
+            }
+            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
+                path: uri.into(),
+                metadata_num_rows: n.min(metadata_num_rows),
+                read_rows: table.len(),
+            }),
+            _ => Ok(()),
+        }?;
     }
     let expected_num_columns = if let Some(columns) = columns {
         columns.len()
