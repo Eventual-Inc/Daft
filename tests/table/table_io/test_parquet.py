@@ -375,12 +375,18 @@ PRED_PUSHDOWN_FILES = [
 
 
 @pytest.mark.parametrize(
-    "path, pred",
-    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
+    "path, pred, limit",
+    product(
+        PRED_PUSHDOWN_FILES,
+        [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)],
+        [None, 1, 1000],
+    ),
 )
-def test_parquet_filter_pushdowns(path, pred):
-    with_pushdown = MicroPartition.read_parquet(path, predicate=pred)
+def test_parquet_filter_pushdowns(path, pred, limit):
+    with_pushdown = MicroPartition.read_parquet(path, predicate=pred, num_rows=limit)
     after = MicroPartition.read_parquet(path).filter([pred])
+    if limit is not None:
+        after = after.head(limit)
     assert with_pushdown.to_arrow() == after.to_arrow()
 
 
