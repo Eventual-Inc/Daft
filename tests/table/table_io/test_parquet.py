@@ -392,3 +392,16 @@ def test_parquet_filter_pushdowns_disjoint_predicate(path, pred):
     with_pushdown = MicroPartition.read_parquet(path, predicate=pred, columns=["L_QUANTITY"])
     after = MicroPartition.read_parquet(path).filter([pred]).eval_expression_list([daft.col("L_QUANTITY")])
     assert with_pushdown.to_arrow() == after.to_arrow()
+
+
+@pytest.mark.parametrize(
+    "path, pred",
+    product(
+        ["tests/assets/parquet-data/mvp.parquet", "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"],
+        [daft.col("a") == 1, daft.col("a") == 10000, daft.lit(True)],
+    ),
+)
+def test_parquet_filter_pushdowns_disjoint_predicate_no_stats(path, pred):
+    with_pushdown = MicroPartition.read_parquet(path, predicate=pred, columns=["b"])
+    after = MicroPartition.read_parquet(path).filter([pred]).eval_expression_list([daft.col("b")])
+    assert with_pushdown.to_arrow() == after.to_arrow()
