@@ -70,6 +70,14 @@ pub enum Error {
         path: String,
         source: arrow2::error::Error,
     },
+
+    #[snafu(display(
+        "Unable to convert arrow schema to daft schema for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToConvertSchemaToDaft { path: String, source: DaftError },
+
     #[snafu(display(
         "Field: {} not found in Parquet File: {} Available Fields: {:?}",
         field,
@@ -145,6 +153,21 @@ pub enum Error {
         path: String,
         metadata_num_columns: usize,
         read_columns: usize,
+    },
+
+    #[snafu(display(
+        "Parquet file: {} unable to convert row group metadata to stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToConvertRowGroupMetadataToStats { path: String, source: DaftError },
+
+    #[snafu(display(
+        "Parquet file: {} unable to evaluate predicate on stats\nDetails:\n{source}",
+        path,
+    ))]
+    UnableToRunExpressionOnStats {
+        path: String,
+        source: daft_stats::Error,
     },
 
     #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]

@@ -8,6 +8,7 @@ use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
@@ -120,6 +121,7 @@ fn materialize_scan_task(
                         None,
                         scan_task.pushdowns.limit,
                         row_groups,
+                        scan_task.pushdowns.filters.clone(),
                         io_client.clone(),
                         io_stats,
                         8,
@@ -410,6 +412,7 @@ impl MicroPartition {
                     None,
                     scan_task.pushdowns.limit,
                     row_groups,
+                    scan_task.pushdowns.filters.clone(),
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -707,6 +710,7 @@ pub(crate) fn read_parquet_into_micropartition(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicate: Option<ExprRef>,
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -720,6 +724,46 @@ pub(crate) fn read_parquet_into_micropartition(
     // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+
+    if let Some(predicate) = predicate {
+        // We have a predicate, so we will perform eager read only reading what row groups we need.
+        let all_tables = read_parquet_bulk(
+            uris,
+            columns,
+            None,
+            num_rows,
+            row_groups,
+            Some(predicate.clone()),
+            io_client,
+            io_stats,
+            num_parallel_tasks,
+            runtime_handle,
+            schema_infer_options,
+        )?;
+
+        let unioned_schema = all_tables
+            .iter()
+            .map(|t| t.schema.clone())
+            .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
+        let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
+        // Hack to avoid to owned schema
+        let full_daft_schema = Schema {
+            fields: full_daft_schema.fields.clone(),
+        };
+        let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
+
+        let all_tables = all_tables
+            .into_iter()
+            .map(|t| t.cast_to_schema(&pruned_daft_schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        // TODO: we can pass in stats here to optimize downstream workloads such as join
+        return Ok(MicroPartition::new_loaded(
+            Arc::new(pruned_daft_schema),
+            all_tables.into(),
+            None,
+        ));
+    }
+
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
     let metadata = runtime_handle.block_on(async move {
@@ -847,6 +891,7 @@ pub(crate) fn read_parquet_into_micropartition(
             start_offset,
             num_rows,
             row_groups,
+            None,
             io_client,
             io_stats,
             num_parallel_tasks,

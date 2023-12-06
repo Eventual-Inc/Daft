@@ -2,7 +2,8 @@ use std::{collections::HashSet, fs::File};
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_dsl::ExprRef;
 use daft_table::Table;
 use itertools::Itertools;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge};
@@ -11,6 +12,7 @@ use snafu::ResultExt;
 use crate::{
     file::build_row_ranges,
     read::{ArrowChunk, ParquetSchemaInferenceOptions},
+    UnableToConvertSchemaToDaftSnafu,
 };
 
 use crate::stream_reader::read::schema::infer_schema_with_options;
@@ -51,6 +53,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(
     parquet2::metadata::FileMetaData,
@@ -90,14 +93,20 @@ pub(crate) fn local_parquet_read_into_arrow(
             path: uri.to_string(),
         })?;
     let schema = prune_fields_from_schema(schema, columns, uri)?;
+    let daft_schema =
+        Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
+            path: uri.to_string(),
+        })?;
     let chunk_size = 128 * 1024;
-    let expected_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
+    let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
-    let num_expected_arrays = f32::ceil(expected_rows as f32 / chunk_size as f32) as usize;
+    let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
     let row_ranges = build_row_ranges(
-        expected_rows,
+        num_rows,
         start_offset.unwrap_or(0),
         row_groups,
+        predicate,
+        &daft_schema,
         &metadata,
         uri,
     )?;
@@ -173,6 +182,7 @@ pub(crate) async fn local_parquet_read_async(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<(parquet2::metadata::FileMetaData, Table)> {
     let (send, recv) = tokio::sync::oneshot::channel();
@@ -185,6 +195,7 @@ pub(crate) async fn local_parquet_read_async(
                 start_offset,
                 num_rows,
                 row_groups.as_deref(),
+                predicate,
                 schema_infer_options,
             );
             let (metadata, schema, arrays) = v?;
@@ -221,6 +232,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> super::Result<(
     parquet2::metadata::FileMetaData,
@@ -236,6 +248,7 @@ pub(crate) async fn local_parquet_read_into_arrow_async(
             start_offset,
             num_rows,
             row_groups.as_deref(),
+            predicate,
             schema_infer_options,
         );
         let _ = send.send(v);

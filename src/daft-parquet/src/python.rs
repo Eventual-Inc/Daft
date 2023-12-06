@@ -5,6 +5,7 @@ pub mod pylib {
         ffi::field_to_py,
         python::{datatype::PyTimeUnit, schema::PySchema, PySeries},
     };
+    use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, types::PyModule, PyResult, Python};
@@ -21,6 +22,7 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
+        predicate: Option<PyExpr>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -43,6 +45,7 @@ pub mod pylib {
                 start_offset,
                 num_rows,
                 row_groups,
+                predicate.map(|e| e.expr.into()),
                 io_client,
                 Some(io_stats.clone()),
                 runtime_handle,
@@ -127,6 +130,7 @@ pub mod pylib {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
+        predicate: Option<PyExpr>,
         io_config: Option<IOConfig>,
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
@@ -150,6 +154,7 @@ pub mod pylib {
                 start_offset,
                 num_rows,
                 row_groups,
+                predicate.map(|e| e.expr.into()),
                 io_client,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,

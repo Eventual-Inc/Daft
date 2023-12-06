@@ -174,16 +174,20 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
-    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
+    pub fn filter<E: AsRef<Expr>>(&self, predicate: &[E]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.get(0).unwrap())?;
+            let mask = self.eval_expression(predicate.get(0).unwrap().as_ref())?;
             self.mask_filter(&mask)
         } else {
-            let mut expr = predicate.get(0).unwrap().and(predicate.get(1).unwrap());
+            let mut expr = predicate
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .and(predicate.get(1).unwrap().as_ref());
             for i in 2..predicate.len() {
-                let next = predicate.get(i).unwrap();
+                let next = predicate.get(i).unwrap().as_ref();
                 expr = expr.and(next);
             }
             let mask = self.eval_expression(&expr)?;
