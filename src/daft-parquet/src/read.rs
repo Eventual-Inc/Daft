@@ -62,12 +62,12 @@ async fn read_parquet_single(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
-    predicates: Option<Vec<ExprRef>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
-    let pred_set = predicates.is_some();
+    let pred_set = predicate.is_some();
     if pred_set && num_rows.is_some() {
         return Err(common_error::DaftError::ValueError("Parquet Reader Currently doesn't support having both `num_rows` and `predicate` set at the same time".to_string()));
     }
@@ -106,8 +106,8 @@ async fn read_parquet_single(
             builder
         };
 
-        let builder = if let Some(ref predicates) = predicates {
-            builder.set_filter(predicates.clone())
+        let builder = if let Some(ref predicate) = predicate {
+            builder.set_filter(predicate.clone())
         } else {
             builder
         };
@@ -130,9 +130,9 @@ async fn read_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
 
-    if let Some(predicates) = predicates {
+    if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concating, rather than after
-        table = table.filter(predicates.as_slice())?;
+        table = table.filter(&[predicate])?;
     } else {
         if let Some(row_groups) = row_groups {
             let expected_rows: usize = row_groups
@@ -333,7 +333,7 @@ pub fn read_parquet(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
-    predicates: Option<Vec<ExprRef>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
@@ -347,7 +347,7 @@ pub fn read_parquet(
             start_offset,
             num_rows,
             row_groups,
-            predicates,
+            predicate,
             io_client,
             io_stats,
             schema_infer_options,
@@ -392,7 +392,7 @@ pub fn read_parquet_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
-    predicates: Option<Vec<ExprRef>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -416,7 +416,7 @@ pub fn read_parquet_bulk(
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
-                let owned_predicates = predicates.clone();
+                let owned_predicate = predicate.clone();
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
@@ -433,7 +433,7 @@ pub fn read_parquet_bulk(
                             start_offset,
                             num_rows,
                             owned_row_group,
-                            owned_predicates,
+                            owned_predicate,
                             io_client,
                             io_stats,
                             schema_infer_options,

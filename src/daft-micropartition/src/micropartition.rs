@@ -120,11 +120,7 @@ fn materialize_scan_task(
                         None,
                         scan_task.pushdowns.limit,
                         row_groups,
-                        scan_task
-                            .pushdowns
-                            .filters
-                            .as_ref()
-                            .map(|v| v.as_ref().clone()),
+                        scan_task.pushdowns.filters.clone(),
                         io_client.clone(),
                         io_stats,
                         8,
@@ -393,11 +389,7 @@ impl MicroPartition {
                     None,
                     scan_task.pushdowns.limit,
                     row_groups,
-                    scan_task
-                        .pushdowns
-                        .filters
-                        .as_ref()
-                        .map(|v| v.as_ref().clone()),
+                    scan_task.pushdowns.filters.clone(),
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -646,7 +638,7 @@ pub(crate) fn read_parquet_into_micropartition(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
-    predicates: Option<Vec<ExprRef>>,
+    predicate: Option<ExprRef>,
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -661,7 +653,7 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    if let Some(ref predicates) = predicates {
+    if let Some(predicate) = predicate {
         // We have a predicate, so we will perform eager read with the predicate
         // Since we currently
         let all_tables = read_parquet_bulk(
@@ -670,7 +662,7 @@ pub(crate) fn read_parquet_into_micropartition(
             None,
             None,
             row_groups,
-            Some(predicates.clone()),
+            Some(predicate.clone()),
             io_client,
             io_stats,
             num_parallel_tasks,

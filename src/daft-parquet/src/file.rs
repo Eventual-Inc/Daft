@@ -33,7 +33,7 @@ pub(crate) struct ParquetReaderBuilder {
     limit: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
-    predicates: Option<Vec<ExprRef>>,
+    predicate: Option<ExprRef>,
 }
 use parquet2::read::decompress;
 
@@ -99,7 +99,7 @@ pub(crate) fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
     row_groups: Option<&[i64]>,
-    predicates: Option<&[ExprRef]>,
+    predicate: Option<ExprRef>,
     schema: &Schema,
     metadata: &parquet2::metadata::FileMetaData,
     uri: &str,
@@ -107,14 +107,6 @@ pub(crate) fn build_row_ranges(
     let limit = limit.map(|v| v as i64);
     let mut row_ranges = vec![];
     let mut curr_row_index = 0;
-
-    let folded_expr = predicates.map(|preds| {
-        preds
-            .iter()
-            .cloned()
-            .reduce(|a, b| a.and(&b).into())
-            .expect("should have at least 1 expr")
-    });
 
     if let Some(row_groups) = row_groups {
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
@@ -131,7 +123,7 @@ pub(crate) fn build_row_ranges(
                 break;
             }
             let rg = metadata.row_groups.get(i).unwrap();
-            if let Some(ref pred) = folded_expr {
+            if let Some(ref pred) = predicate {
                 let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                     .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
                         path: uri.to_string(),
@@ -163,7 +155,7 @@ pub(crate) fn build_row_ranges(
                 curr_row_index += rg.num_rows();
                 continue;
             } else if rows_to_add > 0 {
-                if let Some(ref pred) = folded_expr {
+                if let Some(ref pred) = predicate {
                     let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                         .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
                             path: uri.to_string(),
@@ -213,7 +205,7 @@ impl ParquetReaderBuilder {
             limit: None,
             row_groups: None,
             schema_inference_options: Default::default(),
-            predicates: None,
+            predicate: None,
         })
     }
 
@@ -269,9 +261,9 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn set_filter(mut self, predicates: Vec<ExprRef>) -> Self {
+    pub fn set_filter(mut self, predicate: ExprRef) -> Self {
         assert_eq!(self.limit, None);
-        self.predicates = Some(predicates);
+        self.predicate = Some(predicate);
         self
     }
 
@@ -293,7 +285,7 @@ impl ParquetReaderBuilder {
             self.limit,
             self.row_start_offset,
             self.row_groups.as_deref(),
-            self.predicates.as_deref(),
+            self.predicate.clone(),
             &daft_schema,
             &self.metadata,
             &self.uri,

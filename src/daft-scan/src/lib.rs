@@ -313,7 +313,7 @@ impl ScanExternalInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
-    pub filters: Option<Arc<Vec<ExprRef>>>,
+    pub filters: Option<ExprRef>,
     /// Optional columns to select from the source data.
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
@@ -328,7 +328,7 @@ impl Default for Pushdowns {
 
 impl Pushdowns {
     pub fn new(
-        filters: Option<Arc<Vec<ExprRef>>>,
+        filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
     ) -> Self {
@@ -347,7 +347,7 @@ impl Pushdowns {
         }
     }
 
-    pub fn with_filters(&self, filters: Option<Arc<Vec<ExprRef>>>) -> Self {
+    pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
             columns: self.columns.clone(),
@@ -369,14 +369,7 @@ impl Pushdowns {
             res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
         }
         if let Some(filters) = &self.filters {
-            res.push(format!(
-                "Filter pushdown = [{}]",
-                filters
-                    .iter()
-                    .map(|f| f.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            res.push(format!("Filter pushdown = {}", filters));
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {}", limit));
