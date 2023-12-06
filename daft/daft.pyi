@@ -211,6 +211,15 @@ class JsonSourceConfig:
     Configuration of a JSON data source.
     """
 
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+    ): ...
+
 class FileFormatConfig:
     """
     Configuration for parsing a particular file format (Parquet, CSV, JSON).
@@ -287,6 +296,41 @@ class CsvParseOptions:
 class CsvReadOptions:
     """
     Options for reading CSV files.
+    """
+
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+    ): ...
+
+class JsonConvertOptions:
+    """
+    Options for converting JSON data to Daft data.
+    """
+
+    limit: int | None
+    include_columns: list[str] | None
+    schema: PySchema | None
+
+    def __init__(
+        self,
+        limit: int | None = None,
+        include_columns: list[str] | None = None,
+        schema: PySchema | None = None,
+    ): ...
+
+class JsonParseOptions:
+    """
+    Options for parsing JSON files.
+    """
+
+class JsonReadOptions:
+    """
+    Options for reading JSON files.
     """
 
     buffer_size: int | None
@@ -586,6 +630,21 @@ def read_csv(
 def read_csv_schema(
     uri: str,
     parse_options: CsvParseOptions | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+): ...
+def read_json(
+    uri: str,
+    convert_options: JsonConvertOptions | None = None,
+    parse_options: JsonParseOptions | None = None,
+    read_options: JsonReadOptions | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    max_chunks_in_flight: int | None = None,
+): ...
+def read_json_schema(
+    uri: str,
+    parse_options: JsonParseOptions | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
 ): ...
@@ -935,6 +994,16 @@ class PyMicroPartition:
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ): ...
+    @classmethod
+    def read_json_native(
+        cls,
+        uri: str,
+        convert_options: JsonConvertOptions | None = None,
+        parse_options: JsonParseOptions | None = None,
+        read_options: JsonReadOptions | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ): ...
 
 class PhysicalPlanScheduler:
     """
@@ -993,8 +1062,19 @@ class LogicalPlanBuilder:
     ) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def optimize(self) -> LogicalPlanBuilder: ...
-    def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler: ...
+    def to_physical_plan_scheduler(self, cfg: PyDaftConfig) -> PhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
+
+class PyDaftConfig:
+    def with_config_values(
+        self,
+        merge_scan_tasks_min_size_bytes: int | None = None,
+        merge_scan_tasks_max_size_bytes: int | None = None,
+    ) -> PyDaftConfig: ...
+    @property
+    def merge_scan_tasks_min_size_bytes(self): ...
+    @property
+    def merge_scan_tasks_max_size_bytes(self): ...
 
 def build_type() -> str: ...
 def version() -> str: ...

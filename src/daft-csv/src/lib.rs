@@ -5,7 +5,6 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
-mod compression;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]

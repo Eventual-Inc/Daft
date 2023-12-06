@@ -10,6 +10,16 @@ import daft
 from daft.table import MicroPartition
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_configs():
+    """Sets global Daft config for testing"""
+    daft.context.set_config(
+        # Disables merging of ScanTasks
+        merge_scan_tasks_min_size_bytes=0,
+        merge_scan_tasks_max_size_bytes=0,
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test that runs with external dependencies"

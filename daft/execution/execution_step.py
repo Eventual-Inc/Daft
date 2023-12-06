@@ -17,6 +17,7 @@ from daft.daft import (
     FileFormatConfig,
     IOConfig,
     JoinType,
+    JsonReadOptions,
     JsonSourceConfig,
     ParquetSourceConfig,
     ResourceRequest,
@@ -370,6 +371,9 @@ class ReadFile(SingleOutputInstruction):
                         file=fp,
                         schema=self.schema,
                         storage_config=self.storage_config,
+                        json_read_options=JsonReadOptions(
+                            buffer_size=format_config.buffer_size, chunk_size=format_config.chunk_size
+                        ),
                         read_options=read_options,
                     )
                     for fp in filepaths

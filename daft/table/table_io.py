@@ -17,6 +17,9 @@ from daft.daft import (
     CsvParseOptions,
     CsvReadOptions,
     IOConfig,
+    JsonConvertOptions,
+    JsonParseOptions,
+    JsonReadOptions,
     NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
@@ -74,6 +77,7 @@ def read_json(
     file: FileInput,
     schema: Schema,
     storage_config: StorageConfig | None = None,
+    json_read_options: JsonReadOptions | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> MicroPartition:
     """Reads a MicroPartition from a JSON file
@@ -82,7 +86,8 @@ def read_json(
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-        read_options (TableReadOptions, optional): Options for reading the file
+        json_read_options (JsonReadOptions, optional): JSON-specific configs to apply when reading the file
+        read_options (TableReadOptions, optional): Non-format-specific options for reading the file
 
     Returns:
         MicroPartition: Parsed MicroPartition from JSON
@@ -90,8 +95,25 @@ def read_json(
     io_config = None
     if storage_config is not None:
         config = storage_config.config
-        assert isinstance(config, PythonStorageConfig), "JSON reads only supports PyStorageConfig"
-        io_config = config.io_config
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
+            json_convert_options = JsonConvertOptions(
+                limit=read_options.num_rows,
+                include_columns=read_options.column_names,
+                schema=schema._schema if schema is not None else None,
+            )
+            json_parse_options = JsonParseOptions()
+            tbl = MicroPartition.read_json(
+                str(file),
+                convert_options=json_convert_options,
+                parse_options=json_parse_options,
+                read_options=json_read_options,
+                io_config=config.io_config,
+            )
+            return _cast_table_to_schema(tbl, read_options=read_options, schema=schema)
+        else:
+            assert isinstance(config, PythonStorageConfig)
+            io_config = config.io_config
 
     with _open_stream(file, io_config) as f:
         table = pajson.read_json(f)
@@ -130,7 +152,7 @@ def read_parquet(
         if isinstance(config, NativeStorageConfig):
             assert isinstance(
                 file, (str, pathlib.Path)
-            ), "Native downloader only works on string inputs to read_parquet"
+            ), "Native downloader only works on string or Path inputs to read_parquet"
             tbl = MicroPartition.read_parquet(
                 str(file),
                 columns=read_options.column_names,
@@ -225,7 +247,7 @@ def read_csv(
         if isinstance(config, NativeStorageConfig):
             assert isinstance(
                 file, (str, pathlib.Path)
-            ), "Native downloader only works on string inputs to read_parquet"
+            ), "Native downloader only works on string or Path inputs to read_csv"
             has_header = csv_options.header_index is not None
             csv_convert_options = CsvConvertOptions(
                 limit=read_options.num_rows,

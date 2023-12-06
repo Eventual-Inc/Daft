@@ -515,14 +515,16 @@ mod tests {
             ],
             OptimizerConfig::new(20),
         );
+        let fields = vec![Field::new("a", DataType::Int64)];
         let proj_exprs = vec![
             col("a") + lit(1),
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+        let filter_predicate = col("a").lt(&lit(2));
+        let plan = dummy_scan_node(fields.clone())
             .project(proj_exprs, Default::default())?
-            .filter(col("a").lt(&lit(2)))?
+            .filter(filter_predicate)?
             .build();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -536,7 +538,7 @@ mod tests {
         let expected = "\
         Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
         \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64)";
         assert_eq!(opt_plan.repr_indent(), expected);
         Ok(())
     }

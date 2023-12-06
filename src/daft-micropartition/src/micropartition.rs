@@ -9,6 +9,7 @@ use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
+use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
@@ -133,7 +134,7 @@ fn materialize_scan_task(
                 // ****************
                 // Native CSV Reads
                 // ****************
-                FileFormatConfig::Csv(cfg @ CsvSourceConfig { .. }) => {
+                FileFormatConfig::Csv(cfg) => {
                     let col_names = if !cfg.has_headers {
                         Some(
                             cast_to_schema
@@ -184,8 +185,30 @@ fn materialize_scan_task(
                 // ****************
                 // Native JSON Reads
                 // ****************
-                FileFormatConfig::Json(_) => {
-                    todo!("TODO: Implement MicroPartition native reads for JSON.");
+                FileFormatConfig::Json(cfg) => {
+                    let convert_options = JsonConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        None,
+                    );
+                    let parse_options = JsonParseOptions::new_internal();
+                    let read_options =
+                        JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+                    let uris = urls.collect::<Vec<_>>();
+                    daft_json::read_json_bulk(
+                        uris.as_slice(),
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        native_storage_config.multithreaded_io,
+                        None,
+                        8,
+                    )
+                    .context(DaftCoreComputeSnafu)?
                 }
             }
         }
@@ -598,6 +621,55 @@ pub(crate) fn read_csv_into_micropartition(
         uris => {
             // Perform a bulk read of URIs, materializing a table per URI.
             let tables = daft_csv::read_csv_bulk(
+                uris,
+                convert_options,
+                parse_options,
+                read_options,
+                io_client,
+                io_stats,
+                multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?;
+
+            // Union all schemas and cast all tables to the same schema
+            let unioned_schema = tables
+                .iter()
+                .map(|tbl| tbl.schema.clone())
+                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .unwrap();
+            let tables = tables
+                .into_iter()
+                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            // Construct MicroPartition from tables and unioned schema
+            Ok(MicroPartition::new_loaded(
+                unioned_schema.clone(),
+                Arc::new(tables),
+                None,
+            ))
+        }
+    }
+}
+
+pub(crate) fn read_json_into_micropartition(
+    uris: &[&str],
+    convert_options: Option<JsonConvertOptions>,
+    parse_options: Option<JsonParseOptions>,
+    read_options: Option<JsonReadOptions>,
+    io_config: Arc<IOConfig>,
+    multithreaded_io: bool,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<MicroPartition> {
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+
+    match uris {
+        [] => Ok(MicroPartition::empty(None)),
+        uris => {
+            // Perform a bulk read of URIs, materializing a table per URI.
+            let tables = daft_json::read_json_bulk(
                 uris,
                 convert_options,
                 parse_options,
