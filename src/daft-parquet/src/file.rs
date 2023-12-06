@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_dsl::Expr;
+use daft_dsl::{Expr, ExprRef};
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
 use daft_table::Table;
@@ -33,7 +33,7 @@ pub(crate) struct ParquetReaderBuilder {
     limit: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
-    predicate: Option<Expr>,
+    predicates: Option<Vec<ExprRef>>,
 }
 use parquet2::read::decompress;
 
@@ -99,7 +99,7 @@ pub(crate) fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
     row_groups: Option<&[i64]>,
-    predicate: Option<&Expr>,
+    predicates: Option<&[ExprRef]>,
     schema: &Schema,
     metadata: &parquet2::metadata::FileMetaData,
     uri: &str,
@@ -107,6 +107,15 @@ pub(crate) fn build_row_ranges(
     let limit = limit.map(|v| v as i64);
     let mut row_ranges = vec![];
     let mut curr_row_index = 0;
+
+    let folded_expr = predicates.map(|preds| {
+        preds
+            .iter()
+            .cloned()
+            .reduce(|a, b| a.and(&b).into())
+            .expect("should have at least 1 expr")
+    });
+
     if let Some(row_groups) = row_groups {
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
@@ -122,11 +131,12 @@ pub(crate) fn build_row_ranges(
                 break;
             }
             let rg = metadata.row_groups.get(i).unwrap();
-            if let Some(pred) = predicate {
+            if let Some(ref pred) = folded_expr {
                 let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                     .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
                         path: uri.to_string(),
                     })?;
+
                 let evaled = stats.eval_expression(pred).with_context(|_| {
                     UnableToRunExpressionOnStatsSnafu {
                         path: uri.to_string(),
@@ -153,7 +163,7 @@ pub(crate) fn build_row_ranges(
                 curr_row_index += rg.num_rows();
                 continue;
             } else if rows_to_add > 0 {
-                if let Some(pred) = predicate {
+                if let Some(ref pred) = folded_expr {
                     let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                         .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
                             path: uri.to_string(),
@@ -203,7 +213,7 @@ impl ParquetReaderBuilder {
             limit: None,
             row_groups: None,
             schema_inference_options: Default::default(),
-            predicate: None,
+            predicates: None,
         })
     }
 
@@ -259,8 +269,9 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn set_filter(mut self, predicate: Expr) -> Self {
-        self.predicate = Some(predicate);
+    pub fn set_filter(mut self, predicates: Vec<ExprRef>) -> Self {
+        assert_eq!(self.limit, None);
+        self.predicates = Some(predicates);
         self
     }
 
@@ -276,13 +287,13 @@ impl ParquetReaderBuilder {
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
-        // DONT UNWRAP
+        // TODO: DONT UNWRAP
         let daft_schema = Schema::try_from(&arrow_schema).unwrap();
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,
             self.row_groups.as_deref(),
-            self.predicate.as_ref(),
+            self.predicates.as_deref(),
             &daft_schema,
             &self.metadata,
             &self.uri,

@@ -405,6 +405,7 @@ impl PyMicroPartition {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
+        predicates: Option<Vec<PyExpr>>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -423,6 +424,8 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups.map(|rg| vec![Some(rg)]),
+                predicates
+                    .map(|e_vec| e_vec.into_iter().map(|e| e.expr.into()).collect::<Vec<_>>()),
                 io_config,
                 Some(io_stats),
                 1,
@@ -442,6 +445,7 @@ impl PyMicroPartition {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
+        predicates: Option<Vec<PyExpr>>,
         io_config: Option<IOConfig>,
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
@@ -461,6 +465,8 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups,
+                predicates
+                    .map(|e_vec| e_vec.into_iter().map(|e| e.expr.into()).collect::<Vec<_>>()),
                 io_config,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,

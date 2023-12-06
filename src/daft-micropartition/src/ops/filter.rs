@@ -8,7 +8,7 @@ use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 use daft_stats::TruthValue;
 
 impl MicroPartition {
-    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
+    pub fn filter<E: AsRef<Expr>>(&self, predicate: &[E]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::filter");
         if predicate.is_empty() {
             return Ok(Self::empty(Some(self.schema.clone())));
@@ -16,7 +16,7 @@ impl MicroPartition {
         if let Some(statistics) = &self.statistics {
             let folded_expr = predicate
                 .iter()
-                .cloned()
+                .map(|e| e.as_ref().clone())
                 .reduce(|a, b| a.and(&b))
                 .expect("should have at least 1 expr");
             let eval_result = statistics.eval_expression(&folded_expr)?;

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::format, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -7,6 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
+use daft_dsl::{Expr, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
@@ -61,12 +62,18 @@ async fn read_parquet_single(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicates: Option<Vec<ExprRef>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
+    let pred_set = predicates.is_some();
+    if pred_set && num_rows.is_some() {
+        return Err(common_error::DaftError::ValueError("Parquet Reader Currently doesn't support having both `num_rows` and `predicate` set at the same time".to_string()));
+    }
     let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, table) = if matches!(source_type, SourceType::File) {
+    let (metadata, mut table) = if matches!(source_type, SourceType::File) {
+        // TODO thread predicate to local parquet read
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
             columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
@@ -99,6 +106,12 @@ async fn read_parquet_single(
             builder
         };
 
+        let builder = if let Some(ref predicates) = predicates {
+            builder.set_filter(predicates.clone())
+        } else {
+            builder
+        };
+
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
@@ -117,44 +130,48 @@ async fn read_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
 
-    if let Some(row_groups) = row_groups {
-        let expected_rows: usize = row_groups
-            .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table.len() {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: expected_rows,
-                read_rows: table.len(),
-            }
-            .into());
-        }
+    if let Some(predicates) = predicates {
+        // TODO ideally pipeline this with IO and before concating, rather than after
+        table = table.filter(predicates.as_slice())?;
     } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
+        if let Some(row_groups) = row_groups {
+            let expected_rows: usize = row_groups
+                .iter()
+                .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+                .sum();
+            if expected_rows != table.len() {
+                return Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows,
+                    metadata_num_rows: expected_rows,
                     read_rows: table.len(),
-                })
+                }
+                .into());
             }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
+        } else {
+            match (start_offset, num_rows) {
+                (None, None) if metadata_num_rows != table.len() => {
+                    Err(super::Error::ParquetNumRowMismatch {
+                        path: uri.into(),
+                        metadata_num_rows,
+                        read_rows: table.len(),
+                    })
+                }
+                (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
+                    Err(super::Error::ParquetNumRowMismatch {
+                        path: uri.into(),
+                        metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                        read_rows: table.len(),
+                    })
+                }
+                (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
+                    metadata_num_rows: n.min(metadata_num_rows),
                     read_rows: table.len(),
-                })
-            }
-            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                metadata_num_rows: n.min(metadata_num_rows),
-                read_rows: table.len(),
-            }),
-            _ => Ok(()),
-        }?;
-    };
-
+                }),
+                _ => Ok(()),
+            }?;
+        };
+    }
     let expected_num_columns = if let Some(columns) = columns {
         columns.len()
     } else {
@@ -316,6 +333,7 @@ pub fn read_parquet(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicates: Option<Vec<ExprRef>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
@@ -329,6 +347,7 @@ pub fn read_parquet(
             start_offset,
             num_rows,
             row_groups,
+            predicates,
             io_client,
             io_stats,
             schema_infer_options,
@@ -373,6 +392,7 @@ pub fn read_parquet_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicates: Option<Vec<ExprRef>>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -396,6 +416,7 @@ pub fn read_parquet_bulk(
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
+                let owned_predicates = predicates.clone();
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
@@ -412,6 +433,7 @@ pub fn read_parquet_bulk(
                             start_offset,
                             num_rows,
                             owned_row_group,
+                            owned_predicates,
                             io_client,
                             io_stats,
                             schema_infer_options,
@@ -639,6 +661,7 @@ mod tests {
 
         let table = read_parquet(
             file,
+            None,
             None,
             None,
             None,
