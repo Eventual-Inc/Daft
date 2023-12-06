@@ -3,34 +3,37 @@
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
 use common_error::DaftError;
+use futures::stream::TryChunksError;
 use snafu::Snafu;
 
-pub mod metadata;
+mod decoding;
+mod inference;
 pub mod options;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
-mod schema;
+pub mod schema;
 
-pub use metadata::read_csv_schema_bulk;
-pub use options::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+// pub use metadata::read_json_schema_bulk;
+pub use options::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use read::{read_csv, read_csv_bulk};
+pub use read::{read_json, read_json_bulk};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
     IOError { source: daft_io::Error },
     #[snafu(display("{source}"))]
-    CSVError { source: csv_async::Error },
-    #[snafu(display("Invalid char: {}", val))]
-    WrongChar {
-        source: std::char::TryFromCharError,
-        val: char,
-    },
+    StdIOError { source: std::io::Error },
     #[snafu(display("{source}"))]
     ArrowError { source: arrow2::error::Error },
+    #[snafu(display("JSON deserialization error: {}", string))]
+    JsonDeserializationError { string: String },
+    #[snafu(display("Error chunking: {}", source))]
+    ChunkError {
+        source: TryChunksError<String, std::io::Error>,
+    },
     #[snafu(display("Error joining spawned task: {}", source))]
     JoinError { source: tokio::task::JoinError },
     #[snafu(display(
@@ -57,22 +60,14 @@ impl From<daft_io::Error> for Error {
     }
 }
 
-#[cfg(feature = "python")]
-impl From<Error> for pyo3::PyErr {
-    fn from(value: Error) -> Self {
-        let daft_error: DaftError = value.into();
-        daft_error.into()
-    }
-}
-
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
-    parent.add_class::<CsvConvertOptions>()?;
-    parent.add_class::<CsvParseOptions>()?;
-    parent.add_class::<CsvReadOptions>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv))?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv_schema))?;
+    parent.add_class::<JsonConvertOptions>()?;
+    parent.add_class::<JsonParseOptions>()?;
+    parent.add_class::<JsonReadOptions>()?;
+    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_json))?;
+    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_json_schema))?;
     Ok(())
 }

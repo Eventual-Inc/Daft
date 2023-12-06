@@ -12,6 +12,8 @@ use csv_async::ByteRecord;
 pub(crate) const ISO8601: &str = "%+";
 pub(crate) const ISO8601_NO_TIME_ZONE: &str = "%Y-%m-%dT%H:%M:%S%.f";
 pub(crate) const ISO8601_NO_TIME_ZONE_NO_FRACTIONAL: &str = "%Y-%m-%dT%H:%M:%S";
+pub(crate) const ISO8601_DATE: &str = "%Y-%m-%d";
+pub(crate) const ISO8601_DATE_SLASHES: &str = "%Y/%m/%d";
 pub(crate) const RFC3339_WITH_SPACE: &str = "%Y-%m-%d %H:%M:%S%.f%:z";
 pub(crate) const RFC3339_WITH_SPACE_NO_TIME_ZONE: &str = "%Y-%m-%d %H:%M:%S%.f";
 pub(crate) const RFC3339_WITH_SPACE_NO_TIME_ZONE_NO_FRACTIONAL: &str = "%Y-%m-%d %H:%M:%S";
@@ -20,8 +22,11 @@ pub(crate) const ALL_NAIVE_TIMESTAMP_FMTS: &[&str] = &[
     ISO8601_NO_TIME_ZONE_NO_FRACTIONAL,
     RFC3339_WITH_SPACE_NO_TIME_ZONE,
     RFC3339_WITH_SPACE_NO_TIME_ZONE_NO_FRACTIONAL,
+    ISO8601_DATE,
+    ISO8601_DATE_SLASHES,
 ];
 pub(crate) const ALL_TIMESTAMP_FMTS: &[&str] = &[ISO8601, RFC3339_WITH_SPACE];
+pub(crate) const ALL_NAIVE_DATE_FMTS: &[&str] = &[ISO8601_DATE, ISO8601_DATE_SLASHES];
 
 // Ideally this trait should not be needed and both `csv` and `csv_async` crates would share
 // the same `ByteRecord` struct. Unfortunately, they do not and thus we must use generics
@@ -153,7 +158,24 @@ fn deserialize_null<B: ByteRecordGeneric>(rows: &[B], _: usize) -> Box<dyn Array
 }
 
 #[inline]
-fn deserialize_naive_datetime(string: &str, fmt_idx: &mut usize) -> Option<chrono::NaiveDateTime> {
+pub fn deserialize_naive_date(string: &str, fmt_idx: &mut usize) -> Option<chrono::NaiveDate> {
+    // TODO(Clark): Parse as all candidate formats in a single pass.
+    for i in 0..ALL_NAIVE_DATE_FMTS.len() {
+        let idx = (i + *fmt_idx) % ALL_NAIVE_DATE_FMTS.len();
+        let fmt = ALL_NAIVE_DATE_FMTS[idx];
+        if let Ok(dt) = chrono::NaiveDate::parse_from_str(string, fmt) {
+            *fmt_idx = idx;
+            return Some(dt);
+        }
+    }
+    None
+}
+
+#[inline]
+pub fn deserialize_naive_datetime(
+    string: &str,
+    fmt_idx: &mut usize,
+) -> Option<chrono::NaiveDateTime> {
     // TODO(Clark): Parse as all candidate formats in a single pass.
     for i in 0..ALL_NAIVE_TIMESTAMP_FMTS.len() {
         let idx = (i + *fmt_idx) % ALL_NAIVE_TIMESTAMP_FMTS.len();
@@ -167,7 +189,7 @@ fn deserialize_naive_datetime(string: &str, fmt_idx: &mut usize) -> Option<chron
 }
 
 #[inline]
-fn deserialize_datetime<T: chrono::TimeZone>(
+pub fn deserialize_datetime<T: chrono::TimeZone>(
     string: &str,
     tz: &T,
     fmt_idx: &mut usize,
@@ -234,13 +256,15 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
             lexical_core::parse::<f64>(bytes).ok()
         }),
         Date32 => deserialize_primitive(rows, column, datatype, |bytes| {
+            let mut last_fmt_idx = 0;
             to_utf8(bytes)
-                .and_then(|x| x.parse::<chrono::NaiveDate>().ok())
+                .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
                 .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE)
         }),
         Date64 => deserialize_primitive(rows, column, datatype, |bytes| {
+            let mut last_fmt_idx = 0;
             to_utf8(bytes)
-                .and_then(|x| x.parse::<chrono::NaiveDateTime>().ok())
+                .and_then(|x| deserialize_naive_datetime(x, &mut last_fmt_idx))
                 .map(|x| x.timestamp_millis())
         }),
         Time32(time_unit) => deserialize_primitive(rows, column, datatype, |bytes| {
@@ -310,7 +334,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
 }
 
 // Return the factor by how small is a time unit compared to seconds
-fn get_factor_from_timeunit(time_unit: TimeUnit) -> u32 {
+pub fn get_factor_from_timeunit(time_unit: TimeUnit) -> u32 {
     match time_unit {
         TimeUnit::Second => 1,
         TimeUnit::Millisecond => 1_000,
