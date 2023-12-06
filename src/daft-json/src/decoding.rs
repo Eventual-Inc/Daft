@@ -230,8 +230,11 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<Value<'a>>>(
                 Number::Integer(number, exponent) | Number::Float(number, exponent) => {
                     scratch.clear();
                     scratch.extend_from_slice(number);
-                    scratch.push(b'e');
-                    scratch.extend_from_slice(exponent);
+                    if !exponent.is_empty() {
+                        scratch.push(b'e');
+                        scratch.extend_from_slice(exponent);
+                    }
+                    target.push(simdutf8::basic::from_utf8(scratch.as_slice()).ok());
                 }
             },
             Value::Bool(v) => target.push(Some(if *v { "true" } else { "false" })),

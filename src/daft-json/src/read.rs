@@ -127,11 +127,6 @@ pub fn read_json_bulk(
             .await
     })?;
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
-
-    // Sort the task results by task index, yielding tables whose order matches the input URI order.
-    // let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
-    // collected.sort_by_key(|(idx, _)| *idx);
-    // Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
 
 async fn read_json_single_into_table(
