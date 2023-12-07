@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
-from daft.context import get_context
+from daft.context import get_context, set_config
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -30,6 +30,7 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
+    PyDaftConfig,
     ResourceRequest,
     StorageConfig,
 )
@@ -75,10 +76,13 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 @ray.remote
 def _glob_path_into_file_infos(
+    daft_config: PyDaftConfig,
     paths: list[str],
     file_format_config: FileFormatConfig | None,
     io_config: IOConfig | None,
 ) -> MicroPartition:
+    set_config(daft_config)
+
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
     for path in paths:
@@ -91,7 +95,9 @@ def _glob_path_into_file_infos(
 
 
 @ray.remote
-def _make_ray_block_from_vpartition(partition: MicroPartition) -> RayDatasetBlock:
+def _make_ray_block_from_vpartition(daft_config: PyDaftConfig, partition: MicroPartition) -> RayDatasetBlock:
+    set_config(daft_config)
+
     try:
         return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
     except pa.ArrowInvalid:
@@ -100,15 +106,20 @@ def _make_ray_block_from_vpartition(partition: MicroPartition) -> RayDatasetBloc
 
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(
-    ray_dataset_block: pa.MicroPartition, daft_schema: Schema
+    daft_config: PyDaftConfig, ray_dataset_block: pa.MicroPartition, daft_schema: Schema
 ) -> MicroPartition:
+    set_config(daft_config)
+
     return MicroPartition.from_arrow(ray_dataset_block)
 
 
 @ray.remote(num_returns=2)
 def _make_daft_partition_from_dask_dataframe_partitions(
+    daft_config: PyDaftConfig,
     dask_df_partition: pd.DataFrame,
 ) -> tuple[MicroPartition, pa.Schema]:
+    set_config(daft_config)
+
     vpart = MicroPartition.from_pandas(dask_df_partition)
     return vpart, vpart.schema()
 
@@ -127,11 +138,14 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
 
 @ray.remote
 def sample_schema_from_filepath(
+    daft_config: PyDaftConfig,
     first_file_path: str,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a MicroPartition containing a single filepath"""
+    set_config(daft_config)
+
     # Currently just samples the Schema from the first file
     return runner_io.sample_schema(first_file_path, file_format_config, storage_config)
 
@@ -156,7 +170,10 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
                 "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
             )
 
-        blocks = [_make_ray_block_from_vpartition.remote(self._results[k].partition()) for k in self._results.keys()]
+        blocks = [
+            _make_ray_block_from_vpartition.remote(get_context().daft_config, self._results[k].partition())
+            for k in self._results.keys()
+        ]
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
@@ -213,7 +230,11 @@ class RayRunnerIO(runner_io.RunnerIO):
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
         return FileInfos.from_table(
-            ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
+            ray.get(
+                _glob_path_into_file_infos.remote(
+                    get_context().daft_config, source_paths, file_format_config, io_config=io_config
+                )
+            )
             .to_table()
             ._table
         )
@@ -230,6 +251,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         first_path = file_infos[0].file_path
         return ray.get(
             sample_schema_from_filepath.remote(
+                get_context().daft_config,
                 first_path,
                 file_format_config,
                 storage_config,
@@ -267,7 +289,8 @@ class RayRunnerIO(runner_io.RunnerIO):
         # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
         # which can iterate on Ray Dataset blocks and materialize as-needed
         daft_vpartitions = [
-            _make_daft_partition_from_ray_dataset_blocks.remote(block, daft_schema) for block in block_refs
+            _make_daft_partition_from_ray_dataset_blocks.remote(get_context().daft_config, block, daft_schema)
+            for block in block_refs
         ]
         return RayPartitionSet({i: RayMaterializedResult(obj) for i, obj in enumerate(daft_vpartitions)}), daft_schema
 
@@ -328,22 +351,27 @@ def build_partitions(
 
 @ray.remote
 def single_partition_pipeline(
-    instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_config: PyDaftConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
+    set_config(daft_config)
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote
 def fanout_pipeline(
-    instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_config: PyDaftConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
+    set_config(daft_config)
+
     return build_partitions(instruction_stack, *inputs)
 
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_pipeline(
-    instruction_stack: list[Instruction], inputs: list
+    daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
+    set_config(daft_config)
+
     import ray
 
     return build_partitions(instruction_stack, *ray.get(inputs))
@@ -351,15 +379,19 @@ def reduce_pipeline(
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_and_fanout(
-    instruction_stack: list[Instruction], inputs: list
+    daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
+    set_config(daft_config)
+
     import ray
 
     return build_partitions(instruction_stack, *ray.get(inputs))
 
 
 @ray.remote
-def get_meta(partition: MicroPartition) -> PartitionMetadata:
+def get_meta(daft_config: PyDaftConfig, partition: MicroPartition) -> PartitionMetadata:
+    set_config(daft_config)
+
     return PartitionMetadata.from_table(partition)
 
 
@@ -616,7 +648,9 @@ class Scheduler:
 
 @ray.remote(num_cpus=1)
 class SchedulerActor(Scheduler):
-    def __init__(self, *n, **kw) -> None:
+    def __init__(self, daft_config: PyDaftConfig, *n, **kw) -> None:
+        set_config(daft_config)
+
         super().__init__(*n, **kw)
         self.reserved_cores = 1
 
@@ -633,14 +667,14 @@ def _build_partitions(task: PartitionTask[ray.ObjectRef]) -> list[ray.ObjectRef]
     if isinstance(task.instructions[0], ReduceInstruction):
         build_remote = reduce_and_fanout if isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
         build_remote = build_remote.options(**ray_options)
-        [metadatas_ref, *partitions] = build_remote.remote(task.instructions, task.inputs)
+        [metadatas_ref, *partitions] = build_remote.remote(get_context().daft_config, task.instructions, task.inputs)
 
     else:
         build_remote = (
             fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
         )
         build_remote = build_remote.options(**ray_options)
-        [metadatas_ref, *partitions] = build_remote.remote(task.instructions, *task.inputs)
+        [metadatas_ref, *partitions] = build_remote.remote(get_context().daft_config, task.instructions, *task.inputs)
 
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result([RayMaterializedResult(partition, metadatas_accessor, i) for i, partition in enumerate(partitions)])
@@ -662,7 +696,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
-                max_task_backlog=max_task_backlog, use_ray_tqdm=True
+                get_context().daft_config, max_task_backlog=max_task_backlog, use_ray_tqdm=True
             )
         else:
             self.scheduler = Scheduler(max_task_backlog=max_task_backlog, use_ray_tqdm=False)
@@ -771,7 +805,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
         if self._metadatas is not None and self._metadata_index is not None:
             return self._metadatas.get_index(self._metadata_index)
         else:
-            return ray.get(get_meta.remote(self._partition))
+            return ray.get(get_meta.remote(get_context().daft_config, self._partition))
 
     def cancel(self) -> None:
         return ray.cancel(self._partition)

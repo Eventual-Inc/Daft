@@ -191,12 +191,15 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
 
 
 def set_config(
+    config: PyDaftConfig | None = None,
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution
 
     Args:
+        config: A PyDaftConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+            that the old (current) config should be used.
         merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
             which leads to bigger but fewer partitions. (Defaults to 64MB)
@@ -207,7 +210,7 @@ def set_config(
     old_ctx = get_context()
 
     # Replace values in the DaftConfig with user-specified overrides
-    old_daft_config = old_ctx.daft_config
+    old_daft_config = old_ctx.daft_config if config is None else config
     new_daft_config = old_daft_config.with_config_values(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
