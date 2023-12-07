@@ -306,7 +306,9 @@ class RayRunnerIO(runner_io.RunnerIO):
             raise ValueError("Can't convert an empty Dask DataFrame (with no partitions) to a Daft DataFrame.")
         persisted_partitions = dask.persist(*partitions, scheduler=ray_dask_get)
         parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
-        daft_vpartitions, schemas = zip(*map(_make_daft_partition_from_dask_dataframe_partitions.remote, parts))
+        daft_vpartitions, schemas = zip(
+            *(_make_daft_partition_from_dask_dataframe_partitions.remote(get_context().daft_config, p) for p in parts)
+        )
         schemas = ray.get(list(schemas))
         # Dask shouldn't allow inconsistent schemas across partitions, but we double-check here.
         if not all(schemas[0] == schema for schema in schemas[1:]):
