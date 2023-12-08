@@ -53,7 +53,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner}")
 
 
-@dataclasses.dataclass()
+@dataclasses.dataclass
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
