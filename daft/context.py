@@ -24,7 +24,7 @@ class _PyRunnerConfig(_RunnerConfig):
     use_thread_pool: bool | None
 
 
-@dataclasses.dataclass()
+@dataclasses.dataclass
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
