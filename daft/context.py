@@ -212,7 +212,10 @@ def set_config(
     """
     old_ctx = get_context()
     if old_ctx.disallow_set_runner:
-        raise RuntimeError("Cannot call `set_config` after the runner has already been created.")
+        raise RuntimeError(
+            "Cannot call `set_config` after the runner has already been created. "
+            "Please call `set_config` before any calls to set the runner and before any dataframe creation or execution."
+        )
 
     # Replace values in the DaftConfig with user-specified overrides
     old_daft_config = old_ctx.daft_config if config is None else config
