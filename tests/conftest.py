@@ -13,6 +13,10 @@ from daft.table import MicroPartition
 @pytest.fixture(scope="session", autouse=True)
 def set_configs():
     """Sets global Daft config for testing"""
+
+    # Pop the old context, which gets rid of the old Runner as well
+    daft.context._pop_context()
+
     daft.context.set_config(
         # Disables merging of ScanTasks
         merge_scan_tasks_min_size_bytes=0,
