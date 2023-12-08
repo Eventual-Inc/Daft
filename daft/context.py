@@ -209,10 +209,10 @@ def set_config(
             fewer partitions. (Defaults to 512MB)
     """
     ctx = get_context()
-    if ctx.disallow_set_runner:
+    if ctx.runner is not None:
         raise RuntimeError(
             "Cannot call `set_config` after the runner has already been created. "
-            "Please call `set_config` before any calls to set the runner and before any dataframe creation or execution."
+            "Please call `set_config` before any dataframe creation or execution."
         )
 
     # Replace values in the DaftConfig with user-specified overrides
