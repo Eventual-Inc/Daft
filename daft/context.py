@@ -115,6 +115,15 @@ def get_context() -> DaftContext:
     return _DaftContext
 
 
+def set_context(ctx: DaftContext) -> DaftContext:
+    global _DaftContext
+
+    pop_context()
+    _DaftContext = ctx
+
+    return _DaftContext
+
+
 def pop_context() -> DaftContext:
     """Helper used in tests and test fixtures to clear the global runner and allow for re-setting of configs."""
     global _DaftContext

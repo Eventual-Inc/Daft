@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
-from daft.context import get_context, set_config
+from daft.context import set_config
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -223,8 +223,8 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
 
 class RayRunnerIO(runner_io.RunnerIO):
-    def __init__(self, daft_config: PyDaftConfig, *args, **kwargs):
-        self.daft_config = daft_config
+    def __init__(self, daft_config_objref: ray.ObjectRef, *args, **kwargs):
+        self.daft_config_objref = daft_config_objref
         super().__init__(*args, **kwargs)
 
     def glob_paths_details(
@@ -237,7 +237,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         return FileInfos.from_table(
             ray.get(
                 _glob_path_into_file_infos.remote(
-                    self.daft_config, source_paths, file_format_config, io_config=io_config
+                    self.daft_config_objref, source_paths, file_format_config, io_config=io_config
                 )
             )
             .to_table()
@@ -256,7 +256,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         first_path = file_infos[0].file_path
         return ray.get(
             sample_schema_from_filepath.remote(
-                self.daft_config,
+                self.daft_config_objref,
                 first_path,
                 file_format_config,
                 storage_config,
@@ -267,7 +267,6 @@ class RayRunnerIO(runner_io.RunnerIO):
         self,
         ds: RayDataset,
     ) -> tuple[RayPartitionSet, Schema]:
-        daft_config_objref = ray.put(self.daft_config)
         arrow_schema = ds.schema(fetch_if_missing=True)
         if not isinstance(arrow_schema, pa.Schema):
             # Convert Dataset to an Arrow dataset.
@@ -295,15 +294,15 @@ class RayRunnerIO(runner_io.RunnerIO):
         # NOTE: This materializes the entire Ray Dataset - we could make this more intelligent by creating a new RayDatasetScan node
         # which can iterate on Ray Dataset blocks and materialize as-needed
         daft_vpartitions = [
-            _make_daft_partition_from_ray_dataset_blocks.remote(daft_config_objref, block, daft_schema)
+            _make_daft_partition_from_ray_dataset_blocks.remote(self.daft_config_objref, block, daft_schema)
             for block in block_refs
         ]
 
         return (
             RayPartitionSet(
-                _daft_config_objref=daft_config_objref,
+                _daft_config_objref=self.daft_config_objref,
                 _results={
-                    i: RayMaterializedResult(obj, _daft_config_objref=daft_config_objref)
+                    i: RayMaterializedResult(obj, _daft_config_objref=self.daft_config_objref)
                     for i, obj in enumerate(daft_vpartitions)
                 },
             ),
@@ -317,15 +316,13 @@ class RayRunnerIO(runner_io.RunnerIO):
         import dask
         from ray.util.dask import ray_dask_get
 
-        daft_config_objref = ray.put(self.daft_config)
-
         partitions = ddf.to_delayed()
         if not partitions:
             raise ValueError("Can't convert an empty Dask DataFrame (with no partitions) to a Daft DataFrame.")
         persisted_partitions = dask.persist(*partitions, scheduler=ray_dask_get)
         parts = [_to_pandas_ref(next(iter(part.dask.values()))) for part in persisted_partitions]
         daft_vpartitions, schemas = zip(
-            *(_make_daft_partition_from_dask_dataframe_partitions.remote(daft_config_objref, p) for p in parts)
+            *(_make_daft_partition_from_dask_dataframe_partitions.remote(self.daft_config_objref, p) for p in parts)
         )
         schemas = ray.get(list(schemas))
         # Dask shouldn't allow inconsistent schemas across partitions, but we double-check here.
@@ -336,9 +333,9 @@ class RayRunnerIO(runner_io.RunnerIO):
             )
         return (
             RayPartitionSet(
-                _daft_config_objref=daft_config_objref,
+                _daft_config_objref=self.daft_config_objref,
                 _results={
-                    i: RayMaterializedResult(obj, _daft_config_objref=daft_config_objref)
+                    i: RayMaterializedResult(obj, _daft_config_objref=self.daft_config_objref)
                     for i, obj in enumerate(daft_vpartitions)
                 },
             ),
@@ -391,7 +388,6 @@ def fanout_pipeline(
     daft_config: PyDaftConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     set_config(daft_config)
-
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -399,10 +395,9 @@ def fanout_pipeline(
 def reduce_pipeline(
     daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_config(daft_config)
-
     import ray
 
+    set_config(daft_config)
     return build_partitions(instruction_stack, *ray.get(inputs))
 
 
@@ -410,17 +405,15 @@ def reduce_pipeline(
 def reduce_and_fanout(
     daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_config(daft_config)
-
     import ray
 
+    set_config(daft_config)
     return build_partitions(instruction_stack, *ray.get(inputs))
 
 
 @ray.remote
 def get_meta(daft_config: PyDaftConfig, partition: MicroPartition) -> PartitionMetadata:
     set_config(daft_config)
-
     return PartitionMetadata.from_table(partition)
 
 
@@ -839,7 +832,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         return self._part_set_cache.put_partition_set(pset=pset)
 
     def runner_io(self) -> RayRunnerIO:
-        return RayRunnerIO(daft_config=self.daft_config)
+        return RayRunnerIO(daft_config_objref=self.daft_config_objref)
 
 
 @dataclass(frozen=True)
@@ -859,7 +852,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
         if self._metadatas is not None and self._metadata_index is not None:
             return self._metadatas.get_index(self._metadata_index)
         else:
-            return ray.get(get_meta.remote(get_context().daft_config, self._partition))
+            return ray.get(get_meta.remote(self._daft_config_objref, self._partition))
 
     def cancel(self) -> None:
         return ray.cancel(self._partition)
