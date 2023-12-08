@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use pyo3::prelude::*;
+use pyo3::{prelude::*, PyTypeInfo};
+use serde::{Deserialize, Serialize};
 
 use crate::DaftConfig;
 
-#[derive(Clone, Default)]
-#[pyclass]
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft")]
 pub struct PyDaftConfig {
     pub config: Arc<DaftConfig>,
 }
@@ -44,5 +45,25 @@ impl PyDaftConfig {
     #[getter(merge_scan_tasks_max_size_bytes)]
     fn get_merge_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.merge_scan_tasks_max_size_bytes)
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
+        let bin_data = bincode::serialize(self.config.as_ref())
+            .expect("DaftConfig should be serializable to bytes");
+        Ok((
+            Self::type_object(py)
+                .getattr("_from_serialized")?
+                .to_object(py),
+            (bin_data,),
+        ))
+    }
+
+    #[staticmethod]
+    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftConfig> {
+        let daft_config: DaftConfig = bincode::deserialize(bin_data.as_slice())
+            .expect("DaftConfig should be deserializable from bytes");
+        Ok(PyDaftConfig {
+            config: daft_config.into(),
+        })
     }
 }

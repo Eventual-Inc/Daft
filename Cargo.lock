@@ -906,8 +906,10 @@ dependencies = [
 name = "common-daft-config"
 version = "0.1.10"
 dependencies = [
+ "bincode",
  "lazy_static",
  "pyo3",
+ "serde",
 ]
 
 [[package]]

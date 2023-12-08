@@ -1,6 +1,8 @@
 [dependencies]
+bincode = {workspace = true}
 lazy_static = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
 
 [features]
 default = ["python"]

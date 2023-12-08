@@ -1,4 +1,6 @@
-#[derive(Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DaftConfig {
     pub merge_scan_tasks_min_size_bytes: usize,
     pub merge_scan_tasks_max_size_bytes: usize,
