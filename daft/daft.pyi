@@ -417,6 +417,25 @@ class S3Config:
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
     ): ...
+    def replace(
+        self,
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+        key_id: str | None = None,
+        session_token: str | None = None,
+        access_key: str | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
+        retry_mode: str | None = None,
+        anonymous: bool | None = None,
+        verify_ssl: bool | None = None,
+        check_hostname_ssl: bool | None = None,
+    ) -> S3Config:
+        """Replaces values if provided, returning a new S3Config"""
+        ...
 
 class AzureConfig:
     """
@@ -426,6 +445,11 @@ class AzureConfig:
     def __init__(
         self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
     ): ...
+    def replace(
+        self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
+    ) -> AzureConfig:
+        """Replaces values if provided, returning a new AzureConfig"""
+        ...
 
 class GCSConfig:
     """
@@ -436,6 +460,9 @@ class GCSConfig:
     anonymous: bool
 
     def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
+    def replace(self, project_id: str | None = None, anonymous: bool | None = None) -> GCSConfig:
+        """Replaces values if provided, returning a new GCSConfig"""
+        ...
 
 class IOConfig:
     """
@@ -452,6 +479,11 @@ class IOConfig:
         """
         Recreate an IOConfig from a JSON string.
         """
+    def replace(
+        self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None
+    ) -> IOConfig:
+        """Replaces values if provided, returning a new IOConfig"""
+        ...
 
 class NativeStorageConfig:
     """
