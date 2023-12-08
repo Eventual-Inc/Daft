@@ -12,9 +12,7 @@ impl Default for DaftConfig {
         DaftConfig {
             merge_scan_tasks_min_size_bytes: 64 * 1024 * 1024, // 64 MiB
             merge_scan_tasks_max_size_bytes: 512 * 1024 * 1024, // 512 MiB
-            broadcast_join_size_bytes_threshold: std::env::var("DAFT_BROADCAST_JOIN_THRESHOLD")
-                .map(|s| s.parse::<usize>().unwrap())
-                .unwrap_or(10 * 1024 * 1024), // 10 MiB
+            broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
         }
     }
 }

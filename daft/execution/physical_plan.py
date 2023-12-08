@@ -272,66 +272,71 @@ def hash_join(
                 return
 
 
+def _create_join_step(
+    broadcaster_parts: deque[SingleOutputPartitionTask[PartitionT]],
+    receiver_part: SingleOutputPartitionTask[PartitionT],
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    how: JoinType,
+    is_swapped: bool,
+) -> PartitionTaskBuilder[PartitionT]:
+    # Calculate memory request for task.
+    broadcaster_size_bytes_ = 0
+    broadcaster_partitions = []
+    broadcaster_partition_metadatas = []
+    null_count = 0
+    for next_broadcaster in broadcaster_parts:
+        next_broadcaster_partition_metadata = next_broadcaster.partition_metadata()
+        if next_broadcaster_partition_metadata is None or next_broadcaster_partition_metadata.size_bytes is None:
+            null_count += 1
+        else:
+            broadcaster_size_bytes_ += next_broadcaster_partition_metadata.size_bytes
+        broadcaster_partitions.append(next_broadcaster.partition())
+        broadcaster_partition_metadatas.append(next_broadcaster_partition_metadata)
+    if null_count == len(broadcaster_parts):
+        broadcaster_size_bytes = None
+    elif null_count > 0:
+        # Impute null size estimates with mean of non-null estimates.
+        broadcaster_size_bytes = broadcaster_size_bytes_ + math.ceil(
+            null_count * broadcaster_size_bytes_ / (len(broadcaster_parts) - null_count)
+        )
+    else:
+        broadcaster_size_bytes = broadcaster_size_bytes_
+    receiver_size_bytes = receiver_part.partition_metadata().size_bytes
+    if broadcaster_size_bytes is None and receiver_size_bytes is None:
+        size_bytes = None
+    elif broadcaster_size_bytes is None and receiver_size_bytes is not None:
+        # Use 1.25x the receiver side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
+        size_bytes = int(1.25 * receiver_size_bytes)
+    elif receiver_size_bytes is None and broadcaster_size_bytes is not None:
+        # Use 4x the broadcaster side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
+        size_bytes = 4 * broadcaster_size_bytes
+    elif broadcaster_size_bytes is not None and receiver_size_bytes is not None:
+        size_bytes = broadcaster_size_bytes + receiver_size_bytes
+
+    return PartitionTaskBuilder[PartitionT](
+        inputs=broadcaster_partitions + [receiver_part.partition()],
+        partial_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
+        resource_request=ResourceRequest(memory_bytes=size_bytes),
+    ).add_instruction(
+        instruction=execution_step.Join(
+            left_on=left_on,
+            right_on=right_on,
+            how=how,
+            is_swapped=is_swapped,
+        )
+    )
+
+
 def broadcast_join(
     broadcaster_plan: InProgressPhysicalPlan[PartitionT],
-    reciever_plan: InProgressPhysicalPlan[PartitionT],
+    receiver_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
     how: JoinType,
     is_swapped: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Broadcast join all partitions from the broadcaster child plan to each partition in the receiver child plan."""
-
-    def _emit_join_step(
-        broadcaster_parts: deque[SingleOutputPartitionTask[PartitionT]],
-        receiver_part: SingleOutputPartitionTask[PartitionT],
-    ) -> PartitionTaskBuilder[PartitionT]:
-        # Calculate memory request for task.
-        broadcaster_size_bytes_ = 0
-        broadcaster_partitions = []
-        broadcaster_partition_metadatas = []
-        null_count = 0
-        for next_broadcaster in broadcaster_parts:
-            next_broadcaster_partition_metadata = next_broadcaster.partition_metadata()
-            if next_broadcaster_partition_metadata is None or next_broadcaster_partition_metadata.size_bytes is None:
-                null_count += 1
-            else:
-                broadcaster_size_bytes_ += next_broadcaster_partition_metadata.size_bytes
-            broadcaster_partitions.append(next_broadcaster.partition())
-            broadcaster_partition_metadatas.append(next_broadcaster_partition_metadata)
-        if null_count == len(broadcaster_parts):
-            broadcaster_size_bytes = None
-        elif null_count > 0:
-            # Impute null size estimates with mean of non-null estimates.
-            broadcaster_size_bytes = broadcaster_size_bytes_ + math.ceil(
-                null_count * broadcaster_size_bytes_ / (len(broadcaster_parts) - null_count)
-            )
-        else:
-            broadcaster_size_bytes = broadcaster_size_bytes_
-        receiver_size_bytes = receiver_part.partition_metadata().size_bytes
-        if broadcaster_size_bytes is None and receiver_size_bytes is None:
-            size_bytes = None
-        elif broadcaster_size_bytes is None and receiver_size_bytes is not None:
-            # Use 1.25x the receiver side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
-            size_bytes = int(1.25 * receiver_size_bytes)
-        elif receiver_size_bytes is None and broadcaster_size_bytes is not None:
-            # Use 4x the broadcaster side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
-            size_bytes = 4 * broadcaster_size_bytes
-        elif broadcaster_size_bytes is not None and receiver_size_bytes is not None:
-            size_bytes = broadcaster_size_bytes + receiver_size_bytes
-
-        return PartitionTaskBuilder[PartitionT](
-            inputs=broadcaster_partitions + [receiver_part.partition()],
-            partial_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
-            resource_request=ResourceRequest(memory_bytes=size_bytes),
-        ).add_instruction(
-            instruction=execution_step.Join(
-                left_on=left_on,
-                right_on=right_on,
-                how=how,
-                is_swapped=is_swapped,
-            )
-        )
 
     # Materialize the steps from the broadcaster and receiver sources to get partitions.
     # As the receiver-side materializations complete, emit new steps to join each broadcaster and receiver partition.
@@ -364,9 +369,9 @@ def broadcast_join(
 
     # Second, broadcast materialized partitions to receiver side of join, as it materializes.
     receiver_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    receiver_parts: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     while True:
+        receiver_parts: deque[SingleOutputPartitionTask[PartitionT]] = deque()
         # Moved completed partition tasks in the receiver side of the join to the materialized partition set.
         while receiver_requests and receiver_requests[0].done():
             receiver_parts.append(receiver_requests.popleft())
@@ -374,14 +379,11 @@ def broadcast_join(
         # Emit join steps for newly materialized partitions.
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
         for receiver_part in receiver_parts:
-            yield _emit_join_step(broadcaster_parts, receiver_part)
-
-        # We always emit a join step for every newly materialized receiver-side partition, so clear the materialized partition queue.
-        receiver_parts.clear()
+            yield _create_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
 
         # Execute single child step to pull in more input partitions.
         try:
-            step = next(reciever_plan)
+            step = next(receiver_plan)
             if isinstance(step, PartitionTaskBuilder):
                 step = step.finalize_partition_task_single_output(stage_id=stage_id)
                 receiver_requests.append(step)

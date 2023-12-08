@@ -492,25 +492,20 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
             // entire smaller table broadcast to each of the partitions of the larger table.
 
             // Ensure that the left side of the join is the smaller side.
-            let mut do_swap = false;
-            let smaller_size_bytes = match (
+            let (smaller_size_bytes, do_swap) = match (
                 left_physical.approximate_size_bytes(),
                 right_physical.approximate_size_bytes(),
             ) {
                 (Some(left_size_bytes), Some(right_size_bytes)) => {
                     if right_size_bytes < left_size_bytes {
-                        do_swap = true;
-                        Some(right_size_bytes)
+                        (Some(right_size_bytes), true)
                     } else {
-                        Some(left_size_bytes)
+                        (Some(left_size_bytes), false)
                     }
                 }
-                (Some(left_size_bytes), None) => Some(left_size_bytes),
-                (None, Some(right_size_bytes)) => {
-                    do_swap = true;
-                    Some(right_size_bytes)
-                }
-                (None, None) => None,
+                (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
+                (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
+                (None, None) => (None, false),
             };
             // If smaller table is under broadcast size threshold, use broadcast join.
             if let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {

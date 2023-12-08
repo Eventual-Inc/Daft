@@ -207,8 +207,8 @@ def hash_join(
 
 
 def broadcast_join(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    right: physical_plan.InProgressPhysicalPlan[PartitionT],
+    broadcaster: physical_plan.InProgressPhysicalPlan[PartitionT],
+    receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
     join_type: JoinType,
@@ -217,8 +217,8 @@ def broadcast_join(
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
     return physical_plan.broadcast_join(
-        broadcaster_plan=input,
-        reciever_plan=right,
+        broadcaster_plan=broadcaster,
+        receiver_plan=receiver,
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,

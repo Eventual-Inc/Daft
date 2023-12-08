@@ -635,8 +635,10 @@ class Join(SingleOutputInstruction):
         return self._join(inputs)
 
     def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        # All inputs except for the last are the left side of the join, in order to support left-broadcasted joins.
         *lefts, right = inputs
         if len(lefts) > 1:
+            # NOTE: MicroPartition concats don't concatenate the underlying column arrays, since MicroPartitions are chunked.
             left = MicroPartition.concat(lefts)
         else:
             left = lefts[0]

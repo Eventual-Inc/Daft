@@ -160,7 +160,9 @@ impl PhysicalPlan {
                     .into(),
                 }
             }
-            Self::BroadcastJoin(BroadcastJoin { right, .. }) => right.partition_spec(),
+            Self::BroadcastJoin(BroadcastJoin {
+                receiver: right, ..
+            }) => right.partition_spec(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
@@ -639,8 +641,8 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::BroadcastJoin(BroadcastJoin {
-                left,
-                right,
+                broadcaster: left,
+                receiver: right,
                 left_on,
                 right_on,
                 join_type,

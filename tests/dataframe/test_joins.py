@@ -12,7 +12,7 @@ from tests.utils import sort_arrow_table
 @pytest.fixture(params=[False, True])
 def broadcast_join_enabled(request):
     # Toggles between default broadcast join threshold (10 MiB), and a threshold of 0, which disables broadcast joins.
-    broadcast_threshold = 10 * 1024 * 1024 if request.param else False
+    broadcast_threshold = 10 * 1024 * 1024 if request.param else 0
     old_context = daft.context.pop_context()
     try:
         yield daft.context.set_config(broadcast_join_size_bytes_threshold=broadcast_threshold)
