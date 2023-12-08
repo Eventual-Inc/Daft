@@ -10,7 +10,7 @@ use csv_async::AsyncReader;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt, future};
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -117,7 +117,7 @@ pub fn read_csv_bulk(
             // num_parallel_tasks redundant files.
             .try_take_while(|result| {
                 match (result, remaining_rows) {
-                    // Limit has been met, early-teriminate.
+                    // Limit has been met, early-terminate.
                     (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
                     // Limit has not yet been met, update remaining limit slack and continue.
                     (Ok(table), Some(rows_left)) => {
@@ -148,6 +148,10 @@ async fn read_csv_single_into_table(
     let include_columns = convert_options
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
+
+    let mut remaining_rows = convert_options
+        .as_ref()
+        .and_then(|opts| opts.limit.map(|limit| limit as i64));
     let (chunk_stream, fields) = read_csv_single_into_stream(
         uri,
         convert_options.unwrap_or_default(),
@@ -171,6 +175,20 @@ async fn read_csv_single_into_table(
     let chunks = chunk_stream
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight)
+        .try_take_while(|result| {
+            match (result, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                (Ok(table), Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // (1) No limit, never early-terminate.
+                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+            }
+        })
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
@@ -288,14 +306,14 @@ async fn read_csv_single_into_stream(
     let projection_indices =
         fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
     let fields = schema.fields;
-    Ok((
+    let stream =
         parse_into_column_array_chunk_stream(
             read_stream,
             Arc::new(fields.clone()),
             projection_indices,
-        ),
-        fields,
-    ))
+        );
+
+    Ok((stream, fields))
 }
 
 fn read_into_byterecord_chunk_stream<R>(
