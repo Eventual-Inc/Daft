@@ -8,11 +8,11 @@ from typing import Iterable, Iterator
 
 import psutil
 
-from daft.context import get_context
 from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
+    PyDaftConfig,
     ResourceRequest,
     StorageConfig,
 )
@@ -105,8 +105,9 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyRunner(Runner[MicroPartition]):
-    def __init__(self, use_thread_pool: bool | None) -> None:
+    def __init__(self, daft_config: PyDaftConfig, use_thread_pool: bool | None) -> None:
         super().__init__()
+        self.daft_config = daft_config
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
 
         self.num_cpus = multiprocessing.cpu_count()
@@ -132,13 +133,11 @@ class PyRunner(Runner[MicroPartition]):
         # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
     ) -> Iterator[PyMaterializedResult]:
-        daft_config = get_context().daft_config
-
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler(daft_config)
+        plan_scheduler = builder.to_physical_plan_scheduler(self.daft_config)
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
