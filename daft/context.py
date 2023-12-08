@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, ClassVar
 from daft.daft import PyDaftConfig
 
 if TYPE_CHECKING:
+    pass
+
     from daft.runners.runner import Runner
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,7 @@ class _PyRunnerConfig(_RunnerConfig):
     use_thread_pool: bool | None
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass()
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
@@ -74,6 +76,7 @@ class DaftContext:
 
             assert isinstance(self.runner_config, _RayRunnerConfig)
             _RUNNER = RayRunner(
+                daft_config=self.daft_config,
                 address=self.runner_config.address,
                 max_task_backlog=self.runner_config.max_task_backlog,
             )
@@ -208,6 +211,8 @@ def set_config(
             fewer partitions. (Defaults to 512MB)
     """
     old_ctx = get_context()
+    if old_ctx.disallow_set_runner:
+        raise RuntimeError("Cannot call `set_config` after the runner has already been created.")
 
     # Replace values in the DaftConfig with user-specified overrides
     old_daft_config = old_ctx.daft_config if config is None else config
