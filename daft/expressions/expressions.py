@@ -425,14 +425,22 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
+        ..NOTE::
+            If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
+            you may wish to reduce the value of ``max_connections`` (defaults to 32) to reduce the amount of load you are placing
+            on your S3 servers.
+
+            Alternatively, if you are running on machines with lower number of cores but very high network bandwidth, you can increase
+            ``max_connections`` to get higher throughput with additional parallelism
+
         Args:
-            max_connections: The maximum number of connections to use per thread to use for downloading URLs, defaults to 32
+            max_connections: The maximum number of connections to use per thread to use for downloading URLs. Defaults to 32.
             on_error: Behavior when a URL download error is encountered - "raise" to raise the error immediately or "null" to log
                 the error but fallback to a Null value. Defaults to "raise".
-            fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for downloading data.
-                By default, Daft will automatically construct a FileSystem instance internally.
+            io_config: IOConfig to use when accessing remote storage. Note that the S3Config's `max_connections` parameter will be overridden
+                with `max_connections` that is passed in as a kwarg.
             use_native_downloader (bool): Use the native downloader rather than python based one.
-                Defaults to False.
+                Defaults to True.
 
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
