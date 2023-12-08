@@ -437,7 +437,10 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         Returns:
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
+        from daft.io import IOConfig, S3Config
+
         if use_native_downloader:
+
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True
@@ -445,8 +448,20 @@ class ExpressionUrlNamespace(ExpressionNamespace):
                 raise_on_error = False
             else:
                 raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
+
+            # Use the `max_connections` kwarg to override the value in S3Config
+            # This is because the max parallelism is actually `min(S3Config's max_connections, url_download's max_connections)` under the hood.
+            # However, default max_connections on S3Config is only 8, and even if we specify 32 here we are bottlenecked there.
+            # Therefore for S3 downloads, we override `max_connections` kwarg to have the intended effect.
+            io_config = (
+                IOConfig(s3=S3Config(max_connections=max_connections))
+                if io_config is None
+                else io_config.replace(s3=io_config.s3.replace(max_connections=max_connections))
+            )
+
             using_ray_runner = context.get_context().is_ray_runner
             return Expression._from_pyexpr(
                 self._expr.url_download(max_connections, raise_on_error, not using_ray_runner, io_config)
