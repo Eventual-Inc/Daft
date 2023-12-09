@@ -120,25 +120,6 @@ def get_context() -> DaftContext:
     return _DaftContext
 
 
-def set_context(ctx: DaftContext) -> DaftContext:
-    global _DaftContext
-
-    pop_context()
-    _DaftContext = ctx
-
-    return _DaftContext
-
-
-def pop_context() -> DaftContext:
-    """Helper used in tests and test fixtures to clear the global runner and allow for re-setting of configs."""
-    global _DaftContext
-
-    old_daft_context = _DaftContext
-    _DaftContext = DaftContext()
-
-    return old_daft_context
-
-
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,

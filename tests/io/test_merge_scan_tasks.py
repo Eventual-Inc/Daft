@@ -10,7 +10,7 @@ import daft
 
 @contextlib.contextmanager
 def override_merge_scan_tasks_configs(merge_scan_tasks_min_size_bytes: int, merge_scan_tasks_max_size_bytes: int):
-    old_context = daft.context.pop_context()
+    old_execution_config = daft.context.get_context().daft_execution_config
 
     try:
         daft.context.set_execution_config(
@@ -19,7 +19,7 @@ def override_merge_scan_tasks_configs(merge_scan_tasks_min_size_bytes: int, merg
         )
         yield
     finally:
-        daft.context.set_context(old_context)
+        daft.context.set_execution_config(old_execution_config)
 
 
 @pytest.fixture(scope="function")
