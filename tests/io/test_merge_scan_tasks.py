@@ -13,7 +13,7 @@ def override_merge_scan_tasks_configs(merge_scan_tasks_min_size_bytes: int, merg
     old_context = daft.context.pop_context()
 
     try:
-        daft.context.set_config(
+        daft.context.set_execution_config(
             merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
             merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         )

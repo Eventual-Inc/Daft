@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
 import pyarrow as pa
 
-from daft.context import set_config
+from daft.context import set_execution_config
 from daft.logical.builder import LogicalPlanBuilder
 from daft.plan_scheduler import PhysicalPlanScheduler
 from daft.runners.progress_bar import ProgressBar
@@ -81,7 +81,7 @@ def _glob_path_into_file_infos(
     file_format_config: FileFormatConfig | None,
     io_config: IOConfig | None,
 ) -> MicroPartition:
-    set_config(daft_config)
+    set_execution_config(daft_config)
 
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
@@ -96,7 +96,7 @@ def _glob_path_into_file_infos(
 
 @ray.remote
 def _make_ray_block_from_vpartition(daft_config: PyDaftExecutionConfig, partition: MicroPartition) -> RayDatasetBlock:
-    set_config(daft_config)
+    set_execution_config(daft_config)
 
     try:
         return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
@@ -108,7 +108,7 @@ def _make_ray_block_from_vpartition(daft_config: PyDaftExecutionConfig, partitio
 def _make_daft_partition_from_ray_dataset_blocks(
     daft_config: PyDaftExecutionConfig, ray_dataset_block: pa.MicroPartition, daft_schema: Schema
 ) -> MicroPartition:
-    set_config(daft_config)
+    set_execution_config(daft_config)
 
     return MicroPartition.from_arrow(ray_dataset_block)
 
@@ -118,7 +118,7 @@ def _make_daft_partition_from_dask_dataframe_partitions(
     daft_config: PyDaftExecutionConfig,
     dask_df_partition: pd.DataFrame,
 ) -> tuple[MicroPartition, pa.Schema]:
-    set_config(daft_config)
+    set_execution_config(daft_config)
 
     vpart = MicroPartition.from_pandas(dask_df_partition)
     return vpart, vpart.schema()
@@ -144,7 +144,7 @@ def sample_schema_from_filepath(
     storage_config: StorageConfig,
 ) -> Schema:
     """Ray remote function to run schema sampling on top of a MicroPartition containing a single filepath"""
-    set_config(daft_config)
+    set_execution_config(daft_config)
 
     # Currently just samples the Schema from the first file
     return runner_io.sample_schema(first_file_path, file_format_config, storage_config)
@@ -387,7 +387,7 @@ def build_partitions(
 def single_partition_pipeline(
     daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_config(daft_config)
+    set_execution_config(daft_config)
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -395,7 +395,7 @@ def single_partition_pipeline(
 def fanout_pipeline(
     daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    set_config(daft_config)
+    set_execution_config(daft_config)
     return build_partitions(instruction_stack, *inputs)
 
 
@@ -405,7 +405,7 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    set_config(daft_config)
+    set_execution_config(daft_config)
     return build_partitions(instruction_stack, *ray.get(inputs))
 
 
@@ -415,13 +415,13 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    set_config(daft_config)
+    set_execution_config(daft_config)
     return build_partitions(instruction_stack, *ray.get(inputs))
 
 
 @ray.remote
 def get_metas(daft_config: PyDaftExecutionConfig, *partitions: MicroPartition) -> list[PartitionMetadata]:
-    set_config(daft_config)
+    set_execution_config(daft_config)
     return [PartitionMetadata.from_table(partition) for partition in partitions]
 
 

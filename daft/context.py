@@ -191,7 +191,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     return ctx
 
 
-def set_config(
+def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
@@ -214,8 +214,8 @@ def set_config(
     ctx = get_context()
     if ctx._runner is not None:
         raise RuntimeError(
-            "Cannot call `set_config` after the runner has already been created. "
-            "Please call `set_config` before any dataframe creation or execution."
+            "Cannot call `set_execution_config` after the runner has already been created. "
+            "Please call `set_execution_config` before any dataframe creation or execution."
         )
 
     # Replace values in the DaftExecutionConfig with user-specified overrides
