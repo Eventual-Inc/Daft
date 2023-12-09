@@ -209,7 +209,7 @@ def set_config(
             fewer partitions. (Defaults to 512MB)
     """
     ctx = get_context()
-    if ctx.runner is not None:
+    if ctx._runner is not None:
         raise RuntimeError(
             "Cannot call `set_config` after the runner has already been created. "
             "Please call `set_config` before any dataframe creation or execution."
