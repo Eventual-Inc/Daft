@@ -97,9 +97,7 @@ class DaftContext:
                 pass
 
             assert isinstance(self.runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(
-                daft_execution_config=self.daft_execution_config, use_thread_pool=self.runner_config.use_thread_pool
-            )
+            self._runner = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
 
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
