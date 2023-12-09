@@ -494,7 +494,7 @@ class NativeStorageConfig:
     multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None = None): ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
 
 class PythonStorageConfig:
     """
@@ -503,7 +503,7 @@ class PythonStorageConfig:
 
     io_config: IOConfig
 
-    def __init__(self, io_config: IOConfig | None = None): ...
+    def __init__(self, io_config: IOConfig): ...
 
 class StorageConfig:
     """
@@ -836,7 +836,7 @@ class PyExpr:
     def list_join(self, delimiter: PyExpr) -> PyExpr: ...
     def list_lengths(self) -> PyExpr: ...
     def url_download(
-        self, max_connections: int, raise_error_on_failure: bool, multi_thread: bool, config: IOConfig | None = None
+        self, max_connections: int, raise_error_on_failure: bool, multi_thread: bool, config: IOConfig
     ) -> PyExpr: ...
 
 def eq(expr1: PyExpr, expr2: PyExpr) -> bool: ...

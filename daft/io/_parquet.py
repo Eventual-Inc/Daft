@@ -46,6 +46,7 @@ def read_parquet(
     returns:
         DataFrame: parsed DataFrame
     """
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of Parquet filepaths")
