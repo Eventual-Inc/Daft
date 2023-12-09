@@ -57,7 +57,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
-    daft_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
+    daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
     _runner: Runner | None = None
@@ -71,7 +71,7 @@ class DaftContext:
 
             assert isinstance(self.runner_config, _RayRunnerConfig)
             self._runner = RayRunner(
-                daft_config=self.daft_config,
+                daft_execution_config=self.daft_execution_config,
                 address=self.runner_config.address,
                 max_task_backlog=self.runner_config.max_task_backlog,
             )
@@ -92,7 +92,9 @@ class DaftContext:
                 pass
 
             assert isinstance(self.runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(daft_config=self.daft_config, use_thread_pool=self.runner_config.use_thread_pool)
+            self._runner = PyRunner(
+                daft_execution_config=self.daft_execution_config, use_thread_pool=self.runner_config.use_thread_pool
+            )
 
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
@@ -219,12 +221,12 @@ def set_execution_config(
         )
 
     # Replace values in the DaftExecutionConfig with user-specified overrides
-    old_daft_config = ctx.daft_config if config is None else config
-    new_daft_config = old_daft_config.with_config_values(
+    old_daft_execution_config = ctx.daft_execution_config if config is None else config
+    new_daft_execution_config = old_daft_execution_config.with_config_values(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
     )
 
-    ctx.daft_config = new_daft_config
+    ctx.daft_execution_config = new_daft_execution_config
     return ctx

@@ -69,10 +69,10 @@ impl PyDaftExecutionConfig {
 
     #[staticmethod]
     fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftExecutionConfig> {
-        let daft_config: DaftExecutionConfig = bincode::deserialize(bin_data.as_slice())
+        let daft_execution_config: DaftExecutionConfig = bincode::deserialize(bin_data.as_slice())
             .expect("DaftExecutionConfig should be deserializable from bytes");
         Ok(PyDaftExecutionConfig {
-            config: daft_config.into(),
+            config: daft_execution_config.into(),
         })
     }
 }

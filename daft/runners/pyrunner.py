@@ -113,9 +113,9 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyRunner(Runner[MicroPartition]):
-    def __init__(self, daft_config: PyDaftExecutionConfig, use_thread_pool: bool | None) -> None:
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig, use_thread_pool: bool | None) -> None:
         super().__init__()
-        self.daft_config = daft_config
+        self.daft_execution_config = daft_execution_config
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
 
         self.num_cpus = multiprocessing.cpu_count()
@@ -145,7 +145,7 @@ class PyRunner(Runner[MicroPartition]):
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler(self.daft_config)
+        plan_scheduler = builder.to_physical_plan_scheduler(self.daft_execution_config)
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
