@@ -207,9 +207,9 @@ class LogicalPlanBuilder:
         self,
         root_dir: str | pathlib.Path,
         file_format: FileFormat,
+        io_config: IOConfig,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
-        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder:
         if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
             raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
