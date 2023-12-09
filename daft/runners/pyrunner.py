@@ -12,7 +12,7 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
-    PyDaftConfig,
+    PyDaftExecutionConfig,
     ResourceRequest,
     StorageConfig,
 )
@@ -113,7 +113,7 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyRunner(Runner[MicroPartition]):
-    def __init__(self, daft_config: PyDaftConfig, use_thread_pool: bool | None) -> None:
+    def __init__(self, daft_config: PyDaftExecutionConfig, use_thread_pool: bool | None) -> None:
         super().__init__()
         self.daft_config = daft_config
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True

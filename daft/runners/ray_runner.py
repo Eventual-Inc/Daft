@@ -30,7 +30,7 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
-    PyDaftConfig,
+    PyDaftExecutionConfig,
     ResourceRequest,
     StorageConfig,
 )
@@ -76,7 +76,7 @@ RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
 
 @ray.remote
 def _glob_path_into_file_infos(
-    daft_config: PyDaftConfig,
+    daft_config: PyDaftExecutionConfig,
     paths: list[str],
     file_format_config: FileFormatConfig | None,
     io_config: IOConfig | None,
@@ -95,7 +95,7 @@ def _glob_path_into_file_infos(
 
 
 @ray.remote
-def _make_ray_block_from_vpartition(daft_config: PyDaftConfig, partition: MicroPartition) -> RayDatasetBlock:
+def _make_ray_block_from_vpartition(daft_config: PyDaftExecutionConfig, partition: MicroPartition) -> RayDatasetBlock:
     set_config(daft_config)
 
     try:
@@ -106,7 +106,7 @@ def _make_ray_block_from_vpartition(daft_config: PyDaftConfig, partition: MicroP
 
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(
-    daft_config: PyDaftConfig, ray_dataset_block: pa.MicroPartition, daft_schema: Schema
+    daft_config: PyDaftExecutionConfig, ray_dataset_block: pa.MicroPartition, daft_schema: Schema
 ) -> MicroPartition:
     set_config(daft_config)
 
@@ -115,7 +115,7 @@ def _make_daft_partition_from_ray_dataset_blocks(
 
 @ray.remote(num_returns=2)
 def _make_daft_partition_from_dask_dataframe_partitions(
-    daft_config: PyDaftConfig,
+    daft_config: PyDaftExecutionConfig,
     dask_df_partition: pd.DataFrame,
 ) -> tuple[MicroPartition, pa.Schema]:
     set_config(daft_config)
@@ -138,7 +138,7 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
 
 @ray.remote
 def sample_schema_from_filepath(
-    daft_config: PyDaftConfig,
+    daft_config: PyDaftExecutionConfig,
     first_file_path: str,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
@@ -385,7 +385,7 @@ def build_partitions(
 
 @ray.remote
 def single_partition_pipeline(
-    daft_config: PyDaftConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     set_config(daft_config)
     return build_partitions(instruction_stack, *inputs)
@@ -393,7 +393,7 @@ def single_partition_pipeline(
 
 @ray.remote
 def fanout_pipeline(
-    daft_config: PyDaftConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
+    daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], *inputs: MicroPartition
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     set_config(daft_config)
     return build_partitions(instruction_stack, *inputs)
@@ -401,7 +401,7 @@ def fanout_pipeline(
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_pipeline(
-    daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
+    daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
@@ -411,7 +411,7 @@ def reduce_pipeline(
 
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_and_fanout(
-    daft_config: PyDaftConfig, instruction_stack: list[Instruction], inputs: list
+    daft_config: PyDaftExecutionConfig, instruction_stack: list[Instruction], inputs: list
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
@@ -420,7 +420,7 @@ def reduce_and_fanout(
 
 
 @ray.remote
-def get_metas(daft_config: PyDaftConfig, *partitions: MicroPartition) -> list[PartitionMetadata]:
+def get_metas(daft_config: PyDaftExecutionConfig, *partitions: MicroPartition) -> list[PartitionMetadata]:
     set_config(daft_config)
     return [PartitionMetadata.from_table(partition) for partition in partitions]
 
@@ -725,7 +725,7 @@ def _build_partitions(daft_config_objref: ray.ObjectRef, task: PartitionTask[ray
 class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
-        daft_config: PyDaftConfig,
+        daft_config: PyDaftExecutionConfig,
         address: str | None,
         max_task_backlog: int | None,
     ) -> None:

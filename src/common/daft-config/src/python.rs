@@ -3,19 +3,19 @@ use std::sync::Arc;
 use pyo3::{prelude::*, PyTypeInfo};
 use serde::{Deserialize, Serialize};
 
-use crate::DaftConfig;
+use crate::DaftExecutionConfig;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
-pub struct PyDaftConfig {
-    pub config: Arc<DaftConfig>,
+pub struct PyDaftExecutionConfig {
+    pub config: Arc<DaftExecutionConfig>,
 }
 
 #[pymethods]
-impl PyDaftConfig {
+impl PyDaftExecutionConfig {
     #[new]
     pub fn new() -> Self {
-        PyDaftConfig::default()
+        PyDaftExecutionConfig::default()
     }
 
     fn with_config_values(
@@ -23,7 +23,7 @@ impl PyDaftConfig {
         merge_scan_tasks_min_size_bytes: Option<usize>,
         merge_scan_tasks_max_size_bytes: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
-    ) -> PyResult<PyDaftConfig> {
+    ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(merge_scan_tasks_max_size_bytes) = merge_scan_tasks_max_size_bytes {
@@ -36,7 +36,7 @@ impl PyDaftConfig {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
         }
 
-        Ok(PyDaftConfig {
+        Ok(PyDaftExecutionConfig {
             config: Arc::new(config),
         })
     }
@@ -58,7 +58,7 @@ impl PyDaftConfig {
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
         let bin_data = bincode::serialize(self.config.as_ref())
-            .expect("DaftConfig should be serializable to bytes");
+            .expect("DaftExecutionConfig should be serializable to bytes");
         Ok((
             Self::type_object(py)
                 .getattr("_from_serialized")?
@@ -68,10 +68,10 @@ impl PyDaftConfig {
     }
 
     #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftConfig> {
-        let daft_config: DaftConfig = bincode::deserialize(bin_data.as_slice())
-            .expect("DaftConfig should be deserializable from bytes");
-        Ok(PyDaftConfig {
+    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftExecutionConfig> {
+        let daft_config: DaftExecutionConfig = bincode::deserialize(bin_data.as_slice())
+            .expect("DaftExecutionConfig should be deserializable from bytes");
+        Ok(PyDaftExecutionConfig {
             config: daft_config.into(),
         })
     }

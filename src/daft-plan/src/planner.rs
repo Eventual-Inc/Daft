@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use std::{cmp::max, collections::HashMap};
 
-use common_daft_config::DaftConfig;
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_dsl::Expr;
@@ -26,7 +26,7 @@ use crate::{FileFormat, PartitionScheme};
 use crate::physical_ops::InMemoryScan;
 
 /// Translate a logical plan to a physical plan.
-pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<PhysicalPlan> {
+pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
     match logical_plan {
         LogicalPlan::Source(Source {
             output_schema,
@@ -602,7 +602,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
 
 #[cfg(test)]
 mod tests {
-    use common_daft_config::DaftConfig;
+    use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit, AggExpr, Expr};
@@ -618,7 +618,7 @@ mod tests {
     /// Repartition-upstream_op -> upstream_op
     #[test]
     fn repartition_dropped_redundant_into_partitions() -> DaftResult<()> {
-        let cfg: Arc<DaftConfig> = DaftConfig::default().into();
+        let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
         let builder = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
@@ -646,7 +646,7 @@ mod tests {
     /// Repartition-upstream_op -> upstream_op
     #[test]
     fn repartition_dropped_single_partition() -> DaftResult<()> {
-        let cfg: Arc<DaftConfig> = DaftConfig::default().into();
+        let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
         let builder = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
@@ -671,7 +671,7 @@ mod tests {
     /// Repartition-upstream_op -> upstream_op
     #[test]
     fn repartition_dropped_same_partition_spec() -> DaftResult<()> {
-        let cfg = DaftConfig::default().into();
+        let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
@@ -691,7 +691,7 @@ mod tests {
     /// Repartition-Aggregation -> Aggregation
     #[test]
     fn repartition_dropped_same_partition_spec_agg() -> DaftResult<()> {
-        let cfg = DaftConfig::default().into();
+        let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),

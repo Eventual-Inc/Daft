@@ -6,7 +6,7 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
-from daft.daft import PyDaftConfig
+from daft.daft import PyDaftExecutionConfig
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
@@ -57,7 +57,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
-    daft_config: PyDaftConfig = PyDaftConfig()
+    daft_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
     _runner: Runner | None = None
@@ -192,7 +192,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
 
 
 def set_config(
-    config: PyDaftConfig | None = None,
+    config: PyDaftExecutionConfig | None = None,
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
@@ -200,7 +200,7 @@ def set_config(
     """Globally sets various configuration parameters which control various aspects of Daft execution
 
     Args:
-        config: A PyDaftConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+        config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
         merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
@@ -218,7 +218,7 @@ def set_config(
             "Please call `set_config` before any dataframe creation or execution."
         )
 
-    # Replace values in the DaftConfig with user-specified overrides
+    # Replace values in the DaftExecutionConfig with user-specified overrides
     old_daft_config = ctx.daft_config if config is None else config
     new_daft_config = old_daft_config.with_config_values(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
