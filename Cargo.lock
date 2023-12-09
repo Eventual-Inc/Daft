@@ -907,6 +907,7 @@ name = "common-daft-config"
 version = "0.1.10"
 dependencies = [
  "bincode",
+ "common-io-config",
  "lazy_static",
  "pyo3",
  "serde",
