@@ -77,7 +77,6 @@ class DaftContext:
 
             assert isinstance(self.runner_config, _RayRunnerConfig)
             self._runner = RayRunner(
-                daft_execution_config=self.daft_execution_config,
                 address=self.runner_config.address,
                 max_task_backlog=self.runner_config.max_task_backlog,
             )

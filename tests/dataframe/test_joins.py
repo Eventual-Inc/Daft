@@ -15,7 +15,7 @@ def broadcast_join_enabled(request):
     broadcast_threshold = 10 * 1024 * 1024 if request.param else 0
     old_context = daft.context.pop_context()
     try:
-        yield daft.context.set_config(broadcast_join_size_bytes_threshold=broadcast_threshold)
+        yield daft.context.set_execution_config(broadcast_join_size_bytes_threshold=broadcast_threshold)
     finally:
         daft.context.set_context(old_context)
 
