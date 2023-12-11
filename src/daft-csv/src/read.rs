@@ -10,7 +10,7 @@ use csv_async::AsyncReader;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{Stream, StreamExt, TryStreamExt, future};
+use futures::{future, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -31,14 +31,8 @@ use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
 trait ByteRecordChunkStream = Stream<Item = super::Result<Vec<ByteRecord>>>;
-trait ColumnArrayChunkStream = Stream<
-    Item = super::Result<
-        Context<
-            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
-            super::JoinSnafu,
-            super::Error,
-        >,
-    >,
+trait ColumnArrayChunkStream<T> = Stream<
+    Item = super::Result<Context<JoinHandle<DaftResult<T>>, super::JoinSnafu, super::Error>>,
 >;
 
 #[allow(clippy::too_many_arguments)]
@@ -136,6 +130,13 @@ pub fn read_csv_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
+#[inline]
+fn assert_stream_send<'u, R>(
+    s: impl 'u + Send + Stream<Item = R>,
+) -> impl 'u + Send + Stream<Item = R> {
+    s
+}
+
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -148,11 +149,15 @@ async fn read_csv_single_into_table(
     let include_columns = convert_options
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
+    let predicate = convert_options
+        .as_ref()
+        .and_then(|opts| opts.predicate.clone());
 
-    let mut remaining_rows = convert_options
+    let limit = convert_options
         .as_ref()
         .and_then(|opts| opts.limit.map(|limit| limit as i64));
-    let (chunk_stream, fields) = read_csv_single_into_stream(
+    let mut remaining_rows = limit;
+    let (chunk_stream, mut fields) = read_csv_single_into_stream(
         uri,
         convert_options.unwrap_or_default(),
         parse_options.unwrap_or_default(),
@@ -172,9 +177,40 @@ async fn read_csv_single_into_table(
             .unwrap()
     });
     // Collect all chunks in chunk x column form.
-    let chunks = chunk_stream
+    let tables = chunk_stream
         // Limit the number of chunks we have in flight at any given time.
-        .try_buffered(max_chunks_in_flight)
+        .try_buffered(max_chunks_in_flight);
+    if let Some(include_columns) = include_columns {
+        let field_map = fields
+            .into_iter()
+            .map(|field| (field.name.clone(), field))
+            .collect::<HashMap<String, Field>>();
+        fields = include_columns
+            .into_iter()
+            .map(|col| field_map[&col].clone())
+            .collect::<Vec<_>>();
+    }
+    let schema: arrow2::datatypes::Schema = fields.clone().into();
+    let daft_schema = Arc::new(Schema::try_from(&schema)?);
+    let owned_daft_schema = daft_schema.clone();
+
+    let filtered_tables = assert_stream_send(tables.map_ok(move |result| {
+        let arrow_chunk = result?;
+        let columns_series = arrow_chunk
+            .into_par_iter()
+            .zip(&fields)
+            .map(|(array, field)| {
+                Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
+            })
+            .collect::<DaftResult<Vec<Series>>>()?;
+        let table = Table::new(owned_daft_schema.clone(), columns_series)?;
+        if let Some(predicate) = &predicate {
+            table.filter(&[predicate.as_ref()])
+        } else {
+            Ok(table)
+        }
+    }));
+    let collected_tables = filtered_tables
         .try_take_while(|result| {
             match (result, remaining_rows) {
                 // Limit has been met, early-terminate.
@@ -194,21 +230,17 @@ async fn read_csv_single_into_table(
         .into_iter()
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
-    if chunks.is_empty() {
-        let schema: arrow2::datatypes::Schema = fields.into();
-        let daft_schema = Arc::new(Schema::try_from(&schema)?);
+    if collected_tables.is_empty() {
         return Table::empty(Some(daft_schema));
     }
-    // Transpose chunk x column into column x chunk.
-    let mut column_arrays = vec![Vec::with_capacity(chunks.len()); chunks[0].len()];
-    for chunk in chunks.into_iter() {
-        for (idx, col) in chunk.into_iter().enumerate() {
-            column_arrays[idx].push(col);
-        }
-    }
-    // Build table from chunks.
     // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-    chunks_to_table(column_arrays, include_columns, fields)
+    let concated_table = Table::concat(&collected_tables)?;
+    if let Some(limit) = limit {
+        // apply head incase that last chunk went over limit
+        concated_table.head(limit as usize)
+    } else {
+        Ok(concated_table)
+    }
 }
 
 async fn read_csv_single_into_stream(
@@ -218,7 +250,10 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl ColumnArrayChunkStream + Send, Vec<Field>)> {
+) -> DaftResult<(
+    impl ColumnArrayChunkStream<Vec<Box<dyn arrow2::array::Array>>> + Send,
+    Vec<Field>,
+)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
     {
         Some(schema) => (schema.to_arrow()?, None, None),
@@ -306,12 +341,11 @@ async fn read_csv_single_into_stream(
     let projection_indices =
         fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
     let fields = schema.fields;
-    let stream =
-        parse_into_column_array_chunk_stream(
-            read_stream,
-            Arc::new(fields.clone()),
-            projection_indices,
-        );
+    let stream = parse_into_column_array_chunk_stream(
+        read_stream,
+        Arc::new(fields.clone()),
+        projection_indices,
+    );
 
     Ok((stream, fields))
 }
@@ -378,7 +412,7 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
-) -> impl ColumnArrayChunkStream + Send {
+) -> impl ColumnArrayChunkStream<Vec<Box<dyn arrow2::array::Array>>> + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
     stream.map_ok(move |record| {
