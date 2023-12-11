@@ -525,9 +525,9 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
                 (None, None) => (None, false),
             };
             let is_larger_partitioned = if do_swap {
-                is_right_partitioned
-            } else {
                 is_left_partitioned
+            } else {
+                is_right_partitioned
             };
             // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
             if !is_larger_partitioned && let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {
