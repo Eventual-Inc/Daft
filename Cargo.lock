@@ -241,7 +241,7 @@ dependencies = [
  "aws-sdk-sso",
  "aws-sdk-sts",
  "aws-smithy-async",
- "aws-smithy-client",
+ "aws-smithy-client 0.55.3",
  "aws-smithy-http",
  "aws-smithy-http-tower",
  "aws-smithy-json",
@@ -320,7 +320,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-checksums",
- "aws-smithy-client",
+ "aws-smithy-client 0.55.3",
  "aws-smithy-eventstream",
  "aws-smithy-http",
  "aws-smithy-http-tower",
@@ -351,7 +351,7 @@ dependencies = [
  "aws-http",
  "aws-sig-auth",
  "aws-smithy-async",
- "aws-smithy-client",
+ "aws-smithy-client 0.55.3",
  "aws-smithy-http",
  "aws-smithy-http-tower",
  "aws-smithy-json",
@@ -376,7 +376,7 @@ dependencies = [
  "aws-http",
  "aws-sig-auth",
  "aws-smithy-async",
- "aws-smithy-client",
+ "aws-smithy-client 0.55.3",
  "aws-smithy-http",
  "aws-smithy-http-tower",
  "aws-smithy-json",
@@ -483,6 +483,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-smithy-client"
+version = "0.61.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2a603a28efa60ff169dae49e74a27f36bd68e70fa45af7be41f3758d379fc5"
+
+[[package]]
 name = "aws-smithy-eventstream"
 version = "0.55.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -581,7 +587,7 @@ checksum = "6dd209616cc8d7bfb82f87811a5c655dc97537f592689b18743bddf5dc5c4829"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-async",
- "aws-smithy-client",
+ "aws-smithy-client 0.55.3",
  "aws-smithy-http",
  "aws-smithy-types",
  "http",
@@ -1240,7 +1246,7 @@ dependencies = [
  "aws-sig-auth",
  "aws-sigv4",
  "aws-smithy-async",
- "aws-smithy-client",
+ "aws-smithy-client 0.61.0",
  "azure_storage",
  "azure_storage_blobs",
  "bytes",
