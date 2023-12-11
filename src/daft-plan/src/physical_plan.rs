@@ -52,7 +52,8 @@ pub enum PhysicalPlan {
     ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Concat(Concat),
-    Join(Join),
+    HashJoin(HashJoin),
+    BroadcastJoin(BroadcastJoin),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -135,7 +136,7 @@ impl PhysicalPlan {
                 None,
             )
             .into(),
-            Self::Join(Join {
+            Self::HashJoin(HashJoin {
                 left,
                 right,
                 left_on,
@@ -159,9 +160,74 @@ impl PhysicalPlan {
                     .into(),
                 }
             }
+            Self::BroadcastJoin(BroadcastJoin {
+                receiver: right, ..
+            }) => right.partition_spec(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
+        }
+    }
+
+    pub fn approximate_size_bytes(&self) -> Option<usize> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => {
+                Some(in_memory_info.size_bytes)
+            }
+            Self::TabularScan(TabularScan { scan_tasks, .. }) => scan_tasks
+                .iter()
+                .map(|scan_task| scan_task.size_bytes())
+                .sum::<Option<usize>>(),
+            // Assume no row/column pruning in cardinality-affecting operations.
+            // TODO(Clark): Estimate row/column pruning to get a better size approximation.
+            Self::Filter(Filter { input, .. })
+            | Self::Limit(Limit { input, .. })
+            | Self::Project(Project { input, .. }) => input.approximate_size_bytes(),
+            // Assume ~the same size in bytes for explodes.
+            // TODO(Clark): Improve this estimate.
+            Self::Explode(Explode { input, .. }) => input.approximate_size_bytes(),
+            // Propagate child approximation for operations that don't affect cardinality.
+            Self::Coalesce(Coalesce { input, .. })
+            | Self::FanoutByHash(FanoutByHash { input, .. })
+            | Self::FanoutByRange(FanoutByRange { input, .. })
+            | Self::FanoutRandom(FanoutRandom { input, .. })
+            | Self::Flatten(Flatten { input, .. })
+            | Self::ReduceMerge(ReduceMerge { input, .. })
+            | Self::Sort(Sort { input, .. })
+            | Self::Split(Split { input, .. }) => input.approximate_size_bytes(),
+            Self::Concat(Concat { input, other }) => {
+                input.approximate_size_bytes().and_then(|input_size| {
+                    other
+                        .approximate_size_bytes()
+                        .map(|other_size| input_size + other_size)
+                })
+            }
+            // Assume a simple sum of the sizes of both sides of the join for the post-join size.
+            // TODO(Clark): This will double-count join key columns, we should ensure that these are only counted once.
+            Self::BroadcastJoin(BroadcastJoin {
+                broadcaster: left,
+                receiver: right,
+                ..
+            })
+            | Self::HashJoin(HashJoin { left, right, .. }) => {
+                left.approximate_size_bytes().and_then(|left_size| {
+                    right
+                        .approximate_size_bytes()
+                        .map(|right_size| left_size + right_size)
+                })
+            }
+            // TODO(Clark): Approximate post-aggregation sizes via grouping estimates + aggregation type.
+            Self::Aggregate(_) => None,
+            // No size approximation support for legacy I/O.
+            Self::TabularScanParquet(_) | Self::TabularScanCsv(_) | Self::TabularScanJson(_) => {
+                None
+            }
+            // Post-write DataFrame will contain paths to files that were written.
+            // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
+            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
+                None
+            }
         }
     }
 }
@@ -582,7 +648,7 @@ impl PhysicalPlan {
                     .call1((upstream_input_iter, upstream_other_iter))?;
                 Ok(py_iter.into())
             }
-            PhysicalPlan::Join(Join {
+            PhysicalPlan::HashJoin(HashJoin {
                 left,
                 right,
                 left_on,
@@ -602,13 +668,44 @@ impl PhysicalPlan {
                     .collect();
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                    .getattr(pyo3::intern!(py, "join"))?
+                    .getattr(pyo3::intern!(py, "hash_join"))?
                     .call1((
                         upstream_left_iter,
                         upstream_right_iter,
                         left_on_pyexprs,
                         right_on_pyexprs,
                         *join_type,
+                    ))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::BroadcastJoin(BroadcastJoin {
+                broadcaster: left,
+                receiver: right,
+                left_on,
+                right_on,
+                join_type,
+                is_swapped,
+            }) => {
+                let upstream_left_iter = left.to_partition_tasks(py, psets, is_ray_runner)?;
+                let upstream_right_iter = right.to_partition_tasks(py, psets, is_ray_runner)?;
+                let left_on_pyexprs: Vec<PyExpr> = left_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let right_on_pyexprs: Vec<PyExpr> = right_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "broadcast_join"))?
+                    .call1((
+                        upstream_left_iter,
+                        upstream_right_iter,
+                        left_on_pyexprs,
+                        right_on_pyexprs,
+                        *join_type,
+                        *is_swapped,
                     ))?;
                 Ok(py_iter.into())
             }

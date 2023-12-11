@@ -1,4 +1,5 @@
 mod agg;
+mod broadcast_join;
 mod coalesce;
 mod concat;
 mod csv;
@@ -6,9 +7,9 @@ mod explode;
 mod fanout;
 mod filter;
 mod flatten;
+mod hash_join;
 #[cfg(feature = "python")]
 mod in_memory;
-mod join;
 mod json;
 mod limit;
 mod parquet;
@@ -19,6 +20,7 @@ mod sort;
 mod split;
 
 pub use agg::Aggregate;
+pub use broadcast_join::BroadcastJoin;
 pub use coalesce::Coalesce;
 pub use concat::Concat;
 pub use csv::{TabularScanCsv, TabularWriteCsv};
@@ -26,9 +28,9 @@ pub use explode::Explode;
 pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;
 pub use flatten::Flatten;
+pub use hash_join::HashJoin;
 #[cfg(feature = "python")]
 pub use in_memory::InMemoryScan;
-pub use join::Join;
 pub use json::{TabularScanJson, TabularWriteJson};
 pub use limit::Limit;
 pub use parquet::{TabularScanParquet, TabularWriteParquet};

@@ -3,13 +3,25 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
 
 
+@pytest.fixture(params=[False, True])
+def broadcast_join_enabled(request):
+    # Toggles between default broadcast join threshold (10 MiB), and a threshold of 0, which disables broadcast joins.
+    broadcast_threshold = 10 * 1024 * 1024 if request.param else 0
+    old_context = daft.context.pop_context()
+    try:
+        yield daft.context.set_config(broadcast_join_size_bytes_threshold=broadcast_threshold)
+    finally:
+        daft.context.set_context(old_context)
+
+
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_multicol_joins(make_df, n_partitions: int):
+def test_multicol_joins(broadcast_join_enabled, make_df, n_partitions: int):
     df = make_df(
         {
             "A": [1, 2, 3],
@@ -32,7 +44,7 @@ def test_multicol_joins(make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_limit_after_join(make_df, n_partitions: int):
+def test_limit_after_join(broadcast_join_enabled, make_df, n_partitions: int):
     data = {
         "A": [1, 2, 3],
     }
@@ -59,7 +71,7 @@ def test_limit_after_join(make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join(make_df, repartition_nparts):
+def test_inner_join(broadcast_join_enabled, make_df, repartition_nparts):
     daft_df = make_df(
         {
             "id": [1, None, 3],
@@ -87,7 +99,7 @@ def test_inner_join(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join_multikey(make_df, repartition_nparts):
+def test_inner_join_multikey(broadcast_join_enabled, make_df, repartition_nparts):
     daft_df = make_df(
         {
             "id": [1, None, None],
@@ -118,7 +130,7 @@ def test_inner_join_multikey(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_inner_join_all_null(make_df, repartition_nparts):
+def test_inner_join_all_null(broadcast_join_enabled, make_df, repartition_nparts):
     daft_df = make_df(
         {
             "id": [None, None, None],
@@ -145,7 +157,7 @@ def test_inner_join_all_null(make_df, repartition_nparts):
     )
 
 
-def test_inner_join_null_type_column(make_df):
+def test_inner_join_null_type_column(broadcast_join_enabled, make_df):
     daft_df = make_df(
         {
             "id": [None, None, None],

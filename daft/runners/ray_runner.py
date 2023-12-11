@@ -212,7 +212,15 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return idx in self._results
 
     def __len__(self) -> int:
-        return sum([self._results[pid].metadata().num_rows for pid in self._results])
+        return sum(result.metadata().num_rows for result in self._results.values())
+
+    def size_bytes(self) -> int | None:
+        size_bytes_ = [result.metadata().size_bytes for result in self._results.values()]
+        size_bytes: list[int] = [size for size in size_bytes_ if size is not None]
+        if len(size_bytes) != len(size_bytes_):
+            return None
+        else:
+            return sum(size_bytes)
 
     def num_partitions(self) -> int:
         return len(self._results)
@@ -302,7 +310,7 @@ class RayRunnerIO(runner_io.RunnerIO):
             RayPartitionSet(
                 _daft_config_objref=self.daft_config_objref,
                 _results={
-                    i: RayMaterializedResult(obj, _daft_config_objref=self.daft_config_objref)
+                    i: RayMaterializedResult(obj, daft_config_objref=self.daft_config_objref)
                     for i, obj in enumerate(daft_vpartitions)
                 },
             ),
@@ -335,7 +343,7 @@ class RayRunnerIO(runner_io.RunnerIO):
             RayPartitionSet(
                 _daft_config_objref=self.daft_config_objref,
                 _results={
-                    i: RayMaterializedResult(obj, _daft_config_objref=self.daft_config_objref)
+                    i: RayMaterializedResult(obj, daft_config_objref=self.daft_config_objref)
                     for i, obj in enumerate(daft_vpartitions)
                 },
             ),
@@ -412,9 +420,9 @@ def reduce_and_fanout(
 
 
 @ray.remote
-def get_meta(daft_config: PyDaftConfig, partition: MicroPartition) -> PartitionMetadata:
+def get_metas(daft_config: PyDaftConfig, *partitions: MicroPartition) -> list[PartitionMetadata]:
     set_config(daft_config)
-    return PartitionMetadata.from_table(partition)
+    return [PartitionMetadata.from_table(partition) for partition in partitions]
 
 
 def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
@@ -578,7 +586,7 @@ class Scheduler:
                                 assert isinstance(next_step, SingleOutputPartitionTask)
                                 next_step.set_result(
                                     [
-                                        RayMaterializedResult(partition, _daft_config_objref=self.daft_config_objref)
+                                        RayMaterializedResult(partition, daft_config_objref=self.daft_config_objref)
                                         for partition in next_step.inputs
                                     ]
                                 )
@@ -617,7 +625,6 @@ class Scheduler:
                     dispatch = datetime.now()
                     completed_task_ids = []
                     for wait_for in ("next_one", "next_batch"):
-
                         if not is_active():
                             break
 
@@ -704,10 +711,9 @@ def _build_partitions(daft_config_objref: ray.ObjectRef, task: PartitionTask[ray
     task.set_result(
         [
             RayMaterializedResult(
-                _partition=partition,
-                _daft_config_objref=daft_config_objref,
-                _metadatas=metadatas_accessor,
-                _metadata_index=i,
+                partition=partition,
+                metadatas=metadatas_accessor,
+                metadata_idx=i,
             )
             for i, partition in enumerate(partitions)
         ]
@@ -824,7 +830,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             pset = RayPartitionSet(
                 _daft_config_objref=self.daft_config_objref,
                 _results={
-                    pid: RayMaterializedResult(ray.put(val), _daft_config_objref=self.daft_config_objref)
+                    pid: RayMaterializedResult(ray.put(val), daft_config_objref=self.daft_config_objref)
                     for pid, val in pset._partitions.items()
                 },
             )
@@ -835,12 +841,22 @@ class RayRunner(Runner[ray.ObjectRef]):
         return RayRunnerIO(daft_config_objref=self.daft_config_objref)
 
 
-@dataclass(frozen=True)
 class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
-    _partition: ray.ObjectRef
-    _daft_config_objref: ray.ObjectRef
-    _metadatas: PartitionMetadataAccessor | None = None
-    _metadata_index: int | None = None
+    def __init__(
+        self,
+        partition: ray.ObjectRef,
+        daft_config_objref: ray.ObjectRef | None = None,
+        metadatas: PartitionMetadataAccessor | None = None,
+        metadata_idx: int | None = None,
+    ):
+        self._partition = partition
+        if metadatas is None:
+            assert metadata_idx is None
+            assert daft_config_objref is not None
+            metadatas = PartitionMetadataAccessor(get_metas.remote(daft_config_objref, self._partition))
+            metadata_idx = 0
+        self._metadatas = metadatas
+        self._metadata_idx = metadata_idx
 
     def partition(self) -> ray.ObjectRef:
         return self._partition
@@ -849,10 +865,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
         return ray.get(self._partition)
 
     def metadata(self) -> PartitionMetadata:
-        if self._metadatas is not None and self._metadata_index is not None:
-            return self._metadatas.get_index(self._metadata_index)
-        else:
-            return ray.get(get_meta.remote(self._daft_config_objref, self._partition))
+        return self._metadatas.get_index(self._metadata_idx)
 
     def cancel(self) -> None:
         return ray.cancel(self._partition)

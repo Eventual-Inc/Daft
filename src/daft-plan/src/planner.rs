@@ -487,6 +487,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
         }) => {
             let mut left_physical = plan(left, cfg.clone())?;
             let mut right_physical = plan(right, cfg.clone())?;
+
             let left_pspec = left_physical.partition_spec();
             let right_pspec = right_physical.partition_spec();
             let num_partitions = max(left_pspec.num_partitions, right_pspec.num_partitions);
@@ -500,8 +501,44 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
                 num_partitions,
                 Some(right_on.clone()),
             ));
+
+            let is_left_partitioned = left_pspec == new_left_pspec;
+            let is_right_partitioned = right_pspec == new_right_pspec;
+
+            // If either the left or right side of the join are very small tables, perform a broadcast join with the
+            // entire smaller table broadcast to each of the partitions of the larger table.
+
+            // Ensure that the left side of the join is the smaller side.
+            let (smaller_size_bytes, do_swap) = match (
+                left_physical.approximate_size_bytes(),
+                right_physical.approximate_size_bytes(),
+            ) {
+                (Some(left_size_bytes), Some(right_size_bytes)) => {
+                    if right_size_bytes < left_size_bytes {
+                        (Some(right_size_bytes), true)
+                    } else {
+                        (Some(left_size_bytes), false)
+                    }
+                }
+                (Some(left_size_bytes), None) => (Some(left_size_bytes), false),
+                (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
+                (None, None) => (None, false),
+            };
+            let is_larger_partitioned = if do_swap {
+                is_right_partitioned
+            } else {
+                is_left_partitioned
+            };
+            // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
+            if !is_larger_partitioned && let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {
+                if do_swap {
+                    // These will get swapped back when doing the actual local joins.
+                    (left_physical, right_physical) = (right_physical, left_physical);
+                }
+                return Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(left_physical.into(), right_physical.into(), left_on.clone(), right_on.clone(), *join_type, do_swap)));
+            }
             if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
-                && left_pspec != new_left_pspec
+                && !is_left_partitioned
             {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     left_physical.into(),
@@ -511,7 +548,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
                 left_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
             }
             if (num_partitions > 1 || right_pspec.num_partitions != num_partitions)
-                && right_pspec != new_right_pspec
+                && !is_right_partitioned
             {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     right_physical.into(),
@@ -520,7 +557,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftConfig>) -> DaftResult<Phys
                 ));
                 right_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
             }
-            Ok(PhysicalPlan::Join(Join::new(
+            Ok(PhysicalPlan::HashJoin(HashJoin::new(
                 left_physical.into(),
                 right_physical.into(),
                 left_on.clone(),

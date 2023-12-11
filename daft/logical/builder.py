@@ -74,9 +74,11 @@ class LogicalPlanBuilder:
 
     @classmethod
     def from_in_memory_scan(
-        cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int
+        cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int, size_bytes: int
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, num_partitions)
+        builder = _LogicalPlanBuilder.in_memory_scan(
+            partition.key, partition, schema._schema, num_partitions, size_bytes
+        )
         return cls(builder)
 
     @classmethod

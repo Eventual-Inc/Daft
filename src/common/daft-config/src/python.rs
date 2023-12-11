@@ -19,9 +19,10 @@ impl PyDaftConfig {
     }
 
     fn with_config_values(
-        &mut self,
+        &self,
         merge_scan_tasks_min_size_bytes: Option<usize>,
         merge_scan_tasks_max_size_bytes: Option<usize>,
+        broadcast_join_size_bytes_threshold: Option<usize>,
     ) -> PyResult<PyDaftConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -31,20 +32,28 @@ impl PyDaftConfig {
         if let Some(merge_scan_tasks_min_size_bytes) = merge_scan_tasks_min_size_bytes {
             config.merge_scan_tasks_min_size_bytes = merge_scan_tasks_min_size_bytes;
         }
+        if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
+            config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
+        }
 
         Ok(PyDaftConfig {
             config: Arc::new(config),
         })
     }
 
-    #[getter(merge_scan_tasks_min_size_bytes)]
+    #[getter]
     fn get_merge_scan_tasks_min_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.merge_scan_tasks_min_size_bytes)
     }
 
-    #[getter(merge_scan_tasks_max_size_bytes)]
+    #[getter]
     fn get_merge_scan_tasks_max_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.merge_scan_tasks_max_size_bytes)
+    }
+
+    #[getter]
+    fn get_broadcast_join_size_bytes_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.broadcast_join_size_bytes_threshold)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

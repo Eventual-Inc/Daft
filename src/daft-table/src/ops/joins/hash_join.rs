@@ -43,6 +43,7 @@ pub(super) fn hash_inner_join(left: &Table, right: &Table) -> DaftResult<(Series
         ));
     }
 
+    // TODO(Clark): Build the probe table on the smaller table, rather than always building it on the left table.
     let probe_table = left.to_probe_hash_table()?;
 
     let r_hashes = right.hash_rows()?;

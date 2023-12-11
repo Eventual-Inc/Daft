@@ -31,6 +31,7 @@ pub struct InMemoryInfo {
     )]
     pub cache_entry: PyObject,
     pub num_partitions: usize,
+    pub size_bytes: usize,
 }
 
 #[cfg(feature = "python")]
@@ -40,12 +41,14 @@ impl InMemoryInfo {
         cache_key: String,
         cache_entry: PyObject,
         num_partitions: usize,
+        size_bytes: usize,
     ) -> Self {
         Self {
             source_schema,
             cache_key,
             cache_entry,
             num_partitions,
+            size_bytes,
         }
     }
 }
