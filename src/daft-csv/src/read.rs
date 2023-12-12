@@ -30,8 +30,14 @@ use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
 trait ByteRecordChunkStream = Stream<Item = super::Result<Vec<ByteRecord>>>;
-trait ColumnArrayChunkStream<T> = Stream<
-    Item = super::Result<Context<JoinHandle<DaftResult<T>>, super::JoinSnafu, super::Error>>,
+trait ColumnArrayChunkStream = Stream<
+    Item = super::Result<
+        Context<
+            JoinHandle<DaftResult<Vec<Box<dyn arrow2::array::Array>>>>,
+            super::JoinSnafu,
+            super::Error,
+        >,
+    >,
 >;
 
 #[allow(clippy::too_many_arguments)]
@@ -298,10 +304,7 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(
-    impl ColumnArrayChunkStream<Vec<Box<dyn arrow2::array::Array>>> + Send,
-    Vec<Field>,
-)> {
+) -> DaftResult<(impl ColumnArrayChunkStream + Send, Vec<Field>)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
     {
         Some(schema) => (schema.to_arrow()?, None, None),
@@ -460,7 +463,7 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
-) -> impl ColumnArrayChunkStream<Vec<Box<dyn arrow2::array::Array>>> + Send {
+) -> impl ColumnArrayChunkStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
     stream.map_ok(move |record| {
