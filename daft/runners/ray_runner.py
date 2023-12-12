@@ -832,7 +832,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
 
     def metadata(self) -> PartitionMetadata:
         return self._metadatas.get_index(self._metadata_idx)
-    
+
     def cancel(self) -> None:
         return ray.cancel(self._partition)
 
