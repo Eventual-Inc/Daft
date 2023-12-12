@@ -248,9 +248,7 @@ async fn read_csv_single_into_table(
         let columns_series = arrow_chunk
             .into_iter()
             .zip(&read_fields)
-            .map(|(array, field)| {
-                Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
-            })
+            .map(|(array, field)| Series::try_from((field.name.as_ref(), array)))
             .collect::<DaftResult<Vec<Series>>>()?;
         let table = Table::new(owned_read_schema.clone(), columns_series)?;
         if let Some(predicate) = &predicate {
@@ -396,6 +394,7 @@ async fn read_csv_single_into_stream(
         read_stream,
         Arc::new(fields.clone()),
         projection_indices,
+        true,
     );
 
     Ok((stream, fields))
@@ -463,6 +462,7 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
+    cast_to_daft_compatible_type: bool,
 ) -> impl ColumnArrayChunkStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
@@ -475,12 +475,17 @@ fn parse_into_column_array_chunk_stream(
                     let chunk = projection_indices
                         .par_iter()
                         .map(|idx| {
-                            deserialize_column(
+                            let deserialized_col = deserialize_column(
                                 record.as_slice(),
                                 *idx,
                                 fields[*idx].data_type().clone(),
                                 0,
-                            )
+                            );
+                            if cast_to_daft_compatible_type {
+                                Ok(cast_array_for_daft_if_needed(deserialized_col?))
+                            } else {
+                                deserialized_col
+                            }
                         })
                         .collect::<arrow2::error::Result<Vec<Box<dyn arrow2::array::Array>>>>()
                         .context(ArrowSnafu)?;
