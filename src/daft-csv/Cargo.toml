@@ -12,9 +12,9 @@ csv-async = "1.2.6"
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
+daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
-daft-dsl = {path = "../daft-dsl", default-features = false}
 futures = {workspace = true}
 lexical-core = {version = "0.8"}
 log = {workspace = true}
