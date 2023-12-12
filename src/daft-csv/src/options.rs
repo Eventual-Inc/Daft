@@ -1,5 +1,5 @@
 use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
-use daft_dsl::{Expr, ExprRef};
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
@@ -35,7 +35,7 @@ impl CsvConvertOptions {
             include_columns,
             column_names,
             schema,
-            predicate: predicate,
+            predicate,
         }
     }
 

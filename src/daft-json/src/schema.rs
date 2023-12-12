@@ -317,8 +317,7 @@ mod tests {
                         Field::new("list", DataType::List(Box::new(DataType::Int64))),
                     ])
                 ),
-            ])?
-            .into(),
+            ])?,
         );
 
         Ok(())

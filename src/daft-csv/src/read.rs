@@ -11,10 +11,8 @@ use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Ser
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{future, Stream, StreamExt, TryStreamExt};
-use rayon::prelude::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use futures::{Stream, StreamExt, TryStreamExt};
+use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use snafu::{
     futures::{try_future::Context, TryFutureExt},
     ResultExt,
@@ -287,7 +285,7 @@ async fn read_csv_single_into_table(
     let concated_table = Table::concat(&collected_tables)?;
     if let Some(limit) = limit && concated_table.len() > limit {
         // apply head incase that last chunk went over limit
-        concated_table.head(limit as usize)
+        concated_table.head(limit)
     } else {
         Ok(concated_table)
     }
@@ -491,45 +489,6 @@ fn parse_into_column_array_chunk_stream(
         })
         .context(super::JoinSnafu {})
     })
-}
-
-fn chunks_to_table(
-    chunks: Vec<Vec<Box<dyn arrow2::array::Array>>>,
-    include_columns: Option<Vec<String>>,
-    mut fields: Vec<arrow2::datatypes::Field>,
-) -> DaftResult<Table> {
-    // Truncate fields to only contain projected columns.
-    if let Some(include_columns) = include_columns {
-        let field_map = fields
-            .into_iter()
-            .map(|field| (field.name.clone(), field))
-            .collect::<HashMap<String, Field>>();
-        fields = include_columns
-            .into_iter()
-            .map(|col| field_map[&col].clone())
-            .collect::<Vec<_>>();
-    }
-    // Concatenate column chunks and convert into Daft Series.
-    // Note that this concatenation is done in parallel on the rayon threadpool.
-    let columns_series = chunks
-        .into_par_iter()
-        .zip(&fields)
-        .map(|(mut arrays, field)| {
-            let array = if arrays.len() > 1 {
-                // Concatenate all array chunks.
-                let unboxed_arrays = arrays.iter().map(Box::as_ref).collect::<Vec<_>>();
-                arrow2::compute::concatenate::concatenate(unboxed_arrays.as_slice())?
-            } else {
-                // Return single array chunk directly.
-                arrays.pop().unwrap()
-            };
-            Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
-        })
-        .collect::<DaftResult<Vec<Series>>>()?;
-    // Build Daft Table.
-    let schema: arrow2::datatypes::Schema = fields.into();
-    let daft_schema = Schema::try_from(&schema)?;
-    Table::new(daft_schema, columns_series)
 }
 
 fn fields_to_projection_indices(
