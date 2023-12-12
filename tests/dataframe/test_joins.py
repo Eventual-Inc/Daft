@@ -13,11 +13,15 @@ from tests.utils import sort_arrow_table
 def broadcast_join_enabled(request):
     # Toggles between default broadcast join threshold (10 MiB), and a threshold of 0, which disables broadcast joins.
     broadcast_threshold = 10 * 1024 * 1024 if request.param else 0
-    old_context = daft.context.pop_context()
+
+    old_execution_config = daft.context.get_context().daft_execution_config
     try:
-        yield daft.context.set_execution_config(broadcast_join_size_bytes_threshold=broadcast_threshold)
+        daft.context.set_execution_config(
+            broadcast_join_size_bytes_threshold=broadcast_threshold,
+        )
+        yield
     finally:
-        daft.context.set_context(old_context)
+        daft.context.set_execution_config(old_execution_config)
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
