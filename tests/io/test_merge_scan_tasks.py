@@ -13,13 +13,13 @@ def override_merge_scan_tasks_configs(merge_scan_tasks_min_size_bytes: int, merg
     old_execution_config = daft.context.get_context().daft_execution_config
 
     try:
-        daft.context.set_execution_config(
+        daft.set_execution_config(
             merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
             merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         )
         yield
     finally:
-        daft.context.set_execution_config(old_execution_config)
+        daft.set_execution_config(old_execution_config)
 
 
 @pytest.fixture(scope="function")

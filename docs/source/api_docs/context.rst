@@ -22,5 +22,5 @@ Configure Daft in various ways during execution.
     :nosignatures:
     :toctree: doc_gen/configuration_functions
 
-    daft.context.set_planning_config
-    daft.context.set_execution_config
+    daft.set_planning_config
+    daft.set_execution_config

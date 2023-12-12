@@ -94,4 +94,6 @@ __all__ = [
     "register_viz_hook",
     "udf",
     "ResourceRequest",
+    "set_planning_config",
+    "set_execution_config",
 ]

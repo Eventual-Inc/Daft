@@ -16,12 +16,12 @@ def broadcast_join_enabled(request):
 
     old_execution_config = daft.context.get_context().daft_execution_config
     try:
-        daft.context.set_execution_config(
+        daft.set_execution_config(
             broadcast_join_size_bytes_threshold=broadcast_threshold,
         )
         yield
     finally:
-        daft.context.set_execution_config(old_execution_config)
+        daft.set_execution_config(old_execution_config)
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
