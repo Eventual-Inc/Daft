@@ -26,7 +26,7 @@ use daft_scan::{
 #[cfg(feature = "python")]
 use {
     crate::{physical_plan::PhysicalPlan, source_info::InMemoryInfo},
-    common_daft_config::PyDaftConfig,
+    common_daft_config::PyDaftExecutionConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::{file_format::PyFileFormatConfig, python::pylib::ScanOperatorHandle},
@@ -474,7 +474,7 @@ impl PyLogicalPlanBuilder {
     pub fn to_physical_plan_scheduler(
         &self,
         py: Python,
-        cfg: PyDaftConfig,
+        cfg: PyDaftExecutionConfig,
     ) -> PyResult<PhysicalPlanScheduler> {
         py.allow_threads(|| {
             let logical_plan = self.builder.build();

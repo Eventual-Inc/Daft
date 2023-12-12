@@ -6,7 +6,7 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
-from daft.daft import PyDaftConfig
+from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
@@ -57,7 +57,13 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
-    daft_config: PyDaftConfig = PyDaftConfig()
+    # When a dataframe is executed, this config is copied into the Runner
+    # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
+    daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
+
+    # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
+    daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig()
+
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
     _runner: Runner | None = None
@@ -71,7 +77,6 @@ class DaftContext:
 
             assert isinstance(self.runner_config, _RayRunnerConfig)
             self._runner = RayRunner(
-                daft_config=self.daft_config,
                 address=self.runner_config.address,
                 max_task_backlog=self.runner_config.max_task_backlog,
             )
@@ -92,7 +97,7 @@ class DaftContext:
                 pass
 
             assert isinstance(self.runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(daft_config=self.daft_config, use_thread_pool=self.runner_config.use_thread_pool)
+            self._runner = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
 
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
@@ -113,25 +118,6 @@ _DaftContext = DaftContext()
 
 def get_context() -> DaftContext:
     return _DaftContext
-
-
-def set_context(ctx: DaftContext) -> DaftContext:
-    global _DaftContext
-
-    pop_context()
-    _DaftContext = ctx
-
-    return _DaftContext
-
-
-def pop_context() -> DaftContext:
-    """Helper used in tests and test fixtures to clear the global runner and allow for re-setting of configs."""
-    global _DaftContext
-
-    old_daft_context = _DaftContext
-    _DaftContext = DaftContext()
-
-    return old_daft_context
 
 
 def set_runner_ray(
@@ -191,16 +177,41 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     return ctx
 
 
-def set_config(
-    config: PyDaftConfig | None = None,
+def set_planning_config(
+    config: PyDaftPlanningConfig | None = None,
+    default_io_config: IOConfig | None = None,
+) -> DaftContext:
+    """Globally sets varioous configuration parameters which control Daft plan construction behavior. These configuration values
+    are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe)
+
+    Args:
+        config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+            that the old (current) config should be used.
+        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
+            or Dataframe operation (e.g. `daft.read_parquet()`).
+    """
+    # Replace values in the DaftPlanningConfig with user-specified overrides
+    ctx = get_context()
+    old_daft_planning_config = ctx.daft_planning_config if config is None else config
+    new_daft_planning_config = old_daft_planning_config.with_config_values(
+        default_io_config=default_io_config,
+    )
+
+    ctx.daft_planning_config = new_daft_planning_config
+    return ctx
+
+
+def set_execution_config(
+    config: PyDaftExecutionConfig | None = None,
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control various aspects of Daft execution
+    """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
+    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
 
     Args:
-        config: A PyDaftConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+        config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
         merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
@@ -211,20 +222,14 @@ def set_config(
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
     """
+    # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
-    if ctx._runner is not None:
-        raise RuntimeError(
-            "Cannot call `set_config` after the runner has already been created. "
-            "Please call `set_config` before any dataframe creation or execution."
-        )
-
-    # Replace values in the DaftConfig with user-specified overrides
-    old_daft_config = ctx.daft_config if config is None else config
-    new_daft_config = old_daft_config.with_config_values(
+    old_daft_execution_config = ctx.daft_execution_config if config is None else config
+    new_daft_execution_config = old_daft_execution_config.with_config_values(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
     )
 
-    ctx.daft_config = new_daft_config
+    ctx.daft_execution_config = new_daft_execution_config
     return ctx

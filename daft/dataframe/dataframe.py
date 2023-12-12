@@ -131,8 +131,8 @@ class DataFrame:
         print(builder.pretty_print(simple))
 
     def num_partitions(self) -> int:
-        daft_config = get_context().daft_config
-        return self.__builder.to_physical_plan_scheduler(daft_config).num_partitions()
+        daft_execution_config = get_context().daft_execution_config
+        return self.__builder.to_physical_plan_scheduler(daft_execution_config).num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -319,6 +319,8 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
@@ -365,6 +367,8 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))

@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Optional, Union
 
+from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
@@ -46,6 +47,8 @@ def read_json(
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of JSON filepaths")
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     json_config = JsonSourceConfig(_buffer_size, _chunk_size)
     file_format_config = FileFormatConfig.from_json_config(json_config)
