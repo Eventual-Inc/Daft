@@ -289,7 +289,7 @@ async fn read_csv_single_into_table(
             .zip(&read_fields)
             .map(|(array, field)| Series::try_from((field.name.as_ref(), array)))
             .collect::<DaftResult<Vec<Series>>>()?;
-        let table = Table::new(owned_read_schema.clone(), columns_series)?;
+        let table = Table::new_unchecked(owned_read_schema.clone(), columns_series);
         if let Some(predicate) = &predicate {
             let filtered = table.filter(&[predicate.as_ref()])?;
             if let Some(include_columns) = &include_columns {

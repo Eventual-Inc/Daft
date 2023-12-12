@@ -71,6 +71,14 @@ impl Table {
         })
     }
 
+
+    pub fn new_unchecked<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> Self {
+        Table {
+            schema: schema.into(),
+            columns: columns,
+        }
+    }
+
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         match schema {
             Some(schema) => {
