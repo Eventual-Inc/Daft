@@ -147,22 +147,23 @@ async fn read_csv_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
 
-    let required_columns_for_predicate = predicate.as_ref().map(|p | get_required_columns(p));
-
     let limit = convert_options.as_ref().and_then(|opts| opts.limit);
 
     let mut remaining_rows = limit.map(|limit| limit as i64);
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
 
-    let convert_options_with_predicate_columns = match (convert_options, required_columns_for_predicate)  {
+    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
         (None, _) => None,
         (co, None) => co,
-        (Some(mut co), Some(required_columns_for_predicate)) => {
+        (Some(mut co), Some(predicate)) => {
             if let Some(ref mut include_columns) = co.include_columns {
+                let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
                         include_columns.push(rc)
@@ -173,8 +174,9 @@ async fn read_csv_single_into_table(
             Some(co)
         }
     };
-    println!("{:#?}", convert_options_with_predicate_columns);
-    let include_columns = convert_options_with_predicate_columns
+
+    // union of columns requested and columns needed for evaluating predicate
+    let read_columns = convert_options_with_predicate_columns
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
 
@@ -201,6 +203,22 @@ async fn read_csv_single_into_table(
     let tables = chunk_stream
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
+
+    // Fields expected for read and evaluating predicate
+    let read_fields = if let Some(read_columns) = &read_columns {
+        let field_map = fields
+            .iter()
+            .map(|field| (field.name.clone(), field.clone()))
+            .collect::<HashMap<String, Field>>();
+        read_columns
+            .iter()
+            .map(|col| field_map[col].clone())
+            .collect::<Vec<_>>()
+    } else {
+        fields.clone()
+    };
+
+    // Fields expected as the output. (removing fields that are only needed for predicate evaluation)
     let schema_fields = if let Some(include_columns) = &include_columns {
         let field_map = fields
             .iter()
@@ -214,23 +232,25 @@ async fn read_csv_single_into_table(
         fields
     };
 
+    let read_schema: arrow2::datatypes::Schema = read_fields.clone().into();
+    let read_schema = Arc::new(Schema::try_from(&read_schema)?);
+    let owned_read_schema = read_schema.clone();
+
     let schema: arrow2::datatypes::Schema = schema_fields.clone().into();
-    let daft_schema = Arc::new(Schema::try_from(&schema)?);
-    let owned_daft_schema = daft_schema.clone();
+    let schema = Arc::new(Schema::try_from(&schema)?);
 
     let filtered_tables = assert_stream_send(tables.map_ok(move |result| {
         let arrow_chunk = result?;
         let columns_series = arrow_chunk
             .into_iter()
-            .zip(&schema_fields)
+            .zip(&read_fields)
             .map(|(array, field)| {
                 Series::try_from((field.name.as_ref(), cast_array_for_daft_if_needed(array)))
             })
             .collect::<DaftResult<Vec<Series>>>()?;
-        let table = Table::new(owned_daft_schema.clone(), columns_series)?;
+        let table = Table::new(owned_read_schema.clone(), columns_series)?;
         if let Some(predicate) = &predicate {
             let filtered = table.filter(&[predicate.as_ref()])?;
-            println!("{}", table);
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())
             } else {
@@ -261,7 +281,7 @@ async fn read_csv_single_into_table(
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return Table::empty(Some(daft_schema));
+        return Table::empty(Some(schema));
     }
     // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = Table::concat(&collected_tables)?;
