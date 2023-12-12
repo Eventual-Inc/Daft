@@ -43,6 +43,17 @@ trait ColumnArrayChunkStream = Stream<
     >,
 >;
 
+trait TableStream = Stream<
+    Item = super::Result<
+        Context<
+            JoinHandle<DaftResult<Table>>,
+            super::JoinSnafu,
+            super::Error,
+        >,
+    >,
+>;
+
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
     uri: &str,
@@ -283,13 +294,13 @@ async fn read_csv_single_into_table(
     let schema = Arc::new(Schema::try_from(&schema)?);
 
     let filtered_tables = assert_stream_send(tables.map_ok(move |result| {
-        let arrow_chunk = result?;
-        let columns_series = arrow_chunk
-            .into_iter()
-            .zip(&read_fields)
-            .map(|(array, field)| Series::try_from((field.name.as_ref(), array)))
-            .collect::<DaftResult<Vec<Series>>>()?;
-        let table = Table::new_unchecked(owned_read_schema.clone(), columns_series);
+        let table = result?;
+        // let columns_series = arrow_chunk
+        //     .into_iter()
+        //     .zip(&read_fields)
+        //     .map(|(array, field)| Series::try_from((field.name.as_ref(), array)))
+        //     .collect::<DaftResult<Vec<Series>>>()?;
+        // let table = Table::new_unchecked(owned_read_schema.clone(), columns_series);
         if let Some(predicate) = &predicate {
             let filtered = table.filter(&[predicate.as_ref()])?;
             if let Some(include_columns) = &include_columns {
@@ -341,7 +352,7 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl ColumnArrayChunkStream + Send, Vec<Field>)> {
+) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
     {
         Some(schema) => (schema.to_arrow()?, None, None),
@@ -501,8 +512,8 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
-    cast_to_daft_compatible_type: bool,
-) -> impl ColumnArrayChunkStream + Send {
+    _cast_to_daft_compatible_type: bool,
+) -> impl TableStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
     stream.map_ok(move |record| {
@@ -520,15 +531,11 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*idx].data_type().clone(),
                                 0,
                             );
-                            if cast_to_daft_compatible_type {
-                                Ok(cast_array_for_daft_if_needed(deserialized_col?))
-                            } else {
-                                deserialized_col
-                            }
+                            Series::try_from((fields[*idx].name.as_ref(), cast_array_for_daft_if_needed(deserialized_col?)))
                         })
-                        .collect::<arrow2::error::Result<Vec<Box<dyn arrow2::array::Array>>>>()
-                        .context(ArrowSnafu)?;
-                    Ok(chunk)
+                        .collect::<DaftResult<Vec<Series>>>()?;
+                        // .context(ArrowSnafu)?;
+                    Table::from_columns(chunk)
                 })();
                 let _ = send.send(result);
             });
