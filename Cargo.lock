@@ -904,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "common-daft-config"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "bincode",
  "common-io-config",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "common-error"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "pyo3",
@@ -924,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "common-io-config"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "common-error",
  "pyo3",
@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "common-treenode"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "common-error",
  "pyo3",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "daft"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "common-daft-config",
  "daft-compression",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "daft-compression"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "async-compression",
  "tokio",
@@ -1133,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "daft-core"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "base64 0.21.5",
@@ -1163,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "daft-csv"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "daft-decoding"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "async-compression",
@@ -1213,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "daft-dsl"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "bincode",
  "common-error",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "daft-io"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "async-recursion",
  "async-stream",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "daft-json"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "daft-micropartition"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "bincode",
@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "daft-parquet"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "daft-plan"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "bincode",
@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "daft-scan"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "bincode",
  "common-error",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "daft-stats"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "common-error",
  "daft-core",
@@ -1427,7 +1427,7 @@ dependencies = [
 
 [[package]]
 name = "daft-table"
-version = "0.2.0+dev0"
+version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table",
