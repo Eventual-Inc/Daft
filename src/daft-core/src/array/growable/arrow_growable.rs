@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use common_error::DaftResult;
 
@@ -46,8 +46,8 @@ where
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {
         let arrow_array = self.arrow2_growable.as_box();
-        let field = Field::new(self.name.clone(), self.dtype.clone());
-        Ok(DataArray::<T>::from_arrow(&field, arrow_array)?.into_series())
+        let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
+        Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
     }
 }
 
@@ -207,7 +207,7 @@ impl<'a> Growable for ArrowExtensionGrowable<'a> {
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {
         let arr = self.child_growable.as_box();
-        let field = Field::new(self.name.clone(), self.dtype.clone());
-        Ok(ExtensionArray::from_arrow(&field, arr)?.into_series())
+        let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
+        Ok(ExtensionArray::from_arrow(field, arr)?.into_series())
     }
 }

@@ -17,6 +17,8 @@ pub struct Field {
     pub metadata: Arc<Metadata>,
 }
 
+pub type FieldRef = Arc<Field>;
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct FieldID {
     pub id: Arc<str>,

@@ -7,7 +7,7 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{schema::{Schema, SchemaRef}, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
@@ -27,7 +27,7 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::ArrowSnafu;
+use crate::{ArrowSnafu, schema};
 use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
@@ -335,7 +335,7 @@ async fn read_csv_single_into_table(
     if collected_tables.is_empty() {
         return Table::empty(Some(schema));
     }
-    // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
+    // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = parallel_table_concat(&collected_tables)?;
     if let Some(limit) = limit && concated_table.len() > limit {
         // apply head incase that last chunk went over limit
@@ -439,11 +439,15 @@ async fn read_csv_single_into_stream(
     );
     let projection_indices =
         fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
+
     let fields = schema.fields;
+    let fields_subset = projection_indices.iter().map(|i| fields.get(*i).unwrap().into()).collect::<Vec<daft_core::datatypes::Field>>();
+    let read_schema = daft_core::schema::Schema::new(fields_subset)?;
     let stream = parse_into_column_array_chunk_stream(
         read_stream,
         Arc::new(fields.clone()),
         projection_indices,
+        Arc::new(read_schema),
         true,
     );
 
@@ -512,12 +516,16 @@ fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
+    read_schema: SchemaRef,
     _cast_to_daft_compatible_type: bool,
 ) -> impl TableStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
+    let read_daft_fields = Arc::new(read_schema.fields.values().map(|f| Arc::new(f.clone())).collect::<Vec<_>>());
     stream.map_ok(move |record| {
         let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
+        let read_schema = read_schema.clone();
+        let read_daft_fields = read_daft_fields.clone();
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
@@ -531,11 +539,11 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*idx].data_type().clone(),
                                 0,
                             );
-                            Series::try_from((fields[*idx].name.as_ref(), cast_array_for_daft_if_needed(deserialized_col?)))
+                            Series::try_from_field_and_arrow_array(read_daft_fields[*idx].clone(), cast_array_for_daft_if_needed(deserialized_col?))
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
                         // .context(ArrowSnafu)?;
-                    Table::from_columns(chunk)
+                    Ok(Table::new_unchecked(read_schema, chunk))
                 })();
                 let _ = send.send(result);
             });
