@@ -17,7 +17,7 @@ use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{
-    iter::IntoParallelIterator,
+    iter::{IndexedParallelIterator, IntoParallelIterator},
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
 use snafu::{
@@ -507,15 +507,16 @@ fn parse_into_column_array_chunk_stream(
                 let result = (move || {
                     let chunk = projection_indices
                         .par_iter()
-                        .map(|idx| {
+                        .enumerate()
+                        .map(|(i, proj_idx)| {
                             let deserialized_col = deserialize_column(
                                 record.as_slice(),
-                                *idx,
-                                fields[*idx].data_type().clone(),
+                                *proj_idx,
+                                fields[*proj_idx].data_type().clone(),
                                 0,
                             );
                             Series::try_from_field_and_arrow_array(
-                                read_daft_fields[*idx].clone(),
+                                read_daft_fields[i].clone(),
                                 cast_array_for_daft_if_needed(deserialized_col?),
                             )
                         })
