@@ -7,7 +7,11 @@ use arrow2::{
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
-use daft_core::{schema::{Schema, SchemaRef}, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    schema::{Schema, SchemaRef},
+    utils::arrow::cast_array_for_daft_if_needed,
+    Series,
+};
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
@@ -27,8 +31,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{ArrowSnafu, schema};
 use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+use crate::{schema, ArrowSnafu};
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
@@ -44,15 +48,8 @@ trait ColumnArrayChunkStream = Stream<
 >;
 
 trait TableStream = Stream<
-    Item = super::Result<
-        Context<
-            JoinHandle<DaftResult<Table>>,
-            super::JoinSnafu,
-            super::Error,
-        >,
-    >,
+    Item = super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>,
 >;
-
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
@@ -224,15 +221,11 @@ async fn read_csv_single_into_table(
                     }
                 }
             }
+            // if we have a limit and a predicate, remove limit for stream
             co.limit = None;
             Some(co)
         }
     };
-
-    // union of columns requested and columns needed for evaluating predicate
-    let read_columns = convert_options_with_predicate_columns
-        .as_ref()
-        .and_then(|opts| opts.include_columns.clone());
 
     let (chunk_stream, fields) = read_csv_single_into_stream(
         uri,
@@ -258,20 +251,6 @@ async fn read_csv_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    // Fields expected for read and evaluating predicate
-    let read_fields = if let Some(read_columns) = &read_columns {
-        let field_map = fields
-            .iter()
-            .map(|field| (field.name.clone(), field.clone()))
-            .collect::<HashMap<String, Field>>();
-        read_columns
-            .iter()
-            .map(|col| field_map[col].clone())
-            .collect::<Vec<_>>()
-    } else {
-        fields.clone()
-    };
-
     // Fields expected as the output. (removing fields that are only needed for predicate evaluation)
     let schema_fields = if let Some(include_columns) = &include_columns {
         let field_map = fields
@@ -286,30 +265,19 @@ async fn read_csv_single_into_table(
         fields
     };
 
-    let read_schema: arrow2::datatypes::Schema = read_fields.clone().into();
-    let read_schema = Arc::new(Schema::try_from(&read_schema)?);
-    let owned_read_schema = read_schema.clone();
-
     let schema: arrow2::datatypes::Schema = schema_fields.clone().into();
     let schema = Arc::new(Schema::try_from(&schema)?);
 
-    let filtered_tables = assert_stream_send(tables.map_ok(move |result| {
-        let table = result?;
-        // let columns_series = arrow_chunk
-        //     .into_iter()
-        //     .zip(&read_fields)
-        //     .map(|(array, field)| Series::try_from((field.name.as_ref(), array)))
-        //     .collect::<DaftResult<Vec<Series>>>()?;
-        // let table = Table::new_unchecked(owned_read_schema.clone(), columns_series);
+    let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
         if let Some(predicate) = &predicate {
-            let filtered = table.filter(&[predicate.as_ref()])?;
+            let filtered = table?.filter(&[predicate.as_ref()])?;
             if let Some(include_columns) = &include_columns {
                 filtered.get_columns(include_columns.as_slice())
             } else {
                 Ok(filtered)
             }
         } else {
-            Ok(table)
+            table
         }
     }));
     let collected_tables = filtered_tables
@@ -441,14 +409,16 @@ async fn read_csv_single_into_stream(
         fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
 
     let fields = schema.fields;
-    let fields_subset = projection_indices.iter().map(|i| fields.get(*i).unwrap().into()).collect::<Vec<daft_core::datatypes::Field>>();
+    let fields_subset = projection_indices
+        .iter()
+        .map(|i| fields.get(*i).unwrap().into())
+        .collect::<Vec<daft_core::datatypes::Field>>();
     let read_schema = daft_core::schema::Schema::new(fields_subset)?;
     let stream = parse_into_column_array_chunk_stream(
         read_stream,
         Arc::new(fields.clone()),
         projection_indices,
         Arc::new(read_schema),
-        true,
     );
 
     Ok((stream, fields))
@@ -517,11 +487,16 @@ fn parse_into_column_array_chunk_stream(
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
     read_schema: SchemaRef,
-    _cast_to_daft_compatible_type: bool,
 ) -> impl TableStream + Send {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    let read_daft_fields = Arc::new(read_schema.fields.values().map(|f| Arc::new(f.clone())).collect::<Vec<_>>());
+    let read_daft_fields = Arc::new(
+        read_schema
+            .fields
+            .values()
+            .map(|f| Arc::new(f.clone()))
+            .collect::<Vec<_>>(),
+    );
     stream.map_ok(move |record| {
         let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
         let read_schema = read_schema.clone();
@@ -539,10 +514,12 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*idx].data_type().clone(),
                                 0,
                             );
-                            Series::try_from_field_and_arrow_array(read_daft_fields[*idx].clone(), cast_array_for_daft_if_needed(deserialized_col?))
+                            Series::try_from_field_and_arrow_array(
+                                read_daft_fields[*idx].clone(),
+                                cast_array_for_daft_if_needed(deserialized_col?),
+                            )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
-                        // .context(ArrowSnafu)?;
                     Ok(Table::new_unchecked(read_schema, chunk))
                 })();
                 let _ = send.send(result);

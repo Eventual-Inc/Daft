@@ -945,12 +945,12 @@ fn extract_python_like_to_tensor_array<
         Field::new(name, physical_type),
         vec![
             ListArray::from_arrow(
-                Arc::new(Field::new("data",data_array.data_type().into())),
+                Arc::new(Field::new("data", data_array.data_type().into())),
                 data_array,
             )?
             .into_series(),
             ListArray::from_arrow(
-                Arc::new(Field::new("shape",shapes_array.data_type().into())),
+                Arc::new(Field::new("shape", shapes_array.data_type().into())),
                 shapes_array,
             )?
             .into_series(),

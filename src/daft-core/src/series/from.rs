@@ -11,9 +11,11 @@ use super::Series;
 use crate::array::ops::from_arrow::FromArrow;
 use crate::series::array_impl::IntoSeries;
 
-
 impl Series {
-    pub fn try_from_field_and_arrow_array(field: Arc<Field>, array: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    pub fn try_from_field_and_arrow_array(
+        field: Arc<Field>,
+        array: Box<dyn arrow2::array::Array>,
+    ) -> DaftResult<Self> {
         // TODO(Nested): Refactor this out with nested logical types in StructArray and ListArray
         // Corner-case nested logical types that have not yet been migrated to new Array formats
         // to hold only casted physical arrow arrays.
@@ -38,7 +40,6 @@ impl Series {
         })
     }
 }
-
 
 impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
     type Error = DaftError;

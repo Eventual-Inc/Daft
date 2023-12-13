@@ -692,8 +692,10 @@ impl FixedShapeImageArray {
             Box::new(arrow2::array::PrimitiveArray::from_vec(data)),
             validity,
         ));
-        let physical_array =
-            FixedSizeListArray::from_arrow(Arc::new(Field::new(name, (&arrow_dtype).into())), arrow_array)?;
+        let physical_array = FixedSizeListArray::from_arrow(
+            Arc::new(Field::new(name, (&arrow_dtype).into())),
+            arrow_array,
+        )?;
         let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
         Ok(Self::new(Field::new(name, logical_dtype), physical_array))
     }

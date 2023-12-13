@@ -4,7 +4,9 @@ use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
-    datatypes::{logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field, FieldRef},
+    datatypes::{
+        logical::LogicalArray, DaftDataType, DaftLogicalType, DaftPhysicalType, Field, FieldRef,
+    },
     DataType, Series,
 };
 

@@ -15,8 +15,8 @@ use arrow2::{
 pub use binary_ops::try_physical_supertype;
 pub use dtype::DataType;
 pub use field::Field;
-pub use field::FieldRef;
 pub use field::FieldID;
+pub use field::FieldRef;
 pub use image_format::ImageFormat;
 pub use image_mode::ImageMode;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};

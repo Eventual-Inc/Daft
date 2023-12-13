@@ -71,7 +71,6 @@ impl Table {
         })
     }
 
-
     pub fn new_unchecked<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> Self {
         Table {
             schema: schema.into(),
