@@ -42,7 +42,7 @@ name = "daft"
 edition = "2021"
 name = "daft"
 publish = false
-version = "0.1.10"
+version = "0.2.0+dev0"
 
 [patch.crates-io]
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
@@ -147,4 +147,4 @@ version = "1.0.190"
 
 [workspace.package]
 edition = "2021"
-version = "0.1.10"
+version = "0.2.0+dev0"
