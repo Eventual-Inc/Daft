@@ -31,8 +31,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
+use crate::ArrowSnafu;
 use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use crate::{schema, ArrowSnafu};
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 

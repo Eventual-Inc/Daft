@@ -719,8 +719,6 @@ fn extract_python_like_to_fixed_size_list<
     child_dtype: &DataType,
     list_size: usize,
 ) -> DaftResult<FixedSizeListArray> {
-    use std::sync::Arc;
-
     let (values_vec, _, _, _) =
         extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, Some(list_size), None)?;
 
@@ -754,8 +752,6 @@ fn extract_python_like_to_list<
     python_objects: &PythonArray,
     child_dtype: &DataType,
 ) -> DaftResult<ListArray> {
-    use std::sync::Arc;
-
     let (values_vec, offsets, _, _) =
         extract_python_to_vec::<Tgt>(py, python_objects, child_dtype, None, None, None)?;
 
@@ -889,8 +885,6 @@ fn extract_python_like_to_tensor_array<
     dtype: &DataType,
     child_dtype: &DataType,
 ) -> DaftResult<TensorArray> {
-    use std::sync::Arc;
-
     let (data, offsets, shapes, shape_offsets) = extract_python_to_vec::<Tgt>(
         py,
         python_objects,
