@@ -1289,6 +1289,7 @@ dependencies = [
  "daft-compression",
  "daft-core",
  "daft-decoding",
+ "daft-dsl",
  "daft-io",
  "daft-table",
  "futures",

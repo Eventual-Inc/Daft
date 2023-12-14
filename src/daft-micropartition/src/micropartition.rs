@@ -193,6 +193,7 @@ fn materialize_scan_task(
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
                         None,
+                        scan_task.pushdowns.filters.clone(),
                     );
                     let parse_options = JsonParseOptions::new_internal();
                     let read_options =

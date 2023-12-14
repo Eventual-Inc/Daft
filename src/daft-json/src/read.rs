@@ -2,6 +2,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -32,6 +33,10 @@ trait ColumnArrayChunkStream = Stream<
             super::Error,
         >,
     >,
+>;
+
+trait TableChunkStream = Stream<
+    Item = super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>,
 >;
 
 #[allow(clippy::too_many_arguments)]
@@ -129,6 +134,49 @@ pub fn read_json_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
+// Parallel version of table concat
+// get rid of this once Table APIs are parallel
+fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+    if tables.is_empty() {
+        return Err(DaftError::ValueError(
+            "Need at least 1 Table to perform concat".to_string(),
+        ));
+    }
+    if tables.len() == 1 {
+        return Ok(tables.pop().unwrap());
+    }
+    let first_table = tables.pop().unwrap();
+
+    let first_schema = first_table.schema.as_ref();
+    for tab in tables.iter().skip(1) {
+        if tab.schema.as_ref() != first_schema {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Table concat requires all schemas to match, {} vs {}",
+                first_schema, tab.schema
+            )));
+        }
+    }
+    let num_columns = first_table.num_columns();
+    let new_series = (0..num_columns)
+        .into_par_iter()
+        .map(|i| {
+            let series_to_cat: Vec<&Series> = tables
+                .iter()
+                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
+                .collect();
+            Series::concat(series_to_cat.as_slice())
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    Table::new(first_table.schema, new_series)
+}
+
+#[inline]
+fn assert_stream_send<'u, R>(
+    s: impl 'u + Send + Stream<Item = R>,
+) -> impl 'u + Send + Stream<Item = R> {
+    s
+}
+
 async fn read_json_single_into_table(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
@@ -138,9 +186,35 @@ async fn read_json_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let (chunk_stream, schema) = read_json_single_into_stream(
+    let predicate = convert_options.as_ref().and_then(|p| p.predicate.clone());
+
+    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
+
+    let include_columns = convert_options
+        .as_ref()
+        .and_then(|opts| opts.include_columns.clone());
+
+    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
+        (None, _) => None,
+        (co, None) => co,
+        (Some(mut co), Some(predicate)) => {
+            if let Some(ref mut include_columns) = co.include_columns {
+                let required_columns_for_predicate = get_required_columns(predicate);
+                for rc in required_columns_for_predicate {
+                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                        include_columns.push(rc)
+                    }
+                }
+            }
+            // if we have a limit and a predicate, remove limit for stream
+            co.limit = None;
+            Some(co)
+        }
+    };
+
+    let (table_stream, schema) = read_json_single_into_stream(
         uri,
-        convert_options.unwrap_or_default(),
+        convert_options_with_predicate_columns.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
         io_client,
@@ -158,28 +232,55 @@ async fn read_json_single_into_table(
             .unwrap()
     });
     // Collect all chunks in chunk x column form.
-    let chunks = chunk_stream
+    let tables = table_stream
         // Limit the number of chunks we have in flight at any given time.
-        .try_buffered(max_chunks_in_flight)
+        .try_buffered(max_chunks_in_flight);
+
+    let filtered_tables = assert_stream_send(tables.map_ok(move |table| {
+        if let Some(predicate) = &predicate {
+            let filtered = table?.filter(&[predicate.as_ref()])?;
+            if let Some(include_columns) = &include_columns {
+                filtered.get_columns(include_columns.as_slice())
+            } else {
+                Ok(filtered)
+            }
+        } else {
+            table
+        }
+    }));
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    let collected_tables = filtered_tables
+        .try_take_while(|result| {
+            match (result, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                (Ok(table), Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // (1) No limit, never early-terminate.
+                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+            }
+        })
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
-    if chunks.is_empty() {
+    if collected_tables.is_empty() {
         let daft_schema = Arc::new(Schema::try_from(&schema)?);
         return Table::empty(Some(daft_schema));
     }
-    // Transpose chunk x column into column x chunk.
-    let mut column_arrays = vec![Vec::with_capacity(chunks.len()); chunks[0].len()];
-    for chunk in chunks.into_iter() {
-        for (idx, col) in chunk.into_iter().enumerate() {
-            column_arrays[idx].push(col);
-        }
+    // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
+    let concated_table = tables_concat(collected_tables)?;
+    if let Some(limit) = limit && concated_table.len() > limit {
+        // apply head incase that last chunk went over limit
+        concated_table.head(limit)
+    } else {
+        Ok(concated_table)
     }
-    // Build table from chunks.
-    // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-    chunks_to_table(column_arrays, schema)
 }
 
 async fn read_json_single_into_stream(
@@ -189,10 +290,7 @@ async fn read_json_single_into_stream(
     read_options: Option<JsonReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(
-    impl ColumnArrayChunkStream + Send,
-    arrow2::datatypes::Schema,
-)> {
+) -> DaftResult<(impl TableChunkStream + Send, arrow2::datatypes::Schema)> {
     let schema = match convert_options.schema {
         Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
@@ -206,6 +304,7 @@ async fn read_json_single_into_stream(
         .await?
         .to_arrow()?,
     };
+
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
             .single_url_get(uri.to_string(), None, io_stats)
@@ -283,7 +382,7 @@ async fn read_json_single_into_stream(
             read_stream,
             projected_schema.clone().into(),
             schema_is_projection,
-        ),
+        )?,
         projected_schema,
     ))
 }
@@ -309,11 +408,21 @@ fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
     schema: Arc<arrow2::datatypes::Schema>,
     schema_is_projection: bool,
-) -> impl ColumnArrayChunkStream + Send {
+) -> DaftResult<impl TableChunkStream + Send> {
+    let daft_schema = Arc::new(daft_core::schema::Schema::try_from(schema.as_ref())?);
+    let daft_fields = Arc::new(
+        daft_schema
+            .fields
+            .values()
+            .map(|f| Arc::new(f.clone()))
+            .collect::<Vec<_>>(),
+    );
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
     // we further parse each chunk column in parallel on the rayon threadpool.
-    stream.map_ok(move |records| {
+    Ok(stream.map_ok(move |records| {
         let schema = schema.clone();
+        let daft_schema = daft_schema.clone();
+        let daft_fields = daft_fields.clone();
         tokio::spawn(async move {
             let (send, recv) = tokio::sync::oneshot::channel();
             rayon::spawn(move || {
@@ -331,14 +440,21 @@ fn parse_into_column_array_chunk_stream(
                         .collect::<super::Result<Vec<_>>>()?;
                     let chunk = deserialize_records(parsed, schema.as_ref(), schema_is_projection)
                         .context(ArrowSnafu)?;
-                    Ok(chunk)
+                    let all_series = chunk
+                        .into_iter()
+                        .zip(daft_fields.iter())
+                        .map(|(array, field)| {
+                            Series::try_from_field_and_arrow_array(field.clone(), array)
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    Ok(Table::new_unchecked(daft_schema.clone(), all_series))
                 })();
                 let _ = send.send(result);
             });
             recv.await.context(super::OneShotRecvSnafu {})?
         })
         .context(super::JoinSnafu {})
-    })
+    }))
 }
 
 fn chunks_to_table(
