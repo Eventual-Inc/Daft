@@ -1,8 +1,10 @@
 use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_core::python::schema::PySchema,
+    daft_dsl::python::PyExpr,
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
         Python, ToPyObject,
@@ -16,6 +18,7 @@ pub struct JsonConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
     pub schema: Option<SchemaRef>,
+    pub predicate: Option<ExprRef>,
 }
 
 impl JsonConvertOptions {
@@ -23,11 +26,13 @@ impl JsonConvertOptions {
         limit: Option<usize>,
         include_columns: Option<Vec<String>>,
         schema: Option<SchemaRef>,
+        predicate: Option<ExprRef>,
     ) -> Self {
         Self {
             limit,
             include_columns,
             schema,
+            predicate,
         }
     }
 
@@ -45,11 +50,15 @@ impl JsonConvertOptions {
     pub fn with_schema(self, schema: Option<SchemaRef>) -> Self {
         Self { schema, ..self }
     }
+
+    pub fn with_predicate(self, predicate: Option<ExprRef>) -> Self {
+        Self { predicate, ..self }
+    }
 }
 
 impl Default for JsonConvertOptions {
     fn default() -> Self {
-        Self::new_internal(None, None, None)
+        Self::new_internal(None, None, None, None)
     }
 }
 
@@ -63,14 +72,22 @@ impl JsonConvertOptions {
     /// * `limit` - Only read this many rows.
     /// * `include_columns` - The names of the columns that should be kept, e.g. via a projection.
     /// * `schema` - The names and dtypes for the JSON columns.
+    /// * `predicate` - Expression to filter rows applied before limit.
+
     #[new]
-    #[pyo3(signature = (limit=None, include_columns=None, schema=None))]
+    #[pyo3(signature = (limit=None, include_columns=None, schema=None, predicate=None))]
     pub fn new(
         limit: Option<usize>,
         include_columns: Option<Vec<String>>,
         schema: Option<PySchema>,
+        predicate: Option<PyExpr>,
     ) -> Self {
-        Self::new_internal(limit, include_columns, schema.map(|s| s.into()))
+        Self::new_internal(
+            limit,
+            include_columns,
+            schema.map(|s| s.into()),
+            predicate.map(|p| p.expr.into()),
+        )
     }
 
     #[getter]
