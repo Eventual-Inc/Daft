@@ -65,7 +65,6 @@ fn run_glob(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
-
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let runtime_handle = runtime.handle();

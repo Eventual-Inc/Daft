@@ -52,9 +52,7 @@ pub fn record_batches_to_table(
                 .collect::<DaftResult<Vec<_>>>()?;
             tables.push(Table::from_columns(columns)?)
         }
-        Ok(Table::concat(
-            tables.iter().collect::<Vec<&Table>>().as_slice(),
-        )?)
+        Ok(Table::concat(tables.as_slice())?)
     })
 }
 

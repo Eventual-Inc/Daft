@@ -262,6 +262,7 @@ class CsvConvertOptions:
     include_columns: list[str] | None
     column_names: list[str] | None
     schema: PySchema | None
+    predicate: PyExpr | None
 
     def __init__(
         self,
@@ -269,6 +270,7 @@ class CsvConvertOptions:
         include_columns: list[str] | None = None,
         column_names: list[str] | None = None,
         schema: PySchema | None = None,
+        predicate: PyExpr | None = None,
     ): ...
 
 class CsvParseOptions:

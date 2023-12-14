@@ -18,7 +18,7 @@ PRED_PUSHDOWN_FILES = [
     "path, pred, limit",
     product(
         PRED_PUSHDOWN_FILES,
-        [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)],
+        [daft.col("L_ORDERKEY") == 7, daft.col("L_ORDERKEY") == 10000, daft.lit(True)],
         [None, 1, 1000],
     ),
 )
@@ -33,7 +33,7 @@ def test_parquet_filter_pushdowns(path, pred, limit, aws_public_s3_config):
 @pytest.mark.integration()
 @pytest.mark.parametrize(
     "path, pred",
-    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 1, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
+    product(PRED_PUSHDOWN_FILES, [daft.col("L_ORDERKEY") == 7, daft.col("L_ORDERKEY") == 10000, daft.lit(True)]),
 )
 def test_parquet_filter_pushdowns_disjoint_predicate(path, pred, aws_public_s3_config):
     with_pushdown = MicroPartition.read_parquet(
@@ -52,7 +52,7 @@ def test_parquet_filter_pushdowns_disjoint_predicate(path, pred, aws_public_s3_c
     "path, pred",
     product(
         ["tests/assets/parquet-data/mvp.parquet", "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"],
-        [daft.col("a") == 1, daft.col("a") == 10000, daft.lit(True)],
+        [daft.col("a") == 7, daft.col("a") == 10000, daft.lit(True)],
     ),
 )
 def test_parquet_filter_pushdowns_disjoint_predicate_no_stats(path, pred, aws_public_s3_config):

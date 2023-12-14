@@ -12,6 +12,7 @@ csv-async = "1.2.6"
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
+daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
@@ -33,7 +34,7 @@ rstest = {workspace = true}
 
 [features]
 default = ["python"]
-python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python"]
+python = ["dep:pyo3", "dep:pyo3-log", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
 
 [package]
 edition = {workspace = true}

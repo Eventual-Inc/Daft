@@ -354,6 +354,12 @@ impl From<PyTable> for Table {
     }
 }
 
+impl AsRef<Table> for PyTable {
+    fn as_ref(&self) -> &Table {
+        &self.table
+    }
+}
+
 pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<PyTable>()?;
     Ok(())

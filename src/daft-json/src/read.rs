@@ -440,14 +440,7 @@ mod tests {
                     .into(),
                 true,
             ),
-            None => (
-                field_map
-                    .into_values()
-                    .into_iter()
-                    .collect::<Vec<_>>()
-                    .into(),
-                false,
-            ),
+            None => (field_map.into_values().collect::<Vec<_>>().into(), false),
         };
         // Deserialize JSON records into Arrow2 column arrays.
         let columns = deserialize_records(parsed, &schema, is_projection).unwrap();
@@ -1049,7 +1042,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_json(
-            file.as_ref(),
+            file,
             Some(JsonConvertOptions::default().with_limit(Some(5))),
             None,
             None,
@@ -1084,7 +1077,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_json(
-            file.as_ref(),
+            file,
             Some(
                 JsonConvertOptions::default().with_include_columns(Some(vec![
                     "petalWidth".to_string(),
@@ -1121,7 +1114,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_json(
-            file.as_ref(),
+            file,
             None,
             None,
             Some(JsonReadOptions::default().with_buffer_size(Some(128))),
@@ -1156,7 +1149,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_json(
-            file.as_ref(),
+            file,
             None,
             None,
             Some(JsonReadOptions::default().with_chunk_size(Some(5))),
@@ -1191,7 +1184,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let table = read_json(
-            file.as_ref(),
+            file,
             None,
             None,
             Some(JsonReadOptions::default().with_chunk_size(Some(5))),

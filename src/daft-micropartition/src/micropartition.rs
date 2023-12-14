@@ -155,6 +155,7 @@ fn materialize_scan_task(
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
                         None,
+                        scan_task.pushdowns.filters.clone(),
                     );
                     let parse_options = CsvParseOptions::new_with_defaults(
                         cfg.has_headers,
