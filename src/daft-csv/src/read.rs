@@ -160,11 +160,11 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.len() == 1 {
         return Ok(tables.pop().unwrap());
     }
-    let first_table = tables.pop().unwrap();
+    let first_table = tables.as_slice().first().unwrap();
 
-    let first_schema = first_table.schema.as_ref();
+    let first_schema = &first_table.schema;
     for tab in tables.iter().skip(1) {
-        if tab.schema.as_ref() != first_schema {
+        if tab.schema.as_ref() != first_schema.as_ref() {
             return Err(DaftError::SchemaMismatch(format!(
                 "Table concat requires all schemas to match, {} vs {}",
                 first_schema, tab.schema
@@ -182,7 +182,7 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new(first_table.schema, new_series)
+    Table::new(first_table.schema.clone(), new_series)
 }
 
 async fn read_csv_single_into_table(
@@ -299,6 +299,7 @@ async fn read_csv_single_into_table(
     if collected_tables.is_empty() {
         return Table::empty(Some(schema));
     }
+
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;
     if let Some(limit) = limit && concated_table.len() > limit {
@@ -1219,7 +1220,7 @@ mod tests {
             file.as_ref(),
             None,
             None,
-            Some(CsvReadOptions::default().with_chunk_size(Some(100))),
+            Some(CsvReadOptions::default().with_chunk_size(Some(2))),
             io_client,
             None,
             true,

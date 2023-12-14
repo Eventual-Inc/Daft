@@ -145,11 +145,11 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.len() == 1 {
         return Ok(tables.pop().unwrap());
     }
-    let first_table = tables.pop().unwrap();
+    let first_table = tables.as_slice().first().unwrap();
 
-    let first_schema = first_table.schema.as_ref();
+    let first_schema = &first_table.schema;
     for tab in tables.iter().skip(1) {
-        if tab.schema.as_ref() != first_schema {
+        if tab.schema.as_ref() != first_schema.as_ref() {
             return Err(DaftError::SchemaMismatch(format!(
                 "Table concat requires all schemas to match, {} vs {}",
                 first_schema, tab.schema
@@ -167,7 +167,7 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Table::new(first_table.schema, new_series)
+    Table::new(first_table.schema.clone(), new_series)
 }
 
 #[inline]
