@@ -23,7 +23,7 @@ PRED_PUSHDOWN_FILES = [
         [None, 1, 1000],
     ),
 )
-def test_csv_filter_pushdowns(path, pred, limit, aws_public_s3_config):
+def test_json_filter_pushdowns(path, pred, limit, aws_public_s3_config):
     with_pushdown = MicroPartition.read_json(
         path,
         io_config=aws_public_s3_config,
