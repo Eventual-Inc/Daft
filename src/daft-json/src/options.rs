@@ -1,9 +1,10 @@
 use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
-use daft_dsl::{python::PyExpr, ExprRef};
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_core::python::schema::PySchema,
+    daft_dsl::python::PyExpr,
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
         Python, ToPyObject,
