@@ -468,7 +468,9 @@ where
             estimated_std_row_size = (m2 / ((total_rows_read - 1) as f64)).sqrt();
 
             chunk_buffer.truncate(rows_read);
-            yield chunk_buffer
+            if rows_read > 0 {
+                yield chunk_buffer
+            }
         }
     }
 }
