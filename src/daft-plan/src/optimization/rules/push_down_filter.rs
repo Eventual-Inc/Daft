@@ -279,7 +279,7 @@ mod tests {
             rules::PushDownFilter,
             Optimizer,
         },
-        test::dummy_scan_node,
+        test::{dummy_scan_node, dummy_scan_operator_node},
         JoinType, LogicalPlan, PartitionScheme,
     };
 
@@ -320,6 +320,40 @@ mod tests {
         let expected = "\
         Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests combining of two Filters into a ScanOperator
+    #[test]
+    fn pushdown_filter_into_scan_operator() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .filter(col("a").lt(&lit(2)))?
+        .filter(col("b").eq(&lit("foo")))?
+        .build();
+        let expected = "\
+        Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Filter pushdown = [col(b) == lit(\"foo\")] & [col(a) < lit(2)], Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that we cant pushdown a filter into a ScanOperator with a limit
+    #[test]
+    fn pushdown_filter_into_scan_operator_with_limit() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .limit(1, false)?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let expected = "\
+        Filter: col(a) < lit(2)\
+        \n  Limit: 1\
+        \n    Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
