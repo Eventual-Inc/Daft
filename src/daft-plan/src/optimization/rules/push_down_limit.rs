@@ -127,7 +127,10 @@ mod tests {
             rules::PushDownLimit,
             Optimizer,
         },
-        test::{dummy_scan_node, dummy_scan_node_with_pushdowns},
+        test::{
+            dummy_scan_node, dummy_scan_node_with_pushdowns,
+            dummy_scan_operator_node_with_pushdowns,
+        },
         LogicalPlan, PartitionScheme,
     };
 
@@ -255,6 +258,27 @@ mod tests {
         let expected = "\
         Limit: 5\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does push into external Source with existing larger limit.
+    ///
+    /// Limit-Source[existing_limit] -> Source[new_limit]
+    #[test]
+    fn limit_does_push_into_scan_operator_if_larger_limit() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node_with_pushdowns(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Pushdowns::default().with_limit(Some(10)),
+        )
+        .limit(5, false)?
+        .build();
+        let expected = "\
+        Limit: 5\
+        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
