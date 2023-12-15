@@ -53,7 +53,8 @@ impl Source {
                 partitioning_keys,
                 pushdowns,
             })) => {
-                res.push(format!("Source: Operator = {}", scan_op));
+                res.push("Source:".to_string());
+                res.push(format!("Operator = {}", scan_op));
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!("Partitioning keys = {:?}", partitioning_keys));
                 res.extend(pushdowns.multiline_display());

@@ -125,18 +125,20 @@ mod tests {
     #[test]
     fn same_plans_eq() -> DaftResult<()> {
         // Both plan1 and plan2 are Filter -> Project -> Source
-        let scan_node = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
-        let plan1 = scan_node
-            .project(vec![col("a")], Default::default())?
-            .filter(col("a").lt(&lit(2)))?
-            .build();
-        let plan2 = scan_node
-            .project(vec![col("a")], Default::default())?
-            .filter(col("a").lt(&lit(2)))?
-            .build();
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let plan2 = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         // Double-check that logical plans are equal.
         assert_eq!(plan1, plan2);
 
@@ -155,21 +157,20 @@ mod tests {
     #[test]
     fn different_plans_not_eq_op_ordering() -> DaftResult<()> {
         // plan1 is Project -> Filter -> Source, while plan2 is Filter -> Project -> Source.
-
-        let scan_node = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
-
-        let plan1 = scan_node
-            .filter(col("a").lt(&lit(2)))?
-            .project(vec![col("a")], Default::default())?
-            .build();
-
-        let plan2 = scan_node
-            .project(vec![col("a")], Default::default())?
-            .filter(col("a").lt(&lit(2)))?
-            .build();
+        ])
+        .filter(col("a").lt(&lit(2)))?
+        .project(vec![col("a")], Default::default())?
+        .build();
+        let plan2 = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
 
@@ -188,21 +189,20 @@ mod tests {
     #[test]
     fn different_plans_not_eq_same_order_diff_config() -> DaftResult<()> {
         // Both plan1 and plan2 are Filter -> Project -> Source, but with different filter predicates.
-
-        let scan_node = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
-
-        let plan1 = scan_node
-            .project(vec![col("a")], Default::default())?
-            .filter(col("a").lt(&lit(2)))?
-            .build();
-
-        let plan2 = scan_node
-            .project(vec![col("a")], Default::default())?
-            .filter(col("a").lt(&lit(4)))?
-            .build();
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let plan2 = dummy_scan_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .project(vec![col("a")], Default::default())?
+        .filter(col("a").lt(&lit(4)))?
+        .build();
         // Double-check that logical plans are NOT equal.
         assert_ne!(plan1, plan2);
 

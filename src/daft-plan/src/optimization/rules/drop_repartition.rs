@@ -98,7 +98,7 @@ mod tests {
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 5, Partition by = col(a)\
-        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
