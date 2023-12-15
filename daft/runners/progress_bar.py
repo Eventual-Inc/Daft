@@ -56,7 +56,7 @@ class ProgressBar:
         stage_id = step.stage_id
 
         if stage_id not in self.pbars:
-            name = "-".join(i.__class__.__name__ for i in step.instructions)
+            name = step.name()
             self._make_new_bar(stage_id, name)
         else:
             pb = self.pbars[stage_id]

@@ -82,6 +82,9 @@ class PartitionTask(Generic[PartitionT]):
     def __repr__(self) -> str:
         return self.__str__()
 
+    def name(self) -> str:
+        return f"{'-'.join(i.__class__.__name__ for i in self.instructions)} [Stage:{self.stage_id}]"
+
 
 class PartitionTaskBuilder(Generic[PartitionT]):
     """Builds a PartitionTask by adding instructions to its pipeline."""
