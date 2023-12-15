@@ -662,7 +662,7 @@ mod tests {
             .repartition(Some(1), vec![col("a")], PartitionScheme::Hash)?
             .build();
         let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
-        assert_matches!(physical_plan, PhysicalPlan::TabularScanJson(_));
+        assert_matches!(physical_plan, PhysicalPlan::TabularScan(_));
         Ok(())
     }
 
