@@ -16,12 +16,15 @@ pub fn dummy_scan_node_with_pushdowns(
     pushdowns: Pushdowns,
 ) -> LogicalPlanBuilder {
     let schema = Arc::new(Schema::new(fields).unwrap());
-    LogicalPlanBuilder::table_scan_with_pushdowns(
-        FileInfos::new_internal(vec!["/foo".to_string()], vec![None], vec![None]),
+    let anon = daft_scan::AnonymousScanOperator::new(
+        vec!["/foo".to_string()],
         schema,
         FileFormatConfig::Json(Default::default()).into(),
         StorageConfig::Native(NativeStorageConfig::new_internal(true, None).into()).into(),
-        pushdowns,
+    );
+    LogicalPlanBuilder::table_scan_with_scan_operator(
+        daft_scan::ScanOperatorRef(Arc::new(anon)),
+        Some(pushdowns),
     )
     .unwrap()
 }
