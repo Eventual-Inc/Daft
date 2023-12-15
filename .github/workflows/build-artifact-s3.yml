@@ -84,6 +84,8 @@ jobs:
       id-token: write
       contents: read
     steps:
+    - uses: actions/checkout@v4
+
     - name: Assume GitHub Actions AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -94,5 +96,5 @@ jobs:
       run: aws s3 ls s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/
     - name: install boto3
       run: pip3 install boto3
-    - name: Generate New Manifeest
+    - name: Generate New Manifest
       run: python3 tools/generate_whl_html_manifest.py
