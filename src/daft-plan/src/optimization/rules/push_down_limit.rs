@@ -195,9 +195,10 @@ mod tests {
 
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan = LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default())?
-            .limit(5, false)?
-            .build();
+        let plan =
+            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5)?
+                .limit(5, false)?
+                .build();
         let expected = "\
         Limit: 5\
         \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
