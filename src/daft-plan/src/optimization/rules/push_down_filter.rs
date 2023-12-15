@@ -6,6 +6,7 @@ use std::{
 use common_error::DaftResult;
 use daft_dsl::{
     col,
+    functions::FunctionExpr,
     optimization::{get_required_columns, replace_columns_with_expressions},
     Expr,
 };
@@ -89,10 +90,34 @@ impl OptimizerRule for PushDownFilter {
                     {
                         return Ok(Transformed::No(plan))
                     }
+
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| f.and(predicate)).unwrap_or(predicate.clone());
+                        use common_treenode::{TreeNode, VisitRecursion};
+
+                        let mut has_udf = false;
+                        predicate.apply(&mut |e: &Expr| {
+
+                            match e {
+                                #[cfg(feature = "python")]
+                                Expr::Function{func: FunctionExpr::Python(..), .. } => {
+                                    has_udf = true;
+                                    Ok(VisitRecursion::Stop)
+                                },
+                                Expr::Function{func: FunctionExpr::Uri(..), .. } => {
+                                    has_udf = true;
+                                    Ok(VisitRecursion::Stop)
+                                },
+                                _ => Ok(VisitRecursion::Continue)
+                            }
+                        }).unwrap();
+                        if has_udf {
+                            return Ok(Transformed::No(plan));
+                        }
+
+
+                        let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
                         let new_pushdowns =
                             external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
