@@ -111,7 +111,7 @@ impl OptimizerRule for PushDownFilter {
                                 },
                                 _ => Ok(VisitRecursion::Continue)
                             }
-                        }).unwrap();
+                        })?;
                         if has_udf {
                             return Ok(Transformed::No(plan));
                         }
