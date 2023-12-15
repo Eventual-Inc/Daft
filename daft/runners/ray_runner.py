@@ -651,9 +651,7 @@ def _build_partitions(
     daft_execution_config_objref: ray.ObjectRef, task: PartitionTask[ray.ObjectRef]
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask and return the resulting list of partitions."""
-    ray_options: dict[str, Any] = {
-        "num_returns": task.num_results + 1,
-    }
+    ray_options: dict[str, Any] = {"num_returns": task.num_results + 1, "name": task.name()}
 
     if task.resource_request is not None:
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
