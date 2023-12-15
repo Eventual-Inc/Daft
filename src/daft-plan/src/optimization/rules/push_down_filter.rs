@@ -358,6 +358,23 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that we cant pushdown a filter into a ScanOperator with an udf-ish expression
+    #[test]
+    fn pushdown_filter_into_scan_operator_with_udf() -> DaftResult<()> {
+        let pred = daft_dsl::functions::uri::download(&col("a"), 1, true, true, None);
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .filter(pred.is_null())?
+        .build();
+        let expected = "\
+        Filter: is_null(download(col(a)))\
+        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
     /// Tests that Filter commutes with Projections.
     #[test]
     fn filter_commutes_with_projection() -> DaftResult<()> {
