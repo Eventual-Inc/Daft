@@ -28,7 +28,11 @@ impl OptimizerRule for PushDownLimit {
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
-            LogicalPlan::Limit(LogicalLimit { input, limit, .. }) => {
+            LogicalPlan::Limit(LogicalLimit {
+                input,
+                limit,
+                eager,
+            }) => {
                 let limit = *limit as usize;
                 match input.as_ref() {
                     // Naive commuting with unary ops.
@@ -73,6 +77,25 @@ impl OptimizerRule for PushDownLimit {
                                 Ok(Transformed::Yes(out_plan))
                             }
                         }
+                    }
+                    // Fold Limit together.
+                    //
+                    // Limit-Limit -> Limit
+                    LogicalPlan::Limit(LogicalLimit {
+                        input,
+                        limit: child_limit,
+                        eager: child_eagar,
+                    }) => {
+                        let new_limit = limit.min(*child_limit as usize);
+                        let new_eager = eager | child_eagar;
+                        Ok(Transformed::Yes(
+                            LogicalPlan::Limit(LogicalLimit::new(
+                                input.clone(),
+                                new_limit as i64,
+                                new_eager,
+                            ))
+                            .into(),
+                        ))
                     }
                     _ => Ok(Transformed::No(plan)),
                 }

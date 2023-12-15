@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Not};
+use std::{
+    fmt::Display,
+    ops::{BitAnd, BitOr, Not},
+};
 
 use common_error::DaftError;
 use daft_dsl::Expr;
@@ -108,6 +111,8 @@ impl TableStatistics {
                     Gt => lhs.gt(&rhs),
                     Plus => &lhs + &rhs,
                     Minus => &lhs - &rhs,
+                    And => lhs.bitand(&rhs),
+                    Or => lhs.bitor(&rhs),
                     _ => Ok(ColumnRangeStatistics::Missing),
                 }
             }
