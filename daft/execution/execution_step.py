@@ -83,7 +83,7 @@ class PartitionTask(Generic[PartitionT]):
         return self.__str__()
 
     def name(self) -> str:
-        return f"{'-'.join(i.__class__.__name__ for i in self.instructions)}:{self.stage_id}"
+        return f"{'-'.join(i.__class__.__name__ for i in self.instructions)} [Stage:{self.stage_id}]"
 
 
 class PartitionTaskBuilder(Generic[PartitionT]):
