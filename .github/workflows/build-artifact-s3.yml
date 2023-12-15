@@ -70,16 +70,16 @@ jobs:
     - name: Copy all files as zip for Glue
       run: for file in dist/*.whl; do cp $file dist/`basename $file .whl`.zip; done
     - name: Upload files to s3
-      run: for file in dist/*; do aws s3 cp $file s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/ --no-progress; done
-
-
+      run: for file in dist/*; do aws s3 cp $file s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/ --acl public-read --no-progress; done
 
   list-wheels:
     name: List Wheels and Zip files Published to S3
     runs-on: ubuntu-latest
     needs:
     - build-and-push
-
+    concurrency:
+      group: GenerateManifestS3
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
@@ -92,3 +92,7 @@ jobs:
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: List Wheels
       run: aws s3 ls s3://github-actions-artifacts-bucket/daft-build-artifact-s3/${{ github.sha }}/
+    - name: install boto3
+      run: pip3 install boto3
+    - name: Generate New Manifeest
+      run: python3 tools/generate_whl_html_manifest.py
