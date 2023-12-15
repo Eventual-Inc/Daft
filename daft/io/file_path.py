@@ -43,6 +43,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
             parsed from the provided filesystem.
     """
     context = get_context()
+    io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
     runner_io = context.runner().runner_io()
     file_infos = runner_io.glob_paths_details([path], io_config=io_config)
     file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
