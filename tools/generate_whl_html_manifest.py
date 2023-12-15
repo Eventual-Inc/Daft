@@ -4,9 +4,14 @@ import boto3
 
 s3 = boto3.client("s3")
 
-response = s3.list_objects_v2(Bucket="github-actions-artifacts-bucket")
+all_objects = []
 
-all_objects = response["Contents"]
+paginator = s3.get_paginator("list_objects_v2")
+pages = paginator.paginate(Bucket="github-actions-artifacts-bucket")
+
+for page in pages:
+    for obj in page["Contents"]:
+        all_objects.append(obj)
 
 all_wheels = [obj["Key"] for obj in all_objects if obj["Key"].endswith(".whl")]
 
