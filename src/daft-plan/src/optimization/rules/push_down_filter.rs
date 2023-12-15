@@ -9,9 +9,11 @@ use daft_dsl::{
     optimization::{get_required_columns, replace_columns_with_expressions},
     Expr,
 };
+use daft_scan::ScanExternalInfo;
 
 use crate::{
-    logical_ops::{Concat, Filter, Project},
+    logical_ops::{Concat, Filter, Project, Source},
+    source_info::{ExternalInfo, SourceInfo},
     LogicalPlan,
 };
 
@@ -69,6 +71,40 @@ impl OptimizerRule for PushDownFilter {
                     .or(Transformed::Yes(new_filter))
                     .unwrap()
                     .clone()
+            }
+            LogicalPlan::Source(source) => {
+                match source.source_info.as_ref() {
+                    // Filter pushdown is not supported for in-memory sources.
+                    #[cfg(feature = "python")]
+                    SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
+                    // Do not pushdown if Source node is already has a limit
+                    SourceInfo::ExternalInfo(external_info)
+                        if let Some(existing_limit) =
+                            external_info.pushdowns().limit =>
+                    {
+                        return Ok(Transformed::No(plan))
+                    }
+                    // Do not pushdown if we are using python legacy scan info
+                    SourceInfo::ExternalInfo(external_info)
+                        if let ExternalInfo::Legacy(..) = external_info =>
+                    {
+                        return Ok(Transformed::No(plan))
+                    }
+                    // Pushdown filter into the Source node
+                    SourceInfo::ExternalInfo(external_info) => {
+                        let predicate = &filter.predicate;
+                        let new_predicate = external_info.pushdowns().filters.as_ref().and_then(|f| Some(f.and(predicate))).unwrap_or(predicate.clone());
+                        let new_pushdowns =
+                            external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
+                        let new_external_info = external_info.with_pushdowns(new_pushdowns);
+                        let new_source = LogicalPlan::Source(Source::new(
+                            source.output_schema.clone(),
+                            SourceInfo::ExternalInfo(new_external_info).into(),
+                        ))
+                        .into();
+                        return Ok(Transformed::Yes(new_source))
+                    }
+                }
             }
             LogicalPlan::Project(child_project) => {
                 // Commute filter with projection if predicate only depends on projection columns that
