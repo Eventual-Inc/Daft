@@ -115,8 +115,6 @@ impl OptimizerRule for PushDownFilter {
                         if has_udf {
                             return Ok(Transformed::No(plan));
                         }
-
-
                         let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
                         let new_pushdowns =
                             external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
