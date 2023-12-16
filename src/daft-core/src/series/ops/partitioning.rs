@@ -53,18 +53,17 @@ impl Series {
     pub fn partitioning_days(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Date => {
-                let downcasted = self.downcast::<DateArray>()?;
-                downcasted.cast(&DataType::Int32)
+                Ok(self.clone())
             }
             DataType::Timestamp(_, None) => {
                 let ts_array = self.downcast::<TimestampArray>()?;
-                ts_array.date()?.cast(&DataType::Int32)
+                Ok(ts_array.date()?.into_series())
             }
 
             DataType::Timestamp(tu, Some(_)) => {
                 let array = self.cast(&DataType::Timestamp(*tu, None))?;
                 let ts_array = array.downcast::<TimestampArray>()?;
-                ts_array.date()?.cast(&DataType::Int32)
+                Ok(ts_array.date()?.into_series())
             }
 
             _ => Err(DaftError::ComputeError(format!(

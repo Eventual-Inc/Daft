@@ -9,7 +9,7 @@ from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import Table
 from pyiceberg.typedef import Record
-
+import pyarrow as pa
 import daft
 from daft.daft import (
     FileFormatConfig,
@@ -46,7 +46,6 @@ def _iceberg_partition_field_to_daft_partition_field(
         MonthTransform,
         YearTransform,
     )
-
     tfm = None
     if isinstance(transform, IdentityTransform):
         tfm = PartitionTransform.identity()
@@ -92,9 +91,9 @@ class IcebergScanOperator(ScanOperator):
             field = Field._from_pyfield(pfield.field)
             field_name = field.name
             field_dtype = field.dtype
+            arrow_type = field_dtype.to_arrow_dtype()
             assert name == field_name
-            arrays[name] = daft.Series.from_pylist([value], name=name).cast(field_dtype)
-
+            arrays[name] = daft.Series.from_arrow(pa.array([value], type=arrow_type), name=name).cast(field_dtype)
         if len(arrays) > 0:
             return daft.table.Table.from_pydict(arrays)
         else:
@@ -130,7 +129,7 @@ class IcebergScanOperator(ScanOperator):
 
             # TODO: Thread in PartitionSpec to each ScanTask: P1
             # TODO: Thread in Statistics to each ScanTask: P2
-            self._iceberg_record_to_partition_spec(file.partition)
+            pvalues = self._iceberg_record_to_partition_spec(file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -139,9 +138,13 @@ class IcebergScanOperator(ScanOperator):
                 storage_config=self._storage_config,
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
+                partition_values=pvalues._table
             )
+            if st is None:
+                continue
             rows_left -= record_count
             scan_tasks.append(st)
+        print()
         return iter(scan_tasks)
 
     def can_absorb_filter(self) -> bool:

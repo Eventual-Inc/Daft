@@ -60,12 +60,13 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_predicate_pushdown(local_iceberg_catalog):
+    from datetime import date
     tab = local_iceberg_catalog.load_table("default.test_partitioned_by_days")
     df = daft.read_iceberg(tab)
-    import ipdb
-
-    ipdb.set_trace()
+    df = df.where(df['ts'] < date(2023, 3, 6))
     df.collect()
+    import ipdb
+    ipdb.set_trace()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

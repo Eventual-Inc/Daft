@@ -10,6 +10,7 @@ pub mod pylib {
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
     use daft_table::Table;
+    use daft_table::python::PyTable;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
     use pyo3::types::PyIterator;
@@ -271,10 +272,27 @@ partitioning_keys:\n",
             storage_config: PyStorageConfig,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
-        ) -> PyResult<Self> {
-            // TODO(Sammy): This should parsed from the operator and passed in here
-            let empty_pspec = PartitionSpec {
-                keys: Table::empty(None)?,
+            partition_values: Option<PyTable>
+        ) -> PyResult<Option<Self>> {
+            if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
+                let table = &pvalues.table;
+                let eval_pred = table.eval_expression_list(&[partition_filters.as_ref().clone()])?;
+                assert_eq!(eval_pred.num_columns(), 1);
+                let series = eval_pred.get_column_by_index(0)?;
+                assert_eq!(series.data_type(), &daft_core::DataType::Boolean);
+                let boolean = series.bool()?;
+                assert_eq!(boolean.len(), 1);
+                let value = boolean.get(0);
+                println!("start\n{table}\n{series}\n{value:?}");
+
+                match value {
+                    Some(false) => return Ok(None),
+                    None | Some(true) => {}
+                }
+            }
+
+            let pspec = PartitionSpec {
+                keys: partition_values.map(|p| p.table).unwrap_or_else(|| Table::empty(None).unwrap()),
             };
             let data_source = DataFileSource::CatalogDataFile {
                 path: file,
@@ -283,7 +301,7 @@ partitioning_keys:\n",
                 metadata: TableMetadata {
                     length: num_rows as usize,
                 },
-                partition_spec: empty_pspec,
+                partition_spec: pspec,
                 statistics: None,
             };
 
@@ -294,7 +312,7 @@ partitioning_keys:\n",
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Some(PyScanTask(scan_task.into())))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {

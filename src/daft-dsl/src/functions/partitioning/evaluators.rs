@@ -11,7 +11,7 @@ use common_error::{DaftError, DaftResult};
 use super::super::FunctionEvaluator;
 
 macro_rules! impl_func_evaluator_for_partitioning {
-    ($name:ident, $op:ident, $kernel:ident) => {
+    ($name:ident, $op:ident, $kernel:ident, $result_type:ident) => {
         pub(super) struct $name {}
 
         impl FunctionEvaluator for $name {
@@ -23,7 +23,7 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 match inputs {
                     [input] => match input.to_field(schema) {
                         Ok(field) if field.dtype.is_temporal() => {
-                            Ok(Field::new(field.name, DataType::Int32))
+                            Ok(Field::new(field.name, $result_type))
                         }
                         Ok(field) => Err(DaftError::TypeError(format!(
                             "Expected input to {} to be temporal, got {}",
@@ -52,8 +52,8 @@ macro_rules! impl_func_evaluator_for_partitioning {
         }
     };
 }
-
-impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years);
-impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months);
-impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days);
-impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours);
+use DataType::{Int32, Date};
+impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
+impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
+impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);
+impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours, Int32);
