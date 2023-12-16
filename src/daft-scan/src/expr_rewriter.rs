@@ -41,7 +41,7 @@ fn apply_partitioning_expr(expr: Expr, tfm: PartitionTransform) -> Option<Expr> 
 pub fn rewrite_predicate_for_partitioning(
     predicate: Expr,
     pfields: &[PartitionField],
-) -> DaftResult<Vec<Expr>> {
+) -> DaftResult<Option<Expr>> {
     if pfields.is_empty() {
         todo!("no predicate")
     }
@@ -153,6 +153,5 @@ pub fn rewrite_predicate_for_partitioning(
         })
         .cloned()
         .collect::<Vec<_>>();
-
-    Ok(filtered)
+    Ok(conjuct(filtered))
 }

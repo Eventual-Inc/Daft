@@ -31,6 +31,7 @@ pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
 mod expr_rewriter;
+pub use expr_rewriter::rewrite_predicate_for_partitioning;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
@@ -451,6 +452,8 @@ impl ScanExternalInfo {
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
     pub filters: Option<ExprRef>,
+    /// Optional filters to apply on partitioning keys.
+    pub partition_filters: Option<ExprRef>,
     /// Optional columns to select from the source data.
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
@@ -459,18 +462,20 @@ pub struct Pushdowns {
 
 impl Default for Pushdowns {
     fn default() -> Self {
-        Self::new(None, None, None)
+        Self::new(None, None,  None, None)
     }
 }
 
 impl Pushdowns {
     pub fn new(
         filters: Option<ExprRef>,
+        partition_filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
     ) -> Self {
         Self {
             filters,
+            partition_filters,
             columns,
             limit,
         }
@@ -479,6 +484,7 @@ impl Pushdowns {
     pub fn with_limit(&self, limit: Option<usize>) -> Self {
         Self {
             filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit,
         }
@@ -487,6 +493,16 @@ impl Pushdowns {
     pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+        }
+    }
+
+    pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters,
             columns: self.columns.clone(),
             limit: self.limit,
         }
@@ -495,6 +511,7 @@ impl Pushdowns {
     pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
         Self {
             filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
             columns,
             limit: self.limit,
         }
@@ -507,6 +524,9 @@ impl Pushdowns {
         }
         if let Some(filters) = &self.filters {
             res.push(format!("Filter pushdown = {}", filters));
+        }
+        if let Some(pfilters) = &self.partition_filters {
+            res.push(format!("Partition Filter = {}", pfilters));
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {}", limit));

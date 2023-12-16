@@ -12,6 +12,7 @@ use daft_dsl::{
     },
     Expr,
 };
+use daft_scan::{rewrite_predicate_for_partitioning, ScanExternalInfo};
 
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
@@ -115,8 +116,20 @@ impl OptimizerRule for PushDownFilter {
                             return Ok(Transformed::No(plan));
                         }
                         let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let partition_filter = if let ExternalInfo::Scan(ScanExternalInfo {scan_op,  ..}) = &external_info {
+                            rewrite_predicate_for_partitioning(new_predicate.clone(), scan_op.0.partitioning_keys())?
+                        } else {
+                            None
+                        };
+                        println!("pfilter: {:#?}", partition_filter);
                         let new_pushdowns =
                             external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
+
+                        let new_pushdowns = if let Some(pfilter) = partition_filter {
+                            new_pushdowns.with_partition_filters(Some(Arc::new(pfilter)))
+                        } else {
+                            new_pushdowns
+                        };
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source = LogicalPlan::Source(Source::new(
                             source.output_schema.clone(),

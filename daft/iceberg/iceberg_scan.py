@@ -95,7 +95,7 @@ class IcebergScanOperator(ScanOperator):
             arrays[name] = daft.Series.from_pylist([value], name=name).cast(field_dtype)
 
         if len(arrays) > 0:
-            return daft.table.LegacyTable.from_pydict(arrays)
+            return daft.table.Table.from_pydict(arrays)
         else:
             return None
 

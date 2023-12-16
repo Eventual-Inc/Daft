@@ -866,6 +866,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .into(),
             Pushdowns::new(
                 None,
+                None,
                 columns
                     .map(|cols| Arc::new(cols.iter().map(|v| v.to_string()).collect::<Vec<_>>())),
                 num_rows,
