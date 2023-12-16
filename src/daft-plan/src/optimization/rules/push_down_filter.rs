@@ -121,7 +121,6 @@ impl OptimizerRule for PushDownFilter {
                         } else {
                             None
                         };
-                        println!("pfilter: {:#?}", partition_filter);
                         let new_pushdowns =
                             external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
 

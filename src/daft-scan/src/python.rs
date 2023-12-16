@@ -283,8 +283,6 @@ partitioning_keys:\n",
                 let boolean = series.bool()?;
                 assert_eq!(boolean.len(), 1);
                 let value = boolean.get(0);
-                println!("start\n{table}\n{series}\n{value:?}");
-
                 match value {
                     Some(false) => return Ok(None),
                     None | Some(true) => {}
