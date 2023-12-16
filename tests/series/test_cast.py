@@ -760,3 +760,16 @@ def test_series_cast_struct_add_col() -> None:
     casted = series.cast(cast_to)
     assert casted.datatype() == cast_to
     assert casted.to_pylist() == [{**x, "baz": None} for x in data.to_pylist()]
+
+
+def test_cast_date_to_timestamp():
+    from datetime import date, datetime
+
+    import pytz
+
+    input = Series.from_pylist([date(2022, 1, 6)])
+    casted = input.cast(DataType.timestamp("us", "UTC"))
+    assert casted.to_pylist() == [datetime(2022, 1, 6, tzinfo=pytz.utc)]
+
+    back = casted.dt.date()
+    assert (input == back).to_pylist() == [True]
