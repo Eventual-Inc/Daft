@@ -49,7 +49,9 @@ def test_partitioning_days(input, dtype, expected):
 )
 def test_partitioning_months(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.partitioning.months().to_pylist() == expected
+    m = s.partitioning.months()
+    assert m.datatype() == DataType.int32()
+    assert m.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -70,7 +72,9 @@ def test_partitioning_months(input, dtype, expected):
 )
 def test_partitioning_years(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.partitioning.years().to_pylist() == expected
+    y = s.partitioning.years()
+    assert y.datatype() == DataType.int32()
+    assert y.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -91,4 +95,6 @@ def test_partitioning_years(input, dtype, expected):
 )
 def test_partitioning_hours(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.partitioning.hours().to_pylist() == expected
+    h = s.partitioning.hours()
+    assert h.datatype() == DataType.int32()
+    assert h.to_pylist() == expected

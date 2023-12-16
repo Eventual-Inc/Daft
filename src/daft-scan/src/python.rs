@@ -9,8 +9,8 @@ pub mod pylib {
     use daft_core::impl_bincode_py_state_serialization;
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
-    use daft_table::Table;
     use daft_table::python::PyTable;
+    use daft_table::Table;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
     use pyo3::types::PyIterator;
@@ -272,7 +272,7 @@ partitioning_keys:\n",
             storage_config: PyStorageConfig,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
-            partition_values: Option<PyTable>
+            partition_values: Option<PyTable>,
         ) -> PyResult<Option<Self>> {
             if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
                 let table = &pvalues.table;
@@ -292,7 +292,9 @@ partitioning_keys:\n",
             }
 
             let pspec = PartitionSpec {
-                keys: partition_values.map(|p| p.table).unwrap_or_else(|| Table::empty(None).unwrap()),
+                keys: partition_values
+                    .map(|p| p.table)
+                    .unwrap_or_else(|| Table::empty(None).unwrap()),
             };
             let data_source = DataFileSource::CatalogDataFile {
                 path: file,
