@@ -1374,6 +1374,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-io-config",
+ "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-scan",

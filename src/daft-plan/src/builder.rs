@@ -71,7 +71,10 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn table_scan_with_scan_operator(scan_operator: ScanOperatorRef) -> DaftResult<Self> {
+    pub fn table_scan_with_scan_operator(
+        scan_operator: ScanOperatorRef,
+        pushdowns: Option<Pushdowns>,
+    ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
         let source_info =
@@ -79,7 +82,7 @@ impl LogicalPlanBuilder {
                 scan_operator.clone(),
                 schema.clone(),
                 partitioning_keys.into(),
-                Default::default(),
+                pushdowns.unwrap_or_default(),
             )));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
@@ -301,7 +304,7 @@ impl PyLogicalPlanBuilder {
 
     #[staticmethod]
     pub fn table_scan_with_scan_operator(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(scan_operator.into())?.into())
+        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(scan_operator.into(), None)?.into())
     }
 
     #[staticmethod]

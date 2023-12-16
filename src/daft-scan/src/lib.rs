@@ -12,6 +12,7 @@ use file_format::FileFormatConfig;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
+pub use anonymous::AnonymousScanOperator;
 pub mod file_format;
 mod glob;
 #[cfg(feature = "python")]
