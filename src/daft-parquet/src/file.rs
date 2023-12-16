@@ -2,8 +2,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::{utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
+use daft_stats::TruthValue;
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
@@ -17,8 +19,9 @@ use crate::{
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
-    JoinSnafu, OneShotRecvSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu,
+    statistics, JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
+    UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
+    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
 
@@ -27,9 +30,10 @@ pub(crate) struct ParquetReaderBuilder {
     pub metadata: parquet2::metadata::FileMetaData,
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
-    num_rows: usize,
+    limit: Option<usize>,
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
+    predicate: Option<ExprRef>,
 }
 use parquet2::read::decompress;
 
@@ -92,16 +96,20 @@ where
 }
 
 pub(crate) fn build_row_ranges(
-    num_rows: usize,
+    limit: Option<usize>,
     row_start_offset: usize,
     row_groups: Option<&[i64]>,
+    predicate: Option<ExprRef>,
+    schema: &Schema,
     metadata: &parquet2::metadata::FileMetaData,
     uri: &str,
 ) -> super::Result<Vec<RowGroupRange>> {
+    let limit = limit.map(|v| v as i64);
     let mut row_ranges = vec![];
     let mut curr_row_index = 0;
-    let mut rows_to_add = num_rows;
+
     if let Some(row_groups) = row_groups {
+        let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
             let i = *i as usize;
             if !(0..metadata.row_groups.len()).contains(&i) {
@@ -111,26 +119,63 @@ pub(crate) fn build_row_ranges(
                     total_row_groups: metadata.row_groups.len() as i64,
                 });
             }
+            if rows_to_add <= 0 {
+                break;
+            }
             let rg = metadata.row_groups.get(i).unwrap();
+            if let Some(ref pred) = predicate {
+                let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
+                    .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
+                        path: uri.to_string(),
+                    })?;
+
+                let evaled = stats.eval_expression(pred).with_context(|_| {
+                    UnableToRunExpressionOnStatsSnafu {
+                        path: uri.to_string(),
+                    }
+                })?;
+                if evaled.to_truth_value() == TruthValue::False {
+                    continue;
+                }
+            }
+
             let range_to_add = RowGroupRange {
                 row_group_index: i,
                 start: 0,
-                num_rows: rg.num_rows(),
+                num_rows: rg.num_rows().min(rows_to_add as usize),
             };
+            rows_to_add = rows_to_add.saturating_sub((rg.num_rows() as i64).min(rows_to_add));
             row_ranges.push(range_to_add);
         }
     } else {
+        let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
+
         for (i, rg) in metadata.row_groups.iter().enumerate() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
             } else if rows_to_add > 0 {
+                if let Some(ref pred) = predicate {
+                    let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
+                        .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
+                            path: uri.to_string(),
+                        })?;
+                    let evaled = stats.eval_expression(pred).with_context(|_| {
+                        UnableToRunExpressionOnStatsSnafu {
+                            path: uri.to_string(),
+                        }
+                    })?;
+                    if evaled.to_truth_value() == TruthValue::False {
+                        curr_row_index += rg.num_rows();
+                        continue;
+                    }
+                }
                 let range_to_add = RowGroupRange {
                     row_group_index: i,
                     start: row_start_offset.saturating_sub(curr_row_index),
-                    num_rows: rg.num_rows().min(rows_to_add),
+                    num_rows: rg.num_rows().min(rows_to_add as usize),
                 };
-                rows_to_add = rows_to_add.saturating_sub(rg.num_rows().min(rows_to_add));
+                rows_to_add = rows_to_add.saturating_sub((rg.num_rows() as i64).min(rows_to_add));
                 row_ranges.push(range_to_add);
             } else {
                 break;
@@ -152,15 +197,15 @@ impl ParquetReaderBuilder {
             .single_url_get_size(uri.into(), io_stats.clone())
             .await?;
         let metadata = read_parquet_metadata(uri, size, io_client, io_stats).await?;
-        let num_rows = metadata.num_rows;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
             metadata,
             selected_columns: None,
             row_start_offset: 0,
-            num_rows,
+            limit: None,
             row_groups: None,
             schema_inference_options: Default::default(),
+            predicate: None,
         })
     }
 
@@ -172,7 +217,7 @@ impl ParquetReaderBuilder {
         self.metadata().schema()
     }
 
-    pub fn prune_columns(mut self, columns: &[&str]) -> super::Result<Self> {
+    pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
         let avail_names = self
             .parquet_schema()
             .fields()
@@ -181,7 +226,7 @@ impl ParquetReaderBuilder {
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
-            if avail_names.contains(col_name) {
+            if avail_names.contains(col_name.as_ref()) {
                 names_to_keep.insert(col_name.to_string());
             } else {
                 return Err(super::Error::FieldNotFound {
@@ -201,9 +246,8 @@ impl ParquetReaderBuilder {
         num_rows: Option<usize>,
     ) -> super::Result<Self> {
         let start_offset = start_offset.unwrap_or(0);
-        let num_rows = num_rows.unwrap_or(self.metadata.num_rows.saturating_sub(start_offset));
         self.row_start_offset = start_offset;
-        self.num_rows = num_rows;
+        self.limit = num_rows;
         Ok(self)
     }
 
@@ -217,15 +261,13 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn build(self) -> super::Result<ParquetFileReader> {
-        let row_ranges = build_row_ranges(
-            self.num_rows,
-            self.row_start_offset,
-            self.row_groups.as_deref(),
-            &self.metadata,
-            &self.uri,
-        )?;
+    pub fn set_filter(mut self, predicate: ExprRef) -> Self {
+        assert_eq!(self.limit, None);
+        self.predicate = Some(predicate);
+        self
+    }
 
+    pub fn build(self) -> super::Result<ParquetFileReader> {
         let mut arrow_schema =
             infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
                 .context(UnableToParseSchemaFromMetadataSnafu::<String> {
@@ -237,6 +279,19 @@ impl ParquetReaderBuilder {
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
+        let daft_schema =
+            Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
+                path: self.uri.to_string(),
+            })?;
+        let row_ranges = build_row_ranges(
+            self.limit,
+            self.row_start_offset,
+            self.row_groups.as_deref(),
+            self.predicate.clone(),
+            &daft_schema,
+            &self.metadata,
+            &self.uri,
+        )?;
 
         ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
     }

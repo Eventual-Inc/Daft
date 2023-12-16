@@ -186,6 +186,7 @@ impl Project {
 
 #[cfg(test)]
 mod tests {
+    use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit, Expr};
@@ -197,6 +198,7 @@ mod tests {
     /// do not destroy the partition spec.
     #[test]
     fn test_partition_spec_preserving() -> DaftResult<()> {
+        let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
             (col("a") % lit(2)), // this is now "a"
             col("b"),
@@ -215,7 +217,7 @@ mod tests {
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan)?;
+        let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_pspec =
             PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("aa"), col("b")]));
@@ -240,6 +242,7 @@ mod tests {
         )]
         projection: Vec<Expr>,
     ) -> DaftResult<()> {
+        let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
@@ -253,7 +256,7 @@ mod tests {
         .project(projection, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan)?;
+        let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_pspec = PartitionSpec::new_internal(PartitionScheme::Unknown, 3, None);
         assert_eq!(
@@ -268,6 +271,7 @@ mod tests {
     /// i.e. ("a", "a" as "b") remains partitioned by "a", not "b"
     #[test]
     fn test_partition_spec_prefer_existing_names() -> DaftResult<()> {
+        let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
 
         let logical_plan = dummy_scan_node(vec![
@@ -283,7 +287,7 @@ mod tests {
         .project(expressions, Default::default())?
         .build();
 
-        let physical_plan = plan(&logical_plan)?;
+        let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_pspec =
             PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("a"), col("b")]));

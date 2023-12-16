@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import itertools
 import operator
+from datetime import date, datetime
 
 import pyarrow as pa
 import pytest
+import pytz
 
 from daft import DataType, Series
 
@@ -682,3 +684,51 @@ def test_logicalops_pyobjects(op, expected, expected_self) -> None:
     assert op(custom_falses, values).datatype() == DataType.bool()
     assert op(custom_falses, values).to_pylist() == expected
     assert op(custom_falses, custom_falses).to_pylist() == expected_self
+
+
+@pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
+def test_compare_timestamps_no_tz(tu1, tu2):
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    assert (tz1.cast(DataType.timestamp(tu1)) == tz1.cast(DataType.timestamp(tu2))).to_pylist() == [True]
+
+
+def test_compare_timestamps_no_tz_date():
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    Series.from_pylist([date(2022, 1, 1)])
+    assert (tz1 == tz1).to_pylist() == [True]
+
+
+def test_compare_timestamps_one_tz():
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    with pytest.raises(ValueError, match="Cannot perform comparison on types"):
+        assert (tz1 == tz2).to_pylist() == [True]
+
+
+def test_compare_timestamps_and_int():
+    tz1 = Series.from_pylist([datetime(2022, 1, 1)])
+    tz2 = Series.from_pylist([5])
+    with pytest.raises(ValueError, match="Cannot perform comparison on types"):
+        assert (tz1 == tz2).to_pylist() == [True]
+
+
+def test_compare_timestamps_tz_date():
+    tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    Series.from_pylist([date(2022, 1, 1)])
+    assert (tz1 == tz1).to_pylist() == [True]
+
+
+@pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
+def test_compare_timestamps_same_tz(tu1, tu2):
+    tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)]).cast(DataType.timestamp(tu1, "UTC"))
+    tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)]).cast(DataType.timestamp(tu2, "UTC"))
+    assert (tz1 == tz2).to_pylist() == [True]
+
+
+@pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))
+def test_compare_timestamps_diff_tz(tu1, tu2):
+    utc = datetime(2022, 1, 1, tzinfo=pytz.utc)
+    eastern = utc.astimezone(pytz.timezone("US/Eastern"))
+    tz1 = Series.from_pylist([utc]).cast(DataType.timestamp(tu1, "UTC"))
+    tz2 = Series.from_pylist([eastern]).cast(DataType.timestamp(tu1, "US/Eastern"))
+    assert (tz1 == tz2).to_pylist() == [True]

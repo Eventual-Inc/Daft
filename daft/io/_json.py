@@ -2,11 +2,13 @@
 
 from typing import Dict, List, Optional, Union
 
+from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
     IOConfig,
     JsonSourceConfig,
+    NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
 )
@@ -20,6 +22,9 @@ def read_json(
     path: Union[str, List[str]],
     schema_hints: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
+    use_native_downloader: bool = True,
+    _buffer_size: Optional[int] = None,
+    _chunk_size: Optional[int] = None,
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s)
 
@@ -34,6 +39,8 @@ def read_json(
         schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
             disable all schema inference on data being read, and throw an error if data being read is incompatible.
         io_config (IOConfig): Config to be used with the native downloader
+        use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
+            is currently experimental.
 
     returns:
         DataFrame: parsed DataFrame
@@ -41,8 +48,13 @@ def read_json(
     if isinstance(path, list) and len(path) == 0:
         raise ValueError(f"Cannot read DataFrame from from empty list of JSON filepaths")
 
-    json_config = JsonSourceConfig()
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+    json_config = JsonSourceConfig(_buffer_size, _chunk_size)
     file_format_config = FileFormatConfig.from_json_config(json_config)
-    storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
+    if use_native_downloader:
+        storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
+    else:
+        storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
     builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)

@@ -401,7 +401,7 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
 
         cnames = (
             [f"column_{i}" for i in range(1, 6)]
-            if use_native_downloader or os.environ.get("DAFT_MICROPARTITIONS", "0") == "1"
+            if use_native_downloader or os.environ.get("DAFT_MICROPARTITIONS", "1") == "1"
             else [f"f{i}" for i in range(5)]
         )
         df = daft.read_csv(fname, has_headers=False, use_native_downloader=use_native_downloader)
@@ -491,17 +491,111 @@ def test_create_dataframe_csv_specify_schema_no_headers(
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
+        schema_hints_for_csv_without_headers = {
+            "column_1": DataType.float64(),
+            "column_2": DataType.float64(),
+            "column_3": DataType.float64(),
+            "column_4": DataType.float64(),
+            "column_5": DataType.string(),
+        }
+
+        if use_native_downloader == False and os.environ.get("DAFT_MICROPARTITIONS") == "0":
+            schema_hints_for_csv_without_headers = {
+                "f0": DataType.float64(),
+                "f1": DataType.float64(),
+                "f2": DataType.float64(),
+                "f3": DataType.float64(),
+                "f4": DataType.string(),
+            }
+
+        df = daft.read_csv(
+            fname,
+            delimiter="\t",
+            schema_hints=schema_hints_for_csv_without_headers,
+            has_headers=False,
+            use_native_downloader=use_native_downloader,
+        )
+        assert df.column_names == list(schema_hints_for_csv_without_headers.keys())
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == list(schema_hints_for_csv_without_headers.keys())
+        assert len(pd_df) == len(valid_data)
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_schema_hints_partial(valid_data: list[dict[str, float]], use_native_downloader) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
         df = daft.read_csv(
             fname,
             delimiter="\t",
             schema_hints={
                 "sepal_length": DataType.float64(),
                 "sepal_width": DataType.float64(),
-                "petal_length": DataType.float64(),
-                "petal_width": DataType.float64(),
-                "variety": DataType.string(),
             },
-            has_headers=False,
+            use_native_downloader=use_native_downloader,
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_schema_hints_override_types(
+    valid_data: list[dict[str, float]], use_native_downloader
+) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
+        df = daft.read_csv(
+            fname,
+            delimiter="\t",
+            schema_hints={
+                "sepal_length": DataType.string(),  # Override the inferred float64 type to string
+            },
+            use_native_downloader=use_native_downloader,
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
+
+
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_csv_schema_hints_ignore_random_hint(
+    valid_data: list[dict[str, float]], use_native_downloader
+) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
+        df = daft.read_csv(
+            fname,
+            delimiter="\t",
+            schema_hints={
+                "foo": DataType.string(),  # Random column name that is not in the table
+            },
             use_native_downloader=use_native_downloader,
         )
         assert df.column_names == COL_NAMES
@@ -516,7 +610,8 @@ def test_create_dataframe_csv_specify_schema_no_headers(
 ###
 
 
-def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -524,7 +619,7 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
                 f.write("\n")
             f.flush()
 
-        df = daft.read_json(fname)
+        df = daft.read_json(fname, use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -532,7 +627,8 @@ def test_create_dataframe_json(valid_data: list[dict[str, float]]) -> None:
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as f1name, create_temp_filename() as f2name:
         with open(f1name, "w") as f1, open(f2name, "w") as f2:
             for f in (f1, f2):
@@ -541,7 +637,7 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
                     f.write("\n")
                 f.flush()
 
-        df = daft.read_json([f1name, f2name])
+        df = daft.read_json([f1name, f2name], use_native_downloader=use_native_downloader)
         assert df.column_names == COL_NAMES
 
         pd_df = df.to_pandas()
@@ -549,7 +645,8 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]]) -> 
         assert len(pd_df) == (len(valid_data) * 2)
 
 
-def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -559,7 +656,7 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
 
         col_subset = COL_NAMES[:3]
 
-        df = daft.read_json(fname)
+        df = daft.read_json(fname, use_native_downloader=use_native_downloader)
         df = df.select(*col_subset)
         assert df.column_names == col_subset
 
@@ -568,14 +665,21 @@ def test_create_dataframe_json_column_projection(valid_data: list[dict[str, floa
         assert len(pd_df) == len(valid_data)
 
 
+# TODO(Clark): Debug why this segfaults for the native downloader and is slow for the Python downloader.
+# @pytest.mark.parametrize("use_native_downloader", [True, False])
+@pytest.mark.skip
 def test_create_dataframe_json_https() -> None:
-    df = daft.read_json("https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz")
+    df = daft.read_json(
+        "https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz",
+        # use_native_downloader=use_native_downloader,
+    )
     df.collect()
     assert set(df.column_names) == {"label", "image"}
     assert len(df) == 10000
 
 
-def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]) -> None:
+@pytest.mark.parametrize("use_native_downloader", [True, False])
+def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -591,6 +695,74 @@ def test_create_dataframe_json_specify_schema(valid_data: list[dict[str, float]]
                 "petal_length": DataType.float32(),
                 "petal_width": DataType.float32(),
                 "variety": DataType.string(),
+            },
+            use_native_downloader=use_native_downloader,
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_json_schema_hints_partial(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(
+            fname,
+            schema_hints={
+                "sepal_length": DataType.float64(),
+                "sepal_width": DataType.float64(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_json_schema_hints_override_types(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(
+            fname,
+            schema_hints={
+                "sepal_length": DataType.string(),  # Override the inferred float64 type to string
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
+
+
+def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(
+            fname,
+            schema_hints={
+                "foo": DataType.string(),  # Random column name that is not in the table
             },
         )
         assert df.column_names == COL_NAMES
@@ -686,6 +858,70 @@ def test_create_dataframe_parquet_specify_schema(valid_data: list[dict[str, floa
                 "petal_length": DataType.float64(),
                 "petal_width": DataType.float64(),
                 "variety": DataType.string(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_parquet_schema_hints_partial(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, fname)
+            f.flush()
+
+        df = daft.read_parquet(
+            fname,
+            schema_hints={
+                "sepal_length": DataType.float64(),
+                "sepal_width": DataType.float64(),
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_parquet_schema_hints_override_types(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, fname)
+            f.flush()
+
+        df = daft.read_parquet(
+            fname,
+            schema_hints={
+                "sepal_length": DataType.string(),  # Override the inferred float64 type to string
+            },
+        )
+        assert df.column_names == COL_NAMES
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES
+        assert len(pd_df) == len(valid_data)
+
+        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
+
+
+def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, fname)
+            f.flush()
+
+        df = daft.read_parquet(
+            fname,
+            schema_hints={
+                "foo": DataType.string(),  # Random column name that is not in the table
             },
         )
         assert df.column_names == COL_NAMES

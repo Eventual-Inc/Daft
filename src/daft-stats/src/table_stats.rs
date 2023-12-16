@@ -1,5 +1,9 @@
-use std::{fmt::Display, ops::Not};
+use std::{
+    fmt::Display,
+    ops::{BitAnd, BitOr, Not},
+};
 
+use common_error::DaftError;
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
@@ -82,9 +86,15 @@ impl TableStatistics {
     pub fn eval_expression(&self, expr: &Expr) -> crate::Result<ColumnRangeStatistics> {
         match expr {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
-            Expr::Column(col) => {
-                let col = self.columns.get(col.as_ref()).unwrap();
-                Ok(col.clone())
+            Expr::Column(col_name) => {
+                let col = self.columns.get(col_name.as_ref());
+                if let Some(col) = col {
+                    Ok(col.clone())
+                } else {
+                    Err(crate::Error::DaftCoreCompute {
+                        source: DaftError::FieldNotFound(col_name.to_string()),
+                    })
+                }
             }
             Expr::Literal(lit_value) => lit_value.try_into(),
             Expr::Not(col) => self.eval_expression(col)?.not(),
@@ -101,6 +111,8 @@ impl TableStatistics {
                     Gt => lhs.gt(&rhs),
                     Plus => &lhs + &rhs,
                     Minus => &lhs - &rhs,
+                    And => lhs.bitand(&rhs),
+                    Or => lhs.bitor(&rhs),
                     _ => Ok(ColumnRangeStatistics::Missing),
                 }
             }

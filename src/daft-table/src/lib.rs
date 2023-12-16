@@ -71,6 +71,13 @@ impl Table {
         })
     }
 
+    pub fn new_unchecked<S: Into<SchemaRef>>(schema: S, columns: Vec<Series>) -> Self {
+        Table {
+            schema: schema.into(),
+            columns,
+        }
+    }
+
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         match schema {
             Some(schema) => {
@@ -174,16 +181,20 @@ impl Table {
         Ok(column_sizes?.iter().sum())
     }
 
-    pub fn filter(&self, predicate: &[Expr]) -> DaftResult<Self> {
+    pub fn filter<E: AsRef<Expr>>(&self, predicate: &[E]) -> DaftResult<Self> {
         if predicate.is_empty() {
             Ok(self.clone())
         } else if predicate.len() == 1 {
-            let mask = self.eval_expression(predicate.get(0).unwrap())?;
+            let mask = self.eval_expression(predicate.get(0).unwrap().as_ref())?;
             self.mask_filter(&mask)
         } else {
-            let mut expr = predicate.get(0).unwrap().and(predicate.get(1).unwrap());
+            let mut expr = predicate
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .and(predicate.get(1).unwrap().as_ref());
             for i in 2..predicate.len() {
-                let next = predicate.get(i).unwrap();
+                let next = predicate.get(i).unwrap().as_ref();
                 expr = expr.and(next);
             }
             let mask = self.eval_expression(&expr)?;
@@ -212,19 +223,19 @@ impl Table {
         Ok(Table::new(self.schema.clone(), new_series?).unwrap())
     }
 
-    pub fn concat(tables: &[&Table]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 Table to perform concat".to_string(),
             ));
         }
         if tables.len() == 1 {
-            return Ok((*tables.first().unwrap()).clone());
+            return Ok((*tables.first().unwrap().as_ref()).clone());
         }
-        let first_table = tables.first().unwrap();
+        let first_table = tables.first().unwrap().as_ref();
 
         let first_schema = first_table.schema.as_ref();
-        for tab in tables.iter().skip(1) {
+        for tab in tables.iter().skip(1).map(|t| t.as_ref()) {
             if tab.schema.as_ref() != first_schema {
                 return Err(DaftError::SchemaMismatch(format!(
                     "Table concat requires all schemas to match, {} vs {}",
@@ -237,7 +248,7 @@ impl Table {
         for i in 0..num_columns {
             let series_to_cat: Vec<&Series> = tables
                 .iter()
-                .map(|s| s.get_column_by_index(i).unwrap())
+                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
                 .collect();
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
@@ -489,6 +500,12 @@ impl Display for Table {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let table = self.to_comfy_table(Some(32));
         writeln!(f, "{table}")
+    }
+}
+
+impl AsRef<Table> for Table {
+    fn as_ref(&self) -> &Table {
+        self
     }
 }
 

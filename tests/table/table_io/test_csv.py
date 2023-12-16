@@ -14,7 +14,7 @@ from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
 from daft.series import ARROW_VERSION
-from daft.table import Table, schema_inference, table_io
+from daft.table import MicroPartition, schema_inference, table_io
 
 
 def storage_config_from_use_native_downloader(use_native_downloader: bool) -> StorageConfig:
@@ -143,7 +143,7 @@ def test_csv_read_data(data, expected_data_series, use_native_downloader):
         schema = Schema._from_field_name_and_types(
             [("id", DataType.int64()), ("data", expected_data_series.datatype())]
         )
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": expected_data_series,
@@ -166,7 +166,7 @@ def test_csv_read_data_csv_limit_rows(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2],
                 "data": [1, 2],
@@ -194,7 +194,7 @@ def test_csv_read_data_csv_select_columns(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "data": [1, 2, None],
             }
@@ -222,7 +222,7 @@ def test_csv_read_data_csv_custom_delimiter(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": [1, 2, None],
@@ -250,7 +250,7 @@ def test_csv_read_data_csv_no_header(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.int64())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": [1, 2, None],
@@ -279,7 +279,7 @@ def test_csv_read_data_csv_custom_quote(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": ["aa", "aa", "aa"],
@@ -313,7 +313,7 @@ def test_csv_read_data_custom_escape(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 2, 3],
                 "data": ['a"a"a', "aa", "aa"],
@@ -345,7 +345,7 @@ def test_csv_read_data_custom_comment(use_native_downloader):
         storage_config = storage_config_from_use_native_downloader(use_native_downloader)
 
         schema = Schema._from_field_name_and_types([("id", DataType.int64()), ("data", DataType.string())])
-        expected = Table.from_pydict(
+        expected = MicroPartition.from_pydict(
             {
                 "id": [1, 3],
                 "data": ["aa", "aa"],

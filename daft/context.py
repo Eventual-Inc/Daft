@@ -6,6 +6,8 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
+from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
+
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
 
@@ -51,26 +53,30 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner}")
 
 
-# Global Runner singleton, initialized when accessed through the DaftContext
-_RUNNER: Runner | None = None
-
-
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class DaftContext:
     """Global context for the current Daft execution environment"""
 
+    # When a dataframe is executed, this config is copied into the Runner
+    # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
+    daft_execution_config: PyDaftExecutionConfig = PyDaftExecutionConfig()
+
+    # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
+    daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig()
+
     runner_config: _RunnerConfig = dataclasses.field(default_factory=_get_runner_config_from_env)
     disallow_set_runner: bool = False
+    _runner: Runner | None = None
 
     def runner(self) -> Runner:
-        global _RUNNER
-        if _RUNNER is not None:
-            return _RUNNER
+        if self._runner is not None:
+            return self._runner
+
         if self.runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
             assert isinstance(self.runner_config, _RayRunnerConfig)
-            _RUNNER = RayRunner(
+            self._runner = RayRunner(
                 address=self.runner_config.address,
                 max_task_backlog=self.runner_config.max_task_backlog,
             )
@@ -91,20 +97,16 @@ class DaftContext:
                 pass
 
             assert isinstance(self.runner_config, _PyRunnerConfig)
-            _RUNNER = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
+            self._runner = PyRunner(use_thread_pool=self.runner_config.use_thread_pool)
 
         else:
             raise NotImplementedError(f"Runner config implemented: {self.runner_config.name}")
 
         # Mark DaftContext as having the runner set, which prevents any subsequent setting of the config
         # after the runner has been initialized once
-        global _DaftContext
-        _DaftContext = dataclasses.replace(
-            _DaftContext,
-            disallow_set_runner=True,
-        )
+        self.disallow_set_runner = True
 
-        return _RUNNER
+        return self._runner
 
     @property
     def is_ray_runner(self) -> bool:
@@ -116,12 +118,6 @@ _DaftContext = DaftContext()
 
 def get_context() -> DaftContext:
     return _DaftContext
-
-
-def _set_context(ctx: DaftContext):
-    global _DaftContext
-
-    _DaftContext = ctx
 
 
 def set_runner_ray(
@@ -147,24 +143,21 @@ def set_runner_ray(
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
-    old_ctx = get_context()
-    if old_ctx.disallow_set_runner:
+    ctx = get_context()
+    if ctx.disallow_set_runner:
         if noop_if_initialized:
             warnings.warn(
                 "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
             )
-            return old_ctx
+            return ctx
         raise RuntimeError("Cannot set runner more than once")
-    new_ctx = dataclasses.replace(
-        old_ctx,
-        runner_config=_RayRunnerConfig(
-            address=address,
-            max_task_backlog=max_task_backlog,
-        ),
-        disallow_set_runner=True,
+
+    ctx.runner_config = _RayRunnerConfig(
+        address=address,
+        max_task_backlog=max_task_backlog,
     )
-    _set_context(new_ctx)
-    return new_ctx
+    ctx.disallow_set_runner = True
+    return ctx
 
 
 def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
@@ -175,13 +168,68 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     Returns:
         DaftContext: Daft context after setting the Py runner
     """
-    old_ctx = get_context()
-    if old_ctx.disallow_set_runner:
+    ctx = get_context()
+    if ctx.disallow_set_runner:
         raise RuntimeError("Cannot set runner more than once")
-    new_ctx = dataclasses.replace(
-        old_ctx,
-        runner_config=_PyRunnerConfig(use_thread_pool=use_thread_pool),
-        disallow_set_runner=True,
+
+    ctx.runner_config = _PyRunnerConfig(use_thread_pool=use_thread_pool)
+    ctx.disallow_set_runner = True
+    return ctx
+
+
+def set_planning_config(
+    config: PyDaftPlanningConfig | None = None,
+    default_io_config: IOConfig | None = None,
+) -> DaftContext:
+    """Globally sets varioous configuration parameters which control Daft plan construction behavior. These configuration values
+    are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe)
+
+    Args:
+        config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+            that the old (current) config should be used.
+        default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
+            or Dataframe operation (e.g. `daft.read_parquet()`).
+    """
+    # Replace values in the DaftPlanningConfig with user-specified overrides
+    ctx = get_context()
+    old_daft_planning_config = ctx.daft_planning_config if config is None else config
+    new_daft_planning_config = old_daft_planning_config.with_config_values(
+        default_io_config=default_io_config,
     )
-    _set_context(new_ctx)
-    return new_ctx
+
+    ctx.daft_planning_config = new_daft_planning_config
+    return ctx
+
+
+def set_execution_config(
+    config: PyDaftExecutionConfig | None = None,
+    merge_scan_tasks_min_size_bytes: int | None = None,
+    merge_scan_tasks_max_size_bytes: int | None = None,
+    broadcast_join_size_bytes_threshold: int | None = None,
+) -> DaftContext:
+    """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
+    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
+
+    Args:
+        config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
+            that the old (current) config should be used.
+        merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
+            Increasing this value will make Daft perform more merging of files into a single partition before yielding,
+            which leads to bigger but fewer partitions. (Defaults to 64 MiB)
+        merge_scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
+            Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
+            fewer partitions. (Defaults to 512 MiB)
+        broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
+            Default is 10 MiB.
+    """
+    # Replace values in the DaftExecutionConfig with user-specified overrides
+    ctx = get_context()
+    old_daft_execution_config = ctx.daft_execution_config if config is None else config
+    new_daft_execution_config = old_daft_execution_config.with_config_values(
+        merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
+        merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
+        broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
+    )
+
+    ctx.daft_execution_config = new_daft_execution_config
+    return ctx

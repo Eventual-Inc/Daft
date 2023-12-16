@@ -78,14 +78,14 @@ pub mod pylib {
             glob_path: Vec<&str>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
-            schema: Option<PySchema>,
+            schema_hint: Option<PySchema>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
                     glob_path.as_slice(),
                     file_format_config.into(),
                     storage_config.into(),
-                    schema.map(|s| s.schema),
+                    schema_hint.map(|s| s.schema),
                 )?);
                 Ok(ScanOperatorHandle {
                     scan_op: ScanOperatorRef(operator),
@@ -216,15 +216,13 @@ partitioning_keys:\n",
         > {
             println!("{:?}", pushdowns.filters);
             if let Some(pred) = pushdowns.filters.as_deref() {
-                for p in pred {
-                    let transformed = rewrite_predicate_for_partitioning(
-                        p.as_ref().clone(),
-                        self.partitioning_keys.as_slice(),
-                    )?;
-                    println!("before {}", p);
-                    for t in transformed {
-                        println!(" {t}");
-                    }
+                let transformed = rewrite_predicate_for_partitioning(
+                    pred.as_ref().clone(),
+                    self.partitioning_keys.as_slice(),
+                )?;
+                println!("before {}", pred);
+                for t in transformed {
+                    println!(" {t}");
                 }
             }
 
@@ -329,18 +327,6 @@ partitioning_keys:\n",
     }
 
     impl_bincode_py_state_serialization!(PyScanTask);
-
-    pub(crate) fn read_json_schema(
-        py: Python,
-        uri: &str,
-        storage_config: PyStorageConfig,
-    ) -> PyResult<PySchema> {
-        py.import(pyo3::intern!(py, "daft.table.schema_inference"))?
-            .getattr(pyo3::intern!(py, "from_json"))?
-            .call1((uri, storage_config))?
-            .getattr(pyo3::intern!(py, "_schema"))?
-            .extract()
-    }
 
     #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]

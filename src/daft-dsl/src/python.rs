@@ -358,7 +358,7 @@ impl PyExpr {
         max_connections: i64,
         raise_error_on_failure: bool,
         multi_thread: bool,
-        config: Option<PyIOConfig>,
+        config: PyIOConfig,
     ) -> PyResult<Self> {
         if max_connections <= 0 {
             return Err(PyValueError::new_err(format!(
@@ -371,7 +371,7 @@ impl PyExpr {
             max_connections as usize,
             raise_error_on_failure,
             multi_thread,
-            config.map(|c| c.config),
+            Some(config.config),
         )
         .into())
     }

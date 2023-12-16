@@ -7,6 +7,17 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.table import MicroPartition
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_execution_configs():
+    """Sets global Daft config for testing"""
+    daft.set_execution_config(
+        # Disables merging of ScanTasks
+        merge_scan_tasks_min_size_bytes=0,
+        merge_scan_tasks_max_size_bytes=0,
+    )
 
 
 def pytest_configure(config):
@@ -78,7 +89,7 @@ def make_df(request, tmp_path) -> daft.Dataframe:
             import pyarrow.parquet as papq
 
             name = str(uuid.uuid4())
-            daft_table = daft.table.Table.from_arrow(pa_table)
+            daft_table = MicroPartition.from_arrow(pa_table)
             partitioned_tables = (
                 daft_table.partition_by_random(repartition, 0)
                 if len(repartition_columns) == 0

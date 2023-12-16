@@ -72,8 +72,12 @@ def read_iceberg(
 ) -> DataFrame:
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 
-    if io_config is None:
-        io_config = _convert_iceberg_file_io_properties_to_io_config(pyiceberg_table.io.properties)
+    io_config = (
+        _convert_iceberg_file_io_properties_to_io_config(pyiceberg_table.io.properties)
+        if io_config is None
+        else io_config
+    )
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     multithreaded_io = not context.get_context().is_ray_runner
     storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
@@ -81,7 +85,5 @@ def read_iceberg(
     iceberg_operator = IcebergScanOperator(pyiceberg_table, storage_config=storage_config)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
-    builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
-        scan_operator=handle, schema_hint=iceberg_operator.schema()
-    )
+    builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(scan_operator=handle)
     return DataFrame(builder)

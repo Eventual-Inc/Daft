@@ -20,7 +20,7 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartialPartitionMetadata, PartitionT
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 def scan_with_tasks(
@@ -46,12 +46,12 @@ def scan_with_tasks(
 class ScanWithTask(execution_step.SingleOutputInstruction):
     scan_task: ScanTask
 
-    def run(self, inputs: list[Table]) -> list[Table]:
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._scan(inputs)
 
-    def _scan(self, inputs: list[Table]) -> list[Table]:
+    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         assert len(inputs) == 0
-        return [Table._from_scan_task(self.scan_task)]
+        return [MicroPartition._from_scan_task(self.scan_task)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 0
@@ -74,7 +74,7 @@ def tabular_scan(
     is_ray_runner: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     # TODO(Clark): Fix this Ray runner hack.
-    part = Table._from_pytable(file_info_table)
+    part = MicroPartition._from_pytable(file_info_table)
     if is_ray_runner:
         import ray
 
@@ -114,7 +114,7 @@ class ShimExplodeOp(MapPartitionOp):
     def get_output_schema(self) -> Schema:
         raise NotImplementedError("Output schema shouldn't be needed at execution time")
 
-    def run(self, input_partition: Table) -> Table:
+    def run(self, input_partition: MicroPartition) -> MicroPartition:
         return input_partition.explode(self.explode_columns)
 
 
@@ -188,7 +188,7 @@ def reduce_merge(
     return physical_plan.reduce(input, reduce_instruction)
 
 
-def join(
+def hash_join(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
@@ -197,12 +197,32 @@ def join(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
-    return physical_plan.join(
+    return physical_plan.hash_join(
         left_plan=input,
         right_plan=right,
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+    )
+
+
+def broadcast_join(
+    broadcaster: physical_plan.InProgressPhysicalPlan[PartitionT],
+    receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
+    left_on: list[PyExpr],
+    right_on: list[PyExpr],
+    join_type: JoinType,
+    is_swapped: bool,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
+    right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
+    return physical_plan.broadcast_join(
+        broadcaster_plan=broadcaster,
+        receiver_plan=receiver,
+        left_on=left_on_expr_proj,
+        right_on=right_on_expr_proj,
+        how=join_type,
+        is_swapped=is_swapped,
     )
 
 

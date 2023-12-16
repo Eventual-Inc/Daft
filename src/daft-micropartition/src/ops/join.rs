@@ -41,6 +41,7 @@ impl MicroPartition {
             return Ok(Self::empty(Some(join_schema.into())));
         }
 
+        // TODO(Clark): Elide concatenations where possible by doing a chunk-aware local table join.
         let lt = self.concat_or_get(io_stats.clone())?;
         let rt = right.concat_or_get(io_stats)?;
 

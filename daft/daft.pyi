@@ -211,6 +211,15 @@ class JsonSourceConfig:
     Configuration of a JSON data source.
     """
 
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+    ): ...
+
 class FileFormatConfig:
     """
     Configuration for parsing a particular file format (Parquet, CSV, JSON).
@@ -253,6 +262,7 @@ class CsvConvertOptions:
     include_columns: list[str] | None
     column_names: list[str] | None
     schema: PySchema | None
+    predicate: PyExpr | None
 
     def __init__(
         self,
@@ -260,6 +270,7 @@ class CsvConvertOptions:
         include_columns: list[str] | None = None,
         column_names: list[str] | None = None,
         schema: PySchema | None = None,
+        predicate: PyExpr | None = None,
     ): ...
 
 class CsvParseOptions:
@@ -287,6 +298,41 @@ class CsvParseOptions:
 class CsvReadOptions:
     """
     Options for reading CSV files.
+    """
+
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        chunk_size: int | None = None,
+    ): ...
+
+class JsonConvertOptions:
+    """
+    Options for converting JSON data to Daft data.
+    """
+
+    limit: int | None
+    include_columns: list[str] | None
+    schema: PySchema | None
+
+    def __init__(
+        self,
+        limit: int | None = None,
+        include_columns: list[str] | None = None,
+        schema: PySchema | None = None,
+    ): ...
+
+class JsonParseOptions:
+    """
+    Options for parsing JSON files.
+    """
+
+class JsonReadOptions:
+    """
+    Options for reading JSON files.
     """
 
     buffer_size: int | None
@@ -373,6 +419,25 @@ class S3Config:
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
     ): ...
+    def replace(
+        self,
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+        key_id: str | None = None,
+        session_token: str | None = None,
+        access_key: str | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
+        retry_mode: str | None = None,
+        anonymous: bool | None = None,
+        verify_ssl: bool | None = None,
+        check_hostname_ssl: bool | None = None,
+    ) -> S3Config:
+        """Replaces values if provided, returning a new S3Config"""
+        ...
 
 class AzureConfig:
     """
@@ -382,6 +447,11 @@ class AzureConfig:
     def __init__(
         self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
     ): ...
+    def replace(
+        self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
+    ) -> AzureConfig:
+        """Replaces values if provided, returning a new AzureConfig"""
+        ...
 
 class GCSConfig:
     """
@@ -392,6 +462,9 @@ class GCSConfig:
     anonymous: bool
 
     def __init__(self, project_id: str | None = None, anonymous: bool | None = None): ...
+    def replace(self, project_id: str | None = None, anonymous: bool | None = None) -> GCSConfig:
+        """Replaces values if provided, returning a new GCSConfig"""
+        ...
 
 class IOConfig:
     """
@@ -408,6 +481,11 @@ class IOConfig:
         """
         Recreate an IOConfig from a JSON string.
         """
+    def replace(
+        self, s3: S3Config | None = None, azure: AzureConfig | None = None, gcs: GCSConfig | None = None
+    ) -> IOConfig:
+        """Replaces values if provided, returning a new IOConfig"""
+        ...
 
 class NativeStorageConfig:
     """
@@ -418,7 +496,7 @@ class NativeStorageConfig:
     multithreaded_io: bool
     io_config: IOConfig
 
-    def __init__(self, multithreaded_io: bool, io_config: IOConfig | None = None): ...
+    def __init__(self, multithreaded_io: bool, io_config: IOConfig): ...
 
 class PythonStorageConfig:
     """
@@ -427,7 +505,7 @@ class PythonStorageConfig:
 
     io_config: IOConfig
 
-    def __init__(self, io_config: IOConfig | None = None): ...
+    def __init__(self, io_config: IOConfig): ...
 
 class StorageConfig:
     """
@@ -497,7 +575,7 @@ class ScanOperatorHandle:
         glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
-        schema: PySchema | None = None,
+        schema_hint: PySchema | None = None,
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
@@ -526,6 +604,7 @@ def read_parquet(
     start_offset: int | None = None,
     num_rows: int | None = None,
     row_groups: list[int] | None = None,
+    predicate: PyExpr | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
@@ -536,6 +615,7 @@ def read_parquet_bulk(
     start_offset: int | None = None,
     num_rows: int | None = None,
     row_groups: list[list[int] | None] | None = None,
+    predicate: PyExpr | None = None,
     io_config: IOConfig | None = None,
     num_parallel_tasks: int | None = 128,
     multithreaded_io: bool | None = None,
@@ -584,6 +664,21 @@ def read_csv(
 def read_csv_schema(
     uri: str,
     parse_options: CsvParseOptions | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+): ...
+def read_json(
+    uri: str,
+    convert_options: JsonConvertOptions | None = None,
+    parse_options: JsonParseOptions | None = None,
+    read_options: JsonReadOptions | None = None,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    max_chunks_in_flight: int | None = None,
+): ...
+def read_json_schema(
+    uri: str,
+    parse_options: JsonParseOptions | None = None,
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
 ): ...
@@ -676,6 +771,7 @@ class PySchema:
     def __getitem__(self, name: str) -> PyField: ...
     def names(self) -> list[str]: ...
     def union(self, other: PySchema) -> PySchema: ...
+    def apply_hints(self, other: PySchema) -> PySchema: ...
     def eq(self, other: PySchema) -> bool: ...
     @staticmethod
     def from_field_name_and_types(names_and_types: list[tuple[str, PyDataType]]) -> PySchema: ...
@@ -742,7 +838,7 @@ class PyExpr:
     def list_join(self, delimiter: PyExpr) -> PyExpr: ...
     def list_lengths(self) -> PyExpr: ...
     def url_download(
-        self, max_connections: int, raise_error_on_failure: bool, multi_thread: bool, config: IOConfig | None = None
+        self, max_connections: int, raise_error_on_failure: bool, multi_thread: bool, config: IOConfig
     ) -> PyExpr: ...
 
 def eq(expr1: PyExpr, expr2: PyExpr) -> bool: ...
@@ -903,6 +999,7 @@ class PyMicroPartition:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups: list[int] | None = None,
+        predicate: PyExpr | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: PyTimeUnit = PyTimeUnit.nanoseconds(),
@@ -915,6 +1012,7 @@ class PyMicroPartition:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups: list[list[int] | None] | None = None,
+        predicate: PyExpr | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = None,
         multithreaded_io: bool | None = None,
@@ -927,6 +1025,16 @@ class PyMicroPartition:
         convert_options: CsvConvertOptions | None = None,
         parse_options: CsvParseOptions | None = None,
         read_options: CsvReadOptions | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ): ...
+    @classmethod
+    def read_json_native(
+        cls,
+        uri: str,
+        convert_options: JsonConvertOptions | None = None,
+        parse_options: JsonParseOptions | None = None,
+        read_options: JsonReadOptions | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
     ): ...
@@ -952,12 +1060,10 @@ class LogicalPlanBuilder:
 
     @staticmethod
     def in_memory_scan(
-        partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int
+        partition_key: str, cache_entry: PartitionCacheEntry, schema: PySchema, num_partitions: int, size_bytes: int
     ) -> LogicalPlanBuilder: ...
     @staticmethod
-    def table_scan_with_scan_operator(
-        scan_operator: ScanOperatorHandle, schema_hint: PySchema | None
-    ) -> LogicalPlanBuilder: ...
+    def table_scan_with_scan_operator(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
     @staticmethod
     def table_scan(
         file_infos: FileInfos, schema: PySchema, file_format_config: FileFormatConfig, storage_config: StorageConfig
@@ -990,8 +1096,30 @@ class LogicalPlanBuilder:
     ) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...
     def optimize(self) -> LogicalPlanBuilder: ...
-    def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler: ...
+    def to_physical_plan_scheduler(self, cfg: PyDaftExecutionConfig) -> PhysicalPlanScheduler: ...
     def repr_ascii(self, simple: bool) -> str: ...
+
+class PyDaftExecutionConfig:
+    def with_config_values(
+        self,
+        merge_scan_tasks_min_size_bytes: int | None = None,
+        merge_scan_tasks_max_size_bytes: int | None = None,
+        broadcast_join_size_bytes_threshold: int | None = None,
+    ) -> PyDaftExecutionConfig: ...
+    @property
+    def merge_scan_tasks_min_size_bytes(self) -> int: ...
+    @property
+    def merge_scan_tasks_max_size_bytes(self): ...
+    @property
+    def broadcast_join_size_bytes_threshold(self): ...
+
+class PyDaftPlanningConfig:
+    def with_config_values(
+        self,
+        default_io_config: IOConfig | None = None,
+    ) -> PyDaftPlanningConfig: ...
+    @property
+    def default_io_config(self) -> IOConfig: ...
 
 def build_type() -> str: ...
 def version() -> str: ...

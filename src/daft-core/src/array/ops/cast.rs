@@ -1,4 +1,4 @@
-use std::iter::repeat;
+use std::{iter::repeat, sync::Arc};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -141,8 +141,8 @@ where
         }
     };
 
-    let new_field = Field::new(to_cast.name(), dtype.clone());
-    Series::from_arrow(&new_field, result_arrow_physical_array)
+    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+    Series::from_arrow(new_field, result_arrow_physical_array)
 }
 
 fn arrow_cast<T>(to_cast: &DataArray<T>, dtype: &DataType) -> DaftResult<Series>
@@ -216,8 +216,8 @@ where
         )));
     };
 
-    let new_field = Field::new(to_cast.name(), dtype.clone());
-    Series::from_arrow(&new_field, result_array)
+    let new_field = Arc::new(Field::new(to_cast.name(), dtype.clone()));
+    Series::from_arrow(new_field, result_array)
 }
 
 impl<T> DataArray<T>
@@ -739,7 +739,7 @@ fn extract_python_like_to_fixed_size_list<
     );
 
     FixedSizeListArray::from_arrow(
-        &Field::new(python_objects.name(), daft_type),
+        Arc::new(Field::new(python_objects.name(), daft_type)),
         Box::new(list_array),
     )
 }
@@ -776,7 +776,7 @@ fn extract_python_like_to_list<
     );
 
     ListArray::from_arrow(
-        &Field::new(python_objects.name(), daft_type),
+        Arc::new(Field::new(python_objects.name(), daft_type)),
         Box::new(list_arrow_array),
     )
 }
@@ -939,12 +939,12 @@ fn extract_python_like_to_tensor_array<
         Field::new(name, physical_type),
         vec![
             ListArray::from_arrow(
-                &Field::new("data", data_array.data_type().into()),
+                Arc::new(Field::new("data", data_array.data_type().into())),
                 data_array,
             )?
             .into_series(),
             ListArray::from_arrow(
-                &Field::new("shape", shapes_array.data_type().into()),
+                Arc::new(Field::new("shape", shapes_array.data_type().into())),
                 shapes_array,
             )?
             .into_series(),

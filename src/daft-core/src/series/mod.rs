@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     array::ops::{from_arrow::FromArrow, full::FullNull},
-    datatypes::{DataType, Field},
+    datatypes::{DataType, Field, FieldRef},
     utils::display_table::make_comfy_table,
     with_match_daft_types,
 };
@@ -35,7 +35,10 @@ impl Series {
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`arrow2::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow(field: &Field, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    pub fn from_arrow(
+        field: FieldRef,
+        arrow_arr: Box<dyn arrow2::array::Array>,
+    ) -> DaftResult<Self> {
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
         })

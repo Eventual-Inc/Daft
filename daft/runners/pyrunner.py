@@ -8,6 +8,7 @@ from typing import Iterable, Iterator
 
 import psutil
 
+from daft.context import get_context
 from daft.daft import (
     FileFormatConfig,
     FileInfos,
@@ -32,28 +33,28 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
 from daft.runners.runner import Runner
-from daft.table import Table
+from daft.table import MicroPartition
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LocalPartitionSet(PartitionSet[Table]):
-    _partitions: dict[PartID, Table]
+class LocalPartitionSet(PartitionSet[MicroPartition]):
+    _partitions: dict[PartID, MicroPartition]
 
-    def items(self) -> list[tuple[PartID, Table]]:
+    def items(self) -> list[tuple[PartID, MicroPartition]]:
         return sorted(self._partitions.items())
 
-    def _get_merged_vpartition(self) -> Table:
+    def _get_merged_vpartition(self) -> MicroPartition:
         ids_and_partitions = self.items()
         assert ids_and_partitions[0][0] == 0
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
-        return Table.concat([part for id, part in ids_and_partitions])
+        return MicroPartition.concat([part for id, part in ids_and_partitions])
 
-    def get_partition(self, idx: PartID) -> Table:
+    def get_partition(self, idx: PartID) -> MicroPartition:
         return self._partitions[idx]
 
-    def set_partition(self, idx: PartID, part: MaterializedResult[Table]) -> None:
+    def set_partition(self, idx: PartID, part: MaterializedResult[MicroPartition]) -> None:
         self._partitions[idx] = part.partition()
 
     def delete_partition(self, idx: PartID) -> None:
@@ -63,7 +64,15 @@ class LocalPartitionSet(PartitionSet[Table]):
         return idx in self._partitions
 
     def __len__(self) -> int:
-        return sum([len(self._partitions[pid]) for pid in self._partitions])
+        return sum(len(partition) for partition in self._partitions.values())
+
+    def size_bytes(self) -> int | None:
+        size_bytes_ = [partition.size_bytes() for partition in self._partitions.values()]
+        size_bytes: list[int] = [size for size in size_bytes_ if size is not None]
+        if len(size_bytes) != len(size_bytes_):
+            return None
+        else:
+            return sum(size_bytes)
 
     def num_partitions(self) -> int:
         return len(self._partitions)
@@ -103,7 +112,7 @@ class PyRunnerIO(runner_io.RunnerIO):
         return runner_io.sample_schema(file_infos[0].file_path, file_format_config, storage_config)
 
 
-class PyRunner(Runner[Table]):
+class PyRunner(Runner[MicroPartition]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
@@ -131,11 +140,14 @@ class PyRunner(Runner[Table]):
         # NOTE: PyRunner does not run any async execution, so it ignores `results_buffer_size` which is essentially 0
         results_buffer_size: int | None = None,
     ) -> Iterator[PyMaterializedResult]:
+        # NOTE: Freeze and use this same execution config for the entire execution
+        daft_execution_config = get_context().daft_execution_config
+
         # Optimize the logical plan.
         builder = builder.optimize()
         # Finalize the logical plan and get a physical plan scheduler for translating the
         # physical plan to executable tasks.
-        plan_scheduler = builder.to_physical_plan_scheduler()
+        plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
         psets = {
             key: entry.value.values()
             for key, entry in self._part_set_cache._uuid_to_partition_set.items()
@@ -147,12 +159,14 @@ class PyRunner(Runner[Table]):
             results_gen = self._physical_plan_to_partitions(tasks)
             yield from results_gen
 
-    def run_iter_tables(self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None) -> Iterator[Table]:
+    def run_iter_tables(
+        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+    ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
     def _physical_plan_to_partitions(
-        self, plan: physical_plan.MaterializedPhysicalPlan[Table]
+        self, plan: physical_plan.MaterializedPhysicalPlan[MicroPartition]
     ) -> Iterator[PyMaterializedResult]:
         inflight_tasks: dict[str, PartitionTask] = dict()
         inflight_tasks_resources: dict[str, ResourceRequest] = dict()
@@ -269,7 +283,7 @@ class PyRunner(Runner[Table]):
         return all((cpus_okay, gpus_okay, memory_okay))
 
     @staticmethod
-    def build_partitions(instruction_stack: list[Instruction], *inputs: Table) -> list[Table]:
+    def build_partitions(instruction_stack: list[Instruction], *inputs: MicroPartition) -> list[MicroPartition]:
         partitions = list(inputs)
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
@@ -278,13 +292,13 @@ class PyRunner(Runner[Table]):
 
 
 @dataclass(frozen=True)
-class PyMaterializedResult(MaterializedResult[Table]):
-    _partition: Table
+class PyMaterializedResult(MaterializedResult[MicroPartition]):
+    _partition: MicroPartition
 
-    def partition(self) -> Table:
+    def partition(self) -> MicroPartition:
         return self._partition
 
-    def vpartition(self) -> Table:
+    def vpartition(self) -> MicroPartition:
         return self._partition
 
     def metadata(self) -> PartitionMetadata:
@@ -293,5 +307,5 @@ class PyMaterializedResult(MaterializedResult[Table]):
     def cancel(self) -> None:
         return None
 
-    def _noop(self, _: Table) -> None:
+    def _noop(self, _: MicroPartition) -> None:
         return None

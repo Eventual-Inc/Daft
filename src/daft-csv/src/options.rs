@@ -1,8 +1,10 @@
 use daft_core::{impl_bincode_py_state_serialization, schema::SchemaRef};
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_core::python::schema::PySchema,
+    daft_dsl::python::PyExpr,
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
         Python, ToPyObject,
@@ -17,6 +19,7 @@ pub struct CsvConvertOptions {
     pub include_columns: Option<Vec<String>>,
     pub column_names: Option<Vec<String>>,
     pub schema: Option<SchemaRef>,
+    pub predicate: Option<ExprRef>,
 }
 
 impl CsvConvertOptions {
@@ -25,12 +28,14 @@ impl CsvConvertOptions {
         include_columns: Option<Vec<String>>,
         column_names: Option<Vec<String>>,
         schema: Option<SchemaRef>,
+        predicate: Option<ExprRef>,
     ) -> Self {
         Self {
             limit,
             include_columns,
             column_names,
             schema,
+            predicate,
         }
     }
 
@@ -40,6 +45,7 @@ impl CsvConvertOptions {
             include_columns: self.include_columns,
             column_names: self.column_names,
             schema: self.schema,
+            predicate: self.predicate,
         }
     }
 
@@ -49,6 +55,7 @@ impl CsvConvertOptions {
             include_columns,
             column_names: self.column_names,
             schema: self.schema,
+            predicate: self.predicate,
         }
     }
 
@@ -58,6 +65,7 @@ impl CsvConvertOptions {
             include_columns: self.include_columns,
             column_names,
             schema: self.schema,
+            predicate: self.predicate,
         }
     }
 
@@ -67,13 +75,14 @@ impl CsvConvertOptions {
             include_columns: self.include_columns,
             column_names: self.column_names,
             schema,
+            predicate: self.predicate,
         }
     }
 }
 
 impl Default for CsvConvertOptions {
     fn default() -> Self {
-        Self::new_internal(None, None, None, None)
+        Self::new_internal(None, None, None, None, None)
     }
 }
 
@@ -88,19 +97,22 @@ impl CsvConvertOptions {
     /// * `include_columns` - The names of the columns that should be kept, e.g. via a projection.
     /// * `column_names` - The names for the CSV columns.
     /// * `schema` - The names and dtypes for the CSV columns.
+    /// * `predicate` - Expression to filter rows applied before the limit
     #[new]
-    #[pyo3(signature = (limit=None, include_columns=None, column_names=None, schema=None))]
+    #[pyo3(signature = (limit=None, include_columns=None, column_names=None, schema=None, predicate=None))]
     pub fn new(
         limit: Option<usize>,
         include_columns: Option<Vec<String>>,
         column_names: Option<Vec<String>>,
         schema: Option<PySchema>,
+        predicate: Option<PyExpr>,
     ) -> Self {
         Self::new_internal(
             limit,
             include_columns,
             column_names,
             schema.map(|s| s.into()),
+            predicate.map(|p| p.expr.into()),
         )
     }
 

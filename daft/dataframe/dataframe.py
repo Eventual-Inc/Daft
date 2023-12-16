@@ -33,7 +33,7 @@ from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
 if TYPE_CHECKING:
@@ -85,10 +85,16 @@ class DataFrame:
             return self.__builder
         else:
             num_partitions = self._result_cache.num_partitions()
+            size_bytes = self._result_cache.size_bytes()
             # Partition set should always be set on cache entry.
-            assert num_partitions is not None, "Partition set should always be set on cache entry"
+            assert (
+                num_partitions is not None and size_bytes is not None
+            ), "Partition set should always be set on cache entry"
             return self.__builder.from_in_memory_scan(
-                self._result_cache, self.__builder.schema(), num_partitions=num_partitions
+                self._result_cache,
+                self.__builder.schema(),
+                num_partitions=num_partitions,
+                size_bytes=size_bytes,
             )
 
     def _get_current_builder(self) -> LogicalPlanBuilder:
@@ -125,7 +131,8 @@ class DataFrame:
         print(builder.pretty_print(simple))
 
     def num_partitions(self) -> int:
-        return self.__builder.to_physical_plan_scheduler().num_partitions()
+        daft_execution_config = get_context().daft_execution_config
+        return self.__builder.to_physical_plan_scheduler(daft_execution_config).num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -184,7 +191,7 @@ class DataFrame:
                     yield row
 
     @DataframePublicAPI
-    def iter_partitions(self) -> Iterator[Union[Table, "RayObjectRef"]]:
+    def iter_partitions(self) -> Iterator[Union[MicroPartition, "RayObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.Table object (if using Python runner backend)
@@ -236,7 +243,7 @@ class DataFrame:
                 f"Expected all columns to be of the same length, but received columns with lengths: {column_lengths}"
             )
 
-        data_vpartition = Table.from_pydict(data)
+        data_vpartition = MicroPartition.from_pydict(data)
         return cls._from_tables(data_vpartition)
 
     @classmethod
@@ -244,7 +251,7 @@ class DataFrame:
         """Creates a DataFrame from a pyarrow Table."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_arrow(table) for table in data]
+        data_vpartitions = [MicroPartition.from_arrow(table) for table in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
@@ -252,11 +259,11 @@ class DataFrame:
         """Creates a Daft DataFrame from a pandas DataFrame."""
         if not isinstance(data, list):
             data = [data]
-        data_vpartitions = [Table.from_pandas(df) for df in data]
+        data_vpartitions = [MicroPartition.from_pandas(df) for df in data]
         return cls._from_tables(*data_vpartitions)
 
     @classmethod
-    def _from_tables(cls, *parts: Table) -> "DataFrame":
+    def _from_tables(cls, *parts: MicroPartition) -> "DataFrame":
         """Creates a Daft DataFrame from a single Table.
 
         Args:
@@ -272,7 +279,11 @@ class DataFrame:
 
         context = get_context()
         cache_entry = context.runner().put_partition_set_into_cache(result_pset)
-        builder = LogicalPlanBuilder.from_in_memory_scan(cache_entry, parts[0].schema(), result_pset.num_partitions())
+        size_bytes = result_pset.size_bytes()
+        assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
+        builder = LogicalPlanBuilder.from_in_memory_scan(
+            cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes
+        )
         return cls(builder)
 
     ###
@@ -308,6 +319,8 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
@@ -354,6 +367,8 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
@@ -1036,7 +1051,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = Table.concat(tables)
+            preview_partition = MicroPartition.concat(tables)
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
@@ -1232,8 +1247,13 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        size_bytes = partition_set.size_bytes()
+        assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry, schema=schema, num_partitions=partition_set.num_partitions()
+            cache_entry,
+            schema=schema,
+            num_partitions=partition_set.num_partitions(),
+            size_bytes=size_bytes,
         )
         return cls(builder)
 
@@ -1299,8 +1319,13 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
         cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        size_bytes = partition_set.size_bytes()
+        assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
         builder = LogicalPlanBuilder.from_in_memory_scan(
-            cache_entry, schema=schema, num_partitions=partition_set.num_partitions()
+            cache_entry,
+            schema=schema,
+            num_partitions=partition_set.num_partitions(),
+            size_bytes=size_bytes,
         )
         return cls(builder)
 

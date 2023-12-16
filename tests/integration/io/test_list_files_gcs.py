@@ -3,11 +3,9 @@ from __future__ import annotations
 import gcsfs
 import pytest
 
-from daft.daft import GCSConfig, IOConfig, io_glob
+from daft.daft import io_glob
 
 BUCKET = "daft-public-data-gs"
-DEFAULT_GCS_CONFIG = GCSConfig(project_id=None, anonymous=None)
-ANON_GCS_CONFIG = GCSConfig(project_id=None, anonymous=True)
 
 
 def gcsfs_recursive_list(fs, path) -> list:
@@ -52,29 +50,26 @@ def compare_gcs_result(daft_ls_result: list, fsspec_result: list):
 )
 @pytest.mark.parametrize("recursive", [False, True])
 @pytest.mark.parametrize("fanout_limit", [None, 1])
-@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
-def test_gs_flat_directory_listing(path, recursive, gcs_config, fanout_limit):
+def test_gs_flat_directory_listing(gcs_public_config, path, recursive, fanout_limit):
     fs = gcsfs.GCSFileSystem()
     glob_path = path.rstrip("/") + "/**" if recursive else path
-    daft_ls_result = io_glob(glob_path, io_config=IOConfig(gcs=gcs_config), fanout_limit=fanout_limit)
+    daft_ls_result = io_glob(glob_path, io_config=gcs_public_config, fanout_limit=fanout_limit)
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("recursive", [False, True])
-@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
-def test_gs_single_file_listing(recursive, gcs_config):
+def test_gs_single_file_listing(gcs_public_config, recursive):
     path = f"gs://{BUCKET}/test_ls/file.txt"
     fs = gcsfs.GCSFileSystem()
-    daft_ls_result = io_glob(path, io_config=IOConfig(gcs=gcs_config))
+    daft_ls_result = io_glob(path, io_config=gcs_public_config)
     fsspec_result = gcsfs_recursive_list(fs, path) if recursive else fs.ls(path, detail=True)
     compare_gcs_result(daft_ls_result, fsspec_result)
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("gcs_config", [DEFAULT_GCS_CONFIG, ANON_GCS_CONFIG])
-def test_gs_notfound(gcs_config):
+def test_gs_notfound(gcs_public_config):
     path = f"gs://{BUCKET}/test_"
     with pytest.raises(FileNotFoundError, match=path):
-        io_glob(path, io_config=IOConfig(gcs=gcs_config))
+        io_glob(path, io_config=gcs_public_config)

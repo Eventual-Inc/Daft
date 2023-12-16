@@ -11,7 +11,7 @@ import pyarrow as pa
 
 from daft.datatype import TimeUnit
 from daft.logical.schema import Schema
-from daft.table import Table
+from daft.table import MicroPartition
 
 if sys.version_info < (3, 8):
     pass
@@ -82,7 +82,7 @@ class PartitionMetadata(PartialPartitionMetadata):
     size_bytes: int | None
 
     @classmethod
-    def from_table(cls, table: Table) -> PartitionMetadata:
+    def from_table(cls, table: MicroPartition) -> PartitionMetadata:
         return PartitionMetadata(
             num_rows=len(table),
             size_bytes=table.size_bytes(),
@@ -104,7 +104,7 @@ class MaterializedResult(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def vpartition(self) -> Table:
+    def vpartition(self) -> MicroPartition:
         """Get the vPartition of this result."""
         ...
 
@@ -127,7 +127,7 @@ class MaterializedResult(Generic[PartitionT]):
 
 
 class PartitionSet(Generic[PartitionT]):
-    def _get_merged_vpartition(self) -> Table:
+    def _get_merged_vpartition(self) -> MicroPartition:
         raise NotImplementedError()
 
     def to_pydict(self) -> dict[str, list[Any]]:
@@ -176,6 +176,10 @@ class PartitionSet(Generic[PartitionT]):
         raise NotImplementedError()
 
     @abstractmethod
+    def size_bytes(self) -> int | None:
+        raise NotImplementedError()
+
+    @abstractmethod
     def num_partitions(self) -> int:
         raise NotImplementedError()
 
@@ -207,6 +211,9 @@ class PartitionCacheEntry:
 
     def num_partitions(self) -> int | None:
         return self.value.num_partitions() if self.value is not None else None
+
+    def size_bytes(self) -> int | None:
+        return self.value.size_bytes() if self.value is not None else None
 
 
 class PartitionSetCache:

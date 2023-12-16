@@ -7,6 +7,7 @@ use daft_core::{
     schema::Schema,
     DataType, IntoSeries, Series,
 };
+use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
@@ -61,18 +62,39 @@ async fn read_parquet_single(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
 ) -> DaftResult<Table> {
+    let original_columns = columns;
+    let original_num_rows = num_rows;
+    let mut num_rows = num_rows;
+    let mut columns = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
+    let requested_columns = columns.as_ref().map(|v| v.len());
+    if let Some(ref pred) = predicate {
+        if num_rows.is_some() {
+            num_rows = None;
+        }
+        if let Some(req_columns) = columns.as_mut() {
+            let needed_columns = get_required_columns(pred);
+            for c in needed_columns {
+                if !req_columns.contains(&c) {
+                    req_columns.push(c);
+                }
+            }
+        }
+    }
     let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, table) = if matches!(source_type, SourceType::File) {
+
+    let (metadata, mut table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
-            columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec()),
+            columns,
             start_offset,
             num_rows,
             row_groups.clone(),
+            predicate.clone(),
             schema_infer_options,
         )
         .await
@@ -81,8 +103,8 @@ async fn read_parquet_single(
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(columns) = columns {
-            builder.prune_columns(columns)?
+        let builder = if let Some(columns) = columns.as_ref() {
+            builder.prune_columns(columns.as_slice())?
         } else {
             builder
         };
@@ -95,6 +117,12 @@ async fn read_parquet_single(
 
         let builder = if let Some(ref row_groups) = row_groups {
             builder.set_row_groups(row_groups)?
+        } else {
+            builder
+        };
+
+        let builder = if let Some(ref predicate) = predicate {
+            builder.set_filter(predicate.clone())
         } else {
             builder
         };
@@ -117,7 +145,16 @@ async fn read_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
 
-    if let Some(row_groups) = row_groups {
+    if let Some(predicate) = predicate {
+        // TODO ideally pipeline this with IO and before concating, rather than after
+        table = table.filter(&[predicate])?;
+        if let Some(oc) = original_columns {
+            table = table.get_columns(oc)?;
+        }
+        if let Some(nr) = original_num_rows {
+            table = table.head(nr)?;
+        }
+    } else if let Some(row_groups) = row_groups {
         let expected_rows: usize = row_groups
             .iter()
             .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
@@ -153,10 +190,10 @@ async fn read_parquet_single(
             }),
             _ => Ok(()),
         }?;
-    };
+    }
 
-    let expected_num_columns = if let Some(columns) = columns {
-        columns.len()
+    let expected_num_columns = if let Some(columns) = requested_columns {
+        columns
     } else {
         metadata_num_columns
     };
@@ -193,6 +230,7 @@ async fn read_parquet_single_into_arrow(
                 start_offset,
                 num_rows,
                 row_groups.clone(),
+                None,
                 schema_infer_options,
             )
             .await?;
@@ -316,6 +354,7 @@ pub fn read_parquet(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     runtime_handle: Arc<Runtime>,
@@ -329,6 +368,7 @@ pub fn read_parquet(
             start_offset,
             num_rows,
             row_groups,
+            predicate,
             io_client,
             io_stats,
             schema_infer_options,
@@ -373,6 +413,7 @@ pub fn read_parquet_bulk(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicate: Option<ExprRef>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -396,6 +437,7 @@ pub fn read_parquet_bulk(
                 let uri = uri.to_string();
                 let owned_columns = owned_columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
+                let owned_predicate = predicate.clone();
 
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
@@ -412,6 +454,7 @@ pub fn read_parquet_bulk(
                             start_offset,
                             num_rows,
                             owned_row_group,
+                            owned_predicate,
                             io_client,
                             io_stats,
                             schema_infer_options,
@@ -639,6 +682,7 @@ mod tests {
 
         let table = read_parquet(
             file,
+            None,
             None,
             None,
             None,

@@ -12,7 +12,7 @@ import pytest
 from daft import DataType, TimeUnit
 from daft.context import get_context
 from daft.series import Series
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
@@ -160,7 +160,7 @@ def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
 
 
 def test_from_pydict_roundtrip() -> None:
-    table = Table.from_pydict(PYTHON_TYPE_ARRAYS)
+    table = MicroPartition.from_pydict(PYTHON_TYPE_ARRAYS)
     assert len(table) == 2
     assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
@@ -178,7 +178,7 @@ def test_from_pydict_roundtrip() -> None:
 
 def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
     arrow_roundtrip_types, arrow_type_arrays = _with_uuid_ext_type(uuid_ext_type)
-    table = Table.from_pydict(arrow_type_arrays)
+    table = MicroPartition.from_pydict(arrow_type_arrays)
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
@@ -190,7 +190,7 @@ def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
 def test_from_arrow_roundtrip(uuid_ext_type) -> None:
     arrow_roundtrip_types, arrow_type_arrays = _with_uuid_ext_type(uuid_ext_type)
     pa_table = pa.table(arrow_type_arrays)
-    table = Table.from_arrow(pa_table)
+    table = MicroPartition.from_arrow(pa_table)
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
@@ -201,7 +201,7 @@ def test_from_arrow_roundtrip(uuid_ext_type) -> None:
 
 def test_from_pandas_roundtrip() -> None:
     df = pd.DataFrame(PYTHON_TYPE_ARRAYS)
-    table = Table.from_pandas(df)
+    table = MicroPartition.from_pandas(df)
     assert len(table) == 2
     assert set(table.column_names()) == set(PYTHON_TYPE_ARRAYS.keys())
     for field in table.schema():
@@ -214,19 +214,19 @@ def test_from_pandas_roundtrip() -> None:
 
 
 def test_from_pydict_list() -> None:
-    daft_table = Table.from_pydict({"a": [1, 2, 3]})
+    daft_table = MicroPartition.from_pydict({"a": [1, 2, 3]})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
 
 
 def test_from_pydict_np() -> None:
-    daft_table = Table.from_pydict({"a": np.array([1, 2, 3], dtype=np.int64)})
+    daft_table = MicroPartition.from_pydict({"a": np.array([1, 2, 3], dtype=np.int64)})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int64())
 
 
 def test_from_pydict_arrow() -> None:
-    daft_table = Table.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
+    daft_table = MicroPartition.from_pydict({"a": pa.array([1, 2, 3], type=pa.int8())})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
 
@@ -234,7 +234,7 @@ def test_from_pydict_arrow() -> None:
 @pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
 def test_from_pydict_arrow_list_array(list_type) -> None:
     arrow_arr = pa.array([["a", "b"], ["c"], None, [None, "d", "e"]], list_type(pa.string()))
-    daft_table = Table.from_pydict({"a": arrow_arr})
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the outer list array is cast to a large list array
     # (if the outer list array wasn't already a large list in the first place), and
@@ -246,7 +246,7 @@ def test_from_pydict_arrow_list_array(list_type) -> None:
 def test_from_pydict_arrow_fixed_size_list_array() -> None:
     data = [["a", "b"], ["c", "d"], None, [None, "e"]]
     arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
-    daft_table = Table.from_pydict({"a": arrow_arr})
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
@@ -256,7 +256,7 @@ def test_from_pydict_arrow_fixed_size_list_array() -> None:
 def test_from_pydict_arrow_struct_array() -> None:
     data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
     arrow_arr = pa.array(data)
-    daft_table = Table.from_pydict({"a": arrow_arr})
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(
@@ -274,7 +274,7 @@ def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
     pydata[2] = None
     storage = pa.array(pydata)
     arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
-    daft_table = Table.from_pydict({"a": arrow_arr})
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
@@ -287,7 +287,7 @@ def test_from_pydict_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
     data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
     arrow_arr = pa.array(data)
-    daft_table = Table.from_pydict({"a": arrow_arr})
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
@@ -316,7 +316,7 @@ def test_from_pydict_arrow_deeply_nested() -> None:
 def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> None:
     if chunked:
         data = pa.chunked_array(data)
-    daft_table = Table.from_pydict({"a": data})
+    daft_table = MicroPartition.from_pydict({"a": data})
     assert "a" in daft_table.column_names()
     if chunked:
         data = data.combine_chunks()
@@ -356,7 +356,7 @@ def test_from_pydict_arrow_sliced_roundtrip(data, out_dtype, chunked, slice_) ->
     sliced_data = data.slice(offset, length)
     if chunked:
         sliced_data = pa.chunked_array(sliced_data)
-    daft_table = Table.from_pydict({"a": sliced_data})
+    daft_table = MicroPartition.from_pydict({"a": sliced_data})
     assert "a" in daft_table.column_names()
     if chunked:
         sliced_data = sliced_data.combine_chunks()
@@ -364,7 +364,7 @@ def test_from_pydict_arrow_sliced_roundtrip(data, out_dtype, chunked, slice_) ->
 
 
 def test_from_pydict_series() -> None:
-    daft_table = Table.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
+    daft_table = MicroPartition.from_pydict({"a": Series.from_arrow(pa.array([1, 2, 3], type=pa.int8()))})
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pa.array([1, 2, 3], type=pa.int8())
 
@@ -399,7 +399,7 @@ def test_from_arrow_sliced_roundtrip(data, out_dtype, slice_) -> None:
     offset, end = slice_
     length = end - offset
     sliced_data = data.slice(offset, length)
-    daft_table = Table.from_arrow(pa.table({"a": sliced_data}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": sliced_data}))
     assert "a" in daft_table.column_names()
     assert daft_table.to_arrow()["a"].combine_chunks() == pac.cast(sliced_data, out_dtype)
 
@@ -407,7 +407,7 @@ def test_from_arrow_sliced_roundtrip(data, out_dtype, slice_) -> None:
 @pytest.mark.parametrize("list_type", [pa.list_, pa.large_list])
 def test_from_arrow_list_array(list_type) -> None:
     arrow_arr = pa.array([["a", "b"], ["c"], None, [None, "d", "e"]], list_type(pa.string()))
-    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the outer list array is cast to a large list array
     # (if the outer list array wasn't already a large list in the first place), and
@@ -419,7 +419,7 @@ def test_from_arrow_list_array(list_type) -> None:
 def test_from_arrow_fixed_size_list_array() -> None:
     data = [["a", "b"], ["c", "d"], None, [None, "e"]]
     arrow_arr = pa.array(data, pa.list_(pa.string(), 2))
-    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(data, type=pa.list_(pa.large_string(), 2))
@@ -429,7 +429,7 @@ def test_from_arrow_fixed_size_list_array() -> None:
 def test_from_arrow_struct_array() -> None:
     data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
     arrow_arr = pa.array(data)
-    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string array is cast to a large string array.
     expected = pa.array(
@@ -447,7 +447,7 @@ def test_from_arrow_extension_array(uuid_ext_type) -> None:
     pydata[2] = None
     storage = pa.array(pydata)
     arrow_arr = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
-    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Although Daft will internally represent the binary storage array as a large_binary array,
     # it should be cast back to the ingress extension type.
@@ -460,7 +460,7 @@ def test_from_arrow_deeply_nested() -> None:
     # Test a struct of lists of struct of lists of strings.
     data = [{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}]
     arrow_arr = pa.array(data)
-    daft_table = Table.from_arrow(pa.table({"a": arrow_arr}))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform the expected Daft cast, where each list array is cast to a large list array and
     # the string array is cast to a large string array.
@@ -483,12 +483,12 @@ def test_from_arrow_deeply_nested() -> None:
 
 def test_from_pydict_bad_input() -> None:
     with pytest.raises(ValueError, match="Mismatch in Series lengths"):
-        Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7]})
+        MicroPartition.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7]})
 
 
 def test_pyobjects_roundtrip() -> None:
     o0, o1 = object(), object()
-    table = Table.from_pydict({"objs": [o0, o1, None]})
+    table = MicroPartition.from_pydict({"objs": [o0, o1, None]})
     objs = table.to_pydict()["objs"]
     assert objs[0] is o0
     assert objs[1] is o1
@@ -500,7 +500,7 @@ def test_nested_list_dates(levels: int) -> None:
     data = [datetime.date.today(), datetime.date.today()]
     for _ in range(levels):
         data = [data, data]
-    table = Table.from_pydict({"item": data})
+    table = MicroPartition.from_pydict({"item": data})
     back_again = table.get_column("item")
 
     dtype = back_again.datatype()
@@ -532,7 +532,7 @@ def test_nested_fixed_size_list_dates(levels: int) -> None:
         expected_arrow_type = pa.list_(expected_arrow_type, 2)
 
     pa_data = pa.array(data, type=expected_arrow_type)
-    table = Table.from_pydict({"data": pa_data})
+    table = MicroPartition.from_pydict({"data": pa_data})
     back_again = table.get_column("data")
 
     dtype = back_again.datatype()
@@ -549,7 +549,7 @@ def test_nested_struct_dates(levels: int) -> None:
         data = {"data": data}
 
     data = [data]
-    table = Table.from_pydict({"data": data})
+    table = MicroPartition.from_pydict({"data": data})
     back_again = table.get_column("data")
     dtype = back_again.datatype()
     expected_dtype = DataType.date()

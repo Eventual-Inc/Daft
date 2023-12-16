@@ -8,7 +8,7 @@ from pyarrow import parquet as pq
 
 import daft
 from daft.filesystem import get_filesystem, get_protocol_from_path
-from daft.table import LegacyTable, Table
+from daft.table import MicroPartition, Table
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -216,8 +216,10 @@ def read_parquet_with_pyarrow(path) -> pa.Table:
 )
 def test_parquet_read_table(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
-    daft_native_read = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
-    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
+    daft_native_read = MicroPartition.read_parquet(
+        url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
+    )
+    pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
@@ -245,20 +247,22 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
 )
 def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
-    daft_native_reads = Table.read_parquet_bulk(
+    daft_native_reads = MicroPartition.read_parquet_bulk(
         [url] * 2, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
     )
-    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
+    pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
 
     # Legacy Table returns a list[Table]
-    if Table == LegacyTable:
+    if MicroPartition == Table:
         for daft_native_read in daft_native_reads:
             assert daft_native_read.schema() == pa_read.schema()
             pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
     # MicroPartitions returns a MicroPartition
     else:
         assert daft_native_reads.schema() == pa_read.schema()
-        pd.testing.assert_frame_equal(daft_native_reads.to_pandas(), Table.concat([pa_read, pa_read]).to_pandas())
+        pd.testing.assert_frame_equal(
+            daft_native_reads.to_pandas(), MicroPartition.concat([pa_read, pa_read]).to_pandas()
+        )
 
 
 @pytest.mark.integration()
@@ -282,7 +286,7 @@ def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multi
 def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
     daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config)
-    pa_read = Table.from_arrow(read_parquet_with_pyarrow(url))
+    pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
     assert daft_native_read.schema() == pa_read.schema()
     pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
 
@@ -294,21 +298,21 @@ def test_parquet_read_df(parquet_file, public_storage_io_config):
 )
 def test_row_groups_selection(public_storage_io_config, multithreaded_io):
     url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
-    all_rows = Table.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
+    all_rows = MicroPartition.read_parquet(url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io)
     assert len(all_rows) == 100
-    first = Table.read_parquet(
+    first = MicroPartition.read_parquet(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[0]
     )
     assert len(first) == 10
     assert all_rows.to_arrow()[:10] == first.to_arrow()
 
-    fifth = Table.read_parquet(
+    fifth = MicroPartition.read_parquet(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[5]
     )
     assert len(fifth) == 10
     assert all_rows.to_arrow()[50:60] == fifth.to_arrow()
 
-    repeated = Table.read_parquet(
+    repeated = MicroPartition.read_parquet(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 1, 1]
     )
     assert len(repeated) == 30
@@ -316,7 +320,7 @@ def test_row_groups_selection(public_storage_io_config, multithreaded_io):
     assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[10:20]
     assert all_rows.to_arrow()[10:20] == repeated.to_arrow()[20:]
 
-    out_of_order = Table.read_parquet(
+    out_of_order = MicroPartition.read_parquet(
         url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups=[1, 0]
     )
     assert len(out_of_order) == 20
@@ -333,8 +337,8 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
     url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
     row_groups = [list(range(10))] + [[i] for i in range(10)]
 
-    if Table == LegacyTable:
-        first, *rest = Table.read_parquet_bulk(
+    if MicroPartition == Table:
+        first, *rest = MicroPartition.read_parquet_bulk(
             url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
         )
         assert len(first) == 100
@@ -344,7 +348,7 @@ def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
             assert len(t) == 10
             assert first.to_arrow()[i * 10 : (i + 1) * 10] == t.to_arrow()
     else:
-        mp = Table.read_parquet_bulk(
+        mp = MicroPartition.read_parquet_bulk(
             url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
         )
         assert len(mp) == 100 + (

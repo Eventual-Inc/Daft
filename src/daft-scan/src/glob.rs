@@ -8,12 +8,10 @@ use daft_io::{
 };
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
-use snafu::{ResultExt, Snafu};
-#[cfg(feature = "python")]
-use {crate::PyIOSnafu, daft_core::schema::Schema, pyo3::Python};
+use snafu::Snafu;
 
 use crate::{
-    file_format::{CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig},
+    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
     DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
@@ -67,7 +65,6 @@ fn run_glob(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<FileInfoIterator> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
-
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let runtime_handle = runtime.handle();
@@ -121,7 +118,7 @@ impl GlobScanOperator {
         glob_paths: &[&str],
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
-        schema: Option<SchemaRef>,
+        schema_hint: Option<SchemaRef>,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -130,95 +127,80 @@ impl GlobScanOperator {
             Some(path) => Ok(path),
         }?;
 
-        let schema = match schema {
-            Some(s) => s,
-            None => {
-                let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
-                let io_stats = IOStatsContext::new(format!(
-                    "GlobScanOperator::try_new schema inference for {first_glob_path}"
-                ));
-                let mut paths = run_glob(
-                    first_glob_path,
-                    Some(1),
-                    io_client.clone(),
-                    io_runtime.clone(),
-                    Some(io_stats.clone()),
-                )?;
-                let FileMetadata {
-                    filepath: first_filepath,
-                    ..
-                } = match paths.next() {
-                    Some(file_metadata) => file_metadata,
-                    None => Err(Error::GlobNoMatch {
-                        glob_path: first_glob_path.to_string(),
-                    }
-                    .into()),
-                }?;
-                let inferred_schema = match file_format_config.as_ref() {
-                    FileFormatConfig::Parquet(ParquetSourceConfig {
-                        coerce_int96_timestamp_unit,
-                    }) => {
-                        let io_stats = IOStatsContext::new(format!(
-                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                        ));
-                        daft_parquet::read::read_parquet_schema(
-                            first_filepath.as_str(),
-                            io_client.clone(),
-                            Some(io_stats),
-                            ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
-                            },
-                        )?
-                    }
-                    FileFormatConfig::Csv(CsvSourceConfig {
-                        delimiter,
-                        has_headers,
-                        double_quote,
-                        quote,
-                        escape_char,
-                        comment,
-                        ..
-                    }) => {
-                        let (schema, _) = daft_csv::metadata::read_csv_schema(
-                            first_filepath.as_str(),
-                            Some(CsvParseOptions::new_with_defaults(
-                                *has_headers,
-                                *delimiter,
-                                *double_quote,
-                                *quote,
-                                *escape_char,
-                                *comment,
-                            )?),
-                            None,
-                            io_client,
-                            Some(io_stats),
-                        )?;
-                        schema
-                    }
-                    FileFormatConfig::Json(JsonSourceConfig {}) => {
-                        // NOTE: Native JSON reads not yet implemented, so we have to delegate to Python here or implement
-                        // a daft_json crate that gives us native JSON schema inference
-                        match storage_config.as_ref() {
-                            StorageConfig::Native(_) => todo!(
-                                "Implement native JSON schema inference in a daft_json crate."
-                            ),
-                            #[cfg(feature = "python")]
-                            StorageConfig::Python(_) => Python::with_gil(|py| {
-                                crate::python::pylib::read_json_schema(
-                                    py,
-                                    first_filepath.as_str(),
-                                    storage_config.clone().into(),
-                                )
-                                .and_then(|s| {
-                                    Ok(Schema::new(s.schema.fields.values().cloned().collect())?)
-                                })
-                                .context(PyIOSnafu)
-                            })?,
-                        }
-                    }
-                };
-                Arc::new(inferred_schema)
+        let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
+        let io_stats = IOStatsContext::new(format!(
+            "GlobScanOperator::try_new schema inference for {first_glob_path}"
+        ));
+        let mut paths = run_glob(
+            first_glob_path,
+            Some(1),
+            io_client.clone(),
+            io_runtime.clone(),
+            Some(io_stats.clone()),
+        )?;
+        let FileMetadata {
+            filepath: first_filepath,
+            ..
+        } = match paths.next() {
+            Some(file_metadata) => file_metadata,
+            None => Err(Error::GlobNoMatch {
+                glob_path: first_glob_path.to_string(),
             }
+            .into()),
+        }?;
+        let inferred_schema = match file_format_config.as_ref() {
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit,
+            }) => {
+                let io_stats = IOStatsContext::new(format!(
+                    "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                ));
+                daft_parquet::read::read_parquet_schema(
+                    first_filepath.as_str(),
+                    io_client.clone(),
+                    Some(io_stats),
+                    ParquetSchemaInferenceOptions {
+                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                    },
+                )?
+            }
+            FileFormatConfig::Csv(CsvSourceConfig {
+                delimiter,
+                has_headers,
+                double_quote,
+                quote,
+                escape_char,
+                comment,
+                ..
+            }) => {
+                let (schema, _) = daft_csv::metadata::read_csv_schema(
+                    first_filepath.as_str(),
+                    Some(CsvParseOptions::new_with_defaults(
+                        *has_headers,
+                        *delimiter,
+                        *double_quote,
+                        *quote,
+                        *escape_char,
+                        *comment,
+                    )?),
+                    None,
+                    io_client,
+                    Some(io_stats),
+                )?;
+                schema
+            }
+            FileFormatConfig::Json(_) => daft_json::schema::read_json_schema(
+                first_filepath.as_str(),
+                None,
+                None,
+                io_client,
+                Some(io_stats),
+            )?,
+        };
+
+        let schema = match schema_hint {
+            None => Arc::new(inferred_schema),
+            Some(schema_hint) => Arc::new(inferred_schema.apply_hints(&schema_hint)?),
         };
 
         Ok(Self {

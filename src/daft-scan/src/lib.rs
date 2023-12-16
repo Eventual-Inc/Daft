@@ -14,10 +14,12 @@ use file_format::FileFormatConfig;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
+pub use anonymous::AnonymousScanOperator;
 pub mod file_format;
 mod glob;
 #[cfg(feature = "python")]
 pub mod py_object_serde;
+pub mod scan_task_iters;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -33,6 +35,46 @@ mod expr_rewriter;
 pub enum Error {
     #[cfg(feature = "python")]
     PyIO { source: PyErr },
+
+    #[snafu(display(
+        "PartitionSpecs were different during ScanTask::merge: {:?} vs {:?}",
+        ps1,
+        ps2
+    ))]
+    DifferingPartitionSpecsInScanTaskMerge {
+        ps1: Option<PartitionSpec>,
+        ps2: Option<PartitionSpec>,
+    },
+
+    #[snafu(display("Schemas were different during ScanTask::merge: {} vs {}", s1, s2))]
+    DifferingSchemasInScanTaskMerge { s1: SchemaRef, s2: SchemaRef },
+
+    #[snafu(display(
+        "FileFormatConfigs were different during ScanTask::merge: {:?} vs {:?}",
+        ffc1,
+        ffc2
+    ))]
+    DifferingFileFormatConfigsInScanTaskMerge {
+        ffc1: Arc<FileFormatConfig>,
+        ffc2: Arc<FileFormatConfig>,
+    },
+
+    #[snafu(display(
+        "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
+        sc1,
+        sc2
+    ))]
+    DifferingStorageConfigsInScanTaskMerge {
+        sc1: Arc<StorageConfig>,
+        sc2: Arc<StorageConfig>,
+    },
+
+    #[snafu(display(
+        "Pushdowns were different during ScanTask::merge: {:?} vs {:?}",
+        p1,
+        p2
+    ))]
+    DifferingPushdownsInScanTaskMerge { p1: Pushdowns, p2: Pushdowns },
 }
 
 impl From<Error> for DaftError {
@@ -110,6 +152,13 @@ impl DataFileSource {
             | Self::CatalogDataFile { statistics, .. } => statistics.as_ref(),
         }
     }
+
+    pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
+        match self {
+            Self::AnonymousDataFile { partition_spec, .. } => partition_spec.as_ref(),
+            Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -134,6 +183,12 @@ impl ScanTask {
         pushdowns: Pushdowns,
     ) -> Self {
         assert!(!sources.is_empty());
+        debug_assert!(
+            sources
+                .iter()
+                .all(|s| s.get_partition_spec() == sources.first().unwrap().get_partition_spec()),
+            "ScanTask sources must all have the same PartitionSpec at construction",
+        );
         let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
@@ -169,6 +224,50 @@ impl ScanTask {
         }
     }
 
+    pub fn merge(sc1: &ScanTask, sc2: &ScanTask) -> Result<ScanTask, Error> {
+        if sc1.partition_spec() != sc2.partition_spec() {
+            return Err(Error::DifferingPartitionSpecsInScanTaskMerge {
+                ps1: sc1.partition_spec().cloned(),
+                ps2: sc2.partition_spec().cloned(),
+            });
+        }
+        if sc1.file_format_config != sc2.file_format_config {
+            return Err(Error::DifferingFileFormatConfigsInScanTaskMerge {
+                ffc1: sc1.file_format_config.clone(),
+                ffc2: sc2.file_format_config.clone(),
+            });
+        }
+        if sc1.schema != sc2.schema {
+            return Err(Error::DifferingSchemasInScanTaskMerge {
+                s1: sc1.schema.clone(),
+                s2: sc2.schema.clone(),
+            });
+        }
+        if sc1.storage_config != sc2.storage_config {
+            return Err(Error::DifferingStorageConfigsInScanTaskMerge {
+                sc1: sc1.storage_config.clone(),
+                sc2: sc2.storage_config.clone(),
+            });
+        }
+        if sc1.pushdowns != sc2.pushdowns {
+            return Err(Error::DifferingPushdownsInScanTaskMerge {
+                p1: sc1.pushdowns.clone(),
+                p2: sc2.pushdowns.clone(),
+            });
+        }
+        Ok(ScanTask::new(
+            sc1.sources
+                .clone()
+                .into_iter()
+                .chain(sc2.sources.clone())
+                .collect(),
+            sc1.file_format_config.clone(),
+            sc1.schema.clone(),
+            sc1.storage_config.clone(),
+            sc1.pushdowns.clone(),
+        ))
+    }
+
     pub fn num_rows(&self) -> Option<usize> {
         self.metadata.as_ref().map(|m| m.length)
     }
@@ -183,6 +282,13 @@ impl ScanTask {
             })
             // Fall back on on-disk size.
             .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
+    }
+
+    pub fn partition_spec(&self) -> Option<&PartitionSpec> {
+        match self.sources.first() {
+            None => None,
+            Some(source) => source.get_partition_spec(),
+        }
     }
 }
 
@@ -344,7 +450,7 @@ impl ScanExternalInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
-    pub filters: Option<Arc<Vec<ExprRef>>>,
+    pub filters: Option<ExprRef>,
     /// Optional columns to select from the source data.
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
@@ -359,7 +465,7 @@ impl Default for Pushdowns {
 
 impl Pushdowns {
     pub fn new(
-        filters: Option<Arc<Vec<ExprRef>>>,
+        filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
     ) -> Self {
@@ -378,7 +484,7 @@ impl Pushdowns {
         }
     }
 
-    pub fn with_filters(&self, filters: Option<Arc<Vec<ExprRef>>>) -> Self {
+    pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
             columns: self.columns.clone(),
@@ -400,14 +506,7 @@ impl Pushdowns {
             res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
         }
         if let Some(filters) = &self.filters {
-            res.push(format!(
-                "Filter pushdown = [{}]",
-                filters
-                    .iter()
-                    .map(|f| f.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            res.push(format!("Filter pushdown = {}", filters));
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {}", limit));

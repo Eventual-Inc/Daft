@@ -8,6 +8,7 @@ import pyarrow.parquet as papq
 
 from daft.daft import (
     CsvParseOptions,
+    JsonParseOptions,
     NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
@@ -16,7 +17,7 @@ from daft.datatype import DataType
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseCSVOptions
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.table.table_io import FileInput, _open_stream
 
 
@@ -90,13 +91,22 @@ def from_json(
     io_config = None
     if storage_config is not None:
         config = storage_config.config
-        assert isinstance(config, PythonStorageConfig), "JSON schema inference only supports PythonStorageConfig"
+        if isinstance(config, NativeStorageConfig):
+            assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
+            io_config = config.io_config
+            return Schema.from_json(
+                str(file),
+                parse_options=JsonParseOptions(),
+                io_config=io_config,
+            )
+
+        assert isinstance(config, PythonStorageConfig)
         io_config = config.io_config
 
     with _open_stream(file, io_config) as f:
         table = pajson.read_json(f)
 
-    return Table.from_arrow(table).schema()
+    return MicroPartition.from_arrow(table).schema()
 
 
 def from_parquet(

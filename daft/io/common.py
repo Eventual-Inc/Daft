@@ -48,28 +48,27 @@ def _get_tabular_files_scan(
     ### FEATURE_FLAG: $DAFT_MICROPARTITIONS
     #
     # This environment variable will make Daft use the new "v2 scans" and MicroPartitions when building Daft logical plans
-    if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
+    if os.getenv("DAFT_MICROPARTITIONS", "1") == "1":
         scan_op: ScanOperatorHandle
         if isinstance(path, list):
             scan_op = ScanOperatorHandle.glob_scan(
                 path,
                 file_format_config,
                 storage_config,
-                schema=schema_hint._schema if schema_hint is not None else None,
+                schema_hint=schema_hint._schema if schema_hint is not None else None,
             )
         elif isinstance(path, str):
             scan_op = ScanOperatorHandle.glob_scan(
                 [path],
                 file_format_config,
                 storage_config,
-                schema=schema_hint._schema if schema_hint is not None else None,
+                schema_hint=schema_hint._schema if schema_hint is not None else None,
             )
         else:
             raise NotImplementedError(f"_get_tabular_files_scan cannot construct ScanOperatorHandle for input: {path}")
 
         builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(
             scan_operator=scan_op,
-            schema_hint=schema_hint,
         )
         return builder
 
@@ -77,16 +76,16 @@ def _get_tabular_files_scan(
     runner_io = get_context().runner().runner_io()
     file_infos = runner_io.glob_paths_details(paths, file_format_config=file_format_config, io_config=io_config)
 
-    # Infer schema if no hints provided
-    inferred_or_provided_schema = (
-        schema_hint
-        if schema_hint is not None
-        else runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
-    )
+    # Infer schema
+    schema = runner_io.get_schema_from_first_filepath(file_infos, file_format_config, storage_config)
+
+    # Apply hints from schema_hints if provided
+    if schema_hint is not None:
+        schema = schema.apply_hints(schema_hint)
     # Construct plan
     builder = LogicalPlanBuilder.from_tabular_scan(
         file_infos=file_infos,
-        schema=inferred_or_provided_schema,
+        schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
     )

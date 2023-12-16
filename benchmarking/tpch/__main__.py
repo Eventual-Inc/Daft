@@ -6,6 +6,7 @@ import csv
 import logging
 import math
 import os
+import pathlib
 import platform
 import socket
 import subprocess
@@ -120,7 +121,13 @@ def get_df_with_parquet_folder(parquet_folder: str) -> Callable[[str], DataFrame
     return _get_df
 
 
-def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output_location: str | None):
+def run_all_benchmarks(
+    parquet_folder: str,
+    skip_questions: set[int],
+    csv_output_location: str | None,
+    ray_job_dashboard_url: str | None = None,
+    requirements: str | None = None,
+):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     daft_context = get_context()
@@ -131,11 +138,40 @@ def run_all_benchmarks(parquet_folder: str, skip_questions: set[int], csv_output
             logger.warning(f"Skipping TPC-H q{i}")
             continue
 
-        answer = getattr(answers, f"q{i}")
-        daft_df = answer(get_df)
+        # Run as a Ray Job if dashboard URL is provided
+        if ray_job_dashboard_url is not None:
+            from benchmarking.tpch import ray_job_runner
 
-        with metrics_builder.collect_metrics(i):
-            daft_df.collect()
+            working_dir = pathlib.Path(os.path.dirname(__file__))
+            entrypoint = working_dir / "ray_job_runner.py"
+            job_params = ray_job_runner.ray_job_params(
+                parquet_folder_path=parquet_folder,
+                tpch_qnum=i,
+                working_dir=working_dir,
+                entrypoint=entrypoint,
+                runtime_env=get_ray_runtime_env(requirements),
+            )
+
+            # Run once as a warmup step
+            ray_job_runner.run_on_ray(
+                ray_job_dashboard_url,
+                {**job_params, "submission_id": job_params["submission_id"] + "-warmup"},
+            )
+
+            # Run second time to collect metrics
+            with metrics_builder.collect_metrics(i):
+                ray_job_runner.run_on_ray(
+                    ray_job_dashboard_url,
+                    job_params,
+                )
+
+        # Run locally (potentially on a local Ray cluster)
+        else:
+            answer = getattr(answers, f"q{i}")
+            daft_df = answer(get_df)
+
+            with metrics_builder.collect_metrics(i):
+                daft_df.collect()
 
     if csv_output_location:
         logger.info(f"Writing CSV to: {csv_output_location}")
@@ -162,16 +198,23 @@ def get_daft_version() -> str:
     return daft.get_version()
 
 
+def get_ray_runtime_env(requirements: str | None) -> dict:
+    runtime_env = {
+        "py_modules": [daft],
+        "eager_install": True,
+        "env_vars": {"DAFT_PROGRESS_BAR": "0"},
+    }
+    if requirements:
+        runtime_env.update({"pip": requirements})
+    return runtime_env
+
+
 def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
     if ctx.runner_config.name == "ray":
-        runtime_env = {"py_modules": [daft]}
-        if requirements:
-            runtime_env.update({"pip": requirements})
-        if runtime_env:
-            runtime_env.update({"eager_install": True})
+        runtime_env = get_ray_runtime_env(requirements)
 
         ray.init(
             address=ctx.runner_config.address,
@@ -238,6 +281,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip warming up data before benchmark",
     )
+    parser.add_argument(
+        "--ray_job_dashboard_url",
+        default=None,
+        help="Ray Dashboard URL to submit jobs instead of using Ray client, most useful when running on a remote cluster",
+    )
 
     args = parser.parse_args()
     if args.output_csv_headers:
@@ -264,4 +312,6 @@ if __name__ == "__main__":
         parquet_folder,
         skip_questions={int(s) for s in args.skip_questions.split(",")} if args.skip_questions is not None else set(),
         csv_output_location=args.output_csv,
+        ray_job_dashboard_url=args.ray_job_dashboard_url,
+        requirements=args.requirements,
     )

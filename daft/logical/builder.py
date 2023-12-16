@@ -14,6 +14,7 @@ from daft.daft import (
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import (
     PartitionScheme,
+    PyDaftExecutionConfig,
     ResourceRequest,
     ScanOperatorHandle,
     StorageConfig,
@@ -34,7 +35,7 @@ class LogicalPlanBuilder:
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
-    def to_physical_plan_scheduler(self) -> PhysicalPlanScheduler:
+    def to_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> PhysicalPlanScheduler:
         """
         Convert the underlying logical plan to a physical plan scheduler, which is
         used to generate executable tasks for the physical plan.
@@ -43,7 +44,7 @@ class LogicalPlanBuilder:
         """
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
-        return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler())
+        return PhysicalPlanScheduler(self._builder.to_physical_plan_scheduler(daft_execution_config))
 
     def schema(self) -> Schema:
         """
@@ -73,9 +74,11 @@ class LogicalPlanBuilder:
 
     @classmethod
     def from_in_memory_scan(
-        cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int
+        cls, partition: PartitionCacheEntry, schema: Schema, num_partitions: int, size_bytes: int
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.in_memory_scan(partition.key, partition, schema._schema, num_partitions)
+        builder = _LogicalPlanBuilder.in_memory_scan(
+            partition.key, partition, schema._schema, num_partitions, size_bytes
+        )
         return cls(builder)
 
     @classmethod
@@ -83,10 +86,8 @@ class LogicalPlanBuilder:
         cls,
         *,
         scan_operator: ScanOperatorHandle,
-        schema_hint: Schema | None,
     ) -> LogicalPlanBuilder:
-        pyschema = schema_hint._schema if schema_hint is not None else None
-        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator, pyschema)
+        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator)
         return cls(builder)
 
     @classmethod
@@ -206,9 +207,9 @@ class LogicalPlanBuilder:
         self,
         root_dir: str | pathlib.Path,
         file_format: FileFormat,
+        io_config: IOConfig,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
-        io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder:
         if file_format != FileFormat.Csv and file_format != FileFormat.Parquet:
             raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")

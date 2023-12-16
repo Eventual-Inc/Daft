@@ -11,6 +11,9 @@ from daft.daft import (
     CsvReadOptions,
     IOConfig,
     JoinType,
+    JsonConvertOptions,
+    JsonParseOptions,
+    JsonReadOptions,
 )
 from daft.daft import PyMicroPartition as _PyMicroPartition
 from daft.daft import PyTable as _PyTable
@@ -19,7 +22,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series
-from daft.table import Table
+from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -310,6 +313,7 @@ class MicroPartition:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups: list[int] | None = None,
+        predicate: Expression | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
@@ -321,6 +325,7 @@ class MicroPartition:
                 start_offset,
                 num_rows,
                 row_groups,
+                predicate._expr if predicate is not None else None,
                 io_config,
                 multithreaded_io,
                 coerce_int96_timestamp_unit._timeunit,
@@ -335,6 +340,7 @@ class MicroPartition:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups_per_path: list[list[int] | None] | None = None,
+        predicate: Expression | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,
@@ -347,6 +353,7 @@ class MicroPartition:
                 start_offset,
                 num_rows,
                 row_groups_per_path,
+                predicate._expr if predicate is not None else None,
                 io_config,
                 num_parallel_tasks,
                 multithreaded_io,
@@ -366,6 +373,27 @@ class MicroPartition:
     ) -> MicroPartition:
         return MicroPartition._from_pymicropartition(
             _PyMicroPartition.read_csv(
+                uri=path,
+                convert_options=convert_options,
+                parse_options=parse_options,
+                read_options=read_options,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+            )
+        )
+
+    @classmethod
+    def read_json(
+        cls,
+        path: str,
+        convert_options: JsonConvertOptions | None = None,
+        parse_options: JsonParseOptions | None = None,
+        read_options: JsonReadOptions | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            _PyMicroPartition.read_json_native(
                 uri=path,
                 convert_options=convert_options,
                 parse_options=parse_options,

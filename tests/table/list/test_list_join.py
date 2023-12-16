@@ -3,17 +3,17 @@ from __future__ import annotations
 import pytest
 
 from daft.expressions import col
-from daft.table import Table
+from daft.table import MicroPartition
 
 
 def test_list_join():
-    table = Table.from_pydict({"col": [None, [], ["a"], [None], ["a", "a"], ["a", None], ["a", None, "a"]]})
+    table = MicroPartition.from_pydict({"col": [None, [], ["a"], [None], ["a", "a"], ["a", None], ["a", None, "a"]]})
     result = table.eval_expression_list([col("col").list.join(",")])
     assert result.to_pydict() == {"col": [None, "", "a", "", "a,a", "a,", "a,,a"]}
 
 
 def test_list_join_other_col():
-    table = Table.from_pydict(
+    table = MicroPartition.from_pydict(
         {
             "col": [None, [], ["a"], [None], ["a", "a"], ["a", None], ["a", None, "a"]],
             "delimiter": ["1", "2", "3", "4", "5", "6", "7"],
@@ -24,10 +24,10 @@ def test_list_join_other_col():
 
 
 def test_list_join_bad_type():
-    table = Table.from_pydict({"col": [1, 2, 3]})
+    table = MicroPartition.from_pydict({"col": [1, 2, 3]})
     with pytest.raises(ValueError):
         table.eval_expression_list([col("col").list.join(",")])
 
-    table = Table.from_pydict({"col": [[1, 2, 3], [4, 5, 6], []]})
+    table = MicroPartition.from_pydict({"col": [[1, 2, 3], [4, 5, 6], []]})
     with pytest.raises(ValueError):
         table.eval_expression_list([col("col").list.join(",")])

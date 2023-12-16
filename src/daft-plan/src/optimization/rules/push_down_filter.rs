@@ -6,12 +6,12 @@ use std::{
 use common_error::DaftResult;
 use daft_dsl::{
     col,
+    functions::FunctionExpr,
     optimization::{
         conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
     },
     Expr,
 };
-use daft_scan::ScanExternalInfo;
 
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
@@ -43,34 +43,6 @@ impl OptimizerRule for PushDownFilter {
         };
         let child_plan = filter.input.as_ref();
         let new_plan = match child_plan {
-            LogicalPlan::Source(Source {
-                output_schema,
-                source_info
-            }) if let SourceInfo::ExternalInfo(ext_info) = source_info.as_ref() => {
-                // Push Filter into Scan.
-                //
-                // Filter-Scan --> Filter-Scan
-                // TODO: We can drop The Filter if the Scan absorbs it
-                let pred = &filter.predicate;
-
-                let new_filters = if let Some(filters) = &ext_info.pushdowns().filters {
-                    let pred_sem_id = pred.semantic_id(&output_schema);
-                    for f in filters.iter() {
-                        if f.semantic_id(&output_schema) == pred_sem_id  {
-                            return Ok(Transformed::No(plan));
-                        }
-                    }
-                    let mut filters = filters.as_ref().clone();
-                    filters.push(pred.clone().into());
-                    filters
-                } else {
-                    vec![Arc::new(pred.clone())]
-                };
-                let pushdowns = ext_info.pushdowns().with_filters(Some(Arc::new(new_filters)));
-                let new_ext_info = ext_info.with_pushdowns(pushdowns);
-                let new_scan = Arc::new(LogicalPlan::Source(Source::new(output_schema.clone(), SourceInfo::ExternalInfo(new_ext_info).into())));
-                plan.with_new_children(&[new_scan])
-            },
             LogicalPlan::Filter(child_filter) => {
                 // Combine filters.
                 //
@@ -98,6 +70,62 @@ impl OptimizerRule for PushDownFilter {
                     .or(Transformed::Yes(new_filter))
                     .unwrap()
                     .clone()
+            }
+            LogicalPlan::Source(source) => {
+                match source.source_info.as_ref() {
+                    // Filter pushdown is not supported for in-memory sources.
+                    #[cfg(feature = "python")]
+                    SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
+                    // Do not pushdown if Source node is already has a limit
+                    SourceInfo::ExternalInfo(external_info)
+                        if let Some(existing_limit) =
+                            external_info.pushdowns().limit =>
+                    {
+                        return Ok(Transformed::No(plan))
+                    }
+                    // Do not pushdown if we are using python legacy scan info
+                    SourceInfo::ExternalInfo(external_info)
+                        if let ExternalInfo::Legacy(..) = external_info =>
+                    {
+                        return Ok(Transformed::No(plan))
+                    }
+
+                    // Pushdown filter into the Source node
+                    SourceInfo::ExternalInfo(external_info) => {
+                        let predicate = &filter.predicate;
+                        use common_treenode::{TreeNode, VisitRecursion};
+
+                        let mut has_udf = false;
+                        predicate.apply(&mut |e: &Expr| {
+
+                            match e {
+                                #[cfg(feature = "python")]
+                                Expr::Function{func: FunctionExpr::Python(..), .. } => {
+                                    has_udf = true;
+                                    Ok(VisitRecursion::Stop)
+                                },
+                                Expr::Function{func: FunctionExpr::Uri(..), .. } => {
+                                    has_udf = true;
+                                    Ok(VisitRecursion::Stop)
+                                },
+                                _ => Ok(VisitRecursion::Continue)
+                            }
+                        })?;
+                        if has_udf {
+                            return Ok(Transformed::No(plan));
+                        }
+                        let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let new_pushdowns =
+                            external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
+                        let new_external_info = external_info.with_pushdowns(new_pushdowns);
+                        let new_source = LogicalPlan::Source(Source::new(
+                            source.output_schema.clone(),
+                            SourceInfo::ExternalInfo(new_external_info).into(),
+                        ))
+                        .into();
+                        return Ok(Transformed::Yes(new_source))
+                    }
+                }
             }
             LogicalPlan::Project(child_project) => {
                 // Commute filter with projection if predicate only depends on projection columns that
@@ -250,7 +278,7 @@ mod tests {
             rules::PushDownFilter,
             Optimizer,
         },
-        test::dummy_scan_node,
+        test::{dummy_scan_node, dummy_scan_operator_node},
         JoinType, LogicalPlan, PartitionScheme,
     };
 
@@ -290,7 +318,58 @@ mod tests {
         .build();
         let expected = "\
         Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests combining of two Filters into a ScanOperator
+    #[test]
+    fn pushdown_filter_into_scan_operator() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .filter(col("a").lt(&lit(2)))?
+        .filter(col("b").eq(&lit("foo")))?
+        .build();
+        let expected = "\
+        Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Filter pushdown = [col(b) == lit(\"foo\")] & [col(a) < lit(2)], Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that we cant pushdown a filter into a ScanOperator with a limit
+    #[test]
+    fn pushdown_filter_into_scan_operator_with_limit() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .limit(1, false)?
+        .filter(col("a").lt(&lit(2)))?
+        .build();
+        let expected = "\
+        Filter: col(a) < lit(2)\
+        \n  Limit: 1\
+        \n    Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that we cant pushdown a filter into a ScanOperator with an udf-ish expression
+    #[test]
+    fn pushdown_filter_into_scan_operator_with_udf() -> DaftResult<()> {
+        let pred = daft_dsl::functions::uri::download(&col("a"), 1, true, true, None);
+        let plan = dummy_scan_operator_node(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ])
+        .filter(pred.is_null())?
+        .build();
+        let expected = "\
+        Filter: is_null(download(col(a)))\
+        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -308,7 +387,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -326,7 +405,7 @@ mod tests {
         let expected = "\
         Project: col(a), col(b)\
         \n  Filter: [col(a) < lit(2)] & [col(b) == lit(\"foo\")]\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -346,7 +425,7 @@ mod tests {
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Project: col(a) + lit(1)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -367,7 +446,7 @@ mod tests {
         let expected = "\
         Project: col(a) + lit(1)\
         \n  Filter: [col(a) + lit(1)] < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -385,7 +464,7 @@ mod tests {
         let expected = "\
         Sort: Sort by = (col(a), descending)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         // TODO(Clark): For tests in which we only care about reordering of operators, maybe switch to a form that leverages the single-node display?
         // let expected = format!("{sort}\n  {filter}\n    {source}");
         assert_optimized_plan_eq(plan, expected)?;
@@ -405,7 +484,7 @@ mod tests {
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -424,9 +503,9 @@ mod tests {
         let expected = "\
         Concat\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -452,8 +531,8 @@ mod tests {
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
-        \n  Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
+        \n  Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -478,9 +557,9 @@ mod tests {
         .build();
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
         \n  Filter: col(c) < lit(2.0)\
-        \n    Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
+        \n    Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -504,9 +583,9 @@ mod tests {
         let expected = "\
         Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
         \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64), c (Float64)\
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64), c (Float64)\
         \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = b (Int64), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Int64)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

@@ -8,10 +8,11 @@ from .table import Table, read_parquet_into_pyarrow, read_parquet_into_pyarrow_b
 from .micropartition import MicroPartition as _MicroPartition  # isort:skip
 
 
-# Use $DAFT_MICROPARTITIONS envvar as a feature flag to turn on MicroPartitions
-LegacyTable = Table
-if os.getenv("DAFT_MICROPARTITIONS", "0") == "1":
-    Table = _MicroPartition  # type: ignore
+MicroPartition = _MicroPartition
+
+# Use $DAFT_MICROPARTITIONS envvar as a feature flag to turn off MicroPartitions
+if os.getenv("DAFT_MICROPARTITIONS", "1") != "1":
+    MicroPartition = Table  # type: ignore
 
 
-__all__ = ["Table", "LegacyTable", "read_parquet_into_pyarrow", "read_parquet_into_pyarrow_bulk"]
+__all__ = ["MicroPartition", "Table", "read_parquet_into_pyarrow", "read_parquet_into_pyarrow_bulk"]

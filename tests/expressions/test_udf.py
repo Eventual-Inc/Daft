@@ -8,12 +8,12 @@ from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
-from daft.table import Table
+from daft.table import MicroPartition
 from daft.udf import udf
 
 
 def test_udf():
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     def repeat_n(data, n):
@@ -29,7 +29,7 @@ def test_udf():
 
 
 def test_class_udf():
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     class RepeatN:
@@ -49,7 +49,7 @@ def test_class_udf():
 
 
 def test_udf_kwargs():
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     def repeat_n(*, data=None, n=2):
@@ -66,7 +66,7 @@ def test_udf_kwargs():
 
 @pytest.mark.parametrize("container", [Series, list, np.ndarray])
 def test_udf_return_containers(container):
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     def identity(data):
@@ -84,7 +84,7 @@ def test_udf_return_containers(container):
 
 
 def test_udf_error():
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     def throw_value_err(x):
@@ -122,7 +122,7 @@ def test_full_udf_call():
 
 
 def test_class_udf_initialization_error():
-    table = Table.from_pydict({"a": ["foo", "bar", "baz"]})
+    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     class IdentityWithInitError:
@@ -152,7 +152,7 @@ def test_udf_return_tensor():
         return [np.ones((3, 3)) * i for i in x.to_pylist()]
 
     expr = np_udf(col("x"))
-    table = Table.from_pydict({"x": [0, 1, 2]})
+    table = MicroPartition.from_pydict({"x": [0, 1, 2]})
     result = table.eval_expression_list([expr])
     assert len(result.to_pydict()["x"]) == 3
     for i in range(3):

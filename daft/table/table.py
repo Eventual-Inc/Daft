@@ -6,10 +6,19 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 
 from daft.arrow_utils import ensure_table
-from daft.daft import CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinType
+from daft.daft import (
+    CsvConvertOptions,
+    CsvParseOptions,
+    CsvReadOptions,
+    JoinType,
+    JsonConvertOptions,
+    JsonParseOptions,
+    JsonReadOptions,
+)
 from daft.daft import PyTable as _PyTable
 from daft.daft import ScanTask as _ScanTask
 from daft.daft import read_csv as _read_csv
+from daft.daft import read_json as _read_json
 from daft.daft import read_parquet as _read_parquet
 from daft.daft import read_parquet_bulk as _read_parquet_bulk
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
@@ -383,6 +392,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups: list[int] | None = None,
+        predicate: Expression | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
         coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
@@ -394,6 +404,7 @@ class Table:
                 start_offset=start_offset,
                 num_rows=num_rows,
                 row_groups=row_groups,
+                predicate=predicate._expr if predicate is not None else None,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
                 coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
@@ -408,6 +419,7 @@ class Table:
         start_offset: int | None = None,
         num_rows: int | None = None,
         row_groups_per_path: list[list[int] | None] | None = None,
+        predicate: Expression | None = None,
         io_config: IOConfig | None = None,
         num_parallel_tasks: int | None = 128,
         multithreaded_io: bool | None = None,
@@ -419,6 +431,7 @@ class Table:
             start_offset=start_offset,
             num_rows=num_rows,
             row_groups=row_groups_per_path,
+            predicate=predicate._expr if predicate is not None else None,
             io_config=io_config,
             num_parallel_tasks=num_parallel_tasks,
             multithreaded_io=multithreaded_io,
@@ -462,6 +475,29 @@ class Table:
                 read_options=read_options,
                 io_config=io_config,
                 multithreaded_io=multithreaded_io,
+            )
+        )
+
+    @classmethod
+    def read_json(
+        cls,
+        path: str,
+        convert_options: JsonConvertOptions | None = None,
+        parse_options: JsonParseOptions | None = None,
+        read_options: JsonReadOptions | None = None,
+        io_config: IOConfig | None = None,
+        multithreaded_io: bool | None = None,
+        max_chunks_in_flight: int | None = None,
+    ) -> Table:
+        return Table._from_pytable(
+            _read_json(
+                uri=path,
+                convert_options=convert_options,
+                parse_options=parse_options,
+                read_options=read_options,
+                io_config=io_config,
+                multithreaded_io=multithreaded_io,
+                max_chunks_in_flight=max_chunks_in_flight,
             )
         )
 

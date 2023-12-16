@@ -12,6 +12,7 @@ use daft_core::{
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
+use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
 use daft_stats::TableStatistics;
@@ -371,6 +372,33 @@ impl PyMicroPartition {
     }
 
     #[staticmethod]
+    pub fn read_json_native(
+        py: Python,
+        uri: &str,
+        convert_options: Option<JsonConvertOptions>,
+        parse_options: Option<JsonParseOptions>,
+        read_options: Option<JsonReadOptions>,
+        io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
+    ) -> PyResult<Self> {
+        let mp = py.allow_threads(|| {
+            let io_stats = IOStatsContext::new(format!("read_json: for uri {uri}"));
+            let io_config = io_config.unwrap_or_default().config.into();
+
+            crate::micropartition::read_json_into_micropartition(
+                [uri].as_ref(),
+                convert_options,
+                parse_options,
+                read_options,
+                io_config,
+                multithreaded_io.unwrap_or(true),
+                Some(io_stats),
+            )
+        })?;
+        Ok(mp.into())
+    }
+
+    #[staticmethod]
     pub fn read_csv(
         py: Python,
         uri: &str,
@@ -405,6 +433,7 @@ impl PyMicroPartition {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<i64>>,
+        predicate: Option<PyExpr>,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -423,6 +452,7 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups.map(|rg| vec![Some(rg)]),
+                predicate.map(|e| e.expr.into()),
                 io_config,
                 Some(io_stats),
                 1,
@@ -442,6 +472,7 @@ impl PyMicroPartition {
         start_offset: Option<usize>,
         num_rows: Option<usize>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
+        predicate: Option<PyExpr>,
         io_config: Option<IOConfig>,
         num_parallel_tasks: Option<i64>,
         multithreaded_io: Option<bool>,
@@ -461,6 +492,7 @@ impl PyMicroPartition {
                 start_offset,
                 num_rows,
                 row_groups,
+                predicate.map(|e| e.expr.into()),
                 io_config,
                 Some(io_stats),
                 num_parallel_tasks.unwrap_or(128) as usize,

@@ -28,7 +28,11 @@ impl OptimizerRule for PushDownLimit {
 
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
-            LogicalPlan::Limit(LogicalLimit { input, limit, .. }) => {
+            LogicalPlan::Limit(LogicalLimit {
+                input,
+                limit,
+                eager,
+            }) => {
                 let limit = *limit as usize;
                 match input.as_ref() {
                     // Naive commuting with unary ops.
@@ -74,6 +78,30 @@ impl OptimizerRule for PushDownLimit {
                             }
                         }
                     }
+                    // Fold Limit together.
+                    //
+                    // Limit-Limit -> Limit
+                    LogicalPlan::Limit(LogicalLimit {
+                        input,
+                        limit: child_limit,
+                        eager: child_eagar,
+                    }) => {
+                        let new_limit = limit.min(*child_limit as usize);
+                        let new_eager = eager | child_eagar;
+
+                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            new_limit as i64,
+                            new_eager,
+                        )));
+                        // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
+                        let optimized = self
+                            .try_optimize(new_plan.clone())?
+                            .or(Transformed::Yes(new_plan))
+                            .unwrap()
+                            .clone();
+                        Ok(Transformed::Yes(optimized))
+                    }
                     _ => Ok(Transformed::No(plan)),
                 }
             }
@@ -87,6 +115,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, schema::Schema, DataType};
     use daft_dsl::col;
+    use daft_scan::Pushdowns;
     use std::sync::Arc;
 
     #[cfg(feature = "python")]
@@ -98,7 +127,10 @@ mod tests {
             rules::PushDownLimit,
             Optimizer,
         },
-        test::{dummy_scan_node, dummy_scan_node_with_limit},
+        test::{
+            dummy_scan_node, dummy_scan_node_with_pushdowns,
+            dummy_scan_operator_node_with_pushdowns,
+        },
         LogicalPlan, PartitionScheme,
     };
 
@@ -139,7 +171,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -149,18 +181,62 @@ mod tests {
     /// Limit-Source[existing_limit] -> Source[existing_limit]
     #[test]
     fn limit_does_not_push_into_external_source_if_smaller_limit() -> DaftResult<()> {
-        let plan = dummy_scan_node_with_limit(
+        let plan = dummy_scan_node_with_pushdowns(
             vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8),
             ],
-            Some(3),
+            Pushdowns::default().with_limit(Some(3)),
         )
         .limit(5, false)?
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 3, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 3, Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does not push into external Source with existing smaller limit.
+    ///
+    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
+    #[test]
+    fn limit_folds_with_smaller_limit() -> DaftResult<()> {
+        let plan = dummy_scan_node_with_pushdowns(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Pushdowns::default(),
+        )
+        .limit(5, false)?
+        .limit(10, false)?
+        .build();
+        let expected = "\
+        Limit: 5\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does not push into external Source with existing smaller limit.
+    ///
+    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
+    #[test]
+    fn limit_folds_with_large_limit() -> DaftResult<()> {
+        let plan = dummy_scan_node_with_pushdowns(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Pushdowns::default().with_limit(Some(20)),
+        )
+        .limit(10, false)?
+        .limit(5, false)?
+        .build();
+        let expected = "\
+        Limit: 5\
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -170,18 +246,39 @@ mod tests {
     /// Limit-Source[existing_limit] -> Source[new_limit]
     #[test]
     fn limit_does_push_into_external_source_if_larger_limit() -> DaftResult<()> {
-        let plan = dummy_scan_node_with_limit(
+        let plan = dummy_scan_node_with_pushdowns(
             vec![
                 Field::new("a", DataType::Int64),
                 Field::new("b", DataType::Utf8),
             ],
-            Some(10),
+            Pushdowns::default().with_limit(Some(10)),
         )
         .limit(5, false)?
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does push into external Source with existing larger limit.
+    ///
+    /// Limit-Source[existing_limit] -> Source[new_limit]
+    #[test]
+    fn limit_does_push_into_scan_operator_if_larger_limit() -> DaftResult<()> {
+        let plan = dummy_scan_operator_node_with_pushdowns(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Utf8),
+            ],
+            Pushdowns::default().with_limit(Some(10)),
+        )
+        .limit(5, false)?
+        .build();
+        let expected = "\
+        Limit: 5\
+        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -194,12 +291,13 @@ mod tests {
 
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan = LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default())?
-            .limit(5, false)?
-            .build();
+        let plan =
+            LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5)?
+                .limit(5, false)?
+                .build();
         let expected = "\
         Limit: 5\
-        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -219,7 +317,7 @@ mod tests {
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -239,7 +337,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

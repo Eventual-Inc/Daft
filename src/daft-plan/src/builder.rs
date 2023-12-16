@@ -26,6 +26,7 @@ use daft_scan::{
 #[cfg(feature = "python")]
 use {
     crate::{physical_plan::PhysicalPlan, source_info::InMemoryInfo},
+    common_daft_config::PyDaftExecutionConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
     daft_scan::{file_format::PyFileFormatConfig, python::pylib::ScanOperatorHandle},
@@ -56,12 +57,14 @@ impl LogicalPlanBuilder {
         cache_entry: PyObject,
         schema: Arc<Schema>,
         num_partitions: usize,
+        size_bytes: usize,
     ) -> DaftResult<Self> {
         let source_info = SourceInfo::InMemoryInfo(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
             num_partitions,
+            size_bytes,
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
@@ -70,16 +73,16 @@ impl LogicalPlanBuilder {
 
     pub fn table_scan_with_scan_operator(
         scan_operator: ScanOperatorRef,
-        schema_hint: Option<SchemaRef>,
+        pushdowns: Option<Pushdowns>,
     ) -> DaftResult<Self> {
-        let schema = schema_hint.unwrap_or_else(|| scan_operator.0.schema());
+        let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
         let source_info =
             SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo::new(
                 scan_operator.clone(),
                 schema.clone(),
                 partitioning_keys.into(),
-                Default::default(),
+                pushdowns.unwrap_or_default(),
             )));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
@@ -287,26 +290,21 @@ impl PyLogicalPlanBuilder {
         cache_entry: &PyAny,
         schema: PySchema,
         num_partitions: usize,
+        size_bytes: usize,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
             cache_entry.to_object(cache_entry.py()),
             schema.into(),
             num_partitions,
+            size_bytes,
         )?
         .into())
     }
 
     #[staticmethod]
-    pub fn table_scan_with_scan_operator(
-        scan_operator: ScanOperatorHandle,
-        schema_hint: Option<PySchema>,
-    ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(
-            scan_operator.into(),
-            schema_hint.map(|s| s.into()),
-        )?
-        .into())
+    pub fn table_scan_with_scan_operator(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(scan_operator.into(), None)?.into())
     }
 
     #[staticmethod]
@@ -476,10 +474,15 @@ impl PyLogicalPlanBuilder {
     /// Finalize the logical plan, translate the logical plan to a physical plan, and return
     /// a physical plan scheduler that's capable of launching the work necessary to compute the output
     /// of the physical plan.
-    pub fn to_physical_plan_scheduler(&self, py: Python) -> PyResult<PhysicalPlanScheduler> {
+    pub fn to_physical_plan_scheduler(
+        &self,
+        py: Python,
+        cfg: PyDaftExecutionConfig,
+    ) -> PyResult<PhysicalPlanScheduler> {
         py.allow_threads(|| {
             let logical_plan = self.builder.build();
-            let physical_plan: Arc<PhysicalPlan> = plan(logical_plan.as_ref())?.into();
+            let physical_plan: Arc<PhysicalPlan> =
+                plan(logical_plan.as_ref(), cfg.config.clone())?.into();
             Ok(physical_plan.into())
         })
     }

@@ -1,8 +1,11 @@
 [dependencies]
+common-daft-config = {path = "src/common/daft-config", default-features = false}
+daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
+daft-json = {path = "src/daft-json", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
@@ -24,9 +27,11 @@ python = [
   "daft-plan/python",
   "daft-parquet/python",
   "daft-csv/python",
+  "daft-json/python",
   "daft-micropartition/python",
   "daft-scan/python",
-  "daft-stats/python"
+  "daft-stats/python",
+  "common-daft-config/python"
 ]
 
 [lib]
@@ -37,7 +42,7 @@ name = "daft"
 edition = "2021"
 name = "daft"
 publish = false
-version = "0.1.10"
+version = "0.2.0-dev0"
 
 [patch.crates-io]
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
@@ -61,7 +66,7 @@ lto = 'fat'
 inherits = "dev"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-libc = {version = "^0.2.8", default-features = false}
+libc = {version = "^0.2.150", default-features = false}
 tikv-jemallocator = {version = "0.5.4", features = ["disable_initial_exec_tls"]}
 
 [workspace]
@@ -69,10 +74,12 @@ members = [
   "src/common/error",
   "src/common/io-config",
   "src/common/treenode",
+  "src/common/daft-config",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",
   "src/daft-csv",
+  "src/daft-json",
   "src/daft-dsl",
   "src/daft-table",
   "src/daft-plan",
@@ -105,10 +112,10 @@ tokio-util = "0.7.8"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
-# branch = "jay/fix-parquet-timezone-parsing"
+# branch = "daft-fork"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "3a23c780d4d59ef0c9c8751675480e07f4e1c311"
+rev = "d5685eebf1d65c3f3d854370ad39f93dcd91971a"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
@@ -140,4 +147,4 @@ version = "1.0.190"
 
 [workspace.package]
 edition = "2021"
-version = "0.1.10"
+version = "0.2.0-dev0"

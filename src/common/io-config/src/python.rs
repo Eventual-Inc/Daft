@@ -91,6 +91,23 @@ impl IOConfig {
         }
     }
 
+    pub fn replace(
+        &self,
+        s3: Option<S3Config>,
+        azure: Option<AzureConfig>,
+        gcs: Option<GCSConfig>,
+    ) -> Self {
+        IOConfig {
+            config: config::IOConfig {
+                s3: s3.map(|s3| s3.config).unwrap_or(self.config.s3.clone()),
+                azure: azure
+                    .map(|azure| azure.config)
+                    .unwrap_or(self.config.azure.clone()),
+                gcs: gcs.map(|gcs| gcs.config).unwrap_or(self.config.gcs.clone()),
+            },
+        }
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
     }
@@ -185,6 +202,46 @@ impl S3Config {
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 verify_ssl: verify_ssl.unwrap_or(def.verify_ssl),
                 check_hostname_ssl: check_hostname_ssl.unwrap_or(def.check_hostname_ssl),
+            },
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn replace(
+        &self,
+        region_name: Option<String>,
+        endpoint_url: Option<String>,
+        key_id: Option<String>,
+        session_token: Option<String>,
+        access_key: Option<String>,
+        max_connections: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
+        retry_mode: Option<String>,
+        anonymous: Option<bool>,
+        verify_ssl: Option<bool>,
+        check_hostname_ssl: Option<bool>,
+    ) -> Self {
+        S3Config {
+            config: crate::S3Config {
+                region_name: region_name.or_else(|| self.config.region_name.clone()),
+                endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
+                key_id: key_id.or_else(|| self.config.key_id.clone()),
+                session_token: session_token.or_else(|| self.config.session_token.clone()),
+                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(self.config.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(self.config.num_tries),
+                retry_mode: retry_mode.or_else(|| self.config.retry_mode.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+                verify_ssl: verify_ssl.unwrap_or(self.config.verify_ssl),
+                check_hostname_ssl: check_hostname_ssl.unwrap_or(self.config.check_hostname_ssl),
             },
         }
     }
@@ -297,6 +354,21 @@ impl AzureConfig {
         }
     }
 
+    pub fn replace(
+        &self,
+        storage_account: Option<String>,
+        access_key: Option<String>,
+        anonymous: Option<bool>,
+    ) -> Self {
+        AzureConfig {
+            config: crate::AzureConfig {
+                storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
+                access_key: access_key.or_else(|| self.config.access_key.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+            },
+        }
+    }
+
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
     }
@@ -324,6 +396,15 @@ impl GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+            },
+        }
+    }
+
+    pub fn replace(&self, project_id: Option<String>, anonymous: Option<bool>) -> Self {
+        GCSConfig {
+            config: crate::GCSConfig {
+                project_id: project_id.or_else(|| self.config.project_id.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
             },
         }
     }

@@ -56,9 +56,11 @@ pub mod pylib {
         daft_io::register_modules(_py, m)?;
         daft_parquet::register_modules(_py, m)?;
         daft_csv::register_modules(_py, m)?;
+        daft_json::register_modules(_py, m)?;
         daft_plan::register_modules(_py, m)?;
         daft_micropartition::register_modules(_py, m)?;
         daft_scan::register_modules(_py, m)?;
+        common_daft_config::register_modules(_py, m)?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;

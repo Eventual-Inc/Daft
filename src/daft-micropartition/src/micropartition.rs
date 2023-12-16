@@ -8,6 +8,8 @@ use common_error::DaftResult;
 use daft_core::schema::{Schema, SchemaRef};
 
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+use daft_dsl::ExprRef;
+use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
@@ -119,6 +121,7 @@ fn materialize_scan_task(
                         None,
                         scan_task.pushdowns.limit,
                         row_groups,
+                        scan_task.pushdowns.filters.clone(),
                         io_client.clone(),
                         io_stats,
                         8,
@@ -131,7 +134,7 @@ fn materialize_scan_task(
                 // ****************
                 // Native CSV Reads
                 // ****************
-                FileFormatConfig::Csv(cfg @ CsvSourceConfig { .. }) => {
+                FileFormatConfig::Csv(cfg) => {
                     let col_names = if !cfg.has_headers {
                         Some(
                             cast_to_schema
@@ -152,6 +155,7 @@ fn materialize_scan_task(
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
                         None,
+                        scan_task.pushdowns.filters.clone(),
                     );
                     let parse_options = CsvParseOptions::new_with_defaults(
                         cfg.has_headers,
@@ -182,8 +186,31 @@ fn materialize_scan_task(
                 // ****************
                 // Native JSON Reads
                 // ****************
-                FileFormatConfig::Json(_) => {
-                    todo!("TODO: Implement MicroPartition native reads for JSON.");
+                FileFormatConfig::Json(cfg) => {
+                    let convert_options = JsonConvertOptions::new_internal(
+                        scan_task.pushdowns.limit,
+                        column_names
+                            .as_ref()
+                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                        None,
+                        scan_task.pushdowns.filters.clone(),
+                    );
+                    let parse_options = JsonParseOptions::new_internal();
+                    let read_options =
+                        JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+                    let uris = urls.collect::<Vec<_>>();
+                    daft_json::read_json_bulk(
+                        uris.as_slice(),
+                        Some(convert_options),
+                        Some(parse_options),
+                        Some(read_options),
+                        io_client,
+                        io_stats,
+                        native_storage_config.multithreaded_io,
+                        None,
+                        8,
+                    )
+                    .context(DaftCoreComputeSnafu)?
                 }
             }
         }
@@ -381,13 +408,13 @@ impl MicroPartition {
                     .map(|cols| cols.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
                 let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
-
-                read_parquet_into_micropartition(
+                let mp = read_parquet_into_micropartition(
                     uris.as_slice(),
                     columns.as_deref(),
                     None,
                     scan_task.pushdowns.limit,
                     row_groups,
+                    scan_task.pushdowns.filters.clone(),
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -399,7 +426,15 @@ impl MicroPartition {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
                 )
-                .context(DaftCoreComputeSnafu)
+                .context(DaftCoreComputeSnafu)?;
+
+                let applied_schema = Arc::new(
+                    mp.schema
+                        .apply_hints(&schema)
+                        .context(DaftCoreComputeSnafu)?,
+                );
+                mp.cast_to_schema(applied_schema)
+                    .context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
@@ -621,6 +656,55 @@ pub(crate) fn read_csv_into_micropartition(
     }
 }
 
+pub(crate) fn read_json_into_micropartition(
+    uris: &[&str],
+    convert_options: Option<JsonConvertOptions>,
+    parse_options: Option<JsonParseOptions>,
+    read_options: Option<JsonReadOptions>,
+    io_config: Arc<IOConfig>,
+    multithreaded_io: bool,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<MicroPartition> {
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+
+    match uris {
+        [] => Ok(MicroPartition::empty(None)),
+        uris => {
+            // Perform a bulk read of URIs, materializing a table per URI.
+            let tables = daft_json::read_json_bulk(
+                uris,
+                convert_options,
+                parse_options,
+                read_options,
+                io_client,
+                io_stats,
+                multithreaded_io,
+                None,
+                8,
+            )
+            .context(DaftCoreComputeSnafu)?;
+
+            // Union all schemas and cast all tables to the same schema
+            let unioned_schema = tables
+                .iter()
+                .map(|tbl| tbl.schema.clone())
+                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .unwrap();
+            let tables = tables
+                .into_iter()
+                .map(|tbl| tbl.cast_to_schema(&unioned_schema))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            // Construct MicroPartition from tables and unioned schema
+            Ok(MicroPartition::new_loaded(
+                unioned_schema.clone(),
+                Arc::new(tables),
+                None,
+            ))
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_parquet_into_micropartition(
     uris: &[&str],
@@ -628,6 +712,7 @@ pub(crate) fn read_parquet_into_micropartition(
     start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicate: Option<ExprRef>,
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -641,6 +726,46 @@ pub(crate) fn read_parquet_into_micropartition(
     // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+
+    if let Some(predicate) = predicate {
+        // We have a predicate, so we will perform eager read only reading what row groups we need.
+        let all_tables = read_parquet_bulk(
+            uris,
+            columns,
+            None,
+            num_rows,
+            row_groups,
+            Some(predicate.clone()),
+            io_client,
+            io_stats,
+            num_parallel_tasks,
+            runtime_handle,
+            schema_infer_options,
+        )?;
+
+        let unioned_schema = all_tables
+            .iter()
+            .map(|t| t.schema.clone())
+            .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
+        let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
+        // Hack to avoid to owned schema
+        let full_daft_schema = Schema {
+            fields: full_daft_schema.fields.clone(),
+        };
+        let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
+
+        let all_tables = all_tables
+            .into_iter()
+            .map(|t| t.cast_to_schema(&pruned_daft_schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        // TODO: we can pass in stats here to optimize downstream workloads such as join
+        return Ok(MicroPartition::new_loaded(
+            Arc::new(pruned_daft_schema),
+            all_tables.into(),
+            None,
+        ));
+    }
+
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
     let metadata = runtime_handle.block_on(async move {
@@ -768,6 +893,7 @@ pub(crate) fn read_parquet_into_micropartition(
             start_offset,
             num_rows,
             row_groups,
+            None,
             io_client,
             io_stats,
             num_parallel_tasks,
