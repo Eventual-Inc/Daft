@@ -214,7 +214,12 @@ impl GlobScanOperator {
 
 impl Display for GlobScanOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#?}", self)
+        write!(
+            f,
+            "GlobScanOperator: Glob paths=[{}], Format-specific config = {:?}",
+            self.glob_paths.join(", "),
+            self.file_format_config
+        )
     }
 }
 
