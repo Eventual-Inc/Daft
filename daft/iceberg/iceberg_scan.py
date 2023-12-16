@@ -87,6 +87,7 @@ class IcebergScanOperator(ScanOperator):
 
     def _iceberg_record_to_partition_spec(self, record: Record) -> daft.table.Table | None:
         arrays = dict()
+        assert len(record._position_to_field_name) == len(self._partition_keys)
         for name, value, pfield in zip(record._position_to_field_name, record.record_fields(), self._partition_keys):
             field = Field._from_pyfield(pfield.field)
             field_name = field.name
@@ -103,7 +104,7 @@ class IcebergScanOperator(ScanOperator):
         limit = pushdowns.limit
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
 
-        limit_files = limit is not None and pushdowns.filters is None
+        limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         scan_tasks = []
 

@@ -214,18 +214,6 @@ partitioning_keys:\n",
         ) -> common_error::DaftResult<
             Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTaskRef>>>,
         > {
-            println!("{:?}", pushdowns.filters);
-            if let Some(pred) = pushdowns.filters.as_deref() {
-                let transformed = rewrite_predicate_for_partitioning(
-                    pred.as_ref().clone(),
-                    self.partitioning_keys.as_slice(),
-                )?;
-                println!("before {}", pred);
-                for t in transformed {
-                    println!(" {t}");
-                }
-            }
-
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.into()).into_py(py);
                 let pyiter =

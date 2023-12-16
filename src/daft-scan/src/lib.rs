@@ -462,7 +462,7 @@ pub struct Pushdowns {
 
 impl Default for Pushdowns {
     fn default() -> Self {
-        Self::new(None, None,  None, None)
+        Self::new(None, None, None, None)
     }
 }
 
