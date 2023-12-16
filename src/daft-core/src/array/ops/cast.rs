@@ -14,8 +14,8 @@ use crate::{
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
             TimestampArray,
         },
-        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, TimeUnit, UInt64Array,
-        Utf8Array,
+        DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, Int64Array, TimeUnit,
+        UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_daft_logical_primitive_types,
@@ -255,14 +255,12 @@ where
 
 impl DateArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        // We need to handle casts that Arrow doesn't allow, but our type-system does
-
         let date_array = self
             .as_arrow()
             .clone()
             .to(arrow2::datatypes::DataType::Date32);
-
         match dtype {
+            DataType::Date => Ok(self.clone().into_series()),
             DataType::Utf8 => {
                 // TODO: we should move this into our own strftime kernel
                 let year_array = compute::temporal::year(&date_array)?;
@@ -279,11 +277,27 @@ impl DateArray {
                     .collect();
                 Ok(Utf8Array::from((self.name(), Box::new(date_str))).into_series())
             }
+            DataType::Int32 => Ok(self.physical.clone().into_series()),
             DataType::Float32 => self.cast(&DataType::Int32)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int32)?.cast(&DataType::Float64),
+            DataType::Timestamp(tu, _) => {
+                let days_to_unit: i64 = match tu {
+                    TimeUnit::Nanoseconds => 24 * 3_600_000_000_000,
+                    TimeUnit::Microseconds => 24 * 3_600_000_000,
+                    TimeUnit::Milliseconds => 24 * 3_600_000,
+                    TimeUnit::Seconds => 24 * 3_600,
+                };
+
+                let units_per_day = Int64Array::from(("units", vec![days_to_unit])).into_series();
+                let unit_since_epoch = ((&self.physical.clone().into_series()) * &units_per_day)?;
+                unit_since_epoch.cast(dtype)
+            }
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
-            _ => arrow_cast(&self.physical, dtype),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Date to {}",
+                dtype
+            ))),
         }
     }
 }
@@ -348,9 +362,7 @@ impl TimestampArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
-            DataType::Date => Err(DaftError::TypeError(
-                "Cannot cast Timestamp to Date, use .date() instead.".to_string(),
-            )),
+            DataType::Date => Ok(self.date()?.into_series()),
             DataType::Utf8 => {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
