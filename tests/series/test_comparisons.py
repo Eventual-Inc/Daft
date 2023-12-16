@@ -714,8 +714,14 @@ def test_compare_timestamps_and_int():
 
 def test_compare_timestamps_tz_date():
     tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
-    Series.from_pylist([date(2022, 1, 1)])
-    assert (tz1 == tz1).to_pylist() == [True]
+    tz2 = Series.from_pylist([date(2022, 1, 1)])
+    assert (tz1 == tz2).to_pylist() == [True]
+
+
+def test_compare_lt_timestamps_tz_date():
+    tz1 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
+    tz2 = Series.from_pylist([date(2022, 1, 6)])
+    assert (tz1 < tz2).to_pylist() == [True]
 
 
 @pytest.mark.parametrize("tu1, tu2", itertools.product(["ns", "us", "ms"], repeat=2))

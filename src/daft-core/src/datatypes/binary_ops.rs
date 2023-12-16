@@ -40,8 +40,13 @@ impl DataType {
                 (s, o) if s.is_physical() && o.is_physical() => {
                     Ok((Boolean, None, try_physical_supertype(s, o)?))
                 }
-                (Timestamp(..) | Date, Timestamp(..) | Date) => {
+                (Timestamp(..), Timestamp(..)) => {
                     let intermediate_type = try_get_supertype(self, other)?;
+                    let pt = intermediate_type.to_physical();
+                    Ok((Boolean, Some(intermediate_type), pt))
+                }
+                (Timestamp(..), Date) | (Date, Timestamp(..)) => {
+                    let intermediate_type = Date;
                     let pt = intermediate_type.to_physical();
                     Ok((Boolean, Some(intermediate_type), pt))
                 }
