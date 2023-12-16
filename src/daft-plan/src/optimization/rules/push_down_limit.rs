@@ -278,7 +278,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Operator = AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source:, AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
