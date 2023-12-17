@@ -3,8 +3,10 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef};
-use futures::StreamExt;
+use futures::{StreamExt, stream::BoxStream, TryStreamExt};
 use tokio::task::JoinHandle;
+
+use crate::read_worker::{ProtectedState, start_worker};
 
 type RangeList = Vec<Range<usize>>;
 
@@ -92,24 +94,13 @@ enum RangeCacheState {
 struct RangeCacheEntry {
     start: usize,
     end: usize,
-    state: tokio::sync::Mutex<RangeCacheState>,
+    state: ProtectedState,
 }
 
 impl RangeCacheEntry {
-    async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
+    async fn get_stream(&self, range: Range<usize>) -> std::result::Result<BoxStream<'static, std::result::Result<Bytes, daft_io::Error>>, daft_io::Error> {
         {
-            let mut _guard = self.state.lock().await;
-            match &mut (*_guard) {
-                RangeCacheState::InFlight(f) => {
-                    // TODO(sammy): thread in url for join error
-                    let v = f
-                        .await
-                        .map_err(|e| daft_io::Error::JoinError { source: e })??;
-                    *_guard = RangeCacheState::Ready(v.clone());
-                    Ok(v.slice(range))
-                }
-                RangeCacheState::Ready(v) => Ok(v.slice(range)),
-            }
+            Ok(self.state.get_stream(range).await)
         }
     }
 }
@@ -165,17 +156,19 @@ impl ReadPlanner {
 
             let start = range.start;
             let end = range.end;
-            let join_handle = tokio::spawn(async move {
-                let get_result = owned_io_client
-                    .single_url_get(owned_url, Some(range.clone()), owned_io_stats)
-                    .await?;
-                get_result.bytes().await
-            });
-            let state = RangeCacheState::InFlight(join_handle);
+            // let join_handle = tokio::spawn(async move {
+            //     let get_result = owned_io_client
+            //         .single_url_get(owned_url, Some(range.clone()), owned_io_stats)
+            //         .await?;
+            //     get_result.bytes().await
+            // });
+            // let state = RangeCacheState::InFlight(join_handle);
+
+            let state = start_worker(owned_url, range, owned_io_client, owned_io_stats);
             let entry = Arc::new(RangeCacheEntry {
                 start,
                 end,
-                state: tokio::sync::Mutex::new(state),
+                state,
             });
             entries.push(entry);
         }
@@ -247,7 +240,7 @@ impl RangesContainer {
         assert_eq!(current_pos, range.end);
 
         let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
-            .then(|(e, r)| async move { e.get_or_wait(r).await });
+            .then(|(e, r)| async move { e.get_stream(r).await }).try_flatten();
 
         let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
         let convert = async_compat::Compat::new(stream_reader);
