@@ -12,6 +12,7 @@ mod statistics;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
+mod read_worker;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
