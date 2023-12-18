@@ -117,21 +117,25 @@ pub(crate) fn start_worker(
         let mut start_offsets = Vec::<usize>::with_capacity(expected_chunks);
         let mut curr_pos = 0;
         let mut stream_active = true;
-        let target_chunk_size = 64 * 1024;
-        let num_chunks_to_grab = (64 * 1024) / 4096;
+        let target_chunk_size = 256 * 1024;
         if let GetResult::Stream(mut stream, ..) = get_result {
             loop {
-                for _ in 0..num_chunks_to_grab {
-                    if stream_active && let Some(chunk) = stream.next().await {
-                        let chunk = chunk.unwrap();
-                        // dont unwrap
-                        start_offsets.push(curr_pos);
-                        curr_pos += chunk.len();
-                        chunks.push(chunk);
-                    } else {
-                        stream_active = false;
-                        break;
+                {
+                    let mut curr_chunk = Vec::with_capacity(target_chunk_size);
+                    while stream_active && curr_chunk.len() < target_chunk_size {
+                        if stream_active && let Some(chunk) = stream.next().await {
+                            let chunk = chunk.unwrap();
+                            // dont unwrap
+                            curr_chunk.extend_from_slice(&chunk);
+                        } else {
+                            stream_active = false;
+                            break;    
+                        }
                     }
+                    let chunk: Bytes = curr_chunk.into();
+                    start_offsets.push(curr_pos);
+                    curr_pos += chunk.len();
+                    chunks.push(chunk);
                 }
                 {
                     let mut _g = owned_state.0.lock().unwrap();
@@ -151,15 +155,14 @@ pub(crate) fn start_worker(
 
                             if c.last_index.is_none() {
                                 let start_point = start_offsets.binary_search(&c.curr);
-                                let mut curr_index;
+                                let curr_index;
                                 match start_point {
                                     Ok(index) => {
                                         let index_pos = start_offsets[index];
                                         let chunk = &chunks[index];
                                         let end_offset = chunk.len().min(c.end - c.curr);
                                         let start_offset = c.curr - index_pos;
-                                        let _v =
-                                            c.channel.send(chunk.slice(start_offset..end_offset));
+                                        let _v = c.channel.send(chunk.slice(start_offset..end_offset));
                                         is_dropped = is_dropped | _v.is_err();
                                         assert_eq!(index_pos, c.curr);
                                         // let before = c.curr;
@@ -183,8 +186,7 @@ pub(crate) fn start_worker(
                                             c.curr,
                                             c.end
                                         );
-                                        let _v =
-                                            c.channel.send(chunk.slice(start_offset..end_offset));
+                                        let _v = c.channel.send(chunk.slice(start_offset..end_offset));
                                         is_dropped = is_dropped | _v.is_err();
 
                                         // let before = c.curr;
@@ -195,10 +197,7 @@ pub(crate) fn start_worker(
                                 };
                                 c.last_index = Some(curr_index);
                             }
-                            while !is_dropped
-                                && c.curr < curr_pos
-                                && c.last_index.unwrap() < chunks.len()
-                            {
+                            while !is_dropped && c.curr < curr_pos && c.last_index.unwrap() < chunks.len() {
                                 let chunk = &chunks[c.last_index.unwrap()];
                                 let start_offset = 0;
                                 let end_offset = chunk.len().min(c.end - c.curr);
