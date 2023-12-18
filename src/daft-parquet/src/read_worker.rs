@@ -3,7 +3,6 @@ use std::{fs::OpenOptions, ops::Range, sync::Arc};
 use bytes::Bytes;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use futures::{stream::BoxStream, Stream, StreamExt};
-use itertools::all;
 
 struct BytesConsumer {
     start: usize,
@@ -12,8 +11,32 @@ struct BytesConsumer {
     channel: tokio::sync::mpsc::UnboundedSender<Bytes>,
 }
 
+impl PartialEq for BytesConsumer {
+    fn eq(&self, other: &Self) -> bool {
+        self.start == other.start && self.end == other.end && self.curr == other.curr
+    }
+}
+
+impl Eq for BytesConsumer {}
+
+impl Ord for BytesConsumer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .curr
+            .cmp(&self.curr)
+            .then_with(|| other.start.cmp(&self.start))
+            .then_with(|| other.end.cmp(&self.end))
+    }
+}
+
+impl PartialOrd for BytesConsumer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 struct InFlightState {
-    consumers: Vec<BytesConsumer>,
+    consumers: std::collections::BinaryHeap<BytesConsumer>,
 }
 
 enum DownloaderState {
@@ -24,8 +47,8 @@ enum DownloaderState {
 impl DownloaderState {
     fn new() -> ProtectedState {
         ProtectedState(
-            tokio::sync::Mutex::new(DownloaderState::InFlight(InFlightState {
-                consumers: vec![],
+            std::sync::Mutex::new(DownloaderState::InFlight(InFlightState {
+                consumers: std::collections::BinaryHeap::new(),
             }))
             .into(),
         )
@@ -33,14 +56,14 @@ impl DownloaderState {
 }
 
 #[derive(Clone)]
-pub(crate) struct ProtectedState(Arc<tokio::sync::Mutex<DownloaderState>>);
+pub(crate) struct ProtectedState(Arc<std::sync::Mutex<DownloaderState>>);
 
 impl ProtectedState {
     pub async fn get_stream(
         &self,
         range: Range<usize>,
     ) -> BoxStream<'static, std::result::Result<Bytes, daft_io::Error>> {
-        let mut _g = self.0.lock().await;
+        let mut _g = self.0.lock().unwrap();
         match &mut (*_g) {
             DownloaderState::Complete(so, v) => {
                 let mut current_pos = range.start;
@@ -144,12 +167,12 @@ pub(crate) fn start_worker(
                     stream_active = false;
                 }
                 {
-                    let mut _g = owned_state.0.lock().await;
+                    let mut _g = owned_state.0.lock().unwrap();
                     if let DownloaderState::InFlight(InFlightState { ref mut consumers }) =
                         &mut (*_g)
                     {
-                        let mut all_done = !stream_active;
-                        for c in consumers {
+                        while !consumers.is_empty() && consumers.peek().unwrap().curr < curr_pos {
+                            let mut c = consumers.pop().unwrap();
                             assert!(
                                 c.curr >= c.start && c.curr <= c.end,
                                 "start: {} curr: {} end: {} ",
@@ -157,64 +180,59 @@ pub(crate) fn start_worker(
                                 c.curr,
                                 c.end
                             );
-
-                            if c.curr < c.end {
-                                all_done = false;
-                            }
-                            if c.curr <= curr_pos && c.curr < c.end {
-                                let start_point = start_offsets.binary_search(&c.curr);
-                                let mut curr_index;
-                                match start_point {
-                                    Ok(index) => {
-                                        let index_pos = start_offsets[index];
-                                        let chunk = &chunks[index];
-                                        let end_offset = chunk.len().min(c.end - c.curr);
-                                        let start_offset = c.curr - index_pos;
-                                        let _v =
-                                            c.channel.send(chunk.slice(start_offset..end_offset));
-                                        assert_eq!(index_pos, c.curr);
-                                        // let before = c.curr;
-                                        c.curr += (end_offset - start_offset);
-                                        // println!("ok before {before} after {}", c.curr);
-                                        curr_index = index + 1;
-                                    }
-                                    Err(index) => {
-                                        assert!(index > 0,);
-                                        let index = index - 1;
-                                        let index_pos = start_offsets[index];
-                                        assert!(index_pos < c.curr);
-
-                                        let chunk = &chunks[index];
-                                        let start_offset = c.curr - index_pos;
-                                        let end_offset = chunk.len().min(c.end - index_pos);
-                                        assert!(
-                                            c.curr >= c.start && c.curr < c.end,
-                                            "start: {} curr: {} end: {} ",
-                                            c.start,
-                                            c.curr,
-                                            c.end
-                                        );
-                                        let _v =
-                                            c.channel.send(chunk.slice(start_offset..end_offset));
-                                        // let before = c.curr;
-                                        c.curr += (end_offset - start_offset);
-                                        // println!("err before {before} after {}", c.curr);
-                                        curr_index = index + 1;
-                                    }
-                                };
-                                while c.curr < curr_pos && curr_index < chunks.len() {
-                                    let chunk = &chunks[curr_index];
-                                    let start_offset = 0;
+                            let start_point = start_offsets.binary_search(&c.curr);
+                            let mut curr_index;
+                            match start_point {
+                                Ok(index) => {
+                                    let index_pos = start_offsets[index];
+                                    let chunk = &chunks[index];
                                     let end_offset = chunk.len().min(c.end - c.curr);
+                                    let start_offset = c.curr - index_pos;
+                                    let _v = c.channel.send(chunk.slice(start_offset..end_offset));
+                                    assert_eq!(index_pos, c.curr);
+                                    // let before = c.curr;
+                                    c.curr += (end_offset - start_offset);
+                                    // println!("ok before {before} after {}", c.curr);
+                                    curr_index = index + 1;
+                                }
+                                Err(index) => {
+                                    assert!(index > 0,);
+                                    let index = index - 1;
+                                    let index_pos = start_offsets[index];
+                                    assert!(index_pos < c.curr);
+
+                                    let chunk = &chunks[index];
+                                    let start_offset = c.curr - index_pos;
+                                    let end_offset = chunk.len().min(c.end - index_pos);
+                                    assert!(
+                                        c.curr >= c.start && c.curr < c.end,
+                                        "start: {} curr: {} end: {} ",
+                                        c.start,
+                                        c.curr,
+                                        c.end
+                                    );
                                     let _v = c.channel.send(chunk.slice(start_offset..end_offset));
                                     // let before = c.curr;
                                     c.curr += (end_offset - start_offset);
-                                    // println!("while before {before} after {}", c.curr);
-                                    curr_index += 1;
+                                    // println!("err before {before} after {}", c.curr);
+                                    curr_index = index + 1;
                                 }
+                            };
+                            while c.curr < curr_pos && curr_index < chunks.len() {
+                                let chunk = &chunks[curr_index];
+                                let start_offset = 0;
+                                let end_offset = chunk.len().min(c.end - c.curr);
+                                let _v = c.channel.send(chunk.slice(start_offset..end_offset));
+                                // let before = c.curr;
+                                c.curr += (end_offset - start_offset);
+                                // println!("while before {before} after {}", c.curr);
+                                curr_index += 1;
+                            }
+                            if c.curr < c.end {
+                                consumers.push(c)
                             }
                         }
-                        if all_done {
+                        if !stream_active && consumers.is_empty() {
                             *_g = DownloaderState::Complete(start_offsets, chunks);
                             break;
                         }
