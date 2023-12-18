@@ -68,10 +68,13 @@ impl ProtectedState {
         let mut _g = self.0.lock().unwrap();
         match &mut (*_g) {
             DownloaderState::Complete(bytes) => {
+                println!("complete: {range:?}");
                 let result = bytes.slice(range);
                 futures::stream::iter(vec![Ok(result)]).boxed()
             }
             DownloaderState::InFlight(InFlightState { ref mut consumers }) => {
+                println!("in flight: {range:?}");
+
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                 let new_consumer = BytesConsumer {
                     start: range.start,
