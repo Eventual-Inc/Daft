@@ -117,7 +117,7 @@ pub(crate) fn start_worker(
         let mut start_offsets = Vec::<usize>::with_capacity(expected_chunks);
         let mut curr_pos = 0;
         let mut stream_active = true;
-        let target_chunk_size = 256 * 1024;
+        let target_chunk_size = 1024 * 1024;
         if let GetResult::Stream(mut stream, ..) = get_result {
             loop {
                 {
