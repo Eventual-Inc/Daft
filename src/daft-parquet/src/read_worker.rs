@@ -1,5 +1,6 @@
 use std::{fs::OpenOptions, ops::Range, sync::Arc};
 
+use arrow2::chunk;
 use bytes::Bytes;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use futures::{stream::BoxStream, Stream, StreamExt};
@@ -41,7 +42,7 @@ struct InFlightState {
 
 enum DownloaderState {
     InFlight(InFlightState),
-    Complete(Vec<usize>, Vec<Bytes>),
+    Complete(Bytes),
 }
 
 impl DownloaderState {
@@ -65,50 +66,9 @@ impl ProtectedState {
     ) -> BoxStream<'static, std::result::Result<Bytes, daft_io::Error>> {
         let mut _g = self.0.lock().unwrap();
         match &mut (*_g) {
-            DownloaderState::Complete(so, v) => {
-                let mut current_pos = range.start;
-                let mut curr_index;
-                let start_point = so.binary_search(&current_pos);
-                let mut bytes = vec![];
-                match start_point {
-                    Ok(index) => {
-                        let index_pos = so[index];
-                        let chunk = &v[index];
-                        let end_offset = chunk.len().min(range.end - current_pos);
-                        let start_offset = current_pos - index_pos;
-                        bytes.push(chunk.slice(start_offset..end_offset));
-                        assert_eq!(index_pos, current_pos);
-                        current_pos += (end_offset - current_pos);
-                        curr_index = index + 1;
-                    }
-                    Err(index) => {
-                        assert!(index > 0, "range: {range:?}, start: {}", &so[index],);
-                        let index = index - 1;
-                        let index_pos = so[index];
-                        assert!(index_pos < range.start);
-
-                        let chunk = &v[index];
-                        let start_offset = current_pos - index_pos;
-                        let end_offset = chunk.len().min(range.end - index_pos);
-                        assert!(current_pos >= range.start && current_pos < range.end, "range: {range:?}, current_pos: {current_pos}, bytes_start: {}, end: {}", range.start, range.end);
-
-                        bytes.push(chunk.slice(start_offset..end_offset));
-                        current_pos += (end_offset - start_offset);
-                        curr_index = index + 1;
-                    }
-                };
-                while current_pos < range.end && curr_index < v.len() {
-                    let chunk = &v[curr_index];
-                    let start_offset = 0;
-                    let end_offset = chunk.len().min(range.end - current_pos);
-                    bytes.push(chunk.slice(start_offset..end_offset));
-                    current_pos += end_offset - start_offset;
-                    curr_index += 1;
-                }
-                assert!(current_pos == range.end);
-
-                assert_eq!(bytes.iter().map(|b| b.len()).sum::<usize>(), range.len());
-                futures::stream::iter(bytes).map(|b| Ok(b)).boxed()
+            DownloaderState::Complete(bytes) => {
+                let result = bytes.slice(range);
+                futures::stream::iter(vec![Ok(result)]).boxed()
             }
             DownloaderState::InFlight(InFlightState { ref mut consumers }) => {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -233,7 +193,11 @@ pub(crate) fn start_worker(
                             }
                         }
                         if !stream_active && consumers.is_empty() {
-                            *_g = DownloaderState::Complete(start_offsets, chunks);
+                            let mut all_data = Vec::<u8>::with_capacity(expected_len);
+                            for chunk in chunks.into_iter() {
+                                all_data.extend_from_slice(&chunk);
+                            }
+                            *_g = DownloaderState::Complete(all_data.into());
                             break;
                         }
                     }
