@@ -3,10 +3,10 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef};
-use futures::{StreamExt, stream::BoxStream, TryStreamExt};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
-use crate::read_worker::{ProtectedState, start_worker};
+use crate::read_worker::{start_worker, ProtectedState};
 
 type RangeList = Vec<Range<usize>>;
 
@@ -98,7 +98,13 @@ struct RangeCacheEntry {
 }
 
 impl RangeCacheEntry {
-    async fn get_stream(&self, range: Range<usize>) -> std::result::Result<BoxStream<'static, std::result::Result<Bytes, daft_io::Error>>, daft_io::Error> {
+    async fn get_stream(
+        &self,
+        range: Range<usize>,
+    ) -> std::result::Result<
+        BoxStream<'static, std::result::Result<Bytes, daft_io::Error>>,
+        daft_io::Error,
+    > {
         {
             Ok(self.state.get_stream(range).await)
         }
@@ -165,11 +171,7 @@ impl ReadPlanner {
             // let state = RangeCacheState::InFlight(join_handle);
 
             let state = start_worker(owned_url, range, owned_io_client, owned_io_stats);
-            let entry = Arc::new(RangeCacheEntry {
-                start,
-                end,
-                state,
-            });
+            let entry = Arc::new(RangeCacheEntry { start, end, state });
             entries.push(entry);
         }
         Ok(Arc::new(RangesContainer { ranges: entries }))
@@ -240,7 +242,8 @@ impl RangesContainer {
         assert_eq!(current_pos, range.end);
 
         let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
-            .then(|(e, r)| async move { e.get_stream(r).await }).try_flatten();
+            .then(|(e, r)| async move { e.get_stream(r).await })
+            .try_flatten();
 
         let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
         let convert = async_compat::Compat::new(stream_reader);
