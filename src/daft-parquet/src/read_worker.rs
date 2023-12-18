@@ -9,6 +9,7 @@ struct BytesConsumer {
     start: usize,
     end: usize,
     curr: usize,
+    last_index: Option<usize>,
     channel: tokio::sync::mpsc::UnboundedSender<Bytes>,
 }
 
@@ -76,6 +77,7 @@ impl ProtectedState {
                     start: range.start,
                     end: range.end,
                     curr: range.start,
+                    last_index: None,
                     channel: tx,
                 };
                 let expected_bytes = range.len();
@@ -133,6 +135,7 @@ pub(crate) fn start_worker(
                     {
                         while !consumers.is_empty() && consumers.peek().unwrap().curr < curr_pos {
                             let mut c = consumers.pop().unwrap();
+                            let mut is_dropped = false;
                             assert!(
                                 c.curr >= c.start && c.curr <= c.end,
                                 "start: {} curr: {} end: {} ",
@@ -140,55 +143,70 @@ pub(crate) fn start_worker(
                                 c.curr,
                                 c.end
                             );
-                            let start_point = start_offsets.binary_search(&c.curr);
-                            let mut curr_index;
-                            match start_point {
-                                Ok(index) => {
-                                    let index_pos = start_offsets[index];
-                                    let chunk = &chunks[index];
-                                    let end_offset = chunk.len().min(c.end - c.curr);
-                                    let start_offset = c.curr - index_pos;
-                                    let _v = c.channel.send(chunk.slice(start_offset..end_offset));
-                                    assert_eq!(index_pos, c.curr);
-                                    // let before = c.curr;
-                                    c.curr += (end_offset - start_offset);
-                                    // println!("ok before {before} after {}", c.curr);
-                                    curr_index = index + 1;
-                                }
-                                Err(index) => {
-                                    assert!(index > 0,);
-                                    let index = index - 1;
-                                    let index_pos = start_offsets[index];
-                                    assert!(index_pos < c.curr);
 
-                                    let chunk = &chunks[index];
-                                    let start_offset = c.curr - index_pos;
-                                    let end_offset = chunk.len().min(c.end - index_pos);
-                                    assert!(
-                                        c.curr >= c.start && c.curr < c.end,
-                                        "start: {} curr: {} end: {} ",
-                                        c.start,
-                                        c.curr,
-                                        c.end
-                                    );
-                                    let _v = c.channel.send(chunk.slice(start_offset..end_offset));
-                                    // let before = c.curr;
-                                    c.curr += (end_offset - start_offset);
-                                    // println!("err before {before} after {}", c.curr);
-                                    curr_index = index + 1;
-                                }
-                            };
-                            while c.curr < curr_pos && curr_index < chunks.len() {
-                                let chunk = &chunks[curr_index];
+                            if c.last_index.is_none() {
+                                let start_point = start_offsets.binary_search(&c.curr);
+                                let mut curr_index;
+                                match start_point {
+                                    Ok(index) => {
+                                        let index_pos = start_offsets[index];
+                                        let chunk = &chunks[index];
+                                        let end_offset = chunk.len().min(c.end - c.curr);
+                                        let start_offset = c.curr - index_pos;
+                                        let _v = c.channel.send(chunk.slice(start_offset..end_offset));
+                                        is_dropped = is_dropped | _v.is_err();
+                                        assert_eq!(index_pos, c.curr);
+                                        // let before = c.curr;
+                                        c.curr += (end_offset - start_offset);
+                                        // println!("ok before {before} after {}", c.curr);
+                                        curr_index = index + 1;
+                                    }
+                                    Err(index) => {
+                                        assert!(index > 0,);
+                                        let index = index - 1;
+                                        let index_pos = start_offsets[index];
+                                        assert!(index_pos < c.curr);
+
+                                        let chunk = &chunks[index];
+                                        let start_offset = c.curr - index_pos;
+                                        let end_offset = chunk.len().min(c.end - index_pos);
+                                        assert!(
+                                            c.curr >= c.start && c.curr < c.end,
+                                            "start: {} curr: {} end: {} ",
+                                            c.start,
+                                            c.curr,
+                                            c.end
+                                        );
+                                        let _v = c.channel.send(chunk.slice(start_offset..end_offset));
+                                        is_dropped = is_dropped | _v.is_err();
+
+                                        // let before = c.curr;
+                                        c.curr += (end_offset - start_offset);
+                                        // println!("err before {before} after {}", c.curr);
+                                        curr_index = index + 1;
+                                    }
+                                };
+                                c.last_index = Some(curr_index);
+                            }
+                            while !is_dropped && c.curr < curr_pos && c.last_index.unwrap() < chunks.len() {
+                                let chunk = &chunks[c.last_index.unwrap()];
                                 let start_offset = 0;
                                 let end_offset = chunk.len().min(c.end - c.curr);
-                                let _v = c.channel.send(chunk.slice(start_offset..end_offset));
+
+                                let chunk = if c.curr + chunk.len() > c.end {
+                                    chunk.slice(start_offset..end_offset)
+                                } else {
+                                    chunk.clone()
+                                };
+                                let _v = c.channel.send(chunk);
+                                is_dropped = is_dropped | _v.is_err();
+
                                 // let before = c.curr;
                                 c.curr += (end_offset - start_offset);
                                 // println!("while before {before} after {}", c.curr);
-                                curr_index += 1;
+                                c.last_index = Some(c.last_index.unwrap() + 1);
                             }
-                            if c.curr < c.end {
+                            if !is_dropped && c.curr < c.end {
                                 consumers.push(c)
                             }
                         }
