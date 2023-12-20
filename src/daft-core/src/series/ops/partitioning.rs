@@ -2,7 +2,7 @@ use crate::datatypes::logical::TimestampArray;
 use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
 use crate::series::array_impl::IntoSeries;
 use crate::{
-    datatypes::{logical::DateArray, DataType},
+    datatypes::DataType,
     series::Series,
 };
 use common_error::{DaftError, DaftResult};

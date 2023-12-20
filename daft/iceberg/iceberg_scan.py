@@ -3,13 +3,14 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 
+import pyarrow as pa
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import Table
 from pyiceberg.typedef import Record
-import pyarrow as pa
+
 import daft
 from daft.daft import (
     FileFormatConfig,
@@ -46,6 +47,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         MonthTransform,
         YearTransform,
     )
+
     tfm = None
     if isinstance(transform, IdentityTransform):
         tfm = PartitionTransform.identity()
@@ -138,7 +140,7 @@ class IcebergScanOperator(ScanOperator):
                 storage_config=self._storage_config,
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
-                partition_values=pvalues._table
+                partition_values=pvalues._table,
             )
             if st is None:
                 continue

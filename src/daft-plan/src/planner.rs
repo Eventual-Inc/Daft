@@ -86,7 +86,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     cfg.merge_scan_tasks_min_size_bytes,
                     cfg.merge_scan_tasks_max_size_bytes,
                 );
-                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;                
+                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let partition_spec = Arc::new(PartitionSpec::new_internal(
                         PartitionScheme::Unknown,
@@ -110,8 +110,6 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         partition_spec,
                     )))
                 }
-
-
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => {

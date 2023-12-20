@@ -181,7 +181,7 @@ impl PhysicalPlan {
                 .iter()
                 .map(|scan_task| scan_task.size_bytes())
                 .sum::<Option<usize>>(),
-            Self::EmptyScan(..) => Some(0), 
+            Self::EmptyScan(..) => Some(0),
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
             Self::Filter(Filter { input, .. })
@@ -396,12 +396,13 @@ impl PhysicalPlan {
                 Ok(py_iter.into())
             }
             PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
-                let schema_mod =
-                    py.import(pyo3::intern!(py, "daft.logical.schema"))?;
+                let schema_mod = py.import(pyo3::intern!(py, "daft.logical.schema"))?;
                 let python_schema = schema_mod
                     .getattr(pyo3::intern!(py, "Schema"))?
                     .getattr(pyo3::intern!(py, "_from_pyschema"))?
-                    .call1((PySchema {schema: schema.clone()},))?;
+                    .call1((PySchema {
+                        schema: schema.clone(),
+                    },))?;
 
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?

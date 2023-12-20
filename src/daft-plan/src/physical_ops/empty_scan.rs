@@ -10,10 +10,7 @@ pub struct EmptyScan {
 }
 
 impl EmptyScan {
-    pub(crate) fn new(
-        schema: SchemaRef,
-        partition_spec: Arc<PartitionSpec>,
-    ) -> Self {
+    pub(crate) fn new(schema: SchemaRef, partition_spec: Arc<PartitionSpec>) -> Self {
         Self {
             schema,
             partition_spec,

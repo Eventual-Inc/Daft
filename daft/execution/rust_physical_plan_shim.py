@@ -41,16 +41,17 @@ def scan_with_tasks(
         )
         yield scan_step
 
+
 def empty_scan(
     schema: Schema,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    """yield a plan to create an empty Partition
-    """
+    """yield a plan to create an empty Partition"""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
         instruction=EmptyScan(schema=schema),
         resource_request=ResourceRequest(memory_bytes=0),
     )
     yield scan_step
+
 
 @dataclass(frozen=True)
 class ScanWithTask(execution_step.SingleOutputInstruction):
@@ -72,6 +73,7 @@ class ScanWithTask(execution_step.SingleOutputInstruction):
                 size_bytes=self.scan_task.size_bytes(),
             )
         ]
+
 
 @dataclass(frozen=True)
 class EmptyScan(execution_step.SingleOutputInstruction):
