@@ -82,6 +82,9 @@ redirects = {
     "learn/10-min": "../10-min.html",
 }
 
+# Adds /_html folder which serves robots.txt and the sitemap
+html_extra_path = ["_html"]
+
 # Resolving code links to github
 # Adapted from: https://github.com/aaugustin/websockets/blob/778a1ca6936ac67e7a3fe1bbe585db2eafeaa515/docs/conf.py#L100-L134
 
