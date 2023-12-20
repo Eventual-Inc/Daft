@@ -1,51 +1,65 @@
-use arrow2::{array::{Array, growable::GrowableUtf8}, offset};
+use arrow2::array::Array;
 
-use crate::{array::DataArray, datatypes::{DaftPhysicalType, Utf8Array}};
+use crate::{array::DataArray, datatypes::DaftPhysicalType};
 use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;
 
-use super::as_arrow::AsArrow;
+macro_rules! impl_variable_length_concat {
+    ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
+        fn $fn_name(arrays: &[&dyn arrow2::array::Array]) -> DaftResult<Box<$arrow_type>> {
+            let mut num_rows: usize = 0;
+            let mut num_bytes: usize = 0;
+            let mut need_validity = false;
+            for arr in arrays {
+                let arr = arr.as_any().downcast_ref::<$arrow_type>().unwrap();
 
-
-
-fn utf8_concat(arrays: &[&arrow2::array::Utf8Array<i64>]) -> DaftResult<Box<arrow2::array::Utf8Array<i64>>> {
-    let mut num_rows: usize = 0;
-    let mut num_bytes: usize = 0;
-    let mut need_validity = false;
-    for arr in arrays {
-        num_rows += arr.len();
-        num_bytes += arr.values().len();
-        need_validity |= arr.validity().map(|v| v.unset_bits() > 0).unwrap_or(false);
-    }
-    let mut offsets = arrow2::offset::Offsets::<i64>::with_capacity(num_rows);
-
-    let mut validity = if need_validity {
-        Some(arrow2::bitmap::MutableBitmap::with_capacity(num_rows))
-    } else {
-        None
-    };
-    let mut buffer = Vec::<u8>::with_capacity(num_bytes);
-
-    for arr in arrays {
-        offsets.try_extend_from_slice(arr.offsets(), 0, arr.len()).unwrap();
-        if let Some(ref mut bitmap) = validity {
-            if let Some(b) = arr.validity() {
-                bitmap.extend_from_bitmap(b);
-            } else {
-                bitmap.extend_constant(arr.len(), true);
+                num_rows += arr.len();
+                num_bytes += arr.values().len();
+                need_validity |= arr.validity().map(|v| v.unset_bits() > 0).unwrap_or(false);
             }
+            let mut offsets = arrow2::offset::Offsets::<i64>::with_capacity(num_rows);
+
+            let mut validity = if need_validity {
+                Some(arrow2::bitmap::MutableBitmap::with_capacity(num_rows))
+            } else {
+                None
+            };
+            let mut buffer = Vec::<u8>::with_capacity(num_bytes);
+
+            for arr in arrays {
+                let arr = arr.as_any().downcast_ref::<$arrow_type>().unwrap();
+                offsets.try_extend_from_slice(arr.offsets(), 0, arr.len())?;
+                if let Some(ref mut bitmap) = validity {
+                    if let Some(b) = arr.validity() {
+                        bitmap.extend_from_bitmap(b);
+                    } else {
+                        bitmap.extend_constant(arr.len(), true);
+                    }
+                }
+                buffer.extend_from_slice(arr.values().as_slice());
+            }
+            let dtype = arrays.first().unwrap().data_type().clone();
+            #[allow(unused_unsafe)]
+            let result_array = unsafe {
+                <$arrow_type>::$create_fn(
+                    dtype,
+                    offsets.into(),
+                    buffer.into(),
+                    validity.map(|v| v.into()),
+                )
+            }?;
+            Ok(Box::new(result_array))
         }
-        buffer.extend_from_slice(arr.values().as_slice())
-    }
-    let result_array = unsafe {
-        arrow2::array::Utf8Array::<i64>::try_new_unchecked(arrow2::datatypes::DataType::LargeUtf8, offsets.into(), buffer.into(), validity.map(|v| v.into()))
-    }?;
-    Ok(Box::new(result_array))
-
+    };
 }
-
+impl_variable_length_concat!(
+    utf8_concat,
+    arrow2::array::Utf8Array<i64>,
+    try_new_unchecked
+);
+impl_variable_length_concat!(binary_concat, arrow2::array::BinaryArray<i64>, try_new);
 
 impl<T> DataArray<T>
 where
@@ -83,17 +97,13 @@ where
                 DataArray::new(field.clone(), cat_array)
             }
             crate::DataType::Utf8 => {
-                let utf8arrays = arrow_arrays
-                .iter()
-                .map(|s| {
-                    s.as_any()
-                        .downcast_ref::<arrow2::array::Utf8Array<i64>>()
-                        .unwrap()
-                })
-                .collect::<Vec<_>>();
-                let cat_array = utf8_concat(utf8arrays.as_slice())?;
+                let cat_array = utf8_concat(arrow_arrays.as_slice())?;
                 DataArray::new(field.clone(), cat_array)
-            },
+            }
+            crate::DataType::Binary => {
+                let cat_array = binary_concat(arrow_arrays.as_slice())?;
+                DataArray::new(field.clone(), cat_array)
+            }
             _ => {
                 let cat_array: Box<dyn Array> =
                     arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
