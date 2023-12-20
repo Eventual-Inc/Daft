@@ -1,9 +1,16 @@
 User-agent: *
 
-Disallow: /projects/docs
+# Allow crawling of all paths
+Allow: /
 
-Allow: /projects/docs/en/latest
+# Override to disallow crawling of documentation
+Disallow: /projects/docs/
 
-Allow: /projects/docs/en/stable
+# Override again to allow crawling of /latest documentation
+Allow: /projects/docs/en/latest/
 
+# Override again to allow crawling of /stable documentation
+Allow: /projects/docs/en/stable/
+
+# Custom sitemap
 Sitemap: https://www.getdaft.io/sitemap-override.xml
