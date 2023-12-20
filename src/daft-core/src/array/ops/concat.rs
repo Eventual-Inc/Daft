@@ -38,7 +38,8 @@ macro_rules! impl_variable_length_concat {
                         bitmap.extend_constant(arr.len(), true);
                     }
                 }
-                buffer.extend_from_slice(arr.values().as_slice());
+                let range = (*arr.offsets().first() as usize)..(*arr.offsets().last() as usize);
+                buffer.extend_from_slice(&arr.values().as_slice()[range]);
             }
             let dtype = arrays.first().unwrap().data_type().clone();
             #[allow(unused_unsafe)]
