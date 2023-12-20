@@ -157,8 +157,19 @@ fn deserialize_binary<O: Offset, B: ByteRecordGeneric>(
     rows: &[B],
     column: usize,
 ) -> Box<dyn Array> {
+    let expected_size = rows
+        .iter()
+        .map(|row| match row.get(column) {
+            Some(bytes) => bytes.len(),
+            None => 0,
+        })
+        .sum::<usize>();
+
     let iter = rows.iter().map(|row| row.get(column));
-    Box::new(BinaryArray::<O>::from_trusted_len_iter(iter))
+    let mut mu = MutableBinaryArray::<O>::with_capacities(rows.len(), expected_size);
+    mu.extend_trusted_len(iter);
+    let array: BinaryArray<O> = mu.into();
+    Box::new(array)
 }
 
 #[inline]
