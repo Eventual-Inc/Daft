@@ -134,11 +134,21 @@ where
 
 #[inline]
 fn deserialize_utf8<O: Offset, B: ByteRecordGeneric>(rows: &[B], column: usize) -> Box<dyn Array> {
+    let expected_size = rows
+        .iter()
+        .map(|row| match row.get(column) {
+            Some(bytes) => bytes.len(),
+            None => 0,
+        })
+        .sum::<usize>();
+
     let iter = rows.iter().map(|row| match row.get(column) {
         Some(bytes) => to_utf8(bytes),
         None => None,
     });
-    Box::new(Utf8Array::<O>::from_trusted_len_iter(iter))
+    let mut mu = MutableUtf8Array::<O>::with_capacities(rows.len(), expected_size);
+    mu.extend_trusted_len(iter);
+    mu.as_box()
 }
 
 #[inline]
