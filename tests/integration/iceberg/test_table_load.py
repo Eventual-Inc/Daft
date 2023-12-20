@@ -80,11 +80,12 @@ def test_daft_iceberg_table_predicate_pushdown_months(local_iceberg_catalog):
 
     tab = local_iceberg_catalog.load_table("default.test_partitioned_by_months")
     df = daft.read_iceberg(tab)
-    df = df.where(df["dt"] < date(2023, 1, 1))
-    df.collect()
+    df = df.where(df["dt"] > date(2025, 1, 1))
     import ipdb
 
     ipdb.set_trace()
+    df.collect()
+
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

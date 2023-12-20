@@ -75,6 +75,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo {
                 pushdowns,
                 scan_op,
+                source_schema,
                 ..
             })) => {
                 let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
@@ -85,17 +86,32 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     cfg.merge_scan_tasks_min_size_bytes,
                     cfg.merge_scan_tasks_max_size_bytes,
                 );
+                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;                
+                if scan_tasks.is_empty() {
+                    let partition_spec = Arc::new(PartitionSpec::new_internal(
+                        PartitionScheme::Unknown,
+                        1,
+                        None,
+                    ));
 
-                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
-                let partition_spec = Arc::new(PartitionSpec::new_internal(
-                    PartitionScheme::Unknown,
-                    scan_tasks.len(),
-                    None,
-                ));
-                Ok(PhysicalPlan::TabularScan(TabularScan::new(
-                    scan_tasks,
-                    partition_spec,
-                )))
+                    Ok(PhysicalPlan::EmptyScan(EmptyScan::new(
+                        source_schema.clone(),
+                        partition_spec,
+                    )))
+                } else {
+                    let partition_spec = Arc::new(PartitionSpec::new_internal(
+                        PartitionScheme::Unknown,
+                        scan_tasks.len(),
+                        None,
+                    ));
+
+                    Ok(PhysicalPlan::TabularScan(TabularScan::new(
+                        scan_tasks,
+                        partition_spec,
+                    )))
+                }
+
+
             }
             #[cfg(feature = "python")]
             SourceInfo::InMemoryInfo(mem_info) => {
