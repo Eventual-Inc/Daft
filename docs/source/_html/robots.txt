@@ -1,0 +1,9 @@
+User-agent: *
+
+Disallow: /projects/docs
+
+Allow: /projects/docs/en/latest
+
+Allow: /projects/docs/en/stable
+
+Sitemap: https://www.getdaft.io/sitemap-override.xml
