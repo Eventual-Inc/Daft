@@ -58,11 +58,11 @@ fn is_boolean(bytes: &[u8]) -> bool {
 }
 
 fn is_float(bytes: &[u8]) -> bool {
-    lexical_core::parse::<f64>(bytes).is_ok()
+    fast_float::parse::<f64, _>(bytes).is_ok()
 }
 
 fn is_integer(bytes: &[u8]) -> bool {
-    lexical_core::parse::<i64>(bytes).is_ok()
+    atoi_simd::parse_skipped::<i64>(bytes).is_ok()
 }
 
 fn is_date(string: &str) -> bool {

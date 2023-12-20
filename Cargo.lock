@@ -1214,7 +1214,6 @@ dependencies = [
  "chrono-tz",
  "csv-async",
  "fast-float",
- "lexical-core",
  "simdutf8",
  "tokio",
  "url",

@@ -55,7 +55,7 @@ fn deserialize_primitive<T, B: ByteRecordGeneric, F>(
     mut op: F,
 ) -> Box<dyn Array>
 where
-    T: NativeType + lexical_core::FromLexical,
+    T: NativeType,
     F: FnMut(&[u8]) -> Option<T>,
 {
     let iter = rows.iter().map(|row| match row.get(column) {
