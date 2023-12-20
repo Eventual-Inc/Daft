@@ -1,9 +1,11 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 async-compression = {workspace = true}
+atoi_simd = "0.15.5"
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 csv-async = "1.2.6"
+fast-float = "0.2.0"
 lexical-core = {version = "0.8"}
 simdutf8 = "0.1.3"
 tokio = {workspace = true}

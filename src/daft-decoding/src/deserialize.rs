@@ -83,8 +83,8 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
     let lhs = a.next();
     let rhs = a.next();
     match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => lexical_core::parse::<i128>(lhs).ok().and_then(|x| {
-            lexical_core::parse::<i128>(rhs)
+        (Some(lhs), Some(rhs)) => atoi_simd::parse_skipped::<i128>(lhs).ok().and_then(|x| {
+            atoi_simd::parse_skipped::<i128>(rhs)
                 .ok()
                 .map(|y| (x, lhs, y, rhs))
                 .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
@@ -102,13 +102,13 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
             if rhs.len() != precision || rhs.len() != scale {
                 return None;
             }
-            lexical_core::parse::<i128>(rhs).ok()
+            atoi_simd::parse_skipped::<i128>(rhs).ok()
         }
         (Some(lhs), None) => {
             if lhs.len() != precision || scale != 0 {
                 return None;
             }
-            lexical_core::parse::<i128>(lhs).ok()
+            atoi_simd::parse_skipped::<i128>(lhs).ok()
         }
         (None, None) => None,
     }
@@ -226,34 +226,34 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
             }
         }),
         Int8 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<i8>(bytes).ok()
+            atoi_simd::parse_skipped::<i8>(bytes).ok()
         }),
         Int16 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<i16>(bytes).ok()
+            atoi_simd::parse_skipped::<i16>(bytes).ok()
         }),
         Int32 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<i32>(bytes).ok()
+            atoi_simd::parse_skipped::<i32>(bytes).ok()
         }),
         Int64 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<i64>(bytes).ok()
+            atoi_simd::parse_skipped::<i64>(bytes).ok()
         }),
         UInt8 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<u8>(bytes).ok()
+            atoi_simd::parse_skipped::<u8>(bytes).ok()
         }),
         UInt16 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<u16>(bytes).ok()
+            atoi_simd::parse_skipped::<u16>(bytes).ok()
         }),
         UInt32 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<u32>(bytes).ok()
+            atoi_simd::parse_skipped::<u32>(bytes).ok()
         }),
         UInt64 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<u64>(bytes).ok()
+            atoi_simd::parse_skipped::<u64>(bytes).ok()
         }),
         Float32 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<f32>(bytes).ok()
+            fast_float::parse::<f32, _>(bytes).ok()
         }),
         Float64 => deserialize_primitive(rows, column, datatype, |bytes| {
-            lexical_core::parse::<f64>(bytes).ok()
+            fast_float::parse::<f64, _>(bytes).ok()
         }),
         Date32 => deserialize_primitive(rows, column, datatype, |bytes| {
             let mut last_fmt_idx = 0;
