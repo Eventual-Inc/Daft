@@ -148,7 +148,8 @@ fn deserialize_utf8<O: Offset, B: ByteRecordGeneric>(rows: &[B], column: usize) 
     });
     let mut mu = MutableUtf8Array::<O>::with_capacities(rows.len(), expected_size);
     mu.extend_trusted_len(iter);
-    mu.as_box()
+    let array: Utf8Array<O> = mu.into();
+    Box::new(array)
 }
 
 #[inline]
