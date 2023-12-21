@@ -58,9 +58,7 @@ def _iceberg_partition_field_to_daft_partition_field(
     elif isinstance(transform, DayTransform):
         tfm = PartitionTransform.day()
     elif isinstance(transform, HourTransform):
-        warnings.warn(
-            "HourTransform not implemented, Please make a comment: https://github.com/Eventual-Inc/Daft/issues/1606"
-        )
+        tfm = PartitionTransform.hour()
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
     return make_partition_field(result_field, daft_field, transform=tfm)

@@ -1,10 +1,7 @@
 use crate::datatypes::logical::TimestampArray;
 use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
 use crate::series::array_impl::IntoSeries;
-use crate::{
-    datatypes::DataType,
-    series::Series,
-};
+use crate::{datatypes::DataType, series::Series};
 use common_error::{DaftError, DaftResult};
 
 impl Series {

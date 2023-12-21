@@ -391,6 +391,11 @@ partitioning_keys:\n",
         }
 
         #[staticmethod]
+        pub fn hour() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Hour))
+        }
+
+        #[staticmethod]
         pub fn void() -> PyResult<Self> {
             Ok(Self(crate::PartitionTransform::Void))
         }
