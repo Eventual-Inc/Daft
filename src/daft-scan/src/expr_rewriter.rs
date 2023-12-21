@@ -40,7 +40,7 @@ pub fn rewrite_predicate_for_partitioning(
     pfields: &[PartitionField],
 ) -> DaftResult<Option<Expr>> {
     if pfields.is_empty() {
-        todo!("no predicate")
+        return Ok(None);
     }
 
     let predicate = unalias(predicate)?;
@@ -49,7 +49,10 @@ pub fn rewrite_predicate_for_partitioning(
         let mut map = HashMap::with_capacity(pfields.len());
         for pf in pfields.iter() {
             if let Some(ref source_field) = pf.source_field {
-                map.insert(source_field.name.as_str(), pf);
+                let prev_value = map.insert(source_field.name.as_str(), pf);
+                if let Some(prev_value) = prev_value {
+                    return Err(common_error::DaftError::ValueError(format!("Duplicate Partitioning Columns found on same source field: {source_field}\n1: {prev_value}\n2: {pf}")));
+                }
             }
         }
         map
