@@ -42,6 +42,27 @@ def test_series_concat(dtype, chunks) -> None:
             counter += 1
 
 
+@pytest.mark.parametrize(
+    "dtype, chunks", itertools.product(ARROW_FLOAT_TYPES + ARROW_INT_TYPES + ARROW_STRING_TYPES, [1, 2, 3, 10])
+)
+def test_series_concat_with_slicing(dtype, chunks) -> None:
+    series = []
+    for i in range(chunks):
+        s = Series.from_pylist([i] * 4).cast(dtype=DataType.from_arrow_type(dtype))
+        series.append(s.slice(0, 2))
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.from_arrow_type(dtype)
+    concated_list = concated.to_pylist()
+
+    counter = 0
+    for i in range(chunks):
+        for _ in range(2):
+            assert float(concated_list[counter]) == i
+            counter += 1
+
+
 @pytest.mark.parametrize("fixed", [False, True])
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_list_array(chunks, fixed) -> None:

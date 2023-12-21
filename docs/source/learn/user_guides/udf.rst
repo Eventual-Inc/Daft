@@ -177,6 +177,7 @@ Running Stateful UDFs are exactly the same as running their Stateless cousins.
     df = df.with_column("image_classifications", RunModel(df["images"]))
 
 
+.. _resource-requests:
 Resource Requests
 -----------------
 
