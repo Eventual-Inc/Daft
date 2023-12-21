@@ -24,7 +24,9 @@ from daft.series import Series
 )
 def test_partitioning_days(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
-    assert s.partitioning.days().cast(DataType.int32()).to_pylist() == expected
+    d = s.partitioning.days()
+    assert d.datatype() == DataType.date()
+    assert d.cast(DataType.int32()).to_pylist() == expected
 
 
 @pytest.mark.parametrize(
