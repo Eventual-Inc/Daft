@@ -62,7 +62,8 @@ class ScanWithTask(execution_step.SingleOutputInstruction):
 
     def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         assert len(inputs) == 0
-        return [MicroPartition._from_scan_task(self.scan_task)]
+        table = MicroPartition._from_scan_task(self.scan_task)
+        return [table]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         assert len(input_metadatas) == 0

@@ -270,7 +270,11 @@ impl ScanTask {
     }
 
     pub fn num_rows(&self) -> Option<usize> {
-        self.metadata.as_ref().map(|m| m.length)
+        if self.pushdowns.filters.is_some() {
+            None
+        } else {
+            self.metadata.as_ref().map(|m| m.length)
+        }
     }
 
     pub fn size_bytes(&self) -> Option<usize> {

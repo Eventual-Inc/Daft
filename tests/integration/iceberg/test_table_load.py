@@ -38,7 +38,7 @@ WORKING_SHOW_COLLECT = [
     # "test_positional_mor_deletes", # Need Merge on Read
     # "test_positional_mor_double_deletes", # Need Merge on Read
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
-    "test_table_version", # we have bugs when loading no files
+    "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
 ]
 
@@ -111,7 +111,6 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
-#
 @pytest.mark.integration()
 @pytest.mark.parametrize(
     "predicate, table, limit",
@@ -141,6 +140,40 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["ts"])]
+    if limit:
+        iceberg_pandas = iceberg_pandas[:limit]
+
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "predicate, table, limit",
+    itertools.product(
+        [
+            lambda x: x < "d",
+            lambda x: x == "d",
+            lambda x: x > "d",
+            lambda x: x != "d",
+            lambda x: x == "z",
+        ],
+        [
+            "test_partitioned_by_truncate",
+        ],
+        [None, 1, 2, 1000],
+    ),
+)
+def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_iceberg(tab)
+    df = df.where(predicate(df["letter"]))
+    if limit:
+        df = df.limit(limit)
+    df.collect()
+
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["letter"])]
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
 

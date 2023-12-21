@@ -76,7 +76,6 @@ class IcebergScanOperator(ScanOperator):
         arrow_schema = schema_to_pyarrow(iceberg_table.schema())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
-        print(self._partition_keys)
 
     def schema(self) -> Schema:
         return self._schema
@@ -107,7 +106,6 @@ class IcebergScanOperator(ScanOperator):
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
-
         scan_tasks = []
 
         if limit is not None:
@@ -146,7 +144,6 @@ class IcebergScanOperator(ScanOperator):
                 continue
             rows_left -= record_count
             scan_tasks.append(st)
-        print()
         return iter(scan_tasks)
 
     def can_absorb_filter(self) -> bool:
