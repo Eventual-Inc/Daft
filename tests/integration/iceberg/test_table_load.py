@@ -79,7 +79,7 @@ def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize(
-    "predicate, table",
+    "predicate, table, limit",
     itertools.product(
         [
             lambda x: x < date(2023, 3, 6),
@@ -92,24 +92,29 @@ def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
             "test_partitioned_by_months",
             "test_partitioned_by_years",
         ],
+        [None, 1, 2, 1000],
     ),
 )
-def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, local_iceberg_catalog):
+def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, limit, local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.{table}")
     df = daft.read_iceberg(tab)
     df = df.where(predicate(df["dt"]))
+    if limit:
+        df = df.limit(limit)
     df.collect()
 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["dt"])]
+    if limit:
+        iceberg_pandas = iceberg_pandas[:limit]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 #
 @pytest.mark.integration()
 @pytest.mark.parametrize(
-    "predicate, table",
+    "predicate, table, limit",
     itertools.product(
         [
             lambda x: x < datetime(2023, 3, 6, tzinfo=pytz.utc),
@@ -122,17 +127,23 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
             "test_partitioned_by_days",
             "test_partitioned_by_hours",
         ],
+        [None, 1, 2, 1000],
     ),
 )
-def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, table, local_iceberg_catalog):
+def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, table, limit, local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.{table}")
     df = daft.read_iceberg(tab)
     df = df.where(predicate(df["ts"]))
+    if limit:
+        df = df.limit(limit)
     df.collect()
 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["ts"])]
+    if limit:
+        iceberg_pandas = iceberg_pandas[:limit]
+
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
