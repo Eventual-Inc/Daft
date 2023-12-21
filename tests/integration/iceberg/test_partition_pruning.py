@@ -38,6 +38,15 @@ def is_null(obj):
         raise NotImplementedError()
 
 
+def udf_func(obj):
+    if isinstance(obj, Expression):
+        return obj.apply(lambda x: str(x)[:1] == "1", return_dtype=daft.DataType.bool())
+    elif isinstance(obj, pd.Series):
+        return obj.apply(lambda x: str(x)[:1] == "1")
+    else:
+        raise NotImplementedError()
+
+
 @pytest.mark.integration()
 @pytest.mark.parametrize(
     "predicate, table, limit",
@@ -52,6 +61,7 @@ def is_null(obj):
             lambda x: date(2023, 3, 6) < x,
             lambda x: date(2023, 3, 6) != x,
             is_null,
+            udf_func,
         ],
         [
             "test_partitioned_by_months",
@@ -90,6 +100,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
             lambda x: datetime(2023, 3, 6, tzinfo=pytz.utc) < x,
             lambda x: datetime(2023, 3, 6, tzinfo=pytz.utc) != x,
             is_null,
+            udf_func,
         ],
         [
             "test_partitioned_by_days",
@@ -132,6 +143,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
             lambda x: "d" != x,
             lambda x: "z" == x,
             is_null,
+            udf_func,
         ],
         [
             "test_partitioned_by_truncate",
@@ -172,6 +184,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
             lambda x: 4 != x,
             lambda x: 100 == x,
             is_null,
+            udf_func,
         ],
         [
             "test_partitioned_by_bucket",
