@@ -3,6 +3,10 @@ from __future__ import annotations
 import pytest
 
 pyiceberg = pytest.importorskip("pyiceberg")
+import itertools
+from datetime import date, datetime
+
+import pytz
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 import daft
@@ -60,32 +64,81 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
-    from datetime import date
 
     tab = local_iceberg_catalog.load_table("default.test_partitioned_by_days")
     df = daft.read_iceberg(tab)
     df = df.where(df["ts"] < date(2023, 3, 6))
     df.collect()
-    import ipdb
-
-    ipdb.set_trace()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 @pytest.mark.integration()
-def test_daft_iceberg_table_predicate_pushdown_months(local_iceberg_catalog):
-    from datetime import date
-
-    tab = local_iceberg_catalog.load_table("default.test_partitioned_by_months")
+@pytest.mark.parametrize(
+    "predicate, table",
+    itertools.product(
+        [
+            lambda x: x < date(2023, 3, 6),
+            lambda x: x == date(2023, 3, 6),
+            lambda x: x > date(2023, 3, 6),
+            lambda x: x != date(2023, 3, 6),
+            lambda x: x == date(2022, 3, 6),
+        ],
+        [
+            "test_partitioned_by_months",
+            "test_partitioned_by_years",
+        ],
+    ),
+)
+def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table}")
     df = daft.read_iceberg(tab)
-    df = df.where(df["dt"] > date(2025, 1, 1))
-    import ipdb
-
-    ipdb.set_trace()
+    df = df.where(predicate(df["dt"]))
+    df.explain(True)
     df.collect()
 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["dt"])]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+#
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "predicate, table",
+    itertools.product(
+        [
+            lambda x: x < datetime(2023, 3, 6, tzinfo=pytz.utc),
+            lambda x: x == datetime(2023, 3, 6, tzinfo=pytz.utc),
+            lambda x: x > datetime(2023, 3, 6, tzinfo=pytz.utc),
+            lambda x: x != datetime(2023, 3, 6, tzinfo=pytz.utc),
+            lambda x: x == datetime(2022, 3, 6, tzinfo=pytz.utc),
+        ],
+        [
+            "test_partitioned_by_days",
+            "test_partitioned_by_hours",
+        ],
+    ),
+)
+def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, table, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_iceberg(tab)
+    df = df.where(predicate(df["ts"]))
+    df.collect()
+
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["ts"])]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_predicate_pushdown_empty_scan(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table("default.test_partitioned_by_months")
+    df = daft.read_iceberg(tab)
+    df = df.where(df["dt"] > date(2030, 1, 1))
+    df.collect()
+    values = df.to_arrow()
+    assert len(values) == 0

@@ -50,7 +50,7 @@ impl Series {
     }
 
     pub fn partitioning_days(&self) -> DaftResult<Self> {
-        let value = match self.data_type() {
+        match self.data_type() {
             DataType::Date => Ok(self.clone()),
             DataType::Timestamp(_, None) => {
                 let ts_array = self.downcast::<TimestampArray>()?;
@@ -67,8 +67,7 @@ impl Series {
                 "Can only run partitioning_days() operation on temporal types, got {}",
                 self.data_type()
             ))),
-        }?;
-        value.cast(&DataType::Int32)
+        }
     }
 
     pub fn partitioning_hours(&self) -> DaftResult<Self> {
