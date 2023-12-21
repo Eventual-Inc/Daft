@@ -127,9 +127,8 @@ class IcebergScanOperator(ScanOperator):
             if len(task.delete_files) > 0:
                 raise NotImplementedError(f"Iceberg Merge-on-Read currently not supported, please make an issue!")
 
-            # TODO: Thread in PartitionSpec to each ScanTask: P1
             # TODO: Thread in Statistics to each ScanTask: P2
-            pvalues = self._iceberg_record_to_partition_spec(file.partition)
+            pspec = self._iceberg_record_to_partition_spec(file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -138,7 +137,7 @@ class IcebergScanOperator(ScanOperator):
                 storage_config=self._storage_config,
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
-                partition_values=pvalues._table,
+                partition_values=pspec._table if pspec is not None else None,
             )
             if st is None:
                 continue
