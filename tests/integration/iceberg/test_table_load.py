@@ -38,7 +38,7 @@ WORKING_SHOW_COLLECT = [
     # "test_positional_mor_deletes", # Need Merge on Read
     # "test_positional_mor_double_deletes", # Need Merge on Read
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
-    # "test_table_version", # we have bugs when loading no files
+    "test_table_version", # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
 ]
 
