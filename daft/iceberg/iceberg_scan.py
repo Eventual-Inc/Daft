@@ -81,6 +81,9 @@ class IcebergScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def display_name(self) -> str:
+        return f"IcebergScanOperator({'.'.join(self._table.name())})"
+
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
 

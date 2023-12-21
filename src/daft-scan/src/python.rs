@@ -111,6 +111,7 @@ pub mod pylib {
         can_absorb_filter: bool,
         can_absorb_limit: bool,
         can_absorb_select: bool,
+        display_name: String,
     }
 
     impl PythonScanOperatorBridge {
@@ -145,6 +146,11 @@ pub mod pylib {
             abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
                 .extract::<bool>(py)
         }
+
+        fn _display_name(abc: &PyObject, py: Python) -> PyResult<String> {
+            abc.call_method0(py, pyo3::intern!(py, "display_name"))?
+                .extract::<String>(py)
+        }
     }
 
     #[pymethods]
@@ -156,6 +162,8 @@ pub mod pylib {
             let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
             let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
             let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
+            let display_name = Self::_display_name(&abc, py)?;
+
             Ok(Self {
                 operator: abc,
                 schema,
@@ -163,32 +171,14 @@ pub mod pylib {
                 can_absorb_filter,
                 can_absorb_limit,
                 can_absorb_select,
+                display_name,
             })
         }
     }
 
     impl Display for PythonScanOperatorBridge {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "PythonScanOperator
-operator:\n{:#?}
-can_absorb_filter: {}
-can_absorb_limit: {}
-can_absorb_select: {}
-schema:\n{}
-partitioning_keys:\n",
-                self.operator,
-                self.can_absorb_filter,
-                self.can_absorb_limit,
-                self.can_absorb_select,
-                self.schema
-            )?;
-
-            for p in self.partitioning_keys.iter() {
-                writeln!(f, "{p}")?;
-            }
-            Ok(())
+            write!(f, "PythonScanOperator: {}", self.display_name,)
         }
     }
 

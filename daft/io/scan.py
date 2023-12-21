@@ -23,6 +23,10 @@ class ScanOperator(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
+    def display_name(self) -> str:
+        return self.__class__.__name__
+
+    @abc.abstractmethod
     def partitioning_keys(self) -> list[PartitionField]:
         raise NotImplementedError()
 
