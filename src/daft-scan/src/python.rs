@@ -34,7 +34,6 @@ pub mod pylib {
     use crate::ScanOperatorRef;
     use crate::ScanTask;
 
-    use crate::expr_rewriter::rewrite_predicate_for_partitioning;
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
@@ -253,6 +252,7 @@ pub mod pylib {
 
     #[pymethods]
     impl PyScanTask {
+        #[allow(clippy::too_many_arguments)]
         #[staticmethod]
         pub fn catalog_scan_task(
             file: String,
@@ -410,19 +410,15 @@ pub mod pylib {
 
         #[getter]
         pub fn filters(&self) -> Option<PyExpr> {
-            self.0.filters.as_ref().and_then(|e| {
-                Some(PyExpr {
-                    expr: e.as_ref().clone(),
-                })
+            self.0.filters.as_ref().map(|e| PyExpr {
+                expr: e.as_ref().clone(),
             })
         }
 
         #[getter]
         pub fn partition_filters(&self) -> Option<PyExpr> {
-            self.0.partition_filters.as_ref().and_then(|e| {
-                Some(PyExpr {
-                    expr: e.as_ref().clone(),
-                })
+            self.0.partition_filters.as_ref().map(|e| PyExpr {
+                expr: e.as_ref().clone(),
             })
         }
 

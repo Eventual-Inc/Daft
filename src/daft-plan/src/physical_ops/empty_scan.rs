@@ -1,4 +1,4 @@
-use crate::{source_info::InMemoryInfo, PartitionSpec};
+use crate::PartitionSpec;
 use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

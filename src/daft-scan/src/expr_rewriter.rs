@@ -1,13 +1,10 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 use common_error::DaftResult;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode, VisitRecursion},
-    functions::{partitioning, FunctionExpr},
+    functions::partitioning,
     null_lit,
     optimization::{conjuct, split_conjuction},
     Expr, Operator,

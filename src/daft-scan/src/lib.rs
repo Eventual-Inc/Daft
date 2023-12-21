@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
-use daft_dsl::{optimization::get_required_columns, Expr, ExprRef};
+use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
 use serde::{Deserialize, Serialize};
