@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Iterator
 
@@ -23,6 +24,8 @@ from daft.daft import (
 from daft.datatype import DataType
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
+
+logger = logging.getLogger(__name__)
 
 
 def _iceberg_partition_field_to_daft_partition_field(
@@ -106,6 +109,11 @@ class IcebergScanOperator(ScanOperator):
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
 
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
+
+        if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
+            logging.warn(
+                f"{self.display_name()} has Partitioning Keys: {self.partitioning_keys()} but no partition filter was specified. This will result in a full table scan."
+            )
         scan_tasks = []
 
         if limit is not None:
