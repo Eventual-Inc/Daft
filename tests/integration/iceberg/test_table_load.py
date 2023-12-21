@@ -71,6 +71,9 @@ def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    # need to use datetime here
+    iceberg_pandas = iceberg_pandas[iceberg_pandas["ts"] < datetime(2023, 3, 6, tzinfo=pytz.utc)]
+
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
@@ -95,7 +98,6 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     tab = local_iceberg_catalog.load_table(f"default.{table}")
     df = daft.read_iceberg(tab)
     df = df.where(predicate(df["dt"]))
-    df.explain(True)
     df.collect()
 
     daft_pandas = df.to_pandas()

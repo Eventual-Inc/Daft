@@ -409,9 +409,21 @@ pub mod pylib {
         }
 
         #[getter]
-        pub fn filters(&self) -> Option<Vec<String>> {
-            //TODO(Sammy): Figure out how to pass filters back to python
-            None
+        pub fn filters(&self) -> Option<PyExpr> {
+            self.0.filters.as_ref().and_then(|e| {
+                Some(PyExpr {
+                    expr: e.as_ref().clone(),
+                })
+            })
+        }
+
+        #[getter]
+        pub fn partition_filters(&self) -> Option<PyExpr> {
+            self.0.partition_filters.as_ref().and_then(|e| {
+                Some(PyExpr {
+                    expr: e.as_ref().clone(),
+                })
+            })
         }
 
         #[getter]
