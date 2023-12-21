@@ -453,7 +453,6 @@ def global_limit(
     # since we will never take more than the remaining limit anyway.
     child_plan = local_limit(child_plan=child_plan, limit=remaining_rows)
     started = False
-    print(f"starting with remaining rows {remaining_rows}")
     while True:
         # Check if any inputs finished executing.
         # Apply and deduct the rolling global limit.

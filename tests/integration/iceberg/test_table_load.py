@@ -125,6 +125,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
         [
             "test_partitioned_by_days",
             "test_partitioned_by_hours",
+            "test_partitioned_by_identity",
         ],
         [None, 1, 2, 1000],
     ),
@@ -174,6 +175,40 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["letter"])]
+    if limit:
+        iceberg_pandas = iceberg_pandas[:limit]
+
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "predicate, table, limit",
+    itertools.product(
+        [
+            lambda x: x < 4,
+            lambda x: x == 4,
+            lambda x: x > 4,
+            lambda x: x != 4,
+            lambda x: x == 4,
+        ],
+        [
+            "test_partitioned_by_bucket",
+        ],
+        [None, 1, 2, 1000],
+    ),
+)
+def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit, local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_iceberg(tab)
+    df = df.where(predicate(df["number"]))
+    if limit:
+        df = df.limit(limit)
+    df.collect()
+
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["number"])]
     if limit:
         iceberg_pandas = iceberg_pandas[:limit]
 
