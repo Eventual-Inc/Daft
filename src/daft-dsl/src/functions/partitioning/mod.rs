@@ -32,30 +32,30 @@ impl PartitioningExpr {
     }
 }
 
-pub fn days(input: &Expr) -> Expr {
+pub fn days(input: Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Days),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn hours(input: &Expr) -> Expr {
+pub fn hours(input: Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Hours),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn months(input: &Expr) -> Expr {
+pub fn months(input: Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Months),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }
 
-pub fn years(input: &Expr) -> Expr {
+pub fn years(input: Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Years),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
 }

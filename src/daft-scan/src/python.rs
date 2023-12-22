@@ -9,6 +9,7 @@ pub mod pylib {
     use daft_core::impl_bincode_py_state_serialization;
     use daft_stats::PartitionSpec;
     use daft_stats::TableMetadata;
+    use daft_table::python::PyTable;
     use daft_table::Table;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
@@ -109,6 +110,7 @@ pub mod pylib {
         can_absorb_filter: bool,
         can_absorb_limit: bool,
         can_absorb_select: bool,
+        display_name: String,
     }
 
     impl PythonScanOperatorBridge {
@@ -143,6 +145,11 @@ pub mod pylib {
             abc.call_method0(py, pyo3::intern!(py, "can_absorb_select"))?
                 .extract::<bool>(py)
         }
+
+        fn _display_name(abc: &PyObject, py: Python) -> PyResult<String> {
+            abc.call_method0(py, pyo3::intern!(py, "display_name"))?
+                .extract::<String>(py)
+        }
     }
 
     #[pymethods]
@@ -154,6 +161,8 @@ pub mod pylib {
             let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
             let can_absorb_limit = Self::_can_absorb_limit(&abc, py)?;
             let can_absorb_select = Self::_can_absorb_select(&abc, py)?;
+            let display_name = Self::_display_name(&abc, py)?;
+
             Ok(Self {
                 operator: abc,
                 schema,
@@ -161,32 +170,14 @@ pub mod pylib {
                 can_absorb_filter,
                 can_absorb_limit,
                 can_absorb_select,
+                display_name,
             })
         }
     }
 
     impl Display for PythonScanOperatorBridge {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "PythonScanOperator
-operator:\n{:#?}
-can_absorb_filter: {}
-can_absorb_limit: {}
-can_absorb_select: {}
-schema:\n{}
-partitioning_keys:\n",
-                self.operator,
-                self.can_absorb_filter,
-                self.can_absorb_limit,
-                self.can_absorb_select,
-                self.schema
-            )?;
-
-            for p in self.partitioning_keys.iter() {
-                writeln!(f, "{p}")?;
-            }
-            Ok(())
+            write!(f, "PythonScanOperator: {}", self.display_name,)
         }
     }
 
@@ -261,6 +252,7 @@ partitioning_keys:\n",
 
     #[pymethods]
     impl PyScanTask {
+        #[allow(clippy::too_many_arguments)]
         #[staticmethod]
         pub fn catalog_scan_task(
             file: String,
@@ -270,10 +262,27 @@ partitioning_keys:\n",
             storage_config: PyStorageConfig,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
-        ) -> PyResult<Self> {
-            // TODO(Sammy): This should parsed from the operator and passed in here
-            let empty_pspec = PartitionSpec {
-                keys: Table::empty(None)?,
+            partition_values: Option<PyTable>,
+        ) -> PyResult<Option<Self>> {
+            if let Some(ref pvalues) = partition_values && let Some(Some(ref partition_filters)) = pushdowns.as_ref().map(|p| &p.0.partition_filters) {
+                let table = &pvalues.table;
+                let eval_pred = table.eval_expression_list(&[partition_filters.as_ref().clone()])?;
+                assert_eq!(eval_pred.num_columns(), 1);
+                let series = eval_pred.get_column_by_index(0)?;
+                assert_eq!(series.data_type(), &daft_core::DataType::Boolean);
+                let boolean = series.bool()?;
+                assert_eq!(boolean.len(), 1);
+                let value = boolean.get(0);
+                match value {
+                    Some(false) => return Ok(None),
+                    None | Some(true) => {}
+                }
+            }
+
+            let pspec = PartitionSpec {
+                keys: partition_values
+                    .map(|p| p.table)
+                    .unwrap_or_else(|| Table::empty(None).unwrap()),
             };
             let data_source = DataFileSource::CatalogDataFile {
                 path: file,
@@ -282,7 +291,7 @@ partitioning_keys:\n",
                 metadata: TableMetadata {
                     length: num_rows as usize,
                 },
-                partition_spec: empty_pspec,
+                partition_spec: pspec,
                 statistics: None,
             };
 
@@ -293,7 +302,7 @@ partitioning_keys:\n",
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Some(PyScanTask(scan_task.into())))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {
@@ -325,14 +334,60 @@ partitioning_keys:\n",
         fn new(
             field: PyField,
             source_field: Option<PyField>,
-            transform: Option<PyExpr>,
+            transform: Option<PyPartitionTransform>,
         ) -> PyResult<Self> {
             let p_field = PartitionField::new(
                 field.field,
                 source_field.map(|f| f.into()),
-                transform.map(|e| e.expr),
+                transform.map(|e| e.0),
             )?;
             Ok(PyPartitionField(Arc::new(p_field)))
+        }
+
+        pub fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("{}", self.0))
+        }
+
+        #[getter]
+        pub fn field(&self) -> PyResult<PyField> {
+            Ok(self.0.field.clone().into())
+        }
+    }
+
+    #[pyclass(module = "daft.daft", name = "PartitionTransform", frozen)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PyPartitionTransform(crate::PartitionTransform);
+
+    #[pymethods]
+    impl PyPartitionTransform {
+        #[staticmethod]
+        pub fn identity() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Identity))
+        }
+
+        #[staticmethod]
+        pub fn year() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Year))
+        }
+
+        #[staticmethod]
+        pub fn month() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Month))
+        }
+
+        #[staticmethod]
+        pub fn day() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Day))
+        }
+
+        #[staticmethod]
+        pub fn hour() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Hour))
+        }
+
+        #[staticmethod]
+        pub fn void() -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::Void))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {
@@ -354,9 +409,17 @@ partitioning_keys:\n",
         }
 
         #[getter]
-        pub fn filters(&self) -> Option<Vec<String>> {
-            //TODO(Sammy): Figure out how to pass filters back to python
-            None
+        pub fn filters(&self) -> Option<PyExpr> {
+            self.0.filters.as_ref().map(|e| PyExpr {
+                expr: e.as_ref().clone(),
+            })
+        }
+
+        #[getter]
+        pub fn partition_filters(&self) -> Option<PyExpr> {
+            self.0.partition_filters.as_ref().map(|e| PyExpr {
+                expr: e.as_ref().clone(),
+            })
         }
 
         #[getter]
@@ -370,6 +433,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;
+    parent.add_class::<pylib::PyPartitionTransform>()?;
     parent.add_class::<pylib::PyPushdowns>()?;
     Ok(())
 }

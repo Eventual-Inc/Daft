@@ -53,11 +53,15 @@ impl Source {
                 partitioning_keys,
                 pushdowns,
             })) => {
+                use itertools::Itertools;
                 res.push("Source:".to_string());
                 res.push(format!("{}", scan_op));
 
                 res.push(format!("File schema = {}", source_schema.short_string()));
-                res.push(format!("Partitioning keys = {:?}", partitioning_keys));
+                res.push(format!(
+                    "Partitioning keys = [{}]",
+                    partitioning_keys.iter().map(|k| format!("{k}")).join(" ")
+                ));
                 res.extend(pushdowns.multiline_display());
             }
             #[cfg(feature = "python")]

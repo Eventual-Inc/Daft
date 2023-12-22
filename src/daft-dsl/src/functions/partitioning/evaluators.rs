@@ -11,22 +11,23 @@ use common_error::{DaftError, DaftResult};
 use super::super::FunctionEvaluator;
 
 macro_rules! impl_func_evaluator_for_partitioning {
-    ($name:ident, $op:ident, $kernel:ident) => {
+    ($name:ident, $op:ident, $kernel:ident, $result_type:ident) => {
         pub(super) struct $name {}
 
         impl FunctionEvaluator for $name {
             fn fn_name(&self) -> &'static str {
-                "$op"
+                stringify!($op)
             }
 
             fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
                 match inputs {
                     [input] => match input.to_field(schema) {
                         Ok(field) if field.dtype.is_temporal() => {
-                            Ok(Field::new(field.name, DataType::Int32))
+                            Ok(Field::new(field.name, $result_type))
                         }
                         Ok(field) => Err(DaftError::TypeError(format!(
-                            "Expected input to $op to be temporal, got {}",
+                            "Expected input to {} to be temporal, got {}",
+                            stringify!($op),
                             field.dtype
                         ))),
                         Err(e) => Err(e),
@@ -42,7 +43,8 @@ macro_rules! impl_func_evaluator_for_partitioning {
                 match inputs {
                     [input] => input.$kernel(),
                     _ => Err(DaftError::ValueError(format!(
-                        "Expected 1 input arg, got {}",
+                        "Expected 1 input arg for {}, got {}",
+                        stringify!($op),
                         inputs.len()
                     ))),
                 }
@@ -50,8 +52,8 @@ macro_rules! impl_func_evaluator_for_partitioning {
         }
     };
 }
-
-impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years);
-impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months);
-impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days);
-impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours);
+use DataType::{Date, Int32};
+impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
+impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
+impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);
+impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours, Int32);

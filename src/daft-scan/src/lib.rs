@@ -1,3 +1,5 @@
+#![feature(if_let_guard)]
+#![feature(let_chains)]
 use std::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
@@ -6,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::Field, schema::SchemaRef};
-use daft_dsl::{optimization::get_required_columns, Expr, ExprRef};
+use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
 use serde::{Deserialize, Serialize};
@@ -28,7 +30,8 @@ use pyo3::PyErr;
 pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
-
+mod expr_rewriter;
+pub use expr_rewriter::rewrite_predicate_for_partitioning;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
@@ -267,7 +270,11 @@ impl ScanTask {
     }
 
     pub fn num_rows(&self) -> Option<usize> {
-        self.metadata.as_ref().map(|m| m.length)
+        if self.pushdowns.filters.is_some() {
+            None
+        } else {
+            self.metadata.as_ref().map(|m| m.length)
+        }
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
@@ -294,35 +301,23 @@ impl ScanTask {
 pub struct PartitionField {
     field: Field,
     source_field: Option<Field>,
-    transform: Option<Expr>,
+    transform: Option<PartitionTransform>,
 }
 
 impl PartitionField {
     pub fn new(
         field: Field,
         source_field: Option<Field>,
-        transform: Option<Expr>,
+        transform: Option<PartitionTransform>,
     ) -> DaftResult<Self> {
         match (&source_field, &transform) {
-            (Some(sf), Some(tfm)) => {
-                let req_columns = get_required_columns(tfm);
-                match req_columns.as_slice() {
-                    [col] => {
-                        if col == &sf.name {
-                            Ok(PartitionField {
-                                field,
-                                source_field,
-                                transform,
-                            })
-                        } else {
-                            Err(DaftError::ValueError(format!("PartitionField transform's required column and source_field differ: {} vs {}" , col, sf.name)))
-                        }
-                    }
-                    _ => Err(DaftError::ValueError(format!(
-                        "PartitionField only supports unary transforms but received {}",
-                        tfm
-                    ))),
-                }
+            (Some(_), Some(_)) => {
+                // TODO ADD VALIDATION OF TRANSFORM based on types
+                Ok(PartitionField {
+                    field,
+                    source_field,
+                    transform,
+                })
             }
             (None, Some(tfm)) => Err(DaftError::ValueError(format!(
                 "transform set in PartitionField: {} but source_field not set",
@@ -340,10 +335,51 @@ impl PartitionField {
 impl Display for PartitionField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(tfm) = &self.transform {
-            write!(f, "PartitionField({}, {})", self.field, tfm)
+            write!(
+                f,
+                "PartitionField({}, src={}, tfm={})",
+                self.field,
+                self.source_field.as_ref().unwrap(),
+                tfm
+            )
         } else {
             write!(f, "PartitionField({})", self.field)
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum PartitionTransform {
+    /// https://iceberg.apache.org/spec/#partitioning
+    /// For Delta, Hudi and Hive, it should always be `Identity`.
+    Identity,
+    Bucket(u64),
+    Truncate(u64),
+    Year,
+    Month,
+    Day,
+    Hour,
+    Void,
+}
+
+impl PartitionTransform {
+    pub fn supports_equals(&self) -> bool {
+        true
+    }
+
+    pub fn supports_not_equals(&self) -> bool {
+        matches!(self, Self::Identity)
+    }
+
+    pub fn supports_comparison(&self) -> bool {
+        use PartitionTransform::*;
+        matches!(self, Identity | Truncate(_) | Year | Month | Day | Hour)
+    }
+}
+
+impl Display for PartitionTransform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 
@@ -420,6 +456,8 @@ impl ScanExternalInfo {
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
     pub filters: Option<ExprRef>,
+    /// Optional filters to apply on partitioning keys.
+    pub partition_filters: Option<ExprRef>,
     /// Optional columns to select from the source data.
     pub columns: Option<Arc<Vec<String>>>,
     /// Optional number of rows to read.
@@ -428,18 +466,20 @@ pub struct Pushdowns {
 
 impl Default for Pushdowns {
     fn default() -> Self {
-        Self::new(None, None, None)
+        Self::new(None, None, None, None)
     }
 }
 
 impl Pushdowns {
     pub fn new(
         filters: Option<ExprRef>,
+        partition_filters: Option<ExprRef>,
         columns: Option<Arc<Vec<String>>>,
         limit: Option<usize>,
     ) -> Self {
         Self {
             filters,
+            partition_filters,
             columns,
             limit,
         }
@@ -448,6 +488,7 @@ impl Pushdowns {
     pub fn with_limit(&self, limit: Option<usize>) -> Self {
         Self {
             filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
             columns: self.columns.clone(),
             limit,
         }
@@ -456,6 +497,16 @@ impl Pushdowns {
     pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
+            partition_filters: self.partition_filters.clone(),
+            columns: self.columns.clone(),
+            limit: self.limit,
+        }
+    }
+
+    pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
+        Self {
+            filters: self.filters.clone(),
+            partition_filters,
             columns: self.columns.clone(),
             limit: self.limit,
         }
@@ -464,6 +515,7 @@ impl Pushdowns {
     pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
         Self {
             filters: self.filters.clone(),
+            partition_filters: self.partition_filters.clone(),
             columns,
             limit: self.limit,
         }
@@ -476,6 +528,9 @@ impl Pushdowns {
         }
         if let Some(filters) = &self.filters {
             res.push(format!("Filter pushdown = {}", filters));
+        }
+        if let Some(pfilters) = &self.partition_filters {
+            res.push(format!("Partition Filter = {}", pfilters));
         }
         if let Some(limit) = self.limit {
             res.push(format!("Limit pushdown = {}", limit));

@@ -552,7 +552,8 @@ class ScanTask:
         storage_config: StorageConfig,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
-    ) -> ScanTask:
+        partition_values: PyTable | None,
+    ) -> ScanTask | None:
         """
         Create a Catalog Scan Task
         """
@@ -585,9 +586,27 @@ class PartitionField:
     Partitioning Field of a Scan Source such as Hive or Iceberg
     """
 
+    field: PyField
+
     def __init__(
-        self, field: PyField, source_field: PyField | None = None, transform: PyExpr | None = None
+        self, field: PyField, source_field: PyField | None = None, transform: PartitionTransform | None = None
     ) -> None: ...
+
+class PartitionTransform:
+    """
+    Partitioning Transform from a Data Catalog source field to a Partitioning Columns
+    """
+
+    @staticmethod
+    def identity() -> PartitionTransform: ...
+    @staticmethod
+    def year() -> PartitionTransform: ...
+    @staticmethod
+    def month() -> PartitionTransform: ...
+    @staticmethod
+    def day() -> PartitionTransform: ...
+    @staticmethod
+    def hour() -> PartitionTransform: ...
 
 class Pushdowns:
     """
@@ -595,7 +614,8 @@ class Pushdowns:
     """
 
     columns: list[str] | None
-    filters: list[str] | None
+    filters: PyExpr | None
+    partition_filters: PyExpr | None
     limit: int | None
 
 def read_parquet(

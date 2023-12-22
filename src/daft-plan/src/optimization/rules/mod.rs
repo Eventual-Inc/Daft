@@ -3,7 +3,6 @@ mod push_down_filter;
 mod push_down_limit;
 mod push_down_projection;
 mod rule;
-mod utils;
 
 pub use drop_repartition::DropRepartition;
 pub use push_down_filter::PushDownFilter;

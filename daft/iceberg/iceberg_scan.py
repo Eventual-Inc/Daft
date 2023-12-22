@@ -1,25 +1,31 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Iterator
 
+import pyarrow as pa
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import Table
+from pyiceberg.typedef import Record
 
+import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PartitionTransform,
     Pushdowns,
     ScanTask,
     StorageConfig,
 )
 from daft.datatype import DataType
-from daft.expressions.expressions import col
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
+
+logger = logging.getLogger(__name__)
 
 
 def _iceberg_partition_field_to_daft_partition_field(
@@ -37,7 +43,6 @@ def _iceberg_partition_field_to_daft_partition_field(
     arrow_result_type = schema_to_pyarrow(iceberg_result_type)
     daft_result_type = DataType.from_arrow_type(arrow_result_type)
     result_field = Field.create(name, daft_result_type)
-
     from pyiceberg.transforms import (
         DayTransform,
         HourTransform,
@@ -46,25 +51,20 @@ def _iceberg_partition_field_to_daft_partition_field(
         YearTransform,
     )
 
-    expr = None
+    tfm = None
     if isinstance(transform, IdentityTransform):
-        expr = col(source_name)
-        if source_name != name:
-            expr = expr.alias(name)
+        tfm = PartitionTransform.identity()
     elif isinstance(transform, YearTransform):
-        expr = col(source_name).dt.year().alias(name)
+        tfm = PartitionTransform.year()
     elif isinstance(transform, MonthTransform):
-        expr = col(source_name).dt.month().alias(name)
+        tfm = PartitionTransform.month()
     elif isinstance(transform, DayTransform):
-        expr = col(source_name).dt.day().alias(name)
+        tfm = PartitionTransform.day()
     elif isinstance(transform, HourTransform):
-        warnings.warn(
-            "HourTransform not implemented, Please make a comment: https://github.com/Eventual-Inc/Daft/issues/1606"
-        )
+        tfm = PartitionTransform.hour()
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
-
-    return make_partition_field(result_field, daft_field, transform=expr)
+    return make_partition_field(result_field, daft_field, transform=tfm)
 
 
 def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
@@ -83,15 +83,37 @@ class IcebergScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def display_name(self) -> str:
+        return f"IcebergScanOperator({'.'.join(self._table.name())})"
+
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
+
+    def _iceberg_record_to_partition_spec(self, record: Record) -> daft.table.Table | None:
+        arrays = dict()
+        assert len(record._position_to_field_name) == len(self._partition_keys)
+        for name, value, pfield in zip(record._position_to_field_name, record.record_fields(), self._partition_keys):
+            field = Field._from_pyfield(pfield.field)
+            field_name = field.name
+            field_dtype = field.dtype
+            arrow_type = field_dtype.to_arrow_dtype()
+            assert name == field_name
+            arrays[name] = daft.Series.from_arrow(pa.array([value], type=arrow_type), name=name).cast(field_dtype)
+        if len(arrays) > 0:
+            return daft.table.Table.from_pydict(arrays)
+        else:
+            return None
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
 
-        limit_files = limit is not None and pushdowns.filters is None
+        limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
+        if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
+            logging.warn(
+                f"{self.display_name()} has Partitioning Keys: {self.partitioning_keys()} but no partition filter was specified. This will result in a full table scan."
+            )
         scan_tasks = []
 
         if limit is not None:
@@ -114,9 +136,8 @@ class IcebergScanOperator(ScanOperator):
             if len(task.delete_files) > 0:
                 raise NotImplementedError(f"Iceberg Merge-on-Read currently not supported, please make an issue!")
 
-            # TODO: Thread in PartitionSpec to each ScanTask: P1
             # TODO: Thread in Statistics to each ScanTask: P2
-
+            pspec = self._iceberg_record_to_partition_spec(file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -125,7 +146,10 @@ class IcebergScanOperator(ScanOperator):
                 storage_config=self._storage_config,
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
+                partition_values=pspec._table if pspec is not None else None,
             )
+            if st is None:
+                continue
             rows_left -= record_count
             scan_tasks.append(st)
         return iter(scan_tasks)

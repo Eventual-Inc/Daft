@@ -37,6 +37,7 @@ pub enum PhysicalPlan {
     TabularScanCsv(TabularScanCsv),
     TabularScanJson(TabularScanJson),
     TabularScan(TabularScan),
+    EmptyScan(EmptyScan),
     Project(Project),
     Filter(Filter),
     Limit(Limit),
@@ -65,6 +66,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::InMemoryScan(InMemoryScan { partition_spec, .. }) => partition_spec.clone(),
             Self::TabularScan(TabularScan { partition_spec, .. }) => partition_spec.clone(),
+            Self::EmptyScan(EmptyScan { partition_spec, .. }) => partition_spec.clone(),
             Self::TabularScanParquet(TabularScanParquet { partition_spec, .. }) => {
                 partition_spec.clone()
             }
@@ -179,6 +181,7 @@ impl PhysicalPlan {
                 .iter()
                 .map(|scan_task| scan_task.size_bytes())
                 .sum::<Option<usize>>(),
+            Self::EmptyScan(..) => Some(0),
             // Assume no row/column pruning in cardinality-affecting operations.
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
             Self::Filter(Filter { input, .. })
@@ -392,6 +395,22 @@ impl PhysicalPlan {
                         .collect::<Vec<PyScanTask>>(),))?;
                 Ok(py_iter.into())
             }
+            PhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
+                let schema_mod = py.import(pyo3::intern!(py, "daft.logical.schema"))?;
+                let python_schema = schema_mod
+                    .getattr(pyo3::intern!(py, "Schema"))?
+                    .getattr(pyo3::intern!(py, "_from_pyschema"))?
+                    .call1((PySchema {
+                        schema: schema.clone(),
+                    },))?;
+
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "empty_scan"))?
+                    .call1((python_schema,))?;
+                Ok(py_iter.into())
+            }
+
             PhysicalPlan::TabularScanParquet(TabularScanParquet {
                 projection_schema,
                 external_info:

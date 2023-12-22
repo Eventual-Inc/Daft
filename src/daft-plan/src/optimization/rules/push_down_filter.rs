@@ -7,9 +7,12 @@ use common_error::DaftResult;
 use daft_dsl::{
     col,
     functions::FunctionExpr,
-    optimization::{get_required_columns, replace_columns_with_expressions},
+    optimization::{
+        conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
+    },
     Expr,
 };
+use daft_scan::{rewrite_predicate_for_partitioning, ScanExternalInfo};
 
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
@@ -17,10 +20,7 @@ use crate::{
     LogicalPlan,
 };
 
-use super::{
-    utils::{conjuct, split_conjuction},
-    ApplyOrder, OptimizerRule, Transformed,
-};
+use super::{ApplyOrder, OptimizerRule, Transformed};
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
@@ -116,8 +116,19 @@ impl OptimizerRule for PushDownFilter {
                             return Ok(Transformed::No(plan));
                         }
                         let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let partition_filter = if let ExternalInfo::Scan(ScanExternalInfo {scan_op,  ..}) = &external_info {
+                            rewrite_predicate_for_partitioning(new_predicate.clone(), scan_op.0.partitioning_keys())?
+                        } else {
+                            None
+                        };
                         let new_pushdowns =
                             external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
+
+                        let new_pushdowns = if let Some(pfilter) = partition_filter {
+                            new_pushdowns.with_partition_filters(Some(Arc::new(pfilter)))
+                        } else {
+                            new_pushdowns
+                        };
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
                         let new_source = LogicalPlan::Source(Source::new(
                             source.output_schema.clone(),
