@@ -123,6 +123,46 @@ def test_inner_join_multikey(join_strategy, make_df, repartition_nparts):
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+def test_inner_join_asymmetric_multikey(join_strategy, make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "left_id": [1, None, None],
+            "left_id2": ["foo1", "foo2", None],
+            "values_left": ["a1", "b1", "c1"],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df2 = make_df(
+        {
+            "right_id": [None, None, 1],
+            "right_id2": ["foo2", None, "foo1"],
+            "values_right": ["a2", "b2", "c2"],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.join(
+        daft_df2,
+        left_on=["left_id", "left_id2"],
+        right_on=["right_id", "right_id2"],
+        how="inner",
+        strategy=join_strategy,
+    )
+
+    expected = {
+        "left_id": [1],
+        "left_id2": ["foo1"],
+        "values_left": ["a1"],
+        "right_id": [1],
+        "right_id2": ["foo1"],
+        "values_right": ["c2"],
+    }
+    assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "left_id") == sort_arrow_table(
+        pa.Table.from_pydict(expected), "left_id"
+    )
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
 def test_inner_join_all_null(join_strategy, make_df, repartition_nparts):
     daft_df = make_df(
         {

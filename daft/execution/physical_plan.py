@@ -623,7 +623,9 @@ def sort_merge_join(
         (left_on, left_source_materializations, left_boundaries),
         (right_on, right_source_materializations, right_boundaries),
     ]:
-        range_fanout_plan = (
+        # NOTE: We need to give reduce() an iter(list), since giving it a generator would result in lazy
+        # binding in this loop.
+        range_fanout_plan = [
             PartitionTaskBuilder[PartitionT](
                 inputs=[boundaries.partition(), source.partition()],
                 partial_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
@@ -638,12 +640,12 @@ def sort_merge_join(
                 ),
             )
             for source in consume_deque(source_materializations)
-        )
+        ]
 
         # Execute a sorting reduce on it.
         sorted_plans.append(
             reduce(
-                fanout_plan=range_fanout_plan,
+                fanout_plan=iter(range_fanout_plan),
                 reduce_instruction=execution_step.ReduceMergeAndSort(
                     sort_by=on,
                     descending=descending,
