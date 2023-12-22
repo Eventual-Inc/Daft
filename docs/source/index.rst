@@ -20,21 +20,17 @@ Learn about other more advanced installation options in our :doc:`Installation G
 Learning Daft
 -------------
 
-:doc:`Learn Daft <learn/index>` with examples and tutorials. We cover common use-cases such as:
+:doc:`Daft User Guide <user_guide/index>`: access useful learning material such as cheatsheets and learn key Daft concepts with specific topic deep-dives.
 
-1. Read a CSV into a Daft dataframe
-2. Work with images using the Pillow library in Daft
-3. Downloading data from URLs
+API Reference
+-------------
 
-Use Daft
---------
-
-Refer to the :doc:`Daft API Documentation <api_docs/index>`.
+:doc:`Daft API Documentation <api_docs/index>`: refer to our Python API documentation when you are actively using the Daft library.
 
 Keep up to date
 ---------------
 
-Keep up to date with the latest features and fixes in Daft with our :doc:`Release Notes <https://github.com/Eventual-Inc/Daft/releases>`.
+Keep up to date with the latest features and fixes in Daft with our `Release Notes <https://github.com/Eventual-Inc/Daft/releases>`_.
 
 Compare Daft to alternatives
 ----------------------------
@@ -48,7 +44,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    Home <self>
    install
    10-min
-   learn/index
+   user_guide/index
    api_docs/index
    Release Notes <https://github.com/Eventual-Inc/Daft/releases>
    Telemetry <telemetry>

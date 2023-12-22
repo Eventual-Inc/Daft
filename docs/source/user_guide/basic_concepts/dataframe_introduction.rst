@@ -1,5 +1,5 @@
-Introduction to DataFrames
-==========================
+Dataframe Operations
+====================
 
 Data in Daft is represented as a DataFrame, which is a collection of data organized as a **table** with **rows** and **columns**.
 
@@ -42,10 +42,6 @@ Examine your Dataframe by printing it:
 
 
 Congratulations - you just created your first DataFrame! It has 3 columns, "A", "B" and "C".
-
-.. NOTE::
-
-    For a deeper look at reading data, skip ahead to the section: :doc:`read-write`
 
 But wait - why is it printing the message ``(No data to display: Dataframe not materialized)`` and where are the rows of each column?
 
@@ -183,10 +179,3 @@ The world of Daft contains much more than just numbers, and you can do much more
 We are also constantly looking to improve Daft and add more Expression functionality. Please contribute to the project with your ideas and code if you have an Expression in mind!
 
 The next section on :doc:`expressions` will provide a much deeper look at the Expressions that Daft provides.
-
-What now?
----------
-
-This introduction covered the bare basics of interacting with Daft. The rest of the user guide will build on these basics and show you the features which really make Daft shine!
-
-We suggest reading in detail the next section on :doc:`expressions`, but other sections of the guide can be read in order of necessity.

@@ -1,7 +1,5 @@
-Key Concepts
+Introduction
 ============
-
-This guide introduces all the key concepts in Daft for a new user to get up-and-running.
 
 DataFrame
 ---------
@@ -34,13 +32,13 @@ Under the hood, Daft splits your DataFrame into **partitions** according to a **
 
 .. NOTE::
 
-    See the user guide: :doc:`user_guides/partitioning` for more details on working efficiently with partitions!
+    The poweruser guide goes into more detail on working efficiently with partitions: :doc:`../poweruser/partitioning`
 
 Daft provides different ``Runners`` that your DataFrame can use for execution. Different Runners can use different backends for running your DataFrame computations - for example, the default multithreaded Python runner will process your partitions of data using multithreading but the Ray runner can run computations on your partitions on a `Ray <https://www.ray.io/>`_ cluster instead.
 
 .. NOTE::
 
-    See the user guide: :doc:`user_guides/scaling-up` for more details on utilizing different Daft runners!
+    The poweruser guide goes into more detail on utilizing different Daft runners: :doc:`../poweruser/scaling-up`
 
 Lazy
 ^^^^
@@ -92,10 +90,6 @@ To actually execute your DataFrame, you can call a method such as :meth:`df.show
     (Showing first 3 rows)
 
 Being "lazy" allows Daft to apply really interesting query optimizations to your DataFrame when it actually executes!
-
-.. NOTE::
-
-    See user guide: :doc:`user_guides/intro-dataframes` for more details!
 
 Complex
 ^^^^^^^
@@ -194,7 +188,3 @@ Note that Expressions aren't very useful just by themselves! They are used in Da
     |       3 |          4 | false            |
     +---------+------------+------------------+
     (Showing first 3 rows)
-
-.. NOTE::
-
-    See user guide: :doc:`user_guides/expressions` for more details!
