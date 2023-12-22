@@ -616,16 +616,16 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
-class Join(SingleOutputInstruction):
+class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
     how: JoinType
     is_swapped: bool
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._join(inputs)
+        return self._hash_join(inputs)
 
-    def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+    def _hash_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         # All inputs except for the last are the left side of the join, in order to support left-broadcasted joins.
         *lefts, right = inputs
         if len(lefts) > 1:
@@ -637,11 +637,41 @@ class Join(SingleOutputInstruction):
             # Swap left/right back.
             # We don't need to swap left_on and right_on since those were never swapped in the first place.
             left, right = right, left
-        result = left.join(
+        result = left.hash_join(
             right,
             left_on=self.left_on,
             right_on=self.right_on,
             how=self.how,
+        )
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # Can't derive anything.
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class MergeJoin(SingleOutputInstruction):
+    left_on: ExpressionsProjection
+    right_on: ExpressionsProjection
+    how: JoinType
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._join(inputs)
+
+    def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        left, right = inputs
+        result = left.sort_merge_join(
+            right,
+            left_on=self.left_on,
+            right_on=self.right_on,
+            how=self.how,
+            is_sorted=True,
         )
         return [result]
 

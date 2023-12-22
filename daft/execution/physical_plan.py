@@ -13,6 +13,7 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 
 from __future__ import annotations
 
+import itertools
 import logging
 import math
 import pathlib
@@ -194,7 +195,7 @@ def hash_join(
     right_on: ExpressionsProjection,
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
+    """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
 
     # Materialize the steps from the left and right sources to get partitions.
     # As the materializations complete, emit new steps to join each left and right partition.
@@ -230,7 +231,7 @@ def hash_join(
                 partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
                 resource_request=ResourceRequest(memory_bytes=size_bytes),
             ).add_instruction(
-                instruction=execution_step.Join(
+                instruction=execution_step.HashJoin(
                     left_on=left_on,
                     right_on=right_on,
                     how=how,
@@ -273,7 +274,7 @@ def hash_join(
                 return
 
 
-def _create_join_step(
+def _create_broadcast_join_step(
     broadcaster_parts: deque[SingleOutputPartitionTask[PartitionT]],
     receiver_part: SingleOutputPartitionTask[PartitionT],
     left_on: ExpressionsProjection,
@@ -320,7 +321,7 @@ def _create_join_step(
         partial_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
         resource_request=ResourceRequest(memory_bytes=size_bytes),
     ).add_instruction(
-        instruction=execution_step.Join(
+        instruction=execution_step.HashJoin(
             left_on=left_on,
             right_on=right_on,
             how=how,
@@ -376,7 +377,7 @@ def broadcast_join(
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
         while receiver_requests and receiver_requests[0].done():
             receiver_part = receiver_requests.popleft()
-            yield _create_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
+            yield _create_broadcast_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
 
         # Execute single child step to pull in more input partitions.
         try:
@@ -394,6 +395,265 @@ def broadcast_join(
                 yield None
             else:
                 return
+
+
+def merge_join(
+    left_plan: InProgressPhysicalPlan[PartitionT],
+    right_plan: InProgressPhysicalPlan[PartitionT],
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    how: JoinType,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """
+    Sort-merge join the partitions from `left_plan` and `right_plan` together.
+
+    This assumes that all partitions in `left_plan` and `right_plan` are internally (but not globally) sorted.
+    """
+
+    # Materialize the steps from the left and right sources to get partitions.
+    # As the materializations complete, emit new steps to join each left and right partition.
+    left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id = next(stage_id_counter)
+    yield_left = True
+
+    while True:
+        # Emit new join steps if we have left and right partitions ready.
+        while (
+            len(left_requests) > 0 and len(right_requests) > 0 and left_requests[0].done() and right_requests[0].done()
+        ):
+            next_left = left_requests.popleft()
+            next_right = right_requests.popleft()
+
+            # Calculate memory request for merge task.
+            left_size_bytes = next_left.partition_metadata().size_bytes
+            right_size_bytes = next_right.partition_metadata().size_bytes
+            if left_size_bytes is None and right_size_bytes is None:
+                size_bytes = None
+            elif left_size_bytes is None and right_size_bytes is not None:
+                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * right_size_bytes
+            elif right_size_bytes is None and left_size_bytes is not None:
+                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
+                size_bytes = 2 * left_size_bytes
+            elif left_size_bytes is not None and right_size_bytes is not None:
+                size_bytes = left_size_bytes + right_size_bytes
+
+            join_step = PartitionTaskBuilder[PartitionT](
+                inputs=[next_left.partition(), next_right.partition()],
+                partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
+            ).add_instruction(
+                instruction=execution_step.MergeJoin(
+                    left_on=left_on,
+                    right_on=right_on,
+                    how=how,
+                )
+            )
+            yield join_step
+
+        # Exhausted all ready inputs; execute a single child step to get more join inputs.
+        # Choose whether to execute from left child or right child (whichever one is furthest behind).
+        if len(left_requests) < len(right_requests):
+            next_plan, next_requests = left_plan, left_requests
+        elif len(left_requests) > len(right_requests):
+            next_plan, next_requests = right_plan, right_requests
+        elif len(left_requests) == len(right_requests):
+            # Both plans have progressed equally; alternate between the two plans to avoid starving either one.
+            next_plan, next_requests = (left_plan, left_requests) if yield_left else (right_plan, right_requests)
+            yield_left = not yield_left
+
+        try:
+            step = next(next_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                next_requests.append(step)
+            yield step
+
+        except StopIteration:
+            # Left and right child plans have completed.
+            # Are we still waiting for materializations to complete? (We will emit more joins from them).
+            if len(left_requests) + len(right_requests) > 0:
+                logger.debug(
+                    "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
+                    left_requests,
+                    right_requests,
+                )
+                yield None
+
+            # Otherwise, we are entirely done.
+            else:
+                return
+
+
+def sort_merge_join(
+    left_plan: InProgressPhysicalPlan[PartitionT],
+    right_plan: InProgressPhysicalPlan[PartitionT],
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    how: JoinType,
+    num_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """
+    Sort-merge join the partitions from `left_plan` and `right_plan` together.
+
+    This assumes that both `left_plan` and `right_plan` need to be sorted, and will be sorted using the same
+    partitioning boundaries.
+    """
+    descending = [False] * len(left_on)
+    # First, materialize the left and right child plans.
+    left_source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    right_source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id_children = next(stage_id_counter)
+    for child, source_materializations in [
+        (left_plan, left_source_materializations),
+        (right_plan, right_source_materializations),
+    ]:
+        for step in child:
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id_children)
+                source_materializations.append(step)
+            yield step
+
+    # Sample all partitions (to be used for calculating sort partitioning boundaries).
+    left_sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    right_sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    stage_id_sampling = next(stage_id_counter)
+
+    sample_size = get_context().daft_execution_config.sample_size_for_sort
+    for source_materializations, on, sample_materializations in [
+        (left_source_materializations, left_on, left_sample_materializations),
+        (right_source_materializations, right_on, right_sample_materializations),
+    ]:
+        for source in source_materializations:
+            while not source.done():
+                logger.debug("sort blocked on completion of source: %s", source)
+                yield None
+
+            sample = (
+                PartitionTaskBuilder[PartitionT](
+                    inputs=[source.partition()],
+                    partial_metadatas=None,
+                )
+                .add_instruction(
+                    instruction=execution_step.Sample(sort_by=on, size=sample_size),
+                )
+                # Rename sample columns so they align with sort_by_left naming, so we can reduce to combined quantiles below.
+                # NOTE: This instruction will be a no-op for the left side of the sort.
+                .add_instruction(
+                    instruction=execution_step.Project(
+                        projection=ExpressionsProjection(
+                            [
+                                e.alias(left_name)
+                                for e, left_name in zip(on.to_column_expressions(), [e.name() for e in left_on])
+                            ]
+                        ),
+                    )
+                )
+                .finalize_partition_task_single_output(stage_id=stage_id_sampling)
+            )
+
+            sample_materializations.append(sample)
+            yield sample
+
+    # Wait for samples from both child plans to materialize.
+    for sample_materializations in (left_sample_materializations, right_sample_materializations):
+        while any(not _.done() for _ in sample_materializations):
+            logger.debug("sort blocked on completion of all samples: %s", sample_materializations)
+            yield None
+
+    stage_id_reduce = next(stage_id_counter)
+
+    # Reduce the samples from both child plans to get combined sort partitioning boundaries.
+    left_boundaries = (
+        PartitionTaskBuilder[PartitionT](
+            inputs=[
+                sample.partition()
+                for sample in itertools.chain(
+                    consume_deque(left_sample_materializations), consume_deque(right_sample_materializations)
+                )
+            ],
+            partial_metadatas=None,
+        )
+        .add_instruction(
+            execution_step.ReduceToQuantiles(
+                num_quantiles=num_partitions,
+                sort_by=left_on,
+                descending=descending,
+            ),
+        )
+        .finalize_partition_task_single_output(stage_id=stage_id_reduce)
+    )
+    yield left_boundaries
+
+    # Wait for boundaries to materialize.
+    while not left_boundaries.done():
+        logger.debug("sort blocked on completion of boundary partition: %s", left_boundaries)
+        yield None
+
+    # Project boundaries back to the right-side column names.
+    # TODO(Clark): Refactor execution model to be able to fuse this with downstream sorting.
+    right_boundaries = (
+        PartitionTaskBuilder[PartitionT](
+            inputs=[left_boundaries.partition()],
+            partial_metadatas=None,
+        )
+        # Rename quantile columns so their original naming is restored, so we can sort each child with their native expression.
+        .add_instruction(
+            instruction=execution_step.Project(
+                projection=ExpressionsProjection(
+                    [
+                        e.alias(right_name)
+                        for e, right_name in zip(left_on.to_column_expressions(), [e.name() for e in right_on])
+                    ]
+                ),
+            )
+        ).finalize_partition_task_single_output(stage_id=stage_id_reduce)
+    )
+    yield right_boundaries
+
+    # Wait for right-side boundaries to materialize.
+    while not right_boundaries.done():
+        logger.debug("sort blocked on completion of boundary partition: %s", right_boundaries)
+        yield None
+
+    # Sort both children using the combined boundaries.
+    sorted_plans: list[InProgressPhysicalPlan[PartitionT]] = []
+    for on, source_materializations, boundaries in [
+        (left_on, left_source_materializations, left_boundaries),
+        (right_on, right_source_materializations, right_boundaries),
+    ]:
+        range_fanout_plan = (
+            PartitionTaskBuilder[PartitionT](
+                inputs=[boundaries.partition(), source.partition()],
+                partial_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
+                resource_request=ResourceRequest(
+                    memory_bytes=source.partition_metadata().size_bytes,
+                ),
+            ).add_instruction(
+                instruction=execution_step.FanoutRange[PartitionT](
+                    _num_outputs=num_partitions,
+                    sort_by=on,
+                    descending=descending,
+                ),
+            )
+            for source in consume_deque(source_materializations)
+        )
+
+        # Execute a sorting reduce on it.
+        sorted_plans.append(
+            reduce(
+                fanout_plan=range_fanout_plan,
+                reduce_instruction=execution_step.ReduceMergeAndSort(
+                    sort_by=on,
+                    descending=descending,
+                ),
+            )
+        )
+
+    left_sorted_plan, right_sorted_plan = sorted_plans
+
+    yield from merge_join(left_sorted_plan, right_sorted_plan, left_on, right_on, how)
 
 
 def concat(

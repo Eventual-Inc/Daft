@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use daft_core::{schema::Schema, utils::supertype::try_get_supertype};
+use daft_core::{schema::Schema, utils::supertype::try_get_supertype, Series};
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
@@ -8,6 +8,7 @@ use daft_dsl::Expr;
 use crate::Table;
 
 mod hash_join;
+mod merge_join;
 
 fn match_types_for_tables(left: &Table, right: &Table) -> DaftResult<(Table, Table)> {
     let mut lseries = vec![];
@@ -103,15 +104,61 @@ pub fn infer_join_schema(
 }
 
 impl Table {
-    pub fn join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
+    pub fn hash_join(&self, right: &Self, left_on: &[Expr], right_on: &[Expr]) -> DaftResult<Self> {
+        self.join(right, left_on, right_on, hash_join::hash_inner_join)
+    }
+
+    pub fn sort_merge_join(
+        &self,
+        right: &Self,
+        left_on: &[Expr],
+        right_on: &[Expr],
+        is_sorted: bool,
+    ) -> DaftResult<Self> {
+        if is_sorted {
+            self.join(right, left_on, right_on, merge_join::merge_inner_join)
+        } else {
+            if left_on.is_empty() {
+                return Err(DaftError::ValueError(
+                    "No columns were passed in to join on".to_string(),
+                ));
+            }
+            let left = self.sort(
+                left_on,
+                std::iter::repeat(false)
+                    .take(left_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )?;
+            if right_on.is_empty() {
+                return Err(DaftError::ValueError(
+                    "No columns were passed in to join on".to_string(),
+                ));
+            }
+            let right = right.sort(
+                right_on,
+                std::iter::repeat(false)
+                    .take(right_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )?;
+            left.join(&right, left_on, right_on, merge_join::merge_inner_join)
+        }
+    }
+
+    fn join(
+        &self,
+        right: &Self,
+        left_on: &[Expr],
+        right_on: &[Expr],
+        inner_join: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
+    ) -> DaftResult<Self> {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
-
-        let (lidx, ridx) = hash_join::hash_inner_join(&ltable, &rtable)?;
-
+        let (lidx, ridx) = inner_join(&ltable, &rtable)?;
         let mut join_fields = ltable
             .column_names()
             .iter()
@@ -131,6 +178,7 @@ impl Table {
             names_so_far.insert(f.name.clone());
         });
 
+        // TODO(Clark): Parallelize with rayon.
         for field in self.schema.fields.values() {
             if names_so_far.contains(&field.name) {
                 continue;
@@ -154,6 +202,7 @@ impl Table {
         let right_to_left_keys: HashMap<&str, &str> =
             HashMap::from_iter(zipped_names.iter().copied());
 
+        // TODO(Clark): Parallelize with Rayon.
         for field in right.schema.fields.values() {
             // Skip fields if they were used in the join and have the same name as the corresponding left field
             match right_to_left_keys.get(field.name.as_str()) {

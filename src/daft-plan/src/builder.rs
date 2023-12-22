@@ -10,7 +10,7 @@ use crate::{
         ExternalInfo as ExternalSourceInfo, FileInfos as InputFileInfos, LegacyExternalInfo,
         SourceInfo,
     },
-    JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
+    JoinStrategy, JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
@@ -212,6 +212,7 @@ impl LogicalPlanBuilder {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -219,6 +220,7 @@ impl LogicalPlanBuilder {
             left_on,
             right_on,
             join_type,
+            join_strategy,
         )?
         .into();
         Ok(logical_plan.into())
@@ -416,6 +418,7 @@ impl PyLogicalPlanBuilder {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
         join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
     ) -> PyResult<Self> {
         let left_on = left_on
             .iter()
@@ -427,7 +430,7 @@ impl PyLogicalPlanBuilder {
             .collect::<Vec<Expr>>();
         Ok(self
             .builder
-            .join(&right.builder, left_on, right_on, join_type)?
+            .join(&right.builder, left_on, right_on, join_type, join_strategy)?
             .into())
     }
 

@@ -19,6 +19,7 @@ mod reduce;
 mod sample;
 mod scan;
 mod sort;
+mod sort_merge_join;
 mod split;
 
 pub use agg::Aggregate;
@@ -42,4 +43,5 @@ pub use reduce::ReduceMerge;
 pub use sample::Sample;
 pub use scan::TabularScan;
 pub use sort::Sort;
+pub use sort_merge_join::SortMergeJoin;
 pub use split::Split;

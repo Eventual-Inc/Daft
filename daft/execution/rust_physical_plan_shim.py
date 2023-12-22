@@ -246,6 +246,26 @@ def hash_join(
     )
 
 
+def sort_merge_join(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    right: physical_plan.InProgressPhysicalPlan[PartitionT],
+    left_on: list[PyExpr],
+    right_on: list[PyExpr],
+    join_type: JoinType,
+    num_partitions: int,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
+    right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
+    return physical_plan.sort_merge_join(
+        left_plan=input,
+        right_plan=right,
+        left_on=left_on_expr_proj,
+        right_on=right_on_expr_proj,
+        how=join_type,
+        num_partitions=num_partitions,
+    )
+
+
 def broadcast_join(
     broadcaster: physical_plan.InProgressPhysicalPlan[PartitionT],
     receiver: physical_plan.InProgressPhysicalPlan[PartitionT],

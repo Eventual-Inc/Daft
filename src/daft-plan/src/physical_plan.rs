@@ -55,6 +55,7 @@ pub enum PhysicalPlan {
     Aggregate(Aggregate),
     Concat(Concat),
     HashJoin(HashJoin),
+    SortMergeJoin(SortMergeJoin),
     BroadcastJoin(BroadcastJoin),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
@@ -167,6 +168,20 @@ impl PhysicalPlan {
             Self::BroadcastJoin(BroadcastJoin {
                 receiver: right, ..
             }) => right.partition_spec(),
+            Self::SortMergeJoin(SortMergeJoin {
+                left,
+                right,
+                left_on,
+                ..
+            }) => PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                max(
+                    left.partition_spec().num_partitions,
+                    right.partition_spec().num_partitions,
+                ),
+                Some(left_on.clone()),
+            )
+            .into(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
@@ -220,7 +235,8 @@ impl PhysicalPlan {
                 receiver: right,
                 ..
             })
-            | Self::HashJoin(HashJoin { left, right, .. }) => {
+            | Self::HashJoin(HashJoin { left, right, .. })
+            | Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 left.approximate_size_bytes().and_then(|left_size| {
                     right
                         .approximate_size_bytes()
@@ -716,6 +732,37 @@ impl PhysicalPlan {
                         left_on_pyexprs,
                         right_on_pyexprs,
                         *join_type,
+                    ))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::SortMergeJoin(SortMergeJoin {
+                left,
+                right,
+                left_on,
+                right_on,
+                join_type,
+                num_partitions,
+            }) => {
+                let upstream_left_iter = left.to_partition_tasks(py, psets, is_ray_runner)?;
+                let upstream_right_iter = right.to_partition_tasks(py, psets, is_ray_runner)?;
+                let left_on_pyexprs: Vec<PyExpr> = left_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let right_on_pyexprs: Vec<PyExpr> = right_on
+                    .iter()
+                    .map(|expr| PyExpr::from(expr.clone()))
+                    .collect();
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "sort_merge_join"))?
+                    .call1((
+                        upstream_left_iter,
+                        upstream_right_iter,
+                        left_on_pyexprs,
+                        right_on_pyexprs,
+                        *join_type,
+                        *num_partitions,
                     ))?;
                 Ok(py_iter.into())
             }

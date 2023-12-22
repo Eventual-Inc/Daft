@@ -10,7 +10,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
-    JoinType, LogicalPlan,
+    JoinStrategy, JoinType, LogicalPlan,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,6 +22,7 @@ pub struct Join {
     pub left_on: Vec<Expr>,
     pub right_on: Vec<Expr>,
     pub join_type: JoinType,
+    pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
 
     // Joins may rename columns from the right input; this struct tracks those renames.
@@ -36,6 +37,7 @@ impl std::hash::Hash for Join {
         std::hash::Hash::hash(&self.left_on, state);
         std::hash::Hash::hash(&self.right_on, state);
         std::hash::Hash::hash(&self.join_type, state);
+        std::hash::Hash::hash(&self.join_strategy, state);
         std::hash::Hash::hash(&self.output_schema, state);
         state.write_u64(hash_index_map(&self.right_input_mapping))
     }
@@ -48,6 +50,7 @@ impl Join {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
     ) -> logical_plan::Result<Self> {
         for (on_exprs, schema) in [(&left_on, left.schema()), (&right_on, right.schema())] {
             let on_fields = on_exprs
@@ -101,6 +104,7 @@ impl Join {
             left_on,
             right_on,
             join_type,
+            join_strategy,
             output_schema,
             right_input_mapping,
         })
@@ -109,6 +113,11 @@ impl Join {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Join: Type = {}", self.join_type));
+        res.push(format!(
+            "Strategy = {}",
+            self.join_strategy
+                .map_or_else(|| "Auto".to_string(), |s| s.to_string())
+        ));
         if !self.left_on.is_empty() && !self.right_on.is_empty() && self.left_on == self.right_on {
             res.push(format!(
                 "On = {}",

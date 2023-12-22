@@ -19,7 +19,7 @@ use crate::logical_plan::LogicalPlan;
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::{ExternalInfo as ExternalSourceInfo, LegacyExternalInfo, SourceInfo};
-use crate::{physical_ops::*, PartitionSpec};
+use crate::{physical_ops::*, JoinStrategy, PartitionSpec};
 use crate::{FileFormat, PartitionScheme};
 
 #[cfg(feature = "python")]
@@ -511,6 +511,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             left_on,
             right_on,
             join_type,
+            join_strategy,
             ..
         }) => {
             let mut left_physical = plan(left, cfg.clone())?;
@@ -519,25 +520,35 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             let left_pspec = left_physical.partition_spec();
             let right_pspec = right_physical.partition_spec();
             let num_partitions = max(left_pspec.num_partitions, right_pspec.num_partitions);
-            let new_left_pspec = Arc::new(PartitionSpec::new_internal(
+            let new_left_hash_pspec = Arc::new(PartitionSpec::new_internal(
                 PartitionScheme::Hash,
                 num_partitions,
                 Some(left_on.clone()),
             ));
-            let new_right_pspec = Arc::new(PartitionSpec::new_internal(
+            let new_right_hash_pspec = Arc::new(PartitionSpec::new_internal(
                 PartitionScheme::Hash,
                 num_partitions,
                 Some(right_on.clone()),
             ));
+            let new_left_sort_pspec = Arc::new(PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                num_partitions,
+                Some(left_on.clone()),
+            ));
+            let new_right_sort_pspec = Arc::new(PartitionSpec::new_internal(
+                PartitionScheme::Range,
+                num_partitions,
+                Some(right_on.clone()),
+            ));
 
-            let is_left_partitioned = left_pspec == new_left_pspec;
-            let is_right_partitioned = right_pspec == new_right_pspec;
+            let is_left_hash_partitioned = left_pspec == new_left_hash_pspec;
+            let is_right_hash_partitioned = right_pspec == new_right_hash_pspec;
 
-            // If either the left or right side of the join are very small tables, perform a broadcast join with the
-            // entire smaller table broadcast to each of the partitions of the larger table.
+            let is_left_sort_partitioned = left_pspec == new_left_sort_pspec;
+            let is_right_sort_partitioned = right_pspec == new_right_sort_pspec;
 
-            // Ensure that the left side of the join is the smaller side.
-            let (smaller_size_bytes, do_swap) = match (
+            // For broadcast joins, ensure that the left side of the join is the smaller side.
+            let (smaller_size_bytes, left_is_larger) = match (
                 left_physical.approximate_size_bytes(),
                 right_physical.approximate_size_bytes(),
             ) {
@@ -552,46 +563,88 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 (None, Some(right_size_bytes)) => (Some(right_size_bytes), true),
                 (None, None) => (None, false),
             };
-            let is_larger_partitioned = if do_swap {
-                is_left_partitioned
+            let is_larger_partitioned = if left_is_larger {
+                is_left_hash_partitioned || is_left_sort_partitioned
             } else {
-                is_right_partitioned
+                is_right_hash_partitioned || is_right_sort_partitioned
             };
-            // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
-            if !is_larger_partitioned && let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {
-                if do_swap {
-                    // These will get swapped back when doing the actual local joins.
-                    (left_physical, right_physical) = (right_physical, left_physical);
+            let join_strategy = join_strategy.unwrap_or_else(|| {
+                // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
+                if !is_larger_partitioned && let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {
+                    JoinStrategy::Broadcast
+                // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
+                // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
+                // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
+                } else if (is_left_sort_partitioned || is_right_sort_partitioned)
+                && (!is_larger_partitioned
+                    || (left_is_larger && is_left_sort_partitioned
+                        || !left_is_larger && is_right_sort_partitioned)) {
+                            JoinStrategy::SortMerge
+                // Otherwise, use a hash join.
+                } else {
+                    JoinStrategy::Hash
                 }
-                return Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(left_physical.into(), right_physical.into(), left_on.clone(), right_on.clone(), *join_type, do_swap)));
-            }
-            if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
-                && !is_left_partitioned
-            {
-                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+            });
+            match join_strategy {
+                JoinStrategy::Broadcast => {
+                    // If either the left or right side of the join are very small tables, perform a broadcast join with the
+                    // entire smaller table broadcast to each of the partitions of the larger table.
+                    if left_is_larger {
+                        // These will get swapped back when doing the actual local joins.
+                        (left_physical, right_physical) = (right_physical, left_physical);
+                    }
+                    Ok(PhysicalPlan::BroadcastJoin(BroadcastJoin::new(
+                        left_physical.into(),
+                        right_physical.into(),
+                        left_on.clone(),
+                        right_on.clone(),
+                        *join_type,
+                        left_is_larger,
+                    )))
+                }
+                // TODO(Clark): Include boundaries in range-partitioned PartitionSpecs, which would allow us to
+                //  (1) elide sorting both sides of the join if they both have the same range-partitioned boundaries on the join keys,
+                //  (2) elide sorting one side of the join if already range-partitioned, where we'd use that side's boundaries to sort the other side.
+                JoinStrategy::SortMerge => Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
                     left_physical.into(),
-                    num_partitions,
-                    left_on.clone(),
-                ));
-                left_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
-            }
-            if (num_partitions > 1 || right_pspec.num_partitions != num_partitions)
-                && !is_right_partitioned
-            {
-                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     right_physical.into(),
-                    num_partitions,
+                    left_on.clone(),
                     right_on.clone(),
-                ));
-                right_physical = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                    *join_type,
+                    num_partitions,
+                ))),
+                JoinStrategy::Hash => {
+                    if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
+                        && !is_left_hash_partitioned
+                    {
+                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                            left_physical.into(),
+                            num_partitions,
+                            left_on.clone(),
+                        ));
+                        left_physical =
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                    }
+                    if (num_partitions > 1 || right_pspec.num_partitions != num_partitions)
+                        && !is_right_hash_partitioned
+                    {
+                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                            right_physical.into(),
+                            num_partitions,
+                            right_on.clone(),
+                        ));
+                        right_physical =
+                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                    }
+                    Ok(PhysicalPlan::HashJoin(HashJoin::new(
+                        left_physical.into(),
+                        right_physical.into(),
+                        left_on.clone(),
+                        right_on.clone(),
+                        *join_type,
+                    )))
+                }
             }
-            Ok(PhysicalPlan::HashJoin(HashJoin::new(
-                left_physical.into(),
-                right_physical.into(),
-                left_on.clone(),
-                right_on.clone(),
-                *join_type,
-            )))
         }
         LogicalPlan::Sink(LogicalSink {
             schema,

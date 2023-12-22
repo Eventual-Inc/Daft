@@ -325,7 +325,7 @@ class Table:
         to_explode_pyexprs = [e._expr for e in columns]
         return Table._from_pytable(self._table.explode(to_explode_pyexprs))
 
-    def join(
+    def hash_join(
         self,
         right: Table,
         left_on: ExpressionsProjection,
@@ -345,7 +345,32 @@ class Table:
         left_exprs = [e._expr for e in left_on]
         right_exprs = [e._expr for e in right_on]
 
-        return Table._from_pytable(self._table.join(right._table, left_on=left_exprs, right_on=right_exprs))
+        return Table._from_pytable(self._table.hash_join(right._table, left_on=left_exprs, right_on=right_exprs))
+
+    def sort_merge_join(
+        self,
+        right: Table,
+        left_on: ExpressionsProjection,
+        right_on: ExpressionsProjection,
+        how: JoinType = JoinType.Inner,
+        is_sorted: bool = False,
+    ) -> Table:
+        if how != JoinType.Inner:
+            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
+        if len(left_on) != len(right_on):
+            raise ValueError(
+                f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
+            )
+
+        if not isinstance(right, Table):
+            raise TypeError(f"Expected a Table for `right` in join but got {type(right)}")
+
+        left_exprs = [e._expr for e in left_on]
+        right_exprs = [e._expr for e in right_on]
+
+        return Table._from_pytable(
+            self._table.sort_merge_join(right._table, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted)
+        )
 
     def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[Table]:
         if not isinstance(num_partitions, int):
