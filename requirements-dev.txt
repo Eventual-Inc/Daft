@@ -16,7 +16,7 @@ pytest-benchmark==4.0.0
 pytest-cov==4.1.0
 
 # Testing dependencies
-lxml==4.9.3
+lxml==5.0.0
 dask==2022.2.0; python_version < '3.8'
 dask==2023.5.0; python_version == '3.8'
 dask==2023.6.0; python_version >= '3.9'
