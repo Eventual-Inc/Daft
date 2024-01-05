@@ -14,7 +14,7 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs(small_images_s3_paths):
     )
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
 
@@ -28,7 +28,7 @@ def test_url_download_aws_s3_public_bucket_custom_s3fs_wrong_region(small_images
     )
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
 
@@ -40,7 +40,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader(aws_public_s3_confi
     df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
 
@@ -54,7 +54,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_io_thread_change(
     df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
     daft.io.set_io_pool_num_threads(2)
@@ -62,7 +62,7 @@ def test_url_download_aws_s3_public_bucket_native_downloader_io_thread_change(
     df = df.with_column("data", df["urls"].url.download(io_config=aws_public_s3_config, use_native_downloader=True))
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
 
