@@ -30,7 +30,7 @@ def test_url_download_aws_s3_public_bucket_with_creds(small_images_s3_paths, io_
     df = df.with_column("data", df["urls"].url.download(use_native_downloader=True, io_config=io_config))
 
     data = df.to_pydict()
-    assert len(data["data"]) == 6
+    assert len(data["data"]) == 12
     for img_bytes in data["data"]:
         assert img_bytes is not None
 

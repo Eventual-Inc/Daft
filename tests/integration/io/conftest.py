@@ -227,4 +227,6 @@ def minio_image_data_fixture(minio_io_config, image_data_folder) -> YieldFixture
 @pytest.fixture(scope="session")
 def small_images_s3_paths() -> list[str]:
     """Paths to small *.jpg files in a public S3 bucket"""
-    return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)]
+    return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)] + [
+        f"s3a://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)
+    ]

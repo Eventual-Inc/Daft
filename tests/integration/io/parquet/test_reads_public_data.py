@@ -167,6 +167,10 @@ DAFT_CAN_READ_FILES = [
         "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
     ),
     (
+        "parquet-benchmarking/s3a-mvp",
+        "s3a://daft-public-data/test_fixtures/parquet-dev/mvp.parquet",
+    ),
+    (
         "azure/mvp",
         "az://public-anonymous/mvp.parquet",
     ),
@@ -198,7 +202,7 @@ def parquet_file(request) -> tuple[str, str]:
 
 def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
-    if get_protocol_from_path(path) == "s3":
+    if get_protocol_from_path(path) == "s3" or get_protocol_from_path(path) == "s3a":
         kwargs["anon"] = True
     if get_protocol_from_path(path) == "az":
         kwargs["account_name"] = "dafttestdata"
