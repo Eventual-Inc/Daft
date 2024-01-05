@@ -37,6 +37,8 @@ def s3fs_recursive_list(fs, path) -> list:
     [
         # Exact filepath:
         (f"s3://bucket/a.match", [{"type": "File", "path": "s3://bucket/a.match", "size": 0}]),
+        # Exact filepath but with s3a:
+        (f"s3a://bucket/a.match", [{"type": "File", "path": "s3a://bucket/a.match", "size": 0}]),
         ###
         # `**`: recursive wildcard
         ###
@@ -53,6 +55,21 @@ def s3fs_recursive_list(fs, path) -> list:
                 {"type": "File", "path": "s3://bucket/nested2/a.match", "size": 0},
                 {"type": "File", "path": "s3://bucket/nested2/b.nomatch", "size": 0},
                 {"type": "File", "path": "s3://bucket/nested2/c.match", "size": 0},
+            ],
+        ),
+        # All files with s3a and **
+        (
+            f"s3a://bucket/**",
+            [
+                {"type": "File", "path": "s3a://bucket/a.match", "size": 0},
+                {"type": "File", "path": "s3a://bucket/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3a://bucket/c.match", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested1/a.match", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested1/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested1/c.match", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested2/a.match", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested2/b.nomatch", "size": 0},
+                {"type": "File", "path": "s3a://bucket/nested2/c.match", "size": 0},
             ],
         ),
         # Exact filepath after **
