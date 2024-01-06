@@ -5,6 +5,7 @@ Daft User Guide
     :hidden:
     :maxdepth: 1
 
+    cheatsheet
     basic_concepts
     daft_in_depth
     poweruser
@@ -37,7 +38,7 @@ aims to help Daft users master the usage of the Daft *DataFrame* for all your da
     code you may wish to take a look at these resources:
 
     1. :doc:`../10-min`: Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
-    2. :doc:`../api_docs/cheatsheet`: Quick reference to commonly-used Daft APIs and usage patterns - useful to keep next to your laptop as you code!
+    2. :doc:`cheatsheet`: Quick reference to commonly-used Daft APIs and usage patterns - useful to keep next to your laptop as you code!
     3. :doc:`../api_docs/index`: Searchable documentation and reference material to Daft's public Python API.
 
 Table of Contents

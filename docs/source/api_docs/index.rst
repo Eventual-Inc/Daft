@@ -3,7 +3,7 @@ API Documentation
 
 .. toctree::
 
-   cheatsheet
+   Home <self>
    input_output
    dataframe
    series
