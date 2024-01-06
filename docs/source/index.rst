@@ -35,7 +35,7 @@ Keep up to date with the latest features and fixes in Daft with our `Release Not
 Compare Daft to alternatives
 ----------------------------
 
-Evaluating Daft for a new project or system? Read more about why you should choose Daft over alternatives such as Pandas, Modin and PySpark in our :doc:`Dataframe Comparison <dataframe_comparison>`.
+Evaluating Daft for a new project or system? Read more about why you should choose Daft over alternatives such as Pandas, Modin and PySpark in our :doc:`Dataframe Comparison <faq/dataframe_comparison>`.
 
 .. toctree::
    :hidden:
@@ -46,11 +46,8 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    10-min
    user_guide/index
    api_docs/index
+   FAQ <faq/index>
    Release Notes <https://github.com/Eventual-Inc/Daft/releases>
-   Telemetry <telemetry>
-   dataframe_comparison
-   technical_architecture
-   benchmarks/index
 
 
 .. Indices and tables
