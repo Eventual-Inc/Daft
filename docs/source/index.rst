@@ -46,7 +46,7 @@ Evaluating Daft for a new project or system? Read more about why you should choo
    10-min
    user_guide/index
    api_docs/index
-   FAQ <faq/index>
+   FAQs <faq/index>
    Release Notes <https://github.com/Eventual-Inc/Daft/releases>
 
 
