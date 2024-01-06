@@ -181,7 +181,7 @@ def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
 ) -> DaftContext:
-    """Globally sets varioous configuration parameters which control Daft plan construction behavior. These configuration values
+    """Globally sets various configuration parameters which control Daft plan construction behavior. These configuration values
     are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe)
 
     Args:
