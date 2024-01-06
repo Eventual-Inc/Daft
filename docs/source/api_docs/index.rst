@@ -4,7 +4,7 @@ API Documentation
 .. toctree::
 
    Table of Contents <self>
-   input_output
+   creation
    dataframe
    series
    datatype
@@ -12,3 +12,4 @@ API Documentation
    groupby
    udf
    context
+   io_configs
