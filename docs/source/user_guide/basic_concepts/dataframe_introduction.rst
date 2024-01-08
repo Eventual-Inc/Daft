@@ -1,5 +1,5 @@
-Dataframe Operations
-====================
+Dataframe
+=========
 
 Data in Daft is represented as a DataFrame, which is a collection of data organized as a **table** with **rows** and **columns**.
 

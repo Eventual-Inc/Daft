@@ -37,7 +37,7 @@ To learn more about each of these constructors, as well as the options that they
 From File Paths
 ^^^^^^^^^^^^^^^
 
-However, if instead you are reading a set of files that are not container file formats, you can use the :func:`daft.from_glob_path` method which will read a DataFrame of globbed filepaths.
+Daft also provides an easy utility to create a DataFrame from globbing a path. You can use the :func:`daft.from_glob_path` method which will read a DataFrame of globbed filepaths.
 
 .. code:: python
 
