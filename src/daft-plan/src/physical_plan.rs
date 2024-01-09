@@ -75,7 +75,7 @@ impl PhysicalPlan {
             Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
             Self::Filter(Filter { input, .. }) => input.partition_spec(),
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
-            Self::Explode(Explode { input, .. }) => input.partition_spec(),
+            Self::Explode(Explode { partition_spec, .. }) => partition_spec.clone(),
             Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
                 PartitionScheme::Range,
                 input.partition_spec().num_partitions,
@@ -246,6 +246,7 @@ pub struct PhysicalPlanScheduler {
 #[pymethods]
 impl PhysicalPlanScheduler {
     pub fn num_partitions(&self) -> PyResult<i64> {
+        println!("{:?}", self.plan.partition_spec());
         self.plan.partition_spec().get_num_partitions()
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
@@ -533,7 +534,9 @@ impl PhysicalPlan {
                     .call1((upstream_iter, *limit, *eager, *num_partitions))?;
                 Ok(global_limit_iter.into())
             }
-            PhysicalPlan::Explode(Explode { input, to_explode }) => {
+            PhysicalPlan::Explode(Explode {
+                input, to_explode, ..
+            }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
                 let explode_pyexprs: Vec<PyExpr> = to_explode
                     .iter()
