@@ -8,7 +8,7 @@ This page is a walkthrough on how Daft handles such situations and possible reme
 Out-of-core Processing
 ----------------------
 
-Daft supports [out-of-core data processing](https://en.wikipedia.org/wiki/External_memory_algorithm) when running on the Ray runner by leveraging Ray's object spilling capabilities.
+Daft supports `out-of-core data processing <https://en.wikipedia.org/wiki/External_memory_algorithm>`_ when running on the Ray runner by leveraging Ray's object spilling capabilities.
 
 This means that when the total amount of data in Daft gets too large, Daft will spill data onto disk. This slows down the overall workload (because data now needs to be written to and read from disk) but frees up space in working memory for Daft to continue executing work without causing an OOM.
 
@@ -28,11 +28,11 @@ Spilling to disk is a mechanism that Daft uses to ensure workload completion in 
 
 There are some things you can do that will help with this.
 
-1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. [AWS EC2 r5 instances](https://aws.amazon.com/ec2/instance-types/r5/))
+1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. `AWS EC2 r5 instances <https://duckdb.org/docs/api/python/spark_api.html>`_)
 2. Use more machines in your cluster to increase overall cluster memory size
-3. Use machines with attached local nvme SSD drives for higher throughput when spilling (e.g. [AWS EC2 r5d instances](https://aws.amazon.com/ec2/instance-types/r5/))
+3. Use machines with attached local nvme SSD drives for higher throughput when spilling (e.g. `AWS EC2 r5d instances <https://duckdb.org/docs/api/python/spark_api.html>`_)
 
-For more troubleshooting, you may also wish to consult the [Ray documentation's recommendations for object spilling](https://docs.ray.io/en/latest/ray-core/objects/object-spilling.html).
+For more troubleshooting, you may also wish to consult the `Ray documentation's recommendations for object spilling <https://docs.ray.io/en/latest/ray-core/objects/object-spilling.html>`_.
 
 Dealing with out-of-memory (OOM) errors
 ---------------------------------------
@@ -51,7 +51,7 @@ These OOMKills are often recoverable (Daft-on-Ray will take care of retrying wor
 
 There are some options available to you.
 
-1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. [AWS EC2 r5 instances](https://aws.amazon.com/ec2/instance-types/r5/))
+1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. `AWS EC2 r5 instances <https://aws.amazon.com/ec2/instance-types/r5/>`_)
 2. Use more machines in your cluster to increase overall cluster memory size
 3. Aggressively filter your data so that Daft can avoid reading data that it does not have to (e.g. ``df.where(...)``)
 4. Request more memory for your UDFs (see: :ref:`resource-requests`) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
