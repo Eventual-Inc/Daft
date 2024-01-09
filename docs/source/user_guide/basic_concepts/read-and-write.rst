@@ -34,6 +34,11 @@ Daft supports file paths to a single file, a directory of files, and wildcards. 
 
 To learn more about each of these constructors, as well as the options that they support, consult the API documentation on :ref:`creating DataFrames from files <df-io-files>`.
 
+From Data Catalogs
+^^^^^^^^^^^^^^^^^^
+
+If you use catalogs such as Apache Iceberg or Hive, you may wish to consult our user guide on integrations with Data Catalogs: :doc:`Daft integration with Data Catalogs <../integrations/data_catalogs>`.
+
 From File Paths
 ^^^^^^^^^^^^^^^
 
