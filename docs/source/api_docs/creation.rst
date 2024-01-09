@@ -20,38 +20,6 @@ Python Objects
     from_pylist
     from_pydict
 
-Arrow
-~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_arrow
-
-Pandas
-~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_pandas
-
-File Paths
-~~~~~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_glob_path
-
 Files
 -----
 
@@ -85,6 +53,50 @@ JSON
     :toctree: doc_gen/io_functions
 
     read_json
+
+Data Catalogs
+-------------
+
+Apache Iceberg
+^^^^^^^^^^^^^^
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_iceberg
+
+Arrow
+~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_arrow
+
+Pandas
+~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_pandas
+
+File Paths
+~~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_glob_path
 
 Integrations
 ------------

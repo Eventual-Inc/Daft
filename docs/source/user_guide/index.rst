@@ -9,6 +9,7 @@ Daft User Guide
     basic_concepts
     daft_in_depth
     poweruser
+    integrations
     tutorials
 
 Welcome to **Daft**!
@@ -60,6 +61,11 @@ Core Daft concepts all Daft users will find useful to understand deeply.
 *************************************
 
 Become a true Daft Poweruser! This section explores advanced topics to help you configure Daft for specific application environments, improve reliability and optimize for performance.
+
+:doc:`Integrations <integrations>`
+**********************************
+
+Learn how to use Daft's integrations with other technologies such as Ray Datasets or Apache Iceberg.
 
 :doc:`Tutorials <tutorials>`
 ****************************
