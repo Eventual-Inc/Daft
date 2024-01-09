@@ -179,6 +179,16 @@ def local_aggregate(
     )
 
 
+def sample(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT], fraction: float, with_replacement: bool, seed: int | None
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=execution_step.Sample(fraction=fraction, with_replacement=with_replacement, seed=seed),
+        resource_request=ResourceRequest(),
+    )
+
+
 def sort(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sort_by: list[PyExpr],

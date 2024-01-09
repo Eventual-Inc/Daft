@@ -197,8 +197,8 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
 
-    def sample(self, num: int) -> MicroPartition:
-        return MicroPartition._from_pymicropartition(self._micropartition.sample(num))
+    def sample(self, fraction: float, with_replacement: bool = False, seed: int | None = None) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(self._micropartition.sample(fraction, with_replacement, seed))
 
     def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> MicroPartition:
         to_agg_pyexprs = [e._expr for e in to_agg]

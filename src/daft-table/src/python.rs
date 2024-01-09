@@ -137,14 +137,19 @@ impl PyTable {
         py.allow_threads(|| Ok(self.table.head(num)?.into()))
     }
 
-    pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
-        if num < 0 {
+    pub fn sample(
+        &self,
+        py: Python,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        if fraction < 0.0 {
             return Err(PyValueError::new_err(format!(
-                "Can not sample table with negative number: {num}"
+                "Can not sample table with negative fraction: {fraction}"
             )));
         }
-        let num = num as usize;
-        py.allow_threads(|| Ok(self.table.sample(num)?.into()))
+        py.allow_threads(|| Ok(self.table.sample(fraction, with_replacement, seed)?.into()))
     }
 
     pub fn quantiles(&self, py: Python, num: i64) -> PyResult<Self> {

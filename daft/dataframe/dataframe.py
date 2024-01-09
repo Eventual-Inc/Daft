@@ -480,6 +480,24 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def sample(self, fraction: float, with_replacement: bool = False, seed: Optional[int] = None) -> "DataFrame":
+        """Samples a fraction of rows from the DataFrame
+
+        Example:
+            >>> sampled_df = df.sample(0.5)
+
+        Args:
+            fraction (float): fraction of rows to sample.
+            with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
+            seed (Optional[int], optional): random seed. Defaults to None.
+
+        Returns:
+            DataFrame: DataFrame with a fraction of rows.
+        """
+        builder = self._builder.sample(fraction, with_replacement, seed)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":
         """Drops columns from the current DataFrame by name
 

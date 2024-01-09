@@ -137,13 +137,27 @@ impl Table {
         self.slice(0, num)
     }
 
-    pub fn sample(&self, num: usize) -> DaftResult<Self> {
+    pub fn sample(
+        &self,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> DaftResult<Self> {
+        let num = (fraction * self.len() as f64).ceil() as usize;
         if num >= self.len() {
             Ok(self.clone())
         } else {
-            use rand::{distributions::Uniform, Rng};
+            use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
+            let mut rng = match seed {
+                Some(seed) => StdRng::seed_from_u64(seed),
+                None => StdRng::from_entropy(),
+            };
             let range = Uniform::from(0..self.len() as u64);
-            let values: Vec<u64> = rand::thread_rng().sample_iter(&range).take(num).collect();
+            let values: Vec<u64> = if with_replacement {
+                (0..num).map(|_| rng.sample(range)).collect()
+            } else {
+                rng.sample_iter(&range).take(num).collect()
+            };
             let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
                 UInt64Array::from(("idx", values));
             self.take(&indices.into_series())

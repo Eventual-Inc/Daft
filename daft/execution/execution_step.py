@@ -580,19 +580,24 @@ class MapPartition(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Sample(SingleOutputInstruction):
-    sort_by: ExpressionsProjection
-    num_samples: int = 20
+    fraction: float
+    with_replacement: bool = False
+    seed: int | None = None
+    sort_by: ExpressionsProjection | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._sample(inputs)
 
     def _sample(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
-        result = (
-            input.sample(self.num_samples)
-            .eval_expression_list(self.sort_by)
-            .filter(ExpressionsProjection([~col(e.name()).is_null() for e in self.sort_by]))
-        )
+        if self.sort_by:
+            result = (
+                input.sample(self.fraction, self.with_replacement, self.seed)
+                .eval_expression_list(self.sort_by)
+                .filter(ExpressionsProjection([~col(e.name()).is_null() for e in self.sort_by]))
+            )
+        else:
+            result = input.sample(self.fraction, self.with_replacement, self.seed)
         return [result]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:

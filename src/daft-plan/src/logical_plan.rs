@@ -23,6 +23,7 @@ pub enum LogicalPlan {
     Concat(Concat),
     Join(Join),
     Sink(Sink),
+    Sample(Sample),
 }
 
 impl LogicalPlan {
@@ -44,6 +45,7 @@ impl LogicalPlan {
             Self::Concat(Concat { input, .. }) => input.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
+            Self::Sample(Sample { input, .. }) => input.schema(),
         }
     }
 
@@ -51,6 +53,7 @@ impl LogicalPlan {
         // TODO: https://github.com/Eventual-Inc/Daft/pull/1288#discussion_r1307820697
         match self {
             Self::Limit(..) => vec![IndexSet::new()],
+            Self::Sample(..) => vec![IndexSet::new()],
             Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
             Self::Project(projection) => {
                 let res = projection
@@ -135,6 +138,7 @@ impl LogicalPlan {
             Self::Concat(Concat { input, other }) => vec![input, other],
             Self::Join(Join { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
+            Self::Sample(Sample { input, .. }) => vec![input],
         }
     }
 
@@ -195,6 +199,7 @@ impl LogicalPlan {
             Self::Concat(..) => "Concat",
             Self::Join(..) => "Join",
             Self::Sink(..) => "Sink",
+            Self::Sample(..) => "Sample",
         };
         name.to_string()
     }
@@ -222,6 +227,9 @@ impl LogicalPlan {
             Self::Concat(_) => vec!["Concat".to_string()],
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
+            Self::Sample(sample) => {
+                vec![format!("Sample: {fraction}", fraction = sample.fraction)]
+            }
         }
     }
 
@@ -282,3 +290,4 @@ impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Concat);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
+impl_from_data_struct_for_logical_plan!(Sample);
