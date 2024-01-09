@@ -2,7 +2,6 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::{optimization::get_required_columns, Expr};
-use indexmap::IndexMap;
 
 use crate::{physical_plan::PhysicalPlan, PartitionScheme, PartitionSpec};
 use serde::{Deserialize, Serialize};
@@ -40,7 +39,7 @@ impl Explode {
                     .as_ref()
                     .map(|b| {
                         b.iter()
-                            .flat_map(|e| get_required_columns(e))
+                            .flat_map(get_required_columns)
                             .collect::<HashSet<String>>()
                     })
                     .expect("Range or Hash partitioned PSpec should be partitioned by something");
@@ -56,7 +55,7 @@ impl Explode {
                         .into();
                     }
                 }
-                return input_pspec;
+                input_pspec
             }
         }
     }
@@ -66,12 +65,8 @@ impl Explode {
 mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::{DateType, Field},
-        DataType,
-    };
-    use daft_dsl::{col, lit, Expr};
-    use rstest::rstest;
+    use daft_core::{datatypes::Field, DataType};
+    use daft_dsl::{col, Expr};
 
     use crate::{planner::plan, test::dummy_scan_node, PartitionScheme, PartitionSpec};
 
