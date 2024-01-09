@@ -150,7 +150,7 @@ impl Table {
             use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
             let mut rng = match seed {
                 Some(seed) => StdRng::seed_from_u64(seed),
-                None => StdRng::from_entropy(),
+                None => StdRng::from_rng(rand::thread_rng()).unwrap(),
             };
             let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = if with_replacement {
