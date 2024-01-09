@@ -178,6 +178,7 @@ Running Stateful UDFs are exactly the same as running their Stateless cousins.
 
 
 .. _resource-requests:
+
 Resource Requests
 -----------------
 

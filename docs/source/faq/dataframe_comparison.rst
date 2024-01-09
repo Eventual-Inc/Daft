@@ -13,7 +13,7 @@ Below we discuss some other Dataframe libraries and compare them to Daft.
 
 
 .. csv-table::
- :file: _static/dataframe-comp-table.csv
+ :file: ../_static/dataframe-comp-table.csv
  :widths: 30, 30, 50, 30, 50, 30, 30
  :header-rows: 1
 

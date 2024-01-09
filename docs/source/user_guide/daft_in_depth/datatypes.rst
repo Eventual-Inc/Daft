@@ -64,9 +64,7 @@ Temporal dtypes represent data that have to do with time.
 Examples:
 
 1. :meth:`DataType.date() <daft.DataType.date>`: represents a Date (year, month and day)
-2. :meth:`DataType.duration() <daft.DataType.duration>`: [COMING SOON] represents the duration between two instances in time
-
-NOTE: Many temporal types are still a work-in-progress!
+2. :meth:`DataType.timestamp() <daft.DataType.timestamp>`: represents a Timestamp (particular instance in time)
 
 See also:
 

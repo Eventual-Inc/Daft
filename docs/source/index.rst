@@ -3,10 +3,6 @@ Daft Documentation
 
 Daft is a **fast and scalable Python dataframe** for complex data and machine learning workloads.
 
-.. NOTE::
-
-   *Daft is currently in its Beta release phase - please expect bugs and rapid improvements to the project. We welcome user feedback/feature requests in our* `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_.
-
 Installing Daft
 ---------------
 
@@ -20,41 +16,28 @@ Learn about other more advanced installation options in our :doc:`Installation G
 Learning Daft
 -------------
 
-:doc:`Learn Daft <learn/index>` with examples and tutorials. We cover common use-cases such as:
+* :doc:`Quckstart Notebook <10-min>`: up-and-running with Daft in less than 10 minutes!
+* :doc:`Daft User Guide <user_guide/index>`: useful learning material to learn key Daft concepts
+* :doc:`Daft API Documentation <api_docs/index>`: Python API documentation for reference
 
-1. Read a CSV into a Daft dataframe
-2. Work with images using the Pillow library in Daft
-3. Downloading data from URLs
+Frequently Asked Questions
+--------------------------
 
-Use Daft
---------
-
-Refer to the :doc:`Daft API Documentation <api_docs/index>`.
-
-Keep up to date
----------------
-
-Keep up to date with the latest features and fixes in Daft with our :doc:`Release Notes <https://github.com/Eventual-Inc/Daft/releases>`.
-
-Compare Daft to alternatives
-----------------------------
-
-Evaluating Daft for a new project or system? Read more about why you should choose Daft over alternatives such as Pandas, Modin and PySpark in our :doc:`Dataframe Comparison <dataframe_comparison>`.
+* **How do I know if Daft is the right framework for me?**: :doc:`faq/dataframe_comparison`
+* **How does Daft perform at large scales vs other data engines?**: :doc:`faq/benchmarks`
+* **What is the technical architecture of Daft?**: :doc:`faq/technical_architecture`
+* **Does Daft perform any telemetry?**: :doc:`faq/telemetry`
 
 .. toctree::
    :hidden:
-   :maxdepth: 1
 
    Home <self>
    install
    10-min
-   learn/index
+   user_guide/index
    api_docs/index
+   FAQs <faq/index>
    Release Notes <https://github.com/Eventual-Inc/Daft/releases>
-   Telemetry <telemetry>
-   dataframe_comparison
-   technical_architecture
-   benchmarks/index
 
 
 .. Indices and tables

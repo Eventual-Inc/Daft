@@ -142,6 +142,7 @@ Integrations
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
+    daft.DataFrame.to_arrow
     daft.DataFrame.to_pandas
     daft.DataFrame.to_torch_map_dataset
     daft.DataFrame.to_torch_iter_dataset

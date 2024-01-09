@@ -1,5 +1,5 @@
-Daft Telemetry
-==============
+Telemetry
+=========
 
 To help core developers improve Daft, we collect non-identifiable statistics on Daft usage in order to better understand how Daft is used, common bugs and performance bottlenecks.
 
