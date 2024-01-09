@@ -777,7 +777,7 @@ def sort(
                 partial_metadatas=None,
             )
             .add_instruction(
-                instruction=execution_step.Sample(fraction=0.05, sort_by=sort_by),
+                instruction=execution_step.Sample(size=20, sort_by=sort_by),
             )
             .finalize_partition_task_single_output(stage_id=stage_id_sampling)
         )

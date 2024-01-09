@@ -293,12 +293,12 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             seed,
         }) => {
             let input_physical = plan(input, cfg)?;
-            Ok(PhysicalPlan::Sample(Sample::try_new(
+            Ok(PhysicalPlan::Sample(Sample::new(
                 input_physical.into(),
-                fraction,
+                *fraction,
                 *with_replacement,
                 *seed,
-            )?))
+            )))
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,

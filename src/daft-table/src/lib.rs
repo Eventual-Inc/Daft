@@ -137,13 +137,22 @@ impl Table {
         self.slice(0, num)
     }
 
-    pub fn sample(
+    pub fn sample_by_fraction(
         &self,
         fraction: f64,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let num = (fraction * self.len() as f64).ceil() as usize;
+        self.sample(num, with_replacement, seed)
+    }
+
+    pub fn sample(
+        &self,
+        num: usize,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> DaftResult<Self> {
         if num >= self.len() {
             Ok(self.clone())
         } else {

@@ -296,8 +296,21 @@ class Table:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return Table._from_pytable(self._table.sort(pyexprs, descending))
 
-    def sample(self, fraction: float, with_replacement: bool = False, seed: int | None = None) -> Table:
-        return Table._from_pytable(self._table.sample(fraction, with_replacement, seed))
+    def sample(
+        self,
+        fraction: float | None = None,
+        size: int | None = None,
+        with_replacement: bool = False,
+        seed: int | None = None,
+    ) -> Table:
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        elif fraction is not None:
+            return Table._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, seed))
+        elif size is not None:
+            return Table._from_pytable(self._table.sample_by_size(size, with_replacement, seed))
+        else:
+            raise ValueError("Must specify either `fraction` or `size`")
 
     def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> Table:
         to_agg_pyexprs = [e._expr for e in to_agg]
