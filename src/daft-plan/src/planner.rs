@@ -162,10 +162,10 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             input, to_explode, ..
         }) => {
             let input_physical = plan(input, cfg)?;
-            Ok(PhysicalPlan::Explode(Explode::new(
+            Ok(PhysicalPlan::Explode(Explode::try_new(
                 input_physical.into(),
                 to_explode.clone(),
-            )))
+            )?))
         }
         LogicalPlan::Sort(LogicalSort {
             input,
