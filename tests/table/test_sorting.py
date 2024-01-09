@@ -324,6 +324,14 @@ def test_table_sample() -> None:
     with pytest.raises(ValueError, match="negative size"):
         daft_table.sample(size=-1)
 
+    # size and fraction
+    with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
+        daft_table.sample(size=1, fraction=0.5)
+
+    # no arguments
+    with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
+        daft_table.sample()
+
 
 @pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100, 101], [0, 1, 2, 3, 100, 101, 200]))
 def test_table_quantiles(size, k) -> None:
