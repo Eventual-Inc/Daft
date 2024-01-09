@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::physical_plan::PhysicalPlan;
+use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -12,17 +13,28 @@ pub struct Sample {
 }
 
 impl Sample {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         input: Arc<PhysicalPlan>,
         fraction: &str,
         with_replacement: bool,
         seed: Option<u64>,
-    ) -> Self {
-        Self {
-            input,
-            fraction: fraction.parse().unwrap(),
-            with_replacement,
-            seed,
+    ) -> DaftResult<Self> {
+        let fraction_parsed = fraction.parse::<f64>();
+
+        match fraction_parsed {
+            Ok(fraction) => Ok(Self {
+                input,
+                fraction,
+                with_replacement,
+                seed,
+            }),
+            Err(_) => {
+                // Return an error if the fraction could not be parsed.
+                Err(DaftError::ValueError(format!(
+                    "Invalid fraction format: {}",
+                    fraction
+                )))
+            }
         }
     }
 }
