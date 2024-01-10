@@ -77,7 +77,7 @@ More Resources
 ^^^^^^^^^^^^^^
 
 * `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `User Guide <https://www.getdaft.io/projects/docs/en/latest/learn/user_guides.html>`_ - take a deep-dive into each topic within Daft
+* `User Guide <https://www.getdaft.io/projects/docs/en/latest/user_guide/index.html>`_ - take a deep-dive into each topic within Daft
 * `API Reference <https://www.getdaft.io/projects/docs/en/latest/api_docs/index.html>`_ - API reference for public classes/functions of Daft
 
 Contributing
