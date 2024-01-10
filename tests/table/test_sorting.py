@@ -324,6 +324,14 @@ def test_table_sample() -> None:
     with pytest.raises(ValueError, match="negative size"):
         daft_table.sample(size=-1)
 
+    # fraction > 1.0
+    with pytest.raises(ValueError, match="fraction greater than 1.0"):
+        daft_table.sample(fraction=1.1)
+
+    # fraction < 0.0
+    with pytest.raises(ValueError, match="negative fraction"):
+        daft_table.sample(fraction=-0.1)
+
     # size and fraction
     with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
         daft_table.sample(size=1, fraction=0.5)

@@ -113,6 +113,11 @@ impl PyDaftExecutionConfig {
         Ok(self.config.broadcast_join_size_bytes_threshold)
     }
 
+    #[getter]
+    fn get_sample_size_for_sort(&self) -> PyResult<usize> {
+        Ok(self.config.sample_size_for_sort)
+    }
+
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
         let bin_data = bincode::serialize(self.config.as_ref())
             .expect("DaftExecutionConfig should be serializable to bytes");

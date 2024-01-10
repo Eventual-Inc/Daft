@@ -188,8 +188,12 @@ impl PhysicalPlan {
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
-            | Self::Project(Project { input, .. })
-            | Self::Sample(Sample { input, .. }) => input.approximate_size_bytes(),
+            | Self::Project(Project { input, .. }) => input.approximate_size_bytes(),
+            Self::Sample(Sample {
+                input, fraction, ..
+            }) => input
+                .approximate_size_bytes()
+                .map(|size| (size as f64 * fraction) as usize),
             // Assume ~the same size in bytes for explodes.
             // TODO(Clark): Improve this estimate.
             Self::Explode(Explode { input, .. }) => input.approximate_size_bytes(),

@@ -494,6 +494,9 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with a fraction of rows.
         """
+        if fraction < 0.0 or fraction > 1.0:
+            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+
         builder = self._builder.sample(fraction, with_replacement, seed)
         return DataFrame(builder)
 

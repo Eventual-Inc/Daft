@@ -19,6 +19,7 @@ import pathlib
 from collections import deque
 from typing import Generator, Iterator, TypeVar, Union
 
+from daft.context import get_context
 from daft.daft import (
     FileFormat,
     FileFormatConfig,
@@ -766,6 +767,7 @@ def sort(
     sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     stage_id_sampling = next(stage_id_counter)
 
+    sample_size = get_context().daft_execution_config.sample_size_for_sort
     for source in source_materializations:
         while not source.done():
             logger.debug("sort blocked on completion of source: %s", source)
@@ -777,7 +779,7 @@ def sort(
                 partial_metadatas=None,
             )
             .add_instruction(
-                instruction=execution_step.Sample(size=20, sort_by=sort_by),
+                instruction=execution_step.Sample(size=sample_size, sort_by=sort_by),
             )
             .finalize_partition_task_single_output(stage_id=stage_id_sampling)
         )

@@ -149,6 +149,11 @@ impl PyTable {
                 "Can not sample table with negative fraction: {fraction}"
             )));
         }
+        if fraction > 1.0 {
+            return Err(PyValueError::new_err(format!(
+                "Can not sample table with fraction greater than 1.0: {fraction}"
+            )));
+        }
         py.allow_threads(|| {
             Ok(self
                 .table

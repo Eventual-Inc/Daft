@@ -16,26 +16,21 @@ def test_sample_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
 def test_sample_negative_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
 
-    df = df.sample(fraction=-1.0)
+    with pytest.raises(ValueError, match="fraction should be between 0.0 and 1.0"):
+        df = df.sample(fraction=-0.1)
 
-    with pytest.raises(ValueError, match="negative fraction"):
-        df.collect()
+
+def test_sample_fraction_above_1(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    with pytest.raises(ValueError, match="fraction should be between 0.0 and 1.0"):
+        df = df.sample(fraction=1.1)
 
 
 def test_sample_full_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
 
     df = df.sample(fraction=1.0)
-    df.collect()
-
-    assert len(df) == len(valid_data)
-    assert df.column_names == list(valid_data[0].keys())
-
-
-def test_sample_over_sample(make_df, valid_data: list[dict[str, float]]) -> None:
-    df = make_df(valid_data)
-
-    df = df.sample(fraction=2.0)
     df.collect()
 
     assert len(df) == len(valid_data)
