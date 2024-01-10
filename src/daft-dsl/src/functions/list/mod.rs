@@ -1,8 +1,10 @@
 mod explode;
+mod get;
 mod join;
 mod lengths;
 
 use explode::ExplodeEvaluator;
+use get::GetEvaluator;
 use join::JoinEvaluator;
 use lengths::LengthsEvaluator;
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,7 @@ pub enum ListExpr {
     Explode,
     Join,
     Lengths,
+    Get,
 }
 
 impl ListExpr {
@@ -26,6 +29,7 @@ impl ListExpr {
             Explode => &ExplodeEvaluator {},
             Join => &JoinEvaluator {},
             Lengths => &LengthsEvaluator {},
+            Get => &GetEvaluator {},
         }
     }
 }
@@ -48,5 +52,12 @@ pub fn lengths(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Lengths),
         inputs: vec![input.clone()],
+    }
+}
+
+pub fn get(input: &Expr, idx: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::List(ListExpr::Get),
+        inputs: vec![input.clone(), idx.clone()],
     }
 }

@@ -4,7 +4,7 @@ use crate::array::{
     growable::{make_growable, Growable},
     FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{UInt64Array, Utf8Array};
+use crate::datatypes::{Int64Array, UInt64Array, Utf8Array};
 use crate::DataType;
 
 use crate::series::Series;
@@ -112,6 +112,55 @@ impl ListArray {
             Box::new(arrow2::array::Utf8Array::from_iter(result)),
         )))
     }
+
+    fn get_children_helper(
+        &self,
+        idx_iter: &mut impl Iterator<Item = Option<i64>>,
+    ) -> DaftResult<Series> {
+        let mut growable = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            self.len(),
+        );
+
+        let offsets = self.offsets();
+
+        for i in 0..self.len() {
+            let is_valid = self.is_valid(i);
+            let start = *offsets.get(i).unwrap();
+            let end = *offsets.get(i + 1).unwrap();
+            let child_idx = idx_iter.next().unwrap().unwrap();
+
+            // only add index value when list is valid and index is within bounds
+            match (is_valid, child_idx >= 0, start + child_idx, end + child_idx) {
+                (true, true, idx_offset, _) if idx_offset < end => {
+                    growable.extend(0, idx_offset as usize, 1)
+                }
+                (true, false, _, idx_offset) if idx_offset >= start => {
+                    growable.extend(0, idx_offset as usize, 1)
+                }
+                _ => growable.add_nulls(1),
+            };
+        }
+
+        growable.build()
+    }
+
+    pub fn get_children(&self, idx: &Int64Array) -> DaftResult<Series> {
+        match idx.len() {
+            1 => {
+                let mut idx_iter = repeat(idx.get(0)).take(self.len());
+                self.get_children_helper(&mut idx_iter)
+            }
+            _ => {
+                assert_eq!(idx.len(), self.len());
+                let mut idx_iter = idx.as_arrow().iter().map(|x| x.copied());
+                self.get_children_helper(&mut idx_iter)
+            }
+        }
+    }
 }
 
 impl FixedSizeListArray {
@@ -189,5 +238,50 @@ impl FixedSizeListArray {
             self.name(),
             Box::new(arrow2::array::Utf8Array::from_iter(result)),
         )))
+    }
+
+    fn get_children_helper(
+        &self,
+        idx_iter: &mut impl Iterator<Item = Option<i64>>,
+    ) -> DaftResult<Series> {
+        let mut growable = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            self.len(),
+        );
+
+        let list_size = self.fixed_element_len();
+
+        for i in 0..self.len() {
+            let is_valid = self.is_valid(i);
+            let child_idx = idx_iter.next().unwrap().unwrap();
+
+            // only add index value when list is valid and index is within bounds
+            match (is_valid, child_idx.abs() < list_size as i64, child_idx >= 0) {
+                (true, true, true) => growable.extend(0, i * list_size + child_idx as usize, 1),
+                (true, true, false) => {
+                    growable.extend(0, (i + 1) * list_size + child_idx as usize, 1)
+                }
+                _ => growable.add_nulls(1),
+            };
+        }
+
+        growable.build()
+    }
+
+    pub fn get_children(&self, idx: &Int64Array) -> DaftResult<Series> {
+        match idx.len() {
+            1 => {
+                let mut idx_iter = repeat(idx.get(0)).take(self.len());
+                self.get_children_helper(&mut idx_iter)
+            }
+            _ => {
+                assert_eq!(idx.len(), self.len());
+                let mut idx_iter = idx.as_arrow().iter().map(|x| x.copied());
+                self.get_children_helper(&mut idx_iter)
+            }
+        }
     }
 }

@@ -53,4 +53,20 @@ impl Series {
             ))),
         }
     }
+
+    pub fn list_get(&self, idx: &Series) -> DaftResult<Series> {
+        use DataType::*;
+
+        let idx = idx.cast(&Int64)?;
+        let idx_arr = idx.i64().unwrap();
+
+        match self.data_type() {
+            List(_) => self.list()?.get_children(idx_arr),
+            FixedSizeList(..) => self.fixed_size_list()?.get_children(idx_arr),
+            dt => Err(DaftError::TypeError(format!(
+                "Get not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

@@ -671,6 +671,19 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.list_lengths())
 
+    def get(self, idx: int | Expression, default: object = None) -> Expression:
+        """Gets the element at an index in each list
+
+        Args:
+            idx: index or indices to retrieve from each list
+            default: the default value if the specified index is out of bounds
+
+        Returns:
+            Expression: an expression with the type of the list values
+        """
+        idx_expr = Expression._to_expression(idx)
+        return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr))
+
 
 class ExpressionsProjection(Iterable[Expression]):
     """A collection of Expressions that can be projected onto a Table to produce another Table
