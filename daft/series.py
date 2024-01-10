@@ -320,6 +320,9 @@ class Series:
 
         return Series._from_pyseries(self._series.hash(seed._series if seed is not None else None))
 
+    def murmur3_32(self) -> Series:
+        return Series._from_pyseries(self._series.murmur3_32())
+
     def __repr__(self) -> str:
         return repr(self._series)
 

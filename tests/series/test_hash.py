@@ -114,3 +114,37 @@ def test_hash_int_array_with_bad_length():
 
     with pytest.raises(ValueError, match="seed length does not match array length"):
         arr.hash(bad_seed)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DataType.uint8(),
+        DataType.uint16(),
+        DataType.uint32(),
+        DataType.uint64(),
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+        DataType.int64(),
+    ],
+)
+def test_murmur3_32_hash_int(dtype):
+    arr = Series.from_pylist([34, None]).cast(dtype)
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [2017239379, None]
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+        DataType.int64(),
+    ],
+)
+def test_murmur3_32_hash_signed_int(dtype):
+    arr = Series.from_pylist([-1, 34, None]).cast(dtype)
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [1651860712, 2017239379, None]
