@@ -116,14 +116,26 @@ impl ListArray {
     fn get_children_helper(
         &self,
         idx_iter: &mut impl Iterator<Item = Option<i64>>,
+        default: &Series,
     ) -> DaftResult<Series> {
+        let default = default.cast(self.child_data_type())?;
+
         let mut growable = make_growable(
             self.name(),
             self.child_data_type(),
-            vec![&self.flat_child],
+            vec![&self.flat_child, &default],
             true,
             self.len(),
         );
+
+        // set all default indices to 0 if there is only one
+        let multiple_defaults = match default.len() {
+            1 => false,
+            len => {
+                assert_eq!(len, self.len());
+                true
+            }
+        } as usize;
 
         let offsets = self.offsets();
 
@@ -141,23 +153,23 @@ impl ListArray {
                 (true, false, _, idx_offset) if idx_offset >= start => {
                     growable.extend(0, idx_offset as usize, 1)
                 }
-                _ => growable.add_nulls(1),
+                _ => growable.extend(1, i * multiple_defaults, 1),
             };
         }
 
         growable.build()
     }
 
-    pub fn get_children(&self, idx: &Int64Array) -> DaftResult<Series> {
+    pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
         match idx.len() {
             1 => {
                 let mut idx_iter = repeat(idx.get(0)).take(self.len());
-                self.get_children_helper(&mut idx_iter)
+                self.get_children_helper(&mut idx_iter, default)
             }
             _ => {
                 assert_eq!(idx.len(), self.len());
                 let mut idx_iter = idx.as_arrow().iter().map(|x| x.copied());
-                self.get_children_helper(&mut idx_iter)
+                self.get_children_helper(&mut idx_iter, default)
             }
         }
     }
@@ -243,16 +255,28 @@ impl FixedSizeListArray {
     fn get_children_helper(
         &self,
         idx_iter: &mut impl Iterator<Item = Option<i64>>,
+        default: &Series,
     ) -> DaftResult<Series> {
+        let default = default.cast(self.child_data_type())?;
+
         let mut growable = make_growable(
             self.name(),
             self.child_data_type(),
-            vec![&self.flat_child],
+            vec![&self.flat_child, &default],
             true,
             self.len(),
         );
 
         let list_size = self.fixed_element_len();
+
+        // set all default indices to 0 if there is only one
+        let multiple_defaults = match default.len() {
+            1 => false,
+            len => {
+                assert_eq!(len, self.len());
+                true
+            }
+        } as usize;
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i);
@@ -264,23 +288,23 @@ impl FixedSizeListArray {
                 (true, true, false) => {
                     growable.extend(0, (i + 1) * list_size + child_idx as usize, 1)
                 }
-                _ => growable.add_nulls(1),
+                _ => growable.extend(1, i * multiple_defaults, 1),
             };
         }
 
         growable.build()
     }
 
-    pub fn get_children(&self, idx: &Int64Array) -> DaftResult<Series> {
+    pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
         match idx.len() {
             1 => {
                 let mut idx_iter = repeat(idx.get(0)).take(self.len());
-                self.get_children_helper(&mut idx_iter)
+                self.get_children_helper(&mut idx_iter, default)
             }
             _ => {
                 assert_eq!(idx.len(), self.len());
                 let mut idx_iter = idx.as_arrow().iter().map(|x| x.copied());
-                self.get_children_helper(&mut idx_iter)
+                self.get_children_helper(&mut idx_iter, default)
             }
         }
     }

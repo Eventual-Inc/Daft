@@ -353,9 +353,9 @@ impl PyExpr {
         Ok(lengths(&self.expr).into())
     }
 
-    pub fn list_get(&self, idx: &Self) -> PyResult<Self> {
+    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
         use crate::functions::list::get;
-        Ok(get(&self.expr, &idx.expr).into())
+        Ok(get(&self.expr, &idx.expr, &default.expr).into())
     }
 
     pub fn url_download(

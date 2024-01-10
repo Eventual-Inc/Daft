@@ -14,9 +14,10 @@ impl FunctionEvaluator for GetEvaluator {
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
-            [input, idx] => {
+            [input, idx, default] => {
                 let input_field = input.to_field(schema)?;
                 let idx_field = idx.to_field(schema)?;
+                let _default_field = default.to_field(schema)?;
 
                 if !idx_field.dtype.is_integer() {
                     return Err(DaftError::TypeError(format!(
@@ -25,11 +26,13 @@ impl FunctionEvaluator for GetEvaluator {
                     )));
                 }
 
+                // TODO(Kevin): Check if default dtype can be cast into input dtype.
+
                 let exploded_field = input_field.to_exploded_field()?;
                 Ok(exploded_field)
             }
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
+                "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }
@@ -37,9 +40,9 @@ impl FunctionEvaluator for GetEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [input, idx] => Ok(input.list_get(idx)?),
+            [input, idx, default] => Ok(input.list_get(idx, default)?),
             _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
+                "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }

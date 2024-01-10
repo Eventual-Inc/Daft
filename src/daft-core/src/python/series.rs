@@ -308,8 +308,8 @@ impl PySeries {
         Ok(self.series.list_lengths()?.into_series().into())
     }
 
-    pub fn list_get(&self, idx: &Self) -> PyResult<Self> {
-        Ok(self.series.list_get(&idx.series)?.into())
+    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
+        Ok(self.series.list_get(&idx.series, &default.series)?.into())
     }
 
     pub fn image_decode(&self) -> PyResult<Self> {

@@ -601,7 +601,7 @@ class SeriesListNamespace(SeriesNamespace):
         return Series._from_pyseries(self._series.list_lengths())
 
     def get(self, idx: Series, default: Series) -> Series:
-        return Series._from_pyseries(self._series.list_get(idx._series))
+        return Series._from_pyseries(self._series.list_get(idx._series, default._series))
 
 
 class SeriesImageNamespace(SeriesNamespace):

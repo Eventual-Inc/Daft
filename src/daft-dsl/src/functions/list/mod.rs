@@ -55,9 +55,9 @@ pub fn lengths(input: &Expr) -> Expr {
     }
 }
 
-pub fn get(input: &Expr, idx: &Expr) -> Expr {
+pub fn get(input: &Expr, idx: &Expr, default: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Get),
-        inputs: vec![input.clone(), idx.clone()],
+        inputs: vec![input.clone(), idx.clone(), default.clone()],
     }
 }
