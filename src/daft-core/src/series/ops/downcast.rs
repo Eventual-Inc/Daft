@@ -1,5 +1,5 @@
 use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::logical::FixedShapeImageArray;
+use crate::datatypes::logical::{DateArray, FixedShapeImageArray, TimestampArray};
 use crate::datatypes::*;
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
@@ -92,6 +92,14 @@ impl Series {
     }
 
     pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
+        self.downcast()
+    }
+
+    pub fn date(&self) -> DaftResult<&DateArray> {
+        self.downcast()
+    }
+
+    pub fn timestamp(&self) -> DaftResult<&TimestampArray> {
         self.downcast()
     }
 

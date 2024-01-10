@@ -1,5 +1,5 @@
 use crate::{
-    datatypes::{UInt32Array, UInt64Array},
+    datatypes::{Int32Array, UInt32Array, UInt64Array},
     series::Series,
     with_match_comparable_daft_types, with_match_integer_daft_types,
 };
@@ -14,12 +14,23 @@ impl Series {
         })
     }
 
-    pub fn murmur3_32(&self) -> DaftResult<UInt32Array> {
+    pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
         // TODO Should be all supported iceberg types
-
-        with_match_integer_daft_types!(self.data_type(),|$T| {
-            let downcasted = self.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            downcasted.murmur3_32()
-        })
+        use crate::DataType::*;
+        match self.data_type() {
+            Int8 => self.i8()?.murmur3_32(),
+            Int16 => self.i16()?.murmur3_32(),
+            Int32 => self.i32()?.murmur3_32(),
+            Int64 => self.i64()?.murmur3_32(),
+            UInt8 => self.u8()?.murmur3_32(),
+            UInt16 => self.u16()?.murmur3_32(),
+            UInt32 => self.u32()?.murmur3_32(),
+            UInt64 => self.u64()?.murmur3_32(),
+            Utf8 => self.utf8()?.murmur3_32(),
+            Binary => self.binary()?.murmur3_32(),
+            Date => self.date()?.murmur3_32(),
+            Timestamp(..) => self.timestamp()?.murmur3_32(),
+            v => panic!("murmur3 hash not implemented for datatype: {v}"),
+        }
     }
 }

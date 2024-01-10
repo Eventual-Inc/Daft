@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import numpy as np
 import pytest
+import pytz
 import xxhash
 
 from daft.datatype import DataType
@@ -148,3 +151,44 @@ def test_murmur3_32_hash_signed_int(dtype):
     arr = Series.from_pylist([-1, 34, None]).cast(dtype)
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [1651860712, 2017239379, None]
+
+
+def test_murmur3_32_hash_string():
+    arr = Series.from_pylist(["iceberg", None])
+    assert arr.datatype() == DataType.string()
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [1210000089, None]
+
+
+def test_murmur3_32_hash_string():
+    arr = Series.from_pylist([b"\x00\x01\x02\x03", None])
+    assert arr.datatype() == DataType.binary()
+    hashes = arr.murmur3_32()
+    java_answer = -188683207
+    assert hashes.to_pylist() == [java_answer, None]
+
+
+def test_murmur3_32_hash_date():
+    arr = Series.from_pylist([date(2017, 11, 16), None])
+    assert arr.datatype() == DataType.date()
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-653330422, None]
+
+
+def test_murmur3_32_hash_timestamp():
+    arr = Series.from_pylist([datetime(2017, 11, 16, 22, 31, 8), None])
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-2047944441, None]
+
+
+def test_murmur3_32_hash_timestamp_with_tz():
+    arr = Series.from_pylist([datetime(2017, 11, 16, 14, 31, 8).astimezone(pytz.timezone("US/Pacific")), None])
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-2047944441, None]
+
+
+def test_murmur3_32_hash_timestamp_with_tz_nanoseconds():
+    arr = Series.from_pylist([datetime(2017, 11, 16, 14, 31, 8).astimezone(pytz.timezone("US/Pacific")), None])
+    arr = arr.cast(DataType.timestamp("ns", "UTC"))
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-2047944441, None]
