@@ -682,7 +682,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: an expression with the type of the list values
         """
         idx_expr = Expression._to_expression(idx)
-        default_expr = Expression._to_expression(default)
+        default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
 
