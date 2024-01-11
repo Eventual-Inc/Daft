@@ -369,6 +369,19 @@ class Expression:
         expr = self._expr.is_null()
         return Expression._from_pyexpr(expr)
 
+    def not_null(self) -> Expression:
+        """Checks if values in the Expression are not Null (a special value indicating missing data)
+
+        Example:
+            >>> # [1., None, NaN] -> [True, False, True]
+            >>> col("x").not_null()
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are not missing
+        """
+        expr = self._expr.not_null()
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 

@@ -155,6 +155,13 @@ impl Project {
                 )?;
                 Ok(Expr::IsNull(newchild.into()))
             }
+            Expr::NotNull(child) => {
+                let newchild = Self::translate_partition_spec_expr(
+                    child.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                Ok(Expr::NotNull(newchild.into()))
+            }
             Expr::IfElse {
                 if_true,
                 if_false,

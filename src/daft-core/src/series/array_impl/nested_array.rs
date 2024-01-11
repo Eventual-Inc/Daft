@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 
 use crate::array::ops::broadcast::Broadcastable;
-use crate::array::ops::{DaftIsNull, GroupIndices};
+use crate::array::ops::{DaftIsNull, DaftNotNull, GroupIndices};
 use crate::array::{FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::BooleanArray;
 use crate::datatypes::Field;
@@ -103,6 +103,10 @@ macro_rules! impl_series_like_for_nested_arrays {
 
             fn is_null(&self) -> DaftResult<Series> {
                 Ok(self.0.is_null()?.into_series())
+            }
+
+            fn not_null(&self) -> DaftResult<Series> {
+                Ok(self.0.not_null()?.into_series())
             }
 
             fn sort(&self, _descending: bool) -> DaftResult<Series> {

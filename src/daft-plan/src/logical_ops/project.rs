@@ -247,6 +247,13 @@ fn replace_column_with_semantic_id(
                         |_| e,
                     )
             }
+            Expr::NotNull(child) => {
+                replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                    .map_yes_no(
+                        |transformed_child| Expr::NotNull(transformed_child).into(),
+                        |_| e,
+                    )
+            }
             Expr::BinaryOp { op, left, right } => {
                 let left =
                     replace_column_with_semantic_id(left.clone(), subexprs_to_replace, schema);

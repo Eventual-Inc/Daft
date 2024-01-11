@@ -325,6 +325,7 @@ impl Table {
             Column(name) => self.get_column(name).cloned(),
             Not(child) => !(self.eval_expression(child)?),
             IsNull(child) => self.eval_expression(child)?.is_null(),
+            NotNull(child) => self.eval_expression(child)?.not_null(),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;

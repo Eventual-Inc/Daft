@@ -10,7 +10,7 @@ impl TreeNode for Expr {
     {
         use Expr::*;
         let children = match self {
-            Alias(expr, _) | Cast(expr, _) | Not(expr) | IsNull(expr) => {
+            Alias(expr, _) | Cast(expr, _) | Not(expr) | IsNull(expr) | NotNull(expr) => {
                 vec![expr.as_ref()]
             }
             Agg(agg_expr) => {
@@ -69,6 +69,7 @@ impl TreeNode for Expr {
             }
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),
             IsNull(expr) => IsNull(transform(expr.as_ref().clone())?.into()),
+            NotNull(expr) => NotNull(transform(expr.as_ref().clone())?.into()),
             IfElse {
                 if_true,
                 if_false,
