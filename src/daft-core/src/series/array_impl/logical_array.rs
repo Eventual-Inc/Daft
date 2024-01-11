@@ -80,6 +80,12 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok(DaftIsNull::is_null(&self.0.physical)?.into_series())
             }
 
+            fn not_null(&self) -> DaftResult<Series> {
+                use crate::array::ops::DaftNotNull;
+
+                Ok(DaftNotNull::not_null(&self.0.physical)?.into_series())
+            }
+
             fn len(&self) -> usize {
                 self.0.physical.len()
             }

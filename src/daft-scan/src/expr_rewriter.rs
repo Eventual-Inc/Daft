@@ -130,6 +130,9 @@ pub fn rewrite_predicate_for_partitioning(
             Expr::IsNull(ref expr) if let Expr::Column(col_name) = expr.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) => {
                 Ok(Transformed::Yes(Expr::IsNull(col(pfield.field.name.as_str()).into())))
             },
+            Expr::NotNull(ref expr) if let Expr::Column(col_name) = expr.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) => {
+                Ok(Transformed::Yes(Expr::NotNull(col(pfield.field.name.as_str()).into())))
+            },
             _ => Ok(Transformed::No(expr))
         }
     })?;

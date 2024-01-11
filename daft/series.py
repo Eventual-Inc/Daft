@@ -467,6 +467,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.is_null())
 
+    def not_null(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.not_null())
+
     @property
     def float(self) -> SeriesFloatNamespace:
         return SeriesFloatNamespace.from_series(self)

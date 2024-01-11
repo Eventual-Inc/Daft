@@ -12,3 +12,13 @@ def test_is_null(unary_data_fixture):
         run_kernel=lambda: arg.is_null(),
         resolvable=True,
     )
+
+
+def test_not_null(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).not_null(),
+        run_kernel=lambda: arg.not_null(),
+        resolvable=True,
+    )

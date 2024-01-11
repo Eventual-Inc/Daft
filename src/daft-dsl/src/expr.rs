@@ -41,6 +41,7 @@ pub enum Expr {
     },
     Not(ExprRef),
     IsNull(ExprRef),
+    NotNull(ExprRef),
     Literal(lit::LiteralValue),
     IfElse {
         if_true: ExprRef,
@@ -283,6 +284,10 @@ impl Expr {
         Expr::IsNull(self.clone().into())
     }
 
+    pub fn not_null(&self) -> Self {
+        Expr::NotNull(self.clone().into())
+    }
+
     pub fn eq(&self, other: &Self) -> Self {
         binary_op(Operator::Eq, self, other)
     }
@@ -338,6 +343,10 @@ impl Expr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_null()"))
             }
+            NotNull(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.not_null()"))
+            }
             Function { func, inputs } => {
                 let inputs = inputs
                     .iter()
@@ -381,7 +390,9 @@ impl Expr {
             Literal(..) => vec![],
 
             // One child.
-            Not(expr) | IsNull(expr) | Cast(expr, ..) | Alias(expr, ..) => vec![expr.clone()],
+            Not(expr) | IsNull(expr) | NotNull(expr) | Cast(expr, ..) | Alias(expr, ..) => {
+                vec![expr.clone()]
+            }
             Agg(agg_expr) => vec![agg_expr.child()],
 
             // Multiple children.
@@ -416,6 +427,7 @@ impl Expr {
                 }
             }
             IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
+            NotNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema, self),
             BinaryOp { op, left, right } => {
@@ -497,6 +509,7 @@ impl Expr {
             Column(name) => Ok(name.as_ref()),
             Not(expr) => expr.name(),
             IsNull(expr) => expr.name(),
+            NotNull(expr) => expr.name(),
             Literal(..) => Ok("literal"),
             Function { func: _, inputs } => inputs.first().unwrap().name(),
             BinaryOp {
@@ -549,6 +562,7 @@ impl Display for Expr {
             Column(name) => write!(f, "col({name})"),
             Not(expr) => write!(f, "not({expr})"),
             IsNull(expr) => write!(f, "is_null({expr})"),
+            NotNull(expr) => write!(f, "not_null({expr})"),
             Literal(val) => write!(f, "lit({val})"),
             Function { func, inputs } => {
                 write!(f, "{}(", func.fn_name())?;

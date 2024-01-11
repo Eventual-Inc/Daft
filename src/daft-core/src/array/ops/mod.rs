@@ -81,6 +81,11 @@ pub trait DaftIsNull {
     fn is_null(&self) -> Self::Output;
 }
 
+pub trait DaftNotNull {
+    type Output;
+    fn not_null(&self) -> Self::Output;
+}
+
 pub trait DaftIsNan {
     type Output;
     fn is_nan(&self) -> Self::Output;

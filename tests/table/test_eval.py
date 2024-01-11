@@ -69,12 +69,34 @@ def test_table_expr_not_wrong() -> None:
         pytest.param(["a", "b", "c"], [False, False, False], id="StringColumn"),
         pytest.param([None, None], [True, True], id="NullColumn"),
         pytest.param([], [], id="EmptyColumn"),
+        pytest.param([[1, 2, 3], [4, 5, 6], None], [False, False, True], id="NestedListColumn"),
+        pytest.param([{"a": 1}, {"b": 1}, None], [False, False, True], id="NestedStructColumn"),
     ],
 )
 def test_table_expr_is_null(input, expected) -> None:
-    """Test logical not expression."""
+    """Test is_null expression."""
     daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").is_null()])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == expected
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        pytest.param([True, False, None], [True, True, False], id="BooleanColumn"),
+        pytest.param(["a", "b", "c"], [True, True, True], id="StringColumn"),
+        pytest.param([None, None], [False, False], id="NullColumn"),
+        pytest.param([], [], id="EmptyColumn"),
+        pytest.param([[1, 2, 3], [4, 5, 6], None], [True, True, False], id="NestedListColumn"),
+        pytest.param([{"a": 1}, {"b": 1}, None], [True, True, False], id="NestedStructColumn"),
+    ],
+)
+def test_table_expr_not_null(input, expected) -> None:
+    """Test not_null expression."""
+    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").not_null()])
     pydict = daft_table.to_pydict()
 
     assert pydict["input"] == expected
@@ -85,7 +107,6 @@ OPS = [ops.add, ops.sub, ops.mul, ops.truediv, ops.mod, ops.lt, ops.le, ops.eq, 
 
 @pytest.mark.parametrize("data_dtype, op", itertools.product(daft_numeric_types, OPS))
 def test_table_numeric_expressions(data_dtype, op) -> None:
-
     a, b = [5, 6, 7, 8], [1, 2, 3, 4]
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
