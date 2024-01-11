@@ -25,6 +25,7 @@ pub mod null;
 pub mod partitioning;
 pub mod search_sorted;
 pub mod sort;
+pub mod struct_;
 pub mod take;
 pub mod utf8;
 

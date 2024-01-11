@@ -103,6 +103,11 @@ class Expression:
         return ExpressionListNamespace.from_expression(self)
 
     @property
+    def struct(self) -> ExpressionStructNamespace:
+        """Access methods that work on columns of structs"""
+        return ExpressionStructNamespace.from_expression(self)
+
+    @property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
@@ -684,6 +689,19 @@ class ExpressionListNamespace(ExpressionNamespace):
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
+
+
+class ExpressionStructNamespace(ExpressionNamespace):
+    def field(self, name: str) -> Expression:
+        """Retrieves one field from a struct column
+
+        Args:
+            name: the name of the field to retrieve
+
+        Returns:
+            Expression: the field expression
+        """
+        return Expression._from_pyexpr(self._expr.field(name))
 
 
 class ExpressionsProjection(Iterable[Expression]):

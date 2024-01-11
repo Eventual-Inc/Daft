@@ -358,6 +358,11 @@ impl PyExpr {
         Ok(get(&self.expr, &idx.expr, &default.expr).into())
     }
 
+    pub fn field(&self, name: &str) -> PyResult<Self> {
+        use crate::functions::struct_::field;
+        Ok(field(&self.expr, name).into())
+    }
+
     pub fn url_download(
         &self,
         max_connections: i64,
