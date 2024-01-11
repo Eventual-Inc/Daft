@@ -257,14 +257,48 @@ impl PyMicroPartition {
         })
     }
 
-    pub fn sample(&self, py: Python, num: i64) -> PyResult<Self> {
+    pub fn sample_by_fraction(
+        &self,
+        py: Python,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         py.allow_threads(|| {
-            if num < 0 {
+            if fraction < 0.0 {
                 return Err(PyValueError::new_err(format!(
-                    "Can not sample table with negative number: {num}"
+                    "Can not sample table with negative fraction: {fraction}"
                 )));
             }
-            Ok(self.inner.sample(num as usize)?.into())
+            if fraction > 1.0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not sample table with fraction greater than 1.0: {fraction}"
+                )));
+            }
+            Ok(self
+                .inner
+                .sample_by_fraction(fraction, with_replacement, seed)?
+                .into())
+        })
+    }
+
+    pub fn sample_by_size(
+        &self,
+        py: Python,
+        size: i64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        py.allow_threads(|| {
+            if size < 0 {
+                return Err(PyValueError::new_err(format!(
+                    "Can not sample table with negative size: {size}"
+                )));
+            }
+            Ok(self
+                .inner
+                .sample_by_size(size as usize, with_replacement, seed)?
+                .into())
         })
     }
 

@@ -179,6 +179,17 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn sample(
+        &self,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            logical_ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
+        Ok(logical_plan.into())
+    }
+
     pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
@@ -377,6 +388,18 @@ impl PyLogicalPlanBuilder {
 
     pub fn distinct(&self) -> PyResult<Self> {
         Ok(self.builder.distinct()?.into())
+    }
+
+    pub fn sample(
+        &self,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .sample(fraction, with_replacement, seed)?
+            .into())
     }
 
     pub fn aggregate(&self, agg_exprs: Vec<PyExpr>, groupby_exprs: Vec<PyExpr>) -> PyResult<Self> {

@@ -135,6 +135,10 @@ class LogicalPlanBuilder:
         builder = self._builder.distinct()
         return LogicalPlanBuilder(builder)
 
+    def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder:
+        builder = self._builder.sample(fraction, with_replacement, seed)
+        return LogicalPlanBuilder(builder)
+
     def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> LogicalPlanBuilder:
         sort_by_pyexprs = [expr._expr for expr in sort_by]
         if not isinstance(descending, list):

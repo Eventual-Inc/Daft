@@ -12,8 +12,8 @@ use daft_scan::ScanExternalInfo;
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
     Explode as LogicalExplode, Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sink as LogicalSink,
-    Sort as LogicalSort, Source,
+    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
+    Sink as LogicalSink, Sort as LogicalSort, Source,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::physical_plan::PhysicalPlan;
@@ -285,6 +285,20 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             } else {
                 Ok(agg_op)
             }
+        }
+        LogicalPlan::Sample(LogicalSample {
+            input,
+            fraction,
+            with_replacement,
+            seed,
+        }) => {
+            let input_physical = plan(input, cfg)?;
+            Ok(PhysicalPlan::Sample(Sample::new(
+                input_physical.into(),
+                *fraction,
+                *with_replacement,
+                *seed,
+            )))
         }
         LogicalPlan::Aggregate(LogicalAggregate {
             aggregations,

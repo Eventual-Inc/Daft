@@ -305,7 +305,7 @@ def test_table_sample() -> None:
     assert daft_table.column_names() == ["a", "b"]
 
     # subsample
-    sampled = daft_table.sample(3)
+    sampled = daft_table.sample(size=3)
     assert len(sampled) == 3
     assert sampled.column_names() == ["a", "b"]
     assert all(
@@ -313,7 +313,7 @@ def test_table_sample() -> None:
     )
 
     # oversample
-    sampled = daft_table.sample(5)
+    sampled = daft_table.sample(size=4)
     assert len(sampled) == 4
     assert sampled.column_names() == ["a", "b"]
     assert all(
@@ -321,8 +321,24 @@ def test_table_sample() -> None:
     )
 
     # negative sample
-    with pytest.raises(ValueError, match="negative number"):
-        daft_table.sample(-1)
+    with pytest.raises(ValueError, match="negative size"):
+        daft_table.sample(size=-1)
+
+    # fraction > 1.0
+    with pytest.raises(ValueError, match="fraction greater than 1.0"):
+        daft_table.sample(fraction=1.1)
+
+    # fraction < 0.0
+    with pytest.raises(ValueError, match="negative fraction"):
+        daft_table.sample(fraction=-0.1)
+
+    # size and fraction
+    with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
+        daft_table.sample(size=1, fraction=0.5)
+
+    # no arguments
+    with pytest.raises(ValueError, match="Must specify either `fraction` or `size`"):
+        daft_table.sample()
 
 
 @pytest.mark.parametrize("size, k", itertools.product([0, 1, 10, 33, 100, 101], [0, 1, 2, 3, 100, 101, 200]))

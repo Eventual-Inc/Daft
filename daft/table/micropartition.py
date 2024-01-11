@@ -197,8 +197,25 @@ class MicroPartition:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
         return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
 
-    def sample(self, num: int) -> MicroPartition:
-        return MicroPartition._from_pymicropartition(self._micropartition.sample(num))
+    def sample(
+        self,
+        fraction: float | None = None,
+        size: int | None = None,
+        with_replacement: bool = False,
+        seed: int | None = None,
+    ) -> MicroPartition:
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        elif fraction is not None:
+            return MicroPartition._from_pymicropartition(
+                self._micropartition.sample_by_fraction(float(fraction), with_replacement, seed)
+            )
+        elif size is not None:
+            return MicroPartition._from_pymicropartition(
+                self._micropartition.sample_by_size(size, with_replacement, seed)
+            )
+        else:
+            raise ValueError("Must specify either `fraction` or `size`")
 
     def agg(self, to_agg: list[Expression], group_by: ExpressionsProjection | None = None) -> MicroPartition:
         to_agg_pyexprs = [e._expr for e in to_agg]
