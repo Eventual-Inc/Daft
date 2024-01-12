@@ -25,7 +25,13 @@ fn unalias(expr: Expr) -> DaftResult<Expr> {
 fn apply_partitioning_expr(expr: Expr, pfield: &PartitionField) -> Option<Expr> {
     use PartitionTransform::*;
     match pfield.transform {
-        Some(Identity) => Some(expr.cast(&pfield.source_field.as_ref().unwrap().dtype)),
+        Some(Identity) => Some(
+            pfield
+                .source_field
+                .as_ref()
+                .map(|s| expr.cast(&s.dtype))
+                .unwrap_or(expr),
+        ),
         Some(Year) => Some(partitioning::years(expr)),
         Some(Month) => Some(partitioning::months(expr)),
         Some(Day) => Some(partitioning::days(expr)),
