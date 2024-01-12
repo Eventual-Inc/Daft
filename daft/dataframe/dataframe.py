@@ -285,7 +285,36 @@ class DataFrame:
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes
         )
-        return cls(builder)
+
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = 8
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            need = 8
+            preview_parts = []
+            for part in parts:
+                part_len = len(part)
+                if part_len >= need:  # if this part has enough rows, take what we need and break
+                    preview_parts.append(part.slice(0, need))
+                    break
+                else:  # otherwise, take the whole part and keep going
+                    need -= part_len
+                    preview_parts.append(part)
+
+            preview_results = LocalPartitionSet({i: part for i, part in enumerate(preview_parts)})
+        else:
+            preview_results = result_pset
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
     ###
     # Write methods
