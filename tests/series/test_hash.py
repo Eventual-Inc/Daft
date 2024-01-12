@@ -4,9 +4,9 @@ import decimal
 from datetime import date, datetime
 
 try:
-    pass
+    from zoneinfo import ZoneInfo
 except ImportError:
-    pass
+    from backports.zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
