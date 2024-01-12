@@ -95,6 +95,7 @@ impl Series {
     }
 
     pub fn partitioning_iceberg_bucket(&self, n: i32) -> DaftResult<Self> {
+        assert!(n >= 0, "Expected n to be non negative, got {n}");
         let hashes = self.murmur3_32()?;
         let buckets = hashes
             .as_arrow()
