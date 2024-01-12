@@ -3,13 +3,9 @@ from __future__ import annotations
 import decimal
 from datetime import date, datetime
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo
-
 import numpy as np
 import pytest
+import pytz
 import xxhash
 
 from daft.datatype import DataType
@@ -187,13 +183,19 @@ def test_murmur3_32_hash_timestamp():
 
 
 def test_murmur3_32_hash_timestamp_with_tz():
-    arr = Series.from_pylist([datetime(2017, 11, 16, 14, 31, 8, tzinfo=ZoneInfo("US/Pacific")), None])
+    dt = datetime(2017, 11, 16, 14, 31, 8)
+    pst = pytz.timezone("US/Pacific")
+    dt = pst.localize(dt)
+    arr = Series.from_pylist([dt, None])
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [-2047944441, None]
 
 
 def test_murmur3_32_hash_timestamp_with_tz_nanoseconds():
-    arr = Series.from_pylist([datetime(2017, 11, 16, 14, 31, 8, tzinfo=ZoneInfo("US/Pacific")), None])
+    dt = datetime(2017, 11, 16, 14, 31, 8)
+    pst = pytz.timezone("US/Pacific")
+    dt = pst.localize(dt)
+    arr = Series.from_pylist([dt, None])
     arr = arr.cast(DataType.timestamp("ns", "UTC"))
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [-2047944441, None]
