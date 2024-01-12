@@ -10,9 +10,9 @@ use common_error::{DaftError, DaftResult};
 
 use super::{super::FunctionEvaluator, StructExpr};
 
-pub(super) struct FieldEvaluator {}
+pub(super) struct GetEvaluator {}
 
-impl FunctionEvaluator for FieldEvaluator {
+impl FunctionEvaluator for GetEvaluator {
     fn fn_name(&self) -> &'static str {
         "field"
     }
@@ -26,7 +26,7 @@ impl FunctionEvaluator for FieldEvaluator {
                     DataType::Struct(fields) => {
                         let name = match expr {
                             Expr::Function {
-                                func: FunctionExpr::Struct(StructExpr::Field(name)),
+                                func: FunctionExpr::Struct(StructExpr::Get(name)),
                                 inputs: _,
                             } => name,
                             _ => panic!("Expected Struct Field Expr, got {expr}"),
@@ -48,7 +48,7 @@ impl FunctionEvaluator for FieldEvaluator {
                         )))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a list type, received: {}",
+                        "Expected input to be a struct type, received: {}",
                         input_field.dtype
                     ))),
                 }
@@ -65,13 +65,13 @@ impl FunctionEvaluator for FieldEvaluator {
             [input] => {
                 let name = match expr {
                     Expr::Function {
-                        func: FunctionExpr::Struct(StructExpr::Field(name)),
+                        func: FunctionExpr::Struct(StructExpr::Get(name)),
                         inputs: _,
                     } => name,
                     _ => panic!("Expected Struct Field Expr, got {expr}"),
                 };
 
-                input.struct_field(name)
+                input.struct_get(name)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

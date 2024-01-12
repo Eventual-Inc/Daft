@@ -7,6 +7,7 @@ pub mod ops;
 pub mod pseudo_arrow;
 mod serdes;
 mod struct_array;
+use arrow2::bitmap::Bitmap;
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 
@@ -75,7 +76,7 @@ where
         self.len() == 0
     }
 
-    pub fn with_validity(&self, validity: &[bool]) -> DaftResult<Self> {
+    pub fn with_validity_slice(&self, validity: &[bool]) -> DaftResult<Self> {
         if validity.len() != self.data.len() {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match DataArray length, {} vs {}",
@@ -83,9 +84,24 @@ where
                 self.data.len()
             )));
         }
-        use arrow2::bitmap::Bitmap;
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
         DataArray::new(self.field.clone(), with_bitmap)
+    }
+
+    pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
+        if let Some(v) = &validity && v.len() != self.data.len() {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match DataArray length, {} vs {}",
+                v.len(),
+                self.data.len()
+            )));
+        }
+        let with_bitmap = self.data.with_validity(validity);
+        DataArray::new(self.field.clone(), with_bitmap)
+    }
+
+    pub fn validity(&self) -> Option<&Bitmap> {
+        self.data.validity()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {

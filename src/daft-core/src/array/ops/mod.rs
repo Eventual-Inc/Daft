@@ -30,6 +30,7 @@ mod pairwise;
 mod repr;
 mod search_sorted;
 mod sort;
+mod struct_;
 mod sum;
 mod take;
 pub(crate) mod tensor;

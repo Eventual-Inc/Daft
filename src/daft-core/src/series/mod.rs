@@ -89,6 +89,14 @@ impl Series {
             Some(80),
         )
     }
+
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Series> {
+        self.inner.with_validity(validity)
+    }
+
+    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+        self.inner.validity()
+    }
 }
 
 impl Display for Series {

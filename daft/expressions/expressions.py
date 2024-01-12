@@ -692,7 +692,7 @@ class ExpressionListNamespace(ExpressionNamespace):
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
-    def field(self, name: str) -> Expression:
+    def get(self, name: str) -> Expression:
         """Retrieves one field from a struct column
 
         Args:
@@ -701,7 +701,7 @@ class ExpressionStructNamespace(ExpressionNamespace):
         Returns:
             Expression: the field expression
         """
-        return Expression._from_pyexpr(self._expr.field(name))
+        return Expression._from_pyexpr(self._expr.struct_get(name))
 
 
 class ExpressionsProjection(Iterable[Expression]):

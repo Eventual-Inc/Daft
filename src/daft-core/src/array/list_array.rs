@@ -160,4 +160,21 @@ impl ListArray {
             self.validity.clone(),
         ))
     }
+
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+        if let Some(v) = &validity && v.len() != self.len() {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match ListArray length, {} vs {}",
+                v.len(),
+                self.len()
+            )))
+        }
+
+        Ok(Self::new(
+            self.field.clone(),
+            self.flat_child.clone(),
+            self.offsets.clone(),
+            validity,
+        ))
+    }
 }
