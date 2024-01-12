@@ -303,6 +303,9 @@ impl PySeries {
     pub fn partitioning_years(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_years()?.into())
     }
+    pub fn murmur3_32(&self) -> PyResult<Self> {
+        Ok(self.series.murmur3_32()?.into_series().into())
+    }
 
     pub fn list_lengths(&self) -> PyResult<Self> {
         Ok(self.series.list_lengths()?.into_series().into())
