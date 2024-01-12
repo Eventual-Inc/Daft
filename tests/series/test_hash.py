@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import decimal
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
+
+try:
+    pass
+except ImportError:
+    pass
 
 import numpy as np
 import pytest

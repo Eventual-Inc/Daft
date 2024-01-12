@@ -28,6 +28,7 @@ pandas==2.1.3; python_version >= '3.9'
 xxhash>=3.0.0
 Pillow==9.5.0
 opencv-python==4.8.1.78
+backports.zoneinfo;python_version<"3.9"
 
 # Pyarrow
 pyarrow==12; platform_system != "Windows"
