@@ -303,6 +303,11 @@ impl PySeries {
     pub fn partitioning_years(&self) -> PyResult<Self> {
         Ok(self.series.partitioning_years()?.into())
     }
+
+    pub fn partitioning_iceberg_bucket(&self, n: i32) -> PyResult<Self> {
+        Ok(self.series.partitioning_iceberg_bucket(n)?.into())
+    }
+
     pub fn murmur3_32(&self) -> PyResult<Self> {
         Ok(self.series.murmur3_32()?.into_series().into())
     }

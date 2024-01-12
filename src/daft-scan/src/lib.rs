@@ -353,8 +353,8 @@ pub enum PartitionTransform {
     /// https://iceberg.apache.org/spec/#partitioning
     /// For Delta, Hudi and Hive, it should always be `Identity`.
     Identity,
-    Bucket(u64),
-    Truncate(u64),
+    IcebergBucket(u64),
+    IcebergTruncate(u64),
     Year,
     Month,
     Day,
@@ -373,7 +373,10 @@ impl PartitionTransform {
 
     pub fn supports_comparison(&self) -> bool {
         use PartitionTransform::*;
-        matches!(self, Identity | Truncate(_) | Year | Month | Day | Hour)
+        matches!(
+            self,
+            Identity | IcebergTruncate(_) | Year | Month | Day | Hour
+        )
     }
 }
 

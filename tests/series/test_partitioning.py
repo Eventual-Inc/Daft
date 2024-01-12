@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal
+from itertools import product
+
 import pytest
 
 from daft import DataType, TimeUnit
@@ -100,3 +104,33 @@ def test_partitioning_hours(input, dtype, expected):
     h = s.partitioning.hours()
     assert h.datatype() == DataType.int32()
     assert h.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    "input,n",
+    product(
+        [
+            ["x", "y", None, "y", "x", None, "x"],
+            [1, 2, 3, 2, 1, None],
+            [date(1920, 3, 1), date(1920, 3, 1), date(2020, 3, 1)],
+            [datetime(1920, 3, 1), datetime(1920, 3, 1), datetime(2020, 3, 1)],
+            [Decimal("1420"), Decimal("1420"), Decimal("14.20"), Decimal(".1420"), Decimal(".1420")],
+        ],
+        [1, 4, 9],
+    ),
+)
+def test_iceberg_bucketing(input, n):
+    s = Series.from_pylist(input)
+    buckets = s.partitioning.iceberg_bucket(n)
+    assert buckets.datatype() == DataType.int32()
+    seen = dict()
+    for v, b in zip(input, buckets.to_pylist()):
+
+        if v is None:
+            assert b is None
+        else:
+            assert b >= 0
+        if v in seen:
+            assert seen[v] == b
+        else:
+            seen[v] = b

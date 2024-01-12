@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     functions::partitioning::evaluators::{
-        DaysEvaluator, HoursEvaluator, MonthsEvaluator, YearsEvaluator,
+        DaysEvaluator, HoursEvaluator, IcebergBucketEvaluator, MonthsEvaluator, YearsEvaluator,
     },
     Expr,
 };
@@ -17,6 +17,7 @@ pub enum PartitioningExpr {
     Months,
     Days,
     Hours,
+    IcebergBucket(i32),
 }
 
 impl PartitioningExpr {
@@ -28,6 +29,7 @@ impl PartitioningExpr {
             Months => &MonthsEvaluator {},
             Days => &DaysEvaluator {},
             Hours => &HoursEvaluator {},
+            IcebergBucket(..) => &IcebergBucketEvaluator {},
         }
     }
 }
@@ -56,6 +58,13 @@ pub fn months(input: Expr) -> Expr {
 pub fn years(input: Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Partitioning(PartitioningExpr::Years),
+        inputs: vec![input],
+    }
+}
+
+pub fn iceberg_bucket(input: Expr, n: i32) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
         inputs: vec![input],
     }
 }
