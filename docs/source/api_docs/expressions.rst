@@ -165,15 +165,31 @@ Example: ``e.image.resize()``
 Nested
 ******
 
-Operations on nested types (such as List and FixedSizeList), accessible through the ``Expression.list`` method accessor.
+Operations on nested types (such as List and FixedSizeList), accessible through the :meth:`Expression.image <daft.expressions.Expression.list>` method accessor.
 
 Example: ``e1.list.join(e2)``
 
 .. autosummary::
     :toctree: doc_gen/expression_methods
 
+    daft.expressions.Expression.list
     daft.expressions.expressions.ExpressionListNamespace.join
     daft.expressions.expressions.ExpressionListNamespace.lengths
+    daft.expressions.expressions.ExpressionListNamespace.get
+
+
+Structs
+******
+
+Operations on structs, accessible through the :meth:`Expression.image <daft.expressions.Expression.struct>` method accessor:
+
+Example: ``e1.struct.get(field)``
+
+.. autosummary::
+    :toctree: doc_gen/expression_methods
+
+    daft.expressions.Expression.struct
+    daft.expressions.expressions.ExpressionStructNamespace.get
 
 
 Changing Column Names/Types

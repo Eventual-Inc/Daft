@@ -29,7 +29,7 @@ impl FunctionEvaluator for GetEvaluator {
                                 func: FunctionExpr::Struct(StructExpr::Get(name)),
                                 inputs: _,
                             } => name,
-                            _ => panic!("Expected Struct Field Expr, got {expr}"),
+                            _ => panic!("Expected Struct Get Expr, got {expr}"),
                         };
 
                         for f in &fields {
@@ -68,7 +68,7 @@ impl FunctionEvaluator for GetEvaluator {
                         func: FunctionExpr::Struct(StructExpr::Get(name)),
                         inputs: _,
                     } => name,
-                    _ => panic!("Expected Struct Field Expr, got {expr}"),
+                    _ => panic!("Expected Struct Get Expr, got {expr}"),
                 };
 
                 input.struct_get(name)
