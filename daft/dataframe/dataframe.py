@@ -290,10 +290,10 @@ class DataFrame:
         df._result_cache = cache_entry
 
         # build preview
-        num_preview_rows = 8
+        num_preview_rows = context.daft_execution_config.num_preview_rows
         dataframe_num_rows = len(df)
         if dataframe_num_rows > num_preview_rows:
-            need = 8
+            need = num_preview_rows
             preview_parts = []
             for part in parts:
                 part_len = len(part)
