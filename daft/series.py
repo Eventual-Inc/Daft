@@ -602,6 +602,9 @@ class SeriesPartitioningNamespace(SeriesNamespace):
     def years(self) -> Series:
         return Series._from_pyseries(self._series.partitioning_years())
 
+    def iceberg_bucket(self, n: int) -> Series:
+        return Series._from_pyseries(self._series.partitioning_iceberg_bucket(n))
+
 
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:

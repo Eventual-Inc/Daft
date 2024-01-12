@@ -1,3 +1,4 @@
+use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::logical::TimestampArray;
 use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
 use crate::series::array_impl::IntoSeries;
@@ -91,5 +92,15 @@ impl Series {
             ))),
         }?;
         value.cast(&DataType::Int32)
+    }
+
+    pub fn partitioning_iceberg_bucket(&self, n: i32) -> DaftResult<Self> {
+        let hashes = self.murmur3_32()?;
+        let buckets = hashes
+            .as_arrow()
+            .into_iter()
+            .map(|v| v.map(|v| (v & i32::MAX) % n));
+        let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
+        Ok(Int32Array::from((self.name(), array)).into_series())
     }
 }
