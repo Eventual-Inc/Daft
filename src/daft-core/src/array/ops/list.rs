@@ -148,6 +148,7 @@ impl ListArray {
             if is_valid && idx_offset >= start && idx_offset < end {
                 growable.extend(0, idx_offset as usize, 1);
             } else {
+                // uses the default value in the case where the row is invalid or the index is out of bounds
                 growable.extend(1, 0, 1);
             }
         }
@@ -280,6 +281,7 @@ impl FixedSizeListArray {
 
                 growable.extend(0, idx_offset as usize, 1);
             } else {
+                // uses the default value in the case where the row is invalid or the index is out of bounds
                 growable.extend(1, 0, 1);
             }
         }

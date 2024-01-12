@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+
+from daft.datatype import DataType
 from daft.expressions import col
 from daft.table import MicroPartition
 
@@ -36,3 +39,40 @@ def test_list_get():
         "col2-default": [1, 3, -1, 6, 7],
         "col2-idx-default": [2, 4, -1, -1, -1],
     }
+
+
+def test_fixed_size_list_get():
+    table = MicroPartition.from_pydict(
+        {"col": [["a", "b"], ["aa", "bb"], None, [None, "bbbb"], ["aaaaa", None]], "idx": [0, -1, 1, 3, -4]}
+    )
+
+    dtype = DataType.fixed_size_list(DataType.string(), 2)
+
+    table = table.eval_expression_list([col("col").cast(dtype), col("idx")])
+
+    result = table.eval_expression_list(
+        [
+            col("col").list.get(0, default="c").alias("0"),
+            col("col").list.get(-1).alias("-1"),
+            col("col").list.get(2).alias("2"),
+            col("col").list.get(-2, default="c").alias("-2"),
+            col("col").list.get(col("idx")).alias("variable"),
+            col("col").list.get(col("idx"), default="c").alias("variable_default"),
+        ]
+    )
+
+    assert result.to_pydict() == {
+        "0": ["a", "aa", "c", None, "aaaaa"],
+        "-1": ["b", "bb", None, "bbbb", None],
+        "2": [None, None, None, None, None],
+        "-2": ["c", "c", "c", "c", "c"],
+        "variable": ["a", "bb", None, None, None],
+        "variable_default": ["a", "bb", "c", "c", "c"],
+    }
+
+
+def test_list_get_bad_type():
+    table = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("col").list.get(0)])

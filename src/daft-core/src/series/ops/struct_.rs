@@ -8,7 +8,7 @@ impl Series {
         match self.data_type() {
             DataType::Struct(_) => self.struct_()?.get(name),
             dt => Err(DaftError::TypeError(format!(
-                "field not implemented for {}",
+                "get not implemented for {}",
                 dt
             ))),
         }

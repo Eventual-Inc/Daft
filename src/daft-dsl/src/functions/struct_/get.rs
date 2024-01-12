@@ -14,7 +14,7 @@ pub(super) struct GetEvaluator {}
 
 impl FunctionEvaluator for GetEvaluator {
     fn fn_name(&self) -> &'static str {
-        "field"
+        "get"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, expr: &Expr) -> DaftResult<Field> {
