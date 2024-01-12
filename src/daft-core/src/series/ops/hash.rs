@@ -15,7 +15,6 @@ impl Series {
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        // TODO Should be all supported iceberg types
         use crate::DataType::*;
         match self.data_type() {
             Int8 => self.i8()?.murmur3_32(),
