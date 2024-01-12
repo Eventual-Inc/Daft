@@ -44,6 +44,7 @@ def _iceberg_partition_field_to_daft_partition_field(
     daft_result_type = DataType.from_arrow_type(arrow_result_type)
     result_field = Field.create(name, daft_result_type)
     from pyiceberg.transforms import (
+        BucketTransform,
         DayTransform,
         HourTransform,
         IdentityTransform,
@@ -62,6 +63,9 @@ def _iceberg_partition_field_to_daft_partition_field(
         tfm = PartitionTransform.day()
     elif isinstance(transform, HourTransform):
         tfm = PartitionTransform.hour()
+    elif isinstance(transform, BucketTransform):
+        n = transform.num_buckets
+        tfm = PartitionTransform.iceberg_bucket(n)
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
     return make_partition_field(result_field, daft_field, transform=tfm)
