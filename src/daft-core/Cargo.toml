@@ -12,6 +12,7 @@ html-escape = {workspace = true}
 indexmap = {workspace = true, features = ["serde"]}
 lazy_static = {workspace = true}
 log = {workspace = true}
+mur3 = "0.1.0"
 ndarray = "0.15.6"
 num-derive = {workspace = true}
 num-traits = {workspace = true}
@@ -20,7 +21,6 @@ pyo3-log = {workspace = true}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
-mur3 = "0.1.0"
 
 [dependencies.image]
 default-features = false
