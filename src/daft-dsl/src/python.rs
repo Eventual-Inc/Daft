@@ -357,6 +357,16 @@ impl PyExpr {
         Ok(lengths(&self.expr).into())
     }
 
+    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
+        use crate::functions::list::get;
+        Ok(get(&self.expr, &idx.expr, &default.expr).into())
+    }
+
+    pub fn struct_get(&self, name: &str) -> PyResult<Self> {
+        use crate::functions::struct_::get;
+        Ok(get(&self.expr, name).into())
+    }
+
     pub fn url_download(
         &self,
         max_connections: i64,

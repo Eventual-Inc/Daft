@@ -148,6 +148,22 @@ impl FixedSizeListArray {
             _ => unreachable!("FixedSizeListArray should always have FixedSizeList datatype"),
         }
     }
+
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+        if let Some(v) = &validity && v.len() != self.len() {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match FixedSizeListArray length, {} vs {}",
+                v.len(),
+                self.len()
+            )))
+        }
+
+        Ok(Self::new(
+            self.field.clone(),
+            self.flat_child.clone(),
+            validity,
+        ))
+    }
 }
 
 #[cfg(test)]

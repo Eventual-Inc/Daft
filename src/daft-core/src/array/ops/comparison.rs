@@ -1474,7 +1474,7 @@ mod tests {
         let result: Vec<_> = array.equal(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.equal(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(false)]);
         Ok(())
@@ -1487,7 +1487,7 @@ mod tests {
         let result: Vec<_> = array.not_equal(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(true)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.not_equal(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(true)]);
         Ok(())
@@ -1500,7 +1500,7 @@ mod tests {
         let result: Vec<_> = array.lt(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(false)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.lt(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
         Ok(())
@@ -1513,7 +1513,7 @@ mod tests {
         let result: Vec<_> = array.lte(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(false)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.lte(2).into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
         Ok(())
@@ -1526,7 +1526,7 @@ mod tests {
         let result: Vec<_> = array.gt(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(true)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.gt(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
         Ok(())
@@ -1539,7 +1539,7 @@ mod tests {
         let result: Vec<_> = array.gte(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(true)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.gte(2).into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
         Ok(())
@@ -1552,7 +1552,7 @@ mod tests {
         let result: Vec<_> = array.equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(true)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(true)]);
         Ok(())
@@ -1565,7 +1565,7 @@ mod tests {
         let result: Vec<_> = array.not_equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(false)]);
 
-        let array = array.with_validity(&[true, false, true])?;
+        let array = array.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = array.not_equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(false)]);
         Ok(())
@@ -1578,11 +1578,11 @@ mod tests {
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(true)]);
 
-        let lhs = lhs.with_validity(&[true, false, true])?;
+        let lhs = lhs.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
 
-        let rhs = rhs.with_validity(&[false, true, true])?;
+        let rhs = rhs.with_validity_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(true)]);
         Ok(())
@@ -1595,11 +1595,11 @@ mod tests {
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(true)]);
 
-        let lhs = lhs.with_validity(&[true, false, true])?;
+        let lhs = lhs.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
 
-        let rhs = rhs.with_validity(&[false, true, true])?;
+        let rhs = rhs.with_validity_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(true)]);
         Ok(())
@@ -1612,11 +1612,11 @@ mod tests {
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(false)]);
 
-        let lhs = lhs.with_validity(&[true, false, true])?;
+        let lhs = lhs.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
 
-        let rhs = rhs.with_validity(&[false, true, true])?;
+        let rhs = rhs.with_validity_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(false)]);
         Ok(())
@@ -1629,11 +1629,11 @@ mod tests {
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(false)]);
 
-        let lhs = lhs.with_validity(&[true, false, true])?;
+        let lhs = lhs.with_validity_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
 
-        let rhs = rhs.with_validity(&[false, true, true])?;
+        let rhs = rhs.with_validity_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(false)]);
         Ok(())

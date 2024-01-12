@@ -4,7 +4,7 @@ use crate::array::{
     growable::{make_growable, Growable},
     FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{UInt64Array, Utf8Array};
+use crate::datatypes::{Int64Array, UInt64Array, Utf8Array};
 use crate::DataType;
 
 use crate::series::Series;
@@ -112,6 +112,63 @@ impl ListArray {
             Box::new(arrow2::array::Utf8Array::from_iter(result)),
         )))
     }
+
+    fn get_children_helper(
+        &self,
+        idx_iter: impl Iterator<Item = i64>,
+        default: &Series,
+    ) -> DaftResult<Series> {
+        assert!(
+            default.len() == 1,
+            "Only a single default value is supported"
+        );
+        let default = default.cast(self.child_data_type())?;
+
+        let mut growable = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child, &default],
+            true,
+            self.len(),
+        );
+
+        let offsets = self.offsets();
+
+        for (i, child_idx) in idx_iter.enumerate() {
+            let is_valid = self.is_valid(i);
+            let start = *offsets.get(i).unwrap();
+            let end = *offsets.get(i + 1).unwrap();
+
+            let idx_offset = if child_idx >= 0 {
+                start + child_idx
+            } else {
+                end + child_idx
+            };
+
+            if is_valid && idx_offset >= start && idx_offset < end {
+                growable.extend(0, idx_offset as usize, 1);
+            } else {
+                // uses the default value in the case where the row is invalid or the index is out of bounds
+                growable.extend(1, 0, 1);
+            }
+        }
+
+        growable.build()
+    }
+
+    pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
+        match idx.len() {
+            1 => {
+                let idx_iter = repeat(idx.get(0).unwrap()).take(self.len());
+                self.get_children_helper(idx_iter, default)
+            }
+            len => {
+                assert_eq!(len, self.len());
+                let idx_iter = idx.as_arrow().iter().map(|x| *x.unwrap());
+                self.get_children_helper(idx_iter, default)
+            }
+        }
+    }
 }
 
 impl FixedSizeListArray {
@@ -189,5 +246,60 @@ impl FixedSizeListArray {
             self.name(),
             Box::new(arrow2::array::Utf8Array::from_iter(result)),
         )))
+    }
+
+    fn get_children_helper(
+        &self,
+        idx_iter: impl Iterator<Item = i64>,
+        default: &Series,
+    ) -> DaftResult<Series> {
+        assert!(
+            default.len() == 1,
+            "Only a single default value is supported"
+        );
+        let default = default.cast(self.child_data_type())?;
+
+        let mut growable = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child, &default],
+            true,
+            self.len(),
+        );
+
+        let list_size = self.fixed_element_len();
+
+        for (i, child_idx) in idx_iter.enumerate() {
+            let is_valid = self.is_valid(i);
+
+            if is_valid && child_idx.abs() < list_size as i64 {
+                let idx_offset = if child_idx >= 0 {
+                    (i * list_size) as i64 + child_idx
+                } else {
+                    ((i + 1) * list_size) as i64 + child_idx
+                };
+
+                growable.extend(0, idx_offset as usize, 1);
+            } else {
+                // uses the default value in the case where the row is invalid or the index is out of bounds
+                growable.extend(1, 0, 1);
+            }
+        }
+
+        growable.build()
+    }
+
+    pub fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
+        match idx.len() {
+            1 => {
+                let idx_iter = repeat(idx.get(0).unwrap()).take(self.len());
+                self.get_children_helper(idx_iter, default)
+            }
+            len => {
+                assert_eq!(len, self.len());
+                let idx_iter = idx.as_arrow().iter().map(|x| *x.unwrap());
+                self.get_children_helper(idx_iter, default)
+            }
+        }
     }
 }

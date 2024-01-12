@@ -151,4 +151,20 @@ impl StructArray {
             self.validity.clone(),
         ))
     }
+
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+        if let Some(v) = &validity && v.len() != self.len() {
+            return Err(DaftError::ValueError(format!(
+                "validity mask length does not match StructArray length, {} vs {}",
+                v.len(),
+                self.len()
+            )))
+        }
+
+        Ok(Self::new(
+            self.field.clone(),
+            self.children.clone(),
+            validity,
+        ))
+    }
 }

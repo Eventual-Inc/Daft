@@ -458,7 +458,7 @@ pub fn _url_download(
         }
     }
     Ok(BinaryArray::try_from((name, data, offsets))?
-        .with_validity(valid.as_slice())
+        .with_validity_slice(valid.as_slice())
         .unwrap())
 }
 
