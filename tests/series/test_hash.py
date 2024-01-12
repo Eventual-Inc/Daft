@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import decimal
 from datetime import date, datetime
 
 import numpy as np
@@ -192,3 +193,21 @@ def test_murmur3_32_hash_timestamp_with_tz_nanoseconds():
     arr = arr.cast(DataType.timestamp("ns", "UTC"))
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [-2047944441, None]
+
+
+def test_murmur3_32_hash_decimal_unscaled():
+    arr = Series.from_pylist([decimal.Decimal(1420), None])
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-500754589, None]
+
+
+def test_murmur3_32_hash_decimal_scaled():
+    arr = Series.from_pylist([decimal.Decimal("14.20"), None])
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-500754589, None]
+
+
+def test_murmur3_32_hash_decimal_full_scaled():
+    arr = Series.from_pylist([decimal.Decimal(".00001420"), None])
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-500754589, None]

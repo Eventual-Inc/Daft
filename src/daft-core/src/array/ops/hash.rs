@@ -3,7 +3,7 @@ use std::mem;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, TimestampArray},
+        logical::{DateArray, Decimal128Array, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, Int128Array, Int16Array, Int32Array,
         Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
         Utf8Array,
@@ -169,6 +169,25 @@ impl TimestampArray {
             None,
         ))?;
         us.timestamp()?.physical.murmur3_32()
+    }
+}
+
+impl Decimal128Array {
+    pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        let arr = self.physical.as_arrow();
+        let hashes = arr.into_iter().map(|d| {
+            d.map(|d| {
+                let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
+                let bits_needed = u128::BITS - twos_compliment.leading_zeros();
+                let bytes_needed = bits_needed.div_ceil(8) as usize;
+                let be_bytes = twos_compliment.to_be_bytes();
+                let unsigned =
+                    mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
+                i32::from_ne_bytes(unsigned.to_ne_bytes())
+            })
+        });
+        let array = Box::new(arrow2::array::Int32Array::from_iter(hashes));
+        Ok(Int32Array::from((self.name(), array)))
     }
 }
 

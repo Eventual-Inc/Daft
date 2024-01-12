@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-
+#![feature(int_roundings)]
 pub mod array;
 pub mod count_mode;
 pub mod datatypes;
