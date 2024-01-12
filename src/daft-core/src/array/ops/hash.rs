@@ -1,18 +1,13 @@
-use std::mem;
-
 use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, Decimal128Array, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, Int128Array, Int16Array, Int32Array,
-        Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
-        Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, Int16Array, Int32Array, Int64Array, Int8Array,
+        NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     kernels,
-    utils::arrow,
 };
 
-use arrow2::types::NativeType;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
@@ -146,12 +141,9 @@ impl BinaryArray {
             .map(|v| v.unset_bits() > 0)
             .unwrap_or(false);
         if has_nulls {
-            murmur3_32_hash_from_iter_with_nulls(
-                self.name(),
-                as_arrowed.into_iter().map(|v| v.map(|v| v)),
-            )
+            murmur3_32_hash_from_iter_with_nulls(self.name(), as_arrowed.into_iter())
         } else {
-            murmur3_32_hash_from_iter_no_nulls(self.name(), as_arrowed.values_iter().map(|v| v))
+            murmur3_32_hash_from_iter_no_nulls(self.name(), as_arrowed.values_iter())
         }
     }
 }

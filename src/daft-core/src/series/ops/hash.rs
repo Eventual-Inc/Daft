@@ -1,7 +1,7 @@
 use crate::{
-    datatypes::{Int32Array, UInt32Array, UInt64Array},
+    datatypes::{Int32Array, UInt64Array},
     series::Series,
-    with_match_comparable_daft_types, with_match_integer_daft_types,
+    with_match_comparable_daft_types,
 };
 use common_error::DaftResult;
 
