@@ -81,10 +81,10 @@ mod tests {
             .clone();
 
         assert_eq!(new_child_validity, combined_validity);
-        assert_eq!(old_child.get(0), Some(0));
-        assert_eq!(old_child.get(1), None);
-        assert_eq!(old_child.get(2), None);
-        assert_eq!(old_child.get(3), None);
+        assert_eq!(new_child.get(0), Some(0));
+        assert_eq!(new_child.get(1), None);
+        assert_eq!(new_child.get(2), None);
+        assert_eq!(new_child.get(3), None);
 
         Ok(())
     }
