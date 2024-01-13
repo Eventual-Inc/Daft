@@ -1,15 +1,13 @@
 use std::ops::Rem;
 
-use arrow2::datatypes;
 use common_error::DaftResult;
-use num_traits::{NumCast, ToPrimitive};
+use num_traits::ToPrimitive;
 
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::Decimal128Array, DaftIntegerType, DaftNumericType, Int16Array, Int16Type,
-        Int32Array, Int32Type, Int64Array, Int64Type, Int8Array, Int8Type, UInt16Array, UInt16Type,
-        UInt32Array, UInt32Type, UInt64Array, UInt64Type, UInt8Array, UInt8Type, Utf8Array,
+        logical::Decimal128Array, DaftNumericType, Int16Type, Int32Type, Int64Type, Int8Type,
+        UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Array,
     },
 };
 
