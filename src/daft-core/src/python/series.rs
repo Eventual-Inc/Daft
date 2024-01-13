@@ -308,6 +308,10 @@ impl PySeries {
         Ok(self.series.partitioning_iceberg_bucket(n)?.into())
     }
 
+    pub fn partitioning_iceberg_truncate(&self, w: i64) -> PyResult<Self> {
+        Ok(self.series.partitioning_iceberg_truncate(w)?.into())
+    }
+
     pub fn murmur3_32(&self) -> PyResult<Self> {
         Ok(self.series.murmur3_32()?.into_series().into())
     }

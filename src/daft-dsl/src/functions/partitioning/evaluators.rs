@@ -97,7 +97,7 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
                 func: FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
                 inputs: _,
             } => n,
-            _ => panic!("Expected Url Download Expr, got {expr}"),
+            _ => panic!("Expected PartitioningExpr::IcebergBucket Expr, got {expr}"),
         };
 
         match inputs {

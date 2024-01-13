@@ -605,6 +605,9 @@ class SeriesPartitioningNamespace(SeriesNamespace):
     def iceberg_bucket(self, n: int) -> Series:
         return Series._from_pyseries(self._series.partitioning_iceberg_bucket(n))
 
+    def iceberg_truncate(self, w: int) -> Series:
+        return Series._from_pyseries(self._series.partitioning_iceberg_truncate(w))
+
 
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
