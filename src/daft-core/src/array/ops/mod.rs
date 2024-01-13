@@ -34,6 +34,7 @@ mod struct_;
 mod sum;
 mod take;
 pub(crate) mod tensor;
+mod truncate;
 mod utf8;
 
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};

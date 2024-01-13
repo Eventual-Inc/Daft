@@ -41,6 +41,10 @@ fn apply_partitioning_expr(expr: Expr, pfield: &PartitionField) -> Option<Expr> 
             expr.cast(&pfield.source_field.as_ref().unwrap().dtype),
             n as i32,
         )),
+        Some(IcebergTruncate(w)) => Some(partitioning::iceberg_truncate(
+            expr.cast(&pfield.source_field.as_ref().unwrap().dtype),
+            w as i64,
+        )),
         _ => None,
     }
 }
@@ -114,8 +118,6 @@ pub fn rewrite_predicate_for_partitioning(
             Expr::BinaryOp {
                 op,
                 ref left, ref right } if matches!(op, Lt | LtEq | Gt | GtEq)=> {
-                use PartitionTransform::*;
-
                 let relaxed_op = match op {
                     Lt | LtEq => LtEq,
                     Gt | GtEq => GtEq,
@@ -123,7 +125,7 @@ pub fn rewrite_predicate_for_partitioning(
                 };
 
                 if let Expr::Column(col_name) = left.as_ref() && let Some(pfield) = source_to_pfield.get(col_name.as_ref()) {
-                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && matches!(tfm, Year | Month | Hour | Day) && let Some(new_expr) = apply_partitioning_expr(right.as_ref().clone(), pfield) {
+                    if let Some(tfm) = pfield.transform && tfm.supports_comparison() && let Some(new_expr) = apply_partitioning_expr(right.as_ref().clone(), pfield) {
                         return Ok(Transformed::Yes(Expr::BinaryOp { op: relaxed_op, left: col(pfield.field.name.as_str()).into(), right: new_expr.into() }));
                     }
                     Ok(Transformed::No(expr))

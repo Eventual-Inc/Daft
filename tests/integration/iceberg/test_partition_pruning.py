@@ -158,7 +158,6 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     if limit:
         df = df.limit(limit)
     df.collect()
-
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["letter"])]
@@ -199,7 +198,6 @@ def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit
     if limit:
         df = df.limit(limit)
     df.collect()
-
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["number"])]

@@ -134,3 +134,66 @@ def test_iceberg_bucketing(input, n):
             assert seen[v] == b
         else:
             seen[v] = b
+
+
+def test_iceberg_truncate_decimal():
+    data = ["12.34", "12.30", "12.29", "0.05", "-0.05"]
+    data = [Decimal(v) for v in data] + [None]
+    expected = ["12.30", "12.30", "12.20", "0.00", "-0.10"]
+    expected = [Decimal(v) for v in expected] + [None]
+
+    s = Series.from_pylist(data)
+    trunc = s.partitioning.iceberg_truncate(10)
+    assert trunc.datatype() == s.datatype()
+    assert trunc.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+        DataType.int64(),
+    ],
+)
+def test_iceberg_truncate_signed_int(dtype):
+    data = [0, 1, 5, 9, 10, 11, -1, -5, -10, -11, None]
+    expected = [0, 0, 0, 0, 10, 10, -10, -10, -10, -20, None]
+
+    s = Series.from_pylist(data).cast(dtype)
+    trunc = s.partitioning.iceberg_truncate(10)
+    assert trunc.datatype() == s.datatype()
+    assert trunc.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DataType.uint8(),
+        DataType.uint16(),
+        DataType.uint32(),
+        DataType.uint64(),
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+        DataType.int64(),
+    ],
+)
+def test_iceberg_truncate_all_int(dtype):
+    data = [0, 1, 5, 9, 10, 11, None]
+    expected = [0, 0, 0, 0, 10, 10, None]
+
+    s = Series.from_pylist(data).cast(dtype)
+    trunc = s.partitioning.iceberg_truncate(10)
+    assert trunc.datatype() == s.datatype()
+    assert trunc.to_pylist() == expected
+
+
+def test_iceberg_truncate_str():
+    data = ["abcdefg", "abc", "abcde", None]
+    expected = ["abcde", "abc", "abcde", None]
+    s = Series.from_pylist(data)
+    trunc = s.partitioning.iceberg_truncate(5)
+    assert trunc.datatype() == s.datatype()
+    assert trunc.to_pylist() == expected

@@ -49,6 +49,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         HourTransform,
         IdentityTransform,
         MonthTransform,
+        TruncateTransform,
         YearTransform,
     )
 
@@ -66,6 +67,9 @@ def _iceberg_partition_field_to_daft_partition_field(
     elif isinstance(transform, BucketTransform):
         n = transform.num_buckets
         tfm = PartitionTransform.iceberg_bucket(n)
+    elif isinstance(transform, TruncateTransform):
+        w = transform.width
+        tfm = PartitionTransform.iceberg_truncate(w)
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
     return make_partition_field(result_field, daft_field, transform=tfm)

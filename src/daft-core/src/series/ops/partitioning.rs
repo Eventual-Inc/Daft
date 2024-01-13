@@ -2,6 +2,7 @@ use crate::array::ops::as_arrow::AsArrow;
 use crate::datatypes::logical::TimestampArray;
 use crate::datatypes::{Int32Array, Int64Array, TimeUnit};
 use crate::series::array_impl::IntoSeries;
+use crate::with_match_integer_daft_types;
 use crate::{datatypes::DataType, series::Series};
 use common_error::{DaftError, DaftResult};
 
@@ -103,5 +104,23 @@ impl Series {
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(arrow2::array::Int32Array::from_iter(buckets));
         Ok(Int32Array::from((self.name(), array)).into_series())
+    }
+
+    pub fn partitioning_iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
+        assert!(w > 0, "Expected w to be positive, got {w}");
+        match self.data_type() {
+            i if i.is_integer() => {
+                with_match_integer_daft_types!(i, |$T| {
+                    let downcasted = self.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    Ok(downcasted.iceberg_truncate(w)?.into_series())
+                })
+            }
+            DataType::Decimal128(..) => Ok(self.decimal128()?.iceberg_truncate(w)?.into_series()),
+            DataType::Utf8 => Ok(self.utf8()?.iceberg_truncate(w)?.into_series()),
+            _ =>  Err(DaftError::ComputeError(format!(
+                "Can only run partitioning_iceberg_truncate() operation on integers, decimal and string, got {}",
+                self.data_type()
+            ))),
+        }
     }
 }
