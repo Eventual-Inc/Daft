@@ -8,7 +8,7 @@ aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default
 aws-sig-auth = "0.55.3"
 aws-sigv4 = "0.55.3"
 aws-smithy-async = "0.55.3"
-aws-smithy-client = "0.55.3"
+aws-smithy-client = "0.60.2"
 azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
 azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
 bytes = {workspace = true}
