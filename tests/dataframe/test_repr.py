@@ -174,9 +174,8 @@ def test_alias_repr(make_df):
     )
 
 
-def test_repr_with_unicode(make_df):
+def test_repr_with_unicode(make_df, data_source):
     df = make_df({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
-
     expected_data_unmaterialized = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
     expected_data_materialized = {
         "🔥": (
@@ -208,17 +207,17 @@ def test_repr_with_unicode(make_df):
 <small>(Showing first 3 of 3 rows)</small>
 </div>"""
 
-    is_parquet = "Parquet" in str(df._builder)
-    assert (
-        parse_str_table(
-            df.__repr__(),
-            expected_user_msg_regex=UNMATERIALIZED_REGEX if is_parquet else SHOWING_N_ROWS_REGEX,
+    variant = data_source
+    if variant == "parquet":
+        assert (
+            parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data_unmaterialized
         )
-        == expected_data_unmaterialized
-        if is_parquet
-        else expected_data_materialized
-    )
-    assert df._repr_html_() == expected_html_unmaterialized if is_parquet else expected_data_materialized
+        assert df._repr_html_() == expected_html_unmaterialized
+    elif variant == "arrow":
+        assert (
+            parse_str_table(df.__repr__(), expected_user_msg_regex=SHOWING_N_ROWS_REGEX) == expected_data_materialized
+        )
+        assert df._repr_html_() == expected_html_materialized
 
     df.collect()
 
