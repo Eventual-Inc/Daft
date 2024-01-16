@@ -84,6 +84,7 @@ def test_create_dataframe_empty_list() -> None:
 
 def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
     df = daft.from_pylist(valid_data)
+    assert len(df) == len(valid_data)
     assert len(df._preview.preview_partition) == len(valid_data)
     assert set(df.column_names) == set(COL_NAMES)
 
@@ -91,6 +92,7 @@ def test_create_dataframe_list(valid_data: list[dict[str, float]]) -> None:
 def test_create_dataframe_list_data_longer_than_preview(valid_data: list[dict[str, float]]) -> None:
     valid_data = valid_data * 3
     df = daft.from_pylist(valid_data)
+    assert len(df) == len(valid_data)
     assert len(df._preview.preview_partition) == 8
     assert set(df.column_names) == set(COL_NAMES)
 
@@ -134,6 +136,7 @@ def test_create_dataframe_list_non_dicts() -> None:
 def test_create_dataframe_pydict(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = daft.from_pydict(pydict)
+    assert len(df) == len(valid_data)
     assert len(df._preview.preview_partition) == len(valid_data)
     assert set(df.column_names) == set(COL_NAMES)
 
@@ -142,6 +145,7 @@ def test_create_dataframe_pydict_data_longer_than_preview(valid_data: list[dict[
     valid_data = valid_data * 3
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     df = daft.from_pydict(pydict)
+    assert len(df) == len(valid_data)
     assert len(df._preview.preview_partition) == 8
     assert set(df.column_names) == set(COL_NAMES)
 
@@ -176,6 +180,7 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     df = daft.from_arrow(t)
     if multiple:
         t = pa.concat_tables(t)
+    assert len(df) == len(t)
     assert len(df._preview.preview_partition) == (8 if multiple else len(t))
     assert set(df.column_names) == set(t.column_names)
     casted_field = t.schema.field("variety").with_type(pa.large_string())
@@ -288,6 +293,7 @@ def test_create_dataframe_pandas(valid_data: list[dict[str, float]], multiple) -
     df = daft.from_pandas(pd_df)
     if multiple:
         pd_df = pd.concat(pd_df).reset_index(drop=True)
+    assert len(df) == len(pd_df)
     assert len(df._preview.preview_partition) == (8 if multiple else len(pd_df))
     assert set(df.column_names) == set(pd_df.columns)
     # Check roundtrip.

@@ -1306,7 +1306,24 @@ class DataFrame:
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
         )
-        return cls(builder)
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = context.daft_execution_config.num_preview_rows
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            preview_results, _ = ray_runner_io.partition_set_from_ray_dataset(ds.limit(num_preview_rows))
+        else:
+            preview_results = partition_set
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
     @DataframePublicAPI
     def to_dask_dataframe(
@@ -1378,7 +1395,25 @@ class DataFrame:
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
         )
-        return cls(builder)
+
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = context.daft_execution_config.num_preview_rows
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            preview_results, _ = ray_runner_io.partition_set_from_dask_dataframe(ddf.loc[: num_preview_rows - 1])
+        else:
+            preview_results = partition_set
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
 
 @dataclass
