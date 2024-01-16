@@ -118,6 +118,11 @@ impl PyDaftExecutionConfig {
         Ok(self.config.sample_size_for_sort)
     }
 
+    #[getter]
+    fn get_num_preview_rows(&self) -> PyResult<usize> {
+        Ok(self.config.num_preview_rows)
+    }
+
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
         let bin_data = bincode::serialize(self.config.as_ref())
             .expect("DaftExecutionConfig should be serializable to bytes");

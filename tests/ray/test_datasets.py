@@ -240,3 +240,23 @@ def test_from_ray_dataset_pandas(n_partitions: int):
     df = daft.from_ray_dataset(ds)
     expected_df = add_float(pd_df)
     pd.testing.assert_frame_equal(df.to_pandas(), expected_df)
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
+def test_from_ray_dataset_preview(n_partitions: int):
+    ds = ray.data.range(3, parallelism=n_partitions)
+
+    df = daft.from_ray_dataset(ds)
+    assert len(df) == 3
+    assert len(df._preview.preview_partition) == 3
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
+def test_from_ray_dataset_data_longer_than_preview(n_partitions: int):
+    ds = ray.data.range(10, parallelism=n_partitions)
+
+    df = daft.from_ray_dataset(ds)
+    assert len(df) == 10
+    assert len(df._preview.preview_partition) == 8

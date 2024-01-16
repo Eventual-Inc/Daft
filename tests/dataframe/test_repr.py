@@ -174,24 +174,10 @@ def test_alias_repr(make_df):
     )
 
 
-def test_repr_with_unicode(make_df):
+def test_repr_with_unicode(make_df, data_source):
     df = make_df({"🔥": [1, 2, 3], "🦁": ["🔥a", "b🔥", "🦁🔥" * 60]})
-
-    expected_data = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
-    assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
-    assert (
-        df._repr_html_()
-        == """<div>
-<table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
-</table>
-<small>(No data to display: Dataframe not materialized)</small>
-</div>"""
-    )
-
-    df.collect()
-
-    expected_data = {
+    expected_data_unmaterialized = {"🔥": ("Int64", []), "🦁": ("Utf8", [])}
+    expected_data_materialized = {
         "🔥": (
             "Int64",
             ["1", "2", "3"],
@@ -201,14 +187,15 @@ def test_repr_with_unicode(make_df):
             ["🔥a", "b🔥", "🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁🔥🦁…"],
         ),
     }
-    expected_data_html = {
-        **expected_data,
-    }
+
     string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
-    assert parse_str_table(df.__repr__()) == expected_data
-    assert (
-        df._repr_html_()
-        == f"""<div>
+    expected_html_unmaterialized = """<div>
+<table class="dataframe">
+<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+</table>
+<small>(No data to display: Dataframe not materialized)</small>
+</div>"""
+    expected_html_materialized = f"""<div>
 <table class="dataframe">
 <thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
 <tbody>
@@ -219,12 +206,27 @@ def test_repr_with_unicode(make_df):
 </table>
 <small>(Showing first 3 of 3 rows)</small>
 </div>"""
-    )
+
+    variant = data_source
+    if variant == "parquet":
+        assert (
+            parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data_unmaterialized
+        )
+        assert df._repr_html_() == expected_html_unmaterialized
+    elif variant == "arrow":
+        assert (
+            parse_str_table(df.__repr__(), expected_user_msg_regex=SHOWING_N_ROWS_REGEX) == expected_data_materialized
+        )
+        assert df._repr_html_() == expected_html_materialized
+
+    df.collect()
+
+    assert parse_str_table(df.__repr__()) == expected_data_materialized
+    assert df._repr_html_() == expected_html_materialized
 
 
 def test_repr_with_html_string():
     df = daft.from_pydict({"A": [f"<div>body{i}</div>" for i in range(3)]})
-    df.collect()
 
     non_html_table = df.__repr__()
     html_table = df._repr_html_()
@@ -249,7 +251,6 @@ def test_repr_html_custom_hooks():
             "pil": daft.Series.from_pylist([img for _ in range(3)], pyobj="force"),
         }
     )
-    df.collect()
 
     assert (
         ANSI_ESCAPE.sub("", df.__repr__()).replace("\r", "")

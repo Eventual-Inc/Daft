@@ -144,3 +144,30 @@ def test_from_dask_dataframe_tensor(n_partitions: int):
     daft_df = daft.from_dask_dataframe(ddf)
     out_df = daft_df.to_pandas()
     pd.testing.assert_frame_equal(out_df, df)
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
+def test_from_dask_dataframe_preview(n_partitions: int):
+    df = pd.DataFrame(DATA)
+    ddf = dd.from_pandas(df, npartitions=n_partitions)
+
+    daft_df = daft.from_dask_dataframe(ddf)
+    assert len(daft_df) == 3
+    assert len(daft_df._preview.preview_partition) == 3
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.parametrize("n_partitions", [1, 2])
+def test_from_dask_dataframe_data_longer_than_preview(n_partitions: int):
+    df = pd.DataFrame(
+        {
+            "intcol": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "strcol": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+        }
+    )
+    ddf = dd.from_pandas(df, npartitions=n_partitions)
+
+    daft_df = daft.from_dask_dataframe(ddf)
+    assert len(daft_df) == 10
+    assert len(daft_df._preview.preview_partition) == 8

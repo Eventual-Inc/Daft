@@ -60,7 +60,12 @@ def uuid_ext_type() -> UuidType:
         "parquet",
     ],
 )
-def make_df(request, tmp_path) -> daft.Dataframe:
+def data_source(request):
+    return request.param
+
+
+@pytest.fixture(scope="function")
+def make_df(data_source, tmp_path) -> daft.Dataframe:
     """Makes a dataframe when provided with data"""
 
     def _make_df(
@@ -79,7 +84,7 @@ def make_df(request, tmp_path) -> daft.Dataframe:
         else:
             raise NotImplementedError(f"make_df not implemented for input type: {type(data)}")
 
-        variant = request.param
+        variant = data_source
         if variant == "arrow":
             df = daft.from_arrow(pa_table)
             if repartition != 1:
