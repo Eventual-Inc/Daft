@@ -63,7 +63,7 @@ autolabeler:
   - /.*\[CHORE\].*/
 - label: documentation
   title:
-  - /.*\[DOC\].*/
+  - /.*\[DOCS\].*/
   files:
   - '*.rst'
   - '*.html'
