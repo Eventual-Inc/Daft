@@ -366,11 +366,16 @@ class DataFrame:
             compression=compression,
             io_config=io_config,
         )
-        # Block and write, then retrieve data and return a new disconnected DataFrame
+        # Block and write, then retrieve data
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._builder)
+
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_csv(
@@ -414,11 +419,16 @@ class DataFrame:
             io_config=io_config,
         )
 
-        # Block and write, then retrieve data and return a new disconnected DataFrame
+        # Block and write, then retrieve data
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._builder)
+
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     ###
     # DataFrame operations
