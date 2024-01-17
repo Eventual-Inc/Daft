@@ -62,3 +62,6 @@ Sphinx <= 5
 sphinx-book-theme>=0.3.3,<1.0.0
 sphinx-reredirects>=0.1.1
 sphinx-copybutton>=0.5.2
+# sphinxcontrib-applehelp needs to be pinned as it dropped support for older versions of Sphinx
+# See: https://github.com/sphinx-doc/sphinxcontrib-applehelp/pull/15#issuecomment-1890891611
+sphinxcontrib-applehelp<=1.0.4
