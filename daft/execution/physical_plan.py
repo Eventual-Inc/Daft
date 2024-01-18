@@ -13,12 +13,13 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 
 from __future__ import annotations
 
+import collections
 import itertools
 import logging
 import math
 import pathlib
 from collections import deque
-from typing import Generator, Iterator, TypeVar, Union
+from typing import Generator, Iterator, TypeVar, Union, cast
 
 from daft.context import get_context
 from daft.daft import (
@@ -45,6 +46,7 @@ from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionT,
 )
+from daft.table.micropartition import MicroPartition
 
 logger = logging.getLogger(__name__)
 
@@ -397,72 +399,259 @@ def broadcast_join(
                 return
 
 
-def merge_join(
+def _emit_merge_joins_on_window(
+    next_part: SingleOutputPartitionTask[PartitionT],
+    other_window: deque[SingleOutputPartitionTask[PartitionT]],
+    merge_join_partition_tasks: collections.defaultdict[
+        str, list[PartitionTaskBuilder[PartitionT] | PartitionTask[PartitionT]]
+    ],
+    stage_id: int,
+    flipped: bool,
+    next_is_larger: bool,
+    left_on: ExpressionsProjection,
+    right_on: ExpressionsProjection,
+    how: JoinType,
+) -> Iterator[PartitionTaskBuilder[PartitionT] | PartitionTask[PartitionT]]:
+    """
+    Emits merge-join steps of next_part with each partition in other_window.
+    """
+    # Emit a merge-join step for all partitions in the other window that intersect with this new partition.
+    for other_next_part in other_window:
+        memory_bytes = _memory_bytes_for_merge(next_part, other_next_part)
+        inputs = [next_part.partition(), other_next_part.partition()]
+        partial_metadatas = [
+            next_part.partition_metadata().downcast_to_partial(),
+            other_next_part.partition_metadata().downcast_to_partial(),
+        ]
+        # If next, other are flipped (right, left partitions), flip them back.
+        if flipped:
+            inputs = list(reversed(inputs))
+            partial_metadatas = list(reversed(partial_metadatas))
+        join_task: PartitionTaskBuilder[PartitionT] | PartitionTask[PartitionT] = PartitionTaskBuilder[PartitionT](
+            inputs=inputs,
+            partial_metadatas=partial_metadatas,
+            resource_request=ResourceRequest(memory_bytes=memory_bytes),
+        ).add_instruction(
+            instruction=execution_step.MergeJoin(
+                left_on=left_on,
+                right_on=right_on,
+                how=how,
+                preserve_left_bounds=not flipped,
+            )
+        )
+        # Add to new merge-join step to tracked steps for this larger-side partition, and possibly start finalizing +
+        # emitting non-empty join steps if there are now more than one.
+        part_id = next_part.id() if next_is_larger else other_next_part.id()
+        tasks = merge_join_partition_tasks[part_id]
+        if len(tasks) == 1:
+            # If the only merge-join task we have for this partition is empty, remove it and replace it (below)
+            # with our new (probably) non-empty merge-join task.
+            if tasks[0].is_empty():
+                tasks.pop()
+            elif not join_task.is_empty():
+                # There are currently two (probably non-empty) merge-join tasks so we'll need to issue a coalesce
+                # partition task later, so finalize and yield the first merge-join task now.
+                # The second will be finalized and yielded below.
+                unfinalized_task = tasks[0]
+                assert isinstance(unfinalized_task, PartitionTaskBuilder)
+                tasks[0] = unfinalized_task.finalize_partition_task_single_output(stage_id)
+                yield tasks[0]
+        if not join_task.is_empty() and len(tasks) >= 1:
+            # There are at least two (probably non-empty) merge-join tasks so we'll need to issue a coalesce partition
+            # task later, so finalize and yield the new merge-join task now.
+            assert isinstance(join_task, PartitionTaskBuilder)
+            join_task = join_task.finalize_partition_task_single_output(stage_id)
+            yield join_task
+        # Add merge-join task to appropriate group.
+        if not join_task.is_empty() or not tasks:
+            # If merge-join task is empty and there are no merge-join tasks yet for this partition, we still add the
+            # empty task in case we need to propagate an empty partition later.
+            tasks.append(join_task)
+
+
+def _memory_bytes_for_merge(
+    next_left: SingleOutputPartitionTask[PartitionT], next_right: SingleOutputPartitionTask[PartitionT]
+) -> int | None:
+    # Calculate memory request for merge task.
+    left_size_bytes = next_left.partition_metadata().size_bytes
+    right_size_bytes = next_right.partition_metadata().size_bytes
+    if left_size_bytes is None and right_size_bytes is None:
+        size_bytes = None
+    elif left_size_bytes is None and right_size_bytes is not None:
+        # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
+        size_bytes = 2 * right_size_bytes
+    elif right_size_bytes is None and left_size_bytes is not None:
+        # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
+        size_bytes = 2 * left_size_bytes
+    elif left_size_bytes is not None and right_size_bytes is not None:
+        size_bytes = left_size_bytes + right_size_bytes
+    return size_bytes
+
+
+def merge_join_sorted(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
     how: JoinType,
+    left_is_larger: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """
-    Sort-merge join the partitions from `left_plan` and `right_plan` together.
+    Merge the sorted partitions from `left_plan` and `right_plan` together.
 
-    This assumes that all partitions in `left_plan` and `right_plan` are internally (but not globally) sorted.
+    This assumes that `left_plan` and `right_plan` are both sorted on the join key(s), although with potentially
+    different range partitionings (partition boundaries).
     """
 
-    # Materialize the steps from the left and right sources to get partitions.
-    # As the materializations complete, emit new steps to join each left and right partition.
-    left_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    right_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    # Lerge vs. smaller side of join.
+    larger_plan = left_plan if left_is_larger else right_plan
+    smaller_plan = right_plan if left_is_larger else left_plan
+
+    # In-progress tasks for larger side of join.
+    larger_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    # In-progress tasks for smaller side of join.
+    smaller_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    # Materialized partitions for larger side of join; a larger-side partition isn't dropped until we've emitted all
+    # join steps with smaller-side partitions that may overlap with it..
+    larger_window: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    # Materialized partitions for smaller side of join; a smaller-side partition isn't dropped until the most recent
+    # larger-side materialized partition has a higher upper bound, which suggests that this smaller-side partition won't
+    # be able to intersect with any future larger-side partitions.
+    smaller_window: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    # A map from IDs of input partitions from the larger side of the join to a list of merge-join partition tasks that
+    # were emitted on said input partition.
+    # Once all merge-join tasks are done, the corresponding output partitions will be coalesced together.
+    # If the merge-join task list only contains a single element, it will be an unfinalized PartitionTaskBuilder,
+    # the coalescing step will be skipped, and this merge-join task will be yielded without finalizing in order to
+    # allow fusion with downstream tasks; otherwise, the list will contain finalized PartitionTasks.
+    merge_join_partition_tasks: collections.defaultdict[
+        str, list[PartitionTaskBuilder[PartitionT] | PartitionTask[PartitionT]]
+    ] = collections.defaultdict(list)
+
     stage_id = next(stage_id_counter)
-    yield_left = True
+    yield_smaller = True
+    smaller_done = False
+    larger_done = False
 
+    # As partitions materialize from either side of the join, emit new merge-join steps to join overlapping partitions
+    # together.
     while True:
-        # Emit new join steps if we have left and right partitions ready.
+        # Emit merge-join steps on newly completed partitions from the smaller side of the join with a window of
+        # (possibly) intersecting partitions from the larger side.
+        while smaller_requests and smaller_requests[0].done():
+            next_part = smaller_requests.popleft()
+            # print("new smaller part:", next_part.partition_metadata().boundaries.bounds)
+            yield from _emit_merge_joins_on_window(
+                next_part,
+                larger_window,
+                merge_join_partition_tasks,
+                stage_id,
+                left_is_larger,
+                False,
+                left_on,
+                right_on,
+                how,
+            )
+            smaller_window.append(next_part)
+        # Emit merge-join steps on newly completed partitions from the larger side of the join with a window of
+        # (possibly) intersecting partitions from the smaller side.
+        while larger_requests and larger_requests[0].done():
+            next_part = larger_requests.popleft()
+            yield from _emit_merge_joins_on_window(
+                next_part,
+                smaller_window,
+                merge_join_partition_tasks,
+                stage_id,
+                not left_is_larger,
+                True,
+                left_on,
+                right_on,
+                how,
+            )
+            larger_window.append(next_part)
+        # Remove prefix of smaller window that's under the high water mark set by this new larger-side partition,
+        # since this prefix won't be able to match any future partitions on the smaller side of the join.
         while (
-            len(left_requests) > 0 and len(right_requests) > 0 and left_requests[0].done() and right_requests[0].done()
+            # We always leave at least one partition in the smaller-side window in case we need to yield an empty
+            # merge-join step for a future larger-side partition.
+            len(smaller_window) > (1 if larger_requests else 0)
+            and larger_window
+            and _is_strictly_bounded_above_by(smaller_window[0], larger_window[-1])
         ):
-            next_left = left_requests.popleft()
-            next_right = right_requests.popleft()
-
-            # Calculate memory request for merge task.
-            left_size_bytes = next_left.partition_metadata().size_bytes
-            right_size_bytes = next_right.partition_metadata().size_bytes
-            if left_size_bytes is None and right_size_bytes is None:
-                size_bytes = None
-            elif left_size_bytes is None and right_size_bytes is not None:
-                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * right_size_bytes
-            elif right_size_bytes is None and left_size_bytes is not None:
-                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * left_size_bytes
-            elif left_size_bytes is not None and right_size_bytes is not None:
-                size_bytes = left_size_bytes + right_size_bytes
-
-            join_step = PartitionTaskBuilder[PartitionT](
-                inputs=[next_left.partition(), next_right.partition()],
-                partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
-                resource_request=ResourceRequest(memory_bytes=size_bytes),
-            ).add_instruction(
-                instruction=execution_step.MergeJoin(
-                    left_on=left_on,
-                    right_on=right_on,
-                    how=how,
+            smaller_window.popleft()
+        # For each partition we remove from the larger window, we launch a coalesce task over all output partitions
+        # that correspond to that larger partition.
+        # This loop also removes the prefix of larger window that's under the high water mark set by the smaller window,
+        # since this prefix won't be able to match any future partitions on the smaller side.
+        while (
+            # Must be a larger-side partition whose outputs need finalizing.
+            larger_window
+            and (
+                # Larger-side partition is bounded above by the most recent smaller-side partition, which means that no
+                # future smaller-side partition can intersect with this larger-side partition, allowing us to finalize
+                # the merge-join steps for the larger-side partition.
+                (smaller_window and _is_strictly_bounded_above_by(larger_window[0], smaller_window[-1]))
+                # No more smaller partitions left, so we should launch coalesce tasks for all remaining
+                # larger-side partitions.
+                or smaller_done
+            )
+            and (
+                # Only finalize merge-join tasks for larger-side partition if all outputs are done OR there's only a
+                # single finalized output (in which case we yield and unfinalized merge-join task to allow downstream
+                # fusion with it).
+                all(
+                    isinstance(task, PartitionTaskBuilder) or task.done()
+                    for task in merge_join_partition_tasks[larger_window[0].id()]
                 )
             )
-            yield join_step
+        ):
+            done_larger_part = larger_window.popleft()
+            tasks = merge_join_partition_tasks.pop(done_larger_part.id())
+            assert len(tasks) > 0
+            if len(tasks) == 1:
+                # Only one output partition, so no coalesce needed; yield the merge-join partition task without
+                # finalizing to allow for downstream fusing.
+                # This output partition may be predetermined to be empty.
+                yield tasks[0]
+                continue
+            tasks_ = cast(list[SingleOutputPartitionTask], tasks)
+            # At least two (probably non-empty) merge-join tasks for this group, so need to coalesce.
+            # NOTE: We guarantee in _emit_merge_joins_on_window that any group containing 2 or more partition tasks
+            # will only contain non-guaranteed-empty partitions; i.e., we'll need to execute a task to determine if
+            # they actually are empty, so we just issue the coalesce task.
+            # TODO(Clark): Elide coalescing by emitting a single merge-join task per larger-side partition, including as
+            # input all intersecting partitions from the smaller side of the join.
+            size_bytes = _memory_bytes_for_coalesce(tasks_)
+            coalesce_task = PartitionTaskBuilder[PartitionT](
+                inputs=[task.partition() for task in tasks_],
+                partial_metadatas=[task.partition_metadata() for task in tasks_],
+                resource_request=ResourceRequest(memory_bytes=size_bytes),
+            ).add_instruction(
+                instruction=execution_step.ReduceMerge(),
+            )
+            yield coalesce_task
 
         # Exhausted all ready inputs; execute a single child step to get more join inputs.
-        # Choose whether to execute from left child or right child (whichever one is furthest behind).
-        if len(left_requests) < len(right_requests):
-            next_plan, next_requests = left_plan, left_requests
-        elif len(left_requests) > len(right_requests):
-            next_plan, next_requests = right_plan, right_requests
-        elif len(left_requests) == len(right_requests):
-            # Both plans have progressed equally; alternate between the two plans to avoid starving either one.
-            next_plan, next_requests = (left_plan, left_requests) if yield_left else (right_plan, right_requests)
-            yield_left = not yield_left
+        # Choose whether to execute from smaller child or larger child (whichever one is furthest behind).
+        num_smaller_in_flight = len(smaller_requests) + len(smaller_window)
+        num_larger_in_flight = len(larger_requests) + len(larger_window)
+        if smaller_done or larger_done or num_smaller_in_flight == num_larger_in_flight:
+            # Both plans have progressed equally (or the last yielded side is done); alternate between the two plans
+            # to avoid starving either one.
+            yield_smaller = not yield_smaller
+            next_plan, next_requests = (
+                (smaller_plan, smaller_requests) if yield_smaller else (larger_plan, larger_requests)
+            )
+        elif num_smaller_in_flight < num_larger_in_flight:
+            # Larger side of join is further along than the smaller side, so pull from the smaller side next.
+            next_plan, next_requests = smaller_plan, smaller_requests
+            yield_smaller = True
+        else:
+            # Smaller side of join is further along than the larger side, so pull from the larger side next.
+            next_plan, next_requests = larger_plan, larger_requests
+            yield_smaller = False
 
+        # Pull from the chosen side of the join.
         try:
             step = next(next_plan)
             if isinstance(step, PartitionTaskBuilder):
@@ -471,19 +660,69 @@ def merge_join(
             yield step
 
         except StopIteration:
-            # Left and right child plans have completed.
-            # Are we still waiting for materializations to complete? (We will emit more joins from them).
-            if len(left_requests) + len(right_requests) > 0:
+            # We've exhausted one of the sides of the join.
+            # If we have active tasks for either side of the join, tell runner that we're blocked on inputs.
+            if smaller_requests or larger_requests:
                 logger.debug(
-                    "join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
-                    left_requests,
-                    right_requests,
+                    "merge join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
+                    larger_requests if left_is_larger else smaller_requests,
+                    smaller_requests if left_is_larger else larger_requests,
                 )
                 yield None
-
-            # Otherwise, we are entirely done.
+            # If we just exhausted small side of join, set smaller done flag.
+            elif yield_smaller and not smaller_done:
+                smaller_done = True
+            # If we just exhausted larger side of join, set larger done flag.
+            elif not yield_smaller and not larger_done:
+                larger_done = True
+            # We might still be waiting for some merge-join tasks to complete whose output we still need
+            # to coalesce.
+            elif any(
+                isinstance(task, SingleOutputPartitionTask) and not task.done()
+                for tasks in merge_join_partition_tasks.values()
+                for task in tasks
+            ):
+                logger.debug(
+                    "merge join blocked on completion of merge join tasks (pre-coalesce).\nMerge-join tasks: %s",
+                    list(merge_join_partition_tasks.values()),
+                )
+                yield None
+            # Otherwise, all join inputs are done and all merge-join tasks are done, so we are entirely done emitting
+            # merge join work.
             else:
                 return
+
+
+def _is_strictly_bounded_above_by(
+    lower_part: SingleOutputPartitionTask[PartitionT], upper_part: SingleOutputPartitionTask[PartitionT]
+) -> bool:
+    """
+    Returns whether lower_part is strictly bounded above by upper part; i.e., whether lower_part's upper bound is
+    strictly less than upper_part's upper bound.
+    """
+    lower_boundaries = lower_part.partition_metadata().boundaries
+    upper_boundaries = upper_part.partition_metadata().boundaries
+    assert lower_boundaries is not None and upper_boundaries is not None
+    return lower_boundaries.is_strictly_bounded_above_by(upper_boundaries)
+
+
+def _memory_bytes_for_coalesce(input_parts: list[SingleOutputPartitionTask[PartitionT]]) -> int | None:
+    # Calculate memory request for task.
+    size_bytes_per_task = [task.partition_metadata().size_bytes for task in input_parts]
+    non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
+    non_null_size_bytes = sum(non_null_size_bytes_per_task)
+    if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
+        # If all task size bytes are non-null, directly use the non-null size bytes sum.
+        size_bytes = non_null_size_bytes
+    elif non_null_size_bytes_per_task:
+        # If some are null, calculate the non-null mean and assume that null task size bytes
+        # have that size.
+        mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
+        size_bytes = non_null_size_bytes + mean_size * (len(size_bytes_per_task) - len(non_null_size_bytes_per_task))
+    else:
+        # If all null, set to null.
+        size_bytes = None
+    return size_bytes
 
 
 def sort_merge_join(
@@ -493,6 +732,7 @@ def sort_merge_join(
     right_on: ExpressionsProjection,
     how: JoinType,
     num_partitions: int,
+    left_is_larger: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """
     Sort-merge join the partitions from `left_plan` and `right_plan` together.
@@ -500,6 +740,13 @@ def sort_merge_join(
     This assumes that both `left_plan` and `right_plan` need to be sorted, and will be sorted using the same
     partitioning boundaries.
     """
+    # This algorithm proceeds in the following phases:
+    #  1. Sort both sides of the join.
+    #    a. Fully materialize left and right child plans.
+    #    b. Sample all partitions from both sides of the join.
+    #    c. Create partitioning boundaries from global samples.
+    #    d. Sort each side of join using global partitioning boundaries.
+    #  2. Merge-join the now-sorted sides of the join.
     descending = [False] * len(left_on)
     # First, materialize the left and right child plans.
     left_source_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
@@ -519,6 +766,7 @@ def sort_merge_join(
     left_sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     right_sample_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     stage_id_sampling = next(stage_id_counter)
+    sample_size = get_context().daft_execution_config.sample_size_for_sort
 
     sample_size = get_context().daft_execution_config.sample_size_for_sort
     for source_materializations, on, sample_materializations in [
@@ -643,19 +891,41 @@ def sort_merge_join(
         ]
 
         # Execute a sorting reduce on it.
+        per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
         sorted_plans.append(
             reduce(
                 fanout_plan=iter(range_fanout_plan),
-                reduce_instruction=execution_step.ReduceMergeAndSort(
-                    sort_by=on,
-                    descending=descending,
-                ),
+                reduce_instructions=[
+                    execution_step.ReduceMergeAndSort(
+                        sort_by=on,
+                        descending=descending,
+                        bounds=per_part_boundaries,
+                    )
+                    for per_part_boundaries in per_partition_bounds
+                ],
             )
         )
 
     left_sorted_plan, right_sorted_plan = sorted_plans
 
-    yield from merge_join(left_sorted_plan, right_sorted_plan, left_on, right_on, how)
+    # Merge-join the two sorted sides of the join.
+    yield from merge_join_sorted(left_sorted_plan, right_sorted_plan, left_on, right_on, how, left_is_larger)
+
+
+def _to_per_partition_bounds(boundaries: MicroPartition, num_partitions: int) -> list[MicroPartition]:
+    boundaries_dict = boundaries.to_pydict()
+    return [
+        MicroPartition.from_pydict(
+            {
+                col_name: [
+                    pivots[i - 1] if i > 0 and i - 1 < len(pivots) else None,
+                    pivots[i] if i < len(pivots) else None,
+                ]
+                for col_name, pivots in boundaries_dict.items()
+            }
+        )
+        for i in range(num_partitions)
+    ]
 
 
 def concat(
@@ -961,7 +1231,7 @@ def coalesce(
 
 def reduce(
     fanout_plan: InProgressPhysicalPlan[PartitionT],
-    reduce_instruction: ReduceInstruction,
+    reduce_instructions: ReduceInstruction | list[ReduceInstruction],
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Reduce the result of fanout_plan.
 
@@ -990,6 +1260,10 @@ def reduce(
     inputs_to_reduce = [deque(_.partitions()) for _ in materializations]
     metadatas = [deque(_.partition_metadatas()) for _ in materializations]
     del materializations
+    if not isinstance(reduce_instructions, list):
+        reduce_instructions = [reduce_instructions] * len(inputs_to_reduce[0])
+    reduce_instructions_ = deque(reduce_instructions)
+    del reduce_instructions
 
     # Yield all the reduces in order.
     while len(inputs_to_reduce[0]) > 0:
@@ -1001,7 +1275,7 @@ def reduce(
             resource_request=ResourceRequest(
                 memory_bytes=sum(metadata.size_bytes for metadata in metadata_batch),
             ),
-        ).add_instruction(reduce_instruction)
+        ).add_instruction(reduce_instructions_.popleft())
 
 
 def sort(
@@ -1091,14 +1365,19 @@ def sort(
         )
         for source in consume_deque(source_materializations)
     )
+    per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
 
     # Execute a sorting reduce on it.
     yield from reduce(
         fanout_plan=range_fanout_plan,
-        reduce_instruction=execution_step.ReduceMergeAndSort(
-            sort_by=sort_by,
-            descending=descending,
-        ),
+        reduce_instructions=[
+            execution_step.ReduceMergeAndSort(
+                sort_by=sort_by,
+                descending=descending,
+                bounds=per_part_boundaries,
+            )
+            for per_part_boundaries in per_partition_bounds
+        ],
     )
 
 

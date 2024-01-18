@@ -5,6 +5,7 @@ use std::{cmp::max, collections::HashMap};
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
+use daft_core::DataType;
 use daft_dsl::Expr;
 use daft_scan::file_format::FileFormatConfig;
 use daft_scan::ScanExternalInfo;
@@ -512,6 +513,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             right_on,
             join_type,
             join_strategy,
+            output_schema,
             ..
         }) => {
             let mut left_physical = plan(left, cfg.clone())?;
@@ -569,13 +571,18 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                let is_primitive = |exprs: &Vec<Expr>| exprs.iter().map(|e| e.name().unwrap()).all(|col| {
+                    let dtype = &output_schema.get_field(col).unwrap().dtype;
+                    dtype.is_integer() || dtype.is_floating() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
+                });
                 // If larger table is not already partitioned on the join key AND the smaller table is under broadcast size threshold, use broadcast join.
                 if !is_larger_partitioned && let Some(smaller_size_bytes) = smaller_size_bytes && smaller_size_bytes <= cfg.broadcast_join_size_bytes_threshold {
                     JoinStrategy::Broadcast
                 // Larger side of join is range-partitioned on the join column, so we use a sort-merge join.
+                // TODO(Clark): Support non-primitive dtypes for sort-merge join (e.g. temporal types).
                 // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
-                } else if (is_left_sort_partitioned || is_right_sort_partitioned)
+                } else if is_primitive(left_on) && is_primitive(right_on) && (is_left_sort_partitioned || is_right_sort_partitioned)
                 && (!is_larger_partitioned
                     || (left_is_larger && is_left_sort_partitioned
                         || !left_is_larger && is_right_sort_partitioned)) {
@@ -602,9 +609,6 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         left_is_larger,
                     )))
                 }
-                // TODO(Clark): Include boundaries in range-partitioned PartitionSpecs, which would allow us to
-                //  (1) elide sorting both sides of the join if they both have the same range-partitioned boundaries on the join keys,
-                //  (2) elide sorting one side of the join if already range-partitioned, where we'd use that side's boundaries to sort the other side.
                 JoinStrategy::SortMerge => Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
                     left_physical.into(),
                     right_physical.into(),
@@ -612,6 +616,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     right_on.clone(),
                     *join_type,
                     num_partitions,
+                    left_is_larger,
                 ))),
                 JoinStrategy::Hash => {
                     if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)

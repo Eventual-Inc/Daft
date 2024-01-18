@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from daft.daft import PartitionSpec
 from daft.daft import PhysicalPlanScheduler as _PhysicalPlanScheduler
 from daft.execution import physical_plan
 from daft.runners.partitioning import PartitionT
@@ -15,6 +16,9 @@ class PhysicalPlanScheduler:
 
     def num_partitions(self) -> int:
         return self._scheduler.num_partitions()
+
+    def partition_spec(self) -> PartitionSpec:
+        return self._scheduler.partition_spec()
 
     def to_partition_tasks(
         self, psets: dict[str, list[PartitionT]], is_ray_runner: bool

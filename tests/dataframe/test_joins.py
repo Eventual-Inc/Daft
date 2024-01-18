@@ -10,6 +10,28 @@ from tests.utils import sort_arrow_table
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+def test_joins(join_strategy, make_df, n_partitions: int):
+    df = make_df(
+        {
+            "A": [1, 2, 3],
+            "B": ["a", "b", "c"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [1, 2, 3],
+        "B": ["a", "b", "c"],
+        "right.B": ["a", "b", "c"],
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
 def test_multicol_joins(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -29,6 +51,142 @@ def test_multicol_joins(join_strategy, make_df, n_partitions: int):
         "B": ["a", "b", "c"],
         "C": [True, False, True],
         "right.C": [True, False, True],
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+def test_dupes_join_key(join_strategy, make_df, n_partitions: int):
+    df = make_df(
+        {
+            "A": [1, 1, 2, 2, 3, 3],
+            "B": ["a", "b", "c", "d", "e", "f"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+        "B": ["a", "b", "a", "b", "c", "d", "c", "d", "e", "f", "e", "f"],
+        "right.B": ["a", "a", "b", "b", "c", "c", "d", "d", "e", "e", "f", "f"],
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+def test_multicol_dupes_join_key(join_strategy, make_df, n_partitions: int):
+    df = make_df(
+        {
+            "A": [1, 1, 2, 2, 3, 3],
+            "B": ["a", "a", "b", "b", "c", "d"],
+            "C": [True, False, True, False, True, False],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A", "B"],
+    )
+
+    joined = df.join(df, on=["A", "B"], strategy=join_strategy).sort(["A", "B"])
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3],
+        "B": ["a"] * 4 + ["b"] * 4 + ["c", "d"],
+        "C": [True, False, True, False, True, False, True, False, True, False],
+        "right.C": [True, True, False, False, True, True, False, False, True, False],
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4, 6])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+def test_joins_all_same_key(join_strategy, make_df, n_partitions: int):
+    df = make_df(
+        {
+            "A": [1] * 4,
+            "B": ["a", "b", "c", "d"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [1] * 16,
+        "B": ["a", "b", "c", "d"] * 4,
+        "right.B": ["a"] * 4 + ["b"] * 4 + ["c"] * 4 + ["d"] * 4,
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize("flip", [False, True])
+def test_joins_no_overlap_disjoint(join_strategy, make_df, n_partitions: int, flip):
+    df1 = make_df(
+        {
+            "A": [1, 2, 3],
+            "B": ["a", "b", "c"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+    df2 = make_df(
+        {
+            "A": [4, 5, 6],
+            "B": ["d", "e", "f"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    if flip:
+        joined = df2.join(df1, on="A", strategy=join_strategy).sort("A")
+    else:
+        joined = df1.join(df2, on="A", strategy=join_strategy).sort("A")
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [],
+        "B": [],
+        "right.B": [],
+    }
+
+
+@pytest.mark.parametrize("n_partitions", [1, 2, 4])
+@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize("flip", [False, True])
+def test_joins_no_overlap_interleaved(join_strategy, make_df, n_partitions: int, flip):
+    df1 = make_df(
+        {
+            "A": [1, 3, 5],
+            "B": ["a", "b", "c"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+    df2 = make_df(
+        {
+            "A": [2, 4, 6],
+            "B": ["d", "e", "f"],
+        },
+        repartition=n_partitions,
+        repartition_columns=["A"],
+    )
+
+    if flip:
+        joined = df2.join(df1, on="A", strategy=join_strategy).sort("A")
+    else:
+        joined = df1.join(df2, on="A", strategy=join_strategy).sort("A")
+    joined_data = joined.to_pydict()
+
+    assert joined_data == {
+        "A": [],
+        "B": [],
+        "right.B": [],
     }
 
 

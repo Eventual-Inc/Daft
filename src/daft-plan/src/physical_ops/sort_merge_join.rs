@@ -14,6 +14,7 @@ pub struct SortMergeJoin {
     pub right_on: Vec<Expr>,
     pub join_type: JoinType,
     pub num_partitions: usize,
+    pub left_is_larger: bool,
 }
 
 impl SortMergeJoin {
@@ -24,6 +25,7 @@ impl SortMergeJoin {
         right_on: Vec<Expr>,
         join_type: JoinType,
         num_partitions: usize,
+        left_is_larger: bool,
     ) -> Self {
         Self {
             left,
@@ -32,6 +34,7 @@ impl SortMergeJoin {
             right_on,
             join_type,
             num_partitions,
+            left_is_larger,
         }
     }
 }
