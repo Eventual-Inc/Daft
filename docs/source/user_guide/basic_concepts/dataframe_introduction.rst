@@ -23,7 +23,7 @@ Let's create our first Dataframe from a Python dictionary of columns.
         "A": [1, 2, 3, 4],
         "B": [1.5, 2.5, 3.5, 4.5],
         "C": [True, True, False, False],
-    })
+    }).select("A", "B", "C")
 
 Examine your Dataframe by printing it:
 
@@ -50,7 +50,7 @@ Executing our DataFrame and Viewing Data
 
 The reason that our DataFrame currently does not display its rows is that Daft DataFrames are **lazy**. This just means that Daft DataFrames will defer all its work until you tell it to execute.
 
-In this case, Daft is just deferring the work required to read data from the Python dictionary, however in practice this laziness can be very useful for helping Daft optimize your queries before execution!
+In this case, Daft is just deferring the work required to read data from the Python dictionary and select columns, however in practice this laziness can be very useful for helping Daft optimize your queries before execution!
 
 .. NOTE::
 

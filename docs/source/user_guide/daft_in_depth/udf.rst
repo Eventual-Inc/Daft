@@ -16,16 +16,7 @@ Let's first create a dataframe that will be used as a running example throughout
         # the `crop` column contains a box to crop from our image, represented as a list of integers: [x1, x2, y1, y2]
         "crop": [[0, 1, 0, 1] for i in range(16)],
     })
-    df
 
-.. code:: none
-
-    +----------+---------------+
-    | image    | crop          |
-    | Python   | List[Int64]   |
-    +==========+===============+
-    +----------+---------------+
-    (No data to display: Dataframe not materialized)
 
 Per-column per-row functions using :meth:`.apply <daft.expressions.Expression.apply>`
 -------------------------------------------------------------------------------------
