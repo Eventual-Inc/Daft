@@ -503,7 +503,7 @@ def merge_join_sorted(
     different range partitionings (partition boundaries).
     """
 
-    # Lerge vs. smaller side of join.
+    # Large vs. smaller side of join.
     larger_plan = left_plan if left_is_larger else right_plan
     smaller_plan = right_plan if left_is_larger else left_plan
 
