@@ -540,7 +540,6 @@ def merge_join_sorted(
         # (possibly) intersecting partitions from the larger side.
         while smaller_requests and smaller_requests[0].done():
             next_part = smaller_requests.popleft()
-            # print("new smaller part:", next_part.partition_metadata().boundaries.bounds)
             yield from _emit_merge_joins_on_window(
                 next_part,
                 larger_window,
