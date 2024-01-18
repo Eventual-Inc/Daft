@@ -37,6 +37,7 @@ WORKING_SHOW_COLLECT = [
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
+    "add_new_column"
 ]
 
 
