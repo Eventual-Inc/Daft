@@ -19,7 +19,7 @@ import logging
 import math
 import pathlib
 from collections import deque
-from typing import Generator, Iterator, TypeVar, Union, cast
+from typing import Generator, Iterator, List, TypeVar, Union, cast
 
 from daft.context import get_context
 from daft.daft import (
@@ -614,7 +614,7 @@ def merge_join_sorted(
                 # This output partition may be predetermined to be empty.
                 yield tasks[0]
                 continue
-            tasks_ = cast(list[SingleOutputPartitionTask], tasks)
+            tasks_ = cast(List[SingleOutputPartitionTask], tasks)
             # At least two (probably non-empty) merge-join tasks for this group, so need to coalesce.
             # NOTE: We guarantee in _emit_merge_joins_on_window that any group containing 2 or more partition tasks
             # will only contain non-guaranteed-empty partitions; i.e., we'll need to execute a task to determine if
