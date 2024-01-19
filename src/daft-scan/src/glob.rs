@@ -6,14 +6,15 @@ use daft_csv::CsvParseOptions;
 use daft_io::{
     get_io_client, get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef,
 };
-use daft_parquet::read::ParquetSchemaInferenceOptions;
-use futures::{stream::BoxStream, StreamExt};
-use snafu::Snafu;
+use daft_parquet::read::{read_parquet_metadata, ParquetSchemaInferenceOptions};
+use futures::{future::try_join_all, stream::BoxStream, StreamExt};
+use snafu::{ResultExt, Snafu};
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
     storage_config::StorageConfig,
-    DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, DataFileSource, JoinSnafu, PartitionField, Pushdowns, ScanOperator, ScanTask,
+    ScanTaskRef,
 };
 #[derive(Debug, PartialEq, Hash)]
 pub struct GlobScanOperator {
@@ -246,56 +247,122 @@ impl ScanOperator for GlobScanOperator {
         &self,
         pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'static>> {
+        use itertools::peek_nth;
+
         let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
             self.glob_paths
         ));
 
+        let owned_runtime = io_runtime.clone();
+        let owned_client = io_client.clone();
+        let owned_io_stats = io_stats.clone();
+
         // Run [`run_glob`] on each path and mux them into the same iterator
-        let files = self
-            .glob_paths
-            .clone()
-            .into_iter()
-            .flat_map(move |glob_path| {
-                match run_glob(
+        let mut files =
+            peek_nth(self.glob_paths.clone().into_iter().flat_map(
+                move |glob_path| match run_glob(
                     glob_path.as_str(),
                     None,
-                    io_client.clone(),
-                    io_runtime.clone(),
-                    Some(io_stats.clone()),
+                    owned_client.clone(),
+                    owned_runtime.clone(),
+                    Some(owned_io_stats.clone()),
                 ) {
                     Ok(paths) => paths,
                     Err(err) => Box::new(vec![Err(err)].into_iter()),
+                },
+            ));
+
+        // only partition by row group if we have a small amount of parquet files
+        // this way metadata read will not be a bottleneck, and splitting by row group is less useful when there are more files anyway
+        if let FileFormatConfig::Parquet(_) = self.file_format_config.as_ref() && files.peek_nth(10).is_none() {
+            let runtime_handle = io_runtime.handle();
+            runtime_handle.block_on(self.split_scan_tasks_by_row_group(files, io_client, io_stats, pushdowns))
+        } else {
+            let file_format_config = self.file_format_config.clone();
+            let schema = self.schema.clone();
+            let storage_config = self.storage_config.clone();
+
+            // Create one ScanTask per file
+            Ok(Box::new(files.map(move |f| {
+                let FileMetadata {
+                    filepath: path,
+                    size: size_bytes,
+                    ..
+                } = f?;
+                Ok(ScanTask::new(
+                    vec![DataFileSource::AnonymousDataFile {
+                        path: path.to_string(),
+                        chunk_spec: None,
+                        size_bytes,
+                        metadata: None,
+                        partition_spec: None,
+                        statistics: None,
+                    }],
+                    file_format_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                )
+                .into())
+            })))
+        }
+    }
+}
+
+impl GlobScanOperator {
+    async fn split_scan_tasks_by_row_group(
+        &self,
+        files: impl Iterator<Item = DaftResult<FileMetadata>>,
+        io_client: Arc<IOClient>,
+        io_stats: Arc<IOStatsContext>,
+        pushdowns: Pushdowns,
+    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'static>> {
+        let handles_iter = files.map(|f| {
+            let io_client = io_client.clone();
+            let io_stats = io_stats.clone();
+            let file_format_config = self.file_format_config.clone();
+            let schema: Arc<daft_core::schema::Schema> = self.schema.clone();
+            let storage_config = self.storage_config.clone();
+            let pushdowns = pushdowns.clone();
+
+            tokio::spawn(async move {
+                let path = f?.filepath;
+
+                let fm =
+                    read_parquet_metadata(&path, io_client.clone(), Some(io_stats.clone())).await?;
+
+                Ok(fm.row_groups.into_iter().enumerate().map(move |(rg, rgm)| {
+                    ScanTask::new(
+                        vec![DataFileSource::AnonymousDataFile {
+                            path: path.to_string(),
+                            chunk_spec: Some(ChunkSpec::Parquet(vec![rg as i64])),
+                            size_bytes: Some(rgm.compressed_size() as u64),
+                            metadata: None,
+                            partition_spec: None,
+                            statistics: None,
+                        }],
+                        file_format_config.clone(),
+                        schema.clone(),
+                        storage_config.clone(),
+                        pushdowns.clone(),
+                    )
+                }))
+            })
+        });
+
+        let all_tasks = try_join_all(handles_iter).await.context(JoinSnafu {
+            path: "READ ROW GROUPS",
+        })?;
+
+        Ok(Box::new(all_tasks.into_iter().flat_map(
+            move |tasks| -> Box<dyn Iterator<Item = DaftResult<Arc<ScanTask>>>> {
+                match tasks {
+                    Ok(tasks) => Box::new(tasks.map(|t| Ok(t.into()))),
+                    Err(e) => Box::new(std::iter::once(Err(e))),
                 }
-            });
-
-        let file_format_config = self.file_format_config.clone();
-        let schema = self.schema.clone();
-        let storage_config = self.storage_config.clone();
-
-        // Create one ScanTask per file
-        Ok(Box::new(files.map(move |f| {
-            let FileMetadata {
-                filepath: path,
-                size: size_bytes,
-                ..
-            } = f?;
-            Ok(ScanTask::new(
-                vec![DataFileSource::AnonymousDataFile {
-                    path: path.to_string(),
-                    chunk_spec: None,
-                    size_bytes,
-                    metadata: None,
-                    partition_spec: None,
-                    statistics: None,
-                }],
-                file_format_config.clone(),
-                schema.clone(),
-                storage_config.clone(),
-                pushdowns.clone(),
-            )
-            .into())
-        })))
+            },
+        )))
     }
 }

@@ -76,6 +76,12 @@ pub enum Error {
         p2
     ))]
     DifferingPushdownsInScanTaskMerge { p1: Pushdowns, p2: Pushdowns },
+
+    #[snafu(display("Error joining spawned task: {} for path: {}", source, path))]
+    JoinError {
+        path: String,
+        source: tokio::task::JoinError,
+    },
 }
 
 impl From<Error> for DaftError {
