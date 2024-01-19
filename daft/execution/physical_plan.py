@@ -559,9 +559,9 @@ def _emit_merge_joins_on_window(
                 preserve_left_bounds=not flipped,
             )
         )
+        part_id = next_part.id() if next_is_larger else other_next_part.id()
         # Add to new merge-join step to tracked steps for this larger-side partition, and possibly start finalizing +
         # emitting non-empty join steps if there are now more than one.
-        part_id = next_part.id() if next_is_larger else other_next_part.id()
         merge_join_task_tracker.add_task(part_id, join_task)
         yield from merge_join_task_tracker.yield_ready(part_id)
 
@@ -697,8 +697,13 @@ def merge_join_sorted(
         ):
             done_larger_part = larger_window.popleft()
             part_id = done_larger_part.id()
+            # Indicate to merge-join task tracker that no more merge-join tasks will be added for this partition.
             merge_join_task_tracker.finalize(part_id)
+            # Yield any merge-join tasks that are now ready after finalizing the tracking for this partition (i.e. if
+            # there was only a single merge-join task added to the tracker for this partition, it will now be yielded
+            # here).
             yield from merge_join_task_tracker.yield_ready(part_id)
+            # Get merge-join tasks that need to be coalesced.
             tasks = merge_join_task_tracker.pop_uncoalesced(part_id)
             if tasks is None:
                 # Only one output partition, so no coalesce needed.
