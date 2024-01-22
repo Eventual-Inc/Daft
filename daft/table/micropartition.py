@@ -288,6 +288,13 @@ class MicroPartition:
             for t in self._micropartition.partition_by_random(num_partitions, seed)
         ]
 
+    def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[MicroPartition], MicroPartition]:
+        exprs = [e._expr for e in partition_keys]
+        pytables, values = self._micropartition.partition_by_value(exprs)
+        return [MicroPartition._from_pymicropartition(t) for t in pytables], MicroPartition._from_pymicropartition(
+            values
+        )
+
     ###
     # Compute methods (MicroPartition -> Series)
     ###

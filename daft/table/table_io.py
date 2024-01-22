@@ -383,53 +383,54 @@ def _to_file(
     io_config: IOConfig | None = None,
 ) -> list[str]:
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    arrow_table = table.to_arrow()
 
-    partitioning = [e.name() for e in (partition_cols or [])]
-    if partitioning:
-        # In partition cols, downcast large_string to string,
-        # since pyarrow.dataset.write_dataset breaks for large_string partitioning columns.
-        downcasted_schema = pa.schema(
-            [
-                pa.field(
-                    name=field.name,
-                    type=pa.string(),
-                    nullable=field.nullable,
-                    metadata=field.metadata,
-                )
-                if field.name in partitioning and field.type == pa.large_string()
-                else field
-                for field in arrow_table.schema
-            ]
-        )
-        arrow_table = arrow_table.cast(downcasted_schema)
+    tables_to_write: list[MicroPartition]
+    part_keys_postfix_per_table: list[str]
+    if partition_cols and len(partition_cols) > 0:
+        split_tables, values = table.partition_by_value(partition_keys=partition_cols)
+        assert len(split_tables) == len(values)
+        pkey_names = values.column_names()
 
+        # TODO: Handle null value case
+
+        values_string_values = [values.get_column(c)._to_str_values().to_pylist() for c in pkey_names]
+        part_keys_postfix_per_table = []
+        for i in range(len(values)):
+            postfix = "/".join(f"{pkey}={values[i]}" for pkey, values in zip(pkey_names, values_string_values))
+            part_keys_postfix_per_table.append(postfix)
+        tables_to_write = split_tables
+    else:
+        tables_to_write = [table]
+        part_keys_postfix_per_table = [None]
     if file_format == "parquet":
         format = pads.ParquetFileFormat()
-        opts = format.make_write_options(compression=compression)
+        opts = dict(compression=compression)
+        writer_fn = papq.write_table
     elif file_format == "csv":
         format = pads.CsvFileFormat()
         opts = None
+        writer_fn = pacsv.write_table
         assert compression is None
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
     visited_paths = []
 
-    def file_visitor(written_file):
-        visited_paths.append(written_file.path)
+    for tab, postfix in zip(tables_to_write, part_keys_postfix_per_table):
+        full_path = resolved_path
+        if postfix is not None and len(postfix) > 0:
+            full_path = f"{full_path}/{postfix}"
 
-    pads.write_dataset(
-        arrow_table,
-        base_dir=resolved_path,
-        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
-        format=format,
-        partitioning=partitioning,
-        file_options=opts,
-        file_visitor=file_visitor,
-        use_threads=False,
-        existing_data_behavior="overwrite_or_ignore",
-        filesystem=fs,
-    )
+        # TODO: For overwriting behavior, check here if dir exists to determine to delete files
+
+        fs.create_dir(full_path)
+
+        # TODO: Split table into Target size chunks, generating multiple files for this 1 input table
+
+        filename = f"{uuid4()}.{format.default_extname}"
+        full_path = f"{full_path}/{filename}"
+
+        writer_fn(tab.to_arrow(), where=full_path, filesystem=fs, **opts)
+        visited_paths.append(full_path)
 
     return visited_paths

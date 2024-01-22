@@ -380,6 +380,20 @@ impl PyMicroPartition {
         })
     }
 
+    pub fn partition_by_value(
+        &self,
+        py: Python,
+        partition_keys: Vec<PyExpr>,
+    ) -> PyResult<(Vec<Self>, Self)> {
+        let exprs: Vec<daft_dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
+            let mps = mps.into_iter().map(|m| m.into()).collect::<Vec<Self>>();
+            let values = values.into();
+            Ok((mps, values))
+        })
+    }
+
     #[staticmethod]
     pub fn read_json(
         py: Python,
