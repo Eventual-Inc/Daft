@@ -670,6 +670,13 @@ class DataFrame:
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
         random repartitioning will occur.
 
+        .. NOTE::
+            This function will globally shuffle your data, which is potentially a very expensive operation.
+
+            If instead you merely wish to "split" or "coalesce" partitions to obtain a target number of partitions,
+            you mean instead wish to consider using :meth:`DataFrame.into_parititions`<daft.DataFrame.into_partitions>
+            which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
+
         Example:
             >>> random_repart_df = df.repartition(4)
             >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
@@ -682,6 +689,10 @@ class DataFrame:
             DataFrame: Repartitioned DataFrame.
         """
         if len(partition_by) == 0:
+            warnings.warn(
+                "No columns specified for repartition; If you do not require rebalancing of partitions, you may "
+                "instead prefer using `df.into_partitions(N)` which is a cheaper operation that avoids shuffling data."
+            )
             scheme = PartitionScheme.Random
             exprs = []
         else:
