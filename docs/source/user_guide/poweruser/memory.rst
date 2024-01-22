@@ -28,9 +28,9 @@ Spilling to disk is a mechanism that Daft uses to ensure workload completion in 
 
 There are some things you can do that will help with this.
 
-1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. `AWS EC2 r5 instances <https://duckdb.org/docs/api/python/spark_api.html>`_)
+1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. `AWS EC2 r5 instances <https://aws.amazon.com/ec2/instance-types/r5/>`_)
 2. Use more machines in your cluster to increase overall cluster memory size
-3. Use machines with attached local nvme SSD drives for higher throughput when spilling (e.g. `AWS EC2 r5d instances <https://duckdb.org/docs/api/python/spark_api.html>`_)
+3. Use machines with attached local nvme SSD drives for higher throughput when spilling (e.g. AWS EC2 r5d instances)
 
 For more troubleshooting, you may also wish to consult the `Ray documentation's recommendations for object spilling <https://docs.ray.io/en/latest/ray-core/objects/object-spilling.html>`_.
 
@@ -51,7 +51,7 @@ These OOMKills are often recoverable (Daft-on-Ray will take care of retrying wor
 
 There are some options available to you.
 
-1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. `AWS EC2 r5 instances <https://aws.amazon.com/ec2/instance-types/r5/>`_)
+1. Use machines with more available memory per-CPU to increase each Ray worker's available memory (e.g. AWS EC2 r5 instances)
 2. Use more machines in your cluster to increase overall cluster memory size
 3. Aggressively filter your data so that Daft can avoid reading data that it does not have to (e.g. ``df.where(...)``)
 4. Request more memory for your UDFs (see: :ref:`resource-requests`) if your UDFs are memory intensive (e.g. decompression of data, running large matrix computations etc)
