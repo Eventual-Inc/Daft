@@ -245,13 +245,9 @@ impl LogicalPlanBuilder {
             compression,
             io_config,
         ));
-        let fields = vec![Field::new("path", DataType::Utf8)];
-        let logical_plan: LogicalPlan = logical_ops::Sink::new(
-            self.plan.clone(),
-            Schema::new(fields)?.into(),
-            sink_info.into(),
-        )
-        .into();
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
         Ok(logical_plan.into())
     }
 

@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
-use daft_core::schema::SchemaRef;
+use common_error::DaftResult;
+use daft_core::{
+    datatypes::Field,
+    schema::{Schema, SchemaRef},
+};
 
 use crate::{
-    sink_info::{OutputFileInfo, SinkInfo},
+    sink_info::{self, OutputFileInfo, SinkInfo},
     LogicalPlan,
 };
 
@@ -17,16 +21,25 @@ pub struct Sink {
 }
 
 impl Sink {
-    pub(crate) fn new(
-        input: Arc<LogicalPlan>,
-        schema: SchemaRef,
-        sink_info: Arc<SinkInfo>,
-    ) -> Self {
-        Self {
+    pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
+        let mut fields = vec![Field::new("path", daft_core::DataType::Utf8)];
+        let schema = input.schema();
+
+        match sink_info.as_ref() {
+            SinkInfo::OutputFileInfo(output_file_info) => {
+                if let Some(ref pcols) = output_file_info.partition_cols {
+                    for pc in pcols {
+                        fields.push(pc.to_field(&schema)?);
+                    }
+                }
+            }
+        }
+        let schema = Schema::new(fields)?.into();
+        Ok(Self {
             input,
             schema,
             sink_info,
-        }
+        })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

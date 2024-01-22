@@ -16,6 +16,7 @@ from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
     CsvReadOptions,
+    FileFormat,
     IOConfig,
     JsonConvertOptions,
     JsonParseOptions,
@@ -23,7 +24,6 @@ from daft.daft import (
     NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
-    FileFormat
 )
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
@@ -362,23 +362,21 @@ def write_tabular(
         writer_fn = pacsv.write_table
         assert compression is None
     else:
-        raise ValueError(
-            f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}"
-        )
-
+        raise ValueError(f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}")
 
     tables_to_write: list[MicroPartition]
     part_keys_postfix_per_table: list[str]
+    partition_values = None
     if partition_cols and len(partition_cols) > 0:
-        split_tables, values = table.partition_by_value(partition_keys=partition_cols)
-        assert len(split_tables) == len(values)
-        pkey_names = values.column_names()
+        split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
+        assert len(split_tables) == len(partition_values)
+        pkey_names = partition_values.column_names()
 
         # TODO: Handle null value case
 
-        values_string_values = [values.get_column(c)._to_str_values().to_pylist() for c in pkey_names]
+        values_string_values = [partition_values.get_column(c)._to_str_values().to_pylist() for c in pkey_names]
         part_keys_postfix_per_table = []
-        for i in range(len(values)):
+        for i in range(len(partition_values)):
             postfix = "/".join(f"{pkey}={values[i]}" for pkey, values in zip(pkey_names, values_string_values))
             part_keys_postfix_per_table.append(postfix)
         tables_to_write = split_tables
@@ -405,8 +403,10 @@ def write_tabular(
         writer_fn(tab.to_arrow(), where=full_path, filesystem=fs, **opts)
         visited_paths.append(full_path)
 
-    return MicroPartition.from_pydict(
-        {
-            schema.column_names()[0]: visited_paths,
-        }
-    )
+    data_dict = {schema.column_names()[0]: visited_paths}
+
+    if partition_values is not None:
+        for c_name in partition_values.column_names():
+            data_dict[c_name] = partition_values.get_column(c_name)
+
+    return MicroPartition.from_pydict(data_dict)
