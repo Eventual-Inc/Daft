@@ -340,7 +340,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -354,11 +354,7 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
-            for c in cols:
-                assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(None, *cols)
-        else:
-            pass
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -396,7 +392,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -407,11 +403,6 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
-            for c in cols:
-                assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(None, *cols)
-        else:
-            pass
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
