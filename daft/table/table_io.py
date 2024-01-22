@@ -23,6 +23,7 @@ from daft.daft import (
     NativeStorageConfig,
     PythonStorageConfig,
     StorageConfig,
+    FileFormat
 )
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
@@ -340,49 +341,31 @@ def read_csv(
     return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
 
 
-def write_csv(
+def write_tabular(
     table: MicroPartition,
+    file_format: FileFormat,
     path: str | pathlib.Path,
-    compression: str | None = None,
-    partition_cols: ExpressionsProjection | None = None,
-    io_config: IOConfig | None = None,
-) -> list[str]:
-    return _to_file(
-        table=table,
-        file_format="csv",
-        path=path,
-        partition_cols=partition_cols,
-        compression=compression,
-        io_config=io_config,
-    )
-
-
-def write_parquet(
-    table: MicroPartition,
-    path: str | pathlib.Path,
-    compression: str | None = None,
-    partition_cols: ExpressionsProjection | None = None,
-    io_config: IOConfig | None = None,
-) -> list[str]:
-    return _to_file(
-        table=table,
-        file_format="parquet",
-        path=path,
-        partition_cols=partition_cols,
-        compression=compression,
-        io_config=io_config,
-    )
-
-
-def _to_file(
-    table: MicroPartition,
-    file_format: str,
-    path: str | pathlib.Path,
+    schema: Schema,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,
 ) -> list[str]:
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+
+    if file_format == FileFormat.Parquet:
+        format = pads.ParquetFileFormat()
+        opts = dict(compression=compression)
+        writer_fn = papq.write_table
+    elif file_format == FileFormat.Csv:
+        format = pads.CsvFileFormat()
+        opts = None
+        writer_fn = pacsv.write_table
+        assert compression is None
+    else:
+        raise ValueError(
+            f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}"
+        )
+
 
     tables_to_write: list[MicroPartition]
     part_keys_postfix_per_table: list[str]
@@ -402,17 +385,6 @@ def _to_file(
     else:
         tables_to_write = [table]
         part_keys_postfix_per_table = [None]
-    if file_format == "parquet":
-        format = pads.ParquetFileFormat()
-        opts = dict(compression=compression)
-        writer_fn = papq.write_table
-    elif file_format == "csv":
-        format = pads.CsvFileFormat()
-        opts = None
-        writer_fn = pacsv.write_table
-        assert compression is None
-    else:
-        raise ValueError(f"Unsupported file format {file_format}")
 
     visited_paths = []
 
@@ -433,4 +405,8 @@ def _to_file(
         writer_fn(tab.to_arrow(), where=full_path, filesystem=fs, **opts)
         visited_paths.append(full_path)
 
-    return visited_paths
+    return MicroPartition.from_pydict(
+        {
+            schema.column_names()[0]: visited_paths,
+        }
+    )
