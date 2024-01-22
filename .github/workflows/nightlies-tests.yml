@@ -34,7 +34,7 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
         rm -rf daft
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
       with:
