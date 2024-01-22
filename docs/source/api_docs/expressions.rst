@@ -180,7 +180,7 @@ Example: ``e1.list.join(e2)``
 
 
 Structs
-******
+*******
 
 Operations on structs, accessible through the :meth:`Expression.image <daft.expressions.Expression.struct>` method accessor:
 
