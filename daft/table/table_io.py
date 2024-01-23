@@ -35,6 +35,7 @@ from daft.runners.partitioning import (
     TableParseParquetOptions,
     TableReadOptions,
 )
+from daft.series import Series
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -351,6 +352,7 @@ def write_tabular(
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,
+    partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
 
@@ -358,13 +360,20 @@ def write_tabular(
     part_keys_postfix_per_table: list[str | None]
     partition_values = None
     if partition_cols and len(partition_cols) > 0:
+
+        default_part = Series.from_pylist([partition_null_fallback])
         split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
         assert len(split_tables) == len(partition_values)
         pkey_names = partition_values.column_names()
 
-        # TODO: Handle null value case
+        values_string_values = []
 
-        values_string_values = [partition_values.get_column(c)._to_str_values().to_pylist() for c in pkey_names]
+        for c in pkey_names:
+            column = partition_values.get_column(c)
+            string_names = column._to_str_values()
+            null_filled = column.is_null().if_else(default_part, string_names)
+            values_string_values.append(null_filled.to_pylist())
+
         part_keys_postfix_per_table = []
         for i in range(len(partition_values)):
             postfix = "/".join(f"{pkey}={values[i]}" for pkey, values in zip(pkey_names, values_string_values))
@@ -385,7 +394,6 @@ def write_tabular(
 
     TARGET_ROW_GROUP_SIZE = execution_config.parquet_target_row_group_size
 
-    inflation_factor = 1.0
     if file_format == FileFormat.Parquet:
         format = pads.ParquetFileFormat()
         inflation_factor = execution_config.parquet_inflation_factor
