@@ -112,6 +112,11 @@ class Expression:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
 
+    @property
+    def partitioning(self) -> ExpressionPartitioningNamespace:
+        """Access methods that support partitioning operators"""
+        return ExpressionPartitioningNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -897,3 +902,23 @@ class ExpressionImageNamespace(ExpressionNamespace):
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
+
+
+class ExpressionPartitioningNamespace(ExpressionNamespace):
+    def days(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_days())
+
+    def hours(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_hours())
+
+    def months(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_months())
+
+    def years(self) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_years())
+
+    def iceberg_bucket(self, n: int) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_iceberg_bucket(n))
+
+    def iceberg_truncate(self, w: int) -> Expression:
+        return Expression._from_pyexpr(self._expr.partitioning_iceberg_truncate(w))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import pathlib
 from collections.abc import Callable, Generator
 from typing import IO, Union
@@ -352,18 +353,6 @@ def write_tabular(
 ) -> list[str]:
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
 
-    if file_format == FileFormat.Parquet:
-        format = pads.ParquetFileFormat()
-        opts = dict(compression=compression)
-        writer_fn = papq.write_table
-    elif file_format == FileFormat.Csv:
-        format = pads.CsvFileFormat()
-        opts = None
-        writer_fn = pacsv.write_table
-        assert compression is None
-    else:
-        raise ValueError(f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}")
-
     tables_to_write: list[MicroPartition]
     part_keys_postfix_per_table: list[str]
     partition_values = None
@@ -385,6 +374,25 @@ def write_tabular(
         part_keys_postfix_per_table = [None]
 
     visited_paths = []
+    visited_sizes = []
+
+    def file_visitor(written_file):
+        visited_paths.append(written_file.path)
+        visited_sizes.append(written_file.size)
+
+    TARGET_ROW_GROUP_SIZE = 128 * 1024 * 1024
+    TARGET_FILE_SIZE = 512 * 1024 * 1024
+    PARQUET_INFLATION_FACTOR = 3.0
+
+    if file_format == FileFormat.Parquet:
+        format = pads.ParquetFileFormat()
+        opts = format.make_write_options(compression=compression)
+    elif file_format == FileFormat.Csv:
+        format = pads.CsvFileFormat()
+        opts = None
+        assert compression is None
+    else:
+        raise ValueError(f"Unsupported file format {file_format}")
 
     for tab, postfix in zip(tables_to_write, part_keys_postfix_per_table):
         full_path = resolved_path
@@ -392,16 +400,35 @@ def write_tabular(
             full_path = f"{full_path}/{postfix}"
 
         # TODO: For overwriting behavior, check here if dir exists to determine to delete files
+        # fs.create_dir(full_path)
 
-        fs.create_dir(full_path)
+        arrow_table = tab.to_arrow()
 
-        # TODO: Split table into Target size chunks, generating multiple files for this 1 input table
+        size_bytes = arrow_table.nbytes
 
-        filename = f"{uuid4()}.{format.default_extname}"
-        full_path = f"{full_path}/{filename}"
+        target_num_files = math.ceil(size_bytes / TARGET_FILE_SIZE / PARQUET_INFLATION_FACTOR)
+        num_rows = len(arrow_table)
 
-        writer_fn(tab.to_arrow(), where=full_path, filesystem=fs, **opts)
-        visited_paths.append(full_path)
+        rows_per_file = math.ceil(num_rows / target_num_files)
+
+        target_row_groups = math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / PARQUET_INFLATION_FACTOR)
+        rows_per_row_group = math.ceil(num_rows / target_row_groups)
+
+        pads.write_dataset(
+            arrow_table,
+            base_dir=full_path,
+            basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+            format=format,
+            partitioning=None,
+            file_options=opts,
+            file_visitor=file_visitor,
+            use_threads=True,
+            existing_data_behavior="overwrite_or_ignore",
+            filesystem=fs,
+            max_rows_per_file=rows_per_file,
+            min_rows_per_group=rows_per_row_group,
+            max_rows_per_group=rows_per_row_group,
+        )
 
     data_dict = {schema.column_names()[0]: visited_paths}
 
