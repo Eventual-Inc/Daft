@@ -27,6 +27,8 @@ impl Series {
         if items.is_empty() {
             return Ok(default);
         }
+        // match items.data_type() with the datatypes of LiteralValue because items is a List(Vec<LiteralValue>),
+        // attept to cast self to the same datatype as items, then check if self is in items
         match items.data_type() {
             crate::datatypes::DataType::Null => self.is_null(),
             crate::datatypes::DataType::Boolean => {

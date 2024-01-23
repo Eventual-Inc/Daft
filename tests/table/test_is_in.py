@@ -89,6 +89,10 @@ def test_table_expr_is_in_different_types(input, items, expected) -> None:
     [
         pytest.param([[1, 2, 3], [4, 5, 6]], [[1, 2, 3]], id="NestedListColumn"),
         pytest.param([{"a": 1}, {"b": 1}], [{"a": 1}], id="NestedStructColumn"),
+        # TODO: Add support for these types
+        # Currently list of datetime/timestamp are parsed as LiteralValue::List(Python) instead of LiteralValue::List(Date/Timestamp)
+        # because the default _lit function does not support these types. There are separate _date_lit and _timestamp_lit functions but these are for
+        # single values only. Need to implement a _datelist_lit / _timestamplist_lit function that supports these types.
         pytest.param(
             [datetime.date.today(), datetime.date.today() - datetime.timedelta(days=1)],
             [datetime.date.today()],
