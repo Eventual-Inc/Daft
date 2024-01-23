@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+from pyarrow import dataset as pads
 
 import daft
 from tests.conftest import assert_df_equals
@@ -33,10 +34,6 @@ def test_parquet_write_with_partitioning(tmp_path):
     assert len(pd_df._preview.preview_partition) == 5
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="We only use pyarrow datasets 11 for this test",
-)
 def test_parquet_write_with_partitioning_readback_values(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
@@ -55,6 +52,18 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
 
     assert len(output_files) == 5
     assert len(output_files._preview.preview_partition) == 5
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="We only use pyarrow datasets 11 for this test",
+)
+def test_parquet_write_with_null_values(tmp_path):
+    df = daft.from_pydict({"x": [1, 2, 3, None]})
+    df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y")])
+    ds = pads.dataset(tmp_path, format="parquet", partitioning=pads.HivePartitioning(pa.schema([("y", pa.int64())])))
+    readback = ds.to_table()
+    assert readback.to_pydict() == {"x": [1, 2, 3, None], "y": [1, 2, 3, None]}
 
 
 def test_csv_write(tmp_path):
