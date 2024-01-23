@@ -7,7 +7,7 @@ use daft_core::{
 };
 
 use crate::{
-    sink_info::{self, OutputFileInfo, SinkInfo},
+    sink_info::{OutputFileInfo, SinkInfo},
     LogicalPlan,
 };
 

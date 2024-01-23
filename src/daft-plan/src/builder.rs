@@ -14,8 +14,8 @@ use crate::{
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
+use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_core::{datatypes::Field, schema::Schema, DataType};
 use daft_dsl::Expr;
 use daft_scan::{
     file_format::{FileFormat, FileFormatConfig},
