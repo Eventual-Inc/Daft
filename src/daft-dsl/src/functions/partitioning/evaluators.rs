@@ -22,9 +22,10 @@ macro_rules! impl_func_evaluator_for_partitioning {
             fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
                 match inputs {
                     [input] => match input.to_field(schema) {
-                        Ok(field) if field.dtype.is_temporal() => {
-                            Ok(Field::new(field.name, $result_type))
-                        }
+                        Ok(field) if field.dtype.is_temporal() => Ok(Field::new(
+                            format!("{}_{}", field.name, stringify!($op)),
+                            $result_type,
+                        )),
                         Ok(field) => Err(DaftError::TypeError(format!(
                             "Expected input to {} to be temporal, got {}",
                             stringify!($op),
@@ -73,8 +74,14 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
                     | DataType::Date
                     | DataType::Timestamp(..)
                     | DataType::Utf8
-                    | DataType::Binary => Ok(Field::new(field.name, DataType::Int32)),
-                    v if v.is_integer() => Ok(Field::new(field.name, DataType::Int32)),
+                    | DataType::Binary => Ok(Field::new(
+                        format!("{}_bucket", field.name),
+                        DataType::Int32,
+                    )),
+                    v if v.is_integer() => Ok(Field::new(
+                        format!("{}_bucket", field.name),
+                        DataType::Int32,
+                    )),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to iceberg bucketing to be murmur3 hashable, got {}",
                         field.dtype
@@ -122,8 +129,8 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {
                     DataType::Decimal128(_, _)
-                    | DataType::Utf8 => Ok(field.clone()),
-                    v if v.is_integer() => Ok(field.clone()),
+                    | DataType::Utf8 => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
+                    v if v.is_integer() => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to IcebergTruncate to be an Integer, Utf8 or Decimal, got {}",
                         field.dtype

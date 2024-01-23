@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import pathlib
 from collections.abc import Callable, Generator
-from typing import IO, Union
+from typing import IO, Any, Union
 from uuid import uuid4
 
 import pyarrow as pa
@@ -12,10 +13,12 @@ from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
+from daft.context import get_context
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
     CsvReadOptions,
+    FileFormat,
     IOConfig,
     JsonConvertOptions,
     JsonParseOptions,
@@ -24,6 +27,7 @@ from daft.daft import (
     PythonStorageConfig,
     StorageConfig,
 )
+from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -32,6 +36,7 @@ from daft.runners.partitioning import (
     TableParseParquetOptions,
     TableReadOptions,
 )
+from daft.series import Series
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -340,96 +345,118 @@ def read_csv(
     return _cast_table_to_schema(daft_table, read_options=read_options, schema=schema)
 
 
-def write_csv(
+def write_tabular(
     table: MicroPartition,
+    file_format: FileFormat,
     path: str | pathlib.Path,
-    compression: str | None = None,
-    partition_cols: ExpressionsProjection | None = None,
-    io_config: IOConfig | None = None,
-) -> list[str]:
-    return _to_file(
-        table=table,
-        file_format="csv",
-        path=path,
-        partition_cols=partition_cols,
-        compression=compression,
-        io_config=io_config,
-    )
-
-
-def write_parquet(
-    table: MicroPartition,
-    path: str | pathlib.Path,
-    compression: str | None = None,
-    partition_cols: ExpressionsProjection | None = None,
-    io_config: IOConfig | None = None,
-) -> list[str]:
-    return _to_file(
-        table=table,
-        file_format="parquet",
-        path=path,
-        partition_cols=partition_cols,
-        compression=compression,
-        io_config=io_config,
-    )
-
-
-def _to_file(
-    table: MicroPartition,
-    file_format: str,
-    path: str | pathlib.Path,
+    schema: Schema,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,
-) -> list[str]:
+    partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
+) -> MicroPartition:
+
+    from daft.utils import ARROW_VERSION
+
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    arrow_table = table.to_arrow()
 
-    partitioning = [e.name() for e in (partition_cols or [])]
-    if partitioning:
-        # In partition cols, downcast large_string to string,
-        # since pyarrow.dataset.write_dataset breaks for large_string partitioning columns.
-        downcasted_schema = pa.schema(
-            [
-                pa.field(
-                    name=field.name,
-                    type=pa.string(),
-                    nullable=field.nullable,
-                    metadata=field.metadata,
-                )
-                if field.name in partitioning and field.type == pa.large_string()
-                else field
-                for field in arrow_table.schema
-            ]
-        )
-        arrow_table = arrow_table.cast(downcasted_schema)
+    tables_to_write: list[MicroPartition]
+    part_keys_postfix_per_table: list[str | None]
+    partition_values = None
+    if partition_cols and len(partition_cols) > 0:
 
-    if file_format == "parquet":
+        default_part = Series.from_pylist([partition_null_fallback])
+        split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
+        assert len(split_tables) == len(partition_values)
+        pkey_names = partition_values.column_names()
+
+        values_string_values = []
+
+        for c in pkey_names:
+            column = partition_values.get_column(c)
+            string_names = column._to_str_values()
+            null_filled = column.is_null().if_else(default_part, string_names)
+            values_string_values.append(null_filled.to_pylist())
+
+        part_keys_postfix_per_table = []
+        for i in range(len(partition_values)):
+            postfix = "/".join(f"{pkey}={values[i]}" for pkey, values in zip(pkey_names, values_string_values))
+            part_keys_postfix_per_table.append(postfix)
+        tables_to_write = split_tables
+    else:
+        tables_to_write = [table]
+        part_keys_postfix_per_table = [None]
+
+    visited_paths = []
+    partition_idx = []
+
+    execution_config = get_context().daft_execution_config
+
+    TARGET_ROW_GROUP_SIZE = execution_config.parquet_target_row_group_size
+
+    if file_format == FileFormat.Parquet:
         format = pads.ParquetFileFormat()
+        inflation_factor = execution_config.parquet_inflation_factor
+        target_file_size = execution_config.parquet_target_filesize
         opts = format.make_write_options(compression=compression)
-    elif file_format == "csv":
+    elif file_format == FileFormat.Csv:
         format = pads.CsvFileFormat()
         opts = None
         assert compression is None
+        inflation_factor = execution_config.csv_inflation_factor
+        target_file_size = execution_config.csv_target_filesize
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
-    visited_paths = []
+    for i, (tab, pf) in enumerate(zip(tables_to_write, part_keys_postfix_per_table)):
+        full_path = resolved_path
+        if pf is not None and len(pf) > 0:
+            full_path = f"{full_path}/{pf}"
 
-    def file_visitor(written_file):
-        visited_paths.append(written_file.path)
+        # TODO: For overwriting behavior, check here if dir exists to determine to delete files
+        # fs.create_dir(full_path)
 
-    pads.write_dataset(
-        arrow_table,
-        base_dir=resolved_path,
-        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
-        format=format,
-        partitioning=partitioning,
-        file_options=opts,
-        file_visitor=file_visitor,
-        use_threads=False,
-        existing_data_behavior="overwrite_or_ignore",
-        filesystem=fs,
-    )
+        arrow_table = tab.to_arrow()
 
-    return visited_paths
+        size_bytes = arrow_table.nbytes
+
+        target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+        num_rows = len(arrow_table)
+
+        rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+
+        target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
+        rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
+
+        def file_visitor(written_file, i=i):
+            visited_paths.append(written_file.path)
+            partition_idx.append(i)
+
+        kwargs = dict()
+
+        if ARROW_VERSION >= (7, 0, 0):
+            kwargs["max_rows_per_file"] = rows_per_file
+            kwargs["min_rows_per_group"] = rows_per_row_group
+            kwargs["max_rows_per_group"] = rows_per_row_group
+
+        pads.write_dataset(
+            arrow_table,
+            base_dir=full_path,
+            basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+            format=format,
+            partitioning=None,
+            file_options=opts,
+            file_visitor=file_visitor,
+            use_threads=True,
+            existing_data_behavior="overwrite_or_ignore",
+            filesystem=fs,
+            **kwargs,
+        )
+
+    data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths}
+
+    if partition_values is not None:
+        partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())
+        for c_name in partition_values.column_names():
+            data_dict[c_name] = partition_values.get_column(c_name).take(partition_idx_series)
+    return MicroPartition.from_pydict(data_dict)

@@ -372,6 +372,12 @@ class Table:
 
         return [Table._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
 
+    def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[Table], Table]:
+        exprs = [e._expr for e in partition_keys]
+        pytables, values = self._table.partition_by_value(exprs)
+
+        return [Table._from_pytable(t) for t in pytables], Table._from_pytable(values)
+
     ###
     # Compute methods (Table -> Series)
     ###

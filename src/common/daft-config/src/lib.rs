@@ -27,6 +27,11 @@ pub struct DaftExecutionConfig {
     pub broadcast_join_size_bytes_threshold: usize,
     pub sample_size_for_sort: usize,
     pub num_preview_rows: usize,
+    pub parquet_target_filesize: usize,
+    pub parquet_target_row_group_size: usize,
+    pub parquet_inflation_factor: f64,
+    pub csv_target_filesize: usize,
+    pub csv_inflation_factor: f64,
 }
 
 impl Default for DaftExecutionConfig {
@@ -37,6 +42,11 @@ impl Default for DaftExecutionConfig {
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sample_size_for_sort: 20,
             num_preview_rows: 8,
+            parquet_target_filesize: 512 * 1024 * 1024, // 512MB
+            parquet_target_row_group_size: 128 * 1024 * 1024, // 128MB
+            parquet_inflation_factor: 3.0,
+            csv_target_filesize: 512 * 1024 * 1024, // 512MB
+            csv_inflation_factor: 0.5,
         }
     }
 }

@@ -474,6 +474,9 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.not_null())
 
+    def _to_str_values(self) -> Series:
+        return Series._from_pyseries(self._series.to_str_values())
+
     @property
     def float(self) -> SeriesFloatNamespace:
         return SeriesFloatNamespace.from_series(self)

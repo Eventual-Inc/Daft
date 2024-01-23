@@ -1,6 +1,7 @@
 use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
+use daft_core::array::ops::IntoGroups;
 use daft_dsl::Expr;
 use rand::SeedableRng;
 
@@ -98,5 +99,21 @@ impl Table {
         let partition_key_table = self.eval_expression_list(partition_keys)?;
         let targets = boundaries.search_sorted(&partition_key_table, descending)?;
         self.partition_by_index(&targets, boundaries.len() + 1)
+    }
+
+    pub fn partition_by_value(&self, partition_keys: &[Expr]) -> DaftResult<(Vec<Self>, Self)> {
+        let partition_key_table = self.eval_expression_list(partition_keys)?;
+        let (key_idx, group_idx) = partition_key_table.make_groups()?;
+        let key_idx = UInt64Array::from(("idx", key_idx)).into_series();
+        let pkeys_per_output_table = partition_key_table.take(&key_idx)?;
+        drop(partition_key_table);
+        let output_tables = group_idx
+            .into_iter()
+            .map(|gidx| {
+                let gidx = UInt64Array::from(("idx", gidx)).into_series();
+                self.take(&gidx)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok((output_tables, pkeys_per_output_table))
     }
 }

@@ -49,7 +49,7 @@ fn build_is_equal_with_nan(
     }
 }
 
-pub fn build_is_equal(
+fn build_is_equal(
     left: &dyn Array,
     right: &dyn Array,
     nulls_equal: bool,

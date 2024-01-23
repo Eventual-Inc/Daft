@@ -438,32 +438,14 @@ class WriteFile(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        if self.file_format == FileFormat.Parquet:
-            file_names = table_io.write_parquet(
-                input,
-                path=self.root_dir,
-                compression=self.compression,
-                partition_cols=self.partition_cols,
-                io_config=self.io_config,
-            )
-        elif self.file_format == FileFormat.Csv:
-            file_names = table_io.write_csv(
-                input,
-                path=self.root_dir,
-                compression=self.compression,
-                partition_cols=self.partition_cols,
-                io_config=self.io_config,
-            )
-        else:
-            raise ValueError(
-                f"Only Parquet and CSV file formats are supported for writing, but got: {self.file_format}"
-            )
-
-        assert len(self.schema) == 1
-        return MicroPartition.from_pydict(
-            {
-                self.schema.column_names()[0]: file_names,
-            }
+        return table_io.write_tabular(
+            input,
+            path=self.root_dir,
+            schema=self.schema,
+            file_format=self.file_format,
+            compression=self.compression,
+            partition_cols=self.partition_cols,
+            io_config=self.io_config,
         )
 
 

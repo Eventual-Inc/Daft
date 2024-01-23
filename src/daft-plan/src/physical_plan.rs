@@ -253,7 +253,6 @@ pub struct PhysicalPlanScheduler {
 #[pymethods]
 impl PhysicalPlanScheduler {
     pub fn num_partitions(&self) -> PyResult<i64> {
-        println!("{:?}", self.plan.partition_spec());
         self.plan.partition_spec().get_num_partitions()
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
