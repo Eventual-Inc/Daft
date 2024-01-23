@@ -206,6 +206,13 @@ def set_execution_config(
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
+    sample_size_for_sort: int | None = None,
+    num_preview_rows: int | None = None,
+    parquet_target_filesize: int | None = None,
+    parquet_target_row_group_size: int | None = None,
+    parquet_inflation_factor: float | None = None,
+    csv_target_filesize: int | None = None,
+    csv_inflation_factor: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -221,6 +228,15 @@ def set_execution_config(
             fewer partitions. (Defaults to 512 MiB)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
+        sample_size_for_sort: number of elements to sample from each partition when running sort,
+            Default is 20.
+        num_preview_rows: number of rows to when showing a dataframe preview,
+            Default is 8.
+        parquet_target_filesize: Target File Size when writing out Parquet Files. Defaults to 512MB
+        parquet_target_row_group_size: Target Row Group Size when writing out Parquet Files. Defaults to 128MB
+        parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
+        csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
+        csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -229,6 +245,13 @@ def set_execution_config(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
+        sample_size_for_sort=sample_size_for_sort,
+        num_preview_rows=num_preview_rows,
+        parquet_target_filesize=parquet_target_filesize,
+        parquet_target_row_group_size=parquet_target_row_group_size,
+        parquet_inflation_factor=parquet_inflation_factor,
+        csv_target_filesize=csv_target_filesize,
+        csv_inflation_factor=csv_inflation_factor,
     )
 
     ctx.daft_execution_config = new_daft_execution_config

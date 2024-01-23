@@ -4,7 +4,7 @@ import contextlib
 import math
 import pathlib
 from collections.abc import Callable, Generator
-from typing import IO, Union
+from typing import IO, Any, Union
 from uuid import uuid4
 
 import pyarrow as pa
@@ -13,6 +13,7 @@ from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
 
+from daft.context import get_context
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -350,11 +351,11 @@ def write_tabular(
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,
-) -> list[str]:
+) -> MicroPartition:
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
 
     tables_to_write: list[MicroPartition]
-    part_keys_postfix_per_table: list[str]
+    part_keys_postfix_per_table: list[str | None]
     partition_values = None
     if partition_cols and len(partition_cols) > 0:
         split_tables, partition_values = table.partition_by_value(partition_keys=partition_cols)
@@ -380,27 +381,29 @@ def write_tabular(
         visited_paths.append(written_file.path)
         visited_sizes.append(written_file.size)
 
-    TARGET_ROW_GROUP_SIZE = 128 * 1024 * 1024
-    TARGET_FILE_SIZE = 512 * 1024 * 1024
-    PARQUET_INFLATION_FACTOR = 3.0
+    execution_config = get_context().daft_execution_config
+
+    TARGET_ROW_GROUP_SIZE = execution_config.parquet_target_row_group_size
 
     inflation_factor = 1.0
     if file_format == FileFormat.Parquet:
         format = pads.ParquetFileFormat()
-        inflation_factor = PARQUET_INFLATION_FACTOR
-
+        inflation_factor = execution_config.parquet_inflation_factor
+        target_file_size = execution_config.parquet_target_filesize
         opts = format.make_write_options(compression=compression)
     elif file_format == FileFormat.Csv:
         format = pads.CsvFileFormat()
         opts = None
         assert compression is None
+        inflation_factor = execution_config.csv_inflation_factor
+        target_file_size = execution_config.csv_target_filesize
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
-    for tab, postfix in zip(tables_to_write, part_keys_postfix_per_table):
+    for tab, pf in zip(tables_to_write, part_keys_postfix_per_table):
         full_path = resolved_path
-        if postfix is not None and len(postfix) > 0:
-            full_path = f"{full_path}/{postfix}"
+        if pf is not None and len(pf) > 0:
+            full_path = f"{full_path}/{pf}"
 
         # TODO: For overwriting behavior, check here if dir exists to determine to delete files
         # fs.create_dir(full_path)
@@ -409,7 +412,7 @@ def write_tabular(
 
         size_bytes = arrow_table.nbytes
 
-        target_num_files = math.ceil(size_bytes / TARGET_FILE_SIZE / inflation_factor)
+        target_num_files = math.ceil(size_bytes / target_file_size / inflation_factor)
         num_rows = len(arrow_table)
 
         rows_per_file = math.ceil(num_rows / target_num_files)
@@ -433,7 +436,7 @@ def write_tabular(
             max_rows_per_group=rows_per_row_group,
         )
 
-    data_dict = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
+    data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
 
     if partition_values is not None:
         for c_name in partition_values.column_names():
