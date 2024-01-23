@@ -22,7 +22,10 @@ pub struct Sink {
 
 impl Sink {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
-        let mut fields = vec![Field::new("path", daft_core::DataType::Utf8)];
+        let mut fields = vec![
+            Field::new("path", daft_core::DataType::Utf8),
+            Field::new("file_size", daft_core::DataType::UInt64),
+        ];
         let schema = input.schema();
 
         match sink_info.as_ref() {

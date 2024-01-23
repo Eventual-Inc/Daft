@@ -384,8 +384,11 @@ def write_tabular(
     TARGET_FILE_SIZE = 512 * 1024 * 1024
     PARQUET_INFLATION_FACTOR = 3.0
 
+    inflation_factor = 1.0
     if file_format == FileFormat.Parquet:
         format = pads.ParquetFileFormat()
+        inflation_factor = PARQUET_INFLATION_FACTOR
+
         opts = format.make_write_options(compression=compression)
     elif file_format == FileFormat.Csv:
         format = pads.CsvFileFormat()
@@ -406,12 +409,12 @@ def write_tabular(
 
         size_bytes = arrow_table.nbytes
 
-        target_num_files = math.ceil(size_bytes / TARGET_FILE_SIZE / PARQUET_INFLATION_FACTOR)
+        target_num_files = math.ceil(size_bytes / TARGET_FILE_SIZE / inflation_factor)
         num_rows = len(arrow_table)
 
         rows_per_file = math.ceil(num_rows / target_num_files)
 
-        target_row_groups = math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / PARQUET_INFLATION_FACTOR)
+        target_row_groups = math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor)
         rows_per_row_group = math.ceil(num_rows / target_row_groups)
 
         pads.write_dataset(
@@ -430,7 +433,7 @@ def write_tabular(
             max_rows_per_group=rows_per_row_group,
         )
 
-    data_dict = {schema.column_names()[0]: visited_paths}
+    data_dict = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
 
     if partition_values is not None:
         for c_name in partition_values.column_names():
