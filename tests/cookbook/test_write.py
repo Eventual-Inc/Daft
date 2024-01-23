@@ -82,12 +82,21 @@ def test_parquet_write_with_null_values(tmp_path):
     assert readback.to_pydict() == {"x": [1, 2, 3, None], "y": [1, 2, 3, None]}
 
 
+@pytest.fixture()
+def smaller_parquet_target_filesize():
+    old_execution_config = daft.context.get_context().daft_execution_config
+    try:
+        daft.set_execution_config(parquet_target_filesize=1024)
+        yield
+    finally:
+        daft.set_execution_config(old_execution_config)
+
+
 @pytest.mark.skipif(
     not PYARROW_GE_7_0_0,
     reason="We only use pyarrow datasets 7 for this test",
 )
-def test_parquet_write_multifile(tmp_path):
-    daft.set_execution_config(parquet_target_filesize=1024)
+def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)
     df2 = df.write_parquet(tmp_path)
@@ -101,8 +110,7 @@ def test_parquet_write_multifile(tmp_path):
     not PYARROW_GE_7_0_0,
     reason="We only use pyarrow datasets 7 for this test",
 )
-def test_parquet_write_multifile_with_partitioning(tmp_path):
-    daft.set_execution_config(parquet_target_filesize=1024)
+def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_target_filesize):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)
     df2 = df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y") % 2])

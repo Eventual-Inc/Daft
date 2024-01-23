@@ -428,7 +428,7 @@ def write_tabular(
         target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
         rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
 
-        def file_visitor(written_file):
+        def file_visitor(written_file, i=i):
             visited_paths.append(written_file.path)
             partition_idx.append(i)
 
