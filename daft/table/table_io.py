@@ -453,7 +453,11 @@ def write_tabular(
             **kwargs,
         )
 
-    data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths}
+    data_dict: dict[str, Any] = {
+        schema.column_names()[0]: Series.from_pylist(visited_paths, name=schema.column_names()[0]).cast(
+            DataType.string()
+        )
+    }
 
     if partition_values is not None:
         partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())
