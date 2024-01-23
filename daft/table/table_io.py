@@ -388,7 +388,6 @@ def write_tabular(
         part_keys_postfix_per_table = [None]
 
     visited_paths = []
-    visited_sizes = []
     partition_idx = []
 
     execution_config = get_context().daft_execution_config
@@ -424,20 +423,20 @@ def write_tabular(
         target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
         num_rows = len(arrow_table)
 
-        rows_per_file = math.ceil(num_rows / target_num_files)
+        rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
 
         target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
-        rows_per_row_group = min(math.ceil(num_rows / target_row_groups), rows_per_file)
+        rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
 
         def file_visitor(written_file):
             visited_paths.append(written_file.path)
-            visited_sizes.append(written_file.size)
             partition_idx.append(i)
 
         kwargs = dict()
 
         if ARROW_VERSION >= (7, 0, 0):
             kwargs["max_rows_per_file"] = rows_per_file
+            print(rows_per_row_group, rows_per_file)
             kwargs["min_rows_per_group"] = rows_per_row_group
             kwargs["max_rows_per_group"] = rows_per_row_group
 
@@ -455,7 +454,7 @@ def write_tabular(
             **kwargs,
         )
 
-    data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
+    data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths}
 
     if partition_values is not None:
         partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())

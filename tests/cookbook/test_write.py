@@ -38,8 +38,8 @@ def test_empty_parquet_write_without_partitioning(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
     output_files = df.write_parquet(tmp_path)
-    assert len(output_files) == 1
-    assert len(output_files._preview.preview_partition) == 1
+    assert len(output_files) == 0
+    assert len(output_files._preview.preview_partition) == 0
 
 
 def test_empty_parquet_write_with_partitioning(tmp_path):
