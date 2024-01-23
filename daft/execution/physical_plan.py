@@ -754,8 +754,12 @@ def merge_join_sorted(
 
         except StopIteration:
             # We've exhausted one of the sides of the join.
-            # If we have active tasks for either side of the join, tell runner that we're blocked on inputs.
-            if smaller_requests or larger_requests:
+            # If we have active tasks for either side of the join that completed while dispatching intermediate work,
+            # we continue with another loop so we can process those newly ready inputs.
+            if (smaller_requests and smaller_requests[0].done()) or (larger_requests and larger_requests[0].done()):
+                continue
+            # If we have active tasks for either side of the join that aren't done, tell runner that we're blocked on inputs.
+            elif smaller_requests or larger_requests:
                 logger.debug(
                     "merge join blocked on completion of sources.\n Left sources: %s\nRight sources: %s",
                     larger_requests if left_is_larger else smaller_requests,
