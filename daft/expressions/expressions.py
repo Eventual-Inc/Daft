@@ -387,6 +387,22 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
+    def is_in(self, items: object) -> Expression:
+        """Checks if values in the Expression are in the provided list
+
+        Example:
+            >>> # [1, 2, 3] -> [True, False, True]
+            >>> col("x").is_in([1, 3])
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are in the provided list
+        """
+        if not isinstance(items, list):
+            raise TypeError("is_in expects a list as an argument")
+
+        expr = self._expr.is_in(Expression._to_expression(items)._expr)
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 
@@ -464,7 +480,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
         if use_native_downloader:
-
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True

@@ -144,6 +144,14 @@ impl From<(&str, &[u8])> for BinaryArray {
     }
 }
 
+impl From<(&str, &[&[u8]])> for BinaryArray {
+    fn from(item: (&str, &[&[u8]])) -> Self {
+        let (name, slice) = item;
+        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_slice(slice));
+        DataArray::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+    }
+}
+
 impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn arrow2::array::Array>)>
     for DataArray<T>
 {

@@ -18,6 +18,7 @@ pub mod groups;
 pub mod hash;
 pub mod if_else;
 pub mod image;
+pub mod is_in;
 pub mod len;
 pub mod list;
 pub mod not;
