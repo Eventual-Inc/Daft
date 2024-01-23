@@ -8,7 +8,7 @@ import daft
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
+PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
 def test_parquet_write(tmp_path):
@@ -71,8 +71,8 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
 
 
 @pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="We only use pyarrow datasets 11 for this test",
+    not PYARROW_GE_7_0_0,
+    reason="We only use pyarrow datasets 7 for this test",
 )
 def test_parquet_write_with_null_values(tmp_path):
     df = daft.from_pydict({"x": [1, 2, 3, None]})
@@ -83,8 +83,8 @@ def test_parquet_write_with_null_values(tmp_path):
 
 
 @pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="We only use pyarrow datasets 11 for this test",
+    not PYARROW_GE_7_0_0,
+    reason="We only use pyarrow datasets 7 for this test",
 )
 def test_parquet_write_multifile(tmp_path):
     daft.set_execution_config(parquet_target_filesize=1024)
@@ -98,8 +98,8 @@ def test_parquet_write_multifile(tmp_path):
 
 
 @pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="We only use pyarrow datasets 11 for this test",
+    not PYARROW_GE_7_0_0,
+    reason="We only use pyarrow datasets 7 for this test",
 )
 def test_parquet_write_multifile_with_partitioning(tmp_path):
     daft.set_execution_config(parquet_target_filesize=1024)

@@ -355,6 +355,9 @@ def write_tabular(
     io_config: IOConfig | None = None,
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
+
+    from daft.utils import ARROW_VERSION
+
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
 
     tables_to_write: list[MicroPartition]
@@ -431,6 +434,13 @@ def write_tabular(
             visited_sizes.append(written_file.size)
             partition_idx.append(i)
 
+        kwargs = dict()
+
+        if ARROW_VERSION >= (7, 0, 0):
+            kwargs["max_rows_per_file"] = rows_per_file
+            kwargs["min_rows_per_group"] = rows_per_row_group
+            kwargs["max_rows_per_group"] = rows_per_row_group
+
         pads.write_dataset(
             arrow_table,
             base_dir=full_path,
@@ -442,9 +452,7 @@ def write_tabular(
             use_threads=True,
             existing_data_behavior="overwrite_or_ignore",
             filesystem=fs,
-            max_rows_per_file=rows_per_file,
-            min_rows_per_group=rows_per_row_group,
-            max_rows_per_group=rows_per_row_group,
+            **kwargs,
         )
 
     data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
