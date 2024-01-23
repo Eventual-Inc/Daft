@@ -305,23 +305,13 @@ impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
     /// Schema invariants:
-    /// 1. All columns in `schema` must be exist in the `scan_task` schema
-    /// 2. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
+    /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
         schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        assert!(
-            schema
-                .fields
-                .keys()
-                .collect::<HashSet<_>>()
-                .is_subset(&scan_task.schema.fields.keys().collect::<HashSet<_>>()),
-            "Unloaded MicroPartition's schema names must be a subset of its ScanTask's schema"
-        );
-
         MicroPartition {
             schema: schema.clone(),
             state: Mutex::new(TableState::Unloaded(scan_task)),
@@ -428,13 +418,7 @@ impl MicroPartition {
                 )
                 .context(DaftCoreComputeSnafu)?;
 
-                let applied_schema = Arc::new(
-                    mp.schema
-                        .apply_hints(&schema)
-                        .context(DaftCoreComputeSnafu)?,
-                );
-                mp.cast_to_schema(applied_schema)
-                    .context(DaftCoreComputeSnafu)
+                mp.cast_to_schema(schema).context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
