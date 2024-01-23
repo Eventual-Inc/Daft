@@ -22,6 +22,7 @@ macro_rules! do_is_in {
 
 impl Series {
     pub fn is_in(&self, items: &Self) -> DaftResult<Series> {
+        let items = &items.list()?.flat_child;
         let default =
             BooleanArray::from((self.name(), vec![false; self.len()].as_slice())).into_series();
         if items.is_empty() {

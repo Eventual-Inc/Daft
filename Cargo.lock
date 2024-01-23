@@ -1224,6 +1224,7 @@ dependencies = [
 name = "daft-dsl"
 version = "0.2.0-dev0"
 dependencies = [
+ "arrow2",
  "bincode",
  "common-error",
  "common-io-config",

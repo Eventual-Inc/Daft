@@ -1,4 +1,5 @@
 [dependencies]
+arrow2 = {workspace = true}
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
