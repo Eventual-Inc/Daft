@@ -420,12 +420,12 @@ def write_tabular(
 
         size_bytes = arrow_table.nbytes
 
-        target_num_files = math.ceil(size_bytes / target_file_size / inflation_factor)
+        target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
         num_rows = len(arrow_table)
 
         rows_per_file = math.ceil(num_rows / target_num_files)
 
-        target_row_groups = math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor)
+        target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
         rows_per_row_group = math.ceil(num_rows / target_row_groups)
 
         pads.write_dataset(
