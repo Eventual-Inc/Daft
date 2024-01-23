@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import pyarrow as pa
 import pytest
 from pyarrow import dataset as pads
@@ -68,6 +70,66 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
 
     assert len(output_files) == 5
     assert len(output_files._preview.preview_partition) == 5
+
+
+@pytest.mark.parametrize(
+    "exp,key,answer",
+    [
+        (
+            daft.col("date").partitioning.days(),
+            "date_days",
+            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
+        ),
+        (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
+        (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
+        (daft.col("date").partitioning.years(), "date_years", [54]),
+    ],
+)
+def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path):
+    data = {
+        "id": [1, 2, 3, 4, 5],
+        "date": [
+            datetime(2024, 1, 1),
+            datetime(2024, 2, 1),
+            datetime(2024, 3, 1),
+            datetime(2024, 4, 1),
+            datetime(2024, 5, 1),
+        ],
+    }
+    df = daft.from_pydict(data)
+    date_files = df.write_parquet(tmp_path, partition_cols=[exp]).sort(by=key)
+    output_dict = date_files.to_pydict()
+    assert len(output_dict[key]) == len(answer)
+    assert output_dict[key] == answer
+    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    assert_df_equals(df.to_pandas(), read_back_pd_df, sort_key="id")
+
+
+@pytest.mark.parametrize(
+    "exp,key,answer",
+    [
+        (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
+        (daft.col("id").partitioning.iceberg_truncate(10), "id_truncate", [0, 10, 20, 40]),
+    ],
+)
+def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):
+    data = {
+        "id": [1, 12, 23, 24, 45],
+        "date": [
+            datetime(2024, 1, 1),
+            datetime(2024, 2, 1),
+            datetime(2024, 3, 1),
+            datetime(2024, 4, 1),
+            datetime(2024, 5, 1),
+        ],
+    }
+    df = daft.from_pydict(data)
+    date_files = df.write_parquet(tmp_path, partition_cols=[exp]).sort(by=key)
+    output_dict = date_files.to_pydict()
+    assert len(output_dict[key]) == len(answer)
+    assert output_dict[key] == answer
+    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    assert_df_equals(df.to_pandas(), read_back_pd_df, sort_key="id")
 
 
 @pytest.mark.skipif(
