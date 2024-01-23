@@ -34,6 +34,22 @@ def test_parquet_write_with_partitioning(tmp_path):
     assert len(pd_df._preview.preview_partition) == 5
 
 
+def test_empty_parquet_write_without_partitioning(tmp_path):
+    df = daft.read_csv(COOKBOOK_DATA_CSV)
+    df = df.where(daft.lit(False))
+    output_files = df.write_parquet(tmp_path)
+    assert len(output_files) == 1
+    assert len(output_files._preview.preview_partition) == 1
+
+
+def test_empty_parquet_write_with_partitioning(tmp_path):
+    df = daft.read_csv(COOKBOOK_DATA_CSV)
+    df = df.where(daft.lit(False))
+    output_files = df.write_parquet(tmp_path, partition_cols=["Borough"])
+    assert len(output_files) == 0
+    assert len(output_files._preview.preview_partition) == 0
+
+
 def test_parquet_write_with_partitioning_readback_values(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
@@ -64,6 +80,38 @@ def test_parquet_write_with_null_values(tmp_path):
     ds = pads.dataset(tmp_path, format="parquet", partitioning=pads.HivePartitioning(pa.schema([("y", pa.int64())])))
     readback = ds.to_table()
     assert readback.to_pydict() == {"x": [1, 2, 3, None], "y": [1, 2, 3, None]}
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="We only use pyarrow datasets 11 for this test",
+)
+def test_parquet_write_multifile(tmp_path):
+    daft.set_execution_config(parquet_target_filesize=1024)
+    data = {"x": list(range(1_000))}
+    df = daft.from_pydict(data)
+    df2 = df.write_parquet(tmp_path)
+    assert len(df2) > 1
+    ds = pads.dataset(tmp_path, format="parquet")
+    readback = ds.to_table()
+    assert readback.to_pydict() == data
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="We only use pyarrow datasets 11 for this test",
+)
+def test_parquet_write_multifile_with_partitioning(tmp_path):
+    daft.set_execution_config(parquet_target_filesize=1024)
+    data = {"x": list(range(1_000))}
+    df = daft.from_pydict(data)
+    df2 = df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y") % 2])
+    assert len(df2) >= 4
+    ds = pads.dataset(tmp_path, format="parquet", partitioning=pads.HivePartitioning(pa.schema([("y", pa.int64())])))
+    readback = ds.to_table()
+    readback = readback.sort_by("x").to_pydict()
+    assert readback["x"] == data["x"]
+    assert readback["y"] == [y % 2 for y in data["x"]]
 
 
 def test_csv_write(tmp_path):

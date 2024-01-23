@@ -27,6 +27,7 @@ from daft.daft import (
     PythonStorageConfig,
     StorageConfig,
 )
+from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.logical.schema import Schema
@@ -385,10 +386,7 @@ def write_tabular(
 
     visited_paths = []
     visited_sizes = []
-
-    def file_visitor(written_file):
-        visited_paths.append(written_file.path)
-        visited_sizes.append(written_file.size)
+    partition_idx = []
 
     execution_config = get_context().daft_execution_config
 
@@ -408,7 +406,7 @@ def write_tabular(
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
-    for tab, pf in zip(tables_to_write, part_keys_postfix_per_table):
+    for i, (tab, pf) in enumerate(zip(tables_to_write, part_keys_postfix_per_table)):
         full_path = resolved_path
         if pf is not None and len(pf) > 0:
             full_path = f"{full_path}/{pf}"
@@ -426,7 +424,12 @@ def write_tabular(
         rows_per_file = math.ceil(num_rows / target_num_files)
 
         target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
-        rows_per_row_group = math.ceil(num_rows / target_row_groups)
+        rows_per_row_group = min(math.ceil(num_rows / target_row_groups), rows_per_file)
+
+        def file_visitor(written_file):
+            visited_paths.append(written_file.path)
+            visited_sizes.append(written_file.size)
+            partition_idx.append(i)
 
         pads.write_dataset(
             arrow_table,
@@ -447,7 +450,7 @@ def write_tabular(
     data_dict: dict[str, Any] = {schema.column_names()[0]: visited_paths, schema.column_names()[1]: visited_sizes}
 
     if partition_values is not None:
+        partition_idx_series = Series.from_pylist(partition_idx).cast(DataType.int64())
         for c_name in partition_values.column_names():
-            data_dict[c_name] = partition_values.get_column(c_name)
-
+            data_dict[c_name] = partition_values.get_column(c_name).take(partition_idx_series)
     return MicroPartition.from_pydict(data_dict)
