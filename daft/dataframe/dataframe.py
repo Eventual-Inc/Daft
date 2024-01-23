@@ -285,7 +285,36 @@ class DataFrame:
         builder = LogicalPlanBuilder.from_in_memory_scan(
             cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes
         )
-        return cls(builder)
+
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = context.daft_execution_config.num_preview_rows
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            need = num_preview_rows
+            preview_parts = []
+            for part in parts:
+                part_len = len(part)
+                if part_len >= need:  # if this part has enough rows, take what we need and break
+                    preview_parts.append(part.slice(0, need))
+                    break
+                else:  # otherwise, take the whole part and keep going
+                    need -= part_len
+                    preview_parts.append(part)
+
+            preview_results = LocalPartitionSet({i: part for i, part in enumerate(preview_parts)})
+        else:
+            preview_results = result_pset
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
     ###
     # Write methods
@@ -337,11 +366,16 @@ class DataFrame:
             compression=compression,
             io_config=io_config,
         )
-        # Block and write, then retrieve data and return a new disconnected DataFrame
+        # Block and write, then retrieve data
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._builder)
+
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_csv(
@@ -385,11 +419,16 @@ class DataFrame:
             io_config=io_config,
         )
 
-        # Block and write, then retrieve data and return a new disconnected DataFrame
+        # Block and write, then retrieve data
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        return DataFrame(write_df._builder)
+
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     ###
     # DataFrame operations
@@ -631,6 +670,13 @@ class DataFrame:
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
         random repartitioning will occur.
 
+        .. NOTE::
+            This function will globally shuffle your data, which is potentially a very expensive operation.
+
+            If instead you merely wish to "split" or "coalesce" partitions to obtain a target number of partitions,
+            you mean instead wish to consider using :meth:`DataFrame.into_parititions`<daft.DataFrame.into_partitions>
+            which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
+
         Example:
             >>> random_repart_df = df.repartition(4)
             >>> part_by_df = df.repartition(4, 'x', col('y') + 1)
@@ -643,6 +689,10 @@ class DataFrame:
             DataFrame: Repartitioned DataFrame.
         """
         if len(partition_by) == 0:
+            warnings.warn(
+                "No columns specified for repartition; If you do not require rebalancing of partitions, you may "
+                "instead prefer using `df.into_partitions(N)` which is a cheaper operation that avoids shuffling data."
+            )
             scheme = PartitionScheme.Random
             exprs = []
         else:
@@ -1277,7 +1327,24 @@ class DataFrame:
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
         )
-        return cls(builder)
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = context.daft_execution_config.num_preview_rows
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            preview_results, _ = ray_runner_io.partition_set_from_ray_dataset(ds.limit(num_preview_rows))
+        else:
+            preview_results = partition_set
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
     @DataframePublicAPI
     def to_dask_dataframe(
@@ -1349,7 +1416,25 @@ class DataFrame:
             num_partitions=partition_set.num_partitions(),
             size_bytes=size_bytes,
         )
-        return cls(builder)
+
+        df = cls(builder)
+        df._result_cache = cache_entry
+
+        # build preview
+        num_preview_rows = context.daft_execution_config.num_preview_rows
+        dataframe_num_rows = len(df)
+        if dataframe_num_rows > num_preview_rows:
+            preview_results, _ = ray_runner_io.partition_set_from_dask_dataframe(ddf.loc[: num_preview_rows - 1])
+        else:
+            preview_results = partition_set
+
+        # set preview
+        preview_partition = preview_results._get_merged_vpartition()
+        df._preview = DataFramePreview(
+            preview_partition=preview_partition,
+            dataframe_num_rows=dataframe_num_rows,
+        )
+        return df
 
 
 @dataclass

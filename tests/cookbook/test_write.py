@@ -14,7 +14,8 @@ def test_parquet_write(tmp_path):
     read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/*.parquet").to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
-    assert len(pd_df.to_pandas()) == 1
+    assert len(pd_df) == 1
+    assert len(pd_df._preview.preview_partition) == 1
 
 
 def test_parquet_write_with_partitioning(tmp_path):
@@ -25,7 +26,8 @@ def test_parquet_write_with_partitioning(tmp_path):
     read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
     assert_df_equals(df.exclude("Borough").to_pandas(), read_back_pd_df)
 
-    assert len(pd_df.to_pandas()) == 5
+    assert len(pd_df) == 5
+    assert len(pd_df._preview.preview_partition) == 5
 
 
 def test_csv_write(tmp_path):
@@ -36,7 +38,8 @@ def test_csv_write(tmp_path):
     read_back_pd_df = daft.read_csv(tmp_path.as_posix() + "/*.csv").to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
-    assert len(pd_df.to_pandas()) == 1
+    assert len(pd_df) == 1
+    assert len(pd_df._preview.preview_partition) == 1
 
 
 @pytest.mark.skip()

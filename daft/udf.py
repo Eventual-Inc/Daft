@@ -4,7 +4,7 @@ import dataclasses
 import functools
 import inspect
 import types
-from typing import Callable
+from typing import TYPE_CHECKING, Callable, Union
 
 from daft.datatype import DataType
 from daft.expressions import Expression
@@ -16,7 +16,10 @@ try:
 except ImportError:
     _NUMPY_AVAILABLE = False
 
-UserProvidedPythonFunction = Callable[..., Series]
+if TYPE_CHECKING:
+    import numpy as np
+
+UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 
 
 @dataclasses.dataclass(frozen=True)

@@ -27,6 +27,8 @@ html_favicon = "_static/daft-favicon.png"
 
 default_role = "py:obj"
 
+html_context = {"default_mode": "light"}
+
 extensions = [
     "sphinx_reredirects",
     "sphinx.ext.autodoc",
@@ -54,12 +56,8 @@ html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["header.css", "custom-function-signatures.css"]
 html_theme_options = {
-    # This is the footer of the primary sidebar as HTML
-    "extra_navbar": "",
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
-    # Remove title under the logo on the left sidebar
-    "logo_only": True,
 }
 
 # -- Copy button configuration

@@ -70,6 +70,7 @@ Comparing expressions and values, returning a logical expression
     daft.expressions.Expression.__gt__
     daft.expressions.Expression.__ge__
     daft.expressions.Expression.is_null
+    daft.expressions.Expression.not_null
 
 .. _expression-accessor-properties:
 
@@ -179,7 +180,7 @@ Example: ``e1.list.join(e2)``
 
 
 Structs
-******
+*******
 
 Operations on structs, accessible through the :meth:`Expression.image <daft.expressions.Expression.struct>` method accessor:
 

@@ -97,11 +97,60 @@ impl FunctionEvaluator for IcebergBucketEvaluator {
                 func: FunctionExpr::Partitioning(PartitioningExpr::IcebergBucket(n)),
                 inputs: _,
             } => n,
-            _ => panic!("Expected Url Download Expr, got {expr}"),
+            _ => panic!("Expected PartitioningExpr::IcebergBucket Expr, got {expr}"),
         };
 
         match inputs {
             [input] => input.partitioning_iceberg_bucket(*n),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+}
+
+pub(super) struct IcebergTruncateEvaluator {}
+
+impl FunctionEvaluator for IcebergTruncateEvaluator {
+    fn fn_name(&self) -> &'static str {
+        "partitioning_iceberg_truncate"
+    }
+
+    fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
+        match inputs {
+            [input] => match input.to_field(schema) {
+                Ok(field) => match &field.dtype {
+                    DataType::Decimal128(_, _)
+                    | DataType::Utf8 => Ok(field.clone()),
+                    v if v.is_integer() => Ok(field.clone()),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to IcebergTruncate to be an Integer, Utf8 or Decimal, got {}",
+                        field.dtype
+                    ))),
+                },
+                Err(e) => Err(e),
+            },
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 1 input arg, got {}",
+                inputs.len()
+            ))),
+        }
+    }
+
+    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+        use crate::functions::FunctionExpr;
+
+        let w = match expr {
+            Expr::Function {
+                func: FunctionExpr::Partitioning(PartitioningExpr::IcebergTruncate(w)),
+                inputs: _,
+            } => w,
+            _ => panic!("Expected PartitioningExpr::IcebergTruncate Expr, got {expr}"),
+        };
+
+        match inputs {
+            [input] => input.partitioning_iceberg_truncate(*w),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

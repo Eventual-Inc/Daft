@@ -211,7 +211,7 @@ jobs:
         pip install --upgrade pip
         pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       env:
         cache-name: cache-tpch-data
       with:
@@ -686,7 +686,7 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/

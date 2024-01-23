@@ -395,6 +395,11 @@ pub mod pylib {
             Ok(Self(crate::PartitionTransform::IcebergBucket(n)))
         }
 
+        #[staticmethod]
+        pub fn iceberg_truncate(n: u64) -> PyResult<Self> {
+            Ok(Self(crate::PartitionTransform::IcebergTruncate(n)))
+        }
+
         pub fn __repr__(&self) -> PyResult<String> {
             Ok(format!("{}", self.0))
         }

@@ -23,6 +23,7 @@ Let's create our first Dataframe from a Python dictionary of columns.
         "A": [1, 2, 3, 4],
         "B": [1.5, 2.5, 3.5, 4.5],
         "C": [True, True, False, False],
+        "D": [None, None, None, None],
     })
 
 Examine your Dataframe by printing it:
@@ -30,6 +31,29 @@ Examine your Dataframe by printing it:
 .. code:: python
 
     df
+
+.. code:: none
+
+    +---------+-----------+-----------+-----------+
+    |       A |         B | C         | D         |
+    |   Int64 |   Float64 | Boolean   | Null      |
+    +=========+===========+===========+===========+
+    |       1 |       1.5 | true      | None      |
+    +---------+-----------+-----------+-----------+
+    |       2 |       2.5 | true      | None      |
+    +---------+-----------+-----------+-----------+
+    |       3 |       3.5 | false     | None      |
+    +---------+-----------+-----------+-----------+
+    |       4 |       4.5 | false     | None      |
+    +---------+-----------+-----------+-----------+
+    (Showing first 4 of 4 rows)
+
+
+Congratulations - you just created your first DataFrame! It has 4 columns, "A", "B", "C", and "D". Let's try to select only the "A", "B", and "C" columns:
+
+.. code:: python
+
+    df.select("A", "B", "C")
 
 .. code:: none
 
@@ -41,8 +65,6 @@ Examine your Dataframe by printing it:
     (No data to display: Dataframe not materialized)
 
 
-Congratulations - you just created your first DataFrame! It has 3 columns, "A", "B" and "C".
-
 But wait - why is it printing the message ``(No data to display: Dataframe not materialized)`` and where are the rows of each column?
 
 Executing our DataFrame and Viewing Data
@@ -50,7 +72,7 @@ Executing our DataFrame and Viewing Data
 
 The reason that our DataFrame currently does not display its rows is that Daft DataFrames are **lazy**. This just means that Daft DataFrames will defer all its work until you tell it to execute.
 
-In this case, Daft is just deferring the work required to read data from the Python dictionary, however in practice this laziness can be very useful for helping Daft optimize your queries before execution!
+In this case, Daft is just deferring the work required to read the data and select columns, however in practice this laziness can be very useful for helping Daft optimize your queries before execution!
 
 .. NOTE::
 

@@ -46,6 +46,7 @@ Filtering Rows
     daft.DataFrame.distinct
     daft.DataFrame.where
     daft.DataFrame.limit
+    daft.DataFrame.sample
 
 Reordering
 **********

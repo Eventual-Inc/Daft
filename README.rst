@@ -10,9 +10,6 @@ Daft: the distributed Python dataframe for complex data
 
 `Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
 
-  **Daft is currently in its Beta release phase - please expect bugs and rapid improvements to the project.**
-  **We welcome user feedback/feature requests in our** `Discussions forums <https://github.com/Eventual-Inc/Daft/discussions>`_
-
 **Table of Contents**
 
 * `About Daft`_
@@ -70,7 +67,7 @@ Benchmarks
 ----------
 |Benchmark Image|
 
-To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/benchmarks/index.html>`_
+To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://www.getdaft.io/projects/docs/en/latest/faq/benchmarks.html>`_
 
 
 More Resources
@@ -98,7 +95,7 @@ The data that we collect is:
 2. **Metadata-only:** we do not collect any of our users’ proprietary code or data
 3. **For development only:** we do not buy or sell any user data
 
-Please see our `documentation <https://www.getdaft.io/projects/docs/en/latest/telemetry.html>`_ for more details.
+Please see our `documentation <https://www.getdaft.io/projects/docs/en/latest/faq/telemetry.html>`_ for more details.
 
 Related Projects
 ----------------
@@ -119,7 +116,7 @@ Related Projects
 | `Dask DF <https://github.com/dask/dask>`_         | No              | Python object | Yes         | No              | Some(Pandas)                | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
 
-Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/latest/dataframe_comparison.html>`_ for more details!
+Check out our `dataframe comparison page <https://www.getdaft.io/projects/docs/en/latest/faq/dataframe_comparison.html>`_ for more details!
 
 License
 -------
