@@ -34,3 +34,8 @@ def test_columns(df):
     assert len(df.columns) == 1
     [ex] = df.columns
     assert ex.name() == "foo"
+
+
+def test_in(df):
+    assert "foo" in df
+    assert "bar" not in df
