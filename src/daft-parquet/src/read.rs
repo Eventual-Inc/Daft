@@ -141,6 +141,8 @@ async fn read_parquet_single(
         .map(|m| m.num_rows())
         .collect::<Vec<_>>();
 
+    let metadata_num_rows = metadata.num_rows;
+
     let metadata_num_columns = metadata.schema().fields().len();
 
     if let Some(predicate) = predicate {
@@ -152,33 +154,38 @@ async fn read_parquet_single(
         if let Some(nr) = original_num_rows {
             table = table.head(nr)?;
         }
+    } else if let Some(row_groups) = row_groups {
+        let expected_rows: usize = row_groups
+            .iter()
+            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
+            .sum();
+        if expected_rows != table.len() {
+            return Err(super::Error::ParquetNumRowMismatch {
+                path: uri.into(),
+                metadata_num_rows: expected_rows,
+                read_rows: table.len(),
+            }
+            .into());
+        }
     } else {
-        let expected_rows = match row_groups {
-            Some(row_groups) => row_groups
-                .iter()
-                .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-                .sum(),
-            None => metadata.num_rows,
-        };
-
         match (start_offset, num_rows) {
-            (None, None) if expected_rows != table.len() => {
+            (None, None) if metadata_num_rows != table.len() => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: expected_rows,
+                    metadata_num_rows,
                     read_rows: table.len(),
                 })
             }
-            (Some(s), None) if expected_rows.saturating_sub(s) != table.len() => {
+            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table.len() => {
                 Err(super::Error::ParquetNumRowMismatch {
                     path: uri.into(),
-                    metadata_num_rows: expected_rows.saturating_sub(s),
+                    metadata_num_rows: metadata_num_rows.saturating_sub(s),
                     read_rows: table.len(),
                 })
             }
             (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
                 path: uri.into(),
-                metadata_num_rows: n.min(expected_rows),
+                metadata_num_rows: n.min(metadata_num_rows),
                 read_rows: table.len(),
             }),
             _ => Ok(()),
