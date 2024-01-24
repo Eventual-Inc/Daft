@@ -127,13 +127,14 @@ pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> Box
             .map(|t| -> DaftResult<BoxScanTaskIter> {
                 let t = t?;
 
-                // only split parquet tasks that have one source without a specified chunk spec
+                // only split parquet tasks that have one source without a specified chunk spec or number of rows
                 match (
                     t.file_format_config.as_ref(),
                     &t.sources[..],
                     t.sources.get(0).map(DataFileSource::get_chunk_spec),
+                    t.pushdowns.limit,
                 ) {
-                    (FileFormatConfig::Parquet(_), [source], Some(None)) => {
+                    (FileFormatConfig::Parquet(_), [source], Some(None), None) => {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
 
