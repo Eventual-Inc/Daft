@@ -117,84 +117,77 @@ impl Iterator for MergeByFileSize {
 pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> BoxScanTaskIter {
     let mut scan_tasks = itertools::peek_nth(scan_tasks);
 
-    match scan_tasks.peek_nth(max_tasks) {
-        None => Box::new(scan_tasks.flat_map(|t| -> BoxScanTaskIter {
-            match t {
-                Ok(t) => {
-                    // only split parquet tasks that have one source without a chunk spec that's already specified
-                    match (
-                        t.file_format_config.as_ref(),
-                        &t.sources[..],
-                        t.sources.get(0).map(DataFileSource::get_chunk_spec),
-                    ) {
-                        (FileFormatConfig::Parquet(_), [source], Some(None)) => {
-                            match t.storage_config.get_io_client_and_runtime() {
-                                Ok((io_runtime, io_client)) => {
-                                    let path = source.get_path();
-
-                                    let io_stats = IOStatsContext::new(format!(
-                                        "split_by_row_groups for {:#?}",
-                                        path
-                                    ));
-
-                                    let runtime_handle = io_runtime.handle();
-
-                                    match runtime_handle.block_on(read_parquet_metadata(
-                                        path,
-                                        io_client,
-                                        Some(io_stats),
-                                    )) {
-                                        Ok(file) => Box::new(
-                                            file.row_groups
-                                                .into_iter()
-                                                .enumerate()
-                                                .map(|(i, row_group)| {
-                                                    let mut group_source = source.clone();
-                                                    match &mut group_source {
-                                                        DataFileSource::AnonymousDataFile {
-                                                            chunk_spec,
-                                                            size_bytes,
-                                                            ..
-                                                        }
-                                                        | DataFileSource::CatalogDataFile {
-                                                            chunk_spec,
-                                                            size_bytes,
-                                                            ..
-                                                        } => {
-                                                            *chunk_spec =
-                                                                Some(ChunkSpec::Parquet(vec![
-                                                                    i as i64,
-                                                                ]));
-                                                            *size_bytes =
-                                                                Some(row_group.compressed_size()
-                                                                    as u64);
-                                                        }
-                                                    };
-
-                                                    Ok(ScanTask::new(
-                                                        vec![group_source],
-                                                        t.file_format_config.clone(),
-                                                        t.schema.clone(),
-                                                        t.storage_config.clone(),
-                                                        t.pushdowns.clone(),
-                                                    )
-                                                    .into())
-                                                })
-                                                .collect::<Vec<_>>()
-                                                .into_iter(),
-                                        ),
-                                        Err(e) => Box::new(std::iter::once(Err(e))),
-                                    }
-                                }
-                                Err(e) => Box::new(std::iter::once(Err(e))),
-                            }
-                        }
-                        (..) => Box::new(std::iter::once(Ok(t))),
-                    }
-                }
-                Err(e) => Box::new(std::iter::once(Err(e))),
-            }
-        })),
-        Some(_) => Box::new(scan_tasks),
+    // only split if we have a small amount of files
+    if scan_tasks.peek_nth(max_tasks).is_some() {
+        return Box::new(scan_tasks);
     }
+
+    Box::new(
+        scan_tasks
+            .map(|t| -> DaftResult<BoxScanTaskIter> {
+                let t = t?;
+
+                // only split parquet tasks that have one source without a specified chunk spec
+                match (
+                    t.file_format_config.as_ref(),
+                    &t.sources[..],
+                    t.sources.get(0).map(DataFileSource::get_chunk_spec),
+                ) {
+                    (FileFormatConfig::Parquet(_), [source], Some(None)) => {
+                        let (io_runtime, io_client) =
+                            t.storage_config.get_io_client_and_runtime()?;
+
+                        let path = source.get_path();
+
+                        let io_stats =
+                            IOStatsContext::new(format!("split_by_row_groups for {:#?}", path));
+
+                        let runtime_handle = io_runtime.handle();
+
+                        let file = runtime_handle.block_on(read_parquet_metadata(
+                            path,
+                            io_client,
+                            Some(io_stats),
+                        ))?;
+
+                        Ok(Box::new(
+                            file.row_groups
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, row_group)| {
+                                    let mut group_source = source.clone();
+                                    match &mut group_source {
+                                        DataFileSource::AnonymousDataFile {
+                                            chunk_spec,
+                                            size_bytes,
+                                            ..
+                                        }
+                                        | DataFileSource::CatalogDataFile {
+                                            chunk_spec,
+                                            size_bytes,
+                                            ..
+                                        } => {
+                                            *chunk_spec = Some(ChunkSpec::Parquet(vec![i as i64]));
+                                            *size_bytes = Some(row_group.compressed_size() as u64);
+                                        }
+                                    };
+
+                                    Ok(ScanTask::new(
+                                        vec![group_source],
+                                        t.file_format_config.clone(),
+                                        t.schema.clone(),
+                                        t.storage_config.clone(),
+                                        t.pushdowns.clone(),
+                                    )
+                                    .into())
+                                })
+                                .collect::<Vec<_>>()
+                                .into_iter(),
+                        ))
+                    }
+                    (..) => Ok(Box::new(std::iter::once(Ok(t)))),
+                }
+            })
+            .flat_map(|t| t.unwrap_or_else(|e| Box::new(std::iter::once(Err(e))))),
+    )
 }
