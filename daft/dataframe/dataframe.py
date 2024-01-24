@@ -1176,6 +1176,20 @@ class DataFrame:
         )
         raise RuntimeError(message)
 
+    def __contains__(self, col_name: str) -> bool:
+        """Returns whether the column exists in the dataframe.
+
+        Example:
+            >>> "x" in df
+
+        Args:
+            col_name (str): column name
+
+        Returns:
+            bool: whether the column exists in the dataframe.
+        """
+        return col_name in self.column_names
+
     @DataframePublicAPI
     def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pd.DataFrame":
         """Converts the current DataFrame to a pandas DataFrame.
