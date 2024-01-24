@@ -393,7 +393,7 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
-    def is_in(self, items: _List[Any] | Series) -> Expression:
+    def is_in(self, items: _List[Any] | Expression) -> Expression:
         """Checks if values in the Expression are in the provided list
 
         Example:
@@ -403,12 +403,16 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
         """
-        if not (isinstance(items, Series) or isinstance(items, list)):
-            raise TypeError(f"expected a python list or Daft Series, got {type(items)}")
+        if not (isinstance(items, Expression) or isinstance(items, list)):
+            raise TypeError(f"expected a python list or Daft Expression, got {type(items)}")
 
         if isinstance(items, list):
-            items = Series.from_pylist(items)
-        expr = self._expr.is_in(Expression._to_expression(items)._expr)
+            series = Series.from_pylist(list(items))
+            items_expr = Expression._to_expression(series)
+        else:
+            items_expr = Expression._to_expression(items)
+
+        expr = self._expr.is_in(items_expr._expr)
         return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:
