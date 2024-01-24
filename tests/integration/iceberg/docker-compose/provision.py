@@ -322,3 +322,19 @@ VALUES
     ('123')
 """
 )
+
+spark.sql(
+    """
+  CREATE OR REPLACE TABLE default.add_new_column
+  USING iceberg
+  AS SELECT
+        1            AS idx
+    UNION ALL SELECT
+        2            AS idx
+    UNION ALL SELECT
+        3            AS idx
+"""
+)
+
+spark.sql("ALTER TABLE default.add_new_column ADD COLUMN name STRING")
+spark.sql("INSERT INTO default.add_new_column VALUES (3, 'abc'), (4, 'def')")
