@@ -1,7 +1,7 @@
 use crate::expr::Expr;
 
+use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
-use daft_core::{array::ListArray, utils::hashable_float_wrapper::FloatWrapper};
 use daft_core::{
     datatypes::{
         logical::{DateArray, TimestampArray},
@@ -58,7 +58,7 @@ pub enum LiteralValue {
     /// A 64-bit floating point number.
     Float64(f64),
     /// A list
-    List(Vec<LiteralValue>),
+    Series(Series),
     /// Python object.
     #[cfg(feature = "python")]
     Python(DaftPyObject),
@@ -88,7 +88,13 @@ impl Hash for LiteralValue {
             }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
-            List(l) => l.hash(state),
+            Series(series) => {
+                let hash_result = series.hash(None);
+                match hash_result {
+                    Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
+                    Err(_) => panic!("Cannot hash series"),
+                }
+            }
             #[cfg(feature = "python")]
             Python(py_obj) => py_obj.hash(state),
         }
@@ -111,7 +117,7 @@ impl Display for LiteralValue {
             Date(val) => write!(f, "{}", display_date32(*val)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
-            List(val) => write!(f, "{:?}", val),
+            Series(series) => write!(f, "{}", series),
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
@@ -141,13 +147,7 @@ impl LiteralValue {
             Date(_) => DataType::Date,
             Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Float64(_) => DataType::Float64,
-            List(l) => {
-                if let Some(first) = l.first() {
-                    DataType::List(Box::new(first.get_type()))
-                } else {
-                    DataType::Null
-                }
-            }
+            Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
         }
@@ -175,226 +175,7 @@ impl LiteralValue {
                 TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
-            List(vals) => {
-                let offsets = unsafe {
-                    arrow2::offset::Offsets::<i64>::new_unchecked(vec![0, vals.len() as i64])
-                };
-                if vals.is_empty() {
-                    ListArray::new(
-                        Field::new("literal", DataType::List(Box::new(DataType::Null))),
-                        NullArray::full_null("literal", &DataType::Null, 0).into_series(),
-                        offsets.into(),
-                        None,
-                    )
-                    .into_series()
-                } else {
-                    match vals.first().unwrap() {
-                        LiteralValue::Null => ListArray::new(
-                            Field::new("literal", DataType::List(Box::new(DataType::Null))),
-                            NullArray::full_null("literal", &DataType::Null, vals.len())
-                                .into_series(),
-                            offsets.into(),
-                            None,
-                        )
-                        .into_series(),
-                        LiteralValue::Boolean(..) => {
-                            let vals_extracted: Vec<bool> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Boolean(b) => *b,
-                                    _ => panic!("Expected boolean, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Boolean))),
-                                BooleanArray::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Utf8(..) => {
-                            let vals_extracted: Vec<&str> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Utf8(s) => s.as_str(),
-                                    _ => panic!("Expected string, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Utf8))),
-                                Utf8Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Binary(..) => {
-                            let vals_extracted: Vec<&[u8]> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Binary(b) => b.as_slice(),
-                                    _ => panic!("Expected binary, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Binary))),
-                                BinaryArray::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Int32(..) => {
-                            let vals_extracted: Vec<i32> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Int32(i) => *i,
-                                    _ => panic!("Expected i32, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Int32))),
-                                Int32Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::UInt32(..) => {
-                            let vals_extracted: Vec<u32> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::UInt32(i) => *i,
-                                    _ => panic!("Expected u32, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::UInt32))),
-                                UInt32Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Int64(..) => {
-                            let vals_extracted: Vec<i64> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Int64(i) => *i,
-                                    _ => panic!("Expected i64, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Int64))),
-                                Int64Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::UInt64(..) => {
-                            let vals_extracted: Vec<u64> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::UInt64(i) => *i,
-                                    _ => panic!("Expected u64, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::UInt64))),
-                                UInt64Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Date(..) => {
-                            let vals_extracted: Vec<i32> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Date(i) => *i,
-                                    _ => panic!("Expected date, found {:?}", item),
-                                })
-                                .collect();
-                            let physical = Int32Array::from(("literal", vals_extracted.as_slice()));
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Date))),
-                                DateArray::new(Field::new("literal", self.get_type()), physical)
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Timestamp(..) => {
-                            let vals_extracted: Vec<i64> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Timestamp(i, ..) => *i,
-                                    _ => panic!("Expected timestamp, found {:?}", item),
-                                })
-                                .collect();
-                            let physical = Int64Array::from(("literal", vals_extracted.as_slice()));
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(self.get_type()))),
-                                TimestampArray::new(
-                                    Field::new("literal", self.get_type()),
-                                    physical,
-                                )
-                                .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::Float64(..) => {
-                            let vals_extracted: Vec<f64> = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Float64(i) => *i,
-                                    _ => panic!("Expected f64, found {:?}", item),
-                                })
-                                .collect();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Float64))),
-                                Float64Array::from(("literal", vals_extracted.as_slice()))
-                                    .into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                        LiteralValue::List(..) => {
-                            panic!("Nested lists are not supported")
-                        }
-                        #[cfg(feature = "python")]
-                        LiteralValue::Python(..) => {
-                            let vals_extracted = vals
-                                .iter()
-                                .map(|item| match item {
-                                    LiteralValue::Python(i) => i.pyobject.clone(),
-                                    _ => panic!("Expected PyObject, found {:?}", item),
-                                })
-                                .collect::<Vec<_>>();
-                            ListArray::new(
-                                Field::new("literal", DataType::List(Box::new(DataType::Python))),
-                                PythonArray::from(("literal", vals_extracted)).into_series(),
-                                offsets.into(),
-                                None,
-                            )
-                            .into_series()
-                        }
-                    }
-                }
-            }
+            Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
             Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
         };
@@ -435,9 +216,9 @@ impl<'a> Literal for &'a [u8] {
     }
 }
 
-impl Literal for Vec<LiteralValue> {
+impl Literal for Series {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::List(self))
+        Expr::Literal(LiteralValue::Series(self))
     }
 }
 

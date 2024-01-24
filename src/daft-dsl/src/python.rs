@@ -3,10 +3,9 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use daft_core::python::datatype::PyTimeUnit;
-use pyo3::types::PyList;
+use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
 
-use crate::pyobject::DaftPyObject;
 use crate::{functions, optimization, Expr, LiteralValue};
 use daft_core::{
     count_mode::CountMode,
@@ -42,6 +41,12 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
 }
 
 #[pyfunction]
+pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Series(series.series));
+    Ok(expr.into())
+}
+
+#[pyfunction]
 pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     if item.is_instance_of::<PyBool>() {
         let val = item.extract::<bool>()?;
@@ -73,55 +78,6 @@ pub fn lit(item: &PyAny) -> PyResult<PyExpr> {
     } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
         let bytes = pybytes.as_bytes();
         Ok(crate::lit(bytes).into())
-    } else if let Ok(pylist) = item.downcast::<PyList>() {
-        let mut items: Vec<LiteralValue> = Vec::with_capacity(pylist.len());
-        if pylist.is_empty() {
-            return Ok(crate::lit(items).into());
-        }
-
-        for item in pylist.iter() {
-            if item.is_instance_of::<PyBool>() {
-                items.push(LiteralValue::Boolean(item.extract::<bool>()?));
-            } else if let Ok(int) = item.downcast::<PyInt>() {
-                match int.extract::<i64>() {
-                    Ok(val) => {
-                        if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                            items.push(LiteralValue::Int32(val as i32));
-                        } else {
-                            items.push(LiteralValue::Int64(val));
-                        }
-                    }
-                    _ => {
-                        let val = int.extract::<u64>()?;
-                        items.push(LiteralValue::UInt64(val));
-                    }
-                }
-            } else if let Ok(float) = item.downcast::<PyFloat>() {
-                items.push(LiteralValue::Float64(float.extract::<f64>()?));
-            } else if let Ok(pystr) = item.downcast::<PyString>() {
-                items.push(LiteralValue::Utf8(pystr.to_string()));
-            } else if let Ok(pybytes) = item.downcast::<PyBytes>() {
-                items.push(LiteralValue::Binary(pybytes.as_bytes().to_vec()));
-            } else if item.is_none() {
-                items.push(LiteralValue::Null);
-            } else {
-                items.push(LiteralValue::Python(DaftPyObject {
-                    pyobject: item.into(),
-                }));
-            }
-        }
-
-        // check that all items are the same type
-        let mut iter = items.iter();
-        let first = iter.next().unwrap();
-        if iter.all(|item| item.get_type() == first.get_type()) {
-            Ok(crate::lit(items).into())
-        } else {
-            Err(PyValueError::new_err(format!(
-                "all items in list must be the same type: {:?}",
-                items
-            )))
-        }
     } else if item.is_none() {
         Ok(crate::null_lit().into())
     } else {
