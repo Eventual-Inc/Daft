@@ -21,6 +21,7 @@ pub(crate) mod groups;
 mod hash;
 mod if_else;
 pub(crate) mod image;
+mod is_in;
 mod len;
 mod list;
 mod list_agg;
@@ -76,6 +77,11 @@ pub trait DaftLogical<Rhs> {
 
     /// xor.
     fn xor(&self, rhs: Rhs) -> Self::Output;
+}
+
+pub trait DaftIsIn<Rhs> {
+    type Output;
+    fn is_in(&self, rhs: Rhs) -> Self::Output;
 }
 
 pub trait DaftIsNull {

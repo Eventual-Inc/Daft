@@ -1,7 +1,8 @@
 use common_error::DaftResult;
 
 use crate::{
-    datatypes::BooleanArray, with_match_comparable_daft_types, DataType, IntoSeries, Series,
+    array::ops::DaftIsIn, datatypes::BooleanArray, with_match_comparable_daft_types, DataType,
+    IntoSeries, Series,
 };
 
 #[cfg(feature = "python")]
@@ -42,20 +43,7 @@ impl Series {
                         let lhs = casted_lhs.downcast::<<$T as DaftDataType>::ArrayType>()?;
                         let rhs = casted_rhs.downcast::<<$T as DaftDataType>::ArrayType>()?;
 
-                        // TODO: Replace this O(m*n) impl
-                        let mut result = Vec::new();
-                        for i in 0..lhs.len() {
-                            let mut found = false;
-                            for j in 0..rhs.len() {
-                                if lhs.get(i) == rhs.get(j) {
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            result.push(found);
-                        }
-
-                        Ok(BooleanArray::from((self.name(), result.as_slice())).into_series())
+                        Ok(lhs.is_in(rhs)?.into_series())
                 }),
             }
         } else {

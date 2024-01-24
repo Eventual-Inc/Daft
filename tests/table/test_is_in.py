@@ -51,6 +51,14 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
 @pytest.mark.parametrize(
     "input,items,expected",
     [
+        # Null
+        pytest.param([None, None], [True], [False, False], id="NullWithBool"),
+        pytest.param([None, None], [1], [False, False], id="NullWithInt"),
+        pytest.param([None, None], [1.0], [False, False], id="NullWithFloat"),
+        pytest.param([None, None], ["1"], [False, False], id="NullWithString"),
+        pytest.param([None, None], [b"1"], [False, False], id="NullWithBinary"),
+        pytest.param([None, None], [datetime.date.today()], [False, False], id="NullWithDate"),
+        pytest.param([None, None], [datetime.datetime.today()], [False, False], id="NullWithTimestamp"),
         # Int
         pytest.param([-1, 2, 3, 4], ["-1", "2"], [True, True, False, False], id="IntWithString"),
         pytest.param([1, 2, 3, 4], [1.0, 2.0], [True, True, False, False], id="IntWithFloat"),
@@ -86,7 +94,7 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
         ),
     ],
 )
-def test_table_expr_is_in_different_types_castable(input, items, expected) -> None:
+def test_table_expr_is_in_different_types(input, items, expected) -> None:
     daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
     pydict = daft_table.to_pydict()
