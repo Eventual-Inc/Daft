@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
@@ -36,10 +34,6 @@ def test_minio_parquet_read_no_files(minio_io_config):
     with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
         fs.touch("s3://data-engineering-prod/foo/file.txt")
 
-        msg = (
-            "Glob path had no matches:"
-            if os.getenv("DAFT_MICROPARTITIONS", "1") == "1"
-            else "No files found at s3://data-engineering-prod/foo/\\*\\*.parquet"
-        )
+        msg = "Glob path had no matches:"
         with pytest.raises(FileNotFoundError, match=msg):
             daft.read_parquet("s3://data-engineering-prod/foo/**.parquet", io_config=minio_io_config)
