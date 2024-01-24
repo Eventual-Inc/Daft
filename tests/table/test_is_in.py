@@ -19,7 +19,7 @@ class CustomClass:
 @pytest.mark.parametrize(
     "input,items,expected",
     [
-        pytest.param([None, None], [None], [True, True], id="NullColumn"),
+        pytest.param([None, None], [None], [None, None], id="NullColumn"),
         pytest.param([True, False, None], [True], [True, False, False], id="BooleanColumn"),
         pytest.param(["a", "b", "c", "d"], ["a", "b"], [True, True, False, False], id="StringColumn"),
         pytest.param([b"a", b"b", b"c", b"d"], [b"a", b"b"], [True, True, False, False], id="BinaryColumn"),
@@ -105,7 +105,7 @@ def test_table_expr_is_in_different_types(input, items, expected) -> None:
 @pytest.mark.parametrize(
     "input,items,expected",
     [
-        pytest.param([None, None, None], [None], [True, True, True], id="NullColumn"),
+        pytest.param([None, None, None], [None], [None, None, None], id="NullColumn"),
         pytest.param([True, False, None], [None], [False, False, True], id="BooleanColumn"),
         pytest.param(["a", "b", None], [None], [False, False, True], id="StringColumn"),
         pytest.param([b"a", b"b", None], [None], [False, False, True], id="BinaryColumn"),

@@ -4,9 +4,10 @@ use crate::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Float32Array, Float64Array,
         NullArray, Utf8Array,
     },
+    DataType,
 };
 
-use super::DaftIsIn;
+use super::{full::FullNull, DaftIsIn};
 use common_error::DaftResult;
 use std::hash::Hash;
 
@@ -81,10 +82,11 @@ impl DaftIsIn<&NullArray> for NullArray {
     type Output = DaftResult<BooleanArray>;
 
     fn is_in(&self, _rhs: &NullArray) -> Self::Output {
-        // If self and rhs are null array then membership is always true
-        Ok(BooleanArray::from((
+        // If self and rhs are null array then return a full null array
+        Ok(BooleanArray::full_null(
             self.name(),
-            vec![true; self.len()].as_slice(),
-        )))
+            &DataType::Boolean,
+            self.len(),
+        ))
     }
 }
