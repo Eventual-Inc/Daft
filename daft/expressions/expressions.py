@@ -448,7 +448,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     ) -> Expression:
         """Treats each string as a URL, and downloads the bytes contents as a bytes column
 
-        ..NOTE::
+        .. NOTE::
             If you are observing excessive S3 issues (such as timeouts, DNS errors or slowdown errors) during URL downloads,
             you may wish to reduce the value of ``max_connections`` (defaults to 32) to reduce the amount of load you are placing
             on your S3 servers.
