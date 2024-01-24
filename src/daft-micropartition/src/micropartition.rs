@@ -288,7 +288,7 @@ fn materialize_scan_task(
 
     // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
     // Note that we need to apply column pruning here if specified by the ScanTask
-    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema_after_read());
+    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.materialized_schema());
 
     let casted_table_values = table_values
         .iter()
@@ -357,7 +357,7 @@ impl MicroPartition {
     }
 
     pub fn from_scan_task(scan_task: Arc<ScanTask>, io_stats: IOStatsRef) -> crate::Result<Self> {
-        let schema = scan_task.schema_after_read();
+        let schema = scan_task.materialized_schema();
         match (
             &scan_task.metadata,
             &scan_task.statistics,
@@ -829,7 +829,7 @@ pub(crate) fn read_parquet_into_micropartition(
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
-            scan_task.schema_after_read(),
+            scan_task.materialized_schema(),
             Arc::new(scan_task),
             TableMetadata { length: total_rows },
             stats,

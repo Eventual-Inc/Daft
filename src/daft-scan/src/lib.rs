@@ -171,7 +171,7 @@ pub struct ScanTask {
 
     /// Schema to use when reading the DataFileSources.
     /// Note that this is different than the schema of the data after pushdowns have been applied,
-    /// which can be obtained with [`ScanTask::schema_after_read`] instead.
+    /// which can be obtained with [`ScanTask::materialized_schema`] instead.
     pub schema: SchemaRef,
 
     pub file_format_config: Arc<FileFormatConfig>,
@@ -277,7 +277,7 @@ impl ScanTask {
         ))
     }
 
-    pub fn schema_after_read(&self) -> SchemaRef {
+    pub fn materialized_schema(&self) -> SchemaRef {
         match &self.pushdowns.columns {
             None => self.schema.clone(),
             Some(columns) => Arc::new(Schema {
