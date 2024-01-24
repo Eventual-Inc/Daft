@@ -7,7 +7,10 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::SchemaRef};
+use daft_core::{
+    datatypes::Field,
+    schema::{Schema, SchemaRef},
+};
 use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
@@ -165,8 +168,13 @@ impl DataFileSource {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScanTask {
     pub sources: Vec<DataFileSource>,
-    pub file_format_config: Arc<FileFormatConfig>,
+
+    /// Schema to use when reading the DataFileSources.
+    /// Note that this is different than the schema of the data after pushdowns have been applied,
+    /// which can be obtained with [`ScanTask::schema_after_read`] instead.
     pub schema: SchemaRef,
+
+    pub file_format_config: Arc<FileFormatConfig>,
     pub storage_config: Arc<StorageConfig>,
     pub pushdowns: Pushdowns,
     pub size_bytes_on_disk: Option<u64>,
@@ -267,6 +275,21 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
         ))
+    }
+
+    pub fn schema_after_read(&self) -> SchemaRef {
+        match &self.pushdowns.columns {
+            None => self.schema.clone(),
+            Some(columns) => Arc::new(Schema {
+                fields: self
+                    .schema
+                    .fields
+                    .clone()
+                    .into_iter()
+                    .filter(|(name, _)| columns.contains(name))
+                    .collect(),
+            }),
+        }
     }
 
     pub fn num_rows(&self) -> Option<usize> {
