@@ -4,7 +4,10 @@ use common_error::DaftResult;
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 
-use crate::{file_format::FileFormatConfig, ChunkSpec, DataFileSource, ScanTask, ScanTaskRef};
+use crate::{
+    file_format::FileFormatConfig, storage_config::StorageConfig, ChunkSpec, DataFileSource,
+    ScanTask, ScanTaskRef,
+};
 
 type BoxScanTaskIter = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>;
 
@@ -127,14 +130,24 @@ pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> Box
             .map(|t| -> DaftResult<BoxScanTaskIter> {
                 let t = t?;
 
-                // only split parquet tasks that have one source without a specified chunk spec or number of rows
+                // only split parquet tasks if they:
+                // - have one source
+                // - use native storage config
+                // - have no specified chunk spec or number of rows
                 match (
                     t.file_format_config.as_ref(),
+                    t.storage_config.as_ref(),
                     &t.sources[..],
                     t.sources.get(0).map(DataFileSource::get_chunk_spec),
                     t.pushdowns.limit,
                 ) {
-                    (FileFormatConfig::Parquet(_), [source], Some(None), None) => {
+                    (
+                        FileFormatConfig::Parquet(_),
+                        StorageConfig::Native(_),
+                        [source],
+                        Some(None),
+                        None,
+                    ) => {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
 
