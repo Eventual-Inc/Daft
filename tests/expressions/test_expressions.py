@@ -9,6 +9,7 @@ import pytz
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
+from daft.series import Series
 from daft.table import MicroPartition
 
 
@@ -23,6 +24,7 @@ from daft.table import MicroPartition
         (b"a", DataType.binary()),
         (True, DataType.bool()),
         (None, DataType.null()),
+        (Series.from_pylist([1, 2, 3]), DataType.int64()),
         (date(2023, 1, 1), DataType.date()),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
         (datetime(2022, 1, 1, tzinfo=pytz.utc), DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="UTC")),
@@ -173,3 +175,9 @@ def test_datetime_lit_pre_epoch() -> None:
     d = lit(datetime(1950, 1, 1))
     output = repr(d)
     assert output == "lit(1950-01-01T00:00:00.000000)"
+
+
+def test_repr_series_lit() -> None:
+    s = lit(Series.from_pylist([1, 2, 3]))
+    output = repr(s)
+    assert output == "lit([1, 2, 3])"

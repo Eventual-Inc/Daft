@@ -30,6 +30,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::Not(..)
         | Expr::IsNull(..)
         | Expr::NotNull(..)
+        | Expr::IsIn { .. }
         | Expr::IfElse { .. } => true,
     }
 }

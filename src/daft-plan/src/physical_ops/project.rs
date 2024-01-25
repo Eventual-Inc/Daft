@@ -162,6 +162,17 @@ impl Project {
                 )?;
                 Ok(Expr::NotNull(newchild.into()))
             }
+            Expr::IsIn(child, items) => {
+                let newchild = Self::translate_partition_spec_expr(
+                    child.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                let newitems = Self::translate_partition_spec_expr(
+                    items.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                Ok(Expr::IsIn(newchild.into(), newitems.into()))
+            }
             Expr::IfElse {
                 if_true,
                 if_false,
