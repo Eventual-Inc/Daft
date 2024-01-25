@@ -9,7 +9,7 @@ use crate::{
 
 use super::as_arrow::AsArrow;
 use super::{full::FullNull, DaftIsIn};
-use crate::utils::orderable_float_wrapper::FloatWrapper;
+use crate::utils::hashable_float_wrapper::FloatWrapper;
 use common_error::DaftResult;
 use std::collections::{BTreeSet, HashSet};
 

@@ -3,6 +3,8 @@ use crate::{
     Series,
 };
 
+use itertools::Itertools;
+
 pub fn display_date32(val: i32) -> String {
     let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
     let date = if val.is_positive() {
@@ -41,7 +43,6 @@ pub fn display_series_literal(series: &Series) -> String {
             "[{}]",
             (0..series.len())
                 .map(|i| series.str_value(i).unwrap())
-                .collect::<Vec<_>>()
                 .join(", ")
         )
     } else {
