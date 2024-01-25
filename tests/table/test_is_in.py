@@ -23,6 +23,14 @@ class CustomClass:
         return hash(self.x)
 
 
+class CustomClassWithoutHash:
+    def __init__(self, x):
+        self.x = x
+
+    def __eq__(self, other):
+        return self.x == other.x
+
+
 @pytest.mark.parametrize(
     "input,items,expected",
     [
@@ -45,6 +53,12 @@ class CustomClass:
             id="TimestampColumn",
         ),
         pytest.param([CustomClass(1), CustomClass(2)], [CustomClass(1)], [True, False], id="ObjectColumn"),
+        pytest.param(
+            [CustomClassWithoutHash(1), CustomClassWithoutHash(2)],
+            [CustomClassWithoutHash(1)],
+            [True, False],
+            id="ObjectWithoutHashColumn",
+        ),
     ],
 )
 def test_table_expr_is_in_same_types(input, items, expected) -> None:
