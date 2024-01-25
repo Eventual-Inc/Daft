@@ -29,6 +29,12 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
+_NUMPY_AVAILABLE = True
+try:
+    import numpy as np
+except ImportError:
+    _NUMPY_AVAILABLE = False
+
 _PANDAS_AVAILABLE = True
 try:
     import pandas as pd
