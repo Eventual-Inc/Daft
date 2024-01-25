@@ -8,7 +8,7 @@ use daft_core::{
         TimeUnit,
     },
     series::Series,
-    utils::display_table::{display_date32, display_timestamp},
+    utils::display_table::{display_date32, display_series_literal, display_timestamp},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -117,7 +117,7 @@ impl Display for LiteralValue {
             Date(val) => write!(f, "{}", display_date32(*val)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
-            Series(series) => write!(f, "{}", series),
+            Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;

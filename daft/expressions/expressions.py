@@ -3,9 +3,7 @@ from __future__ import annotations
 import builtins
 import sys
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator
-from typing import List as _List
-from typing import TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
 
 import pyarrow as pa
 
@@ -21,7 +19,7 @@ from daft.daft import udf as _udf
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series
+from daft.series import Series, item_to_series
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -393,7 +391,7 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
-    def is_in(self, items: _List[Any] | Expression) -> Expression:
+    def is_in(self, other: Any) -> Expression:
         """Checks if values in the Expression are in the provided list
 
         Example:
@@ -403,16 +401,12 @@ class Expression:
         Returns:
             Expression: Boolean Expression indicating whether values are in the provided list
         """
-        if not (isinstance(items, Expression) or isinstance(items, list)):
-            raise TypeError(f"expected a python list or Daft Expression, got {type(items)}")
 
-        if isinstance(items, list):
-            series = Series.from_pylist(list(items))
-            items_expr = Expression._to_expression(series)
-        else:
-            items_expr = Expression._to_expression(items)
+        if not isinstance(other, Expression):
+            series = item_to_series("items", other)
+            other = Expression._to_expression(series)
 
-        expr = self._expr.is_in(items_expr._expr)
+        expr = self._expr.is_in(other._expr)
         return Expression._from_pyexpr(expr)
 
     def name(self) -> builtins.str:

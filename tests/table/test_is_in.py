@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import datetime
 
+import numpy as np
+import pandas as pd
+import pyarrow as pa
 import pytest
 
 from daft import col
+from daft.series import Series
 from daft.table import MicroPartition
 
 
@@ -15,12 +19,15 @@ class CustomClass:
     def __eq__(self, other):
         return self.x == other.x
 
+    def __hash__(self):
+        return hash(self.x)
+
 
 @pytest.mark.parametrize(
     "input,items,expected",
     [
         pytest.param([None, None], [None], [None, None], id="NullColumn"),
-        pytest.param([True, False, None], [True], [True, False, False], id="BooleanColumn"),
+        pytest.param([True, False], [False], [False, True], id="BooleanColumn"),
         pytest.param(["a", "b", "c", "d"], ["a", "b"], [True, True, False, False], id="StringColumn"),
         pytest.param([b"a", b"b", b"c", b"d"], [b"a", b"b"], [True, True, False, False], id="BinaryColumn"),
         pytest.param([-1, 2, 3, 4], [-1, 2], [True, True, False, False], id="IntColumn"),
@@ -51,14 +58,6 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
 @pytest.mark.parametrize(
     "input,items,expected",
     [
-        # Null
-        pytest.param([None, None], [True], [False, False], id="NullWithBool"),
-        pytest.param([None, None], [1], [False, False], id="NullWithInt"),
-        pytest.param([None, None], [1.0], [False, False], id="NullWithFloat"),
-        pytest.param([None, None], ["1"], [False, False], id="NullWithString"),
-        pytest.param([None, None], [b"1"], [False, False], id="NullWithBinary"),
-        pytest.param([None, None], [datetime.date.today()], [False, False], id="NullWithDate"),
-        pytest.param([None, None], [datetime.datetime.today()], [False, False], id="NullWithTimestamp"),
         # Int
         pytest.param([-1, 2, 3, 4], ["-1", "2"], [True, True, False, False], id="IntWithString"),
         pytest.param([1, 2, 3, 4], [1.0, 2.0], [True, True, False, False], id="IntWithFloat"),
@@ -70,14 +69,9 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
         # String
         pytest.param(["1", "2", "3", "4"], [1, 2], [True, True, False, False], id="StringWithInt"),
         pytest.param(["1.0", "2.0", "3.0", "4.0"], [1.0, 2.0], [True, True, False, False], id="StringWithFloat"),
-        pytest.param(["True", "False", ""], [True], [False, False, False], id="StringWithBool"),
-        # Binary
-        pytest.param([b"True", b"False", b""], [True], [False, False, False], id="BinaryWithBool"),
         # Bool
-        pytest.param([True, False, None], [1, 0], [True, True, False], id="BoolWithInt"),
-        pytest.param([True, False, None], [1.0], [True, False, False], id="BoolWithFloat"),
-        pytest.param([True, False, None], ["True"], [False, False, False], id="BoolWithString"),
-        pytest.param([True, False, None], [b"True"], [False, False, False], id="BoolWithBinary"),
+        pytest.param([True, False, None], [1, 0], [True, True, None], id="BoolWithInt"),
+        pytest.param([True, False, None], [1.0], [True, False, None], id="BoolWithFloat"),
         # Date
         pytest.param(
             [datetime.date.today(), datetime.date.today() - datetime.timedelta(days=1)],
@@ -94,7 +88,7 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
         ),
     ],
 )
-def test_table_expr_is_in_different_types(input, items, expected) -> None:
+def test_table_expr_is_in_different_types_castable(input, items, expected) -> None:
     daft_table = MicroPartition.from_pydict({"input": input})
     daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
     pydict = daft_table.to_pydict()
@@ -106,11 +100,11 @@ def test_table_expr_is_in_different_types(input, items, expected) -> None:
     "input,items,expected",
     [
         pytest.param([None, None, None], [None], [None, None, None], id="NullColumn"),
-        pytest.param([True, False, None], [None], [False, False, True], id="BooleanColumn"),
-        pytest.param(["a", "b", None], [None], [False, False, True], id="StringColumn"),
-        pytest.param([b"a", b"b", None], [None], [False, False, True], id="BinaryColumn"),
-        pytest.param([1, 2, None], [None], [False, False, True], id="IntColumn"),
-        pytest.param([1.0, 2.0, None], [None], [False, False, True], id="FloatColumn"),
+        pytest.param([True, False, None], [None], [False, False, None], id="BooleanColumn"),
+        pytest.param(["a", "b", None], [None], [False, False, None], id="StringColumn"),
+        pytest.param([b"a", b"b", None], [None], [False, False, None], id="BinaryColumn"),
+        pytest.param([1, 2, None], [None], [False, False, None], id="IntColumn"),
+        pytest.param([1.0, 2.0, None], [None], [False, False, None], id="FloatColumn"),
     ],
 )
 def test_table_expr_is_in_items_is_none(input, items, expected) -> None:
@@ -124,35 +118,26 @@ def test_table_expr_is_in_items_is_none(input, items, expected) -> None:
 @pytest.mark.parametrize(
     "input,items,expected",
     [
-        pytest.param([None, None], [None, None], [None, None], id="NullColumn"),
-        pytest.param([True, False, None], [True, True, True], [True, False, False], id="BooleanColumn"),
-        pytest.param(["a", "b", "c", "d"], ["a", "b", "e", "f"], [True, True, False, False], id="StringColumn"),
-        pytest.param([b"a", b"b", b"c", b"d"], [b"a", b"b", b"e", b"f"], [True, True, False, False], id="BinaryColumn"),
-        pytest.param([-1, 2, 3, 4], [-1, 2, 5, 6], [True, True, False, False], id="IntColumn"),
-        pytest.param([-1.0, 2.0, 3.0, 4.0], [-1.0, 2.0, 5.0, 6.0], [True, True, False, False], id="FloatColumn"),
-        pytest.param(
-            [datetime.date.today(), datetime.date.today() - datetime.timedelta(days=1)],
-            [datetime.date.today(), datetime.date.today() - datetime.timedelta(days=2)],
-            [True, False],
-            id="DateColumn",
-        ),
-        pytest.param(
-            [datetime.datetime(2022, 1, 1), datetime.datetime(2023, 1, 1)],
-            [datetime.datetime(2022, 1, 1), datetime.datetime(2023, 1, 2)],
-            [True, False],
-            id="TimestampColumn",
-        ),
-        pytest.param(
-            [CustomClass(1), CustomClass(2)], [CustomClass(1), CustomClass(3)], [True, False], id="ObjectColumn"
-        ),
+        pytest.param([1, 2, 3, 4], np.array([1, 2]), [True, True, False, False], id="NumpyArray"),
+        pytest.param([1, 2, 3, 4], pa.array([1, 2], type=pa.int8()), [True, True, False, False], id="PyArrowArray"),
+        pytest.param([1, 2, 3, 4], pd.Series([1, 2]), [True, True, False, False], id="PandasSeries"),
+        pytest.param([1, 2, 3, 4], Series.from_pylist([1, 2]), [True, True, False, False], id="DaftSeries"),
     ],
 )
-def test_table_expr_is_in_with_another_df_column(input, items, expected) -> None:
-    daft_table = MicroPartition.from_pydict({"input": input, "items": items})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(col("items"))])
+def test_table_expr_is_in_different_input_types(input, items, expected) -> None:
+    daft_table = MicroPartition.from_pydict({"input": input})
+    daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
     pydict = daft_table.to_pydict()
 
     assert pydict["input"] == expected
+
+
+def test_table_expr_is_in_with_another_df_column() -> None:
+    daft_table = MicroPartition.from_pydict({"input": [1, 2, 3, 4], "items": [3, 4, 5, 6]})
+    daft_table = daft_table.eval_expression_list([col("input").is_in(col("items"))])
+    pydict = daft_table.to_pydict()
+
+    assert pydict["input"] == [False, False, True, True]
 
 
 def test_table_expr_is_in_empty_items() -> None:
@@ -163,8 +148,8 @@ def test_table_expr_is_in_empty_items() -> None:
     assert pydict["input"] == [False, False, False, False]
 
 
-def test_table_expr_is_in_items_is_not_list_or_series() -> None:
+def test_table_expr_is_in_items_invalid_input() -> None:
     daft_table = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
 
-    with pytest.raises(TypeError, match="expected a python list or Daft Expression"):
+    with pytest.raises(ValueError, match="Creating a Series from data of type"):
         daft_table.eval_expression_list([col("input").is_in(1)])

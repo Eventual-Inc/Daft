@@ -35,6 +35,20 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
     )
 }
 
+pub fn display_series_literal(series: &Series) -> String {
+    if !series.is_empty() {
+        format!(
+            "[{}]",
+            (0..series.len())
+                .map(|i| series.str_value(i).unwrap())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        "[]".to_string()
+    }
+}
+
 pub fn make_comfy_table<F: AsRef<Field>>(
     fields: &[F],
     columns: Option<&[&Series]>,

@@ -8,20 +8,20 @@ use crate::{
 #[cfg(feature = "python")]
 use crate::series::ops::py_membership_op_utilfn;
 
+fn default(name: &str, size: usize) -> DaftResult<Series> {
+    Ok(BooleanArray::from((name, vec![false; size].as_slice())).into_series())
+}
+
 impl Series {
     pub fn is_in(&self, items: &Self) -> DaftResult<Series> {
-        let default =
-            BooleanArray::from((self.name(), vec![false; self.len()].as_slice())).into_series();
         if items.is_empty() {
-            return Ok(default);
+            return default(self.name(), self.len());
         }
 
         let (output_type, intermediate, comp_type) =
             match self.data_type().membership_op(items.data_type()) {
-                Ok(value) => value,
-                Err(_) => {
-                    return Ok(default);
-                }
+                Ok(types) => types,
+                Err(_) => return default(self.name(), self.len()),
             };
 
         let (lhs, rhs) = if let Some(ref it) = intermediate {
@@ -33,7 +33,7 @@ impl Series {
         if let DataType::Boolean = output_type {
             match comp_type {
                 #[cfg(feature = "python")]
-                DataType::Python => Ok(py_membership_op_utilfn!(self, items)
+                DataType::Python => Ok(py_membership_op_utilfn(self, items)?
                     .downcast::<BooleanArray>()?
                     .clone()
                     .into_series()),

@@ -91,7 +91,11 @@ def python_list_membership_check(
     left_pylist: list,
     right_pylist: list,
 ) -> list:
-    return [elem in right_pylist for elem in left_pylist]
+    try:
+        right_pyset = set(right_pylist)
+        return [elem in right_pyset for elem in left_pylist]
+    except TypeError:
+        return [elem in right_pylist for elem in left_pylist]
 
 
 def map_operator_arrow_semantics(

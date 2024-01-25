@@ -27,13 +27,7 @@ from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.series import Series
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
+from daft.series import Series, item_to_series
 
 _PANDAS_AVAILABLE = True
 try:
@@ -148,18 +142,7 @@ class Table:
     def from_pydict(data: dict) -> Table:
         series_dict = dict()
         for k, v in data.items():
-            if isinstance(v, list):
-                series = Series.from_pylist(v, name=k)
-            elif _NUMPY_AVAILABLE and isinstance(v, np.ndarray):
-                series = Series.from_numpy(v, name=k)
-            elif isinstance(v, Series):
-                series = v
-            elif isinstance(v, (pa.Array, pa.ChunkedArray)):
-                series = Series.from_arrow(v, name=k)
-            elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
-                series = Series.from_pandas(v, name=k)
-            else:
-                raise ValueError(f"Creating a Series from data of type {type(v)} not implemented")
+            series = item_to_series(k, v)
             series_dict[k] = series._series
         return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 
