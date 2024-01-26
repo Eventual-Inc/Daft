@@ -77,7 +77,7 @@ Comparing expressions and values, returning a logical expression
 Membership
 ***********
 
-Checking if an expression is a member of a set of values
+Checking if an expression is a member of a list of values
 
 .. autosummary::
     :toctree: doc_gen/expression_methods
