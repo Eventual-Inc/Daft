@@ -1153,6 +1153,7 @@ dependencies = [
  "html-escape",
  "image",
  "indexmap 2.1.0",
+ "itertools",
  "lazy_static",
  "log",
  "mur3",

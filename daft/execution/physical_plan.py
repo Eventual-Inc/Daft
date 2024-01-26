@@ -372,14 +372,10 @@ def broadcast_join(
     receiver_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     while True:
-        receiver_parts: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-        # Moved completed partition tasks in the receiver side of the join to the materialized partition set.
-        while receiver_requests and receiver_requests[0].done():
-            receiver_parts.append(receiver_requests.popleft())
-
         # Emit join steps for newly materialized partitions.
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
-        for receiver_part in receiver_parts:
+        while receiver_requests and receiver_requests[0].done():
+            receiver_part = receiver_requests.popleft()
             yield _create_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
 
         # Execute single child step to pull in more input partitions.

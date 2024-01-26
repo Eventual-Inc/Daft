@@ -27,7 +27,7 @@ from daft.daft import read_parquet_statistics as _read_parquet_statistics
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.schema import Schema
-from daft.series import Series
+from daft.series import Series, item_to_series
 
 _NUMPY_AVAILABLE = True
 try:
@@ -148,18 +148,7 @@ class Table:
     def from_pydict(data: dict) -> Table:
         series_dict = dict()
         for k, v in data.items():
-            if isinstance(v, list):
-                series = Series.from_pylist(v, name=k)
-            elif _NUMPY_AVAILABLE and isinstance(v, np.ndarray):
-                series = Series.from_numpy(v, name=k)
-            elif isinstance(v, Series):
-                series = v
-            elif isinstance(v, (pa.Array, pa.ChunkedArray)):
-                series = Series.from_arrow(v, name=k)
-            elif _PANDAS_AVAILABLE and isinstance(v, pd.Series):
-                series = Series.from_pandas(v, name=k)
-            else:
-                raise ValueError(f"Creating a Series from data of type {type(v)} not implemented")
+            series = item_to_series(k, v)
             series_dict[k] = series._series
         return Table._from_pytable(_PyTable.from_pylist_series(series_dict))
 
@@ -371,6 +360,12 @@ class Table:
             raise TypeError(f"Expected a seed to be int, got {type(seed)}")
 
         return [Table._from_pytable(t) for t in self._table.partition_by_random(num_partitions, seed)]
+
+    def partition_by_value(self, partition_keys: ExpressionsProjection) -> tuple[list[Table], Table]:
+        exprs = [e._expr for e in partition_keys]
+        pytables, values = self._table.partition_by_value(exprs)
+
+        return [Table._from_pytable(t) for t in pytables], Table._from_pytable(values)
 
     ###
     # Compute methods (Table -> Series)

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use daft_core::python::datatype::PyTimeUnit;
+use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
 
 use crate::{functions, optimization, Expr, LiteralValue};
@@ -36,6 +37,12 @@ pub fn date_lit(item: i32) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Series(series.series));
     Ok(expr.into())
 }
 
@@ -239,6 +246,10 @@ impl PyExpr {
         Ok(self.expr.not_null().into())
     }
 
+    pub fn is_in(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.expr.is_in(&other.expr).into())
+    }
+
     pub fn name(&self) -> PyResult<&str> {
         Ok(self.expr.name()?)
     }
@@ -365,6 +376,36 @@ impl PyExpr {
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(&self.expr, name).into())
+    }
+
+    pub fn partitioning_days(&self) -> PyResult<Self> {
+        use crate::functions::partitioning::days;
+        Ok(days(self.expr.clone()).into())
+    }
+
+    pub fn partitioning_hours(&self) -> PyResult<Self> {
+        use crate::functions::partitioning::hours;
+        Ok(hours(self.expr.clone()).into())
+    }
+
+    pub fn partitioning_months(&self) -> PyResult<Self> {
+        use crate::functions::partitioning::months;
+        Ok(months(self.expr.clone()).into())
+    }
+
+    pub fn partitioning_years(&self) -> PyResult<Self> {
+        use crate::functions::partitioning::years;
+        Ok(years(self.expr.clone()).into())
+    }
+
+    pub fn partitioning_iceberg_bucket(&self, n: i32) -> PyResult<Self> {
+        use crate::functions::partitioning::iceberg_bucket;
+        Ok(iceberg_bucket(self.expr.clone(), n).into())
+    }
+
+    pub fn partitioning_iceberg_truncate(&self, w: i64) -> PyResult<Self> {
+        use crate::functions::partitioning::iceberg_truncate;
+        Ok(iceberg_truncate(self.expr.clone(), w).into())
     }
 
     pub fn url_download(

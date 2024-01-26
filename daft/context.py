@@ -209,6 +209,13 @@ def set_execution_config(
     split_row_groups_max_files: int | None = None,
     split_row_groups_threshold_bytes: int | None = None,
     split_row_groups_min_size_bytes: int | None = None,
+    sample_size_for_sort: int | None = None,
+    num_preview_rows: int | None = None,
+    parquet_target_filesize: int | None = None,
+    parquet_target_row_group_size: int | None = None,
+    parquet_inflation_factor: float | None = None,
+    csv_target_filesize: int | None = None,
+    csv_inflation_factor: float | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -227,6 +234,15 @@ def set_execution_config(
         split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
         split_row_groups_threshold_bytes: Threshold in which a file should be split by row group. (Defaults to 24 MiB)
         split_row_groups_min_size_bytes: Minimum size of scan tasks when splitting by row group. (Defaults to 16 MiB)
+        sample_size_for_sort: number of elements to sample from each partition when running sort,
+            Default is 20.
+        num_preview_rows: number of rows to when showing a dataframe preview,
+            Default is 8.
+        parquet_target_filesize: Target File Size when writing out Parquet Files. Defaults to 512MB
+        parquet_target_row_group_size: Target Row Group Size when writing out Parquet Files. Defaults to 128MB
+        parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
+        csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
+        csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -238,6 +254,13 @@ def set_execution_config(
         split_row_groups_max_files=split_row_groups_max_files,
         split_row_groups_threshold_bytes=split_row_groups_threshold_bytes,
         split_row_groups_min_size_bytes=split_row_groups_min_size_bytes,
+        sample_size_for_sort=sample_size_for_sort,
+        num_preview_rows=num_preview_rows,
+        parquet_target_filesize=parquet_target_filesize,
+        parquet_target_row_group_size=parquet_target_row_group_size,
+        parquet_inflation_factor=parquet_inflation_factor,
+        csv_target_filesize=csv_target_filesize,
+        csv_inflation_factor=csv_inflation_factor,
     )
 
     ctx.daft_execution_config = new_daft_execution_config

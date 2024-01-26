@@ -77,18 +77,12 @@ fn materialize_scan_task(
     cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(Vec<Table>, SchemaRef)> {
-    log::debug!("Materializing ScanTask: {scan_task:?}");
-
     let column_names = scan_task
         .pushdowns
         .columns
         .as_ref()
         .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
     let urls = scan_task.sources.iter().map(|s| s.get_path());
-
-    // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
-    // Note that we need to apply column pruning here if specified by the ScanTask
-    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.schema.clone());
 
     let table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
@@ -135,9 +129,10 @@ fn materialize_scan_task(
                 // Native CSV Reads
                 // ****************
                 FileFormatConfig::Csv(cfg) => {
+                    let schema_of_file = scan_task.schema.clone();
                     let col_names = if !cfg.has_headers {
                         Some(
-                            cast_to_schema
+                            schema_of_file
                                 .fields
                                 .values()
                                 .map(|f| f.name.as_str())
@@ -226,7 +221,7 @@ fn materialize_scan_task(
                         crate::python::read_parquet_into_py_table(
                             py,
                             url,
-                            cast_to_schema.clone().into(),
+                            scan_task.schema.clone().into(),
                             (*coerce_int96_timestamp_unit).into(),
                             scan_task.storage_config.clone().into(),
                             scan_task
@@ -254,7 +249,7 @@ fn materialize_scan_task(
                             *has_headers,
                             *delimiter,
                             *double_quote,
-                            cast_to_schema.clone().into(),
+                            scan_task.schema.clone().into(),
                             scan_task.storage_config.clone().into(),
                             scan_task
                                 .pushdowns
@@ -273,7 +268,7 @@ fn materialize_scan_task(
                         crate::python::read_json_into_py_table(
                             py,
                             url,
-                            cast_to_schema.clone().into(),
+                            scan_task.schema.clone().into(),
                             scan_task.storage_config.clone().into(),
                             scan_task
                                 .pushdowns
@@ -290,8 +285,10 @@ fn materialize_scan_task(
             }
         }
     };
-    let cast_to_schema = prune_fields_from_schema_ref(cast_to_schema, column_names.as_deref())
-        .context(DaftCoreComputeSnafu)?;
+
+    // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
+    // Note that we need to apply column pruning here if specified by the ScanTask
+    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.materialized_schema());
 
     let casted_table_values = table_values
         .iter()
@@ -305,23 +302,13 @@ impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
     /// Schema invariants:
-    /// 1. All columns in `schema` must be exist in the `scan_task` schema
-    /// 2. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
+    /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
         schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        assert!(
-            schema
-                .fields
-                .keys()
-                .collect::<HashSet<_>>()
-                .is_subset(&scan_task.schema.fields.keys().collect::<HashSet<_>>()),
-            "Unloaded MicroPartition's schema names must be a subset of its ScanTask's schema"
-        );
-
         MicroPartition {
             schema: schema.clone(),
             state: Mutex::new(TableState::Unloaded(scan_task)),
@@ -370,7 +357,7 @@ impl MicroPartition {
     }
 
     pub fn from_scan_task(scan_task: Arc<ScanTask>, io_stats: IOStatsRef) -> crate::Result<Self> {
-        let schema = scan_task.schema.clone();
+        let schema = scan_task.materialized_schema();
         match (
             &scan_task.metadata,
             &scan_task.statistics,
@@ -428,13 +415,7 @@ impl MicroPartition {
                 )
                 .context(DaftCoreComputeSnafu)?;
 
-                let applied_schema = Arc::new(
-                    mp.schema
-                        .apply_hints(&schema)
-                        .context(DaftCoreComputeSnafu)?,
-                );
-                mp.cast_to_schema(applied_schema)
-                    .context(DaftCoreComputeSnafu)
+                mp.cast_to_schema(schema).context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
@@ -550,40 +531,6 @@ fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftRes
             .filter(|field| names_to_keep.contains(field.name.as_str()))
             .collect::<Vec<_>>();
         Schema::new(filtered_columns)
-    } else {
-        Ok(schema)
-    }
-}
-
-fn prune_fields_from_schema_ref(
-    schema: SchemaRef,
-    columns: Option<&[&str]>,
-) -> DaftResult<SchemaRef> {
-    if let Some(columns) = columns {
-        let avail_names = schema
-            .fields
-            .keys()
-            .map(|f| f.as_str())
-            .collect::<HashSet<_>>();
-        let mut names_to_keep = HashSet::new();
-        for col_name in columns.iter() {
-            if avail_names.contains(col_name) {
-                names_to_keep.insert(*col_name);
-            } else {
-                return Err(super::Error::FieldNotFound {
-                    field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
-                }
-                .into());
-            }
-        }
-        let filtered_columns = schema
-            .fields
-            .values()
-            .filter(|field| names_to_keep.contains(field.name.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        Ok(Schema::new(filtered_columns)?.into())
     } else {
         Ok(schema)
     }
@@ -882,7 +829,7 @@ pub(crate) fn read_parquet_into_micropartition(
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
-            scan_task.schema.clone(),
+            scan_task.materialized_schema(),
             Arc::new(scan_task),
             TableMetadata { length: total_rows },
             stats,

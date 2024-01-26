@@ -14,8 +14,8 @@ use crate::{
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
+use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
-use daft_core::{datatypes::Field, schema::Schema, DataType};
 use daft_dsl::Expr;
 use daft_scan::{
     file_format::{FileFormat, FileFormatConfig},
@@ -245,13 +245,9 @@ impl LogicalPlanBuilder {
             compression,
             io_config,
         ));
-        let fields = vec![Field::new("path", DataType::Utf8)];
-        let logical_plan: LogicalPlan = logical_ops::Sink::new(
-            self.plan.clone(),
-            Schema::new(fields)?.into(),
-            sink_info.into(),
-        )
-        .into();
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
         Ok(logical_plan.into())
     }
 

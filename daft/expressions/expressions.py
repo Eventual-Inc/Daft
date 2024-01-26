@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 import sys
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Callable, Iterable, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
 
 import pyarrow as pa
 
@@ -13,11 +13,13 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import lit as _lit
+from daft.daft import series_lit as _series_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
+from daft.series import Series, item_to_series
 
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
@@ -51,6 +53,8 @@ def lit(value: object) -> Expression:
         # pyo3 date (PyDate) is not available when running in abi3 mode, workaround
         epoch_time = value - date(1970, 1, 1)
         lit_value = _date_lit(epoch_time.days)
+    elif isinstance(value, Series):
+        lit_value = _series_lit(value._series)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -111,6 +115,11 @@ class Expression:
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
+
+    @property
+    def partitioning(self) -> ExpressionPartitioningNamespace:
+        """Access methods that support partitioning operators"""
+        return ExpressionPartitioningNamespace.from_expression(self)
 
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
@@ -387,6 +396,24 @@ class Expression:
         expr = self._expr.not_null()
         return Expression._from_pyexpr(expr)
 
+    def is_in(self, other: Any) -> Expression:
+        """Checks if values in the Expression are in the provided list
+
+        Example:
+            >>> # [1, 2, 3] -> [True, False, True]
+            >>> col("x").is_in([1, 3])
+
+        Returns:
+            Expression: Boolean Expression indicating whether values are in the provided list
+        """
+
+        if not isinstance(other, Expression):
+            series = item_to_series("items", other)
+            other = Expression._to_expression(series)
+
+        expr = self._expr.is_in(other._expr)
+        return Expression._from_pyexpr(expr)
+
     def name(self) -> builtins.str:
         return self._expr.name()
 
@@ -464,7 +491,6 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             Expression: a Binary expression which is the bytes contents of the URL, or None if an error occured during download
         """
         if use_native_downloader:
-
             raise_on_error = False
             if on_error == "raise":
                 raise_on_error = True
@@ -897,3 +923,63 @@ class ExpressionImageNamespace(ExpressionNamespace):
             bbox = Expression._to_expression(bbox).cast(DataType.fixed_size_list(DataType.uint64(), 4))
         assert isinstance(bbox, Expression)
         return Expression._from_pyexpr(self._expr.image_crop(bbox._expr))
+
+
+class ExpressionPartitioningNamespace(ExpressionNamespace):
+    def days(self) -> Expression:
+        """Partitioning Transform that returns the number of days since epoch (1970-01-01)
+
+        Returns:
+            Expression: Date Type Expression
+        """
+        return Expression._from_pyexpr(self._expr.partitioning_days())
+
+    def hours(self) -> Expression:
+        """Partitioning Transform that returns the number of hours since epoch (1970-01-01)
+
+        Returns:
+            Expression: Int32 Expression in hours
+        """
+        return Expression._from_pyexpr(self._expr.partitioning_hours())
+
+    def months(self) -> Expression:
+        """Partitioning Transform that returns the number of months since epoch (1970-01-01)
+
+        Returns:
+            Expression: Int32 Expression in months
+        """
+
+        return Expression._from_pyexpr(self._expr.partitioning_months())
+
+    def years(self) -> Expression:
+        """Partitioning Transform that returns the number of years since epoch (1970-01-01)
+
+        Returns:
+            Expression: Int32 Expression in years
+        """
+
+        return Expression._from_pyexpr(self._expr.partitioning_years())
+
+    def iceberg_bucket(self, n: int) -> Expression:
+        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86
+        https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements
+
+        Args:
+            n (int): Number of buckets
+
+        Returns:
+            Expression: Int32 Expression with the Hash Bucket
+        """
+        return Expression._from_pyexpr(self._expr.partitioning_iceberg_bucket(n))
+
+    def iceberg_truncate(self, w: int) -> Expression:
+        """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
+        https://iceberg.apache.org/spec/#truncate-transform-details
+
+        Args:
+            w (int): width of the truncation
+
+        Returns:
+            Expression: Expression of the Same Type of the input
+        """
+        return Expression._from_pyexpr(self._expr.partitioning_iceberg_truncate(w))

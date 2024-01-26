@@ -259,6 +259,23 @@ impl PyTable {
         })
     }
 
+    pub fn partition_by_value(
+        &self,
+        py: Python,
+        partition_keys: Vec<PyExpr>,
+    ) -> PyResult<(Vec<Self>, Self)> {
+        let exprs: Vec<daft_dsl::Expr> = partition_keys.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            let (tables, values) = self.table.partition_by_value(exprs.as_slice())?;
+            let pytables = tables
+                .into_iter()
+                .map(|t| t.into())
+                .collect::<Vec<PyTable>>();
+            let values = values.into();
+            Ok((pytables, values))
+        })
+    }
+
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.table.len())
     }

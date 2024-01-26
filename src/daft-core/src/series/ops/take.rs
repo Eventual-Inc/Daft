@@ -1,5 +1,6 @@
-use crate::series::Series;
+use crate::{datatypes::Utf8Array, series::Series, IntoSeries};
 
+use arrow2::types::IndexRange;
 use common_error::DaftResult;
 
 impl Series {
@@ -25,5 +26,12 @@ impl Series {
 
     pub fn html_value(&self, idx: usize) -> String {
         self.inner.html_value(idx)
+    }
+
+    pub fn to_str_values(&self) -> DaftResult<Self> {
+        let iter =
+            IndexRange::new(0i64, self.len() as i64).map(|i| self.str_value(i as usize).ok());
+        let array = Utf8Array::from_iter(self.name(), iter);
+        Ok(array.into_series())
     }
 }

@@ -340,7 +340,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -354,11 +354,7 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
-            for c in cols:
-                assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(None, *cols)
-        else:
-            pass
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -396,7 +392,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Currently only supports Column Expressions with any calls. Defaults to None.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -407,11 +403,6 @@ class DataFrame:
         cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
-            for c in cols:
-                assert c._is_column(), "we cant support non Column Expressions for partition writing"
-            self.repartition(None, *cols)
-        else:
-            pass
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -1184,6 +1175,20 @@ class DataFrame:
             " or use `df.count_rows()` instead which will calculate the total number of rows."
         )
         raise RuntimeError(message)
+
+    def __contains__(self, col_name: str) -> bool:
+        """Returns whether the column exists in the dataframe.
+
+        Example:
+            >>> "x" in df
+
+        Args:
+            col_name (str): column name
+
+        Returns:
+            bool: whether the column exists in the dataframe.
+        """
+        return col_name in self.column_names
 
     @DataframePublicAPI
     def to_pandas(self, cast_tensors_to_ray_tensor_dtype: bool = False) -> "pd.DataFrame":

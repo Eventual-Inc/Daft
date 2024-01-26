@@ -372,6 +372,10 @@ impl PySeries {
         let values = bincode::deserialize::<Series>(bytes.as_bytes()).unwrap();
         Ok(Self { series: values })
     }
+
+    pub fn to_str_values(&self) -> PyResult<Self> {
+        Ok(self.series.to_str_values()?.into())
+    }
 }
 
 impl From<series::Series> for PySeries {

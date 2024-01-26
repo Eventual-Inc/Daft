@@ -87,6 +87,17 @@ def map_operator_arrow_semantics_bool(
     ]
 
 
+def python_list_membership_check(
+    left_pylist: list,
+    right_pylist: list,
+) -> list:
+    try:
+        right_pyset = set(right_pylist)
+        return [elem in right_pyset for elem in left_pylist]
+    except TypeError:
+        return [elem in right_pylist for elem in left_pylist]
+
+
 def map_operator_arrow_semantics(
     operator: Callable[[Any, Any], Any],
     left_pylist: list,

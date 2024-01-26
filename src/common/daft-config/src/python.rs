@@ -74,7 +74,7 @@ impl PyDaftExecutionConfig {
     pub fn new() -> Self {
         PyDaftExecutionConfig::default()
     }
-
+    #[allow(clippy::too_many_arguments)]
     fn with_config_values(
         &self,
         merge_scan_tasks_min_size_bytes: Option<usize>,
@@ -83,6 +83,13 @@ impl PyDaftExecutionConfig {
         split_row_groups_max_files: Option<usize>,
         split_row_groups_threshold_bytes: Option<usize>,
         split_row_groups_min_size_bytes: Option<usize>,
+        sample_size_for_sort: Option<usize>,
+        num_preview_rows: Option<usize>,
+        parquet_target_filesize: Option<usize>,
+        parquet_target_row_group_size: Option<usize>,
+        parquet_inflation_factor: Option<f64>,
+        csv_target_filesize: Option<usize>,
+        csv_inflation_factor: Option<f64>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -103,6 +110,27 @@ impl PyDaftExecutionConfig {
         }
         if let Some(split_row_groups_min_size_bytes) = split_row_groups_min_size_bytes {
             config.split_row_groups_min_size_bytes = split_row_groups_min_size_bytes
+        }
+        if let Some(sample_size_for_sort) = sample_size_for_sort {
+            config.sample_size_for_sort = sample_size_for_sort;
+        }
+        if let Some(num_preview_rows) = num_preview_rows {
+            config.num_preview_rows = num_preview_rows;
+        }
+        if let Some(parquet_target_filesize) = parquet_target_filesize {
+            config.parquet_target_filesize = parquet_target_filesize;
+        }
+        if let Some(parquet_target_row_group_size) = parquet_target_row_group_size {
+            config.parquet_target_row_group_size = parquet_target_row_group_size;
+        }
+        if let Some(parquet_inflation_factor) = parquet_inflation_factor {
+            config.parquet_inflation_factor = parquet_inflation_factor;
+        }
+        if let Some(csv_target_filesize) = csv_target_filesize {
+            config.csv_target_filesize = csv_target_filesize;
+        }
+        if let Some(csv_inflation_factor) = csv_inflation_factor {
+            config.csv_inflation_factor = csv_inflation_factor;
         }
 
         Ok(PyDaftExecutionConfig {
@@ -133,6 +161,31 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_num_preview_rows(&self) -> PyResult<usize> {
         Ok(self.config.num_preview_rows)
+    }
+
+    #[getter]
+    fn get_parquet_target_filesize(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_target_filesize)
+    }
+
+    #[getter]
+    fn get_parquet_target_row_group_size(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_target_row_group_size)
+    }
+
+    #[getter]
+    fn get_parquet_inflation_factor(&self) -> PyResult<f64> {
+        Ok(self.config.parquet_inflation_factor)
+    }
+
+    #[getter]
+    fn get_csv_target_filesize(&self) -> PyResult<usize> {
+        Ok(self.config.csv_target_filesize)
+    }
+
+    #[getter]
+    fn get_csv_inflation_factor(&self) -> PyResult<f64> {
+        Ok(self.config.csv_inflation_factor)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

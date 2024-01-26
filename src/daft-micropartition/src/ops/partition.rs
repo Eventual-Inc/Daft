@@ -111,4 +111,28 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()?;
         self.vec_part_tables_to_mps(part_tables)
     }
+
+    pub fn partition_by_value(&self, partition_keys: &[Expr]) -> DaftResult<(Vec<Self>, Self)> {
+        let io_stats = IOStatsContext::new("MicroPartition::partition_by_value");
+
+        let tables = self.concat_or_get(io_stats)?;
+
+        if tables.is_empty() {
+            let empty = Self::empty(Some(self.schema.clone()));
+            let pkeys = empty.eval_expression_list(partition_keys)?;
+            return Ok((vec![], pkeys));
+        }
+        let table = tables.first().unwrap();
+        let (tables, values) = table.partition_by_value(partition_keys)?;
+
+        let mps = tables
+            .into_iter()
+            .map(|t| MicroPartition::new_loaded(self.schema.clone(), Arc::new(vec![t]), None))
+            .collect::<Vec<_>>();
+
+        let values =
+            MicroPartition::new_loaded(values.schema.clone(), Arc::new(vec![values]), None);
+
+        Ok((mps, values))
+    }
 }

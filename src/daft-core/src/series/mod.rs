@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    array::ops::{from_arrow::FromArrow, full::FullNull},
+    array::ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
     datatypes::{DataType, Field, FieldRef},
     utils::display_table::make_comfy_table,
     with_match_daft_types,
@@ -24,6 +24,15 @@ pub(crate) use self::series_like::SeriesLike;
 #[derive(Clone, Debug)]
 pub struct Series {
     pub inner: Arc<dyn SeriesLike>,
+}
+
+impl PartialEq for Series {
+    fn eq(&self, other: &Self) -> bool {
+        match self.equal(other) {
+            Ok(arr) => arr.into_iter().all(|x| x.unwrap_or(false)),
+            Err(_) => false,
+        }
+    }
 }
 
 impl Series {
