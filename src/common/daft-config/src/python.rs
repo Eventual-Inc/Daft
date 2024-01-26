@@ -80,6 +80,9 @@ impl PyDaftExecutionConfig {
         merge_scan_tasks_min_size_bytes: Option<usize>,
         merge_scan_tasks_max_size_bytes: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
+        split_row_groups_max_files: Option<usize>,
+        split_row_groups_threshold_bytes: Option<usize>,
+        split_row_groups_min_size_bytes: Option<usize>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -91,6 +94,15 @@ impl PyDaftExecutionConfig {
         }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
+        }
+        if let Some(split_row_groups_max_files) = split_row_groups_max_files {
+            config.split_row_groups_max_files = split_row_groups_max_files
+        }
+        if let Some(split_row_groups_threshold_bytes) = split_row_groups_threshold_bytes {
+            config.split_row_groups_threshold_bytes = split_row_groups_threshold_bytes
+        }
+        if let Some(split_row_groups_min_size_bytes) = split_row_groups_min_size_bytes {
+            config.split_row_groups_min_size_bytes = split_row_groups_min_size_bytes
         }
 
         Ok(PyDaftExecutionConfig {

@@ -83,6 +83,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
                     scan_tasks,
                     cfg.split_row_groups_max_files,
+                    cfg.split_row_groups_threshold_bytes,
+                    cfg.split_row_groups_min_size_bytes,
                 );
 
                 // Apply transformations on the ScanTasks to optimize

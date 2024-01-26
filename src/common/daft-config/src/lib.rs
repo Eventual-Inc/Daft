@@ -27,6 +27,8 @@ pub struct DaftExecutionConfig {
     pub broadcast_join_size_bytes_threshold: usize,
     pub sample_size_for_sort: usize,
     pub split_row_groups_max_files: usize,
+    pub split_row_groups_threshold_bytes: usize,
+    pub split_row_groups_min_size_bytes: usize,
     pub num_preview_rows: usize,
 }
 
@@ -38,6 +40,8 @@ impl Default for DaftExecutionConfig {
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sample_size_for_sort: 20,
             split_row_groups_max_files: 10,
+            split_row_groups_threshold_bytes: 24 * 1024 * 1024, // 24MB
+            split_row_groups_min_size_bytes: 16 * 1024 * 1024,  // 16MB
             num_preview_rows: 8,
         }
     }

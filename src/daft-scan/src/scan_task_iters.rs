@@ -117,7 +117,12 @@ impl Iterator for MergeByFileSize {
     }
 }
 
-pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> BoxScanTaskIter {
+pub fn split_by_row_groups(
+    scan_tasks: BoxScanTaskIter,
+    max_tasks: usize,
+    split_threshold_bytes: usize,
+    min_size_bytes: usize,
+) -> BoxScanTaskIter {
     let mut scan_tasks = itertools::peek_nth(scan_tasks);
 
     // only split if we have a small amount of files
@@ -127,13 +132,15 @@ pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> Box
 
     Box::new(
         scan_tasks
-            .map(|t| -> DaftResult<BoxScanTaskIter> {
+            .map(move |t| -> DaftResult<BoxScanTaskIter> {
                 let t = t?;
 
-                // only split parquet tasks if they:
-                // - have one source
-                // - use native storage config
-                // - have no specified chunk spec or number of rows
+                /* Only split parquet tasks if they:
+                   - have one source
+                   - use native storage config
+                   - have no specified chunk spec or number of rows
+                   - have size past split threshold
+                */
                 match (
                     t.file_format_config.as_ref(),
                     t.storage_config.as_ref(),
@@ -147,7 +154,10 @@ pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> Box
                         [source],
                         Some(None),
                         None,
-                    ) => {
+                    ) if source
+                        .get_size_bytes()
+                        .map_or(true, |s| s > split_threshold_bytes as u64) =>
+                    {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
 
@@ -164,40 +174,47 @@ pub fn split_by_row_groups(scan_tasks: BoxScanTaskIter, max_tasks: usize) -> Box
                             Some(io_stats),
                         ))?;
 
-                        Ok(Box::new(
-                            file.row_groups
-                                .into_iter()
-                                .enumerate()
-                                .map(|(i, row_group)| {
-                                    let mut group_source = source.clone();
-                                    match &mut group_source {
-                                        DataFileSource::AnonymousDataFile {
-                                            chunk_spec,
-                                            size_bytes,
-                                            ..
-                                        }
-                                        | DataFileSource::CatalogDataFile {
-                                            chunk_spec,
-                                            size_bytes,
-                                            ..
-                                        } => {
-                                            *chunk_spec = Some(ChunkSpec::Parquet(vec![i as i64]));
-                                            *size_bytes = Some(row_group.compressed_size() as u64);
-                                        }
-                                    };
+                        let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
+                        let mut curr_row_groups = Vec::new();
+                        let mut curr_size_bytes = 0;
 
-                                    Ok(ScanTask::new(
-                                        vec![group_source],
-                                        t.file_format_config.clone(),
-                                        t.schema.clone(),
-                                        t.storage_config.clone(),
-                                        t.pushdowns.clone(),
-                                    )
-                                    .into())
-                                })
-                                .collect::<Vec<_>>()
-                                .into_iter(),
-                        ))
+                        for (i, rg) in file.row_groups.iter().enumerate() {
+                            curr_row_groups.push(i as i64);
+                            curr_size_bytes += rg.compressed_size();
+
+                            if curr_size_bytes >= min_size_bytes || i == file.row_groups.len() - 1 {
+                                let mut new_source = source.clone();
+                                match &mut new_source {
+                                    DataFileSource::AnonymousDataFile {
+                                        chunk_spec,
+                                        size_bytes,
+                                        ..
+                                    }
+                                    | DataFileSource::CatalogDataFile {
+                                        chunk_spec,
+                                        size_bytes,
+                                        ..
+                                    } => {
+                                        *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
+                                        *size_bytes = Some(curr_size_bytes as u64);
+                                    }
+                                };
+
+                                new_tasks.push(Ok(ScanTask::new(
+                                    vec![new_source],
+                                    t.file_format_config.clone(),
+                                    t.schema.clone(),
+                                    t.storage_config.clone(),
+                                    t.pushdowns.clone(),
+                                )
+                                .into()));
+
+                                curr_row_groups = Vec::new();
+                                curr_size_bytes = 0;
+                            }
+                        }
+
+                        Ok(Box::new(new_tasks.into_iter()))
                     }
                     (..) => Ok(Box::new(std::iter::once(Ok(t)))),
                 }

@@ -1140,6 +1140,9 @@ class PyDaftExecutionConfig:
         merge_scan_tasks_min_size_bytes: int | None = None,
         merge_scan_tasks_max_size_bytes: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
+        split_row_groups_max_files: int | None = None,
+        split_row_groups_threshold_bytes: int | None = None,
+        split_row_groups_min_size_bytes: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def merge_scan_tasks_min_size_bytes(self) -> int: ...

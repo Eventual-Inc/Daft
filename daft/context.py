@@ -206,6 +206,9 @@ def set_execution_config(
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
+    split_row_groups_max_files: int | None = None,
+    split_row_groups_threshold_bytes: int | None = None,
+    split_row_groups_min_size_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -221,6 +224,9 @@ def set_execution_config(
             fewer partitions. (Defaults to 512 MiB)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
+        split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
+        split_row_groups_threshold_bytes: Threshold in which a file should be split by row group. (Defaults to 24 MiB)
+        split_row_groups_min_size_bytes: Minimum size of scan tasks when splitting by row group. (Defaults to 16 MiB)
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -229,6 +235,9 @@ def set_execution_config(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
+        split_row_groups_max_files=split_row_groups_max_files,
+        split_row_groups_threshold_bytes=split_row_groups_threshold_bytes,
+        split_row_groups_min_size_bytes=split_row_groups_min_size_bytes,
     )
 
     ctx.daft_execution_config = new_daft_execution_config
