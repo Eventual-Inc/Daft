@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import os
 import sys
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Callable, Iterable, Iterator, TypeVar, overload
@@ -26,6 +27,32 @@ else:
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
+
+
+# Implementation taken from: https://github.com/pola-rs/polars/blob/main/py-polars/polars/utils/various.py#L388-L399
+# This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
+# return a class instance of the namespace instead of a property object.
+accessor_namespace_property: type[property] = property
+if os.getenv("DAFT_SPHINX_BUILD") == "1":
+    from typing import Any
+
+    # when building docs (with Sphinx) we need access to the functions
+    # associated with the namespaces from the class, as we don't have
+    # an instance; @sphinx_accessor is a @property that allows this.
+    NS = TypeVar("NS")
+
+    class sphinx_accessor(property):  # noqa: D101
+        def __get__(  # type: ignore[override]
+            self,
+            instance: Any,
+            cls: type[NS],
+        ) -> NS:
+            try:
+                return self.fget(instance if isinstance(instance, cls) else cls)  # type: ignore[misc]
+            except (AttributeError, ImportError):
+                return self  # type: ignore[return-value]
+
+    accessor_namespace_property = sphinx_accessor
 
 
 def lit(value: object) -> Expression:
@@ -72,47 +99,47 @@ def col(name: str) -> Expression:
 
 
 class Expression:
-    _expr: _PyExpr
+    _expr: _PyExpr = None  # type: ignore
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
-    @property
+    @accessor_namespace_property
     def str(self) -> ExpressionStringNamespace:
         """Access methods that work on columns of strings"""
         return ExpressionStringNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def dt(self) -> ExpressionDatetimeNamespace:
         """Access methods that work on columns of datetimes"""
         return ExpressionDatetimeNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def float(self) -> ExpressionFloatNamespace:
         """Access methods that work on columns of floats"""
         return ExpressionFloatNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def url(self) -> ExpressionUrlNamespace:
         """Access methods that work on columns of URLs"""
         return ExpressionUrlNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def list(self) -> ExpressionListNamespace:
         """Access methods that work on columns of lists"""
         return ExpressionListNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def struct(self) -> ExpressionStructNamespace:
         """Access methods that work on columns of structs"""
         return ExpressionStructNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def image(self) -> ExpressionImageNamespace:
         """Access methods that work on columns of images"""
         return ExpressionImageNamespace.from_expression(self)
 
-    @property
+    @accessor_namespace_property
     def partitioning(self) -> ExpressionPartitioningNamespace:
         """Access methods that support partitioning operators"""
         return ExpressionPartitioningNamespace.from_expression(self)
