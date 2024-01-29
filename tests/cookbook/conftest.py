@@ -10,7 +10,7 @@ import daft
 from daft.expressions import col
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
-COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor"]
+COLUMNS = ["Unique Key", "Complaint Type", "Borough", "Created Date", "Descriptor", "Closed Date"]
 CsvPathAndColumns = Tuple[str, List[str]]
 
 

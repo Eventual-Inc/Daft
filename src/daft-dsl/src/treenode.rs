@@ -23,6 +23,7 @@ impl TreeNode for Expr {
                     | Max(expr)
                     | List(expr)
                     | Concat(expr) => vec![expr.as_ref()],
+                    MapGroups { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
                 }
             }
             BinaryOp { op: _, left, right } => vec![left.as_ref(), right.as_ref()],
@@ -66,6 +67,13 @@ impl TreeNode for Expr {
                     Max(expr) => transform(expr.as_ref().clone())?.max(),
                     List(expr) => transform(expr.as_ref().clone())?.agg_list(),
                     Concat(expr) => transform(expr.as_ref().clone())?.agg_concat(),
+                    MapGroups { func, inputs } => Expr::Agg(MapGroups {
+                        func,
+                        inputs: inputs
+                            .into_iter()
+                            .map(transform)
+                            .collect::<DaftResult<Vec<_>>>()?,
+                    }),
                 }
             }
             Not(expr) => Not(transform(expr.as_ref().clone())?.into()),

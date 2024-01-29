@@ -312,6 +312,9 @@ impl Table {
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
             List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
             Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
+            MapGroups { .. } => Err(DaftError::ValueError(
+                "MapGroups not supported in eval_agg_expression".to_string(),
+            )),
         }
     }
 

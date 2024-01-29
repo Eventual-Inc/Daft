@@ -896,6 +896,10 @@ class DataFrame:
         builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
+    def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
+        builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
+        return DataFrame(builder)
+
     @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global sum on the DataFrame
@@ -1554,3 +1558,14 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped aggregations
         """
         return self.df._agg(to_agg, group_by=self.group_by)
+
+    def map_groups(self, udf: Expression) -> "DataFrame":
+        """Apply a user-defined function to each group.
+
+        Args:
+            udf (Expression): User-defined function to apply to each group.
+
+        Returns:
+            DataFrame: DataFrame with grouped aggregations
+        """
+        return self.df._map_groups(udf, group_by=self.group_by)

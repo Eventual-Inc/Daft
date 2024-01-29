@@ -181,6 +181,11 @@ class LogicalPlanBuilder:
         builder = self._builder.aggregate([expr._expr for expr in exprs], group_by_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def map_groups(self, udf: Expression, group_by: list[Expression] | None) -> LogicalPlanBuilder:
+        group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
+        builder = self._builder.aggregate([udf._expr], group_by_pyexprs)
+        return LogicalPlanBuilder(builder)
+
     def join(  # type: ignore[override]
         self,
         right: LogicalPlanBuilder,
