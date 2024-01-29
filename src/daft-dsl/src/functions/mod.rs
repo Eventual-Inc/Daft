@@ -8,6 +8,8 @@ pub mod temporal;
 pub mod uri;
 pub mod utf8;
 
+use std::fmt::{Formatter, Result};
+
 use self::image::ImageExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
@@ -17,6 +19,7 @@ use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
 use self::{float::FloatExpr, uri::UriExpr};
 use common_error::DaftResult;
+use daft_core::datatypes::FieldID;
 use daft_core::{datatypes::Field, schema::Schema, series::Series};
 use serde::{Deserialize, Serialize};
 
@@ -80,4 +83,26 @@ impl FunctionEvaluator for FunctionExpr {
     fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
         self.get_evaluator().evaluate(inputs, expr)
     }
+}
+
+pub fn function_display(f: &mut Formatter, func: &FunctionExpr, inputs: &[Expr]) -> Result {
+    write!(f, "{}(", func.fn_name())?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{input}")?;
+    }
+    write!(f, ")")?;
+    Ok(())
+}
+
+pub fn function_semantic_id(func: &FunctionExpr, inputs: &[Expr], schema: &Schema) -> FieldID {
+    let inputs = inputs
+        .iter()
+        .map(|expr| expr.semantic_id(schema).id.to_string())
+        .collect::<Vec<String>>()
+        .join(", ");
+    // TODO: check for function idempotency here.
+    FieldID::new(format!("Function_{func:?}({inputs})"))
 }
