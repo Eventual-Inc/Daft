@@ -50,7 +50,7 @@ urllib3<2; python_version < '3.8'
 
 # Azure
 adlfs==2022.2.0; python_version < '3.8'
-adlfs==2023.10.0; python_version >= '3.8'
+adlfs==2024.1.0; python_version >= '3.8'
 
 # GCS
 gcsfs==2023.1.0; python_version < '3.8'
