@@ -26,9 +26,9 @@ pub struct DaftExecutionConfig {
     pub merge_scan_tasks_max_size_bytes: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub sample_size_for_sort: usize,
-    pub split_row_groups_max_files: usize,
-    pub split_row_groups_threshold_bytes: usize,
-    pub split_row_groups_min_size_bytes: usize,
+    pub parquet_split_row_groups_max_files: usize,
+    pub parquet_split_row_groups_threshold_bytes: usize,
+    pub parquet_split_row_groups_min_size_bytes: usize,
     pub num_preview_rows: usize,
     pub parquet_target_filesize: usize,
     pub parquet_target_row_group_size: usize,
@@ -44,9 +44,9 @@ impl Default for DaftExecutionConfig {
             merge_scan_tasks_max_size_bytes: 512 * 1024 * 1024, // 512MB
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sample_size_for_sort: 20,
-            split_row_groups_max_files: 10,
-            split_row_groups_threshold_bytes: 24 * 1024 * 1024, // 24MB
-            split_row_groups_min_size_bytes: 16 * 1024 * 1024,  // 16MB
+            parquet_split_row_groups_max_files: 10,
+            parquet_split_row_groups_threshold_bytes: 128 * 1024 * 1024, // 24MB
+            parquet_split_row_groups_min_size_bytes: 64 * 1024 * 1024,   // 16MB
             num_preview_rows: 8,
             parquet_target_filesize: 512 * 1024 * 1024, // 512MB
             parquet_target_row_group_size: 128 * 1024 * 1024, // 128MB

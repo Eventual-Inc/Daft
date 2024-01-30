@@ -206,9 +206,9 @@ def set_execution_config(
     merge_scan_tasks_min_size_bytes: int | None = None,
     merge_scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
-    split_row_groups_max_files: int | None = None,
-    split_row_groups_threshold_bytes: int | None = None,
-    split_row_groups_min_size_bytes: int | None = None,
+    parquet_split_row_groups_max_files: int | None = None,
+    parquet_split_row_groups_threshold_bytes: int | None = None,
+    parquet_split_row_groups_min_size_bytes: int | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
     parquet_target_filesize: int | None = None,
@@ -231,9 +231,9 @@ def set_execution_config(
             fewer partitions. (Defaults to 512 MiB)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
-        split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
-        split_row_groups_threshold_bytes: Threshold in which a file should be split by row group. (Defaults to 24 MiB)
-        split_row_groups_min_size_bytes: Minimum size of scan tasks when splitting by row group. (Defaults to 16 MiB)
+        parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
+        parquet_split_row_groups_threshold_bytes: Threshold in which a file should be split by row group. (Defaults to 24 MiB)
+        parquet_split_row_groups_min_size_bytes: Minimum size of scan tasks when splitting by row group. (Defaults to 16 MiB)
         sample_size_for_sort: number of elements to sample from each partition when running sort,
             Default is 20.
         num_preview_rows: number of rows to when showing a dataframe preview,
@@ -251,9 +251,9 @@ def set_execution_config(
         merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
         merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
-        split_row_groups_max_files=split_row_groups_max_files,
-        split_row_groups_threshold_bytes=split_row_groups_threshold_bytes,
-        split_row_groups_min_size_bytes=split_row_groups_min_size_bytes,
+        parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
+        parquet_split_row_groups_threshold_bytes=parquet_split_row_groups_threshold_bytes,
+        parquet_split_row_groups_min_size_bytes=parquet_split_row_groups_min_size_bytes,
         sample_size_for_sort=sample_size_for_sort,
         num_preview_rows=num_preview_rows,
         parquet_target_filesize=parquet_target_filesize,
