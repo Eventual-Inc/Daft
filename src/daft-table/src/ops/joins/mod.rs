@@ -154,6 +154,9 @@ impl Table {
         inner_join: impl Fn(&Table, &Table) -> DaftResult<(Series, Series)>,
     ) -> DaftResult<Self> {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on)?;
+        if self.is_empty() || right.is_empty() {
+            return Self::empty(Some(join_schema.into()));
+        }
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 

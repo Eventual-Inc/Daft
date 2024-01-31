@@ -97,8 +97,10 @@ pub fn merge_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Seri
         Some(Ordering::Equal)
     };
 
-    // Short-circuit if tables are range-wise disjoint on join keys.
-    if matches!(combined_comparator(left.len() - 1, 0), Some(Ordering::Less))
+    // Short-circuit if tables are empty or range-wise disjoint on join keys.
+    if left.is_empty()
+        || right.is_empty()
+        || matches!(combined_comparator(left.len() - 1, 0), Some(Ordering::Less))
         || matches!(
             combined_comparator(0, right.len() - 1),
             Some(Ordering::Greater)
