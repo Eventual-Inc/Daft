@@ -115,6 +115,7 @@ class Boundaries:
     bounds: MicroPartition
 
     def __post_init__(self):
+        assert len(self.sort_by) > 0
         assert len(self.bounds) == 2
         assert self.bounds.column_names() == [e.name() for e in self.sort_by]
 

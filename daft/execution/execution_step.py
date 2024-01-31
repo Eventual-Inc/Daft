@@ -512,7 +512,7 @@ class Project(SingleOutputInstruction):
         ]
 
 
-def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries:
+def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
     """
     If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
     expression, then invalidate the boundary.
@@ -523,6 +523,8 @@ def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection)
         if e.name() in proj_names_needing_compute:
             # Found a sort expression that is no longer valid, so we invalidate that sort expression and all that follow it.
             sort_by = boundaries.sort_by[:i]
+            if not sort_by:
+                return None
             boundaries_ = boundaries.bounds.eval_expression_list(
                 ExpressionsProjection([col(e.name()) for e in sort_by])
             )
