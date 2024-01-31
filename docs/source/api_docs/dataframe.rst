@@ -18,6 +18,15 @@ DataFrame
 Data Manipulation
 #################
 
+Selecting Columns
+*****************
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/dataframe_methods
+
+    DataFrame.__getitem__
+
 Manipulating Columns
 ********************
 

@@ -14,18 +14,7 @@ Constructors
    :nosignatures:
    :toctree: doc_gen/expression_methods
 
-    DataFrame.__getitem__
-
-.. autosummary::
-   :nosignatures:
-   :toctree: doc_gen/expression_methods
-
     col
-
-.. autosummary::
-   :nosignatures:
-   :toctree: doc_gen/expression_methods
-
     lit
 
 Generic

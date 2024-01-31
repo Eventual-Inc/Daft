@@ -12,5 +12,4 @@ API Documentation
    groupby
    udf
    series
-   context
-   io_configs
+   configs
