@@ -192,7 +192,9 @@ def monotonically_increasing_id(
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply a monotonically_increasing_id instruction to the results of `child_plan`."""
 
-    partition_counter = 0  # This counter is gives each partition a monotonically increasing int to use as the leftmost 28 bits of the id
+    partition_counter = (
+        0  # This counter gives each partition a monotonically increasing int to use as the leftmost 28 bits of the id
+    )
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
             yield step.add_instruction(
