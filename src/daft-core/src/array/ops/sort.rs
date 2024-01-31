@@ -44,8 +44,6 @@ pub fn build_multi_array_bicompare(
             l.to_arrow().as_ref(),
             r.to_arrow().as_ref(),
             *desc,
-            None,
-            false,
         )?);
     }
 

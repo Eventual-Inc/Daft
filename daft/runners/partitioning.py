@@ -115,8 +115,8 @@ class Boundaries:
     bounds: MicroPartition
 
     def __post_init__(self):
-        # TODO(Clark): Validation of sort_by + bounds.
-        pass
+        assert len(self.bounds) == 2
+        assert self.bounds.column_names() == [e.name() for e in self.sort_by]
 
     def intersects(self, other: Boundaries) -> bool:
         if self.is_trivial_bounds() or other.is_trivial_bounds():

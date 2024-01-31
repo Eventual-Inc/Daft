@@ -6,7 +6,9 @@ from daft.expressions import col
 from tests.conftest import assert_df_equals
 
 
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.select(col("Unique Key"), col("Borough"))
@@ -24,7 +26,9 @@ def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, reparti
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df = daft_df.select(col("Unique Key"), col("Borough"))
@@ -42,7 +46,9 @@ def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, re
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df_right = daft_df.sort("Unique Key").limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df.repartition(repartition_nparts)
@@ -63,7 +69,9 @@ def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_cs
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df)
 
 
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_simple_join_missing_lvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
     daft_df_right = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.sort(col("Unique Key")).limit(25).repartition(repartition_nparts)

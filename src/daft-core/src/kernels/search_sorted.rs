@@ -298,68 +298,60 @@ pub fn build_compare_with_nulls(
     left: &dyn Array,
     right: &dyn Array,
     reversed: bool,
-    nulls_first: Option<bool>,
-    nulls_unequal: bool,
 ) -> Result<DynComparator> {
     let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
-    let nulls_first = nulls_first.unwrap_or(reversed);
 
     if reversed {
         Ok(Box::new(move |i: usize, j: usize| {
             match (left_is_valid(i), right_is_valid(j)) {
                 (true, true) => comparator(i, j).reverse(),
-                (false, true) => {
-                    if nulls_first {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }
-                (false, false) => {
-                    // TODO(Clark): Refactor to return an Option<Ordering> to capture this behavior, similar to PartialOrd.
-                    if nulls_unequal {
-                        Ordering::Less
-                    } else {
-                        Ordering::Equal
-                    }
-                }
-                (true, false) => {
-                    if nulls_first {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                }
+                (false, true) => Ordering::Less,
+                (false, false) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
             }
         }))
     } else {
         Ok(Box::new(move |i: usize, j: usize| {
             match (left_is_valid(i), right_is_valid(j)) {
                 (true, true) => comparator(i, j),
-                (false, true) => {
-                    if nulls_first {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                }
-                (false, false) => {
-                    // TODO(Clark): Refactor to return an Option<Ordering> to capture this behavior, similar to PartialOrd.
-                    if nulls_unequal {
-                        Ordering::Less
-                    } else {
-                        Ordering::Equal
-                    }
-                }
-                (true, false) => {
-                    if nulls_first {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                }
+                (false, true) => Ordering::Greater,
+                (false, false) => Ordering::Equal,
+                (true, false) => Ordering::Less,
+            }
+        }))
+    }
+}
+
+/// Compare the values at two arbitrary indices in two arrays.
+pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
+
+pub fn build_partial_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
+    reversed: bool,
+) -> Result<DynPartialComparator> {
+    let comparator = build_compare_with_nan(left, right)?;
+    let left_is_valid = build_is_valid(left);
+    let right_is_valid = build_is_valid(right);
+
+    if reversed {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => Some(comparator(i, j).reverse()),
+                (false, true) => Some(Ordering::Less),
+                (true, false) => Some(Ordering::Greater),
+                (false, false) => None,
+            }
+        }))
+    } else {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => Some(comparator(i, j)),
+                (false, true) => Some(Ordering::Greater),
+                (true, false) => Some(Ordering::Less),
+                (false, false) => None,
             }
         }))
     }
@@ -404,13 +396,7 @@ pub fn search_sorted_multi_array(
     }
     let mut cmp_list = Vec::with_capacity(sorted_arrays.len());
     for ((sorted_arr, key_arr), reversed) in zip(sorted_arrays, key_arrays).zip(input_reversed) {
-        cmp_list.push(build_compare_with_nulls(
-            *sorted_arr,
-            *key_arr,
-            *reversed,
-            None,
-            false,
-        )?);
+        cmp_list.push(build_compare_with_nulls(*sorted_arr, *key_arr, *reversed)?);
     }
 
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {

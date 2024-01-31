@@ -746,6 +746,7 @@ impl PhysicalPlan {
                 join_type,
                 num_partitions,
                 left_is_larger,
+                needs_presort,
             }) => {
                 let left_iter = left.to_partition_tasks(py, psets, is_ray_runner)?;
                 let right_iter = right.to_partition_tasks(py, psets, is_ray_runner)?;
@@ -757,12 +758,20 @@ impl PhysicalPlan {
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
                     .collect();
-                let left_pspec = left.partition_spec();
-                let right_pspec = right.partition_spec();
                 // TODO(Clark): Elide sorting one side of the join if already range-partitioned, where we'd use that side's boundaries to sort the other side.
-                let py_iter = if matches!(left_pspec.scheme, PartitionScheme::Range)
-                    && matches!(right_pspec.scheme, PartitionScheme::Range)
-                {
+                let py_iter = if *needs_presort {
+                    py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                        .getattr(pyo3::intern!(py, "sort_merge_join_aligned_boundaries"))?
+                        .call1((
+                            left_iter,
+                            right_iter,
+                            left_on_pyexprs,
+                            right_on_pyexprs,
+                            *join_type,
+                            *num_partitions,
+                            *left_is_larger,
+                        ))?
+                } else {
                     py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                         .getattr(pyo3::intern!(py, "merge_join_sorted"))?
                         .call1((
@@ -771,18 +780,6 @@ impl PhysicalPlan {
                             left_on_pyexprs,
                             right_on_pyexprs,
                             *join_type,
-                            *left_is_larger,
-                        ))?
-                } else {
-                    py.import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                        .getattr(pyo3::intern!(py, "sort_merge_join"))?
-                        .call1((
-                            left_iter,
-                            right_iter,
-                            left_on_pyexprs,
-                            right_on_pyexprs,
-                            *join_type,
-                            *num_partitions,
                             *left_is_larger,
                         ))?
                 };

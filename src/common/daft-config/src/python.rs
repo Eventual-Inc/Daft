@@ -80,6 +80,7 @@ impl PyDaftExecutionConfig {
         merge_scan_tasks_min_size_bytes: Option<usize>,
         merge_scan_tasks_max_size_bytes: Option<usize>,
         broadcast_join_size_bytes_threshold: Option<usize>,
+        sort_merge_join_sort_with_aligned_boundaries: Option<bool>,
         sample_size_for_sort: Option<usize>,
         num_preview_rows: Option<usize>,
         parquet_target_filesize: Option<usize>,
@@ -98,6 +99,12 @@ impl PyDaftExecutionConfig {
         }
         if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
             config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
+        }
+        if let Some(sort_merge_join_sort_with_aligned_boundaries) =
+            sort_merge_join_sort_with_aligned_boundaries
+        {
+            config.sort_merge_join_sort_with_aligned_boundaries =
+                sort_merge_join_sort_with_aligned_boundaries;
         }
         if let Some(sample_size_for_sort) = sample_size_for_sort {
             config.sample_size_for_sort = sample_size_for_sort;
@@ -139,6 +146,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_broadcast_join_size_bytes_threshold(&self) -> PyResult<usize> {
         Ok(self.config.broadcast_join_size_bytes_threshold)
+    }
+
+    #[getter]
+    fn get_sort_merge_join_sort_with_aligned_boundaries(&self) -> PyResult<bool> {
+        Ok(self.config.sort_merge_join_sort_with_aligned_boundaries)
     }
 
     #[getter]

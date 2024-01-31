@@ -1,4 +1,5 @@
 #![feature(hash_raw_entry)]
+#![feature(let_chains)]
 
 use std::borrow::Cow;
 use std::collections::HashSet;

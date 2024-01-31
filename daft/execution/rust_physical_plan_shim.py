@@ -266,7 +266,7 @@ def merge_join_sorted(
     )
 
 
-def sort_merge_join(
+def sort_merge_join_aligned_boundaries(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
@@ -277,7 +277,7 @@ def sort_merge_join(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
     right_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in right_on])
-    return physical_plan.sort_merge_join(
+    return physical_plan.sort_merge_join_aligned_boundaries(
         left_plan=input,
         right_plan=right,
         left_on=left_on_expr_proj,

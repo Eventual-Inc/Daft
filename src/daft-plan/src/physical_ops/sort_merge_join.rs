@@ -15,9 +15,11 @@ pub struct SortMergeJoin {
     pub join_type: JoinType,
     pub num_partitions: usize,
     pub left_is_larger: bool,
+    pub needs_presort: bool,
 }
 
 impl SortMergeJoin {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         left: Arc<PhysicalPlan>,
         right: Arc<PhysicalPlan>,
@@ -26,6 +28,7 @@ impl SortMergeJoin {
         join_type: JoinType,
         num_partitions: usize,
         left_is_larger: bool,
+        needs_presort: bool,
     ) -> Self {
         Self {
             left,
@@ -35,6 +38,7 @@ impl SortMergeJoin {
             join_type,
             num_partitions,
             left_is_larger,
+            needs_presort,
         }
     }
 }

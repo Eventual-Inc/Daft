@@ -205,7 +205,6 @@ def test_table_join_multicolumn_all_nulls(join_impl) -> None:
     )
 
     result = getattr(left_table, join_impl)(right_table, left_on=[col("a"), col("b")], right_on=[col("x"), col("y")])
-    print(result)
     assert set(utils.freeze(utils.pydict_to_rows(result.to_pydict()))) == set(utils.freeze([]))
 
 

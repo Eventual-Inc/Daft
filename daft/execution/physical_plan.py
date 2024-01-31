@@ -818,7 +818,7 @@ def _memory_bytes_for_coalesce(input_parts: Iterable[SingleOutputPartitionTask[P
     return size_bytes
 
 
-def sort_merge_join(
+def sort_merge_join_aligned_boundaries(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,

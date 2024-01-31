@@ -9,7 +9,9 @@ from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_joins(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -20,7 +22,10 @@ def test_joins(join_strategy, make_df, n_partitions: int):
         repartition_columns=["A"],
     )
 
-    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined = df.join(df, on="A", strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -31,7 +36,9 @@ def test_joins(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_multicol_joins(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -43,7 +50,10 @@ def test_multicol_joins(join_strategy, make_df, n_partitions: int):
         repartition_columns=["A", "B"],
     )
 
-    joined = df.join(df, on=["A", "B"], strategy=join_strategy).sort("A")
+    joined = df.join(df, on=["A", "B"], strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -55,7 +65,9 @@ def test_multicol_joins(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_dupes_join_key(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -66,7 +78,10 @@ def test_dupes_join_key(join_strategy, make_df, n_partitions: int):
         repartition_columns=["A"],
     )
 
-    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined = df.join(df, on="A", strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -77,7 +92,9 @@ def test_dupes_join_key(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 8])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_multicol_dupes_join_key(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -89,7 +106,10 @@ def test_multicol_dupes_join_key(join_strategy, make_df, n_partitions: int):
         repartition_columns=["A", "B"],
     )
 
-    joined = df.join(df, on=["A", "B"], strategy=join_strategy).sort(["A", "B"])
+    joined = df.join(df, on=["A", "B"], strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort(["A", "B"])
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -101,7 +121,9 @@ def test_multicol_dupes_join_key(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4, 6])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_joins_all_same_key(join_strategy, make_df, n_partitions: int):
     df = make_df(
         {
@@ -112,7 +134,10 @@ def test_joins_all_same_key(join_strategy, make_df, n_partitions: int):
         repartition_columns=["A"],
     )
 
-    joined = df.join(df, on="A", strategy=join_strategy).sort("A")
+    joined = df.join(df, on="A", strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -123,7 +148,9 @@ def test_joins_all_same_key(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 @pytest.mark.parametrize("flip", [False, True])
 def test_joins_no_overlap_disjoint(join_strategy, make_df, n_partitions: int, flip):
     df1 = make_df(
@@ -144,9 +171,12 @@ def test_joins_no_overlap_disjoint(join_strategy, make_df, n_partitions: int, fl
     )
 
     if flip:
-        joined = df2.join(df1, on="A", strategy=join_strategy).sort("A")
+        joined = df2.join(df1, on="A", strategy=join_strategy)
     else:
-        joined = df1.join(df2, on="A", strategy=join_strategy).sort("A")
+        joined = df1.join(df2, on="A", strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -157,7 +187,9 @@ def test_joins_no_overlap_disjoint(join_strategy, make_df, n_partitions: int, fl
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 @pytest.mark.parametrize("flip", [False, True])
 def test_joins_no_overlap_interleaved(join_strategy, make_df, n_partitions: int, flip):
     df1 = make_df(
@@ -178,9 +210,12 @@ def test_joins_no_overlap_interleaved(join_strategy, make_df, n_partitions: int,
     )
 
     if flip:
-        joined = df2.join(df1, on="A", strategy=join_strategy).sort("A")
+        joined = df2.join(df1, on="A", strategy=join_strategy)
     else:
-        joined = df1.join(df2, on="A", strategy=join_strategy).sort("A")
+        joined = df1.join(df2, on="A", strategy=join_strategy)
+    # We shouldn't need to sort the joined output if using a sort-merge join.
+    if join_strategy != "sort_merge":
+        joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -191,7 +226,9 @@ def test_joins_no_overlap_interleaved(join_strategy, make_df, n_partitions: int,
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_limit_after_join(join_strategy, make_df, n_partitions: int):
     data = {
         "A": [1, 2, 3],
@@ -219,7 +256,9 @@ def test_limit_after_join(join_strategy, make_df, n_partitions: int):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_inner_join(join_strategy, make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -248,7 +287,9 @@ def test_inner_join(join_strategy, make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_inner_join_multikey(join_strategy, make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -280,7 +321,9 @@ def test_inner_join_multikey(join_strategy, make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_inner_join_asymmetric_multikey(join_strategy, make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -320,7 +363,9 @@ def test_inner_join_asymmetric_multikey(join_strategy, make_df, repartition_npar
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_inner_join_all_null(join_strategy, make_df, repartition_nparts):
     daft_df = make_df(
         {
@@ -350,7 +395,9 @@ def test_inner_join_all_null(join_strategy, make_df, repartition_nparts):
     )
 
 
-@pytest.mark.parametrize("join_strategy", [None, "hash", "sort_merge", "broadcast"])
+@pytest.mark.parametrize(
+    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+)
 def test_inner_join_null_type_column(join_strategy, make_df):
     daft_df = make_df(
         {

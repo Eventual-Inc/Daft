@@ -532,22 +532,32 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 num_partitions,
                 Some(right_on.clone()),
             ));
-            let new_left_sort_pspec = Arc::new(PartitionSpec::new_internal(
-                PartitionScheme::Range,
-                num_partitions,
-                Some(left_on.clone()),
-            ));
-            let new_right_sort_pspec = Arc::new(PartitionSpec::new_internal(
-                PartitionScheme::Range,
-                num_partitions,
-                Some(right_on.clone()),
-            ));
 
             let is_left_hash_partitioned = left_pspec == new_left_hash_pspec;
             let is_right_hash_partitioned = right_pspec == new_right_hash_pspec;
 
-            let is_left_sort_partitioned = left_pspec == new_left_sort_pspec;
-            let is_right_sort_partitioned = right_pspec == new_right_sort_pspec;
+            // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
+            // sequence of expressions that has the join key as a prefix.
+            let is_left_sort_partitioned = matches!(left_pspec.scheme, PartitionScheme::Range)
+                && left_pspec
+                    .by
+                    .as_ref()
+                    .map(|e| {
+                        e.len() >= left_on.len()
+                            && e.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
+                    })
+                    .unwrap_or(false);
+            // Right-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
+            // sequence of expressions that has the join key as a prefix.
+            let is_right_sort_partitioned = matches!(right_pspec.scheme, PartitionScheme::Range)
+                && right_pspec
+                    .by
+                    .as_ref()
+                    .map(|e| {
+                        e.len() >= right_on.len()
+                            && e.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
+                    })
+                    .unwrap_or(false);
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
             let (smaller_size_bytes, left_is_larger) = match (
@@ -609,15 +619,44 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         left_is_larger,
                     )))
                 }
-                JoinStrategy::SortMerge => Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
-                    left_physical.into(),
-                    right_physical.into(),
-                    left_on.clone(),
-                    right_on.clone(),
-                    *join_type,
-                    num_partitions,
-                    left_is_larger,
-                ))),
+                JoinStrategy::SortMerge => {
+                    let needs_presort = if cfg.sort_merge_join_sort_with_aligned_boundaries {
+                        // Use the special-purpose presorting that ensures join inputs are sorted with aligned
+                        // boundaries, allowing for a more efficient downstream merge-join (~one-to-one zip).
+                        !is_left_sort_partitioned || !is_right_sort_partitioned
+                    } else {
+                        // Manually insert presorting ops for each side of the join that needs it.
+                        // Note that these merge-join inputs will most likely not have aligned boundaries, which could
+                        // result in less efficient merge-joins (~all-to-all broadcast).
+                        if !is_left_sort_partitioned {
+                            left_physical = PhysicalPlan::Sort(Sort::new(
+                                left_physical.into(),
+                                left_on.clone(),
+                                std::iter::repeat(false).take(left_on.len()).collect(),
+                                num_partitions,
+                            ))
+                        }
+                        if !is_right_sort_partitioned {
+                            right_physical = PhysicalPlan::Sort(Sort::new(
+                                right_physical.into(),
+                                right_on.clone(),
+                                std::iter::repeat(false).take(right_on.len()).collect(),
+                                num_partitions,
+                            ))
+                        }
+                        false
+                    };
+                    Ok(PhysicalPlan::SortMergeJoin(SortMergeJoin::new(
+                        left_physical.into(),
+                        right_physical.into(),
+                        left_on.clone(),
+                        right_on.clone(),
+                        *join_type,
+                        num_partitions,
+                        left_is_larger,
+                        needs_presort,
+                    )))
+                }
                 JoinStrategy::Hash => {
                     if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
                         && !is_left_hash_partitioned

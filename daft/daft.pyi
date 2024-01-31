@@ -1160,7 +1160,7 @@ class LogicalPlanBuilder:
         left_on: list[PyExpr],
         right_on: list[PyExpr],
         join_type: JoinType,
-        strategy: JoinStrategy | None,
+        strategy: JoinStrategy | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def table_write(
@@ -1182,6 +1182,7 @@ class PyDaftExecutionConfig:
         merge_scan_tasks_min_size_bytes: int | None = None,
         merge_scan_tasks_max_size_bytes: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
+        sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
         sample_size_for_sort: int | None = None,
         num_preview_rows: int | None = None,
         parquet_target_filesize: int | None = None,
@@ -1196,6 +1197,8 @@ class PyDaftExecutionConfig:
     def merge_scan_tasks_max_size_bytes(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
+    @property
+    def sort_merge_join_sort_with_aligned_boundaries(self) -> bool: ...
     @property
     def sample_size_for_sort(self) -> int: ...
     @property
