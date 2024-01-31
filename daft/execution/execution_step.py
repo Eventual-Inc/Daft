@@ -594,6 +594,26 @@ class Sample(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
+class MonotonicallyIncreasingId(SingleOutputInstruction):
+    partition_num: int
+    column_name: str
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        result = input.add_monotonically_increasing_id(self.partition_num, self.column_name)
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        [input_meta] = input_metadatas
+        return [
+            PartialPartitionMetadata(
+                num_rows=input_meta.num_rows,
+                size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
 class Aggregate(SingleOutputInstruction):
     to_agg: list[Expression]
     group_by: ExpressionsProjection | None

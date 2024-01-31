@@ -5,8 +5,10 @@ use std::{ops::Deref, sync::Mutex};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
+use daft_core::datatypes::Field;
 use daft_core::schema::{Schema, SchemaRef};
 
+use daft_core::DataType;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
@@ -24,7 +26,7 @@ use snafu::ResultExt;
 use crate::PyIOSnafu;
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-use daft_io::{IOConfig, IOStatsRef};
+use daft_io::{IOConfig, IOStatsContext, IOStatsRef};
 use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
 
@@ -503,6 +505,40 @@ impl MicroPartition {
         } else {
             unreachable!()
         }
+    }
+
+    pub(crate) fn add_monotonically_increasing_id(
+        &self,
+        partition_num: u64,
+        column_name: &str,
+    ) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::add_monotonically_increasing_id");
+        let tables = self.tables_or_read(io_stats)?;
+
+        let tables_with_id = tables
+            .iter()
+            .scan(0u64, |offset, table| {
+                let table_with_id =
+                    table.add_monotonically_increasing_id(partition_num, *offset, column_name);
+                *offset += table.len() as u64;
+                Some(table_with_id)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let mut schema_with_id_index_map = self.schema.fields.clone();
+        schema_with_id_index_map.insert(
+            column_name.to_string(),
+            Field::new(column_name, DataType::UInt64),
+        );
+        let schema_with_id = Schema {
+            fields: schema_with_id_index_map,
+        };
+
+        Ok(Self::new_loaded(
+            Arc::new(schema_with_id),
+            Arc::new(tables_with_id),
+            self.statistics.clone(),
+        ))
     }
 }
 

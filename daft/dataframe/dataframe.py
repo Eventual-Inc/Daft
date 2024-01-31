@@ -467,6 +467,43 @@ class DataFrame:
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
+    def _add_monotonically_increasing_id(self, column_name: Optional[str] = None) -> "DataFrame":
+        """Generates a column of monotonically increasing unique ids for the DataFrame.
+
+        The implementation of this method puts the partition number in the upper 28 bits, and the row number in each partition
+        in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
+
+        Example:
+
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
+            >>> df = df._add_monotonically_increasing_id()
+            >>> df.show()
+            ╭─────────────┬───────╮
+            │ id          ┆ a     │
+            │ ---         ┆ ---   │
+            │ UInt64      ┆ Int64 │
+            ╞═════════════╪═══════╡
+            │ 0           ┆ 1     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1           ┆ 2     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 68719476736 ┆ 3     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 68719476737 ┆ 4     │
+            ╰─────────────┴───────╯
+
+            (Showing first 4 of 4 rows)
+
+        Args:
+            column_name (Optional[str], optional): name of the new column. Defaults to "id".
+
+        Returns:
+            DataFrame: DataFrame with a new column of monotonically increasing ids.
+        """
+
+        builder = self._builder.add_monotonically_increasing_id(column_name)
+        return DataFrame(builder)
+
     @DataframePublicAPI
     def select(self, *columns: ColumnInputType) -> "DataFrame":
         """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``

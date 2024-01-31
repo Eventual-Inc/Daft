@@ -207,6 +207,10 @@ class LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
 
+    def add_monotonically_increasing_id(self, column_name: str | None) -> LogicalPlanBuilder:
+        builder = self._builder.add_monotonically_increasing_id(column_name)
+        return LogicalPlanBuilder(builder)
+
     def write_tabular(
         self,
         root_dir: str | pathlib.Path,

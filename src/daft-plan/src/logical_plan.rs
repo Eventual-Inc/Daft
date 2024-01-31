@@ -24,6 +24,7 @@ pub enum LogicalPlan {
     Join(Join),
     Sink(Sink),
     Sample(Sample),
+    MonotonicallyIncreasingId(MonotonicallyIncreasingId),
 }
 
 impl LogicalPlan {
@@ -46,6 +47,9 @@ impl LogicalPlan {
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
+                schema.clone()
+            }
         }
     }
 
@@ -54,6 +58,7 @@ impl LogicalPlan {
         match self {
             Self::Limit(..) => vec![IndexSet::new()],
             Self::Sample(..) => vec![IndexSet::new()],
+            Self::MonotonicallyIncreasingId(..) => vec![IndexSet::new()],
             Self::Concat(..) => vec![IndexSet::new(), IndexSet::new()],
             Self::Project(projection) => {
                 let res = projection
@@ -139,6 +144,7 @@ impl LogicalPlan {
             Self::Join(Join { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
             Self::Sample(Sample { input, .. }) => vec![input],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
         }
     }
 
@@ -200,6 +206,7 @@ impl LogicalPlan {
             Self::Join(..) => "Join",
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
+            Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
         };
         name.to_string()
     }
@@ -230,6 +237,7 @@ impl LogicalPlan {
             Self::Sample(sample) => {
                 vec![format!("Sample: {fraction}", fraction = sample.fraction)]
             }
+            Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
         }
     }
 
@@ -291,3 +299,4 @@ impl_from_data_struct_for_logical_plan!(Concat);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
+impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);

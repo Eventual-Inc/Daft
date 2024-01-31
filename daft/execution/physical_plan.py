@@ -187,6 +187,22 @@ def pipeline_instruction(
     )
 
 
+def monotonically_increasing_id(
+    child_plan: InProgressPhysicalPlan[PartitionT], column_name: str
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Apply a monotonically_increasing_id instruction to the results of `child_plan`."""
+
+    partition_counter = 0
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            yield step.add_instruction(
+                execution_step.MonotonicallyIncreasingId(partition_counter, column_name), ResourceRequest()
+            )
+            partition_counter += 1
+        else:
+            yield step
+
+
 def hash_join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],

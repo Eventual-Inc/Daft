@@ -12,8 +12,9 @@ use daft_scan::ScanExternalInfo;
 use crate::logical_ops::{
     Aggregate as LogicalAggregate, Concat as LogicalConcat, Distinct as LogicalDistinct,
     Explode as LogicalExplode, Filter as LogicalFilter, Join as LogicalJoin, Limit as LogicalLimit,
-    Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
-    Sink as LogicalSink, Sort as LogicalSort, Source,
+    MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Project as LogicalProject,
+    Repartition as LogicalRepartition, Sample as LogicalSample, Sink as LogicalSink,
+    Sort as LogicalSort, Source,
 };
 use crate::logical_plan::LogicalPlan;
 use crate::physical_plan::PhysicalPlan;
@@ -624,6 +625,16 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     }
                 }
             }
+        }
+        LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
+            input,
+            column_name,
+            ..
+        }) => {
+            let input_physical = plan(input, cfg)?;
+            Ok(PhysicalPlan::MonotonicallyIncreasingId(
+                MonotonicallyIncreasingId::new(input_physical.into(), column_name),
+            ))
         }
     }
 }

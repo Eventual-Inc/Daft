@@ -295,6 +295,11 @@ class MicroPartition:
             values
         )
 
+    def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.add_monotonically_increasing_id(partition_num, column_name)
+        )
+
     ###
     # Compute methods (MicroPartition -> Series)
     ###
