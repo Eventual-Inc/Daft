@@ -42,6 +42,8 @@ Generic
    Expression.not_null
    Expression.apply
 
+.. _api-numeric-expression-operations:
+
 Numeric
 #######
 
@@ -55,6 +57,8 @@ Numeric
     Expression.__mul__
     Expression.__truediv__
     Expression.__mod__
+
+.. _api-comparison-expression:
 
 Logical
 #######
@@ -73,6 +77,9 @@ Logical
     Expression.__gt__
     Expression.__ge__
 
+.. _expression-accessor-properties:
+.. _api-string-expression-operations:
+
 Strings
 #######
 
@@ -89,6 +96,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.concat
    Expression.str.length
    Expression.str.split
+
+.. _api-expressions-temporal:
 
 Temporal
 ########
@@ -126,6 +135,8 @@ Struct
    :template: autosummary/accessor_method.rst
 
    Expression.struct.get
+
+.. _api-expressions-images:
 
 Image
 #####
