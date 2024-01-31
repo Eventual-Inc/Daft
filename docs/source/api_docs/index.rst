@@ -6,10 +6,10 @@ API Documentation
    Table of Contents <self>
    creation
    dataframe
-   series
-   datatype
    expressions
+   datatype
    groupby
    udf
+   series
    context
    io_configs
