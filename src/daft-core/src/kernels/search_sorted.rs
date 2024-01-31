@@ -324,6 +324,39 @@ pub fn build_compare_with_nulls(
     }
 }
 
+/// Compare the values at two arbitrary indices in two arrays.
+pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
+
+pub fn build_partial_compare_with_nulls(
+    left: &dyn Array,
+    right: &dyn Array,
+    reversed: bool,
+) -> Result<DynPartialComparator> {
+    let comparator = build_compare_with_nan(left, right)?;
+    let left_is_valid = build_is_valid(left);
+    let right_is_valid = build_is_valid(right);
+
+    if reversed {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => Some(comparator(i, j).reverse()),
+                (false, true) => Some(Ordering::Less),
+                (true, false) => Some(Ordering::Greater),
+                (false, false) => None,
+            }
+        }))
+    } else {
+        Ok(Box::new(move |i: usize, j: usize| {
+            match (left_is_valid(i), right_is_valid(j)) {
+                (true, true) => Some(comparator(i, j)),
+                (false, true) => Some(Ordering::Greater),
+                (true, false) => Some(Ordering::Less),
+                (false, false) => None,
+            }
+        }))
+    }
+}
+
 pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
     key_arrays: &Vec<&dyn Array>,

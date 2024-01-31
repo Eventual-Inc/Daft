@@ -537,11 +537,12 @@ mod tests {
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
+            None,
         )?
         .filter(col("a").lt(&lit(2)))?
         .build();
         let expected = "\
-        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Filter: col(a) < lit(2)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
         \n  Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
@@ -564,11 +565,12 @@ mod tests {
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
+            None,
         )?
         .filter(col("c").lt(&lit(2.0)))?
         .build();
         let expected = "\
-        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
         \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)\
         \n  Filter: col(c) < lit(2.0)\
         \n    Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = b (Utf8), c (Float64)";
@@ -589,11 +591,12 @@ mod tests {
             vec![col("b")],
             vec![col("b")],
             JoinType::Inner,
+            None,
         )?
         .filter(col("b").lt(&lit(2)))?
         .build();
         let expected = "\
-        Join: Type = Inner, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
         \n  Filter: col(b) < lit(2)\
         \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Float64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64), c (Float64)\
         \n  Filter: col(b) < lit(2)\

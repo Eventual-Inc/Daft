@@ -95,7 +95,7 @@ impl PyTable {
         })
     }
 
-    pub fn join(
+    pub fn hash_join(
         &self,
         py: Python,
         right: &Self,
@@ -107,7 +107,30 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+                .hash_join(&right.table, left_exprs.as_slice(), right_exprs.as_slice())?
+                .into())
+        })
+    }
+
+    pub fn sort_merge_join(
+        &self,
+        py: Python,
+        right: &Self,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        is_sorted: bool,
+    ) -> PyResult<Self> {
+        let left_exprs: Vec<daft_dsl::Expr> = left_on.into_iter().map(|e| e.into()).collect();
+        let right_exprs: Vec<daft_dsl::Expr> = right_on.into_iter().map(|e| e.into()).collect();
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .sort_merge_join(
+                    &right.table,
+                    left_exprs.as_slice(),
+                    right_exprs.as_slice(),
+                    is_sorted,
+                )?
                 .into())
         })
     }

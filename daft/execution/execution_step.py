@@ -27,6 +27,7 @@ from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
+    Boundaries,
     MaterializedResult,
     PartialPartitionMetadata,
     PartitionMetadata,
@@ -54,6 +55,7 @@ class PartitionTask(Generic[PartitionT]):
     resource_request: ResourceRequest
     num_results: int
     stage_id: int
+    partial_metadatas: list[PartialPartitionMetadata]
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -70,6 +72,10 @@ class PartitionTask(Generic[PartitionT]):
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         """Set the result of this Task. For use by the Task executor."""
         raise NotImplementedError
+
+    def is_empty(self) -> bool:
+        """Whether this partition task is guaranteed to result in an empty partition."""
+        return len(self.partial_metadatas) > 0 and all(meta.num_rows == 0 for meta in self.partial_metadatas)
 
     def __str__(self) -> str:
         return (
@@ -116,6 +122,10 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.num_results = instruction.num_outputs()
         return self
 
+    def is_empty(self) -> bool:
+        """Whether this partition task is guaranteed to result in an empty partition."""
+        return len(self.partial_metadatas) > 0 and all(meta.num_rows == 0 for meta in self.partial_metadatas)
+
     def finalize_partition_task_single_output(self, stage_id: int) -> SingleOutputPartitionTask[PartitionT]:
         """Create a SingleOutputPartitionTask from this PartitionTaskBuilder.
 
@@ -135,6 +145,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             instructions=self.instructions,
             num_results=1,
             resource_request=resource_request_final_cpu,
+            partial_metadatas=self.partial_metadatas,
         )
 
     def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
@@ -154,6 +165,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             instructions=self.instructions,
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
+            partial_metadatas=self.partial_metadatas,
         )
 
     def __str__(self) -> str:
@@ -198,7 +210,8 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
 
         (Avoids retrieving the actual partition itself if possible.)
         """
-        return self.result().metadata()
+        [partial_metadata] = self.partial_metadatas
+        return self.result().metadata().merge_with_partial(partial_metadata)
 
     def vpartition(self) -> MicroPartition:
         """Get the raw vPartition of the result."""
@@ -243,7 +256,10 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         (Avoids retrieving the actual partition itself if possible.)
         """
         assert self._results is not None
-        return [result.metadata() for result in self._results]
+        return [
+            result.metadata().merge_with_partial(partial_metadata)
+            for result, partial_metadata in zip(self._results, self.partial_metadatas)
+        ]
 
     def vpartition(self, index: int) -> MicroPartition:
         """Get the raw vPartition of the result."""
@@ -461,11 +477,12 @@ class Filter(SingleOutputInstruction):
         return [input.filter(self.predicate)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        # Can't derive anything.
+        [input_meta] = input_metadatas
         return [
             PartialPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
+                boundaries=input_meta.boundaries,
             )
         ]
 
@@ -483,12 +500,36 @@ class Project(SingleOutputInstruction):
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         [input_meta] = input_metadatas
+        boundaries = input_meta.boundaries
+        if boundaries is not None:
+            boundaries = _prune_boundaries(boundaries, self.projection)
         return [
             PartialPartitionMetadata(
                 num_rows=input_meta.num_rows,
                 size_bytes=None,
+                boundaries=boundaries,
             )
         ]
+
+
+def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
+    """
+    If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
+    expression, then invalidate the boundary.
+    """
+    proj_all_names = projection.to_name_set()
+    proj_names_needing_compute = proj_all_names - projection.input_mapping().keys()
+    for i, e in enumerate(boundaries.sort_by):
+        if e.name() in proj_names_needing_compute:
+            # Found a sort expression that is no longer valid, so we invalidate that sort expression and all that follow it.
+            sort_by = boundaries.sort_by[:i]
+            if not sort_by:
+                return None
+            boundaries_ = boundaries.bounds.eval_expression_list(
+                ExpressionsProjection([col(e.name()) for e in sort_by])
+            )
+            return Boundaries(sort_by, boundaries_)
+    return boundaries
 
 
 @dataclass(frozen=True)
@@ -530,6 +571,7 @@ class LocalLimit(SingleOutputInstruction):
             PartialPartitionMetadata(
                 num_rows=(min(self.limit, input_meta.num_rows) if input_meta.num_rows is not None else None),
                 size_bytes=None,
+                boundaries=input_meta.boundaries,
             )
         ]
 
@@ -616,16 +658,16 @@ class Aggregate(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
-class Join(SingleOutputInstruction):
+class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
     how: JoinType
     is_swapped: bool
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._join(inputs)
+        return self._hash_join(inputs)
 
-    def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+    def _hash_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         # All inputs except for the last are the left side of the join, in order to support left-broadcasted joins.
         *lefts, right = inputs
         if len(lefts) > 1:
@@ -637,7 +679,7 @@ class Join(SingleOutputInstruction):
             # Swap left/right back.
             # We don't need to swap left_on and right_on since those were never swapped in the first place.
             left, right = right, left
-        result = left.join(
+        result = left.hash_join(
             right,
             left_on=self.left_on,
             right_on=self.right_on,
@@ -651,6 +693,43 @@ class Join(SingleOutputInstruction):
             PartialPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class MergeJoin(SingleOutputInstruction):
+    left_on: ExpressionsProjection
+    right_on: ExpressionsProjection
+    how: JoinType
+    preserve_left_bounds: bool
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._join(inputs)
+
+    def _join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        left, right = inputs
+        result = left.sort_merge_join(
+            right,
+            left_on=self.left_on,
+            right_on=self.right_on,
+            how=self.how,
+            is_sorted=True,
+        )
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        [left_meta, right_meta] = input_metadatas
+        # If the boundaries of the left and right partitions don't intersect, then the merge-join will result in an empty partition.
+        if left_meta.boundaries is None or right_meta.boundaries is None:
+            is_nonempty = True
+        else:
+            is_nonempty = left_meta.boundaries.intersects(right_meta.boundaries)
+        return [
+            PartialPartitionMetadata(
+                num_rows=None if is_nonempty else 0,
+                size_bytes=None,
+                boundaries=left_meta.boundaries if self.preserve_left_bounds else right_meta.boundaries,
             )
         ]
 
@@ -682,6 +761,7 @@ class ReduceMerge(ReduceInstruction):
 class ReduceMergeAndSort(ReduceInstruction):
     sort_by: ExpressionsProjection
     descending: list[bool]
+    bounds: MicroPartition
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_merge_and_sort(inputs)
@@ -697,6 +777,7 @@ class ReduceMergeAndSort(ReduceInstruction):
             PartialPartitionMetadata(
                 num_rows=sum(input_rows) if all(_ is not None for _ in input_rows) else None,
                 size_bytes=sum(input_sizes) if all(_ is not None for _ in input_sizes) else None,
+                boundaries=Boundaries(list(self.sort_by), self.bounds),
             )
         ]
 
@@ -834,6 +915,7 @@ class FanoutSlices(FanoutInstruction):
                 PartialPartitionMetadata(
                     num_rows=num_rows,
                     size_bytes=None,
+                    boundaries=input_meta.boundaries,
                 )
             )
 

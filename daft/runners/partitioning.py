@@ -10,6 +10,7 @@ from uuid import uuid4
 import pyarrow as pa
 
 from daft.datatype import TimeUnit
+from daft.expressions.expressions import Expression
 from daft.logical.schema import Schema
 from daft.table import MicroPartition
 
@@ -74,19 +75,96 @@ class TableParseParquetOptions:
 class PartialPartitionMetadata:
     num_rows: None | int
     size_bytes: None | int
+    boundaries: None | Boundaries = None
 
 
 @dataclass(frozen=True)
 class PartitionMetadata(PartialPartitionMetadata):
     num_rows: int
     size_bytes: int | None
+    boundaries: Boundaries | None = None
 
     @classmethod
     def from_table(cls, table: MicroPartition) -> PartitionMetadata:
         return PartitionMetadata(
             num_rows=len(table),
             size_bytes=table.size_bytes(),
+            boundaries=None,
         )
+
+    def merge_with_partial(self, partial_metadata: PartialPartitionMetadata) -> PartitionMetadata:
+        num_rows = self.num_rows
+        size_bytes = self.size_bytes
+        boundaries = self.boundaries
+        if boundaries is None:
+            boundaries = partial_metadata.boundaries
+        return PartitionMetadata(num_rows, size_bytes, boundaries)
+
+    def downcast_to_partial(self) -> PartialPartitionMetadata:
+        return PartialPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
+
+
+def _is_bound_null(bound_row: list[Any | None]) -> bool:
+    return all(bound is None for bound in bound_row)
+
+
+# TODO(Clark): Port this to the Rust side.
+@dataclass(frozen=True)
+class Boundaries:
+    sort_by: list[Expression]
+    bounds: MicroPartition
+
+    def __post_init__(self):
+        assert len(self.sort_by) > 0
+        assert len(self.bounds) == 2
+        assert self.bounds.column_names() == [e.name() for e in self.sort_by]
+
+    def intersects(self, other: Boundaries) -> bool:
+        if self.is_trivial_bounds() or other.is_trivial_bounds():
+            return True
+        self_bounds = self.bounds.to_pylist()
+        other_bounds = other.bounds.to_pylist()
+        self_lower = list(self_bounds[0].values())
+        self_upper = list(self_bounds[1].values())
+        other_lower = list(other_bounds[0].values())
+        other_upper = list(other_bounds[1].values())
+        if _is_bound_null(self_lower):
+            return _is_bound_null(other_lower) or other_lower <= self_upper
+        if _is_bound_null(other_lower):
+            return self_lower <= other_upper
+        if _is_bound_null(self_upper):
+            return _is_bound_null(other_upper) or other_upper >= self_lower
+        if _is_bound_null(other_upper):
+            return self_upper >= other_lower
+        return (self_lower <= other_lower and self_upper >= other_lower) or (
+            self_lower > other_lower and other_upper >= self_lower
+        )
+
+    def is_disjointly_bounded_above_by(self, other: Boundaries) -> bool:
+        # Check that upper of self is less than lower of other.
+        self_upper = list(self.bounds.to_pylist()[1].values())
+        if _is_bound_null(self_upper):
+            return False
+        other_lower = list(other.bounds.to_pylist()[0].values())
+        if _is_bound_null(other_lower):
+            return False
+        return self_upper < other_lower
+
+    def is_trivial_bounds(self) -> bool:
+        bounds = self.bounds.to_pylist()
+        lower = list(bounds[0].values())
+        upper = list(bounds[1].values())
+        return _is_bound_null(lower) and _is_bound_null(upper)
+
+    def is_strictly_bounded_above_by(self, other: Boundaries) -> bool:
+        # Check that upper of self is less than upper of other.
+        self_upper = list(self.bounds.to_pylist()[1].values())
+        if _is_bound_null(self_upper):
+            return False
+        other_upper = list(other.bounds.to_pylist()[1].values())
+        if _is_bound_null(other_upper):
+            return True
+        return self_upper < other_upper
 
 
 PartitionT = TypeVar("PartitionT")

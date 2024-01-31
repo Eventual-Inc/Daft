@@ -230,7 +230,7 @@ class MicroPartition:
         to_explode_pyexprs = [e._expr for e in columns]
         return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
 
-    def join(
+    def hash_join(
         self,
         right: MicroPartition,
         left_on: ExpressionsProjection,
@@ -251,7 +251,34 @@ class MicroPartition:
         right_exprs = [e._expr for e in right_on]
 
         return MicroPartition._from_pymicropartition(
-            self._micropartition.join(right._micropartition, left_on=left_exprs, right_on=right_exprs)
+            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs)
+        )
+
+    def sort_merge_join(
+        self,
+        right: MicroPartition,
+        left_on: ExpressionsProjection,
+        right_on: ExpressionsProjection,
+        how: JoinType = JoinType.Inner,
+        is_sorted: bool = False,
+    ) -> MicroPartition:
+        if how != JoinType.Inner:
+            raise NotImplementedError("TODO: [RUST] Implement Other Join types")
+        if len(left_on) != len(right_on):
+            raise ValueError(
+                f"Mismatch of number of join keys, left_on: {len(left_on)}, right_on: {len(right_on)}\nleft_on {left_on}\nright_on {right_on}"
+            )
+
+        if not isinstance(right, MicroPartition):
+            raise TypeError(f"Expected a MicroPartition for `right` in join but got {type(right)}")
+
+        left_exprs = [e._expr for e in left_on]
+        right_exprs = [e._expr for e in right_on]
+
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.sort_merge_join(
+                right._micropartition, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
+            )
         )
 
     def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[MicroPartition]:

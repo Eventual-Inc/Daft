@@ -9,6 +9,7 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
+    JoinStrategy,
     JoinType,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
@@ -187,6 +188,7 @@ class LogicalPlanBuilder:
         left_on: list[Expression],
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
+        strategy: JoinStrategy | None = None,
     ) -> LogicalPlanBuilder:
         if how == JoinType.Left:
             raise NotImplementedError("Left join not implemented.")
@@ -198,6 +200,7 @@ class LogicalPlanBuilder:
                 [expr._expr for expr in left_on],
                 [expr._expr for expr in right_on],
                 how,
+                strategy,
             )
             return LogicalPlanBuilder(builder)
         else:

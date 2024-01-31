@@ -207,6 +207,7 @@ def set_execution_config(
     scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
     parquet_split_row_groups_max_files: int | None = None,
+    sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
     parquet_target_filesize: int | None = None,
@@ -230,6 +231,9 @@ def set_execution_config(
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
+        sort_merge_join_sort_with_aligned_boundaries: Whether to use a specialized algorithm for sorting both sides of a
+            sort-merge join such that they have aligned boundaries. This can lead to a faster merge-join at the cost of
+            more skewed sorted join inputs, increasing the risk of OOMs.
         sample_size_for_sort: number of elements to sample from each partition when running sort,
             Default is 20.
         num_preview_rows: number of rows to when showing a dataframe preview,
@@ -248,6 +252,7 @@ def set_execution_config(
         scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
         parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
+        sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,
         sample_size_for_sort=sample_size_for_sort,
         num_preview_rows=num_preview_rows,
         parquet_target_filesize=parquet_target_filesize,

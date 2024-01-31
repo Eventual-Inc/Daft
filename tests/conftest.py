@@ -65,6 +65,23 @@ def data_source(request):
 
 
 @pytest.fixture(scope="function")
+def join_strategy(request):
+    # Modifies the join strategy parametrization to toggle a specialized presorting path for sort-merge joins, where
+    # each side of the join is sorted such that their boundaries will align.
+    if request.param != "sort_merge_aligned_boundaries":
+        yield request.param
+    else:
+        old_execution_config = daft.context.get_context().daft_execution_config
+        try:
+            daft.set_execution_config(
+                sort_merge_join_sort_with_aligned_boundaries=True,
+            )
+            yield "sort_merge"
+        finally:
+            daft.set_execution_config(old_execution_config)
+
+
+@pytest.fixture(scope="function")
 def make_df(data_source, tmp_path) -> daft.Dataframe:
     """Makes a dataframe when provided with data"""
 
