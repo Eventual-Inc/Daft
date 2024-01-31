@@ -120,44 +120,39 @@ impl Iterator for MergeByFileSize {
 pub fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
-    split_threshold_bytes: usize,
+    max_size_bytes: usize,
     min_size_bytes: usize,
 ) -> BoxScanTaskIter {
     let mut scan_tasks = itertools::peek_nth(scan_tasks);
 
     // only split if we have a small amount of files
     if scan_tasks.peek_nth(max_tasks).is_some() {
-        return Box::new(scan_tasks);
-    }
+        Box::new(scan_tasks)
+    } else {
+        Box::new(
+            scan_tasks
+                .map(move |t| -> DaftResult<BoxScanTaskIter> {
+                    let t = t?;
 
-    Box::new(
-        scan_tasks
-            .map(move |t| -> DaftResult<BoxScanTaskIter> {
-                let t = t?;
-
-                /* Only split parquet tasks if they:
-                   - have one source
-                   - use native storage config
-                   - have no specified chunk spec or number of rows
-                   - have size past split threshold
-                */
-                match (
-                    t.file_format_config.as_ref(),
-                    t.storage_config.as_ref(),
-                    &t.sources[..],
-                    t.sources.get(0).map(DataFileSource::get_chunk_spec),
-                    t.pushdowns.limit,
-                ) {
-                    (
+                    /* Only split parquet tasks if they:
+                        - have one source
+                        - use native storage config
+                        - have no specified chunk spec or number of rows
+                        - have size past split threshold
+                    */
+                    if let (
                         FileFormatConfig::Parquet(_),
                         StorageConfig::Native(_),
                         [source],
                         Some(None),
                         None,
-                    ) if source
-                        .get_size_bytes()
-                        .map_or(true, |s| s > split_threshold_bytes as u64) =>
-                    {
+                    ) = (
+                        t.file_format_config.as_ref(),
+                        t.storage_config.as_ref(),
+                        &t.sources[..],
+                        t.sources.get(0).map(DataFileSource::get_chunk_spec),
+                        t.pushdowns.limit,
+                    ) && source.get_size_bytes().map_or(true, |s| s > max_size_bytes as u64) {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
 
@@ -197,6 +192,9 @@ pub fn split_by_row_groups(
                                     } => {
                                         *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                         *size_bytes = Some(curr_size_bytes as u64);
+
+                                        curr_row_groups = Vec::new();
+                                        curr_size_bytes = 0;
                                     }
                                 };
 
@@ -208,17 +206,15 @@ pub fn split_by_row_groups(
                                     t.pushdowns.clone(),
                                 )
                                 .into()));
-
-                                curr_row_groups = Vec::new();
-                                curr_size_bytes = 0;
                             }
                         }
 
                         Ok(Box::new(new_tasks.into_iter()))
+                    } else {
+                        Ok(Box::new(std::iter::once(Ok(t))))
                     }
-                    (..) => Ok(Box::new(std::iter::once(Ok(t)))),
-                }
-            })
-            .flat_map(|t| t.unwrap_or_else(|e| Box::new(std::iter::once(Err(e))))),
-    )
+                })
+                .flat_map(|t| t.unwrap_or_else(|e| Box::new(std::iter::once(Err(e))))),
+        )
+    }
 }

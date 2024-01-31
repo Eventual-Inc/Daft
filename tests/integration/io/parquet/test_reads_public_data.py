@@ -202,13 +202,19 @@ def parquet_file(request) -> tuple[str, str]:
 
 @pytest.fixture(params=[(True, True), (True, False), (False, False)], ids=["split", "merge", "ignore"])
 def set_split_config(request):
-    threshold = 0 if request.param[0] else 128 * 1024 * 1024
+    max_size = 0 if request.param[0] else 512 * 1024 * 1024
     min_size = 0 if request.param[1] else 64 * 1024 * 1024
 
-    daft.set_execution_config(
-        parquet_split_row_groups_threshold_bytes=threshold,
-        parquet_split_row_groups_min_size_bytes=min_size,
-    )
+    old_execution_config = daft.context.get_context().daft_execution_config
+
+    try:
+        daft.set_execution_config(
+            scan_tasks_max_size_bytes=max_size,
+            scan_tasks_min_size_bytes=min_size,
+        )
+        yield
+    finally:
+        daft.set_execution_config(old_execution_config)
 
 
 def read_parquet_with_pyarrow(path) -> pa.Table:

@@ -15,8 +15,8 @@ def set_execution_configs():
     """Sets global Daft config for testing"""
     daft.set_execution_config(
         # Disables merging of ScanTasks
-        merge_scan_tasks_min_size_bytes=0,
-        merge_scan_tasks_max_size_bytes=0,
+        scan_tasks_min_size_bytes=0,
+        scan_tasks_max_size_bytes=0,
     )
 
 

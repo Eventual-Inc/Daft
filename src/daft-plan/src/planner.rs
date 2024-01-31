@@ -83,15 +83,15 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
                     scan_tasks,
                     cfg.parquet_split_row_groups_max_files,
-                    cfg.parquet_split_row_groups_threshold_bytes,
-                    cfg.parquet_split_row_groups_min_size_bytes,
+                    cfg.scan_tasks_min_size_bytes,
+                    cfg.scan_tasks_max_size_bytes,
                 );
 
                 // Apply transformations on the ScanTasks to optimize
                 let scan_tasks = daft_scan::scan_task_iters::merge_by_sizes(
                     scan_tasks,
-                    cfg.merge_scan_tasks_min_size_bytes,
-                    cfg.merge_scan_tasks_max_size_bytes,
+                    cfg.scan_tasks_min_size_bytes,
+                    cfg.scan_tasks_max_size_bytes,
                 );
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
