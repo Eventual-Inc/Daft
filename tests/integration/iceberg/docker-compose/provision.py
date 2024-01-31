@@ -325,7 +325,7 @@ VALUES
 
 spark.sql(
     """
-  CREATE OR REPLACE TABLE default.add_new_column
+  CREATE OR REPLACE TABLE default.test_add_new_column
   USING iceberg
   AS SELECT
         1            AS idx
@@ -336,5 +336,38 @@ spark.sql(
 """
 )
 
-spark.sql("ALTER TABLE default.add_new_column ADD COLUMN name STRING")
-spark.sql("INSERT INTO default.add_new_column VALUES (3, 'abc'), (4, 'def')")
+spark.sql("ALTER TABLE default.test_add_new_column ADD COLUMN name STRING")
+spark.sql("INSERT INTO default.test_add_new_column VALUES (3, 'abc'), (4, 'def')")
+
+# In Iceberg the data and schema evolves independently. We can add a column
+# that should show up when querying the data, but is not yet represented in a Parquet file
+
+spark.sql(
+    """
+  CREATE OR REPLACE TABLE default.test_new_column_with_no_data
+  USING iceberg
+  AS SELECT
+        1            AS idx
+    UNION ALL SELECT
+        2            AS idx
+    UNION ALL SELECT
+        3            AS idx
+"""
+)
+
+spark.sql("ALTER TABLE default.test_new_column_with_no_data ADD COLUMN name STRING")
+
+spark.sql(
+    """
+  CREATE OR REPLACE TABLE default.test_table_rename
+  USING iceberg
+  AS SELECT
+        1            AS idx
+    UNION ALL SELECT
+        2            AS idx
+    UNION ALL SELECT
+        3            AS idx
+"""
+)
+
+spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN idx TO pos")

@@ -21,7 +21,7 @@ def test_daft_iceberg_table_open(local_iceberg_tables):
 
 
 WORKING_SHOW_COLLECT = [
-    # "test_all_types", # ValueError: DaftError::ArrowError Not yet implemented: Deserializing type Decimal(10, 2) from parquet
+    "test_all_types",  # ValueError: DaftError::ArrowError Not yet implemented: Deserializing type Decimal(10, 2) from parquet
     "test_limit",
     "test_null_nan",
     "test_null_nan_rewritten",
@@ -37,7 +37,9 @@ WORKING_SHOW_COLLECT = [
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
-    "add_new_column",
+    "test_add_new_column",
+    "test_new_column_with_no_data",
+    "test_table_rename",
 ]
 
 
