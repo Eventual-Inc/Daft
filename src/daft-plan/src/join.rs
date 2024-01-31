@@ -61,7 +61,7 @@ impl FromStr for JoinType {
             "left" => Ok(Left),
             "right" => Ok(Right),
             _ => Err(DaftError::TypeError(format!(
-                "Join type {} is not supported; only the following modes are supported: {:?}",
+                "Join type {} is not supported; only the following types are supported: {:?}",
                 join_type,
                 JoinType::iterator().as_slice()
             ))),
@@ -70,6 +70,68 @@ impl FromStr for JoinType {
 }
 
 impl Display for JoinType {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        // Leverage Debug trait implementation, which will already return the enum variant as a string.
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub enum JoinStrategy {
+    Hash,
+    SortMerge,
+    Broadcast,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl JoinStrategy {
+    /// Create a JoinStrategy from its string representation.
+    ///
+    /// Args:
+    ///     join_strategy: String representation of the join strategy, e.g. "hash", "sort_merge", or "broadcast".
+    #[staticmethod]
+    pub fn from_join_strategy_str(join_strategy: &str) -> PyResult<Self> {
+        Self::from_str(join_strategy).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(self.to_string())
+    }
+}
+
+impl_bincode_py_state_serialization!(JoinStrategy);
+
+impl JoinStrategy {
+    pub fn iterator() -> std::slice::Iter<'static, JoinStrategy> {
+        use JoinStrategy::*;
+
+        static JOIN_STRATEGIES: [JoinStrategy; 3] = [Hash, SortMerge, Broadcast];
+        JOIN_STRATEGIES.iter()
+    }
+}
+
+impl FromStr for JoinStrategy {
+    type Err = DaftError;
+
+    fn from_str(join_strategy: &str) -> DaftResult<Self> {
+        use JoinStrategy::*;
+
+        match join_strategy {
+            "hash" => Ok(Hash),
+            "sort_merge" => Ok(SortMerge),
+            "broadcast" => Ok(Broadcast),
+            _ => Err(DaftError::TypeError(format!(
+                "Join strategy {} is not supported; only the following strategies are supported: {:?}",
+                join_strategy,
+                JoinStrategy::iterator().as_slice()
+            ))),
+        }
+    }
+}
+
+impl Display for JoinStrategy {
     fn fmt(&self, f: &mut Formatter) -> Result {
         // Leverage Debug trait implementation, which will already return the enum variant as a string.
         write!(f, "{:?}", self)

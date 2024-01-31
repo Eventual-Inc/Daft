@@ -25,6 +25,7 @@ pub struct DaftExecutionConfig {
     pub merge_scan_tasks_min_size_bytes: usize,
     pub merge_scan_tasks_max_size_bytes: usize,
     pub broadcast_join_size_bytes_threshold: usize,
+    pub sort_merge_join_sort_with_aligned_boundaries: bool,
     pub sample_size_for_sort: usize,
     pub num_preview_rows: usize,
     pub parquet_target_filesize: usize,
@@ -40,6 +41,7 @@ impl Default for DaftExecutionConfig {
             merge_scan_tasks_min_size_bytes: 64 * 1024 * 1024, // 64MB
             merge_scan_tasks_max_size_bytes: 512 * 1024 * 1024, // 512MB
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
+            sort_merge_join_sort_with_aligned_boundaries: false,
             sample_size_for_sort: 20,
             num_preview_rows: 8,
             parquet_target_filesize: 512 * 1024 * 1024, // 512MB
