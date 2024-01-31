@@ -64,6 +64,13 @@ impl DataType {
             ))
         })
     }
+    pub fn membership_op(
+        &self,
+        other: &Self,
+    ) -> DaftResult<(DataType, Option<DataType>, DataType)> {
+        // membership checks (is_in) use equality checks, so we can use the same logic as comparison ops.
+        self.comparison_op(other)
+    }
 }
 
 impl Add for &DataType {

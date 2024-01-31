@@ -327,6 +327,9 @@ impl Table {
             Not(child) => !(self.eval_expression(child)?),
             IsNull(child) => self.eval_expression(child)?.is_null(),
             NotNull(child) => self.eval_expression(child)?.not_null(),
+            IsIn(child, items) => self
+                .eval_expression(child)?
+                .is_in(&self.eval_expression(items)?),
             BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;

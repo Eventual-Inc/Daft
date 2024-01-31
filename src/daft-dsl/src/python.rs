@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use daft_core::python::datatype::PyTimeUnit;
+use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
 
 use crate::{functions, optimization, Expr, LiteralValue};
@@ -36,6 +37,12 @@ pub fn date_lit(item: i32) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn series_lit(series: PySeries) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Series(series.series));
     Ok(expr.into())
 }
 
@@ -237,6 +244,10 @@ impl PyExpr {
 
     pub fn not_null(&self) -> PyResult<Self> {
         Ok(self.expr.not_null().into())
+    }
+
+    pub fn is_in(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.expr.is_in(&other.expr).into())
     }
 
     pub fn name(&self) -> PyResult<&str> {

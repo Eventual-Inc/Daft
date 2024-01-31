@@ -10,6 +10,7 @@ dyn-clone = "1.0.16"
 fnv = "1.0.7"
 html-escape = {workspace = true}
 indexmap = {workspace = true, features = ["serde"]}
+itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"

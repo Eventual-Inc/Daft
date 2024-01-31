@@ -72,6 +72,18 @@ Comparing expressions and values, returning a logical expression
     daft.expressions.Expression.is_null
     daft.expressions.Expression.not_null
 
+.. _api-membership-expression:
+
+Membership
+***********
+
+Checking if an expression is a member of a list of values
+
+.. autosummary::
+    :toctree: doc_gen/expression_methods
+
+    daft.expressions.Expression.is_in
+
 .. _expression-accessor-properties:
 
 .. _api-float-expression-operations:

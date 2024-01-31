@@ -38,9 +38,9 @@ WORKDIR ${SPARK_HOME}
 
 ENV SPARK_VERSION=3.4.2
 ENV ICEBERG_SPARK_RUNTIME_VERSION=3.4_2.12
-ENV ICEBERG_VERSION=1.4.0
+ENV ICEBERG_VERSION=1.4.3
 ENV AWS_SDK_VERSION=2.20.18
-ENV PYICEBERG_VERSION=0.4.0
+ENV PYICEBERG_VERSION=0.5.1
 
 RUN curl --retry 3 -s -C - https://daft-public-data.s3.us-west-2.amazonaws.com/distribution/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \

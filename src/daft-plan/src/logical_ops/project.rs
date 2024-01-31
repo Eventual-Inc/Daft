@@ -254,6 +254,19 @@ fn replace_column_with_semantic_id(
                         |_| e,
                     )
             }
+            Expr::IsIn(child, items) => {
+                let child =
+                    replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema);
+                let items =
+                    replace_column_with_semantic_id(items.clone(), subexprs_to_replace, schema);
+                if child.is_no() && items.is_no() {
+                    Transformed::No(e)
+                } else {
+                    Transformed::Yes(
+                        Expr::IsIn(child.unwrap().clone(), items.unwrap().clone()).into(),
+                    )
+                }
+            }
             Expr::BinaryOp { op, left, right } => {
                 let left =
                     replace_column_with_semantic_id(left.clone(), subexprs_to_replace, schema);

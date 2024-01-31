@@ -3,6 +3,8 @@ use crate::{
     Series,
 };
 
+use itertools::Itertools;
+
 pub fn display_date32(val: i32) -> String {
     let epoch_date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
     let date = if val.is_positive() {
@@ -33,6 +35,19 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
             }
         },
     )
+}
+
+pub fn display_series_literal(series: &Series) -> String {
+    if !series.is_empty() {
+        format!(
+            "[{}]",
+            (0..series.len())
+                .map(|i| series.str_value(i).unwrap())
+                .join(", ")
+        )
+    } else {
+        "[]".to_string()
+    }
 }
 
 pub fn make_comfy_table<F: AsRef<Field>>(

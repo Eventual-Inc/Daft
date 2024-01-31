@@ -1,9 +1,5 @@
-use std::{
-    fmt::{Display, Formatter, Result},
-    hash::{Hash, Hasher},
-};
-
 use crate::expr::Expr;
+
 use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
@@ -12,9 +8,13 @@ use daft_core::{
         TimeUnit,
     },
     series::Series,
-    utils::display_table::{display_date32, display_timestamp},
+    utils::display_table::{display_date32, display_series_literal, display_timestamp},
 };
 use serde::{Deserialize, Serialize};
+use std::{
+    fmt::{Display, Formatter, Result},
+    hash::{Hash, Hasher},
+};
 
 #[cfg(feature = "python")]
 use crate::pyobject::DaftPyObject;
@@ -57,6 +57,8 @@ pub enum LiteralValue {
     Date(i32),
     /// A 64-bit floating point number.
     Float64(f64),
+    /// A list
+    Series(Series),
     /// Python object.
     #[cfg(feature = "python")]
     Python(DaftPyObject),
@@ -86,6 +88,13 @@ impl Hash for LiteralValue {
             }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
+            Series(series) => {
+                let hash_result = series.hash(None);
+                match hash_result {
+                    Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
+                    Err(_) => panic!("Cannot hash series"),
+                }
+            }
             #[cfg(feature = "python")]
             Python(py_obj) => py_obj.hash(state),
         }
@@ -108,6 +117,7 @@ impl Display for LiteralValue {
             Date(val) => write!(f, "{}", display_date32(*val)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
+            Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
@@ -137,6 +147,7 @@ impl LiteralValue {
             Date(_) => DataType::Date,
             Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Float64(_) => DataType::Float64,
+            Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
         }
@@ -164,6 +175,7 @@ impl LiteralValue {
                 TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
+            Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
             Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
         };
@@ -201,6 +213,12 @@ macro_rules! make_literal {
 impl<'a> Literal for &'a [u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
+    }
+}
+
+impl Literal for Series {
+    fn lit(self) -> Expr {
+        Expr::Literal(LiteralValue::Series(self))
     }
 }
 
