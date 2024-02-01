@@ -1,76 +1,70 @@
 Expressions
 ===========
 
+Daft Expressions allow you to express some computation that needs to happen in a DataFrame.
+
+This page provides an overview of all the functionality that is provided by Daft Expressions.
+
 .. currentmodule:: daft
 
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
-
-    daft.expressions.Expression
-
-Expression Constructors
-#######################
+Constructors
+############
 
 .. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
 
-    daft.DataFrame.__getitem__
-    daft.expressions.col
-    daft.expressions.lit
+    col
+    lit
 
-Operators
-#########
+Generic
+#######
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+
+   Expression.alias
+   Expression.cast
+   Expression.if_else
+   Expression.is_null
+   Expression.not_null
+   Expression.apply
 
 .. _api-numeric-expression-operations:
 
 Numeric
-*******
-
-Operations on numbers (floats and integers)
+#######
 
 .. autosummary::
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
 
-    daft.expressions.Expression.__abs__
-    daft.expressions.Expression.__add__
-    daft.expressions.Expression.__sub__
-    daft.expressions.Expression.__mul__
-    daft.expressions.Expression.__truediv__
-    daft.expressions.Expression.__mod__
-
-Logical
-*******
-
-Operations on logical expressions (True/False booleans)
-
-.. autosummary::
-    :toctree: doc_gen/expression_methods
-
-    daft.expressions.Expression.__invert__
-    daft.expressions.Expression.__and__
-    daft.expressions.Expression.__or__
-    daft.expressions.Expression.if_else
+    Expression.__abs__
+    Expression.__add__
+    Expression.__sub__
+    Expression.__mul__
+    Expression.__truediv__
+    Expression.__mod__
 
 .. _api-comparison-expression:
 
-Comparisons
-***********
-
-Comparing expressions and values, returning a logical expression
+Logical
+#######
 
 .. autosummary::
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
 
-    daft.expressions.Expression.__lt__
-    daft.expressions.Expression.__le__
-    daft.expressions.Expression.__eq__
-    daft.expressions.Expression.__ne__
-    daft.expressions.Expression.__gt__
-    daft.expressions.Expression.__ge__
-    daft.expressions.Expression.is_null
-    daft.expressions.Expression.not_null
+    Expression.__invert__
+    Expression.__and__
+    Expression.__or__
+    Expression.__lt__
+    Expression.__le__
+    Expression.__eq__
+    Expression.__ne__
+    Expression.__gt__
+    Expression.__ge__
 
 .. _api-membership-expression:
 
@@ -85,141 +79,100 @@ Checking if an expression is a member of a list of values
     daft.expressions.Expression.is_in
 
 .. _expression-accessor-properties:
-
-.. _api-float-expression-operations:
-
-Floats
-******
-
-Operations on strings, accessible through the :meth:`Expression.float <daft.expressions.Expression.float>` method accessor.
-
-Example: ``e1.float.is_nan()``
-
-.. autosummary::
-    :toctree: doc_gen/expression_methods
-
-    daft.expressions.Expression.float
-    daft.expressions.expressions.ExpressionFloatNamespace.is_nan
-
 .. _api-string-expression-operations:
 
 Strings
-*******
+#######
 
-Operations on strings, accessible through the :meth:`Expression.str <daft.expressions.Expression.str>` method accessor.
-
-Example: ``e1.str.concat(e2)``
+The following methods are available under the ``expr.str`` attribute.
 
 .. autosummary::
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.str
-    daft.expressions.expressions.ExpressionStringNamespace.concat
-    daft.expressions.expressions.ExpressionStringNamespace.contains
-    daft.expressions.expressions.ExpressionStringNamespace.endswith
-    daft.expressions.expressions.ExpressionStringNamespace.startswith
-    daft.expressions.expressions.ExpressionStringNamespace.length
+   Expression.str.contains
+   Expression.str.endswith
+   Expression.str.startswith
+   Expression.str.concat
+   Expression.str.length
+   Expression.str.split
 
 .. _api-expressions-temporal:
 
-Dates
-*****
-
-Operations on datetimes, accessible through the :meth:`Expression.dt <daft.expressions.Expression.dt>` method accessor:
-
-Example: ``e.dt.day()``
+Temporal
+########
 
 .. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.dt
-    daft.expressions.expressions.ExpressionDatetimeNamespace.day
-    daft.expressions.expressions.ExpressionDatetimeNamespace.month
-    daft.expressions.expressions.ExpressionDatetimeNamespace.year
-    daft.expressions.expressions.ExpressionDatetimeNamespace.day_of_week
-    daft.expressions.expressions.ExpressionDatetimeNamespace.date
+   Expression.dt.date
+   Expression.dt.hour
+   Expression.dt.day
+   Expression.dt.month
+   Expression.dt.year
+   Expression.dt.day_of_week
 
-.. _api-expressions-urls:
-
-URLs
-****
-
-Operations on URLs, accessible through the :meth:`Expression.url <daft.expressions.Expression.url>` method accessor:
-
-Example: ``e.url.download()``
+List
+####
 
 .. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.url
-    daft.expressions.expressions.ExpressionUrlNamespace.download
+   Expression.list.join
+   Expression.list.lengths
+   Expression.list.get
+
+Struct
+######
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.struct.get
 
 .. _api-expressions-images:
 
-Images
-******
-
-Operations on images, accessible through the :meth:`Expression.image <daft.expressions.Expression.image>` method accessor:
-
-Example: ``e.image.resize()``
+Image
+#####
 
 .. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.image
-    daft.expressions.expressions.ExpressionImageNamespace.resize
-    daft.expressions.expressions.ExpressionImageNamespace.decode
-    daft.expressions.expressions.ExpressionImageNamespace.encode
+   Expression.image.decode
+   Expression.image.encode
+   Expression.image.resize
+   Expression.image.crop
 
-
-Nested
-******
-
-Operations on nested types (such as List and FixedSizeList), accessible through the :meth:`Expression.image <daft.expressions.Expression.list>` method accessor.
-
-Example: ``e1.list.join(e2)``
+Partitioning
+############
 
 .. autosummary::
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.list
-    daft.expressions.expressions.ExpressionListNamespace.join
-    daft.expressions.expressions.ExpressionListNamespace.lengths
-    daft.expressions.expressions.ExpressionListNamespace.get
+   Expression.partitioning.days
+   Expression.partitioning.hours
+   Expression.partitioning.months
+   Expression.partitioning.years
+   Expression.partitioning.iceberg_bucket
+   Expression.partitioning.iceberg_truncate
 
-
-Structs
-*******
-
-Operations on structs, accessible through the :meth:`Expression.image <daft.expressions.Expression.struct>` method accessor:
-
-Example: ``e1.struct.get(field)``
-
-.. autosummary::
-    :toctree: doc_gen/expression_methods
-
-    daft.expressions.Expression.struct
-    daft.expressions.expressions.ExpressionStructNamespace.get
-
-
-Changing Column Names/Types
-###########################
+URLs
+####
 
 .. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
 
-    daft.expressions.Expression.alias
-    daft.expressions.Expression.cast
-
-Running Python Functions
-########################
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/expression_methods
-
-    daft.expressions.Expression.apply
+   Expression.url.download

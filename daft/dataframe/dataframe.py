@@ -669,10 +669,11 @@ class DataFrame:
         random repartitioning will occur.
 
         .. NOTE::
+
             This function will globally shuffle your data, which is potentially a very expensive operation.
 
             If instead you merely wish to "split" or "coalesce" partitions to obtain a target number of partitions,
-            you mean instead wish to consider using :meth:`DataFrame.into_parititions`<daft.DataFrame.into_partitions>
+            you mean instead wish to consider using :meth:`DataFrame.into_partitions <daft.DataFrame.into_partitions>`
             which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
 
         Example:

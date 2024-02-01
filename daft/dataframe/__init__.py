@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from .dataframe import DataFrame
+from .dataframe import DataFrame, GroupedDataFrame
 
-__all__ = ["DataFrame"]
+__all__ = ["DataFrame", "GroupedDataFrame"]

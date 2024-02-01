@@ -66,7 +66,7 @@ from daft.convert import (
 from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import col, lit
+from daft.expressions import Expression, col, lit
 from daft.io import from_glob_path, read_csv, read_iceberg, read_json, read_parquet
 from daft.series import Series
 from daft.udf import udf
@@ -85,6 +85,7 @@ __all__ = [
     "read_parquet",
     "read_iceberg",
     "DataFrame",
+    "Expression",
     "col",
     "DataType",
     "ImageMode",

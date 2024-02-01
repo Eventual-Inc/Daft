@@ -58,7 +58,7 @@ Data Catalogs
 -------------
 
 Apache Iceberg
-^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~
 
 .. autosummary::
     :nosignatures:

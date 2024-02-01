@@ -26,7 +26,6 @@ Columns/expressions with these datatypes can be operated on with many numeric ex
 
 See also:
 
-* :ref:`Numeric DataTypes <api-datatypes-numeric>`
 * :ref:`Numeric Expressions <userguide-numeric-expressions>`
 
 Logical DataTypes
@@ -38,7 +37,6 @@ Columns/expressions with this dtype can be operated on using logical expressions
 
 See also:
 
-* :ref:`Logical DataTypes <api-datatypes-logical>`
 * :ref:`Logical Expressions <userguide-logical-expressions>`
 
 String Types
@@ -53,7 +51,6 @@ As a convenience method, string types also support the ``+`` Expression, which h
 
 See also:
 
-* :ref:`String DataTypes <api-datatypes-string>`
 * :ref:`String Expressions <userguide-string-expressions>`
 
 Temporal
@@ -68,7 +65,6 @@ Examples:
 
 See also:
 
-* :ref:`Temporal DataTypes <api-datatypes-temporal>`
 * :ref:`Temporal Expressions <api-expressions-temporal>`
 
 Nested
@@ -80,10 +76,6 @@ Examples:
 
 1. :meth:`DataType.list(child_dtype) <daft.DataType.list>`: represents a list where each element is of the child dtype
 2. :meth:`DataType.struct({"field_name": child_dtype}) <daft.DataType.struct>`: represents a structure that has children dtypes, each mapped to a field name
-
-See also:
-
-* :ref:`Nested DataTypes <api-datatypes-nested>`
 
 Python
 ------
@@ -118,7 +110,3 @@ Daft abstracts away the in-memory representation of your data and provides kerne
 For more complex algorithms, you can also drop into a Python UDF to process this data using your custom Python libraries.
 
 Please add suggestions for new DataTypes to our Github Discussions page!
-
-See also:
-
-* :ref:`Complex Types <api-datatypes-complex>`
