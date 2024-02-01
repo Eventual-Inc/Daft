@@ -120,8 +120,8 @@ impl Iterator for MergeByFileSize {
 pub fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
-    max_size_bytes: usize,
     min_size_bytes: usize,
+    max_size_bytes: usize,
 ) -> BoxScanTaskIter {
     let mut scan_tasks = itertools::peek_nth(scan_tasks);
 
@@ -208,6 +208,8 @@ pub fn split_by_row_groups(
                                 .into()));
                             }
                         }
+
+                        println!("num scan tasks: {}", new_tasks.len());
 
                         Ok(Box::new(new_tasks.into_iter()))
                     } else {
