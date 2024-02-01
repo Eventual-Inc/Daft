@@ -1562,6 +1562,27 @@ class GroupedDataFrame:
     def map_groups(self, udf: Expression) -> "DataFrame":
         """Apply a user-defined function to each group.
 
+        Example:
+            >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            ... def std_dev(data):
+            ...     return [statistics.stdev(data.to_pylist())]
+            >>>
+            >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
+            >>> df.show()
+            ╭───────┬────────────────────╮
+            │ group ┆ data               │
+            │ ---   ┆ ---                │
+            │ Utf8  ┆ Float64            │
+            ╞═══════╪════════════════════╡
+            │ a     ┆ 14.730919862656235 │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b     ┆ 331.62026476076517 │
+            ╰───────┴────────────────────╯
+
+            (Showing first 2 of 2 rows)
+
         Args:
             udf (Expression): User-defined function to apply to each group.
 

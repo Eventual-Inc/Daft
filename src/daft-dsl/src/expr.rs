@@ -128,7 +128,7 @@ impl AggExpr {
         }
     }
 
-    pub fn child(&self) -> Vec<ExprRef> {
+    pub fn children(&self) -> Vec<ExprRef> {
         use AggExpr::*;
         match self {
             Count(expr, ..)
@@ -405,7 +405,7 @@ impl Expr {
             Not(expr) | IsNull(expr) | NotNull(expr) | Cast(expr, ..) | Alias(expr, ..) => {
                 vec![expr.clone()]
             }
-            Agg(agg_expr) => agg_expr.child(),
+            Agg(agg_expr) => agg_expr.children(),
 
             // Multiple children.
             Function { inputs, .. } => inputs.iter().map(|e| e.clone().into()).collect(),

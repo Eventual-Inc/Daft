@@ -30,7 +30,7 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         #[cfg(feature = "python")]
-        if let Some(AggExpr::MapGroups { func, inputs }) = agg_exprs.first() {
+        if let [AggExpr::MapGroups { func, inputs }] = &agg_exprs[..] {
             return self.map_groups(func, inputs, group_by);
         }
 
