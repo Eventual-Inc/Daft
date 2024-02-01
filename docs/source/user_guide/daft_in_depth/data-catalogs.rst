@@ -29,15 +29,3 @@ This is accomplished by techniques such as:
 1. **Partition pruning:** ignore files where their partition values don't match filter predicates
 2. **Schema retrieval:** convert the schema provided by the data catalog into a Daft schema instead of sampling a schema from the data
 3. **Metadata execution**: utilize metadata such as row counts to read the bare minimum amount of data necessary from storage
-
-Data Catalog Integrations
--------------------------
-
-Apache Iceberg
-^^^^^^^^^^^^^^
-
-Apache Iceberg is an open-sourced table format originally developed at Netflix for large-scale analytical datasets.
-
-To read from the Apache Iceberg table format, use the :func:`daft.read_iceberg` function.
-
-We integrate closely with `PyIceberg <https://py.iceberg.apache.org/>`_ (the official Python implementation for Apache Iceberg) and allow the reading of Daft dataframes from PyIceberg's Table objects.
