@@ -797,6 +797,36 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        pytest.param(['{"foo": {}}', '{"foo": {}}'], {"foo": [{"": None}, {"": None}]}, id="AllEmptyObjects"),
+        pytest.param(
+            ['{"foo": {"bar":"baz"}}', '{"foo": {}}'],
+            {"foo": [{"": None, "bar": "baz"}, {"": None, "bar": None}]},
+            id="FirstObjectNonEmpty",
+        ),
+        pytest.param(
+            ['{"foo": {}}', '{"foo": {"bar":"baz"}}'],
+            {"foo": [{"": None, "bar": None}, {"": None, "bar": "baz"}]},
+            id="FirstObjectEmpty",
+        ),
+    ],
+)
+def test_create_dataframe_json_schema_hints_empty_objects(input, expected) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in input:
+                f.write(data)
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(fname)
+        pydict = df.to_pydict()
+
+        assert pydict == expected
+
+
 ###
 # Parquet tests
 ###

@@ -59,7 +59,13 @@ fn infer_object(inner: &IndexMap<String, Value>) -> Result<DataType> {
             Ok(Field::new(key, dt, true))
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(DataType::Struct(fields))
+    if fields.is_empty() {
+        // Converts empty Structs to structs with a single field named "" and with a NullType
+        // This is because Arrow2 MutableStructArray cannot handle empty Structs
+        Ok(DataType::Struct(vec![Field::new("", DataType::Null, true)]))
+    } else {
+        Ok(DataType::Struct(fields))
+    }
 }
 
 fn infer_array(values: &[Value]) -> Result<DataType> {
