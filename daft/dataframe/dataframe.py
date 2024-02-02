@@ -1560,7 +1560,7 @@ class GroupedDataFrame:
         return self.df._agg(to_agg, group_by=self.group_by)
 
     def map_groups(self, udf: Expression) -> "DataFrame":
-        """Apply a user-defined function to each group.
+        """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
 
         Example:
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})

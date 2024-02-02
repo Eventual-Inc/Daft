@@ -465,8 +465,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                         func: func.clone(),
                                         inputs: inputs.to_vec(),
                                     });
-                                let final_id = inputs.first().unwrap().semantic_id(&schema).id;
-                                final_exprs.push(Column(final_id.clone()).alias(output_name));
+                                final_exprs.push(Column(output_name.into()));
                             }
                         }
                     }

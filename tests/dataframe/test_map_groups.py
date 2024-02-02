@@ -114,3 +114,28 @@ def test_map_groups_double_group_by(make_df, repartition_nparts):
     daft_cols = daft_df.to_pydict()
     for i in range(4):
         assert (daft_cols["group_1"][i], daft_cols["group_2"][i], daft_cols["a"][i]) in rows
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+def test_map_groups_compound_input(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 2, 2],
+            "a": [1, 2, 3, 4],
+            "b": [5, 6, 7, 8],
+        },
+        repartition=repartition_nparts,
+    )
+
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def udf(data):
+        data = data.to_pylist()
+        if len(data) == 0:
+            return []
+        return [sum(x**2 for x in data)]
+
+    daft_df = daft_df.groupby("group").map_groups(udf(daft_df["a"].alias("c") * daft_df["b"])).sort("group", desc=True)
+    expected = {"group": [2, 1], "c": [1465, 169]}
+
+    daft_cols = daft_df.to_pydict()
+    assert daft_cols == expected
