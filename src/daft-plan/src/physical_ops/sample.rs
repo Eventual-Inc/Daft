@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub input: Arc<PhysicalPlan>,
     pub fraction: f64,
@@ -24,5 +24,13 @@ impl Sample {
             with_replacement,
             seed,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Sample: {}", self.fraction));
+        res.push(format!("With replacement = {}", self.with_replacement));
+        res.push(format!("Seed = {:?}", self.seed));
+        res
     }
 }

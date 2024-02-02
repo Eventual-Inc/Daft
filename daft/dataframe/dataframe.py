@@ -116,12 +116,13 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_optimized: bool = False, simple=False) -> None:
+    def explain(self, show_optimized: bool = False, include_physical: bool = False, simple: bool = False) -> None:
         """Prints the logical plan that will be executed to produce this DataFrame.
         Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
 
         Args:
             show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
+            include_physical (bool): Whether to also show the physical (lower-level) plan.
             simple (bool): Whether to only show the type of logical op for each node in the logical plan,
                 rather than showing details of how each logical op is configured.
         """
@@ -135,7 +136,13 @@ class DataFrame:
         builder = self.__builder
         if show_optimized:
             builder = builder.optimize()
+        if include_physical:
+            print("Logical plan:\n")
         print(builder.pretty_print(simple))
+        if include_physical:
+            print("\nPhysical plan:\n")
+            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+            print(physical_plan_scheduler.pretty_print(simple))
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config

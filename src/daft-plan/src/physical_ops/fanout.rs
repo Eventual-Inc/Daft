@@ -5,7 +5,7 @@ use daft_dsl::Expr;
 use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutRandom {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -19,9 +19,13 @@ impl FanoutRandom {
             num_partitions,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![format!("FanoutRandom: {}", self.num_partitions)]
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutByHash {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -41,9 +45,23 @@ impl FanoutByHash {
             partition_by,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("FanoutByHash: {}", self.num_partitions));
+        res.push(format!(
+            "Partition by = {}",
+            self.partition_by
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        res
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutByRange {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -59,5 +77,19 @@ impl FanoutByRange {
             num_partitions,
             sort_by,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("FanoutByRange: {}", self.num_partitions));
+        res.push(format!(
+            "Sort by = {}",
+            self.sort_by
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        res
     }
 }

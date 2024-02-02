@@ -36,6 +36,7 @@ impl OptimizerRule for DropRepartition {
                 //
                 // Repartition1-Repartition2 -> Repartition1
                 plan.with_new_children(&[child_plan.children()[0].clone()])
+                    .into()
             }
             _ => return Ok(Transformed::No(plan)),
         };

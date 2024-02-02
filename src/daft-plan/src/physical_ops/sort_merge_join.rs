@@ -5,7 +5,7 @@ use daft_dsl::Expr;
 use crate::{physical_plan::PhysicalPlan, JoinType};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SortMergeJoin {
     // Upstream node.
     pub left: Arc<PhysicalPlan>,
@@ -40,5 +40,45 @@ impl SortMergeJoin {
             left_is_larger,
             needs_presort,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("SortMergeJoin: Type = {}", self.join_type));
+        if !self.left_on.is_empty() && !self.right_on.is_empty() && self.left_on == self.right_on {
+            res.push(format!(
+                "On = {}",
+                self.left_on
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        } else {
+            if !self.left_on.is_empty() {
+                res.push(format!(
+                    "Left on = {}",
+                    self.left_on
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if !self.right_on.is_empty() {
+                res.push(format!(
+                    "Right on = {}",
+                    self.right_on
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
+        res.push(format!("Num partitions = {}", self.num_partitions));
+        res.push(format!("Left is larger = {}", self.left_is_larger));
+        res.push(format!("Needs presort = {}", self.needs_presort));
+        res
     }
 }

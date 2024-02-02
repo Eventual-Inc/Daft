@@ -51,4 +51,18 @@ impl Explode {
             exploded_schema,
         })
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Explode: {}",
+            self.to_explode
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        res.push(format!("Schema = {}", self.exploded_schema.short_string()));
+        res
+    }
 }

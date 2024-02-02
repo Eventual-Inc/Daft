@@ -142,8 +142,8 @@ impl LogicalPlan {
         }
     }
 
-    pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> Arc<LogicalPlan> {
-        let new_plan = match children {
+    pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> LogicalPlan {
+        match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Project(Project { projection, resource_request, .. }) => Self::Project(Project::try_new(
@@ -166,8 +166,7 @@ impl LogicalPlan {
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!("Logical ops should never have more than 2 inputs, but got: {}", children.len())
-        };
-        new_plan.into()
+        }
     }
 
     /// Get the number of nodes in the logical plan tree.
@@ -210,16 +209,7 @@ impl LogicalPlan {
             Self::Project(projection) => projection.multiline_display(),
             Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
             Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
-            Self::Explode(Explode { to_explode, .. }) => {
-                vec![format!(
-                    "Explode: {}",
-                    to_explode
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )]
-            }
+            Self::Explode(explode) => explode.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
             Self::Distinct(_) => vec!["Distinct".to_string()],

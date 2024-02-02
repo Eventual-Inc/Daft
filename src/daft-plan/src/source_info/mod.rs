@@ -136,4 +136,23 @@ impl LegacyExternalInfo {
             pushdowns,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "File paths = [{}]",
+            self.file_infos.file_paths.join(", ")
+        ));
+        res.push(format!(
+            "File schema = {}",
+            self.source_schema.short_string()
+        ));
+        res.push(format!(
+            "Format-specific config = {:?}",
+            self.file_format_config
+        ));
+        res.push(format!("Storage config = {:?}", self.storage_config));
+        res.extend(self.pushdowns.multiline_display());
+        res
+    }
 }

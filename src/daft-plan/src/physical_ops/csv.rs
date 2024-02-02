@@ -9,7 +9,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct TabularScanCsv {
     pub projection_schema: SchemaRef,
     pub external_info: LegacyExternalInfo,
@@ -31,9 +31,24 @@ impl TabularScanCsv {
             pushdowns,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("TabularScanCsv:".to_string());
+        res.push(format!(
+            "Projection schema = {}",
+            self.projection_schema.short_string()
+        ));
+        res.extend(self.external_info.multiline_display());
+        res.push(format!(
+            "Partition spec = {{ {} }}",
+            self.partition_spec.multiline_display().join(", ")
+        ));
+        res
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularWriteCsv {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,
@@ -52,5 +67,13 @@ impl TabularWriteCsv {
             file_info,
             input,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("TabularWriteCsv:".to_string());
+        res.push(format!("Schema = {}", self.schema.short_string()));
+        res.extend(self.file_info.multiline_display());
+        res
     }
 }

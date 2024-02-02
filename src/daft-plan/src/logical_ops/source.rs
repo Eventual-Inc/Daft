@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_core::schema::SchemaRef;
 use daft_scan::ScanExternalInfo;
 
-use crate::source_info::{ExternalInfo, LegacyExternalInfo, SourceInfo};
+use crate::source_info::{ExternalInfo, SourceInfo};
 
 #[cfg(feature = "python")]
 use crate::source_info::InMemoryInfo;
@@ -30,22 +30,12 @@ impl Source {
         let mut res = vec![];
 
         match self.source_info.as_ref() {
-            SourceInfo::ExternalInfo(ExternalInfo::Legacy(LegacyExternalInfo {
-                source_schema,
-                file_infos,
-                file_format_config,
-                storage_config,
-                pushdowns,
-            })) => {
-                res.push(format!("Source: {}", file_format_config.var_name()));
+            SourceInfo::ExternalInfo(ExternalInfo::Legacy(legacy_external_info)) => {
                 res.push(format!(
-                    "File paths = [{}]",
-                    file_infos.file_paths.join(", ")
+                    "Source: {}",
+                    legacy_external_info.file_format_config.var_name()
                 ));
-                res.push(format!("File schema = {}", source_schema.short_string()));
-                res.push(format!("Format-specific config = {:?}", file_format_config));
-                res.push(format!("Storage config = {:?}", storage_config));
-                res.extend(pushdowns.multiline_display());
+                res.extend(legacy_external_info.multiline_display());
             }
             SourceInfo::ExternalInfo(ExternalInfo::Scan(ScanExternalInfo {
                 source_schema,

@@ -165,7 +165,7 @@ impl PushDownProjection {
                                 ))),
                             )
                             .into();
-                            let new_plan = plan.with_new_children(&[new_source.into()]);
+                            let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
                             // Retry optimization now that the upstream node is different.
                             let new_plan = self
                                 .try_optimize(new_plan.clone())?
@@ -200,7 +200,7 @@ impl PushDownProjection {
                     )?
                     .into();
 
-                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -231,7 +231,7 @@ impl PushDownProjection {
                     )?
                     .into();
 
-                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -278,7 +278,7 @@ impl PushDownProjection {
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
-                let new_plan = plan.with_new_children(&[new_upstream]);
+                let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                 // Retry optimization now that the upstream node is different.
                 let new_plan = self
                     .try_optimize(new_plan.clone())?
@@ -327,7 +327,7 @@ impl PushDownProjection {
                     new_left_subprojection.into(),
                     new_right_subprojection.into(),
                 ]);
-                let new_plan = plan.with_new_children(&[new_upstream]);
+                let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                 // Retry optimization now that the upstream node is different.
                 let new_plan = self
                     .try_optimize(new_plan.clone())?
@@ -424,7 +424,7 @@ impl PushDownProjection {
                     let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
                     let new_join =
                         upstream_plan.with_new_children(&[new_left_upstream, new_right_upstream]);
-                    let new_plan = plan.with_new_children(&[new_join]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_join.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -472,7 +472,7 @@ impl PushDownProjection {
             };
 
             let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
-            Ok(Transformed::Yes(new_aggregation))
+            Ok(Transformed::Yes(new_aggregation.into()))
         } else {
             Ok(Transformed::No(plan))
         }

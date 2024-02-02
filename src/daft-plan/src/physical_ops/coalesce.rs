@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Coalesce {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -20,5 +20,12 @@ impl Coalesce {
             num_from,
             num_to,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Coalesce: Num from = {}", self.num_from));
+        res.push(format!("Num to = {}", self.num_to));
+        res
     }
 }

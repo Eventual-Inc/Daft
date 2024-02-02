@@ -301,7 +301,9 @@ impl Optimizer {
             .collect::<Vec<_>>();
 
         // Return new plan with optimized children.
-        Ok(Transformed::Yes(plan.with_new_children(&new_children)))
+        Ok(Transformed::Yes(
+            plan.with_new_children(&new_children).into(),
+        ))
     }
 }
 

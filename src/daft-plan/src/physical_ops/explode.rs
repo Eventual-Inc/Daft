@@ -6,7 +6,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use crate::{physical_plan::PhysicalPlan, PartitionScheme, PartitionSpec};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Explode {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -58,6 +58,23 @@ impl Explode {
                 input_pspec
             }
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Explode: {}",
+            self.to_explode
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        res.push(format!(
+            "Partition spec = {{ {} }}",
+            self.partition_spec.multiline_display().join(", ")
+        ));
+        res
     }
 }
 

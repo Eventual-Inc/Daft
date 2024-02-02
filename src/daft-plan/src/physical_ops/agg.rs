@@ -5,7 +5,7 @@ use daft_dsl::{AggExpr, Expr};
 use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Aggregate {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -28,5 +28,28 @@ impl Aggregate {
             aggregations,
             groupby,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Aggregation: {}",
+            self.aggregations
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        if !self.groupby.is_empty() {
+            res.push(format!(
+                "Group by = {}",
+                self.groupby
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        res
     }
 }

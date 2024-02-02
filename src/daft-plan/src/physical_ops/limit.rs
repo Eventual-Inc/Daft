@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::physical_plan::PhysicalPlan;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Limit {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -25,5 +25,13 @@ impl Limit {
             eager,
             num_partitions,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Limit: {}", self.limit));
+        res.push(format!("Eager = {}", self.eager));
+        res.push(format!("Num partitions = {}", self.num_partitions));
+        res
     }
 }

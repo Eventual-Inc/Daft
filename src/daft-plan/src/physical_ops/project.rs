@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use crate::{physical_plan::PhysicalPlan, PartitionScheme, PartitionSpec, ResourceRequest};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     // Upstream node.
     pub input: Arc<PhysicalPlan>,
@@ -199,6 +199,30 @@ impl Project {
             // Cannot have agg exprs in partition specs.
             Expr::Agg(_) => Err(()),
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Project: {}",
+            self.projection
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        res.push(format!(
+            "Partition spec = {{ {} }}",
+            self.partition_spec.multiline_display().join(", ")
+        ));
+        let resource_request = self.resource_request.multiline_display();
+        if !resource_request.is_empty() {
+            res.push(format!(
+                "Resource request = {{ {} }}",
+                resource_request.join(", ")
+            ));
+        }
+        res
     }
 }
 

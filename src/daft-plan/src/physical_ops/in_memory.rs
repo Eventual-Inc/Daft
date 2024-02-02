@@ -3,7 +3,7 @@ use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub schema: SchemaRef,
     pub in_memory_info: InMemoryInfo,
@@ -21,5 +21,17 @@ impl InMemoryScan {
             in_memory_info,
             partition_spec,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("InMemoryScan:".to_string());
+        res.push(format!("Schema = {}", self.schema.short_string()));
+        res.push(format!("Size bytes = {}", self.in_memory_info.size_bytes,));
+        res.push(format!(
+            "Partition spec = {{ {} }}",
+            self.partition_spec.multiline_display().join(", ")
+        ));
+        res
     }
 }

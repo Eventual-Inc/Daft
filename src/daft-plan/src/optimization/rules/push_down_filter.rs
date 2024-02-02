@@ -206,8 +206,10 @@ impl OptimizerRule for PushDownFilter {
             }
             LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) => {
                 // Naive commuting with unary ops.
-                let new_filter = plan.with_new_children(&[child_plan.children()[0].clone()]);
-                child_plan.with_new_children(&[new_filter])
+                let new_filter = plan
+                    .with_new_children(&[child_plan.children()[0].clone()])
+                    .into();
+                child_plan.with_new_children(&[new_filter]).into()
             }
             LogicalPlan::Concat(Concat { input, other }) => {
                 // Push filter into each side of the concat.
@@ -268,7 +270,7 @@ impl OptimizerRule for PushDownFilter {
                 } else {
                     child_join.right.clone()
                 };
-                child_plan.with_new_children(&[new_left, new_right])
+                child_plan.with_new_children(&[new_left, new_right]).into()
             }
             _ => return Ok(Transformed::No(plan)),
         };
