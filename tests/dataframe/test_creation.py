@@ -802,14 +802,19 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
     [
         pytest.param(['{"foo": {}}', '{"foo": {}}'], {"foo": [{"": None}, {"": None}]}, id="AllEmptyObjects"),
         pytest.param(
-            ['{"foo": {"bar":"baz"}}', '{"foo": {}}'],
-            {"foo": [{"": None, "bar": "baz"}, {"": None, "bar": None}]},
-            id="FirstObjectNonEmpty",
+            ['{"foo": {}}', '{"foo": {"bar":"baz"}}'],
+            {"foo": [{"bar": None}, {"bar": "baz"}]},
+            id="OneEmptyObject",
         ),
         pytest.param(
-            ['{"foo": {}}', '{"foo": {"bar":"baz"}}'],
-            {"foo": [{"": None, "bar": None}, {"": None, "bar": "baz"}]},
-            id="FirstObjectEmpty",
+            ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{}}}}'],
+            {"foo": [{"bar": {"baz": {"": None}}}, {"bar": {"baz": {"": None}}}]},
+            id="AllEmptyNestedObjects",
+        ),
+        pytest.param(
+            ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{"foo2":"bar2"}}}}'],
+            {"foo": [{"bar": {"baz": {"foo2": None}}}, {"bar": {"baz": {"foo2": "bar2"}}}]},
+            id="OneEmptyNestedObject",
         ),
     ],
 )
