@@ -474,7 +474,6 @@ class DataFrame:
         in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
         Example:
-
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
@@ -491,7 +490,6 @@ class DataFrame:
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             │ 68719476737 ┆ 4     │
             ╰─────────────┴───────╯
-
             (Showing first 4 of 4 rows)
 
         Args:
