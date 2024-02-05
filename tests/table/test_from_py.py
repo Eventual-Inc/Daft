@@ -43,8 +43,10 @@ PYTHON_INFERRED_TYPES = {
     "date": DataType.date(),
     "list": DataType.list(DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
-    "empty_struct": DataType.struct({}),
-    "nested_struct": DataType.struct({"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({})}),
+    "empty_struct": DataType.struct({"": DataType.null()}),
+    "nested_struct": DataType.struct(
+        {"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({"": DataType.null()})}
+    ),
     "null": DataType.null(),
     "tensor": DataType.tensor(DataType.int64()),
     # The following types are not natively supported and will be cast to Python object types.
@@ -92,13 +94,13 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
-    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({})),
+    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
     "nested_struct": pa.array(
         PYTHON_TYPE_ARRAYS["nested_struct"],
         pa.struct(
             {
                 "a": pa.struct([("b", pa.int64())]),
-                "c": pa.struct({}),
+                "c": pa.struct({"": pa.null()}),
             }
         ),
     ),
