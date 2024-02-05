@@ -195,6 +195,10 @@ impl LogicalPlanBuilder {
             .iter()
             .map(|expr| match expr {
                 Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+                Expr::Function { func, inputs } => Ok(daft_dsl::AggExpr::MapGroups {
+                    func: func.clone(),
+                    inputs: inputs.clone(),
+                }),
                 _ => Err(DaftError::ValueError(format!(
                     "Expected aggregation expression, but got: {expr}"
                 ))),

@@ -910,6 +910,10 @@ class DataFrame:
         builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
+    def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
+        builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
+        return DataFrame(builder)
+
     @DataframePublicAPI
     def sum(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global sum on the DataFrame
@@ -1568,3 +1572,35 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped aggregations
         """
         return self.df._agg(to_agg, group_by=self.group_by)
+
+    def map_groups(self, udf: Expression) -> "DataFrame":
+        """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
+
+        Example:
+            >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            ... def std_dev(data):
+            ...     return [statistics.stdev(data.to_pylist())]
+            >>>
+            >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
+            >>> df.show()
+            ╭───────┬────────────────────╮
+            │ group ┆ data               │
+            │ ---   ┆ ---                │
+            │ Utf8  ┆ Float64            │
+            ╞═══════╪════════════════════╡
+            │ a     ┆ 14.730919862656235 │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b     ┆ 331.62026476076517 │
+            ╰───────┴────────────────────╯
+
+            (Showing first 2 of 2 rows)
+
+        Args:
+            udf (Expression): User-defined function to apply to each group.
+
+        Returns:
+            DataFrame: DataFrame with grouped aggregations
+        """
+        return self.df._map_groups(udf, group_by=self.group_by)
