@@ -110,14 +110,14 @@ impl RangeCacheEntry {
                         .map_err(Arc::new);
                     let sliced = v
                         .as_ref()
-                        .map(|b| b.slice(range).clone())
+                        .map(|b| b.slice(range))
                         .map_err(|e| daft_io::Error::CachedError { source: e.clone() });
                     *_guard = RangeCacheState::Ready(v);
                     sliced
                 }
                 RangeCacheState::Ready(v) => v
                     .as_ref()
-                    .map(|b| b.slice(range).clone())
+                    .map(|b| b.slice(range))
                     .map_err(|e| daft_io::Error::CachedError { source: e.clone() }),
             }
         }
