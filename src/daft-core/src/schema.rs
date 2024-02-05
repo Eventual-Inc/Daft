@@ -9,7 +9,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{datatypes::Field, utils::display_table::make_comfy_table};
+use crate::{datatypes::Field, utils::display_table::make_comfy_table, DataType};
 
 use common_error::{DaftError, DaftResult};
 
@@ -142,6 +142,41 @@ impl Schema {
             .map(|(name, field)| format!("{} ({:?})", name, field.dtype))
             .collect::<Vec<String>>()
             .join(", ")
+    }
+
+    pub fn replace_empty_struct_placeholders(&self) -> Self {
+        fn recursively_replace_empty_struct_placeholders(field: &Field) -> Field {
+            if let DataType::Struct(fields) = &field.dtype {
+                if fields.len() == 1
+                    && fields[0].name.is_empty()
+                    && fields[0].dtype == DataType::Null
+                {
+                    Field::new(field.name.clone(), DataType::Struct(vec![]))
+                } else {
+                    Field::new(
+                        field.name.clone(),
+                        DataType::Struct(
+                            fields
+                                .iter()
+                                .map(recursively_replace_empty_struct_placeholders)
+                                .collect(),
+                        ),
+                    )
+                }
+            } else {
+                field.clone()
+            }
+        }
+
+        let mut new_fields = IndexMap::new();
+        for (name, field) in &self.fields {
+            new_fields.insert(
+                name.clone(),
+                recursively_replace_empty_struct_placeholders(field),
+            );
+        }
+
+        Schema { fields: new_fields }
     }
 }
 

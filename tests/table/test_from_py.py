@@ -27,6 +27,7 @@ PYTHON_TYPE_ARRAYS = {
     "list": [[1, 2], [3]],
     "struct": [{"a": 1, "b": 2.0}, {"b": 3.0}],
     "empty_struct": [{}, {}],
+    "nested_struct": [{"a": {"b": 1}, "c": {}}, {"a": {"b": 3}, "c": {}}],
     "null": [None, None],
     "tensor": [np.ones((2, 2), np.int64), np.ones((3, 3), np.int64)],
     # The following types are not natively supported and will be cast to Python object types.
@@ -42,7 +43,8 @@ PYTHON_INFERRED_TYPES = {
     "date": DataType.date(),
     "list": DataType.list(DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
-    "empty_struct": DataType.struct({"": DataType.null()}),
+    "empty_struct": DataType.struct({}),
+    "nested_struct": DataType.struct({"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({})}),
     "null": DataType.null(),
     "tensor": DataType.tensor(DataType.int64()),
     # The following types are not natively supported and will be cast to Python object types.
@@ -63,7 +65,8 @@ ROUNDTRIP_TYPES = {
     "date": pa.date32(),
     "list": pa.large_list(pa.int64()),
     "struct": pa.struct({"a": pa.int64(), "b": pa.float64()}),
-    "empty_struct": pa.struct({"": pa.null()}),
+    "empty_struct": pa.struct({}),
+    "nested_struct": pa.struct({"a": pa.struct({"b": pa.int64()}), "c": pa.struct({})}),
     "null": pa.null(),
     "tensor": PYTHON_INFERRED_TYPES["tensor"].to_arrow_dtype(),
     # The following types are not natively supported and will be cast to Python object types.
@@ -89,7 +92,16 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
-    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
+    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({})),
+    "nested_struct": pa.array(
+        PYTHON_TYPE_ARRAYS["nested_struct"],
+        pa.struct(
+            {
+                "a": pa.struct([("b", pa.int64())]),
+                "c": pa.struct({}),
+            }
+        ),
+    ),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
     "tensor": pa.ExtensionArray.from_storage(
         ROUNDTRIP_TYPES["tensor"],
@@ -129,7 +141,8 @@ ARROW_ROUNDTRIP_TYPES = {
     "list": pa.large_list(pa.int64()),
     "fixed_size_list": pa.list_(pa.int64(), 2),
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
-    "empty_struct": pa.struct({"": pa.null()}),
+    "empty_struct": pa.struct({}),
+    "nested_struct": pa.struct([("a", pa.struct([("b", pa.int64())])), ("c", pa.struct({}))]),
     "null": pa.null(),
     "tensor": PYTHON_INFERRED_TYPES["tensor"].to_arrow_dtype(),
     # The following types are not natively supported and will be cast to Python object types.
@@ -208,8 +221,10 @@ def test_from_pandas_roundtrip() -> None:
         assert field.dtype == PANDAS_INFERRED_TYPES[field.name]
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
-    df["empty_struct"][0][""] = None
-    df["empty_struct"][1][""] = None
+    df["empty_struct"][0] = {}
+    df["empty_struct"][1] = {}
+    df["nested_struct"][0]["c"] = {}
+    df["nested_struct"][1]["c"] = {}
     pd.testing.assert_frame_equal(table.to_pandas(), df)
 
 

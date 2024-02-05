@@ -54,12 +54,41 @@ class _FixEmptyStructArrays:
         return pa.chunked_array([_FixEmptyStructArrays.ensure_array(chunk) for chunk in arr.chunks])
 
     def ensure_array(arr: pa.Array) -> pa.Array:
-        if arr.type != _FixEmptyStructArrays.EMPTY_STRUCT_TYPE:
+        """Recursively converts empty struct arrays to single-field struct arrays"""
+        if arr.type == _FixEmptyStructArrays.EMPTY_STRUCT_TYPE:
+            return pa.array(
+                [_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid else None for valid in arr.is_valid()],
+                type=_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE,
+            )
+
+        elif isinstance(arr, pa.StructArray):
+            new_arrays = [ensure_array(arr.field(field.name)) for field in arr.type]
+            names = [field.name for field in arr.type]
+            null_mask = pa.array(arr.is_null(), type=pa.bool_())
+
+            return pa.StructArray.from_arrays(new_arrays, names=names, mask=null_mask)
+
+        else:
             return arr
+
+
+def remove_empty_struct_placeholders(array: pa.Array):
+    """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array"""
+    if array.type == _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE:
         return pa.array(
-            [_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid else None for valid in arr.is_valid()],
-            type=_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE,
+            [{} if valid else None for valid in array.is_valid()],
+            type=_FixEmptyStructArrays.EMPTY_STRUCT_TYPE,
         )
+
+    elif isinstance(array, pa.StructArray):
+        new_arrays = [remove_empty_struct_placeholders(array.field(field.name)) for field in array.type]
+        names = [field.name for field in array.type]
+        null_mask = pa.array(array.is_null(), type=pa.bool_())
+
+        return pa.StructArray.from_arrays(new_arrays, names=names, mask=null_mask)
+
+    else:
+        return array
 
 
 class _FixSliceOffsets:

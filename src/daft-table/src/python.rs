@@ -24,7 +24,7 @@ pub struct PyTable {
 impl PyTable {
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(PySchema {
-            schema: self.table.schema.clone(),
+            schema: self.table.schema.replace_empty_struct_placeholders().into(),
         })
     }
 

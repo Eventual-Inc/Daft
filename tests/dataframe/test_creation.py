@@ -800,7 +800,7 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
 @pytest.mark.parametrize(
     "input,expected",
     [
-        pytest.param(['{"foo": {}}', '{"foo": {}}'], {"foo": [{"": None}, {"": None}]}, id="AllEmptyObjects"),
+        pytest.param(['{"foo": {}}', '{"foo": {}}'], {"foo": [{}, {}]}, id="AllEmptyObjects"),
         pytest.param(
             ['{"foo": {}}', '{"foo": {"bar":"baz"}}'],
             {"foo": [{"bar": None}, {"bar": "baz"}]},
@@ -808,7 +808,7 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         ),
         pytest.param(
             ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{}}}}'],
-            {"foo": [{"bar": {"baz": {"": None}}}, {"bar": {"baz": {"": None}}}]},
+            {"foo": [{"bar": {"baz": {}}}, {"bar": {"baz": {}}}]},
             id="AllEmptyNestedObjects",
         ),
         pytest.param(
@@ -818,7 +818,7 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         ),
     ],
 )
-def test_create_dataframe_json_schema_hints_empty_objects(input, expected) -> None:
+def test_create_dataframe_json_empty_objects(input, expected) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in input:

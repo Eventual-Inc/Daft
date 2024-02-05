@@ -34,7 +34,7 @@ struct PyMicroPartition {
 impl PyMicroPartition {
     pub fn schema(&self) -> PyResult<PySchema> {
         Ok(PySchema {
-            schema: self.inner.schema.clone(),
+            schema: self.inner.schema.replace_empty_struct_placeholders().into(),
         })
     }
 
