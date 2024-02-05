@@ -64,7 +64,7 @@ class _FixEmptyStructArrays:
         elif isinstance(arr, pa.StructArray):
             new_arrays = [ensure_array(arr.field(field.name)) for field in arr.type]
             names = [field.name for field in arr.type]
-            null_mask = pa.array(arr.is_null(), type=pa.bool_())
+            null_mask = arr.is_null()
 
             return pa.StructArray.from_arrays(new_arrays, names=names, mask=null_mask)
 
@@ -72,23 +72,23 @@ class _FixEmptyStructArrays:
             return arr
 
 
-def remove_empty_struct_placeholders(array: pa.Array):
+def remove_empty_struct_placeholders(arr: pa.Array):
     """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array"""
-    if array.type == _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE:
+    if arr.type == _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE:
         return pa.array(
-            [{} if valid else None for valid in array.is_valid()],
+            [{} if valid else None for valid in arr.is_valid()],
             type=_FixEmptyStructArrays.EMPTY_STRUCT_TYPE,
         )
 
-    elif isinstance(array, pa.StructArray):
-        new_arrays = [remove_empty_struct_placeholders(array.field(field.name)) for field in array.type]
-        names = [field.name for field in array.type]
-        null_mask = pa.array(array.is_null(), type=pa.bool_())
+    elif isinstance(arr, pa.StructArray):
+        new_arrays = [remove_empty_struct_placeholders(arr.field(field.name)) for field in arr.type]
+        names = [field.name for field in arr.type]
+        null_mask = arr.is_null()
 
         return pa.StructArray.from_arrays(new_arrays, names=names, mask=null_mask)
 
     else:
-        return array
+        return arr
 
 
 class _FixSliceOffsets:
