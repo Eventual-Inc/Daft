@@ -107,6 +107,7 @@ impl RangeCacheEntry {
                         .await
                         .map_err(|e| daft_io::Error::JoinError { source: e })
                         .flatten()
+                        .inspect_err(|e| log::warn!("Range fetch error: {}", e))
                         .map_err(Arc::new);
                     let sliced = v
                         .as_ref()
