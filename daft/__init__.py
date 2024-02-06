@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import os
 
+# Setup logger if a DAFT_LOGLEVEL environment variable is set.
+if "DAFT_LOGLEVEL" in os.environ:
+    from daft.logging import setup_logger
+
+    setup_logger(os.environ["DAFT_LOGLEVEL"])
+
 ###
 # Set up code coverage for when running code coverage with ray
 ###

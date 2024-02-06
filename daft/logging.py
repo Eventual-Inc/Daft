@@ -7,7 +7,15 @@ def setup_debug_logger(
     exclude_prefix: list[str] = [],
     daft_only: bool = True,
 ):
-    logging.basicConfig(level="DEBUG")
+    setup_logger("DEBUG", exclude_prefix, daft_only)
+
+
+def setup_logger(
+    log_level: str,
+    exclude_prefix: list[str] = [],
+    daft_only: bool = True,
+):
+    logging.basicConfig(level=log_level)
     root_logger = logging.getLogger()
 
     if daft_only:
