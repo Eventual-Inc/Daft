@@ -57,7 +57,10 @@ class _FixEmptyStructArrays:
         """Recursively converts empty struct arrays to single-field struct arrays"""
         if arr.type == _FixEmptyStructArrays.EMPTY_STRUCT_TYPE:
             return pa.array(
-                [_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid else None for valid in arr.is_valid()],
+                [
+                    _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid.as_py() else None
+                    for valid in arr.is_valid()
+                ],
                 type=_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE,
             )
 
@@ -76,7 +79,7 @@ def remove_empty_struct_placeholders(arr: pa.Array):
     """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array"""
     if arr.type == _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE:
         return pa.array(
-            [{} if valid else None for valid in arr.is_valid()],
+            [{} if valid.as_py() else None for valid in arr.is_valid()],
             type=_FixEmptyStructArrays.EMPTY_STRUCT_TYPE,
         )
 

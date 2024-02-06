@@ -807,6 +807,11 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
             id="OneEmptyObject",
         ),
         pytest.param(
+            ['{"foo": {}}', '{"foo":null}'],
+            {"foo": [{}, None]},
+            id="EmptyObjectAndNulls",
+        ),
+        pytest.param(
             ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{}}}}'],
             {"foo": [{"bar": {"baz": {}}}, {"bar": {"baz": {}}}]},
             id="AllEmptyNestedObjects",
