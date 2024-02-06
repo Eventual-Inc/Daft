@@ -187,7 +187,7 @@ fn materialize_scan_task(
                         column_names
                             .as_ref()
                             .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
-                        None,
+                        Some(scan_task.schema.clone()),
                         scan_task.pushdowns.filters.clone(),
                     );
                     let parse_options = JsonParseOptions::new_internal();
