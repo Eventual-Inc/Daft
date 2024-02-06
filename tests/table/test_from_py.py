@@ -94,13 +94,13 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),
-    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct({"": pa.null()})),
+    "empty_struct": pa.array(PYTHON_TYPE_ARRAYS["empty_struct"], pa.struct([])),
     "nested_struct": pa.array(
         PYTHON_TYPE_ARRAYS["nested_struct"],
         pa.struct(
             {
                 "a": pa.struct([("b", pa.int64())]),
-                "c": pa.struct({"": pa.null()}),
+                "c": pa.struct([]),
             }
         ),
     ),
@@ -143,8 +143,8 @@ ARROW_ROUNDTRIP_TYPES = {
     "list": pa.large_list(pa.int64()),
     "fixed_size_list": pa.list_(pa.int64(), 2),
     "struct": pa.struct([("a", pa.int64()), ("b", pa.float64())]),
-    "empty_struct": pa.struct({}),
-    "nested_struct": pa.struct([("a", pa.struct([("b", pa.int64())])), ("c", pa.struct({}))]),
+    "empty_struct": pa.struct([]),
+    "nested_struct": pa.struct([("a", pa.struct([("b", pa.int64())])), ("c", pa.struct([]))]),
     "null": pa.null(),
     "tensor": PYTHON_INFERRED_TYPES["tensor"].to_arrow_dtype(),
     # The following types are not natively supported and will be cast to Python object types.
@@ -197,7 +197,11 @@ def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+        assert field.dtype == (
+            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+            if (field.name != "empty_struct" and field.name != "nested_struct")
+            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
+        )
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
@@ -209,7 +213,11 @@ def test_from_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+        assert field.dtype == (
+            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
+            if (field.name != "empty_struct" and field.name != "nested_struct")
+            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
+        )
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
