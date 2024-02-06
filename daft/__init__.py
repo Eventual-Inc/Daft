@@ -6,7 +6,9 @@ import os
 if "DAFT_LOGLEVEL" in os.environ:
     from daft.logging import _setup_logger
 
-    _setup_logger(os.environ["DAFT_LOGLEVEL"])
+    _setup_logger(
+        os.environ["DAFT_LOGLEVEL"], exclude_prefix=[], daft_only=os.environ.get("DAFT_LOGS_ONLY", "0") == "1"
+    )
 
 ###
 # Set up code coverage for when running code coverage with ray
