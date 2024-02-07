@@ -6,6 +6,14 @@ pub struct PartitionSpec {
     pub keys: Table,
 }
 
+impl PartitionSpec {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Keys = {}", self.keys));
+        res
+    }
+}
+
 impl PartialEq for PartitionSpec {
     fn eq(&self, other: &Self) -> bool {
         // If the names of fields or types of fields don't match, return False

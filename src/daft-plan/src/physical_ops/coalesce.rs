@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Coalesce {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
 
     // Number of partitions to coalesce from and to.
     pub num_from: usize,
@@ -14,7 +12,7 @@ pub struct Coalesce {
 }
 
 impl Coalesce {
-    pub(crate) fn new(input: Arc<PhysicalPlan>, num_from: usize, num_to: usize) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef, num_from: usize, num_to: usize) -> Self {
         Self {
             input,
             num_from,

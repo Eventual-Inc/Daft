@@ -1,17 +1,15 @@
-use std::sync::Arc;
-
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Concat {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
-    pub other: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
+    pub other: PhysicalPlanRef,
 }
 
 impl Concat {
-    pub(crate) fn new(input: Arc<PhysicalPlan>, other: Arc<PhysicalPlan>) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef, other: PhysicalPlanRef) -> Self {
         Self { input, other }
     }
 

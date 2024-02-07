@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use daft_dsl::Expr;
 
 use daft_core::impl_bincode_py_state_serialization;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -62,10 +63,7 @@ impl PartitionSpec {
         if let Some(ref by) = self.by {
             res.push(format!(
                 "By = {}",
-                by.iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                by.iter().map(|e| e.to_string()).join(", ")
             ));
         }
         res

@@ -3,14 +3,15 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::Expr;
 use indexmap::IndexMap;
+use itertools::Itertools;
 
-use crate::{physical_plan::PhysicalPlan, PartitionScheme, PartitionSpec, ResourceRequest};
+use crate::{physical_plan::PhysicalPlanRef, PartitionScheme, PartitionSpec, ResourceRequest};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub projection: Vec<Expr>,
     pub resource_request: ResourceRequest,
     pub partition_spec: Arc<PartitionSpec>,
@@ -18,7 +19,7 @@ pub struct Project {
 
 impl Project {
     pub(crate) fn try_new(
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
         partition_spec: Arc<PartitionSpec>,
@@ -205,11 +206,7 @@ impl Project {
         let mut res = vec![];
         res.push(format!(
             "Project: {}",
-            self.projection
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            self.projection.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
             "Partition spec = {{ {} }}",

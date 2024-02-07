@@ -14,6 +14,7 @@ use daft_core::{
 use daft_dsl::ExprRef;
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use file_format::FileFormatConfig;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
@@ -102,6 +103,18 @@ pub enum ChunkSpec {
     Parquet(Vec<i64>),
 }
 
+impl ChunkSpec {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        match self {
+            Self::Parquet(chunks) => {
+                res.push(format!("Chunks = {:?}", chunks));
+            }
+        }
+        res
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataFileSource {
     AnonymousDataFile {
@@ -162,6 +175,77 @@ impl DataFileSource {
             Self::AnonymousDataFile { partition_spec, .. } => partition_spec.as_ref(),
             Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        match self {
+            Self::AnonymousDataFile {
+                path,
+                chunk_spec,
+                size_bytes,
+                metadata,
+                partition_spec,
+                statistics,
+            } => {
+                res.push(format!("Path = {}", path));
+                if let Some(chunk_spec) = chunk_spec {
+                    res.push(format!(
+                        "Chunk spec = {{ {} }}",
+                        chunk_spec.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(size_bytes) = size_bytes {
+                    res.push(format!("Size bytes = {}", size_bytes));
+                }
+                if let Some(metadata) = metadata {
+                    res.push(format!(
+                        "Metadata = {}",
+                        metadata.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(partition_spec) = partition_spec {
+                    res.push(format!(
+                        "Partition spec = {}",
+                        partition_spec.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(statistics) = statistics {
+                    res.push(format!("Statistics = {}", statistics));
+                }
+            }
+            Self::CatalogDataFile {
+                path,
+                chunk_spec,
+                size_bytes,
+                metadata,
+                partition_spec,
+                statistics,
+            } => {
+                res.push(format!("Path = {}", path));
+                if let Some(chunk_spec) = chunk_spec {
+                    res.push(format!(
+                        "Chunk spec = {{ {} }}",
+                        chunk_spec.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(size_bytes) = size_bytes {
+                    res.push(format!("Size bytes = {}", size_bytes));
+                }
+                res.push(format!(
+                    "Metadata = {}",
+                    metadata.multiline_display().join(", ")
+                ));
+                res.push(format!(
+                    "Partition spec = {}",
+                    partition_spec.multiline_display().join(", ")
+                ));
+                if let Some(statistics) = statistics {
+                    res.push(format!("Statistics = {}", statistics));
+                }
+            }
+        }
+        res
     }
 }
 
@@ -317,6 +401,43 @@ impl ScanTask {
             None => None,
             Some(source) => source.get_partition_spec(),
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        // TODO(Clark): Use above methods to display some of the more derived fields.
+        res.push(format!(
+            "Sources = [ {} ]",
+            self.sources
+                .iter()
+                .map(|s| s.multiline_display().join(", "))
+                .join("; ")
+        ));
+        res.push(format!("Schema = {}", self.schema.short_string()));
+        res.push(format!(
+            "{} config= {}",
+            self.file_format_config.var_name(),
+            self.file_format_config.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "{} storage config= {}",
+            self.storage_config.var_name(),
+            self.storage_config.multiline_display().join(", ")
+        ));
+        res.extend(self.pushdowns.multiline_display());
+        if let Some(size_bytes) = self.size_bytes_on_disk {
+            res.push(format!("Size bytes on disk = {}", size_bytes));
+        }
+        if let Some(metadata) = &self.metadata {
+            res.push(format!(
+                "Metadata = {}",
+                metadata.multiline_display().join(", ")
+            ));
+        }
+        if let Some(statistics) = &self.statistics {
+            res.push(format!("Statistics = {}", statistics));
+        }
+        res
     }
 }
 

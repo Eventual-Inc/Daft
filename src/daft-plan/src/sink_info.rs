@@ -1,5 +1,6 @@
 use common_io_config::IOConfig;
 use daft_dsl::Expr;
+use itertools::Itertools;
 
 use crate::FileFormat;
 use serde::{Deserialize, Serialize};
@@ -40,11 +41,7 @@ impl OutputFileInfo {
         if let Some(ref partition_cols) = self.partition_cols {
             res.push(format!(
                 "Partition cols = {}",
-                partition_cols
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                partition_cols.iter().map(|e| e.to_string()).join(", ")
             ));
         }
         if let Some(ref compression) = self.compression {

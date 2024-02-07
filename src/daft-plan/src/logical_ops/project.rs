@@ -4,6 +4,7 @@ use daft_core::datatypes::FieldID;
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{optimization, AggExpr, Expr, ExprRef};
 use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::logical_plan::{CreationSnafu, Result};
@@ -49,11 +50,7 @@ impl Project {
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!(
             "Project: {}",
-            self.projection
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            self.projection.iter().map(|e| e.to_string()).join(", ")
         )]
     }
 

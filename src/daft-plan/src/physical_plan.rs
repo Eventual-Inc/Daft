@@ -28,6 +28,8 @@ use std::{cmp::max, sync::Arc};
 
 use crate::{display::TreeDisplay, physical_ops::*, PartitionScheme, PartitionSpec};
 
+pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
+
 /// Physical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PhysicalPlan {
@@ -257,7 +259,7 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&Arc<Self>> {
+    pub fn children(&self) -> Vec<&PhysicalPlanRef> {
         match self {
             #[cfg(feature = "python")]
             Self::InMemoryScan(..) => vec![],
@@ -294,7 +296,7 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn with_new_children(&self, children: &[Arc<PhysicalPlan>]) -> PhysicalPlan {
+    pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> PhysicalPlan {
         match children {
             [input] => match self {
                 #[cfg(feature = "python")]
@@ -350,7 +352,37 @@ impl PhysicalPlan {
     }
 
     pub fn name(&self) -> String {
-        format!("{:?}", self)
+        let name = match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(..) => "InMemoryScan",
+            Self::TabularScan(..) => "TabularScan",
+            Self::EmptyScan(..) => "EmptyScan",
+            Self::TabularScanParquet(..) => "TabularScanParquet",
+            Self::TabularScanCsv(..) => "TabularScanCsv",
+            Self::TabularScanJson(..) => "TabularScanJson",
+            Self::Project(..) => "Project",
+            Self::Filter(..) => "Filter",
+            Self::Limit(..) => "Limit",
+            Self::Explode(..) => "Explode",
+            Self::Sample(..) => "Sample",
+            Self::Sort(..) => "Sort",
+            Self::Split(..) => "Split",
+            Self::Coalesce(..) => "Coalesce",
+            Self::Flatten(..) => "Flatten",
+            Self::FanoutRandom(..) => "FanoutRandom",
+            Self::FanoutByHash(..) => "FanoutByHash",
+            Self::FanoutByRange(..) => "FanoutByRange",
+            Self::ReduceMerge(..) => "ReduceMerge",
+            Self::Aggregate(..) => "Aggregate",
+            Self::HashJoin(..) => "HashJoin",
+            Self::BroadcastJoin(..) => "BroadcastJoin",
+            Self::SortMergeJoin(..) => "SortMergeJoin",
+            Self::Concat(..) => "Concat",
+            Self::TabularWriteParquet(..) => "TabularWriteParquet",
+            Self::TabularWriteCsv(..) => "TabularWriteCsv",
+            Self::TabularWriteJson(..) => "TabularWriteJson",
+        };
+        name.to_string()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -407,7 +439,7 @@ impl PhysicalPlan {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalPlanScheduler {
-    plan: Arc<PhysicalPlan>,
+    plan: PhysicalPlanRef,
 }
 
 #[cfg(feature = "python")]
@@ -435,8 +467,8 @@ impl PhysicalPlanScheduler {
 
 impl_bincode_py_state_serialization!(PhysicalPlanScheduler);
 
-impl From<Arc<PhysicalPlan>> for PhysicalPlanScheduler {
-    fn from(plan: Arc<PhysicalPlan>) -> Self {
+impl From<PhysicalPlanRef> for PhysicalPlanScheduler {
+    fn from(plan: PhysicalPlanRef) -> Self {
         Self { plan }
     }
 }

@@ -4,7 +4,7 @@ use daft_core::schema::SchemaRef;
 use daft_scan::Pushdowns;
 
 use crate::{
-    physical_plan::PhysicalPlan, sink_info::OutputFileInfo, source_info::LegacyExternalInfo,
+    physical_plan::PhysicalPlanRef, sink_info::OutputFileInfo, source_info::LegacyExternalInfo,
     PartitionSpec,
 };
 use serde::{Deserialize, Serialize};
@@ -53,14 +53,14 @@ pub struct TabularWriteJson {
     pub schema: SchemaRef,
     pub file_info: OutputFileInfo,
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
 }
 
 impl TabularWriteJson {
     pub(crate) fn new(
         schema: SchemaRef,
         file_info: OutputFileInfo,
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
     ) -> Self {
         Self {
             schema,

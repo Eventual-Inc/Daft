@@ -1,16 +1,14 @@
-use std::sync::Arc;
-
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReduceMerge {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
 }
 
 impl ReduceMerge {
-    pub(crate) fn new(input: Arc<PhysicalPlan>) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef) -> Self {
         Self { input }
     }
 

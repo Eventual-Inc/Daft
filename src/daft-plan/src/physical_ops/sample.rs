@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub fraction: f64,
     pub with_replacement: bool,
     pub seed: Option<u64>,
@@ -13,7 +11,7 @@ pub struct Sample {
 
 impl Sample {
     pub(crate) fn new(
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
         fraction: f64,
         with_replacement: bool,
         seed: Option<u64>,

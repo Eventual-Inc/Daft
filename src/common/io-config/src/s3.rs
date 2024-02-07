@@ -22,6 +22,45 @@ pub struct S3Config {
     pub check_hostname_ssl: bool,
 }
 
+impl S3Config {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(region_name) = &self.region_name {
+            res.push(format!("Region name = {}", region_name));
+        }
+        if let Some(endpoint_url) = &self.endpoint_url {
+            res.push(format!("Endpoint URL = {}", endpoint_url));
+        }
+        if let Some(key_id) = &self.key_id {
+            res.push(format!("Key ID = {}", key_id));
+        }
+        if let Some(session_token) = &self.session_token {
+            res.push(format!("Session token = {}", session_token));
+        }
+        if let Some(access_key) = &self.access_key {
+            res.push(format!("Access key = {}", access_key));
+        }
+        res.push(format!(
+            "Max connections = {}",
+            self.max_connections_per_io_thread
+        ));
+        res.push(format!(
+            "Retry initial backoff ms = {}",
+            self.retry_initial_backoff_ms
+        ));
+        res.push(format!("Connect timeout ms = {}", self.connect_timeout_ms));
+        res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
+        res.push(format!("Max retries = {}", self.num_tries));
+        if let Some(retry_mode) = &self.retry_mode {
+            res.push(format!("Retry mode = {}", retry_mode));
+        }
+        res.push(format!("Anonymous = {}", self.anonymous));
+        res.push(format!("Verify SSL = {}", self.verify_ssl));
+        res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
+        res
+    }
+}
+
 impl Default for S3Config {
     fn default() -> Self {
         S3Config {

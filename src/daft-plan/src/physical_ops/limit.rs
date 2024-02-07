@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Limit {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub limit: i64,
     pub eager: bool,
     pub num_partitions: usize,
@@ -14,7 +12,7 @@ pub struct Limit {
 
 impl Limit {
     pub(crate) fn new(
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
         limit: i64,
         eager: bool,
         num_partitions: usize,

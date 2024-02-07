@@ -1,19 +1,18 @@
-use std::sync::Arc;
-
 use daft_dsl::Expr;
+use itertools::Itertools;
 
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutRandom {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub num_partitions: usize,
 }
 
 impl FanoutRandom {
-    pub(crate) fn new(input: Arc<PhysicalPlan>, num_partitions: usize) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef, num_partitions: usize) -> Self {
         Self {
             input,
             num_partitions,
@@ -28,14 +27,14 @@ impl FanoutRandom {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutByHash {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub num_partitions: usize,
     pub partition_by: Vec<Expr>,
 }
 
 impl FanoutByHash {
     pub(crate) fn new(
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
         num_partitions: usize,
         partition_by: Vec<Expr>,
     ) -> Self {
@@ -51,11 +50,7 @@ impl FanoutByHash {
         res.push(format!("FanoutByHash: {}", self.num_partitions));
         res.push(format!(
             "Partition by = {}",
-            self.partition_by
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            self.partition_by.iter().map(|e| e.to_string()).join(", ")
         ));
         res
     }
@@ -64,14 +59,14 @@ impl FanoutByHash {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FanoutByRange {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub num_partitions: usize,
     pub sort_by: Vec<Expr>,
 }
 
 impl FanoutByRange {
     #[allow(dead_code)]
-    pub(crate) fn new(input: Arc<PhysicalPlan>, num_partitions: usize, sort_by: Vec<Expr>) -> Self {
+    pub(crate) fn new(input: PhysicalPlanRef, num_partitions: usize, sort_by: Vec<Expr>) -> Self {
         Self {
             input,
             num_partitions,
@@ -84,11 +79,7 @@ impl FanoutByRange {
         res.push(format!("FanoutByRange: {}", self.num_partitions));
         res.push(format!(
             "Sort by = {}",
-            self.sort_by
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            self.sort_by.iter().map(|e| e.to_string()).join(", ")
         ));
         res
     }

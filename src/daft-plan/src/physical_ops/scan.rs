@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use daft_scan::ScanTask;
+use itertools::Itertools;
 
 use crate::PartitionSpec;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,13 @@ impl TabularScan {
         let mut res = vec![];
         res.push("TabularScan:".to_string());
         // TODO(Clark): Make scan task printing prettier.
-        res.push(format!("Scan tasks = {:?}", self.scan_tasks));
+        res.push(format!(
+            "Scan tasks = [ {} ]",
+            self.scan_tasks
+                .iter()
+                .map(|scan_task| format!("Task = {}", scan_task.multiline_display().join(", ")))
+                .join("; ")
+        ));
         res.push(format!(
             "Partition spec = {{ {} }}",
             self.partition_spec.multiline_display().join(", ")

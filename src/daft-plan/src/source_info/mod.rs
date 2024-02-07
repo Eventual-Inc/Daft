@@ -148,10 +148,14 @@ impl LegacyExternalInfo {
             self.source_schema.short_string()
         ));
         res.push(format!(
-            "Format-specific config = {:?}",
-            self.file_format_config
+            "{} config= {}",
+            self.file_format_config.var_name(),
+            self.file_format_config.multiline_display().join(", ")
         ));
-        res.push(format!("Storage config = {:?}", self.storage_config));
+        res.push(format!(
+            "Storage config = {}",
+            self.storage_config.multiline_display().join(", ")
+        ));
         res.extend(self.pushdowns.multiline_display());
         res
     }
