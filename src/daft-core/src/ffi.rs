@@ -48,6 +48,10 @@ pub fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
+    let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
+        .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
+        .call1((array,))?;
+
     Ok(array.to_object(py))
 }
 

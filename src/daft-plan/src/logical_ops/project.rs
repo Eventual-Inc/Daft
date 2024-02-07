@@ -381,6 +381,26 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Concat, |_| e.clone())
         }
+        AggExpr::MapGroups { func, inputs } => {
+            let transforms = inputs
+                .iter()
+                .map(|e| {
+                    replace_column_with_semantic_id(e.clone().into(), subexprs_to_replace, schema)
+                })
+                .collect::<Vec<_>>();
+            if transforms.iter().all(|e| e.is_no()) {
+                Transformed::No(AggExpr::MapGroups { func, inputs })
+            } else {
+                Transformed::Yes(AggExpr::MapGroups {
+                    func: func.clone(),
+                    inputs: transforms
+                        .iter()
+                        .map(|t| t.unwrap().as_ref())
+                        .cloned()
+                        .collect(),
+                })
+            }
+        }
     }
 }
 

@@ -7,7 +7,7 @@ use daft_core::{
 };
 
 use crate::{
-    functions::{struct_::StructExpr, FunctionEvaluator},
+    functions::{function_display, function_semantic_id, struct_::StructExpr, FunctionEvaluator},
     lit,
     optimization::{get_required_columns, requires_computation},
 };
@@ -60,6 +60,10 @@ pub enum AggExpr {
     Max(ExprRef),
     List(ExprRef),
     Concat(ExprRef),
+    MapGroups {
+        func: FunctionExpr,
+        inputs: Vec<Expr>,
+    },
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
@@ -85,6 +89,7 @@ impl AggExpr {
             | Max(expr)
             | List(expr)
             | Concat(expr) => expr.name(),
+            MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
 
@@ -119,10 +124,11 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
+            MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
         }
     }
 
-    pub fn child(&self) -> ExprRef {
+    pub fn children(&self) -> Vec<ExprRef> {
         use AggExpr::*;
         match self {
             Count(expr, ..)
@@ -131,7 +137,8 @@ impl AggExpr {
             | Min(expr)
             | Max(expr)
             | List(expr)
-            | Concat(expr) => expr.clone(),
+            | Concat(expr) => vec![expr.clone()],
+            MapGroups { func: _, inputs } => inputs.iter().map(|e| e.clone().into()).collect(),
         }
     }
 
@@ -205,6 +212,9 @@ impl AggExpr {
                         field.dtype, field.name
                     ))),
                 }
+            }
+            MapGroups { func, inputs } => {
+                func.to_field(inputs.as_slice(), schema, &Expr::Agg(self.clone()))
             }
         }
     }
@@ -357,15 +367,7 @@ impl Expr {
                 let items_id = items.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
-            Function { func, inputs } => {
-                let inputs = inputs
-                    .iter()
-                    .map(|expr| expr.semantic_id(schema).id.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                // TODO: check for function idempotency here.
-                FieldID::new(format!("Function_{func:?}({inputs})"))
-            }
+            Function { func, inputs } => function_semantic_id(func, inputs, schema),
             BinaryOp { op, left, right } => {
                 let left_id = left.semantic_id(schema);
                 let right_id = right.semantic_id(schema);
@@ -403,7 +405,7 @@ impl Expr {
             Not(expr) | IsNull(expr) | NotNull(expr) | Cast(expr, ..) | Alias(expr, ..) => {
                 vec![expr.clone()]
             }
-            Agg(agg_expr) => vec![agg_expr.child()],
+            Agg(agg_expr) => agg_expr.children(),
 
             // Multiple children.
             Function { inputs, .. } => inputs.iter().map(|e| e.clone().into()).collect(),
@@ -581,17 +583,7 @@ impl Display for Expr {
             NotNull(expr) => write!(f, "not_null({expr})"),
             IsIn(expr, items) => write!(f, "{expr} in {items}"),
             Literal(val) => write!(f, "lit({val})"),
-            Function { func, inputs } => {
-                write!(f, "{}(", func.fn_name())?;
-                for (i, input) in inputs.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{input}")?;
-                }
-                write!(f, ")")?;
-                Ok(())
-            }
+            Function { func, inputs } => function_display(f, func, inputs),
             IfElse {
                 if_true,
                 if_false,
@@ -614,6 +606,7 @@ impl Display for AggExpr {
             Max(expr) => write!(f, "max({expr})"),
             List(expr) => write!(f, "list({expr})"),
             Concat(expr) => write!(f, "list({expr})"),
+            MapGroups { func, inputs } => function_display(f, func, inputs),
         }
     }
 }
