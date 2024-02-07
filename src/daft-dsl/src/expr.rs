@@ -7,7 +7,7 @@ use daft_core::{
 };
 
 use crate::{
-    functions::{function_display, function_semantic_id, FunctionEvaluator},
+    functions::{function_display, function_semantic_id, struct_::StructExpr, FunctionEvaluator},
     lit,
     optimization::{get_required_columns, requires_computation},
 };
@@ -526,7 +526,10 @@ impl Expr {
             NotNull(expr) => expr.name(),
             IsIn(expr, ..) => expr.name(),
             Literal(..) => Ok("literal"),
-            Function { func: _, inputs } => inputs.first().unwrap().name(),
+            Function { func, inputs } => match func {
+                FunctionExpr::Struct(StructExpr::Get(name)) => Ok(name),
+                _ => inputs.first().unwrap().name(),
+            },
             BinaryOp {
                 op: _,
                 left,
