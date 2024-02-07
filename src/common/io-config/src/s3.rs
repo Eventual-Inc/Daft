@@ -32,8 +32,8 @@ impl Default for S3Config {
             access_key: None,
             max_connections_per_io_thread: 8,
             retry_initial_backoff_ms: 1000,
-            connect_timeout_ms: 10_000,
-            read_timeout_ms: 10_000,
+            connect_timeout_ms: 30_000,
+            read_timeout_ms: 30_000,
             // AWS EMR actually does 100 tries by default for AIMD retries
             // (See [Advanced AIMD retry settings]: https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-emrfs-retry.html)
             num_tries: 25,

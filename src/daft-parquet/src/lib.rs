@@ -1,5 +1,6 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
+#![feature(result_flattening)]
 use common_error::DaftError;
 use snafu::Snafu;
 

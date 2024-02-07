@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 use bytes::Bytes;
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef};
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
 type RangeList = Vec<Range<usize>>;
@@ -86,7 +86,8 @@ impl ReadPlanPass for SplitLargeRequestPass {
 
 enum RangeCacheState {
     InFlight(JoinHandle<std::result::Result<Bytes, daft_io::Error>>),
-    Ready(Bytes),
+    // Ready-state stores either the fetched bytes, or a shared error if the fetch failed.
+    Ready(std::result::Result<Bytes, Arc<daft_io::Error>>),
 }
 
 struct RangeCacheEntry {
@@ -99,16 +100,25 @@ impl RangeCacheEntry {
     async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
         {
             let mut _guard = self.state.lock().await;
-            match &mut (*_guard) {
+            match &mut *_guard {
                 RangeCacheState::InFlight(f) => {
                     // TODO(sammy): thread in url for join error
                     let v = f
                         .await
-                        .map_err(|e| daft_io::Error::JoinError { source: e })??;
-                    *_guard = RangeCacheState::Ready(v.clone());
-                    Ok(v.slice(range))
+                        .map_err(|e| daft_io::Error::JoinError { source: e })
+                        .flatten()
+                        .map_err(Arc::new);
+                    let sliced = v
+                        .as_ref()
+                        .map(|b| b.slice(range))
+                        .map_err(|e| daft_io::Error::CachedError { source: e.clone() });
+                    *_guard = RangeCacheState::Ready(v);
+                    sliced
                 }
-                RangeCacheState::Ready(v) => Ok(v.slice(range)),
+                RangeCacheState::Ready(v) => v
+                    .as_ref()
+                    .map(|b| b.slice(range))
+                    .map_err(|e| daft_io::Error::CachedError { source: e.clone() }),
             }
         }
     }
@@ -247,7 +257,8 @@ impl RangesContainer {
         assert_eq!(current_pos, range.end);
 
         let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
-            .then(|(e, r)| async move { e.get_or_wait(r).await });
+            .then(|(e, r)| async move { e.get_or_wait(r).await })
+            .inspect_err(|e| panic!("Reading a range of Parquet bytes failed: {}", e));
 
         let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
         let convert = async_compat::Compat::new(stream_reader);

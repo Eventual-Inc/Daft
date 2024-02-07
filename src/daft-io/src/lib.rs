@@ -99,6 +99,9 @@ pub enum Error {
 
     #[snafu(display("Error joining spawned task: {}", source), context(false))]
     JoinError { source: tokio::task::JoinError },
+
+    #[snafu(display("Cached error: {}", source))]
+    CachedError { source: Arc<Error> },
 }
 
 impl From<Error> for DaftError {
