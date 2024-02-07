@@ -414,16 +414,22 @@ impl ScanTask {
                 .join("; ")
         ));
         res.push(format!("Schema = {}", self.schema.short_string()));
-        res.push(format!(
-            "{} config= {}",
-            self.file_format_config.var_name(),
-            self.file_format_config.multiline_display().join(", ")
-        ));
-        res.push(format!(
-            "{} storage config= {}",
-            self.storage_config.var_name(),
-            self.storage_config.multiline_display().join(", ")
-        ));
+        let file_format = self.file_format_config.multiline_display();
+        if !file_format.is_empty() {
+            res.push(format!(
+                "{} config= {}",
+                self.file_format_config.var_name(),
+                file_format.join(", ")
+            ));
+        }
+        let storage_config = self.storage_config.multiline_display();
+        if !storage_config.is_empty() {
+            res.push(format!(
+                "{} storage config = {{ {} }}",
+                self.storage_config.var_name(),
+                storage_config.join(", ")
+            ));
+        }
         res.extend(self.pushdowns.multiline_display());
         if let Some(size_bytes) = self.size_bytes_on_disk {
             res.push(format!("Size bytes on disk = {}", size_bytes));
@@ -537,6 +543,8 @@ pub trait ScanOperator: Send + Sync + Display + Debug {
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
+
+    fn multiline_display(&self) -> Vec<String>;
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,

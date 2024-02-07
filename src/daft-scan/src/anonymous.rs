@@ -2,6 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
+use itertools::Itertools;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
@@ -54,6 +55,29 @@ impl ScanOperator for AnonymousScanOperator {
     }
     fn can_absorb_limit(&self) -> bool {
         false
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("AnonymousScanOperator".to_string());
+        res.push(format!("File paths = [{}]", self.files.iter().join(", ")));
+        let file_format = self.file_format_config.multiline_display();
+        if !file_format.is_empty() {
+            res.push(format!(
+                "{} config= {}",
+                self.file_format_config.var_name(),
+                file_format.join(", ")
+            ));
+        }
+        let storage_config = self.storage_config.multiline_display();
+        if !storage_config.is_empty() {
+            res.push(format!(
+                "{} storage config = {{ {} }}",
+                self.storage_config.var_name(),
+                storage_config.join(", ")
+            ));
+        }
+        res
     }
 
     fn to_scan_tasks(

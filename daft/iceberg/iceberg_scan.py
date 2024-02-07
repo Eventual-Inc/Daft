@@ -112,6 +112,15 @@ class IcebergScanOperator(ScanOperator):
         else:
             return None
 
+    def multiline_display(self) -> list[str]:
+        return [
+            self.display_name(),
+            f"Schema = {self._schema}",
+            f"Partitioning keys = {self.partitioning_keys}",
+            # TODO(Clark): Improve repr of storage config here.
+            f"Storage config = {self._storage_config}",
+        ]
+
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         limit = pushdowns.limit
         iceberg_tasks = self._table.scan(limit=limit).plan_files()
