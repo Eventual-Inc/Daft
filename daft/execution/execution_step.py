@@ -608,7 +608,11 @@ class MonotonicallyIncreasingId(SingleOutputInstruction):
         return [
             PartialPartitionMetadata(
                 num_rows=input_meta.num_rows,
-                size_bytes=None,
+                size_bytes=(
+                    (input_meta.size_bytes + input_meta.num_rows * 8)  # 8 bytes per uint64
+                    if input_meta.size_bytes is not None and input_meta.num_rows is not None
+                    else None
+                ),
             )
         ]
 
