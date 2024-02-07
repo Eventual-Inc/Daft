@@ -11,6 +11,20 @@ pub struct AzureConfig {
     pub anonymous: bool,
 }
 
+impl AzureConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(storage_account) = &self.storage_account {
+            res.push(format!("Storage account = {}", storage_account));
+        }
+        if let Some(access_key) = &self.access_key {
+            res.push(format!("Access key = {}", access_key));
+        }
+        res.push(format!("Anoynmous = {}", self.anonymous));
+        res
+    }
+}
+
 impl Display for AzureConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(

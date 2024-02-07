@@ -43,5 +43,9 @@ class ScanOperator(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
+    def multiline_display(self) -> list[str]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         raise NotImplementedError()

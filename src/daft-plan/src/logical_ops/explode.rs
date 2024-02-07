@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::Expr;
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{
@@ -50,5 +51,15 @@ impl Explode {
             to_explode,
             exploded_schema,
         })
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Explode: {}",
+            self.to_explode.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!("Schema = {}", self.exploded_schema.short_string()));
+        res
     }
 }

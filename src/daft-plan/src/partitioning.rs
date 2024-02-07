@@ -1,6 +1,9 @@
+use std::fmt::{Display, Formatter};
+
 use daft_dsl::Expr;
 
 use daft_core::impl_bincode_py_state_serialization;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -24,6 +27,13 @@ pub enum PartitionScheme {
 
 impl_bincode_py_state_serialization!(PartitionScheme);
 
+impl Display for PartitionScheme {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        // Leverage Debug trait implementation, which will already return the enum variant as a string.
+        write!(f, "{:?}", self)
+    }
+}
+
 /// Partition specification: scheme, number of partitions, partition column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
@@ -44,6 +54,19 @@ impl PartitionSpec {
             num_partitions,
             by,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Scheme = {}", self.scheme));
+        res.push(format!("Num partitions = {}", self.num_partitions));
+        if let Some(ref by) = self.by {
+            res.push(format!(
+                "By = {}",
+                by.iter().map(|e| e.to_string()).join(", ")
+            ));
+        }
+        res
     }
 }
 

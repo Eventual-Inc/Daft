@@ -10,6 +10,17 @@ pub struct GCSConfig {
     pub anonymous: bool,
 }
 
+impl GCSConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(project_id) = &self.project_id {
+            res.push(format!("Project ID = {}", project_id));
+        }
+        res.push(format!("Anoynmous = {}", self.anonymous));
+        res
+    }
+}
+
 impl Display for GCSConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(

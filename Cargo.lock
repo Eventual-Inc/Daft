@@ -1415,6 +1415,7 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
+ "itertools",
  "pyo3",
  "pyo3-log",
  "serde",

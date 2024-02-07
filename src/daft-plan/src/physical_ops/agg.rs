@@ -1,14 +1,13 @@
-use std::sync::Arc;
-
 use daft_dsl::{AggExpr, Expr};
+use itertools::Itertools;
 
-use crate::physical_plan::PhysicalPlan;
+use crate::physical_plan::PhysicalPlanRef;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Aggregate {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
 
     /// Aggregations to apply.
     pub aggregations: Vec<AggExpr>,
@@ -19,7 +18,7 @@ pub struct Aggregate {
 
 impl Aggregate {
     pub(crate) fn new(
-        input: Arc<PhysicalPlan>,
+        input: PhysicalPlanRef,
         aggregations: Vec<AggExpr>,
         groupby: Vec<Expr>,
     ) -> Self {
@@ -28,5 +27,20 @@ impl Aggregate {
             aggregations,
             groupby,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Aggregation: {}",
+            self.aggregations.iter().map(|e| e.to_string()).join(", ")
+        ));
+        if !self.groupby.is_empty() {
+            res.push(format!(
+                "Group by = {}",
+                self.groupby.iter().map(|e| e.to_string()).join(", ")
+            ));
+        }
+        res
     }
 }

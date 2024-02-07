@@ -116,14 +116,16 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_optimized: bool = False, simple=False) -> None:
-        """Prints the logical plan that will be executed to produce this DataFrame.
-        Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
+    def explain(self, show_all: bool = False, simple: bool = False) -> None:
+        """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
+        Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
+        the optimized logical plan, and the physical plan.
 
         Args:
-            show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
-            simple (bool): Whether to only show the type of logical op for each node in the logical plan,
-                rather than showing details of how each logical op is configured.
+            show_all (bool): Whether to show the optimized logical plan and the physical plan in addition to the
+                unoptimized logical plan.
+            simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
+                of how each op is configured.
         """
 
         if self._result_cache is not None:
@@ -133,9 +135,15 @@ class DataFrame:
             print("However here is the logical plan used to produce this result:\n")
 
         builder = self.__builder
-        if show_optimized:
-            builder = builder.optimize()
+        print("== Unoptimized Logical Plan ==\n")
         print(builder.pretty_print(simple))
+        if show_all:
+            print("\n== Optimized Logical Plan ==\n")
+            builder = builder.optimize()
+            print(builder.pretty_print(simple))
+            print("\n== Physical Plan ==\n")
+            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+            print(physical_plan_scheduler.pretty_print(simple))
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config

@@ -31,6 +31,24 @@ impl ResourceRequest {
         }
     }
 
+    pub fn has_any(&self) -> bool {
+        self.num_cpus.is_some() || self.num_gpus.is_some() || self.memory_bytes.is_some()
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut requests = vec![];
+        if let Some(num_cpus) = self.num_cpus {
+            requests.push(format!("num_cpus = {}", num_cpus));
+        }
+        if let Some(num_gpus) = self.num_gpus {
+            requests.push(format!("num_gpus = {}", num_gpus));
+        }
+        if let Some(memory_bytes) = self.memory_bytes {
+            requests.push(format!("memory_bytes = {}", memory_bytes));
+        }
+        requests
+    }
+
     pub fn max(resource_requests: &[&Self]) -> Self {
         resource_requests.iter().fold(Default::default(), |acc, e| {
             let max_num_cpus = lift(float_max, acc.num_cpus, e.num_cpus);

@@ -78,7 +78,7 @@ In this case, Daft is just deferring the work required to read the data and sele
 
     When you call methods on a Daft Dataframe, it defers the work by adding to an internal "plan". You can examine the current plan of a DataFrame by calling :meth:`df.explain() <daft.DataFrame.explain>`!
 
-    Passing the ``show_optimized=True`` argument will show you the plan after Daft applies its query optimizations.
+    Passing the ``show_optimized=True`` argument will show you the plan after Daft applies its query optimizations, and passing ``include_physical=True`` will also show you the physical (lower-level) plan.
 
 We can tell Daft to execute our DataFrame and cache the results using :meth:`df.collect() <daft.DataFrame.collect>`:
 

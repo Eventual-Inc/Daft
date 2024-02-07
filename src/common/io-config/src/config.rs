@@ -12,6 +12,25 @@ pub struct IOConfig {
     pub gcs: GCSConfig,
 }
 
+impl IOConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "S3 config = {{ {} }}",
+            self.s3.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "Azure config = {{ {} }}",
+            self.azure.multiline_display().join(", ")
+        ));
+        res.push(format!(
+            "GCS config = {{ {} }}",
+            self.gcs.multiline_display().join(", ")
+        ));
+        res
+    }
+}
+
 impl Display for IOConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(

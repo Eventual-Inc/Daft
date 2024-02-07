@@ -26,10 +26,12 @@ use daft_core::impl_bincode_py_state_serialization;
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
-use crate::{physical_ops::*, PartitionScheme, PartitionSpec};
+use crate::{display::TreeDisplay, physical_ops::*, PartitionScheme, PartitionSpec};
+
+pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 
 /// Physical plan for a Daft query.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     #[cfg(feature = "python")]
     InMemoryScan(InMemoryScan),
@@ -256,13 +258,188 @@ impl PhysicalPlan {
             }
         }
     }
+
+    pub fn children(&self) -> Vec<&PhysicalPlanRef> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(..) => vec![],
+            Self::TabularScan(..)
+            | Self::EmptyScan(..)
+            | Self::TabularScanParquet(..)
+            | Self::TabularScanCsv(..)
+            | Self::TabularScanJson(..) => vec![],
+            Self::Project(Project { input, .. }) => vec![input],
+            Self::Filter(Filter { input, .. }) => vec![input],
+            Self::Limit(Limit { input, .. }) => vec![input],
+            Self::Explode(Explode { input, .. }) => vec![input],
+            Self::Sample(Sample { input, .. }) => vec![input],
+            Self::Sort(Sort { input, .. }) => vec![input],
+            Self::Split(Split { input, .. }) => vec![input],
+            Self::Coalesce(Coalesce { input, .. }) => vec![input],
+            Self::Flatten(Flatten { input }) => vec![input],
+            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input],
+            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input],
+            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input],
+            Self::ReduceMerge(ReduceMerge { input }) => vec![input],
+            Self::Aggregate(Aggregate { input, .. }) => vec![input],
+            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
+            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
+            Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
+            Self::BroadcastJoin(BroadcastJoin {
+                broadcaster,
+                receiver,
+                ..
+            }) => vec![broadcaster, receiver],
+            Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => vec![left, right],
+            Self::Concat(Concat { input, other }) => vec![input, other],
+        }
+    }
+
+    pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> PhysicalPlan {
+        match children {
+            [input] => match self {
+                #[cfg(feature = "python")]
+                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::TabularScan(..)
+                | Self::EmptyScan(..)
+                | Self::TabularScanParquet(..)
+                | Self::TabularScanCsv(..)
+                | Self::TabularScanJson(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::Project(Project { projection, resource_request, partition_spec, .. }) => Self::Project(Project::try_new(
+                    input.clone(), projection.clone(), resource_request.clone(), partition_spec.clone(),
+                ).unwrap()),
+                Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
+                Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
+                Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
+                Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
+                Self::Sort(Sort { sort_by, descending, num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(), *num_partitions)),
+                Self::Split(Split { input_num_partitions, output_num_partitions, .. }) => Self::Split(Split::new(input.clone(), *input_num_partitions, *output_num_partitions)),
+                Self::Coalesce(Coalesce { num_from, num_to, .. }) => Self::Coalesce(Coalesce::new(input.clone(), *num_from, *num_to)),
+                Self::Flatten(..) => Self::Flatten(Flatten::new(input.clone())),
+                Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => Self::FanoutRandom(FanoutRandom::new(input.clone(), *num_partitions)),
+                Self::FanoutByHash(FanoutByHash { num_partitions, partition_by, .. }) => Self::FanoutByHash(FanoutByHash::new(input.clone(), *num_partitions, partition_by.clone())),
+                Self::FanoutByRange(FanoutByRange { num_partitions, sort_by, .. }) => Self::FanoutByRange(FanoutByRange::new(input.clone(), *num_partitions, sort_by.clone())),
+                Self::ReduceMerge(..) => Self::ReduceMerge(ReduceMerge::new(input.clone())),
+                Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
+                Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                _ => panic!("Physical op {:?} has two inputs, but got one", self),
+            },
+            [input1, input2] => match self {
+                #[cfg(feature = "python")]
+                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::TabularScan(..)
+                | Self::EmptyScan(..)
+                | Self::TabularScanParquet(..)
+                | Self::TabularScanCsv(..)
+                | Self::TabularScanJson(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::HashJoin(HashJoin { left_on, right_on, join_type, .. }) => Self::HashJoin(HashJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type)),
+                Self::BroadcastJoin(BroadcastJoin {
+                    left_on,
+                    right_on,
+                    join_type,
+                    is_swapped,
+                    ..
+                }) => Self::BroadcastJoin(BroadcastJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *is_swapped)),
+                Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, num_partitions, left_is_larger, needs_presort, .. }) => Self::SortMergeJoin(SortMergeJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *num_partitions, *left_is_larger, *needs_presort)),
+                Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
+                _ => panic!("Physical op {:?} has one input, but got two", self),
+            },
+            _ => panic!("Physical ops should never have more than 2 inputs, but got: {}", children.len())
+        }
+    }
+
+    pub fn name(&self) -> String {
+        let name = match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(..) => "InMemoryScan",
+            Self::TabularScan(..) => "TabularScan",
+            Self::EmptyScan(..) => "EmptyScan",
+            Self::TabularScanParquet(..) => "TabularScanParquet",
+            Self::TabularScanCsv(..) => "TabularScanCsv",
+            Self::TabularScanJson(..) => "TabularScanJson",
+            Self::Project(..) => "Project",
+            Self::Filter(..) => "Filter",
+            Self::Limit(..) => "Limit",
+            Self::Explode(..) => "Explode",
+            Self::Sample(..) => "Sample",
+            Self::Sort(..) => "Sort",
+            Self::Split(..) => "Split",
+            Self::Coalesce(..) => "Coalesce",
+            Self::Flatten(..) => "Flatten",
+            Self::FanoutRandom(..) => "FanoutRandom",
+            Self::FanoutByHash(..) => "FanoutByHash",
+            Self::FanoutByRange(..) => "FanoutByRange",
+            Self::ReduceMerge(..) => "ReduceMerge",
+            Self::Aggregate(..) => "Aggregate",
+            Self::HashJoin(..) => "HashJoin",
+            Self::BroadcastJoin(..) => "BroadcastJoin",
+            Self::SortMergeJoin(..) => "SortMergeJoin",
+            Self::Concat(..) => "Concat",
+            Self::TabularWriteParquet(..) => "TabularWriteParquet",
+            Self::TabularWriteCsv(..) => "TabularWriteCsv",
+            Self::TabularWriteJson(..) => "TabularWriteJson",
+        };
+        name.to_string()
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        match self {
+            #[cfg(feature = "python")]
+            Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
+            Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
+            Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
+            Self::TabularScanParquet(tabular_scan_parquet) => {
+                tabular_scan_parquet.multiline_display()
+            }
+            Self::TabularScanCsv(tabular_scan_csv) => tabular_scan_csv.multiline_display(),
+            Self::TabularScanJson(tabular_scan_json) => tabular_scan_json.multiline_display(),
+            Self::Project(project) => project.multiline_display(),
+            Self::Filter(filter) => filter.multiline_display(),
+            Self::Limit(limit) => limit.multiline_display(),
+            Self::Explode(explode) => explode.multiline_display(),
+            Self::Sample(sample) => sample.multiline_display(),
+            Self::Sort(sort) => sort.multiline_display(),
+            Self::Split(split) => split.multiline_display(),
+            Self::Coalesce(coalesce) => coalesce.multiline_display(),
+            Self::Flatten(flatten) => flatten.multiline_display(),
+            Self::FanoutRandom(fanout_random) => fanout_random.multiline_display(),
+            Self::FanoutByHash(fanout_by_hash) => fanout_by_hash.multiline_display(),
+            Self::FanoutByRange(fanout_by_range) => fanout_by_range.multiline_display(),
+            Self::ReduceMerge(reduce_merge) => reduce_merge.multiline_display(),
+            Self::Aggregate(aggregate) => aggregate.multiline_display(),
+            Self::HashJoin(hash_join) => hash_join.multiline_display(),
+            Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),
+            Self::SortMergeJoin(sort_merge_join) => sort_merge_join.multiline_display(),
+            Self::Concat(concat) => concat.multiline_display(),
+            Self::TabularWriteParquet(tabular_write_parquet) => {
+                tabular_write_parquet.multiline_display()
+            }
+            Self::TabularWriteCsv(tabular_write_csv) => tabular_write_csv.multiline_display(),
+            Self::TabularWriteJson(tabular_write_json) => tabular_write_json.multiline_display(),
+        }
+    }
+
+    pub fn repr_ascii(&self, simple: bool) -> String {
+        let mut s = String::new();
+        self.fmt_tree(&mut s, simple).unwrap();
+        s
+    }
+
+    pub fn repr_indent(&self) -> String {
+        let mut s = String::new();
+        self.fmt_tree_indent_style(0, &mut s).unwrap();
+        s
+    }
 }
 
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysicalPlanScheduler {
-    plan: Arc<PhysicalPlan>,
+    plan: PhysicalPlanRef,
 }
 
 #[cfg(feature = "python")]
@@ -273,6 +450,10 @@ impl PhysicalPlanScheduler {
     }
     pub fn partition_spec(&self) -> PyResult<PartitionSpec> {
         Ok(self.plan.partition_spec().as_ref().clone())
+    }
+
+    pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
+        Ok(self.plan.repr_ascii(simple))
     }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
@@ -286,8 +467,8 @@ impl PhysicalPlanScheduler {
 
 impl_bincode_py_state_serialization!(PhysicalPlanScheduler);
 
-impl From<Arc<PhysicalPlan>> for PhysicalPlanScheduler {
-    fn from(plan: Arc<PhysicalPlan>) -> Self {
+impl From<PhysicalPlanRef> for PhysicalPlanScheduler {
+    fn from(plan: PhysicalPlanRef) -> Self {
         Self { plan }
     }
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use daft_core::schema::{Schema, SchemaRef};
@@ -67,20 +68,12 @@ impl Aggregate {
         let mut res = vec![];
         res.push(format!(
             "Aggregation: {}",
-            self.aggregations
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            self.aggregations.iter().map(|e| e.to_string()).join(", ")
         ));
         if !self.groupby.is_empty() {
             res.push(format!(
                 "Group by = {}",
-                self.groupby
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                self.groupby.iter().map(|e| e.to_string()).join(", ")
             ));
         }
         res.push(format!("Output schema = {}", self.schema().short_string()));

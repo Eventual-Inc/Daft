@@ -4,6 +4,7 @@ use common_error::DaftError;
 use daft_core::schema::Schema;
 use daft_core::DataType;
 use daft_dsl::Expr;
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::logical_plan;
@@ -65,7 +66,6 @@ impl Sort {
             .iter()
             .zip(self.descending.iter())
             .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
-            .collect::<Vec<_>>()
             .join(", ");
         res.push(format!("Sort: Sort by = {}", pairs));
         res

@@ -20,6 +20,18 @@ class PhysicalPlanScheduler:
     def partition_spec(self) -> PartitionSpec:
         return self._scheduler.partition_spec()
 
+    def pretty_print(self, simple: bool = False) -> str:
+        """
+        Pretty prints the current underlying physical plan.
+        """
+        if simple:
+            return self._scheduler.repr_ascii(simple=True)
+        else:
+            return repr(self)
+
+    def __repr__(self) -> str:
+        return self._scheduler.repr_ascii(simple=False)
+
     def to_partition_tasks(
         self, psets: dict[str, list[PartitionT]], is_ray_runner: bool
     ) -> physical_plan.MaterializedPhysicalPlan:

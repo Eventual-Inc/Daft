@@ -42,4 +42,12 @@ impl Sample {
             seed,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Sample: {}", self.fraction));
+        res.push(format!("With replacement = {}", self.with_replacement));
+        res.push(format!("Seed = {:?}", self.seed));
+        res
+    }
 }
