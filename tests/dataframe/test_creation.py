@@ -801,7 +801,7 @@ def test_create_dataframe_json_schema_hints_large_file() -> None:
     # First assemble data that will be larger than 1MB, because our schema inference will max out at 1MB.
     item = {"column": {"test_key": "test_value"}}
     item_size = len(json.dumps(item).encode("utf-8"))
-    entries_needed = (1 * 1024 * 1024) // item_size + 1
+    entries_needed = (1024 * 1024) // item_size + 1
     data = [item] * entries_needed
 
     # Add a row at the end of the file with a different key to ensure that the schema inference doesn't pick it up
