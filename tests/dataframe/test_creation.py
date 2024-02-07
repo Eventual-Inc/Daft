@@ -797,6 +797,46 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         assert len(pd_df) == len(valid_data)
 
 
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        pytest.param(['{"foo": {}}', '{"foo": {}}'], {"foo": [{}, {}]}, id="AllEmptyObjects"),
+        pytest.param(
+            ['{"foo": {}}', '{"foo": {"bar":"baz"}}'],
+            {"foo": [{"bar": None}, {"bar": "baz"}]},
+            id="OneEmptyObject",
+        ),
+        pytest.param(
+            ['{"foo": {}}', '{"foo":null}'],
+            {"foo": [{}, None]},
+            id="EmptyObjectAndNulls",
+        ),
+        pytest.param(
+            ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{}}}}'],
+            {"foo": [{"bar": {"baz": {}}}, {"bar": {"baz": {}}}]},
+            id="AllEmptyNestedObjects",
+        ),
+        pytest.param(
+            ['{"foo": {"bar":{"baz":{}}}}', '{"foo": {"bar":{"baz":{"foo2":"bar2"}}}}'],
+            {"foo": [{"bar": {"baz": {"foo2": None}}}, {"bar": {"baz": {"foo2": "bar2"}}}]},
+            id="OneEmptyNestedObject",
+        ),
+    ],
+)
+def test_create_dataframe_json_empty_objects(input, expected) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in input:
+                f.write(data)
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(fname)
+        pydict = df.to_pydict()
+
+        assert pydict == expected
+
+
 ###
 # Parquet tests
 ###
