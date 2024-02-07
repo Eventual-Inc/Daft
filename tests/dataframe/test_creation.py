@@ -814,6 +814,10 @@ def test_create_dataframe_json_schema_hints_large_file() -> None:
                 f.write("\n")
             f.flush()
 
+        # Without schema hints, schema inference should not pick up the key value pair at the bottom of the file
+        assert daft.read_json(fname).schema()["column"].dtype == DataType.struct({"test_key": DataType.string()})
+
+        # With schema hints, the bottom kv pair should be included
         df = daft.read_json(
             fname,
             schema_hints={
