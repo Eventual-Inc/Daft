@@ -12,7 +12,7 @@ in Azure Blob Store.
 
     Please file an issue if you need support for non-hierarchical namespace buckets! We'd love to support your use-case.
 
-Specifying a Storage Account
+Authorization/Authentication
 ----------------------------
 
 In Azure Blob Service, data is stored under the hierarchy of:
@@ -23,8 +23,24 @@ In Azure Blob Service, data is stored under the hierarchy of:
 
 URLs to data in Azure Blob Store come in the form: ``az://{CONTAINER_NAME}/{OBJECT_KEY}``.
 
-Given that the Storage Account is not a part of the URL, you must provide this separately. You can either rely on Azure's `environment variables <https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-data-operations-cli#set-environment-variables-for-authorization-parameters>`_
-or you may choose to pass these values into your Daft I/O function calls using an :class:`daft.io.AzureConfig` config object:
+Given that the Storage Account is not a part of the URL, you must provide this separately.
+
+Rely on Environment
+*******************
+
+You can rely on Azure's `environment variables <https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-data-operations-cli#set-environment-variables-for-authorization-parameters>`_
+to have Daft automatically discover credentials.
+
+Please be aware that when doing so in a distributed environment such as Ray, Daft will pick these credentials up from worker machines and thus each worker machine needs to be appropriately provisioned.
+
+If instead you wish to have Daft use credentials from the "driver", you may wish to manually specify your credentials.
+
+Manually specify credentials
+****************************
+
+You may also choose to pass these values into your Daft I/O function calls using an :class:`daft.io.AzureConfig` config object.
+
+:func:`daft.set_planning_config` is a convenient way to set your :class:`daft.io.IOConfig` as the default config to use on any subsequent Daft method calls.
 
 .. code:: python
 
@@ -33,6 +49,16 @@ or you may choose to pass these values into your Daft I/O function calls using a
     # Supply actual values for the storage_account and access key here
     io_config = IOConfig(azure=AzureConfig(storage_account="***", access_key="***"))
 
-    # When calling any IO methods, you can pass in (potentially different!) IOConfigs
-    # Daft will use the AzureConfig when it encounters URLs starting with `az://` or `abfs://`
+    # Globally set the default IOConfig for any subsequent I/O calls
+    daft.set_planning_config(default_io_config=io_config)
+
+    # Perform some I/O operation
     df = daft.read_parquet("az://my_container/my_path/**/*")
+
+Alternatively, Daft supports overriding the default IOConfig per-operation by passing it into the ``io_config=`` keyword argument. This is extremely flexible as you can
+pass a different :class:`daft.io.AzureConfig` per function call if you wish!
+
+.. code:: python
+
+    # Perform some I/O operation but override the IOConfig
+    df2 = daft.read_csv("az://my_container/my_other_path/**/*", io_config=io_config)
