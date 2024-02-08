@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
@@ -8,7 +8,6 @@ use daft_io::{
 };
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
-use itertools::Itertools;
 use snafu::Snafu;
 
 use crate::{
@@ -240,7 +239,7 @@ impl ScanOperator for GlobScanOperator {
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());
 
-        return lines;
+        lines
     }
 
     fn to_scan_tasks(

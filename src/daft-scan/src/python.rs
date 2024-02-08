@@ -17,8 +17,6 @@ pub mod pylib {
     use pyo3::types::PyList;
     use pyo3::PyTypeInfo;
 
-    use std::fmt::Display;
-
     use std::sync::Arc;
 
     use daft_core::python::schema::PySchema;
@@ -194,7 +192,7 @@ pub mod pylib {
 
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
-            return lines;
+            lines
         }
 
         fn to_scan_tasks(

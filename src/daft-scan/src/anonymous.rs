@@ -1,8 +1,7 @@
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use itertools::Itertools;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
@@ -59,7 +58,7 @@ impl ScanOperator for AnonymousScanOperator {
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());
 
-        return lines;
+        lines
     }
 
     fn to_scan_tasks(

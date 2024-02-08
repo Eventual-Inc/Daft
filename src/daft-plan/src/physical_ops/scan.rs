@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use daft_scan::ScanTask;
-use itertools::Itertools;
 
 use crate::PartitionSpec;
 use serde::{Deserialize, Serialize};
