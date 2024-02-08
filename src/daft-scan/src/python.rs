@@ -175,12 +175,6 @@ pub mod pylib {
         }
     }
 
-    impl Display for PythonScanOperatorBridge {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "PythonScanOperator: {}", self.display_name,)
-        }
-    }
-
     impl ScanOperator for PythonScanOperatorBridge {
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
             &self.partitioning_keys
@@ -199,13 +193,8 @@ pub mod pylib {
         }
 
         fn multiline_display(&self) -> Vec<String> {
-            Python::with_gil(|py| {
-                self.operator
-                    .call_method0(py, pyo3::intern!(py, "multiline_display"))
-                    .unwrap()
-                    .extract::<Vec<String>>(py)
-                    .unwrap()
-            })
+            let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
+            return lines;
         }
 
         fn to_scan_tasks(

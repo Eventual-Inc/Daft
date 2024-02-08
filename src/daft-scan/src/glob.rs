@@ -213,17 +213,6 @@ impl GlobScanOperator {
     }
 }
 
-impl Display for GlobScanOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "GlobScanOperator: Glob paths=[{}], Format-specific config = {:?}",
-            self.glob_paths.join(", "),
-            self.file_format_config
-        )
-    }
-}
-
 impl ScanOperator for GlobScanOperator {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -244,27 +233,14 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("GlobScanOperator".to_string());
-        res.push(format!("Files = [ {} ]", self.glob_paths.iter().join(", ")));
-        res.push(format!("Schema = {}", self.schema.short_string()));
-        let file_format = self.file_format_config.multiline_display();
-        if !file_format.is_empty() {
-            res.push(format!(
-                "{} config= {}",
-                self.file_format_config.var_name(),
-                file_format.join(", ")
-            ));
-        }
-        let storage_config = self.storage_config.multiline_display();
-        if !storage_config.is_empty() {
-            res.push(format!(
-                "{} storage config = {{ {} }}",
-                self.storage_config.var_name(),
-                storage_config.join(", ")
-            ));
-        }
-        res
+        let mut lines = vec![
+            "GlobScanOperator".to_string(),
+            format!("Glob Paths= [{}]", self.glob_paths.join(", ")),
+        ];
+        lines.extend(self.file_format_config.multiline_display());
+        lines.extend(self.storage_config.multiline_display());
+
+        return lines;
     }
 
     fn to_scan_tasks(

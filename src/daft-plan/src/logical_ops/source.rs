@@ -44,10 +44,7 @@ impl Source {
                 pushdowns,
             })) => {
                 use itertools::Itertools;
-                res.push(format!(
-                    "Source: {}",
-                    scan_op.0.multiline_display().join(", ")
-                ));
+                res.extend(scan_op.0.multiline_display());
 
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!(

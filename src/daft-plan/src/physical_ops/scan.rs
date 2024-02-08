@@ -23,14 +23,16 @@ impl TabularScan {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push("TabularScan:".to_string());
-        // TODO(Clark): Make scan task printing prettier.
-        res.push(format!(
-            "Scan tasks = [ {} ]",
-            self.scan_tasks
-                .iter()
-                .map(|scan_task| format!("Task = {}", scan_task.multiline_display().join(", ")))
-                .join("; ")
-        ));
+        let num_scan_tasks = self.scan_tasks.len();
+        let total_bytes: usize = self
+            .scan_tasks
+            .iter()
+            .map(|st| st.size_bytes().unwrap_or(0))
+            .sum();
+
+        res.push(format!("Num Scan Tasks = {num_scan_tasks}",));
+        res.push(format!("Estimated Scan Bytes = {total_bytes}",));
+
         res.push(format!(
             "Partition spec = {{ {} }}",
             self.partition_spec.multiline_display().join(", ")
