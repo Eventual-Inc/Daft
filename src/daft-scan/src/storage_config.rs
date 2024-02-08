@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_io_config::IOConfig;
 use daft_core::impl_bincode_py_state_serialization;
+use daft_io::{get_io_client, get_runtime, IOClient};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -24,6 +26,36 @@ pub enum StorageConfig {
 }
 
 impl StorageConfig {
+    pub fn get_io_client_and_runtime(
+        &self,
+    ) -> DaftResult<(Arc<tokio::runtime::Runtime>, Arc<IOClient>)> {
+        // Grab an IOClient and Runtime
+        // TODO: This should be cleaned up and hidden behind a better API from daft-io
+        match self {
+            StorageConfig::Native(cfg) => {
+                let multithreaded_io = cfg.multithreaded_io;
+                Ok((
+                    get_runtime(multithreaded_io)?,
+                    get_io_client(
+                        multithreaded_io,
+                        Arc::new(cfg.io_config.clone().unwrap_or_default()),
+                    )?,
+                ))
+            }
+            #[cfg(feature = "python")]
+            StorageConfig::Python(cfg) => {
+                let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
+                Ok((
+                    get_runtime(multithreaded_io)?,
+                    get_io_client(
+                        multithreaded_io,
+                        Arc::new(cfg.io_config.clone().unwrap_or_default()),
+                    )?,
+                ))
+            }
+        }
+    }
+
     pub fn var_name(&self) -> &'static str {
         match self {
             Self::Native(_) => "Native",

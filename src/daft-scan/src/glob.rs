@@ -3,9 +3,7 @@ use std::{fmt::Display, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{
-    get_io_client, get_runtime, parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef,
-};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
@@ -84,36 +82,6 @@ fn run_glob(
     Ok(Box::new(iterator))
 }
 
-fn get_io_client_and_runtime(
-    storage_config: &StorageConfig,
-) -> DaftResult<(Arc<tokio::runtime::Runtime>, Arc<IOClient>)> {
-    // Grab an IOClient and Runtime
-    // TODO: This should be cleaned up and hidden behind a better API from daft-io
-    match storage_config {
-        StorageConfig::Native(cfg) => {
-            let multithreaded_io = cfg.multithreaded_io;
-            Ok((
-                get_runtime(multithreaded_io)?,
-                get_io_client(
-                    multithreaded_io,
-                    Arc::new(cfg.io_config.clone().unwrap_or_default()),
-                )?,
-            ))
-        }
-        #[cfg(feature = "python")]
-        StorageConfig::Python(cfg) => {
-            let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
-            Ok((
-                get_runtime(multithreaded_io)?,
-                get_io_client(
-                    multithreaded_io,
-                    Arc::new(cfg.io_config.clone().unwrap_or_default()),
-                )?,
-            ))
-        }
-    }
-}
-
 impl GlobScanOperator {
     pub fn try_new(
         glob_paths: &[&str],
@@ -128,7 +96,7 @@ impl GlobScanOperator {
             Some(path) => Ok(path),
         }?;
 
-        let (io_runtime, io_client) = get_io_client_and_runtime(storage_config.as_ref())?;
+        let (io_runtime, io_client) = storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::try_new schema inference for {first_glob_path}"
         ));
@@ -271,7 +239,7 @@ impl ScanOperator for GlobScanOperator {
         &self,
         pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'static>> {
-        let (io_runtime, io_client) = get_io_client_and_runtime(self.storage_config.as_ref())?;
+        let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
             self.glob_paths

@@ -203,9 +203,10 @@ def set_planning_config(
 
 def set_execution_config(
     config: PyDaftExecutionConfig | None = None,
-    merge_scan_tasks_min_size_bytes: int | None = None,
-    merge_scan_tasks_max_size_bytes: int | None = None,
+    scan_tasks_min_size_bytes: int | None = None,
+    scan_tasks_max_size_bytes: int | None = None,
     broadcast_join_size_bytes_threshold: int | None = None,
+    parquet_split_row_groups_max_files: int | None = None,
     sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
     sample_size_for_sort: int | None = None,
     num_preview_rows: int | None = None,
@@ -221,14 +222,15 @@ def set_execution_config(
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        merge_scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
+        scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
-            which leads to bigger but fewer partitions. (Defaults to 64 MiB)
-        merge_scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
+            which leads to bigger but fewer partitions. (Defaults to 96 MiB)
+        scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
-            fewer partitions. (Defaults to 512 MiB)
+            fewer partitions. (Defaults to 384 MiB)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
+        parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
         sort_merge_join_sort_with_aligned_boundaries: Whether to use a specialized algorithm for sorting both sides of a
             sort-merge join such that they have aligned boundaries. This can lead to a faster merge-join at the cost of
             more skewed sorted join inputs, increasing the risk of OOMs.
@@ -246,9 +248,10 @@ def set_execution_config(
     ctx = get_context()
     old_daft_execution_config = ctx.daft_execution_config if config is None else config
     new_daft_execution_config = old_daft_execution_config.with_config_values(
-        merge_scan_tasks_min_size_bytes=merge_scan_tasks_min_size_bytes,
-        merge_scan_tasks_max_size_bytes=merge_scan_tasks_max_size_bytes,
+        scan_tasks_min_size_bytes=scan_tasks_min_size_bytes,
+        scan_tasks_max_size_bytes=scan_tasks_max_size_bytes,
         broadcast_join_size_bytes_threshold=broadcast_join_size_bytes_threshold,
+        parquet_split_row_groups_max_files=parquet_split_row_groups_max_files,
         sort_merge_join_sort_with_aligned_boundaries=sort_merge_join_sort_with_aligned_boundaries,
         sample_size_for_sort=sample_size_for_sort,
         num_preview_rows=num_preview_rows,

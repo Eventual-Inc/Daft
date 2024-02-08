@@ -200,6 +200,23 @@ def parquet_file(request) -> tuple[str, str]:
     return request.param
 
 
+@pytest.fixture(params=[(True, True), (True, False), (False, False)], ids=["split", "merge", "ignore"])
+def set_split_config(request):
+    max_size = 0 if request.param[0] else 384 * 1024 * 1024
+    min_size = 0 if request.param[1] else 96 * 1024 * 1024
+
+    old_execution_config = daft.context.get_context().daft_execution_config
+
+    try:
+        daft.set_execution_config(
+            scan_tasks_max_size_bytes=max_size,
+            scan_tasks_min_size_bytes=min_size,
+        )
+        yield
+    finally:
+        daft.set_execution_config(old_execution_config)
+
+
 def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
     if get_protocol_from_path(path) == "s3" or get_protocol_from_path(path) == "s3a":
@@ -287,7 +304,7 @@ def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multi
 
 
 @pytest.mark.integration()
-def test_parquet_read_df(parquet_file, public_storage_io_config):
+def test_parquet_read_df(parquet_file, public_storage_io_config, set_split_config):
     _, url = parquet_file
     daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config)
     pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))

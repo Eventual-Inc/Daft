@@ -1182,9 +1182,10 @@ class LogicalPlanBuilder:
 class PyDaftExecutionConfig:
     def with_config_values(
         self,
-        merge_scan_tasks_min_size_bytes: int | None = None,
-        merge_scan_tasks_max_size_bytes: int | None = None,
+        scan_tasks_min_size_bytes: int | None = None,
+        scan_tasks_max_size_bytes: int | None = None,
         broadcast_join_size_bytes_threshold: int | None = None,
+        parquet_split_row_groups_max_files: int | None = None,
         sort_merge_join_sort_with_aligned_boundaries: bool | None = None,
         sample_size_for_sort: int | None = None,
         num_preview_rows: int | None = None,
@@ -1195,9 +1196,9 @@ class PyDaftExecutionConfig:
         csv_inflation_factor: float | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
-    def merge_scan_tasks_min_size_bytes(self) -> int: ...
+    def scan_tasks_min_size_bytes(self) -> int: ...
     @property
-    def merge_scan_tasks_max_size_bytes(self) -> int: ...
+    def scan_tasks_max_size_bytes(self) -> int: ...
     @property
     def broadcast_join_size_bytes_threshold(self) -> int: ...
     @property
