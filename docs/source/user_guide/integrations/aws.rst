@@ -10,7 +10,7 @@ Authorization/Authentication
 In AWS S3, data is stored under the hierarchy of:
 
 1. Bucket: The container for data storage, which is the top-level namespace for data storage in S3.
-3. Object Key: The unique identifier for a piece of data within a bucket.
+2. Object Key: The unique identifier for a piece of data within a bucket.
 
 URLs to data in S3 come in the form: ``s3://{BUCKET}/{OBJECT_KEY}``.
 
@@ -18,7 +18,7 @@ Rely on Environment
 *******************
 
 You can configure the AWS `CLI <https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html>`_ to have Daft automatically discover credentials.
-Alternatively, you may specifiy your credentials in environment variables: ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``, and ``AWS_SESSION_TOKEN``.
+Alternatively, you may specifiy your credentials in `environment variables <https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html>`_: ``AWS_ACCESS_KEY_ID``, ``AWS_SECRET_ACCESS_KEY``, and ``AWS_SESSION_TOKEN``.
 
 Please be aware that when doing so in a distributed environment such as Ray, Daft will pick these credentials up from worker machines and thus each worker machine needs to be appropriately provisioned.
 
