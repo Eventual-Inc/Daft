@@ -332,7 +332,7 @@ mod tests {
         .build();
         let expected = "\
         Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -348,7 +348,7 @@ mod tests {
         .filter(col("b").eq(&lit("foo")))?
         .build();
         let expected = "\
-        Source: AnonymousScanOperator, File paths = [/foo], Native storage config = { Use multithreading = true }, File schema = a (Int64), b (Utf8), Partitioning keys = [], Filter pushdown = [col(b) == lit(\"foo\")] & [col(a) < lit(2)], Output schema = a (Int64), b (Utf8)";
+        AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Filter pushdown = [col(b) == lit(\"foo\")] & [col(a) < lit(2)], Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -366,7 +366,7 @@ mod tests {
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Limit: 1\
-        \n    Source: AnonymousScanOperator, File paths = [/foo], Native storage config = { Use multithreading = true }, File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
+        \n    AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -383,7 +383,7 @@ mod tests {
         .build();
         let expected = "\
         Filter: is_null(download(col(a)))\
-        \n  Source: AnonymousScanOperator, File paths = [/foo], Native storage config = { Use multithreading = true }, File schema = a (Int64), b (Utf8), Partitioning keys = [], Output schema = a (Int64), b (Utf8)";
+        \n  AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -401,7 +401,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -419,7 +419,7 @@ mod tests {
         let expected = "\
         Project: col(a), col(b)\
         \n  Filter: [col(a) < lit(2)] & [col(b) == lit(\"foo\")]\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -439,7 +439,7 @@ mod tests {
         let expected = "\
         Filter: col(a) < lit(2)\
         \n  Project: col(a) + lit(1)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -460,7 +460,7 @@ mod tests {
         let expected = "\
         Project: col(a) + lit(1)\
         \n  Filter: [col(a) + lit(1)] < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -478,7 +478,7 @@ mod tests {
         let expected = "\
         Sort: Sort by = (col(a), descending)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         // TODO(Clark): For tests in which we only care about reordering of operators, maybe switch to a form that leverages the single-node display?
         // let expected = format!("{sort}\n  {filter}\n    {source}");
         assert_optimized_plan_eq(plan, expected)?;
@@ -498,7 +498,7 @@ mod tests {
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -517,9 +517,9 @@ mod tests {
         let expected = "\
         Concat\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)\
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -544,10 +544,10 @@ mod tests {
         .filter(col("a").lt(&lit(2)))?
         .build();
         let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Utf8, c#Float64\
         \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)\
-        \n  Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Native storage config = { Use multithreading = true }, Output schema = b (Utf8), c (Float64)";
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
+        \n  Source: Json, File paths = [/foo], File schema = b#Utf8, c#Float64, Native storage config = { Use multithreading = true }, Output schema = b#Utf8, c#Float64";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -572,10 +572,10 @@ mod tests {
         .filter(col("c").lt(&lit(2.0)))?
         .build();
         let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Utf8), c (Float64)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Utf8, c#Float64\
+        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
         \n  Filter: col(c) < lit(2.0)\
-        \n    Source: Json, File paths = [/foo], File schema = b (Utf8), c (Float64), Native storage config = { Use multithreading = true }, Output schema = b (Utf8), c (Float64)";
+        \n    Source: Json, File paths = [/foo], File schema = b#Utf8, c#Float64, Native storage config = { Use multithreading = true }, Output schema = b#Utf8, c#Float64";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -598,11 +598,11 @@ mod tests {
         .filter(col("b").lt(&lit(2)))?
         .build();
         let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a (Int64), b (Int64), c (Float64)\
+        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Int64, c#Float64\
         \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Float64), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Int64), c (Float64)\
+        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, c#Float64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64, c#Float64\
         \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = b (Int64), Native storage config = { Use multithreading = true }, Output schema = b (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = b#Int64, Native storage config = { Use multithreading = true }, Output schema = b#Int64";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

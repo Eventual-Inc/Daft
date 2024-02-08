@@ -1,8 +1,7 @@
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::schema::SchemaRef;
-use itertools::Itertools;
 
 use crate::{
     file_format::FileFormatConfig, storage_config::StorageConfig, DataFileSource, PartitionField,
@@ -32,12 +31,6 @@ impl AnonymousScanOperator {
     }
 }
 
-impl Display for AnonymousScanOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnonymousScanOperator: File paths=[{}], Format-specific config = {:?}, Storage config = {:?}", self.files.join(", "), self.file_format_config, self.storage_config)
-    }
-}
-
 impl ScanOperator for AnonymousScanOperator {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -58,26 +51,14 @@ impl ScanOperator for AnonymousScanOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        res.push("AnonymousScanOperator".to_string());
-        res.push(format!("File paths = [{}]", self.files.iter().join(", ")));
-        let file_format = self.file_format_config.multiline_display();
-        if !file_format.is_empty() {
-            res.push(format!(
-                "{} config= {}",
-                self.file_format_config.var_name(),
-                file_format.join(", ")
-            ));
-        }
-        let storage_config = self.storage_config.multiline_display();
-        if !storage_config.is_empty() {
-            res.push(format!(
-                "{} storage config = {{ {} }}",
-                self.storage_config.var_name(),
-                storage_config.join(", ")
-            ));
-        }
-        res
+        let mut lines = vec![
+            "AnonymousScanOperator".to_string(),
+            format!("File paths = [{}]", self.files.join(", ")),
+        ];
+        lines.extend(self.file_format_config.multiline_display());
+        lines.extend(self.storage_config.multiline_display());
+
+        lines
     }
 
     fn to_scan_tasks(

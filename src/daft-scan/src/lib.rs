@@ -536,19 +536,24 @@ impl Display for PartitionTransform {
     }
 }
 
-pub trait ScanOperator: Send + Sync + Display + Debug {
+pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
-
     fn multiline_display(&self) -> Vec<String>;
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
     ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>>;
+}
+
+impl Display for dyn ScanOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.multiline_display().join("\n"))
+    }
 }
 
 /// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash
