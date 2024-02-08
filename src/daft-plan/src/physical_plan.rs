@@ -301,6 +301,7 @@ impl PhysicalPlan {
             }) => vec![broadcaster, receiver],
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => vec![left, right],
             Self::Concat(Concat { input, other }) => vec![input, other],
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
         }
     }
 
@@ -389,6 +390,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(..) => "TabularWriteParquet",
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
+            Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
         };
         name.to_string()
     }
@@ -427,6 +429,9 @@ impl PhysicalPlan {
             }
             Self::TabularWriteCsv(tabular_write_csv) => tabular_write_csv.multiline_display(),
             Self::TabularWriteJson(tabular_write_json) => tabular_write_json.multiline_display(),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                monotonically_increasing_id.multiline_display()
+            }
         }
     }
 
