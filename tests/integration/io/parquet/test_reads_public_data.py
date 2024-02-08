@@ -202,8 +202,8 @@ def parquet_file(request) -> tuple[str, str]:
 
 @pytest.fixture(params=[(True, True), (True, False), (False, False)], ids=["split", "merge", "ignore"])
 def set_split_config(request):
-    max_size = 0 if request.param[0] else 512 * 1024 * 1024
-    min_size = 0 if request.param[1] else 64 * 1024 * 1024
+    max_size = 0 if request.param[0] else 384 * 1024 * 1024
+    min_size = 0 if request.param[1] else 96 * 1024 * 1024
 
     old_execution_config = daft.context.get_context().daft_execution_config
 

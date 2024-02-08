@@ -39,8 +39,8 @@ pub struct DaftExecutionConfig {
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
         DaftExecutionConfig {
-            scan_tasks_min_size_bytes: 64 * 1024 * 1024,  // 64MB
-            scan_tasks_max_size_bytes: 512 * 1024 * 1024, // 512MB
+            scan_tasks_min_size_bytes: 96 * 1024 * 1024,  // 96MB
+            scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             sort_merge_join_sort_with_aligned_boundaries: false,
             sample_size_for_sort: 20,

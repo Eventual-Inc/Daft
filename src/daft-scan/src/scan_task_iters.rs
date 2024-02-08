@@ -209,8 +209,6 @@ pub fn split_by_row_groups(
                             }
                         }
 
-                        println!("num scan tasks: {}", new_tasks.len());
-
                         Ok(Box::new(new_tasks.into_iter()))
                     } else {
                         Ok(Box::new(std::iter::once(Ok(t))))

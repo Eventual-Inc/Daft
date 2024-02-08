@@ -224,10 +224,10 @@ def set_execution_config(
             that the old (current) config should be used.
         scan_tasks_min_size_bytes: Minimum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will make Daft perform more merging of files into a single partition before yielding,
-            which leads to bigger but fewer partitions. (Defaults to 64 MiB)
+            which leads to bigger but fewer partitions. (Defaults to 96 MiB)
         scan_tasks_max_size_bytes: Maximum size in bytes when merging ScanTasks when reading files from storage.
             Increasing this value will increase the upper bound of the size of merged ScanTasks, which leads to bigger but
-            fewer partitions. (Defaults to 512 MiB)
+            fewer partitions. (Defaults to 384 MiB)
         broadcast_join_size_bytes_threshold: If one side of a join is smaller than this threshold, a broadcast join will be used.
             Default is 10 MiB.
         parquet_split_row_groups_max_files: Maximum number of files to read in which the row group splitting should happen. (Defaults to 10)
