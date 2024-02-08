@@ -1,5 +1,5 @@
 Amazon Web Services
-===============
+===================
 
 Daft is able to read/write data to/from AWS S3, and understands natively the URL protocol ``s3://`` as referring to data that resides
 in S3.
