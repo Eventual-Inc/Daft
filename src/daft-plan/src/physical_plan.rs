@@ -47,6 +47,7 @@ pub enum PhysicalPlan {
     Sort(Sort),
     Split(Split),
     Sample(Sample),
+    MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     Coalesce(Coalesce),
     Flatten(Flatten),
     FanoutRandom(FanoutRandom),
@@ -81,6 +82,10 @@ impl PhysicalPlan {
             Self::Limit(Limit { input, .. }) => input.partition_spec(),
             Self::Explode(Explode { partition_spec, .. }) => partition_spec.clone(),
             Self::Sample(Sample { input, .. }) => input.partition_spec(),
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                input.partition_spec().clone()
+            }
+
             Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
                 PartitionScheme::Range,
                 input.partition_spec().num_partitions,
@@ -205,7 +210,10 @@ impl PhysicalPlan {
             // TODO(Clark): Estimate row/column pruning to get a better size approximation.
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
-            | Self::Project(Project { input, .. }) => input.approximate_size_bytes(),
+            | Self::Project(Project { input, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
+                input.approximate_size_bytes()
+            }
             Self::Sample(Sample {
                 input, fraction, ..
             }) => input
@@ -765,6 +773,17 @@ impl PhysicalPlan {
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "sample"))?
                     .call1((upstream_iter, *fraction, *with_replacement, *seed))?;
+                Ok(py_iter.into())
+            }
+            PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                input,
+                column_name,
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets, is_ray_runner)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "monotonically_increasing_id"))?
+                    .call1((upstream_iter, column_name))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::Sort(Sort {

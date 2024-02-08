@@ -392,6 +392,9 @@ class Table:
 
         return [Table._from_pytable(t) for t in pytables], Table._from_pytable(values)
 
+    def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> Table:
+        return Table._from_pytable(self._table.add_monotonically_increasing_id(partition_num, column_name))
+
     ###
     # Compute methods (Table -> Series)
     ###

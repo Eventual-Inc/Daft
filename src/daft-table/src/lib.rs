@@ -174,6 +174,20 @@ impl Table {
         }
     }
 
+    pub fn add_monotonically_increasing_id(
+        &self,
+        partition_num: u64,
+        offset: u64,
+        column_name: &str,
+    ) -> DaftResult<Self> {
+        // Use the leftmost 28 bits for the partition number and the rightmost 36 bits for the row number
+        let start = (partition_num << 36) + offset;
+        let end = start + self.len() as u64;
+        let ids = (start..end).step_by(1).collect::<Vec<_>>();
+        let id_series = UInt64Array::from((column_name, ids)).into_series();
+        Self::from_columns([&[id_series], &self.columns[..]].concat())
+    }
+
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
         if self.is_empty() {
             return Ok(self.clone());

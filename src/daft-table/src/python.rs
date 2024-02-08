@@ -299,6 +299,20 @@ impl PyTable {
         })
     }
 
+    pub fn add_monotonically_increasing_id(
+        &self,
+        py: Python,
+        partition_num: u64,
+        column_name: &str,
+    ) -> PyResult<Self> {
+        py.allow_threads(|| {
+            Ok(self
+                .table
+                .add_monotonically_increasing_id(partition_num, 0, column_name)?
+                .into())
+        })
+    }
+
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.table.len())
     }

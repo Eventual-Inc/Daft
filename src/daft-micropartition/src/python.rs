@@ -417,6 +417,20 @@ impl PyMicroPartition {
         })
     }
 
+    pub fn add_monotonically_increasing_id(
+        &self,
+        py: Python,
+        partition_num: u64,
+        column_name: &str,
+    ) -> PyResult<Self> {
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .add_monotonically_increasing_id(partition_num, column_name)?
+                .into())
+        })
+    }
+
     #[staticmethod]
     pub fn read_json(
         py: Python,
