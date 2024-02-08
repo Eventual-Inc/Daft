@@ -39,8 +39,12 @@ impl OptimizerRule for PushDownLimit {
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
                     LogicalPlan::Repartition(_) | LogicalPlan::Project(_) => {
-                        let new_limit = plan.with_new_children(&[input.children()[0].clone()]);
-                        Ok(Transformed::Yes(input.with_new_children(&[new_limit])))
+                        let new_limit = plan
+                            .with_new_children(&[input.children()[0].clone()])
+                            .into();
+                        Ok(Transformed::Yes(
+                            input.with_new_children(&[new_limit]).into(),
+                        ))
                     }
                     // Push limit into source as a "local" limit.
                     //
@@ -72,7 +76,7 @@ impl OptimizerRule for PushDownLimit {
                                         ExternalInfo::Scan(ScanExternalInfo {
                                             scan_op, ..
                                         }) if scan_op.0.can_absorb_limit() => new_source,
-                                        _ => plan.with_new_children(&[new_source]),
+                                        _ => plan.with_new_children(&[new_source]).into(),
                                     };
                                 Ok(Transformed::Yes(out_plan))
                             }
@@ -171,7 +175,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -192,7 +196,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 3, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 3, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -214,7 +218,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -236,7 +240,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -257,7 +261,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -278,7 +282,7 @@ mod tests {
         .build();
         let expected = "\
         Limit: 5\
-        \n  Source:, AnonymousScanOperator: File paths=[/foo], Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n  Source: AnonymousScanOperator, File paths = [/foo], Native storage config = { Use multithreading = true }, File schema = a (Int64), b (Utf8), Partitioning keys = [], Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -297,7 +301,7 @@ mod tests {
                 .build();
         let expected = "\
         Limit: 5\
-        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Utf8)";
+        \n . Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -317,7 +321,7 @@ mod tests {
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -337,7 +341,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Utf8), Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a (Int64), b (Utf8)";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

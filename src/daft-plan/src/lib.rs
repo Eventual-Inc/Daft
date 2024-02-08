@@ -17,6 +17,7 @@ mod sink_info;
 mod source_info;
 #[cfg(test)]
 mod test;
+mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use daft_scan::{

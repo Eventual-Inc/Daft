@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +21,12 @@ impl TimeUnit {
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
             TimeUnit::Seconds => ArrowTimeUnit::Second,
         }
+    }
+}
+impl Display for TimeUnit {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        // Leverage Debug trait implementation, which will already return the enum variant as a string.
+        write!(f, "{:?}", self)
     }
 }
 

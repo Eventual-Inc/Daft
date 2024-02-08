@@ -458,7 +458,13 @@ impl Display for DataType {
             DataType::Struct(fields) => {
                 let fields: String = fields
                     .iter()
-                    .map(|f| format!("{}: {}", f.name, f.dtype))
+                    .filter_map(|f| {
+                        if f.name.is_empty() && f.dtype == DataType::Null {
+                            None
+                        } else {
+                            Some(format!("{}: {}", f.name, f.dtype))
+                        }
+                    })
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "Struct[{fields}]")

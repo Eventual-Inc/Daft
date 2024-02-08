@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
+use itertools::Itertools;
 
 use crate::{LogicalPlan, PartitionScheme};
 
@@ -46,11 +47,7 @@ impl Repartition {
         if !self.partition_by.is_empty() {
             res.push(format!(
                 "Partition by = {}",
-                self.partition_by
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                self.partition_by.iter().map(|e| e.to_string()).join(", ")
             ));
         }
         res

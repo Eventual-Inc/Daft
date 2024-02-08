@@ -6,6 +6,7 @@ use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use futures::{stream::BoxStream, StreamExt};
+use itertools::Itertools;
 use snafu::Snafu;
 
 use crate::{
@@ -208,6 +209,30 @@ impl ScanOperator for GlobScanOperator {
     }
     fn can_absorb_limit(&self) -> bool {
         false
+    }
+
+    fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("GlobScanOperator".to_string());
+        res.push(format!("Files = [ {} ]", self.glob_paths.iter().join(", ")));
+        res.push(format!("Schema = {}", self.schema.short_string()));
+        let file_format = self.file_format_config.multiline_display();
+        if !file_format.is_empty() {
+            res.push(format!(
+                "{} config= {}",
+                self.file_format_config.var_name(),
+                file_format.join(", ")
+            ));
+        }
+        let storage_config = self.storage_config.multiline_display();
+        if !storage_config.is_empty() {
+            res.push(format!(
+                "{} storage config = {{ {} }}",
+                self.storage_config.var_name(),
+                storage_config.join(", ")
+            ));
+        }
+        res
     }
 
     fn to_scan_tasks(

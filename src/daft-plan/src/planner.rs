@@ -464,14 +464,29 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                 final_exprs
                                     .push(Column(concat_of_concat_id.clone()).alias(output_name));
                             }
+                            MapGroups { func, inputs } => {
+                                let func_id = agg_expr.semantic_id(&schema).id;
+                                // No first stage aggregation for MapGroups, do all the work in the second stage.
+                                second_stage_aggs
+                                    .entry(func_id.clone())
+                                    .or_insert(MapGroups {
+                                        func: func.clone(),
+                                        inputs: inputs.to_vec(),
+                                    });
+                                final_exprs.push(Column(output_name.into()));
+                            }
                         }
                     }
 
-                    let first_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
-                        input_plan.into(),
-                        first_stage_aggs.values().cloned().collect(),
-                        groupby.clone(),
-                    ));
+                    let first_stage_agg = if first_stage_aggs.is_empty() {
+                        input_plan
+                    } else {
+                        PhysicalPlan::Aggregate(Aggregate::new(
+                            input_plan.into(),
+                            first_stage_aggs.values().cloned().collect(),
+                            groupby.clone(),
+                        ))
+                    };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::Coalesce(Coalesce::new(
                             first_stage_agg.into(),

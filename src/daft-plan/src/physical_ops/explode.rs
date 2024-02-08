@@ -2,20 +2,21 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::{optimization::get_required_columns, Expr};
+use itertools::Itertools;
 
-use crate::{physical_plan::PhysicalPlan, PartitionScheme, PartitionSpec};
+use crate::{physical_plan::PhysicalPlanRef, PartitionScheme, PartitionSpec};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Explode {
     // Upstream node.
-    pub input: Arc<PhysicalPlan>,
+    pub input: PhysicalPlanRef,
     pub to_explode: Vec<Expr>,
     pub partition_spec: Arc<PartitionSpec>,
 }
 
 impl Explode {
-    pub(crate) fn try_new(input: Arc<PhysicalPlan>, to_explode: Vec<Expr>) -> DaftResult<Self> {
+    pub(crate) fn try_new(input: PhysicalPlanRef, to_explode: Vec<Expr>) -> DaftResult<Self> {
         let partition_spec = Self::translate_partition_spec(input.partition_spec(), &to_explode);
         Ok(Self {
             input,
@@ -58,6 +59,19 @@ impl Explode {
                 input_pspec
             }
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Explode: {}",
+            self.to_explode.iter().map(|e| e.to_string()).join(", ")
+        ));
+        res.push(format!(
+            "Partition spec = {{ {} }}",
+            self.partition_spec.multiline_display().join(", ")
+        ));
+        res
     }
 }
 

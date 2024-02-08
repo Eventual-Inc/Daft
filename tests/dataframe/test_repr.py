@@ -286,3 +286,34 @@ def test_repr_html_custom_hooks():
 
     # Assert that numpy array viz hook correctly triggers in html repr
     assert f"<td><div {TD_STYLE}>&ltnp.ndarray<br>shape=(3, 3)<br>dtype=float64&gt</div></td><td>" in html_repr
+
+
+def test_repr_empty_struct():
+    data = {"empty_structs": [{}, {}], "nested_empty_structs": [{"a": {}}, {"b": {}}]}
+    df = daft.from_pydict(data)
+
+    expected_schema_repr = """╭───────────────┬──────────────────────────────────╮
+│ empty_structs ┆ nested_empty_structs             │
+│ ---           ┆ ---                              │
+│ Struct[]      ┆ Struct[a: Struct[], b: Struct[]] │
+╰───────────────┴──────────────────────────────────╯
+"""
+
+    assert str(df.schema()) == expected_schema_repr
+    expected_repr = """╭───────────────┬──────────────────────────────────╮
+│ empty_structs ┆ nested_empty_structs             │
+│ ---           ┆ ---                              │
+│ Struct[]      ┆ Struct[a: Struct[], b: Struct[]] │
+╞═══════════════╪══════════════════════════════════╡
+│ {}            ┆ {a: {},                          │
+│               ┆ b: None,                         │
+│               ┆ }                                │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ {}            ┆ {a: None,                        │
+│               ┆ b: {},                           │
+│               ┆ }                                │
+╰───────────────┴──────────────────────────────────╯
+
+(Showing first 2 of 2 rows)"""
+
+    assert str(df) == expected_repr

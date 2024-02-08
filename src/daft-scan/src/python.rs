@@ -198,6 +198,16 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        fn multiline_display(&self) -> Vec<String> {
+            Python::with_gil(|py| {
+                self.operator
+                    .call_method0(py, pyo3::intern!(py, "multiline_display"))
+                    .unwrap()
+                    .extract::<Vec<String>>(py)
+                    .unwrap()
+            })
+        }
+
         fn to_scan_tasks(
             &self,
             pushdowns: Pushdowns,

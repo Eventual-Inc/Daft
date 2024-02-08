@@ -2,14 +2,14 @@ API Documentation
 =================
 
 .. toctree::
+   :maxdepth: 2
 
    Table of Contents <self>
    creation
    dataframe
-   series
-   datatype
    expressions
+   datatype
    groupby
    udf
-   context
-   io_configs
+   series
+   configs

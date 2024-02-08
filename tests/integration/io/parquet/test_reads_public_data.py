@@ -394,3 +394,45 @@ def test_row_groups_selection_into_pyarrow_bulk(public_storage_io_config, multit
     for i, t in enumerate(rest):
         assert len(t) == 10
         assert first[i * 10 : (i + 1) * 10] == t
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_connect_timeout(multithreaded_io):
+    url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
+    connect_timeout_config = daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            # NOTE: no keys or endpoints specified for an AWS public s3 bucket
+            region_name="us-west-2",
+            anonymous=True,
+            connect_timeout_ms=1,
+            num_tries=3,
+        )
+    )
+
+    with pytest.raises(ValueError, match="HTTP connect timeout"):
+        MicroPartition.read_parquet(url, io_config=connect_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_read_timeout(multithreaded_io):
+    url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
+    read_timeout_config = daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            # NOTE: no keys or endpoints specified for an AWS public s3 bucket
+            region_name="us-west-2",
+            anonymous=True,
+            read_timeout_ms=1,
+            num_tries=3,
+        )
+    )
+
+    with pytest.raises(ValueError, match="HTTP read timeout"):
+        MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()

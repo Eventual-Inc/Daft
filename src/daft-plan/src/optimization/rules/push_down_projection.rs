@@ -165,7 +165,7 @@ impl PushDownProjection {
                                 ))),
                             )
                             .into();
-                            let new_plan = plan.with_new_children(&[new_source.into()]);
+                            let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
                             // Retry optimization now that the upstream node is different.
                             let new_plan = self
                                 .try_optimize(new_plan.clone())?
@@ -200,7 +200,7 @@ impl PushDownProjection {
                     )?
                     .into();
 
-                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -231,7 +231,7 @@ impl PushDownProjection {
                     )?
                     .into();
 
-                    let new_plan = plan.with_new_children(&[new_upstream.into()]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -278,7 +278,7 @@ impl PushDownProjection {
                 };
 
                 let new_upstream = upstream_plan.with_new_children(&[new_subprojection.into()]);
-                let new_plan = plan.with_new_children(&[new_upstream]);
+                let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                 // Retry optimization now that the upstream node is different.
                 let new_plan = self
                     .try_optimize(new_plan.clone())?
@@ -327,7 +327,7 @@ impl PushDownProjection {
                     new_left_subprojection.into(),
                     new_right_subprojection.into(),
                 ]);
-                let new_plan = plan.with_new_children(&[new_upstream]);
+                let new_plan = Arc::new(plan.with_new_children(&[new_upstream.into()]));
                 // Retry optimization now that the upstream node is different.
                 let new_plan = self
                     .try_optimize(new_plan.clone())?
@@ -424,7 +424,7 @@ impl PushDownProjection {
                     let new_right_upstream = maybe_new_right_upstream.unwrap_or(join.right.clone());
                     let new_join =
                         upstream_plan.with_new_children(&[new_left_upstream, new_right_upstream]);
-                    let new_plan = plan.with_new_children(&[new_join]);
+                    let new_plan = Arc::new(plan.with_new_children(&[new_join.into()]));
                     // Retry optimization now that the upstream node is different.
                     let new_plan = self
                         .try_optimize(new_plan.clone())?
@@ -472,7 +472,7 @@ impl PushDownProjection {
             };
 
             let new_aggregation = plan.with_new_children(&[new_subprojection.into()]);
-            Ok(Transformed::Yes(new_aggregation))
+            Ok(Transformed::Yes(new_aggregation.into()))
         } else {
             Ok(Transformed::No(plan))
         }
@@ -574,7 +574,7 @@ mod tests {
 
         let expected = "\
         Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
         Ok(())
     }
@@ -590,7 +590,7 @@ mod tests {
         .build();
 
         let expected = "\
-        Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
+        Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -607,7 +607,7 @@ mod tests {
 
         let expected = "\
         Project: col(b), col(a)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -625,7 +625,7 @@ mod tests {
 
         let expected = "\
         Project: col(b) + lit(3)\
-        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Projection pushdown = [b], Output schema = b (Int64)";
+        \n  Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Native storage config = { Use multithreading = true }, Projection pushdown = [b], Output schema = b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -651,7 +651,7 @@ mod tests {
         let expected = "\
         Project: col(a), col(b), col(b) AS c\
         \n  Project: col(b) + lit(3), col(a)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Output schema = a (Int64), b (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), Native storage config = { Use multithreading = true }, Output schema = a (Int64), b (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -672,7 +672,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Aggregation: mean(col(a)), Group by = col(c), Output schema = c (Int64), a (Float64)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Projection pushdown = [a, c], Output schema = a (Int64), c (Int64)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Int64), c (Int64), Native storage config = { Use multithreading = true }, Projection pushdown = [a, c], Output schema = a (Int64), c (Int64)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())
@@ -693,7 +693,7 @@ mod tests {
         let expected = "\
         Project: col(a)\
         \n  Filter: col(b)\
-        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Boolean), c (Int64), Format-specific config = Json(JsonSourceConfig { buffer_size: None, chunk_size: None }), Storage config = Native(NativeStorageConfig { io_config: None, multithreaded_io: true }), Projection pushdown = [a, b], Output schema = a (Int64), b (Boolean)";
+        \n    Source: Json, File paths = [/foo], File schema = a (Int64), b (Boolean), c (Int64), Native storage config = { Use multithreading = true }, Projection pushdown = [a, b], Output schema = a (Int64), b (Boolean)";
         assert_optimized_plan_eq(unoptimized, expected)?;
 
         Ok(())

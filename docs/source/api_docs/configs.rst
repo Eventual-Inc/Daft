@@ -24,3 +24,19 @@ Configure Daft in various ways during execution.
 
     daft.set_planning_config
     daft.set_execution_config
+
+I/O Configurations
+******************
+
+Configure behavior when Daft interacts with storage (e.g. credentials, retry policies and various other knobs to control performance/resource usage)
+
+These configurations are most often used as inputs to Daft DataFrame reading I/O functions such as in :doc:`creation`.
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_configs
+
+    daft.io.IOConfig
+    daft.io.S3Config
+    daft.io.GCSConfig
+    daft.io.AzureConfig

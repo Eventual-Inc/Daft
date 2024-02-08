@@ -62,6 +62,4 @@ Sphinx==5.3.0
 sphinx-book-theme==1.1.0; python_version >= "3.9"
 sphinx-reredirects>=0.1.1
 sphinx-copybutton>=0.5.2
-# sphinxcontrib-applehelp needs to be pinned as it dropped support for older versions of Sphinx
-# See: https://github.com/sphinx-doc/sphinxcontrib-applehelp/pull/15#issuecomment-1890891611
-sphinxcontrib-applehelp<=1.0.4
+sphinx-autosummary-accessors==2023.4.0; python_version >= "3.9"

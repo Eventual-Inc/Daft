@@ -116,14 +116,16 @@ class DataFrame:
             return self._result_cache.value
 
     @DataframePublicAPI
-    def explain(self, show_optimized: bool = False, simple=False) -> None:
-        """Prints the logical plan that will be executed to produce this DataFrame.
-        Defaults to showing the unoptimized plan. Use `show_optimized` to show the optimized one.
+    def explain(self, show_all: bool = False, simple: bool = False) -> None:
+        """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
+        Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
+        the optimized logical plan, and the physical plan.
 
         Args:
-            show_optimized (bool): shows the optimized QueryPlan instead of the unoptimized one.
-            simple (bool): Whether to only show the type of logical op for each node in the logical plan,
-                rather than showing details of how each logical op is configured.
+            show_all (bool): Whether to show the optimized logical plan and the physical plan in addition to the
+                unoptimized logical plan.
+            simple (bool): Whether to only show the type of op for each node in the plan, rather than showing details
+                of how each op is configured.
         """
 
         if self._result_cache is not None:
@@ -133,9 +135,15 @@ class DataFrame:
             print("However here is the logical plan used to produce this result:\n")
 
         builder = self.__builder
-        if show_optimized:
-            builder = builder.optimize()
+        print("== Unoptimized Logical Plan ==\n")
         print(builder.pretty_print(simple))
+        if show_all:
+            print("\n== Optimized Logical Plan ==\n")
+            builder = builder.optimize()
+            print(builder.pretty_print(simple))
+            print("\n== Physical Plan ==\n")
+            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+            print(physical_plan_scheduler.pretty_print(simple))
 
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config
@@ -669,10 +677,11 @@ class DataFrame:
         random repartitioning will occur.
 
         .. NOTE::
+
             This function will globally shuffle your data, which is potentially a very expensive operation.
 
             If instead you merely wish to "split" or "coalesce" partitions to obtain a target number of partitions,
-            you mean instead wish to consider using :meth:`DataFrame.into_parititions`<daft.DataFrame.into_partitions>
+            you mean instead wish to consider using :meth:`DataFrame.into_partitions <daft.DataFrame.into_partitions>`
             which avoids shuffling of data in favor of splitting/coalescing adjacent partitions where appropriate.
 
         Example:
@@ -907,6 +916,10 @@ class DataFrame:
         )
 
         builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
+        return DataFrame(builder)
+
+    def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
+        builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -1567,3 +1580,34 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped aggregations
         """
         return self.df._agg(to_agg, group_by=self.group_by)
+
+    def map_groups(self, udf: Expression) -> "DataFrame":
+        """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
+
+        Example:
+            >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            ... def std_dev(data):
+            ...     return [statistics.stdev(data.to_pylist())]
+            >>>
+            >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
+            >>> df.show()
+            ╭───────┬────────────────────╮
+            │ group ┆ data               │
+            │ ---   ┆ ---                │
+            │ Utf8  ┆ Float64            │
+            ╞═══════╪════════════════════╡
+            │ a     ┆ 14.730919862656235 │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b     ┆ 331.62026476076517 │
+            ╰───────┴────────────────────╯
+            (Showing first 2 of 2 rows)
+
+        Args:
+            udf (Expression): User-defined function to apply to each group.
+
+        Returns:
+            DataFrame: DataFrame with grouped aggregations
+        """
+        return self.df._map_groups(udf, group_by=self.group_by)

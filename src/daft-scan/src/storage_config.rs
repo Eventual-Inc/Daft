@@ -55,6 +55,22 @@ impl StorageConfig {
             }
         }
     }
+
+    pub fn var_name(&self) -> &'static str {
+        match self {
+            Self::Native(_) => "Native",
+            #[cfg(feature = "python")]
+            Self::Python(_) => "Python",
+        }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        match self {
+            Self::Native(source) => source.multiline_display(),
+            #[cfg(feature = "python")]
+            Self::Python(source) => source.multiline_display(),
+        }
+    }
 }
 
 /// Storage configuration for the Rust-native I/O layer.
@@ -71,6 +87,18 @@ impl NativeStorageConfig {
             io_config,
             multithreaded_io,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(io_config) = &self.io_config {
+            res.push(format!(
+                "IO config = {}",
+                io_config.multiline_display().join(", ")
+            ));
+        }
+        res.push(format!("Use multithreading = {}", self.multithreaded_io));
+        res
     }
 }
 
@@ -101,6 +129,20 @@ pub struct PythonStorageConfig {
     /// IOConfig is used when constructing Python filesystems (PyArrow or fsspec filesystems)
     /// and also used for globbing (since we have no Python-based globbing anymore)
     pub io_config: Option<IOConfig>,
+}
+
+#[cfg(feature = "python")]
+impl PythonStorageConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(io_config) = &self.io_config {
+            res.push(format!(
+                "IO config = {}",
+                io_config.multiline_display().join(", ")
+            ));
+        }
+        res
+    }
 }
 
 #[cfg(feature = "python")]

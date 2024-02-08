@@ -72,6 +72,14 @@ impl FileFormatConfig {
             Json(_) => "Json",
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        match self {
+            Self::Parquet(source) => source.multiline_display(),
+            Self::Csv(source) => source.multiline_display(),
+            Self::Json(source) => source.multiline_display(),
+        }
+    }
 }
 
 /// Configuration for a Parquet data source.
@@ -79,6 +87,17 @@ impl FileFormatConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
+}
+
+impl ParquetSourceConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!(
+            "Coerce int96 timestamp unit = {}",
+            self.coerce_int96_timestamp_unit
+        ));
+        res
+    }
 }
 
 #[cfg(feature = "python")]
@@ -114,6 +133,33 @@ pub struct CsvSourceConfig {
     pub comment: Option<char>,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+}
+
+impl CsvSourceConfig {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(delimiter) = self.delimiter {
+            res.push(format!("Delimiter = {}", delimiter));
+        }
+        res.push(format!("Has headers = {}", self.has_headers));
+        res.push(format!("Double quote = {}", self.double_quote));
+        if let Some(quote) = self.quote {
+            res.push(format!("Quote = {}", quote));
+        }
+        if let Some(escape_char) = self.escape_char {
+            res.push(format!("Escape char = {}", escape_char));
+        }
+        if let Some(comment) = self.comment {
+            res.push(format!("Comment = {}", comment));
+        }
+        if let Some(buffer_size) = self.buffer_size {
+            res.push(format!("Buffer size = {}", buffer_size));
+        }
+        if let Some(chunk_size) = self.chunk_size {
+            res.push(format!("Chunk size = {}", chunk_size));
+        }
+        res
+    }
 }
 
 #[cfg(feature = "python")]
@@ -168,6 +214,17 @@ impl JsonSourceConfig {
             buffer_size,
             chunk_size,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(buffer_size) = self.buffer_size {
+            res.push(format!("Buffer size = {}", buffer_size));
+        }
+        if let Some(chunk_size) = self.chunk_size {
+            res.push(format!("Chunk size = {}", chunk_size));
+        }
+        res
     }
 }
 

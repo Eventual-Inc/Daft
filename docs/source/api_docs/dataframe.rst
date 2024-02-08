@@ -18,6 +18,15 @@ DataFrame
 Data Manipulation
 #################
 
+Selecting Columns
+*****************
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/dataframe_methods
+
+    DataFrame.__getitem__
+
 Manipulating Columns
 ********************
 
@@ -28,10 +37,10 @@ Manipulating Columns
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.select
-    daft.DataFrame.with_column
-    daft.DataFrame.exclude
-    daft.DataFrame.explode
+    DataFrame.select
+    DataFrame.with_column
+    DataFrame.exclude
+    DataFrame.explode
 
 Filtering Rows
 **************
@@ -43,10 +52,10 @@ Filtering Rows
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.distinct
-    daft.DataFrame.where
-    daft.DataFrame.limit
-    daft.DataFrame.sample
+    DataFrame.distinct
+    DataFrame.where
+    DataFrame.limit
+    DataFrame.sample
 
 Reordering
 **********
@@ -57,8 +66,8 @@ Reordering
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.sort
-    daft.DataFrame.repartition
+    DataFrame.sort
+    DataFrame.repartition
 
 Combining
 *********
@@ -69,8 +78,8 @@ Combining
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.join
-    daft.DataFrame.concat
+    DataFrame.join
+    DataFrame.concat
 
 .. _df-aggregations:
 
@@ -85,13 +94,13 @@ Aggregations
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.groupby
-    daft.DataFrame.sum
-    daft.DataFrame.mean
-    daft.DataFrame.count
-    daft.DataFrame.min
-    daft.DataFrame.max
-    daft.DataFrame.agg
+    DataFrame.groupby
+    DataFrame.sum
+    DataFrame.mean
+    DataFrame.count
+    DataFrame.min
+    DataFrame.max
+    DataFrame.agg
 
 Execution
 #########
@@ -106,7 +115,7 @@ Materialization
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.collect
+    DataFrame.collect
 
 Visualization
 *************
@@ -117,7 +126,7 @@ Visualization
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.show
+    DataFrame.show
 
 
 .. _df-write-data:
@@ -131,8 +140,8 @@ Writing Data
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.write_parquet
-    daft.DataFrame.write_csv
+    DataFrame.write_parquet
+    DataFrame.write_csv
 
 Integrations
 ************
@@ -143,12 +152,12 @@ Integrations
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.to_arrow
-    daft.DataFrame.to_pandas
-    daft.DataFrame.to_torch_map_dataset
-    daft.DataFrame.to_torch_iter_dataset
-    daft.DataFrame.to_ray_dataset
-    daft.DataFrame.to_dask_dataframe
+    DataFrame.to_arrow
+    DataFrame.to_pandas
+    DataFrame.to_torch_map_dataset
+    DataFrame.to_torch_iter_dataset
+    DataFrame.to_ray_dataset
+    DataFrame.to_dask_dataframe
 
 Schema and Lineage
 ##################
@@ -157,6 +166,6 @@ Schema and Lineage
     :nosignatures:
     :toctree: doc_gen/dataframe_methods
 
-    daft.DataFrame.explain
-    daft.DataFrame.schema
-    daft.DataFrame.column_names
+    DataFrame.explain
+    DataFrame.schema
+    DataFrame.column_names

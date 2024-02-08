@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import os
 import subprocess
+
+import sphinx_autosummary_accessors
+
+# Set environment variable to help code determine whether or not we are running a Sphinx doc build process
+os.environ["DAFT_SPHINX_BUILD"] = "1"
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -38,9 +44,10 @@ extensions = [
     "IPython.sphinxext.ipython_console_highlighting",
     "myst_nb",
     "sphinx_copybutton",
+    "sphinx_autosummary_accessors",
 ]
 
-templates_path = ["_templates"]
+templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 
 
 # -- Options for Notebook rendering
@@ -91,7 +98,9 @@ code_url = f"https://github.com/Eventual-Inc/Daft/blob/{commit}"
 def linkcode_resolve(domain, info):
     assert domain == "py", "expected only Python objects"
     mod = importlib.import_module(info["module"])
-    if "." in info["fullname"]:
+    if "." not in info["fullname"]:
+        obj = getattr(mod, info["fullname"])
+    elif info["fullname"].count(".") == 1:
         objname, attrname = info["fullname"].split(".")
         obj = getattr(mod, objname)
         try:
@@ -100,8 +109,10 @@ def linkcode_resolve(domain, info):
         except AttributeError:
             # object is an attribute of a class
             return None
-    else:
-        obj = getattr(mod, info["fullname"])
+    # Accessor methods with 2 "."s
+    elif info["fullname"].count(".") == 2:
+        objname, accessor_name, method_name = info["fullname"].split(".")
+        obj = getattr(getattr(getattr(mod, objname), accessor_name), method_name)
 
     # Handle case where object is a decorated function
     while hasattr(obj, "__wrapped__"):

@@ -125,8 +125,30 @@ impl TreeDisplay for crate::LogicalPlan {
     }
 }
 
+impl TreeDisplay for crate::physical_plan::PhysicalPlan {
+    fn get_multiline_representation(&self) -> Vec<String> {
+        self.multiline_display()
+    }
+
+    fn get_name(&self) -> String {
+        self.name()
+    }
+
+    fn get_children(&self) -> Vec<&Arc<Self>> {
+        self.children()
+    }
+}
+
 // Single node display.
 impl Display for crate::LogicalPlan {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.get_multiline_representation().join(", "))?;
+        Ok(())
+    }
+}
+
+// Single node display.
+impl Display for crate::physical_plan::PhysicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.get_multiline_representation().join(", "))?;
         Ok(())

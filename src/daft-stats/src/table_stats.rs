@@ -15,7 +15,7 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }

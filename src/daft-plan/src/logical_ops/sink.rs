@@ -6,10 +6,7 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 
-use crate::{
-    sink_info::{OutputFileInfo, SinkInfo},
-    LogicalPlan,
-};
+use crate::{sink_info::SinkInfo, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -46,32 +43,9 @@ impl Sink {
         let mut res = vec![];
 
         match self.sink_info.as_ref() {
-            SinkInfo::OutputFileInfo(OutputFileInfo {
-                root_dir,
-                file_format,
-                partition_cols,
-                compression,
-                io_config,
-            }) => {
-                res.push(format!("Sink: {:?}", file_format));
-                if let Some(partition_cols) = partition_cols {
-                    res.push(format!(
-                        "Partition cols = {}",
-                        partition_cols
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
-                if let Some(compression) = compression {
-                    res.push(format!("Compression = {}", compression));
-                }
-                res.push(format!("Root dir = {}", root_dir));
-                match io_config {
-                    None => res.push("IOConfig = None".to_string()),
-                    Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
-                }
+            SinkInfo::OutputFileInfo(output_file_info) => {
+                res.push(format!("Sink: {:?}", output_file_info.file_format));
+                res.extend(output_file_info.multiline_display());
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

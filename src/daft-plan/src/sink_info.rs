@@ -1,5 +1,6 @@
 use common_io_config::IOConfig;
 use daft_dsl::Expr;
+use itertools::Itertools;
 
 use crate::FileFormat;
 use serde::{Deserialize, Serialize};
@@ -33,5 +34,24 @@ impl OutputFileInfo {
             compression,
             io_config,
         }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if let Some(ref partition_cols) = self.partition_cols {
+            res.push(format!(
+                "Partition cols = {}",
+                partition_cols.iter().map(|e| e.to_string()).join(", ")
+            ));
+        }
+        if let Some(ref compression) = self.compression {
+            res.push(format!("Compression = {}", compression));
+        }
+        res.push(format!("Root dir = {}", self.root_dir));
+        match &self.io_config {
+            None => res.push("IOConfig = None".to_string()),
+            Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+        }
+        res
     }
 }

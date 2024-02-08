@@ -6,6 +6,7 @@ use daft_core::{
     DataType,
 };
 use daft_dsl::Expr;
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use crate::{
@@ -121,31 +122,19 @@ impl Join {
         if !self.left_on.is_empty() && !self.right_on.is_empty() && self.left_on == self.right_on {
             res.push(format!(
                 "On = {}",
-                self.left_on
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                self.left_on.iter().map(|e| e.to_string()).join(", ")
             ));
         } else {
             if !self.left_on.is_empty() {
                 res.push(format!(
                     "Left on = {}",
-                    self.left_on
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    self.left_on.iter().map(|e| e.to_string()).join(", ")
                 ));
             }
             if !self.right_on.is_empty() {
                 res.push(format!(
                     "Right on = {}",
-                    self.right_on
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    self.right_on.iter().map(|e| e.to_string()).join(", ")
                 ));
             }
         }

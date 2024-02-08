@@ -3,4 +3,4 @@ Integrations
 
 .. toctree::
 
-    integrations/data_catalogs
+    integrations/iceberg
