@@ -53,7 +53,7 @@ impl ScanOperator for AnonymousScanOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![
             "AnonymousScanOperator".to_string(),
-            format!("File Paths= [{}]", self.files.join(", ")),
+            format!("File paths = [{}]", self.files.join(", ")),
         ];
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());

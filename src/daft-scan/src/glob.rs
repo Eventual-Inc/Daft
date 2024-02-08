@@ -234,7 +234,7 @@ impl ScanOperator for GlobScanOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![
             "GlobScanOperator".to_string(),
-            format!("Glob Paths= [{}]", self.glob_paths.join(", ")),
+            format!("Glob paths = [{}]", self.glob_paths.join(", ")),
         ];
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());
