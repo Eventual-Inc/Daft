@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 use itertools::Itertools;
 
-use crate::{LogicalPlan, PartitionScheme};
+use crate::{partitioning::PartitionSchemeConfig, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
@@ -12,7 +12,7 @@ pub struct Repartition {
     pub input: Arc<LogicalPlan>,
     pub num_partitions: Option<usize>,
     pub partition_by: Vec<Expr>,
-    pub scheme: PartitionScheme,
+    pub scheme_config: PartitionSchemeConfig,
 }
 
 impl Repartition {
@@ -20,9 +20,9 @@ impl Repartition {
         input: Arc<LogicalPlan>,
         num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
-        scheme: PartitionScheme,
+        scheme_config: PartitionSchemeConfig,
     ) -> DaftResult<Self> {
-        if matches!(scheme, PartitionScheme::Range) {
+        if matches!(scheme_config, PartitionSchemeConfig::Range(_)) {
             return Err(DaftError::ValueError(
                 "Repartitioning with the Range partition scheme is not supported.".to_string(),
             ));
@@ -31,13 +31,22 @@ impl Repartition {
             input,
             num_partitions,
             partition_by,
-            scheme,
+            scheme_config,
         })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Repartition: Scheme = {:?}", self.scheme));
+        let scheme_config = self.scheme_config.multiline_display();
+        res.push(format!(
+            "Repartition: Scheme = {}{}",
+            self.scheme_config.var_name(),
+            if scheme_config.is_empty() {
+                "".to_string()
+            } else {
+                format!("({})", scheme_config.join(", "))
+            }
+        ));
         res.push(format!(
             "Number of partitions = {}",
             self.num_partitions

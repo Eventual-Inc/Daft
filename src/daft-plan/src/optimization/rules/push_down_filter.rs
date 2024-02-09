@@ -293,7 +293,7 @@ mod tests {
             Optimizer,
         },
         test::{dummy_scan_node, dummy_scan_operator_node},
-        JoinType, LogicalPlan, PartitionScheme,
+        JoinType, LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
@@ -492,7 +492,11 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .repartition(Some(1), vec![col("a")], PartitionScheme::Hash)?
+        .repartition(
+            Some(1),
+            vec![col("a")],
+            PartitionSchemeConfig::Hash(Default::default()),
+        )?
         .filter(col("a").lt(&lit(2)))?
         .build();
         let expected = "\

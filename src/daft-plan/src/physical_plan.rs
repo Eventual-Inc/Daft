@@ -1,6 +1,7 @@
 #[cfg(feature = "python")]
 use {
     crate::{
+        partitioning::PyPartitionSpec,
         sink_info::OutputFileInfo,
         source_info::{FileInfos, InMemoryInfo, LegacyExternalInfo},
     },
@@ -26,7 +27,9 @@ use daft_core::impl_bincode_py_state_serialization;
 use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
-use crate::{display::TreeDisplay, physical_ops::*, PartitionScheme, PartitionSpec};
+use crate::{
+    display::TreeDisplay, partitioning::PartitionSchemeConfig, physical_ops::*, PartitionSpec,
+};
 
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 
@@ -86,8 +89,8 @@ impl PhysicalPlan {
                 input.partition_spec().clone()
             }
 
-            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new_internal(
-                PartitionScheme::Range,
+            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new(
+                PartitionSchemeConfig::Range(Default::default()),
                 input.partition_spec().num_partitions,
                 Some(sort_by.clone()),
             )
@@ -95,23 +98,31 @@ impl PhysicalPlan {
             Self::Split(Split {
                 output_num_partitions,
                 ..
-            }) => {
-                PartitionSpec::new_internal(PartitionScheme::Unknown, *output_num_partitions, None)
-                    .into()
-            }
-            Self::Coalesce(Coalesce { num_to, .. }) => {
-                PartitionSpec::new_internal(PartitionScheme::Unknown, *num_to, None).into()
-            }
+            }) => PartitionSpec::new(
+                PartitionSchemeConfig::Unknown(Default::default()),
+                *output_num_partitions,
+                None,
+            )
+            .into(),
+            Self::Coalesce(Coalesce { num_to, .. }) => PartitionSpec::new(
+                PartitionSchemeConfig::Unknown(Default::default()),
+                *num_to,
+                None,
+            )
+            .into(),
             Self::Flatten(Flatten { input }) => input.partition_spec(),
-            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => {
-                PartitionSpec::new_internal(PartitionScheme::Random, *num_partitions, None).into()
-            }
+            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => PartitionSpec::new(
+                PartitionSchemeConfig::Random(Default::default()),
+                *num_partitions,
+                None,
+            )
+            .into(),
             Self::FanoutByHash(FanoutByHash {
                 num_partitions,
                 partition_by,
                 ..
-            }) => PartitionSpec::new_internal(
-                PartitionScheme::Hash,
+            }) => PartitionSpec::new(
+                PartitionSchemeConfig::Hash(Default::default()),
                 *num_partitions,
                 Some(partition_by.clone()),
             )
@@ -120,8 +131,8 @@ impl PhysicalPlan {
                 num_partitions,
                 sort_by,
                 ..
-            }) => PartitionSpec::new_internal(
-                PartitionScheme::Range,
+            }) => PartitionSpec::new(
+                PartitionSchemeConfig::Range(Default::default()),
                 *num_partitions,
                 Some(sort_by.clone()),
             )
@@ -132,18 +143,19 @@ impl PhysicalPlan {
                 if input_partition_spec.num_partitions == 1 {
                     input_partition_spec.clone()
                 } else if groupby.is_empty() {
-                    PartitionSpec::new_internal(PartitionScheme::Unknown, 1, None).into()
+                    PartitionSpec::new(PartitionSchemeConfig::Unknown(Default::default()), 1, None)
+                        .into()
                 } else {
-                    PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
+                    PartitionSpec::new(
+                        PartitionSchemeConfig::Hash(Default::default()),
                         input.partition_spec().num_partitions,
                         Some(groupby.clone()),
                     )
                     .into()
                 }
             }
-            Self::Concat(Concat { input, other }) => PartitionSpec::new_internal(
-                PartitionScheme::Unknown,
+            Self::Concat(Concat { input, other }) => PartitionSpec::new(
+                PartitionSchemeConfig::Unknown(Default::default()),
                 input.partition_spec().num_partitions + other.partition_spec().num_partitions,
                 None,
             )
@@ -164,8 +176,8 @@ impl PhysicalPlan {
                     // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
                     // to be an entirely planner-side concept.
                     1 => input_partition_spec,
-                    num_partitions => PartitionSpec::new_internal(
-                        PartitionScheme::Hash,
+                    num_partitions => PartitionSpec::new(
+                        PartitionSchemeConfig::Hash(Default::default()),
                         num_partitions,
                         Some(left_on.clone()),
                     )
@@ -180,8 +192,8 @@ impl PhysicalPlan {
                 right,
                 left_on,
                 ..
-            }) => PartitionSpec::new_internal(
-                PartitionScheme::Range,
+            }) => PartitionSpec::new(
+                PartitionSchemeConfig::Range(Default::default()),
                 max(
                     left.partition_spec().num_partitions,
                     right.partition_spec().num_partitions,
@@ -459,10 +471,10 @@ pub struct PhysicalPlanScheduler {
 #[pymethods]
 impl PhysicalPlanScheduler {
     pub fn num_partitions(&self) -> PyResult<i64> {
-        self.plan.partition_spec().get_num_partitions()
+        Ok(self.plan.partition_spec().num_partitions as i64)
     }
-    pub fn partition_spec(&self) -> PyResult<PartitionSpec> {
-        Ok(self.plan.partition_spec().as_ref().clone())
+    pub fn partition_spec(&self) -> PyResult<PyPartitionSpec> {
+        Ok(Arc::new(self.plan.partition_spec().as_ref().clone()).into())
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {
