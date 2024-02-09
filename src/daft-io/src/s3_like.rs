@@ -445,6 +445,7 @@ impl S3LikeSource {
                 .get_s3_client(region)
                 .await?
                 .get_object()
+                .set_request_payer(Some(s3::types::RequestPayer::Requester))
                 .bucket(bucket)
                 .key(key);
 
@@ -549,6 +550,7 @@ impl S3LikeSource {
                 .get_s3_client(region)
                 .await?
                 .head_object()
+                .set_request_payer(Some(s3::types::RequestPayer::Requester))
                 .bucket(bucket)
                 .key(key);
 
@@ -643,6 +645,7 @@ impl S3LikeSource {
         } else {
             request
         };
+        let request = request.set_request_payer(Some(s3::types::RequestPayer::Requester));
         let response = if self.anonymous {
             request
                 .customize_middleware()
