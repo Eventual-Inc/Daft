@@ -5,3 +5,4 @@ Integrations
 
     integrations/iceberg
     integrations/microsoft-azure
+    integrations/aws
