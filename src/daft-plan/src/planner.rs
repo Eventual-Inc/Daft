@@ -497,7 +497,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             first_stage_agg.into(),
-                            1,
+                            num_input_partitions,
                             groupby.clone(),
                         ));
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
