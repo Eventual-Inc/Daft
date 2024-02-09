@@ -82,7 +82,7 @@ impl Default for PartitionSchemeConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct RangeConfig {
     pub descending: Vec<bool>,
 }
@@ -317,19 +317,6 @@ impl PyPartitionSpec {
         )
     }
 
-    /// Get the underlying partitioning scheme config.
-    #[getter]
-    fn get_config(&self, py: Python) -> PyObject {
-        use PartitionSchemeConfig::*;
-
-        match &self.0.scheme_config {
-            Range(config) => config.clone().into_py(py),
-            Hash(config) => config.clone().into_py(py),
-            Random(config) => config.clone().into_py(py),
-            Unknown(config) => config.clone().into_py(py),
-        }
-    }
-
     #[getter]
     pub fn get_scheme(&self) -> PyResult<PartitionScheme> {
         Ok(self.0.scheme_config.to_scheme())
@@ -347,6 +334,19 @@ impl PyPartitionSpec {
             .by
             .as_ref()
             .map(|v| v.iter().map(|e| e.clone().into()).collect()))
+    }
+
+    /// Get the underlying partitioning scheme config.
+    #[getter]
+    fn get_scheme_config(&self, py: Python) -> PyObject {
+        use PartitionSchemeConfig::*;
+
+        match &self.0.scheme_config {
+            Range(config) => config.clone().into_py(py),
+            Hash(config) => config.clone().into_py(py),
+            Random(config) => config.clone().into_py(py),
+            Unknown(config) => config.clone().into_py(py),
+        }
     }
 
     pub fn __str__(&self) -> PyResult<String> {
