@@ -34,6 +34,7 @@ pub struct DaftExecutionConfig {
     pub parquet_inflation_factor: f64,
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
+    pub aggregation_min_partitions: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -51,6 +52,7 @@ impl Default for DaftExecutionConfig {
             parquet_inflation_factor: 3.0,
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
+            aggregation_min_partitions: 10,
         }
     }
 }

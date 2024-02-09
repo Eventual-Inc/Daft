@@ -8,6 +8,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.context import get_context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.utils import freeze
@@ -365,3 +366,30 @@ def test_groupby_agg_pyobjects():
     assert res["groups"] == [1, 2]
     assert res["count"] == [2, 1]
     assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]
+
+
+@pytest.mark.parametrize("aggregation_min_partitions", [None, 20])
+def test_groupby_result_partitions_smaller_than_input(aggregation_min_partitions):
+    if aggregation_min_partitions is None:
+        min_partitions = get_context().daft_execution_config.aggregation_min_partitions
+    else:
+        daft.set_execution_config(aggregation_min_partitions=aggregation_min_partitions)
+        min_partitions = aggregation_min_partitions
+
+    for partition_size in [1, min_partitions, min_partitions + 1]:
+        df = daft.from_pydict(
+            {"group": [i for i in range(min_partitions + 1)], "value": [i for i in range(min_partitions + 1)]}
+        )
+        df = df.into_partitions(partition_size)
+
+        df = df.groupby(col("group")).agg(
+            [
+                (col("value").alias("sum"), "sum"),
+                (col("value").alias("mean"), "mean"),
+                (col("value").alias("min"), "min"),
+            ]
+        )
+
+        df = df.collect()
+
+        assert df.num_partitions() == min(min_partitions, partition_size)

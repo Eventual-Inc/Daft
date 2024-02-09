@@ -89,6 +89,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        aggregation_min_partitions: Option<usize>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -130,6 +131,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
+        }
+        if let Some(aggregation_min_partitions) = aggregation_min_partitions {
+            config.aggregation_min_partitions = aggregation_min_partitions;
         }
 
         Ok(PyDaftExecutionConfig {
@@ -190,6 +194,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_csv_inflation_factor(&self) -> PyResult<f64> {
         Ok(self.config.csv_inflation_factor)
+    }
+
+    #[getter]
+    fn get_aggregation_min_partitions(&self) -> PyResult<usize> {
+        Ok(self.config.aggregation_min_partitions)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {

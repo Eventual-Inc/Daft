@@ -1197,6 +1197,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        aggregation_min_partitions: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1220,6 +1221,8 @@ class PyDaftExecutionConfig:
     def csv_target_filesize(self) -> int: ...
     @property
     def csv_inflation_factor(self) -> float: ...
+    @property
+    def aggregation_min_partitions(self) -> int: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(

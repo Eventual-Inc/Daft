@@ -215,6 +215,7 @@ def set_execution_config(
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
+    aggregation_min_partitions: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -243,6 +244,7 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
+        aggregation_min_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 10, unless the number of input partitions is less than 10.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -260,6 +262,7 @@ def set_execution_config(
         parquet_inflation_factor=parquet_inflation_factor,
         csv_target_filesize=csv_target_filesize,
         csv_inflation_factor=csv_inflation_factor,
+        aggregation_min_partitions=aggregation_min_partitions,
     )
 
     ctx.daft_execution_config = new_daft_execution_config
