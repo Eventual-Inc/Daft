@@ -797,43 +797,34 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         assert len(pd_df) == len(valid_data)
 
 
-def test_create_dataframe_json_schema_hints_large_file() -> None:
-    # First assemble data that will be larger than 1MB, because our schema inference will max out at 1MB.
-    item = {"column": {"test_key": "test_value"}}
-    item_size = len(json.dumps(item).encode("utf-8"))
-    entries_needed = (1024 * 1024) // item_size + 1
-    data = [item] * entries_needed
-
-    # Add a row at the end of the file with a different key to ensure that the schema inference doesn't pick it up
-    data.append({"column": {"TEST_KEY_BOTTOM_OF_FILE": "TEST_VALUE_BOTTOM_OF_FILE"}})
-
-    with create_temp_filename() as fname:
+def test_create_dataframe_json_schema_hints_two_files() -> None:
+    with create_temp_filename() as fname, create_temp_filename() as fname2:
         with open(fname, "w") as f:
-            for row in data:
-                f.write(json.dumps(row))
-                f.write("\n")
+            f.write(json.dumps({"foo": {"bar": "baz"}}))
+            f.write("\n")
             f.flush()
 
-        # Without schema hints, schema inference should not pick up the key value pair at the bottom of the file
-        assert daft.read_json(fname).schema()["column"].dtype == DataType.struct({"test_key": DataType.string()})
+        with open(fname2, "w") as f:
+            f.write(json.dumps({"foo": {"bar2": "baz2"}}))
+            f.write("\n")
+            f.flush()
 
-        # With schema hints, the bottom kv pair should be included
+        # Without schema hints, schema inference should not pick up bar2
+        assert daft.read_json([fname, fname2]).schema()["foo"].dtype == DataType.struct({"bar": DataType.string()})
+
+        # With schema hints, bar2 should be included
         df = daft.read_json(
-            fname,
-            schema_hints={
-                "column": DataType.struct({"test_key": DataType.string(), "TEST_KEY_BOTTOM_OF_FILE": DataType.string()})
-            },
+            [fname, fname2],
+            schema_hints={"foo": DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})},
         )
-        assert df.schema()["column"].dtype == DataType.struct(
-            {"test_key": DataType.string(), "TEST_KEY_BOTTOM_OF_FILE": DataType.string()}
-        )
+        assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
 
-        # When dataframe is materialized, the schema hints should be enforced and the key value pair at the bottom should not be null
-        df = df.select(df["column"].struct.get("TEST_KEY_BOTTOM_OF_FILE"))
-        df = df.where(df["TEST_KEY_BOTTOM_OF_FILE"].not_null()).collect()
+        # When dataframe is materialized, the schema hints should be enforced and bar2 should be included
+        df = df.select(df["foo"].struct.get("bar2"))
+        df = df.where(df["bar2"].not_null()).collect()
 
         assert len(df) == 1
-        assert df.to_pydict()["TEST_KEY_BOTTOM_OF_FILE"][0] == "TEST_VALUE_BOTTOM_OF_FILE"
+        assert df.to_pydict()["bar2"][0] == "baz2"
 
 
 @pytest.mark.parametrize(
