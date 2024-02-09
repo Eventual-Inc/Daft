@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -296,24 +297,33 @@ class PartitionCacheEntry:
 
 class PartitionSetCache:
     def __init__(self) -> None:
-        self._uuid_to_partition_set: weakref.WeakValueDictionary[
+        self.__uuid_to_partition_set: weakref.WeakValueDictionary[
             str, PartitionCacheEntry
         ] = weakref.WeakValueDictionary()
+        self._lock = threading.Lock()
 
     def get_partition_set(self, pset_id: str) -> PartitionCacheEntry:
-        assert pset_id in self._uuid_to_partition_set
-        return self._uuid_to_partition_set[pset_id]
+        with self._lock:
+            assert pset_id in self.__uuid_to_partition_set
+            return self.__uuid_to_partition_set[pset_id]
+
+    def get_all_partition_sets(self) -> dict[str, PartitionSet]:
+        with self._lock:
+            return {key: entry.value for key, entry in self.__uuid_to_partition_set.items() if entry.value is not None}
 
     def put_partition_set(self, pset: PartitionSet) -> PartitionCacheEntry:
         pset_id = uuid4().hex
         part_entry = PartitionCacheEntry(pset_id, pset)
-        self._uuid_to_partition_set[pset_id] = part_entry
-        return part_entry
+        with self._lock:
+            self.__uuid_to_partition_set[pset_id] = part_entry
+            return part_entry
 
     def rm(self, pset_id: str) -> None:
-        if pset_id in self._uuid_to_partition_set:
-            del self._uuid_to_partition_set[pset_id]
+        with self._lock:
+            if pset_id in self.__uuid_to_partition_set:
+                del self.__uuid_to_partition_set[pset_id]
 
     def clear(self) -> None:
-        del self._uuid_to_partition_set
-        self._uuid_to_partition_set = weakref.WeakValueDictionary()
+        with self._lock:
+            del self.__uuid_to_partition_set
+            self.__uuid_to_partition_set = weakref.WeakValueDictionary()

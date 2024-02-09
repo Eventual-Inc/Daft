@@ -727,11 +727,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         # physical plan to executable tasks.
         plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
 
-        psets = {
-            key: entry.value.values()
-            for key, entry in self._part_set_cache._uuid_to_partition_set.items()
-            if entry.value is not None
-        }
+        psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
+
         result_uuid = str(uuid.uuid4())
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
