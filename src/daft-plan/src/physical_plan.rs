@@ -28,7 +28,10 @@ use serde::{Deserialize, Serialize};
 use std::{cmp::max, sync::Arc};
 
 use crate::{
-    display::TreeDisplay, partitioning::PartitionSchemeConfig, physical_ops::*, PartitionSpec,
+    display::TreeDisplay,
+    partitioning::{PartitionSchemeConfig, RangeConfig},
+    physical_ops::*,
+    PartitionSpec,
 };
 
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
@@ -89,8 +92,13 @@ impl PhysicalPlan {
                 input.partition_spec().clone()
             }
 
-            Self::Sort(Sort { input, sort_by, .. }) => PartitionSpec::new(
-                PartitionSchemeConfig::Range(Default::default()),
+            Self::Sort(Sort {
+                input,
+                sort_by,
+                descending,
+                ..
+            }) => PartitionSpec::new(
+                PartitionSchemeConfig::Range(RangeConfig::new_internal(descending.clone())),
                 input.partition_spec().num_partitions,
                 Some(sort_by.clone()),
             )
@@ -130,9 +138,10 @@ impl PhysicalPlan {
             Self::FanoutByRange(FanoutByRange {
                 num_partitions,
                 sort_by,
+                descending,
                 ..
             }) => PartitionSpec::new(
-                PartitionSchemeConfig::Range(Default::default()),
+                PartitionSchemeConfig::Range(RangeConfig::new_internal(descending.clone())),
                 *num_partitions,
                 Some(sort_by.clone()),
             )
@@ -193,7 +202,10 @@ impl PhysicalPlan {
                 left_on,
                 ..
             }) => PartitionSpec::new(
-                PartitionSchemeConfig::Range(Default::default()),
+                // TODO(Clark): Propagate descending vec once our sort-merge join supports more than all-ascending order.
+                PartitionSchemeConfig::Range(RangeConfig::new_internal(
+                    std::iter::repeat(false).take(left_on.len()).collect(),
+                )),
                 max(
                     left.partition_spec().num_partitions,
                     right.partition_spec().num_partitions,
@@ -340,7 +352,7 @@ impl PhysicalPlan {
                 Self::Flatten(..) => Self::Flatten(Flatten::new(input.clone())),
                 Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => Self::FanoutRandom(FanoutRandom::new(input.clone(), *num_partitions)),
                 Self::FanoutByHash(FanoutByHash { num_partitions, partition_by, .. }) => Self::FanoutByHash(FanoutByHash::new(input.clone(), *num_partitions, partition_by.clone())),
-                Self::FanoutByRange(FanoutByRange { num_partitions, sort_by, .. }) => Self::FanoutByRange(FanoutByRange::new(input.clone(), *num_partitions, sort_by.clone())),
+                Self::FanoutByRange(FanoutByRange { num_partitions, sort_by, descending, .. }) => Self::FanoutByRange(FanoutByRange::new(input.clone(), *num_partitions, sort_by.clone(), descending.clone())),
                 Self::ReduceMerge(..) => Self::ReduceMerge(ReduceMerge::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),

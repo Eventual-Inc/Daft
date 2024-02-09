@@ -392,12 +392,15 @@ impl PyLogicalPlanBuilder {
             .map(|expr| expr.clone().into())
             .collect();
         let partition_scheme_config = match scheme {
-            PartitionScheme::Range => PartitionSchemeConfig::Range(
-                scheme_config
-                    .map(|c| c.extract(py))
-                    .transpose()?
-                    .unwrap_or_default(),
-            ),
+            PartitionScheme::Range => {
+                if let Some(scheme_config) = scheme_config {
+                    PartitionSchemeConfig::Range(scheme_config.extract(py)?)
+                } else {
+                    return Err(DaftError::ValueError(
+                        "Must provide a scheme config with ascending/descending list if repartitioning by range.".to_string(),
+                    ).into());
+                }
+            }
             PartitionScheme::Hash => PartitionSchemeConfig::Hash(
                 scheme_config
                     .map(|c| c.extract(py))

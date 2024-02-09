@@ -571,27 +571,37 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
             let is_left_sort_partitioned =
-                matches!(left_pspec.scheme_config, PartitionSchemeConfig::Range(_))
-                    && left_pspec
+                if let PartitionSchemeConfig::Range(range_config) = &left_pspec.scheme_config {
+                    left_pspec
                         .by
                         .as_ref()
                         .map(|e| {
                             e.len() >= left_on.len()
                                 && e.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
                         })
-                        .unwrap_or(false);
+                        .unwrap_or(false)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && range_config.descending.iter().all(|v| *v)
+                } else {
+                    false
+                };
             // Right-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
             let is_right_sort_partitioned =
-                matches!(right_pspec.scheme_config, PartitionSchemeConfig::Range(_))
-                    && right_pspec
+                if let PartitionSchemeConfig::Range(range_config) = &right_pspec.scheme_config {
+                    right_pspec
                         .by
                         .as_ref()
                         .map(|e| {
                             e.len() >= right_on.len()
                                 && e.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
                         })
-                        .unwrap_or(false);
+                        .unwrap_or(false)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && range_config.descending.iter().all(|v| *v)
+                } else {
+                    false
+                };
 
             // For broadcast joins, ensure that the left side of the join is the smaller side.
             let (smaller_size_bytes, left_is_larger) = match (

@@ -47,14 +47,6 @@ pub enum PartitionSchemeConfig {
 }
 
 impl PartitionSchemeConfig {
-    pub fn from_scheme(&self, scheme: PartitionScheme) -> Self {
-        match scheme {
-            PartitionScheme::Range => Self::Range(Default::default()),
-            PartitionScheme::Hash => Self::Hash(Default::default()),
-            PartitionScheme::Random => Self::Random(Default::default()),
-            PartitionScheme::Unknown => Self::Unknown(Default::default()),
-        }
-    }
     pub fn var_name(&self) -> &'static str {
         match self {
             Self::Range(_) => "Range",
@@ -91,21 +83,17 @@ impl Default for PartitionSchemeConfig {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
-pub struct RangeConfig {}
+pub struct RangeConfig {
+    pub descending: Vec<bool>,
+}
 
 impl RangeConfig {
-    pub fn new_internal() -> Self {
-        Self {}
+    pub fn new_internal(descending: Vec<bool>) -> Self {
+        Self { descending }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![]
-    }
-}
-
-impl Default for RangeConfig {
-    fn default() -> Self {
-        Self::new_internal()
+        vec![self.descending.iter().join(", ")]
     }
 }
 
@@ -114,8 +102,8 @@ impl Default for RangeConfig {
 impl RangeConfig {
     /// Create a config for range partitioning.
     #[new]
-    fn new() -> Self {
-        Self::new_internal()
+    fn new(descending: Vec<bool>) -> Self {
+        Self::new_internal(descending)
     }
 }
 impl_bincode_py_state_serialization!(RangeConfig);
@@ -279,13 +267,12 @@ pub struct PyPartitionSpec(Arc<PartitionSpec>);
 impl PyPartitionSpec {
     /// Create a range partitioning spec.
     #[staticmethod]
-    #[pyo3(signature = (scheme_config=RangeConfig::default(), num_partitions=0usize, by=None))]
-    fn range(scheme_config: RangeConfig, num_partitions: usize, by: Option<Vec<PyExpr>>) -> Self {
+    fn range(by: Vec<PyExpr>, num_partitions: usize, descending: Vec<bool>) -> Self {
         Self(
             PartitionSpec::new(
-                PartitionSchemeConfig::Range(scheme_config),
+                PartitionSchemeConfig::Range(RangeConfig::new_internal(descending)),
                 num_partitions,
-                by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
+                Some(by.iter().map(|e| e.clone().into()).collect()),
             )
             .into(),
         )
@@ -293,13 +280,12 @@ impl PyPartitionSpec {
 
     /// Create a hash partitioning spec.
     #[staticmethod]
-    #[pyo3(signature = (scheme_config=Default::default(), num_partitions=0usize, by=None))]
-    fn hash(scheme_config: HashConfig, num_partitions: usize, by: Option<Vec<PyExpr>>) -> Self {
+    fn hash(by: Vec<PyExpr>, num_partitions: usize) -> Self {
         Self(
             PartitionSpec::new(
-                PartitionSchemeConfig::Hash(scheme_config),
+                PartitionSchemeConfig::Hash(Default::default()),
                 num_partitions,
-                by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
+                Some(by.iter().map(|e| e.clone().into()).collect()),
             )
             .into(),
         )
@@ -307,13 +293,12 @@ impl PyPartitionSpec {
 
     /// Create a random partitioning spec.
     #[staticmethod]
-    #[pyo3(signature = (scheme_config=Default::default(), num_partitions=0usize, by=None))]
-    fn random(scheme_config: RandomConfig, num_partitions: usize, by: Option<Vec<PyExpr>>) -> Self {
+    fn random(num_partitions: usize) -> Self {
         Self(
             PartitionSpec::new(
-                PartitionSchemeConfig::Random(scheme_config),
+                PartitionSchemeConfig::Random(Default::default()),
                 num_partitions,
-                by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
+                None,
             )
             .into(),
         )
@@ -321,17 +306,12 @@ impl PyPartitionSpec {
 
     /// Create a unknown partitioning spec.
     #[staticmethod]
-    #[pyo3(signature = (scheme_config=Default::default(), num_partitions=0usize, by=None))]
-    fn unknown(
-        scheme_config: UnknownConfig,
-        num_partitions: usize,
-        by: Option<Vec<PyExpr>>,
-    ) -> Self {
+    fn unknown(num_partitions: usize) -> Self {
         Self(
             PartitionSpec::new(
-                PartitionSchemeConfig::Unknown(scheme_config),
+                PartitionSchemeConfig::Unknown(Default::default()),
                 num_partitions,
-                by.map(|v| v.iter().map(|e| e.clone().into()).collect()),
+                None,
             )
             .into(),
         )
