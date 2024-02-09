@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 import threading
+
+
 class _RunnerConfig:
     name = ClassVar[str]
 
@@ -72,7 +74,7 @@ class DaftContext:
     _lock = threading.Lock()
 
     def __new__(cls):
-        if cls._instance is None: 
+        if cls._instance is None:
             with cls._lock:
                 # Another thread could have created the instance
                 # before we acquired the lock. So check that the
@@ -80,7 +82,6 @@ class DaftContext:
                 if not cls._instance:
                     cls._instance = super().__new__(cls)
         return cls._instance
-
 
     def runner(self) -> Runner:
         with self._lock:
@@ -134,8 +135,10 @@ class DaftContext:
 
 _DaftContext = DaftContext()
 
+
 def get_context() -> DaftContext:
     return _DaftContext
+
 
 def set_runner_ray(
     address: str | None = None,
