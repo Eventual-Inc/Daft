@@ -445,9 +445,14 @@ impl S3LikeSource {
                 .get_s3_client(region)
                 .await?
                 .get_object()
-                .set_request_payer(Some(s3::types::RequestPayer::Requester))
                 .bucket(bucket)
                 .key(key);
+
+            let request = if self.s3_config.requester_pays {
+                request.request_payer(s3::types::RequestPayer::Requester)
+            } else {
+                request
+            };
 
             let request = match &range {
                 None => request,
@@ -550,9 +555,14 @@ impl S3LikeSource {
                 .get_s3_client(region)
                 .await?
                 .head_object()
-                .set_request_payer(Some(s3::types::RequestPayer::Requester))
                 .bucket(bucket)
                 .key(key);
+
+            let request = if self.s3_config.requester_pays {
+                request.request_payer(s3::types::RequestPayer::Requester)
+            } else {
+                request
+            };
 
             let response = if self.anonymous {
                 request
@@ -645,7 +655,12 @@ impl S3LikeSource {
         } else {
             request
         };
-        let request = request.set_request_payer(Some(s3::types::RequestPayer::Requester));
+        let request = if self.s3_config.requester_pays {
+            request.request_payer(s3::types::RequestPayer::Requester)
+        } else {
+            request
+        };
+
         let response = if self.anonymous {
             request
                 .customize_middleware()
