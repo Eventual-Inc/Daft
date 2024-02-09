@@ -70,8 +70,8 @@ class DaftContext:
     disallow_set_runner: bool = False
     _runner: Runner | None = None
 
-    _instance = None
-    _lock = threading.Lock()
+    _instance: ClassVar[DaftContext | None] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
