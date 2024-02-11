@@ -6,6 +6,7 @@ pub mod arrow2;
 pub mod as_arrow;
 pub(crate) mod broadcast;
 pub(crate) mod cast;
+mod ceil;
 mod compare_agg;
 mod comparison;
 mod concat;

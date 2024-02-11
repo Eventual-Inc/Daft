@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import operator as ops
 
 import pyarrow as pa
@@ -157,3 +158,25 @@ def test_table_abs_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to abs to be numeric"):
         table.eval_expression_list([abs(col("a"))])
+
+
+def test_table_numeric_ceil() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": [None, -1.0, -0.5, 0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+    )
+
+    ceil_table = table.eval_expression_list([col("a").ceil(), col("b").ceil()])
+
+    assert [math.ceil(v) if v is not None else v for v in table.get_column("a").to_pylist()] == ceil_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.ceil(v) if v is not None else v for v in table.get_column("b").to_pylist()] == ceil_table.get_column(
+        "b"
+    ).to_pylist()
+
+
+def test_table_ceil_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to ceil to be numeric"):
+        table.eval_expression_list([col("a").ceil()])

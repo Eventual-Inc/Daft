@@ -86,6 +86,15 @@ def test_repr_functions_abs() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_ceil() -> None:
+    a = col("a")
+    y = a.ceil()
+    repr_out = repr(y)
+    assert repr_out == "ceil(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_day() -> None:
     a = col("a")
     y = a.dt.day()

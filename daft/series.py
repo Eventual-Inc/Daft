@@ -349,6 +349,9 @@ class Series:
     def __abs__(self) -> Series:
         return Series._from_pyseries(abs(self._series))
 
+    def ceil(self) -> Series:
+        return Series._from_pyseries(self._series.ceil())
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
