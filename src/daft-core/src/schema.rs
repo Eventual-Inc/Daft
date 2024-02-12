@@ -157,7 +157,7 @@ impl Schema {
             None,
             None,
         );
-        table.to_string()
+        format!("{}\n", table)
     }
 }
 
