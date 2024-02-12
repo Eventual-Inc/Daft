@@ -9,7 +9,10 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::{datatypes::Field, utils::display_table::make_comfy_table};
+use crate::{
+    datatypes::Field,
+    utils::display_table::{make_comfy_table, make_schema_vertical_table},
+};
 
 use common_error::{DaftError, DaftResult};
 
@@ -143,6 +146,19 @@ impl Schema {
             .collect::<Vec<String>>()
             .join(", ")
     }
+
+    pub fn truncated_table_string(&self) -> String {
+        let table = make_comfy_table(
+            self.fields
+                .values()
+                .map(Cow::Borrowed)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            None,
+            None,
+        );
+        format!("{}\n", table)
+    }
 }
 
 impl Eq for Schema {}
@@ -183,14 +199,12 @@ impl Default for Schema {
 impl Display for Schema {
     // Produces an ASCII table.
     fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = make_comfy_table(
+        let table = make_schema_vertical_table(
             self.fields
                 .values()
                 .map(Cow::Borrowed)
                 .collect::<Vec<_>>()
                 .as_slice(),
-            None,
-            None,
         );
         writeln!(f, "{table}")
     }

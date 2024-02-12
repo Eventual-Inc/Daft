@@ -292,14 +292,24 @@ def test_repr_empty_struct():
     data = {"empty_structs": [{}, {}], "nested_empty_structs": [{"a": {}}, {"b": {}}]}
     df = daft.from_pydict(data)
 
-    expected_schema_repr = """╭───────────────┬──────────────────────────────────╮
+    expected_schema_truncated_repr = """╭───────────────┬──────────────────────────────────╮
 │ empty_structs ┆ nested_empty_structs             │
 │ ---           ┆ ---                              │
 │ Struct[]      ┆ Struct[a: Struct[], b: Struct[]] │
 ╰───────────────┴──────────────────────────────────╯
 """
+    assert df.schema()._truncated_table_string() == expected_schema_truncated_repr
 
-    assert str(df.schema()) == expected_schema_repr
+    expected_schema_repr = """╭──────────────────────┬──────────────────────────────────╮
+│ Column Name          ┆ Type                             │
+╞══════════════════════╪══════════════════════════════════╡
+│ empty_structs        ┆ Struct[]                         │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ nested_empty_structs ┆ Struct[a: Struct[], b: Struct[]] │
+╰──────────────────────┴──────────────────────────────────╯
+"""
+    assert repr(df.schema()) == expected_schema_repr
+
     expected_repr = """╭───────────────┬──────────────────────────────────╮
 │ empty_structs ┆ nested_empty_structs             │
 │ ---           ┆ ---                              │

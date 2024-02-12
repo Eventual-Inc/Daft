@@ -57,7 +57,7 @@ class DataFrameDisplay:
         if self.preview.preview_partition is not None:
             res = repr(self.preview.preview_partition.to_table())
         else:
-            res = repr(self.schema)
+            res = self.schema._truncated_table_string()
 
         res += f"\n{self._get_user_message()}"
 

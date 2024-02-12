@@ -63,9 +63,9 @@ def test_schema_to_name_set():
     assert schema.to_name_set() == set(DATA.keys())
 
 
-def test_repr():
+def test_truncated_repr():
     schema = TABLE.schema()
-    out_repr = repr(schema)
+    out_repr = schema._truncated_table_string()
     without_escape = ANSI_ESCAPE.sub("", out_repr)
     assert (
         without_escape.replace("\r", "")
@@ -74,6 +74,27 @@ def test_repr():
 │ ---   ┆ ---     ┆ ---    ┆ ---     │
 │ Int64 ┆ Float64 ┆ Utf8   ┆ Boolean │
 ╰───────┴─────────┴────────┴─────────╯
+"""
+    )
+
+
+def test_repr():
+    schema = TABLE.schema()
+    out_repr = repr(schema)
+    without_escape = ANSI_ESCAPE.sub("", out_repr)
+    assert (
+        without_escape.replace("\r", "")
+        == """╭─────────────┬─────────╮
+│ Column Name ┆ Type    │
+╞═════════════╪═════════╡
+│ int         ┆ Int64   │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ float       ┆ Float64 │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ string      ┆ Utf8    │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+│ bool        ┆ Boolean │
+╰─────────────┴─────────╯
 """
     )
 

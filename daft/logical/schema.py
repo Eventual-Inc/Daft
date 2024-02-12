@@ -132,6 +132,9 @@ class Schema:
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()
 
+    def _truncated_table_string(self) -> str:
+        return self._schema._truncated_table_string()
+
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")
