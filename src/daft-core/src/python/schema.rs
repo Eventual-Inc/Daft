@@ -70,6 +70,10 @@ impl PySchema {
     pub fn _repr_html_(&self) -> PyResult<String> {
         Ok(self.schema.repr_html())
     }
+
+    pub fn _truncated_table_string(&self) -> PyResult<String> {
+        Ok(self.schema.truncated_table_string())
+    }
 }
 
 impl_bincode_py_state_serialization!(PySchema);
