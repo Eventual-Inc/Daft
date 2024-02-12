@@ -9,16 +9,16 @@ import json
 import logging
 import os
 import platform
+import random
 import time
 import urllib.error
 import urllib.request
-import uuid
 from typing import Any, Callable
 
 from daft import context
 
 _ANALYTICS_CLIENT = None
-_WRITE_KEY = "ebFETjqH70OOvtDvrlBC902iljBZGvPU"
+_WRITE_KEY = "opL9scJXH6GKdIYgPdA0ncCj8i920LJq"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
 
 
@@ -31,6 +31,11 @@ class AnalyticsEvent:
     event_name: str
     event_time: datetime.datetime
     data: dict[str, Any]
+
+
+def _get_session_key():
+    # Restrict the cardinality of keys to 1,000
+    return f"anon-{random.randint(1, 1000)}"
 
 
 def _build_segment_batch_payload(
@@ -86,7 +91,7 @@ class AnalyticsClient:
     ) -> None:
         self._daft_version = daft_version
         self._daft_build_type = daft_build_type
-        self._session_key = str(uuid.uuid4())
+        self._session_key = _get_session_key()
 
         # Function to publish a payload to Segment
         self._publish = publish_payload_function
