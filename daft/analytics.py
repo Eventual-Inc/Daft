@@ -34,8 +34,8 @@ class AnalyticsEvent:
 
 
 def _get_session_key():
-    # Restrict the cardinality of keys to 1,000
-    return f"anon-{random.randint(1, 1000)}"
+    # Restrict the cardinality of keys to 8000
+    return f"anon-{random.randint(1, 8000)}"
 
 
 def _build_segment_batch_payload(
