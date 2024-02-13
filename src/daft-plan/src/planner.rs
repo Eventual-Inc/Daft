@@ -1,6 +1,9 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
-use std::{cmp::max, collections::HashMap};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -317,7 +320,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         }) => {
             use daft_dsl::AggExpr::{self, *};
             use daft_dsl::Expr::Column;
-            let input_plan = plan(input, cfg)?;
+            let input_plan = plan(input, cfg.clone())?;
 
             let num_input_partitions = input_plan.partition_spec().num_partitions;
 
@@ -497,7 +500,10 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     } else {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                             first_stage_agg.into(),
-                            num_input_partitions,
+                            min(
+                                num_input_partitions,
+                                cfg.shuffle_aggregation_default_partitions,
+                            ),
                             groupby.clone(),
                         ));
                         PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
