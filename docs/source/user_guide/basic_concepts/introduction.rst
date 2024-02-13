@@ -29,7 +29,7 @@ Using this abstraction of a DataFrame, you can run common tabular operations suc
 Daft DataFrames are:
 
 1. **Distributed:** your data is split into *Partitions* and can be processed in parallel/on different machines
-2. **Lazy:** computations are enqueued in a query plan and optimized and are only executed when requested
+2. **Lazy:** computations are enqueued in a query plan which is then optimized and executed only when requested
 3. **Multimodal:** columns can contain complex datatypes such as tensors, images and Python objects
 
 Since Daft is lazy, it can actually execute the query plan on a variety of different backends. By default, it will run computations locally using Python multithreading. However if you need to scale to large amounts of data that cannot be processed on a single machine, using the Ray runner allows Daft to run computations on a `Ray <https://www.ray.io/>`_ cluster instead.
