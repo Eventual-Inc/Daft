@@ -190,12 +190,7 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn aggregate(
-        &self,
-        agg_exprs: Vec<Expr>,
-        groupby_exprs: Vec<Expr>,
-        shuffle_aggregation_default_partitions: usize,
-    ) -> DaftResult<Self> {
+    pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
             .map(|expr| match expr {
@@ -210,13 +205,8 @@ impl LogicalPlanBuilder {
             })
             .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
-        let logical_plan: LogicalPlan = logical_ops::Aggregate::try_new(
-            self.plan.clone(),
-            agg_exprs,
-            groupby_exprs,
-            shuffle_aggregation_default_partitions,
-        )?
-        .into();
+        let logical_plan: LogicalPlan =
+            logical_ops::Aggregate::try_new(self.plan.clone(), agg_exprs, groupby_exprs)?.into();
         Ok(logical_plan.into())
     }
 
@@ -420,12 +410,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn aggregate(
-        &self,
-        agg_exprs: Vec<PyExpr>,
-        groupby_exprs: Vec<PyExpr>,
-        shuffle_aggregation_default_partitions: usize,
-    ) -> PyResult<Self> {
+    pub fn aggregate(&self, agg_exprs: Vec<PyExpr>, groupby_exprs: Vec<PyExpr>) -> PyResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
             .map(|expr| expr.clone().into())
@@ -434,14 +419,7 @@ impl PyLogicalPlanBuilder {
             .iter()
             .map(|expr| expr.clone().into())
             .collect::<Vec<Expr>>();
-        Ok(self
-            .builder
-            .aggregate(
-                agg_exprs,
-                groupby_exprs,
-                shuffle_aggregation_default_partitions,
-            )?
-            .into())
+        Ok(self.builder.aggregate(agg_exprs, groupby_exprs)?.into())
     }
 
     pub fn join(

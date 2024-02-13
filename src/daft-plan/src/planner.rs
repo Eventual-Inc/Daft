@@ -316,7 +316,6 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             aggregations,
             groupby,
             input,
-            shuffle_aggregation_default_partitions,
             ..
         }) => {
             use daft_dsl::AggExpr::{self, *};
@@ -503,7 +502,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                             first_stage_agg.into(),
                             min(
                                 num_input_partitions,
-                                *shuffle_aggregation_default_partitions,
+                                cfg.shuffle_aggregation_default_partitions,
                             ),
                             groupby.clone(),
                         ));
@@ -767,7 +766,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
 
 #[cfg(test)]
 mod tests {
-    use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
+    use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit, AggExpr, Expr};
@@ -865,7 +864,6 @@ mod tests {
         .aggregate(
             vec![Expr::Agg(AggExpr::Sum(col("a").into()))],
             vec![col("b")],
-            DaftPlanningConfig::default().shuffle_aggregation_default_partitions,
         )?
         .repartition(Some(10), vec![col("b")], PartitionScheme::Hash)?
         .build();
