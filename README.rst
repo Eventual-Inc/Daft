@@ -8,7 +8,7 @@ Daft: Distributed dataframes for multimodal data
 =======================================================
 
 
-`Daft <https://www.getdaft.io>`_  is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
 
 * **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
