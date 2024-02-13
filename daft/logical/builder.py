@@ -128,7 +128,7 @@ class LogicalPlanBuilder:
     def count(self) -> LogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
         first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col._count(CountMode.All)._expr], [])
+        builder = self._builder.aggregate([first_col._count(CountMode.All)._expr], [], 1)
         builder = builder.project([first_col.alias("count")._expr], ResourceRequest())
         return LogicalPlanBuilder(builder)
 
@@ -158,6 +158,7 @@ class LogicalPlanBuilder:
         self,
         to_agg: list[tuple[Expression, str]],
         group_by: list[Expression] | None,
+        shuffle_aggregation_default_partitions: int,
     ) -> LogicalPlanBuilder:
         exprs = []
         for expr, op in to_agg:
@@ -179,12 +180,16 @@ class LogicalPlanBuilder:
                 raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
         group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
-        builder = self._builder.aggregate([expr._expr for expr in exprs], group_by_pyexprs)
+        builder = self._builder.aggregate(
+            [expr._expr for expr in exprs], group_by_pyexprs, shuffle_aggregation_default_partitions
+        )
         return LogicalPlanBuilder(builder)
 
-    def map_groups(self, udf: Expression, group_by: list[Expression] | None) -> LogicalPlanBuilder:
+    def map_groups(
+        self, udf: Expression, group_by: list[Expression] | None, shuffle_aggregation_default_partitions: int
+    ) -> LogicalPlanBuilder:
         group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
-        builder = self._builder.aggregate([udf._expr], group_by_pyexprs)
+        builder = self._builder.aggregate([udf._expr], group_by_pyexprs, shuffle_aggregation_default_partitions)
         return LogicalPlanBuilder(builder)
 
     def join(  # type: ignore[override]

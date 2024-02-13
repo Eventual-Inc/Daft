@@ -949,12 +949,22 @@ class DataFrame:
         exprs_to_agg: List[Tuple[Expression, str]] = list(
             zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
         )
+        shuffle_aggregation_default_partitions = (
+            get_context().daft_planning_config.shuffle_aggregation_default_partitions
+        )
 
-        builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
+        builder = self._builder.agg(
+            exprs_to_agg, list(group_by) if group_by is not None else None, shuffle_aggregation_default_partitions
+        )
         return DataFrame(builder)
 
     def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
-        builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
+        shuffle_aggregation_default_partitions = (
+            get_context().daft_planning_config.shuffle_aggregation_default_partitions
+        )
+        builder = self._builder.map_groups(
+            udf, list(group_by) if group_by is not None else None, shuffle_aggregation_default_partitions
+        )
         return DataFrame(builder)
 
     @DataframePublicAPI

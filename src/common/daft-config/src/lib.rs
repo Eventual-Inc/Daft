@@ -6,9 +6,19 @@ use serde::{Deserialize, Serialize};
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
 ///     that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
+    pub shuffle_aggregation_default_partitions: usize,
+}
+
+impl Default for DaftPlanningConfig {
+    fn default() -> Self {
+        DaftPlanningConfig {
+            default_io_config: IOConfig::default(),
+            shuffle_aggregation_default_partitions: 200,
+        }
+    }
 }
 
 /// Configurations for Daft to use during the execution of a Dataframe
@@ -34,7 +44,6 @@ pub struct DaftExecutionConfig {
     pub parquet_inflation_factor: f64,
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
-    pub aggregation_min_partitions: usize,
 }
 
 impl Default for DaftExecutionConfig {
@@ -52,7 +61,6 @@ impl Default for DaftExecutionConfig {
             parquet_inflation_factor: 3.0,
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
-            aggregation_min_partitions: 10,
         }
     }
 }

@@ -21,6 +21,8 @@ pub struct Aggregate {
     pub groupby: Vec<Expr>,
 
     pub output_schema: SchemaRef,
+
+    pub shuffle_aggregation_default_partitions: usize,
 }
 
 impl Aggregate {
@@ -28,6 +30,7 @@ impl Aggregate {
         input: Arc<LogicalPlan>,
         aggregations: Vec<AggExpr>,
         groupby: Vec<Expr>,
+        shuffle_aggregation_default_partitions: usize,
     ) -> logical_plan::Result<Self> {
         let output_schema = {
             let upstream_schema = input.schema();
@@ -45,6 +48,7 @@ impl Aggregate {
             groupby,
             output_schema,
             input,
+            shuffle_aggregation_default_partitions,
         })
     }
 

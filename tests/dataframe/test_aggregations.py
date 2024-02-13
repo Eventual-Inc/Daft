@@ -368,13 +368,13 @@ def test_groupby_agg_pyobjects():
     assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]
 
 
-@pytest.mark.parametrize("aggregation_min_partitions", [None, 20])
-def test_groupby_result_partitions_smaller_than_input(aggregation_min_partitions):
-    if aggregation_min_partitions is None:
-        min_partitions = get_context().daft_execution_config.aggregation_min_partitions
+@pytest.mark.parametrize("shuffle_aggregation_default_partitions", [None, 201])
+def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_default_partitions):
+    if shuffle_aggregation_default_partitions is None:
+        min_partitions = get_context().daft_planning_config.shuffle_aggregation_default_partitions
     else:
-        daft.set_execution_config(aggregation_min_partitions=aggregation_min_partitions)
-        min_partitions = aggregation_min_partitions
+        daft.set_planning_config(shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions)
+        min_partitions = shuffle_aggregation_default_partitions
 
     for partition_size in [1, min_partitions, min_partitions + 1]:
         df = daft.from_pydict(

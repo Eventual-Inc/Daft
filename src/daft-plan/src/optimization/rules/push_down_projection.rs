@@ -228,6 +228,7 @@ impl PushDownProjection {
                         aggregate.input.clone(),
                         pruned_aggregate_exprs,
                         aggregate.groupby.clone(),
+                        aggregate.shuffle_aggregation_default_partitions,
                     )?
                     .into();
 
@@ -501,6 +502,7 @@ impl OptimizerRule for PushDownProjection {
 mod tests {
     use std::sync::Arc;
 
+    use common_daft_config::DaftPlanningConfig;
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
@@ -666,7 +668,11 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ])
-        .aggregate(vec![col("a").mean(), col("b").mean()], vec![col("c")])?
+        .aggregate(
+            vec![col("a").mean(), col("b").mean()],
+            vec![col("c")],
+            DaftPlanningConfig::default().shuffle_aggregation_default_partitions,
+        )?
         .project(vec![col("a")], Default::default())?
         .build();
 
