@@ -70,7 +70,7 @@ See also:
 Nested
 ------
 
-Nested DataTypes wrap other DataTypes, allowing you to compose types into complex datastructures.
+Nested DataTypes wrap other DataTypes, allowing you to compose types into complex data structures.
 
 Examples:
 

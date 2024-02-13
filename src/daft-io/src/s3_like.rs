@@ -448,6 +448,12 @@ impl S3LikeSource {
                 .bucket(bucket)
                 .key(key);
 
+            let request = if self.s3_config.requester_pays {
+                request.request_payer(s3::types::RequestPayer::Requester)
+            } else {
+                request
+            };
+
             let request = match &range {
                 None => request,
                 Some(range) => request.range(format!(
@@ -552,6 +558,12 @@ impl S3LikeSource {
                 .bucket(bucket)
                 .key(key);
 
+            let request = if self.s3_config.requester_pays {
+                request.request_payer(s3::types::RequestPayer::Requester)
+            } else {
+                request
+            };
+
             let response = if self.anonymous {
                 request
                     .customize_middleware()
@@ -643,6 +655,12 @@ impl S3LikeSource {
         } else {
             request
         };
+        let request = if self.s3_config.requester_pays {
+            request.request_payer(s3::types::RequestPayer::Requester)
+        } else {
+            request
+        };
+
         let response = if self.anonymous {
             request
                 .customize_middleware()

@@ -50,6 +50,34 @@ pub fn display_series_literal(series: &Series) -> String {
     }
 }
 
+pub fn make_schema_vertical_table<F: AsRef<Field>>(fields: &[F]) -> comfy_table::Table {
+    let mut table = comfy_table::Table::new();
+
+    let default_width_if_no_tty = 120usize;
+
+    table
+        .load_preset(comfy_table::presets::UTF8_FULL)
+        .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+        .set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
+    if table.width().is_none() && !table.is_tty() {
+        table.set_width(default_width_if_no_tty as u16);
+    }
+
+    let header = vec![
+        comfy_table::Cell::new("Column Name").add_attribute(comfy_table::Attribute::Bold),
+        comfy_table::Cell::new("Type").add_attribute(comfy_table::Attribute::Bold),
+    ];
+    table.set_header(header);
+
+    for f in fields.iter() {
+        table.add_row(vec![
+            f.as_ref().name.to_string(),
+            format!("{}", f.as_ref().dtype),
+        ]);
+    }
+    table
+}
+
 pub fn make_comfy_table<F: AsRef<Field>>(
     fields: &[F],
     columns: Option<&[&Series]>,

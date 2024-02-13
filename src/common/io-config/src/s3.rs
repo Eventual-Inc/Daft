@@ -20,6 +20,7 @@ pub struct S3Config {
     pub anonymous: bool,
     pub verify_ssl: bool,
     pub check_hostname_ssl: bool,
+    pub requester_pays: bool,
 }
 
 impl S3Config {
@@ -57,6 +58,7 @@ impl S3Config {
         res.push(format!("Anonymous = {}", self.anonymous));
         res.push(format!("Verify SSL = {}", self.verify_ssl));
         res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
+        res.push(format!("Requester pays = {}", self.requester_pays));
         res
     }
 }
@@ -80,6 +82,7 @@ impl Default for S3Config {
             anonymous: false,
             verify_ssl: true,
             check_hostname_ssl: true,
+            requester_pays: false,
         }
     }
 }
@@ -102,7 +105,8 @@ impl Display for S3Config {
     retry_mode: {:?},
     anonymous: {},
     verify_ssl: {},
-    check_hostname_ssl: {}",
+    check_hostname_ssl: {}
+    requester_pays: {}",
             self.region_name,
             self.endpoint_url,
             self.key_id,
@@ -116,7 +120,8 @@ impl Display for S3Config {
             self.retry_mode,
             self.anonymous,
             self.verify_ssl,
-            self.check_hostname_ssl
+            self.check_hostname_ssl,
+            self.requester_pays
         )
     }
 }

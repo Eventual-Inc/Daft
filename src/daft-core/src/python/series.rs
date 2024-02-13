@@ -108,6 +108,10 @@ impl PySeries {
         Ok(self.series.xor(&other.series)?.into_series().into())
     }
 
+    pub fn ceil(&self) -> PyResult<Self> {
+        Ok(self.series.ceil()?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }

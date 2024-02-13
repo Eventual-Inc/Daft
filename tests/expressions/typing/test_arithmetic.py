@@ -72,3 +72,13 @@ def test_abs(unary_data_fixture):
         run_kernel=lambda: abs(arg),
         resolvable=is_numeric(arg.datatype()),
     )
+
+
+def test_ceil(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).ceil(),
+        run_kernel=lambda: arg.ceil(),
+        resolvable=is_numeric(arg.datatype()),
+    )

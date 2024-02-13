@@ -797,6 +797,36 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
         assert len(pd_df) == len(valid_data)
 
 
+def test_create_dataframe_json_schema_hints_two_files() -> None:
+    with create_temp_filename() as fname, create_temp_filename() as fname2:
+        with open(fname, "w") as f:
+            f.write(json.dumps({"foo": {"bar": "baz"}}))
+            f.write("\n")
+            f.flush()
+
+        with open(fname2, "w") as f:
+            f.write(json.dumps({"foo": {"bar2": "baz2"}}))
+            f.write("\n")
+            f.flush()
+
+        # Without schema hints, schema inference should not pick up bar2
+        assert daft.read_json([fname, fname2]).schema()["foo"].dtype == DataType.struct({"bar": DataType.string()})
+
+        # With schema hints, bar2 should be included
+        df = daft.read_json(
+            [fname, fname2],
+            schema_hints={"foo": DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})},
+        )
+        assert df.schema()["foo"].dtype == DataType.struct({"bar": DataType.string(), "bar2": DataType.string()})
+
+        # When dataframe is materialized, the schema hints should be enforced and bar2 should be included
+        df = df.select(df["foo"].struct.get("bar2"))
+        df = df.where(df["bar2"].not_null()).collect()
+
+        assert len(df) == 1
+        assert df.to_pydict()["bar2"][0] == "baz2"
+
+
 @pytest.mark.parametrize(
     "input,expected",
     [
