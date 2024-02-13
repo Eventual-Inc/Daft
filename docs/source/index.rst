@@ -1,7 +1,14 @@
 Daft Documentation
 ==================
 
-Daft is a **fast and scalable Python dataframe** for complex data and machine learning workloads.
+Daft is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+
+* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
+* **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
+* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
+* **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
+* **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
+* **Built for the cloud:** `Record-setting <https://blog.getdaft.io/p/announcing-daft-02-10x-faster-io>`_ I/O performance for integrations with S3 cloud storage
 
 Installing Daft
 ---------------

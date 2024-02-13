@@ -1,12 +1,12 @@
 Introduction
 ============
 
-Daft is a data processing library that has two main classes:
+Daft is a distributed query engine with a DataFrame API. The two key concepts to Daft are:
 
-1. :class:`DataFrame <daft.DataFrame>`: a DataFrame consisting of rows and columns of data
-2. :class:`Expression <daft.expressions.Expression>`: an expression representing some (delayed) computation to execute on columns of data
+1. :class:`DataFrame <daft.DataFrame>`: a Table-like structure that represents rows and columns of data
+2. :class:`Expression <daft.expressions.Expression>`: a symbolic representation of computation that transforms columns of the DataFrame to a new one.
 
-With Daft, you create :class:`DataFrame <daft.DataFrame>` from a variety of sources (e.g. reading data from files or from Python dictionaries) and use :class:`Expression <daft.expressions.Expression>` to manipulate data in that DataFrame. Let's take a closer look at these two abstractions!
+With Daft, you create :class:`DataFrame <daft.DataFrame>` from a variety of sources (e.g. reading data from files, data catalogs or from Python dictionaries) and use :class:`Expression <daft.expressions.Expression>` to manipulate data in that DataFrame. Let's take a closer look at these two abstractions!
 
 DataFrame
 ---------
@@ -29,8 +29,8 @@ Using this abstraction of a DataFrame, you can run common tabular operations suc
 Daft DataFrames are:
 
 1. **Distributed:** your data is split into *Partitions* and can be processed in parallel/on different machines
-2. **Lazy:** computations are enqueued in a query plan, and only executed when requested
-3. **Complex:** columns can contain complex datatypes such as tensors, images and Python objects
+2. **Lazy:** computations are enqueued in a query plan and optimized and are only executed when requested
+3. **Multimodal:** columns can contain complex datatypes such as tensors, images and Python objects
 
 Since Daft is lazy, it can actually execute the query plan on a variety of different backends. By default, it will run computations locally using Python multithreading. However if you need to scale to large amounts of data that cannot be processed on a single machine, using the Ray runner allows Daft to run computations on a `Ray <https://www.ray.io/>`_ cluster instead.
 

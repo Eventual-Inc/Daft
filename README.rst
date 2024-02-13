@@ -4,11 +4,18 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: the distributed Python dataframe for complex data
+Daft: Distributed dataframes for multimodal data
 =======================================================
 
 
-`Daft <https://www.getdaft.io>`_ is a fast, Pythonic and scalable open-source dataframe library built for Python and Machine Learning workloads.
+`Daft <https://www.getdaft.io>`_  is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+
+* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
+* **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
+* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
+* **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
+* **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
+* **Built for the cloud:** `Record-setting <https://blog.getdaft.io/p/announcing-daft-02-10x-faster-io>`_ I/O performance for integrations with S3 cloud storage
 
 **Table of Contents**
 
@@ -21,11 +28,11 @@ Daft: the distributed Python dataframe for complex data
 About Daft
 ----------
 
-The Daft dataframe is a table of data with rows and columns. Columns can contain any Python objects, which allows Daft to support rich complex data types such as images, audio, video and more.
+Daft was designed with the following principles in mind:
 
-1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex multimodal data such as Images, Embeddings and Python objects. Ingestion and basic transformations of complex data is extremely easy and performant in Daft.
-2. **Notebook Computing**: Daft is built for the interactive developer experience on a notebook - intelligent caching/query optimizations accelerates your experimentation and data exploration.
-3. **Distributed Computing**: Rich complex formats such as images can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
+1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with it's Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
+2. **Interactive Computing**: Daft is built for the interactive developer experience through notebooks or REPLs - intelligent caching/query optimizations accelerates your experimentation and data exploration.
+3. **Distributed Computing**: Some workloads can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
 
 Getting Started
 ---------------
@@ -101,7 +108,7 @@ Related Projects
 ----------------
 
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
-| Dataframe                                         | Query Optimizer | Complex Types | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
+| Dataframe                                         | Query Optimizer | Multimodal    | Distributed | Arrow Backed    | Vectorized Execution Engine | Out-of-core |
 +===================================================+=================+===============+=============+=================+=============================+=============+
 | Daft                                              | Yes             | Yes           | Yes         | Yes             | Yes                         | Yes         |
 +---------------------------------------------------+-----------------+---------------+-------------+-----------------+-----------------------------+-------------+
