@@ -14,6 +14,7 @@ SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")
 UNMATERIALIZED_REGEX = re.compile(r".*\(No data to display: Dataframe not materialized\).*")
 MATERIALIZED_NO_ROWS_REGEX = re.compile(r".*\(No data to display: Materialized dataframe has no rows\).*")
 TD_STYLE = 'style="text-align:left; max-width:192px; max-height:64px; overflow:auto"'
+TH_STYLE = 'style="text-wrap: nowrap; max-width:192px; overflow:auto; text-align:left"'
 
 
 def parse_str_table(
@@ -93,9 +94,9 @@ def test_empty_df_repr(make_df):
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert (
         df._repr_html_()
-        == """<div>
+        == f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>A<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -115,9 +116,9 @@ def test_empty_df_repr(make_df):
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=MATERIALIZED_NO_ROWS_REGEX) == expected_data
     assert (
         df._repr_html_()
-        == """<div>
+        == f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>A<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 <tbody>
 </tbody>
 </table>
@@ -134,9 +135,9 @@ def test_alias_repr(make_df):
     assert parse_str_table(df.__repr__(), expected_user_msg_regex=UNMATERIALIZED_REGEX) == expected_data
     assert (
         df._repr_html_()
-        == """<div>
+        == f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A2<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>A2<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
@@ -162,7 +163,7 @@ def test_alias_repr(make_df):
         df._repr_html_()
         == f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">A2<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">B<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>A2<br />Int64</th><th {TH_STYLE}>B<br />Utf8</th></tr></thead>
 <tbody>
 <tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>a</div></td></tr>
 <tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>b</div></td></tr>
@@ -189,15 +190,15 @@ def test_repr_with_unicode(make_df, data_source):
     }
 
     string_array = ["🔥a", "b🔥", "🦁🔥" * 60]  # we dont truncate for html
-    expected_html_unmaterialized = """<div>
+    expected_html_unmaterialized = f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>🔥<br />Int64</th><th {TH_STYLE}>🦁<br />Utf8</th></tr></thead>
 </table>
 <small>(No data to display: Dataframe not materialized)</small>
 </div>"""
     expected_html_materialized = f"""<div>
 <table class="dataframe">
-<thead><tr><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🔥<br />Int64</th><th style="text-wrap: nowrap; max-width:192px; overflow:auto">🦁<br />Utf8</th></tr></thead>
+<thead><tr><th {TH_STYLE}>🔥<br />Int64</th><th {TH_STYLE}>🦁<br />Utf8</th></tr></thead>
 <tbody>
 <tr><td><div {TD_STYLE}>1</div></td><td><div {TD_STYLE}>{string_array[0]}</div></td></tr>
 <tr><td><div {TD_STYLE}>2</div></td><td><div {TD_STYLE}>{string_array[1]}</div></td></tr>
