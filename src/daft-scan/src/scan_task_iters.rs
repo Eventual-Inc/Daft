@@ -69,11 +69,20 @@ impl Iterator for MergeByFileSize {
                             && child_item.schema == accumulator.schema
                             && child_item.storage_config == accumulator.storage_config
                             && child_item.pushdowns == accumulator.pushdowns;
-                        let smaller_than_max_size_bytes = matches!(
-                            (child_item.size_bytes(), accumulator.size_bytes()),
-                            (Some(child_item_size), Some(buffered_item_size)) if child_item_size + buffered_item_size <= self.max_size_bytes
-                        );
-                        child_matches_accumulator && smaller_than_max_size_bytes
+
+                        let smaller_than_min_size_bytes =
+                            if let Some(accumulator_bytes) = accumulator.size_bytes() {
+                                accumulator_bytes <= self.min_size_bytes
+                            } else {
+                                false
+                            };
+
+                        let sum_smaller_than_max_size_bytes = if let Some(child_bytes) = child_item.size_bytes()
+                            && let Some(accumulator_bytes) = accumulator.size_bytes() {child_bytes + accumulator_bytes < self.max_size_bytes} else {false};
+
+                        child_matches_accumulator
+                            && smaller_than_min_size_bytes
+                            && sum_smaller_than_max_size_bytes
                     };
 
                     if should_merge {
