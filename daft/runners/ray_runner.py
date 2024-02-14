@@ -696,6 +696,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             logger.warning(f"Ray has already been initialized, Daft will reuse the existing Ray context.")
         self.ray_context = ray.init(address=address, ignore_reinit_error=True)
 
+        print("==== Got to before scheduler creation ====")
+
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             # Run scheduler remotely if the cluster is connected remotely.
             self.scheduler_actor = SchedulerActor.remote(  # type: ignore
@@ -707,6 +709,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
+
+        print("==== Got to after scheduler creation ====")
 
     def active_plans(self) -> list[str]:
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
