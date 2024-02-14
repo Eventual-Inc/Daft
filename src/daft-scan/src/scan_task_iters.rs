@@ -98,9 +98,7 @@ impl Iterator for MergeByFileSize {
             };
 
             if next_item.size_bytes().is_none() || !self.can_merge(&next_item) {
-                let curr_acc = self.accumulator.take().map(Ok);
-                self.accumulator = Some(next_item);
-                return curr_acc;
+                return self.accumulator.replace(next_item).map(Ok);
             }
 
             self.accumulator = Some(Arc::new(
