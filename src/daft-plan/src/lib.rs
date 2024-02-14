@@ -28,13 +28,15 @@ use daft_scan::{
 };
 pub use join::{JoinStrategy, JoinType};
 pub use logical_plan::LogicalPlan;
-pub use partitioning::{PartitionScheme, PartitionSpec};
+pub use partitioning::{PartitionScheme, PartitionSchemeConfig, PartitionSpec};
 pub use physical_plan::PhysicalPlanScheduler;
 pub use resource_request::ResourceRequest;
 pub use source_info::{FileInfo, FileInfos};
 
 #[cfg(feature = "python")]
 use daft_scan::storage_config::PythonStorageConfig;
+#[cfg(feature = "python")]
+use partitioning::PyPartitionSpec;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -46,7 +48,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_class::<ParquetSourceConfig>()?;
     parent.add_class::<JsonSourceConfig>()?;
     parent.add_class::<CsvSourceConfig>()?;
-    parent.add_class::<PartitionSpec>()?;
+    parent.add_class::<PyPartitionSpec>()?;
     parent.add_class::<PartitionScheme>()?;
     parent.add_class::<JoinType>()?;
     parent.add_class::<JoinStrategy>()?;

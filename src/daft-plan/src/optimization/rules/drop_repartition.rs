@@ -58,7 +58,7 @@ mod tests {
             Optimizer,
         },
         test::dummy_scan_node,
-        LogicalPlan, PartitionScheme,
+        LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the DropRepartition rule registered, optimizes
@@ -94,8 +94,16 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .repartition(Some(10), vec![col("a")], PartitionScheme::Hash)?
-        .repartition(Some(5), vec![col("a")], PartitionScheme::Hash)?
+        .repartition(
+            Some(10),
+            vec![col("a")],
+            PartitionSchemeConfig::Hash(Default::default()),
+        )?
+        .repartition(
+            Some(5),
+            vec![col("a")],
+            PartitionSchemeConfig::Hash(Default::default()),
+        )?
         .build();
         let expected = "\
         Repartition: Scheme = Hash, Number of partitions = 5, Partition by = col(a)\

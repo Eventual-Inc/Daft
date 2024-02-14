@@ -156,13 +156,39 @@ class PartitionSpec:
     scheme: PartitionScheme
     num_partitions: int
     by: list[PyExpr]
+    scheme_config: RangeConfig | HashConfig | RandomConfig | UnknownConfig
 
-    def __init__(
-        self, scheme: PartitionScheme = PartitionScheme.Unknown, num_partitions: int = 0, by: list[PyExpr] | None = None
-    ): ...
+    @staticmethod
+    def range(by: list[PyExpr], num_partitions: int, descending: list[bool]) -> PartitionSpec: ...
+    @staticmethod
+    def hash(by: list[PyExpr], num_partitions: int) -> PartitionSpec: ...
+    @staticmethod
+    def random(num_partitions: int) -> PartitionSpec: ...
+    @staticmethod
+    def unknown(num_partitions: int) -> PartitionSpec: ...
     def __eq__(self, other: PartitionSpec) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: PartitionSpec) -> bool: ...  # type: ignore[override]
     def __str__(self) -> str: ...
+
+class RangeConfig:
+    """Configuration of a range partitioning."""
+
+    descending: list[bool]
+
+class HashConfig:
+    """Configuration of a hash partitioning."""
+
+    ...
+
+class RandomConfig:
+    """Configuration of a random partitioning."""
+
+    ...
+
+class UnknownConfig:
+    """Configuration of an unknown partitioning."""
+
+    ...
 
 class ResourceRequest:
     """

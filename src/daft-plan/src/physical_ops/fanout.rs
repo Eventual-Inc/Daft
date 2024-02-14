@@ -62,25 +62,35 @@ pub struct FanoutByRange {
     pub input: PhysicalPlanRef,
     pub num_partitions: usize,
     pub sort_by: Vec<Expr>,
+    pub descending: Vec<bool>,
 }
 
 impl FanoutByRange {
     #[allow(dead_code)]
-    pub(crate) fn new(input: PhysicalPlanRef, num_partitions: usize, sort_by: Vec<Expr>) -> Self {
+    pub(crate) fn new(
+        input: PhysicalPlanRef,
+        num_partitions: usize,
+        sort_by: Vec<Expr>,
+        descending: Vec<bool>,
+    ) -> Self {
         Self {
             input,
             num_partitions,
             sort_by,
+            descending,
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("FanoutByRange: {}", self.num_partitions));
-        res.push(format!(
-            "Sort by = {}",
-            self.sort_by.iter().map(|e| e.to_string()).join(", ")
-        ));
+        let pairs = self
+            .sort_by
+            .iter()
+            .zip(self.descending.iter())
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .join(", ");
+        res.push(format!("Sort by = {}", pairs,));
         res
     }
 }

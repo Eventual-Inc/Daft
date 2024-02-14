@@ -135,7 +135,7 @@ mod tests {
             dummy_scan_node, dummy_scan_node_with_pushdowns,
             dummy_scan_operator_node_with_pushdowns,
         },
-        LogicalPlan, PartitionScheme,
+        LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes
@@ -315,7 +315,11 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ])
-        .repartition(Some(1), vec![col("a")], PartitionScheme::Hash)?
+        .repartition(
+            Some(1),
+            vec![col("a")],
+            PartitionSchemeConfig::Hash(Default::default()),
+        )?
         .limit(5, false)?
         .build();
         let expected = "\

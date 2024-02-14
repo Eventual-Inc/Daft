@@ -5,7 +5,10 @@ use daft_dsl::Expr;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
-use crate::{physical_plan::PhysicalPlanRef, PartitionScheme, PartitionSpec, ResourceRequest};
+use crate::{
+    partitioning::PartitionSchemeConfig, physical_plan::PhysicalPlanRef, PartitionSpec,
+    ResourceRequest,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -40,12 +43,12 @@ impl Project {
         // Given an input partition spec, and a new projection,
         // produce the new partition spec.
 
-        use crate::PartitionScheme::*;
-        match input_pspec.scheme {
+        use crate::partitioning::PartitionSchemeConfig::*;
+        match input_pspec.scheme_config {
             // If the scheme is vacuous, the result partiiton spec is the same.
-            Random | Unknown => input_pspec.clone(),
+            Random(_) | Unknown(_) => input_pspec.clone(),
             // Otherwise, need to reevaluate the partition scheme for each expression.
-            Range | Hash => {
+            Range(_) | Hash(_) => {
                 // See what columns the projection directly translates into new columns.
                 let mut old_colname_to_new_colname = IndexMap::new();
                 for expr in projection {
@@ -69,16 +72,16 @@ impl Project {
                     .collect::<std::result::Result<Vec<_>, _>>();
                 maybe_new_pspec.map_or_else(
                     |()| {
-                        PartitionSpec::new_internal(
-                            PartitionScheme::Unknown,
+                        PartitionSpec::new(
+                            PartitionSchemeConfig::Unknown(Default::default()),
                             input_pspec.num_partitions,
                             None,
                         )
                         .into()
                     },
                     |new_pspec: Vec<Expr>| {
-                        PartitionSpec::new_internal(
-                            input_pspec.scheme.clone(),
+                        PartitionSpec::new(
+                            input_pspec.scheme_config.clone(),
                             input_pspec.num_partitions,
                             Some(new_pspec),
                         )
@@ -231,7 +234,9 @@ mod tests {
     use daft_dsl::{col, lit, Expr};
     use rstest::rstest;
 
-    use crate::{planner::plan, test::dummy_scan_node, PartitionScheme, PartitionSpec};
+    use crate::{
+        partitioning::PartitionSchemeConfig, planner::plan, test::dummy_scan_node, PartitionSpec,
+    };
 
     /// Test that projections preserving column inputs, even through aliasing,
     /// do not destroy the partition spec.
@@ -251,15 +256,18 @@ mod tests {
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionScheme::Hash,
+            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec =
-            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("aa"), col("b")]));
+        let expected_pspec = PartitionSpec::new(
+            PartitionSchemeConfig::Hash(Default::default()),
+            3,
+            Some(vec![col("aa"), col("b")]),
+        );
 
         assert_eq!(
             expected_pspec,
@@ -281,6 +289,8 @@ mod tests {
         )]
         projection: Vec<Expr>,
     ) -> DaftResult<()> {
+        use crate::partitioning::PartitionSchemeConfig;
+
         let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(vec![
             Field::new("a", DataType::Int64),
@@ -290,14 +300,15 @@ mod tests {
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionScheme::Hash,
+            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(projection, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec = PartitionSpec::new_internal(PartitionScheme::Unknown, 3, None);
+        let expected_pspec =
+            PartitionSpec::new(PartitionSchemeConfig::Unknown(Default::default()), 3, None);
         assert_eq!(
             expected_pspec,
             physical_plan.partition_spec().as_ref().clone()
@@ -321,15 +332,18 @@ mod tests {
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionScheme::Hash,
+            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec =
-            PartitionSpec::new_internal(PartitionScheme::Hash, 3, Some(vec![col("a"), col("b")]));
+        let expected_pspec = PartitionSpec::new(
+            PartitionSchemeConfig::Hash(Default::default()),
+            3,
+            Some(vec![col("a"), col("b")]),
+        );
 
         assert_eq!(
             expected_pspec,

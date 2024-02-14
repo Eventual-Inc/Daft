@@ -4,6 +4,7 @@ use crate::{
     logical_ops,
     logical_plan::LogicalPlan,
     optimization::Optimizer,
+    partitioning::PartitionSchemeConfig,
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{
@@ -162,13 +163,13 @@ impl LogicalPlanBuilder {
         &self,
         num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
-        scheme: PartitionScheme,
+        scheme_config: PartitionSchemeConfig,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
             num_partitions,
             partition_by,
-            scheme,
+            scheme_config,
         )?
         .into();
         Ok(logical_plan.into())
@@ -380,17 +381,48 @@ impl PyLogicalPlanBuilder {
 
     pub fn repartition(
         &self,
+        py: Python<'_>,
         partition_by: Vec<PyExpr>,
         scheme: PartitionScheme,
         num_partitions: Option<usize>,
+        scheme_config: Option<PyObject>,
     ) -> PyResult<Self> {
         let partition_by_exprs: Vec<Expr> = partition_by
             .iter()
             .map(|expr| expr.clone().into())
             .collect();
+        let partition_scheme_config = match scheme {
+            PartitionScheme::Range => {
+                if let Some(scheme_config) = scheme_config {
+                    PartitionSchemeConfig::Range(scheme_config.extract(py)?)
+                } else {
+                    return Err(DaftError::ValueError(
+                        "Must provide a scheme config with ascending/descending list if repartitioning by range.".to_string(),
+                    ).into());
+                }
+            }
+            PartitionScheme::Hash => PartitionSchemeConfig::Hash(
+                scheme_config
+                    .map(|c| c.extract(py))
+                    .transpose()?
+                    .unwrap_or_default(),
+            ),
+            PartitionScheme::Random => PartitionSchemeConfig::Random(
+                scheme_config
+                    .map(|c| c.extract(py))
+                    .transpose()?
+                    .unwrap_or_default(),
+            ),
+            PartitionScheme::Unknown => PartitionSchemeConfig::Unknown(
+                scheme_config
+                    .map(|c| c.extract(py))
+                    .transpose()?
+                    .unwrap_or_default(),
+            ),
+        };
         Ok(self
             .builder
-            .repartition(num_partitions, partition_by_exprs, scheme)?
+            .repartition(num_partitions, partition_by_exprs, partition_scheme_config)?
             .into())
     }
 
