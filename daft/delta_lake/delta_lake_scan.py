@@ -59,55 +59,50 @@ class DeltaLakeScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
-        paths = self._table.file_uris()
         add_actions: pa.RecordBatch = self._table.get_add_actions()
-        assert len(paths) == add_actions.num_rows
+
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logging.warn(
                 f"{self.display_name()} has partitioning keys = {self.partitioning_keys()}, but no partition filter was specified. This will result in a full table scan."
             )
-        # NOTE: We don't assume that table.file_uris() and table.get_add_actions() return file entries in the same order, just to be safe.
-        # TODO(Clark): Keep action table in pyarrow form for the sake of efficiency and dtype handling?
-        actions: dict[str, dict] = {row["path"]: row for row in add_actions.to_pylist()}
-        del add_actions
+
+        # TODO(Clark): Add support for deletion vectors.
+        if "deletionVector" in add_actions.schema.names:
+            raise NotImplementedError(
+                "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
+                "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html"
+            )
+
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
         scan_tasks = []
-        for task_idx in range(len(paths)):
+        is_partitioned = (
+            "partition_values" in add_actions.schema.names
+            and add_actions.schema.field("partition_values").num_fields > 0
+        )
+        for task_idx in range(add_actions.num_rows):
             if limit_files and rows_left <= 0:
                 break
 
-            path = paths[task_idx]
-
-            # NOTE: We assume that the paths in the transaction log consist of only the file name.
-            file_name = os.path.split(path)[-1]
-            if file_name not in actions:
-                raise ValueError(f"File name {file_name} not in Delta Lake transaction log: {list(actions.keys())}")
-
-            row = actions[file_name]
-            record_count = row["num_records"]
+            # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
+            path = os.path.join(self._table.table_uri, add_actions["path"][task_idx].as_py())
+            record_count = add_actions["num_records"][task_idx].as_py()
             try:
-                size_bytes = row["size_bytes"]
+                size_bytes = add_actions["size_bytes"][task_idx].as_py()
             except KeyError:
                 size_bytes = None
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
-            if "partition_values" in row and len(row["partition_values"]) > 0:
-                partition_values = daft.table.Table.from_pydict(
-                    {
-                        field_name: daft.Series.from_pylist([field_value], field_name)
-                        for field_name, field_value in row["partition_values"].items()
-                    }
-                )._table
+            if is_partitioned:
+                dtype = add_actions.schema.field("partition_values")
+                part_values = add_actions["partition_values"][task_idx]
+                arrays = {}
+                for field_idx in range(dtype.num_fields):
+                    field_name = dtype.field(field_idx).name
+                    arrays[field_name] = daft.Series.from_arrow([part_values[field_name]], field_name)
+                partition_values = daft.table.Table.from_pydict(arrays)._table
             else:
                 partition_values = None
-
-            # TODO(Clark): Add support for deletion vectors.
-            if "deletionVector" in row:
-                raise NotImplementedError(
-                    "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
-                    "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html"
-                )
 
             # TODO(Clark): Add stats (column-wise min, max, null counts) into scan task.
             st = ScanTask.catalog_scan_task(
