@@ -581,7 +581,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         })
                         .unwrap_or(false)
                         // TODO(Clark): Add support for descending sort orders.
-                        && range_config.descending.iter().all(|v| *v)
+                        && range_config.descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -598,7 +598,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         })
                         .unwrap_or(false)
                         // TODO(Clark): Add support for descending sort orders.
-                        && range_config.descending.iter().all(|v| *v)
+                        && range_config.descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
