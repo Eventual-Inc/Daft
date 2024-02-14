@@ -47,9 +47,7 @@ struct MergeByFileSize {
 
 impl MergeByFileSize {
     fn accumulator_ready(&self) -> bool {
-        if self.accumulator.is_none() {
-            true
-        } else if let Some(acc) = &self.accumulator && let Some(acc_bytes) = acc.size_bytes() && acc_bytes >= self.min_size_bytes {
+        if let Some(acc) = &self.accumulator && let Some(acc_bytes) = acc.size_bytes() && acc_bytes >= self.min_size_bytes {
             true
         } else {
             false
