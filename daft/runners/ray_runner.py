@@ -704,11 +704,13 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=True,
             )
+            print("==== using remote scheduler ====")
         else:
             self.scheduler = Scheduler(
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
+            print("==== using local scheduler ====")
 
         print("==== Got to after scheduler creation ====")
 
