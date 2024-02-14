@@ -42,8 +42,9 @@ pyiceberg==0.5.1; python_version >= '3.8'
 tenacity==8.2.3; python_version >= '3.8'
 
 # Delta Lake
-deltalake==0.15.3; python_version >= '3.8'
-deltalake==0.13.0; python_version < '3.8'
+deltalake==0.5.8; platform_system == "Windows"
+deltalake==0.15.3; platform_system != "Windows" and python_version >= '3.8'
+deltalake==0.15.3; platform_system != "Windows" and python_version >= '3.8'
 
 # AWS
 s3fs==2023.1.0; python_version < '3.8'
