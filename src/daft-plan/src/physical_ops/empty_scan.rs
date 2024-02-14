@@ -1,4 +1,4 @@
-use crate::PartitionSpec;
+use crate::ClusteringSpec;
 use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -6,14 +6,14 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
-    pub partition_spec: Arc<PartitionSpec>,
+    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl EmptyScan {
-    pub(crate) fn new(schema: SchemaRef, partition_spec: Arc<PartitionSpec>) -> Self {
+    pub(crate) fn new(schema: SchemaRef, clustering_spec: Arc<ClusteringSpec>) -> Self {
         Self {
             schema,
-            partition_spec,
+            clustering_spec,
         }
     }
 
@@ -22,8 +22,8 @@ impl EmptyScan {
         res.push("EmptyScan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!(
-            "Partition spec = {{ {} }}",
-            self.partition_spec.multiline_display().join(", ")
+            "Clustering spec = {{ {} }}",
+            self.clustering_spec.multiline_display().join(", ")
         ));
         res
     }

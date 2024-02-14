@@ -56,7 +56,7 @@ mod tests {
             rules::drop_repartition::DropRepartition, test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
-        LogicalPlan, PartitionSchemeConfig,
+        LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the DropRepartition rule registered, optimizes
@@ -74,32 +74,19 @@ mod tests {
     /// Repartition1-Repartition2 -> Repartition1
     #[test]
     fn repartition_dropped_in_back_to_back() -> DaftResult<()> {
-        let num_partitions1 = Some(10);
-        let num_partitions2 = Some(5);
+        let num_partitions1 = 10;
+        let num_partitions2 = 5;
         let partition_by = vec![col("a")];
-        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .repartition(
-                num_partitions1,
-                partition_by.clone(),
-                partition_scheme_config.clone(),
-            )?
-            .repartition(
-                num_partitions2,
-                partition_by.clone(),
-                partition_scheme_config.clone(),
-            )?
+            .hash_repartition(num_partitions1, partition_by.clone())?
+            .hash_repartition(num_partitions2, partition_by.clone())?
             .build();
         let expected = dummy_scan_node(scan_op)
-            .repartition(
-                num_partitions2,
-                partition_by.clone(),
-                partition_scheme_config.clone(),
-            )?
+            .hash_repartition(num_partitions2, partition_by.clone())?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

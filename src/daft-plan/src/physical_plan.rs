@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 use {
-    crate::{partitioning::PyPartitionSpec, sink_info::OutputFileInfo, source_info::InMemoryInfo},
+    crate::{sink_info::OutputFileInfo, source_info::InMemoryInfo},
     common_io_config::IOConfig,
     daft_core::python::schema::PySchema,
     daft_core::schema::SchemaRef,
@@ -20,9 +20,11 @@ use std::{cmp::max, sync::Arc};
 
 use crate::{
     display::TreeDisplay,
-    partitioning::{PartitionSchemeConfig, RangeConfig},
+    partitioning::{
+        ClusteringSpec, HashPartitioningConfig, RandomPartitioningConfig, RangePartitioningConfig,
+        UnknownPartitioningConfig,
+    },
     physical_ops::*,
-    PartitionSpec,
 };
 
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
@@ -60,19 +62,29 @@ pub enum PhysicalPlan {
 }
 
 impl PhysicalPlan {
-    pub fn partition_spec(&self) -> Arc<PartitionSpec> {
+    pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
         match self {
             #[cfg(feature = "python")]
-            Self::InMemoryScan(InMemoryScan { partition_spec, .. }) => partition_spec.clone(),
-            Self::TabularScan(TabularScan { partition_spec, .. }) => partition_spec.clone(),
-            Self::EmptyScan(EmptyScan { partition_spec, .. }) => partition_spec.clone(),
-            Self::Project(Project { partition_spec, .. }) => partition_spec.clone(),
-            Self::Filter(Filter { input, .. }) => input.partition_spec(),
-            Self::Limit(Limit { input, .. }) => input.partition_spec(),
-            Self::Explode(Explode { partition_spec, .. }) => partition_spec.clone(),
-            Self::Sample(Sample { input, .. }) => input.partition_spec(),
+            Self::InMemoryScan(InMemoryScan {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::TabularScan(TabularScan {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::EmptyScan(EmptyScan {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::Project(Project {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::Filter(Filter { input, .. }) => input.clustering_spec(),
+            Self::Limit(Limit { input, .. }) => input.clustering_spec(),
+            Self::Explode(Explode {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
+            Self::Sample(Sample { input, .. }) => input.clustering_spec(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                input.partition_spec().clone()
+                input.clustering_spec().clone()
             }
 
             Self::Sort(Sort {
@@ -80,125 +92,110 @@ impl PhysicalPlan {
                 sort_by,
                 descending,
                 ..
-            }) => PartitionSpec::new(
-                PartitionSchemeConfig::Range(RangeConfig::new_internal(descending.clone())),
-                input.partition_spec().num_partitions,
-                Some(sort_by.clone()),
-            )
+            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
+                input.clustering_spec().num_partitions(),
+                sort_by.clone(),
+                descending.clone(),
+            ))
             .into(),
             Self::Split(Split {
                 output_num_partitions,
                 ..
-            }) => PartitionSpec::new(
-                PartitionSchemeConfig::Unknown(Default::default()),
-                *output_num_partitions,
-                None,
-            )
-            .into(),
-            Self::Coalesce(Coalesce { num_to, .. }) => PartitionSpec::new(
-                PartitionSchemeConfig::Unknown(Default::default()),
-                *num_to,
-                None,
-            )
-            .into(),
-            Self::Flatten(Flatten { input }) => input.partition_spec(),
-            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => PartitionSpec::new(
-                PartitionSchemeConfig::Random(Default::default()),
-                *num_partitions,
-                None,
-            )
-            .into(),
+            }) => ClusteringSpec::Unknown(UnknownPartitioningConfig::new(*output_num_partitions))
+                .into(),
+            Self::Coalesce(Coalesce { num_to, .. }) => {
+                ClusteringSpec::Unknown(UnknownPartitioningConfig::new(*num_to)).into()
+            }
+            Self::Flatten(Flatten { input }) => input.clustering_spec(),
+            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => {
+                ClusteringSpec::Random(RandomPartitioningConfig::new(*num_partitions)).into()
+            }
             Self::FanoutByHash(FanoutByHash {
                 num_partitions,
                 partition_by,
                 ..
-            }) => PartitionSpec::new(
-                PartitionSchemeConfig::Hash(Default::default()),
+            }) => ClusteringSpec::Hash(HashPartitioningConfig::new(
                 *num_partitions,
-                Some(partition_by.clone()),
-            )
+                partition_by.clone(),
+            ))
             .into(),
             Self::FanoutByRange(FanoutByRange {
                 num_partitions,
                 sort_by,
                 descending,
                 ..
-            }) => PartitionSpec::new(
-                PartitionSchemeConfig::Range(RangeConfig::new_internal(descending.clone())),
+            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
                 *num_partitions,
-                Some(sort_by.clone()),
-            )
+                sort_by.clone(),
+                descending.clone(),
+            ))
             .into(),
-            Self::ReduceMerge(ReduceMerge { input }) => input.partition_spec(),
+            Self::ReduceMerge(ReduceMerge { input }) => input.clustering_spec(),
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
-                let input_partition_spec = input.partition_spec();
-                if input_partition_spec.num_partitions == 1 {
-                    input_partition_spec.clone()
+                let input_clustering_spec = input.clustering_spec();
+                if input_clustering_spec.num_partitions() == 1 {
+                    input_clustering_spec
                 } else if groupby.is_empty() {
-                    PartitionSpec::new(PartitionSchemeConfig::Unknown(Default::default()), 1, None)
-                        .into()
+                    ClusteringSpec::Unknown(Default::default()).into()
                 } else {
-                    PartitionSpec::new(
-                        PartitionSchemeConfig::Hash(Default::default()),
-                        input.partition_spec().num_partitions,
-                        Some(groupby.clone()),
-                    )
+                    ClusteringSpec::Hash(HashPartitioningConfig::new(
+                        input.clustering_spec().num_partitions(),
+                        groupby.clone(),
+                    ))
                     .into()
                 }
             }
-            Self::Concat(Concat { input, other }) => PartitionSpec::new(
-                PartitionSchemeConfig::Unknown(Default::default()),
-                input.partition_spec().num_partitions + other.partition_spec().num_partitions,
-                None,
-            )
-            .into(),
+            Self::Concat(Concat { input, other }) => {
+                ClusteringSpec::Unknown(UnknownPartitioningConfig::new(
+                    input.clustering_spec().num_partitions()
+                        + other.clustering_spec().num_partitions(),
+                ))
+                .into()
+            }
             Self::HashJoin(HashJoin {
                 left,
                 right,
                 left_on,
                 ..
             }) => {
-                let input_partition_spec = left.partition_spec();
+                let input_clustering_spec = left.clustering_spec();
                 match max(
-                    input_partition_spec.num_partitions,
-                    right.partition_spec().num_partitions,
+                    input_clustering_spec.num_partitions(),
+                    right.clustering_spec().num_partitions(),
                 ) {
                     // NOTE: This duplicates the repartitioning logic in the planner, where we
                     // conditionally repartition the left and right tables.
                     // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
                     // to be an entirely planner-side concept.
-                    1 => input_partition_spec,
-                    num_partitions => PartitionSpec::new(
-                        PartitionSchemeConfig::Hash(Default::default()),
+                    1 => input_clustering_spec,
+                    num_partitions => ClusteringSpec::Hash(HashPartitioningConfig::new(
                         num_partitions,
-                        Some(left_on.clone()),
-                    )
+                        left_on.clone(),
+                    ))
                     .into(),
                 }
             }
             Self::BroadcastJoin(BroadcastJoin {
                 receiver: right, ..
-            }) => right.partition_spec(),
+            }) => right.clustering_spec(),
             Self::SortMergeJoin(SortMergeJoin {
                 left,
                 right,
                 left_on,
                 ..
-            }) => PartitionSpec::new(
-                // TODO(Clark): Propagate descending vec once our sort-merge join supports more than all-ascending order.
-                PartitionSchemeConfig::Range(RangeConfig::new_internal(
-                    std::iter::repeat(false).take(left_on.len()).collect(),
-                )),
+            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
                 max(
-                    left.partition_spec().num_partitions,
-                    right.partition_spec().num_partitions,
+                    left.clustering_spec().num_partitions(),
+                    right.clustering_spec().num_partitions(),
                 ),
-                Some(left_on.clone()),
-            )
+                left_on.clone(),
+                // TODO(Clark): Propagate descending vec once sort-merge join supports descending sort orders.
+                std::iter::repeat(false).take(left_on.len()).collect(),
+            ))
             .into(),
-            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.partition_spec(),
-            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.partition_spec(),
-            Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.partition_spec(),
+            Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
+            Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
+            Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
         }
     }
 
@@ -311,8 +308,8 @@ impl PhysicalPlan {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::Project(Project { projection, resource_request, partition_spec, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(), resource_request.clone(), partition_spec.clone(),
+                Self::Project(Project { projection, resource_request, clustering_spec, .. }) => Self::Project(Project::try_new(
+                    input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(),
                 ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
@@ -444,10 +441,7 @@ pub struct PhysicalPlanScheduler {
 #[pymethods]
 impl PhysicalPlanScheduler {
     pub fn num_partitions(&self) -> PyResult<i64> {
-        Ok(self.plan.partition_spec().num_partitions as i64)
-    }
-    pub fn partition_spec(&self) -> PyResult<PyPartitionSpec> {
-        Ok(Arc::new(self.plan.partition_spec().as_ref().clone()).into())
+        Ok(self.plan.clustering_spec().num_partitions() as i64)
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

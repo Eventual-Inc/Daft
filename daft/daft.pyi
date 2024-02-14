@@ -138,58 +138,6 @@ class CountMode(Enum):
         """
         ...
 
-class PartitionScheme(Enum):
-    """
-    Partition scheme for Daft DataFrame.
-    """
-
-    Range: int
-    Hash: int
-    Random: int
-    Unknown: int
-
-class PartitionSpec:
-    """
-    Partition specification for a Daft DataFrame.
-    """
-
-    scheme: PartitionScheme
-    num_partitions: int
-    by: list[PyExpr]
-    scheme_config: RangeConfig | HashConfig | RandomConfig | UnknownConfig
-
-    @staticmethod
-    def range(by: list[PyExpr], num_partitions: int, descending: list[bool]) -> PartitionSpec: ...
-    @staticmethod
-    def hash(by: list[PyExpr], num_partitions: int) -> PartitionSpec: ...
-    @staticmethod
-    def random(num_partitions: int) -> PartitionSpec: ...
-    @staticmethod
-    def unknown(num_partitions: int) -> PartitionSpec: ...
-    def __eq__(self, other: PartitionSpec) -> bool: ...  # type: ignore[override]
-    def __ne__(self, other: PartitionSpec) -> bool: ...  # type: ignore[override]
-    def __str__(self) -> str: ...
-
-class RangeConfig:
-    """Configuration of a range partitioning."""
-
-    descending: list[bool]
-
-class HashConfig:
-    """Configuration of a hash partitioning."""
-
-    ...
-
-class RandomConfig:
-    """Configuration of a random partitioning."""
-
-    ...
-
-class UnknownConfig:
-    """Configuration of an unknown partitioning."""
-
-    ...
-
 class ResourceRequest:
     """
     Resource request for a query fragment task.
@@ -1173,7 +1121,6 @@ class PhysicalPlanScheduler:
     """
 
     def num_partitions(self) -> int: ...
-    def partition_spec(self) -> PartitionSpec: ...
     def repr_ascii(self, simple: bool) -> str: ...
     def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.InProgressPhysicalPlan: ...
 
@@ -1197,12 +1144,13 @@ class LogicalPlanBuilder:
     def limit(self, limit: int, eager: bool) -> LogicalPlanBuilder: ...
     def explode(self, to_explode: list[PyExpr]) -> LogicalPlanBuilder: ...
     def sort(self, sort_by: list[PyExpr], descending: list[bool]) -> LogicalPlanBuilder: ...
-    def repartition(
+    def hash_repartition(
         self,
         partition_by: list[PyExpr],
-        scheme: PartitionScheme,
-        num_partitions: int | None,
+        num_partitions: int,
     ) -> LogicalPlanBuilder: ...
+    def random_shuffle(self, num_partitions: int) -> LogicalPlanBuilder: ...
+    def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder: ...
     def coalesce(self, num_partitions: int) -> LogicalPlanBuilder: ...
     def distinct(self) -> LogicalPlanBuilder: ...
     def sample(self, fraction: float, with_replacement: bool, seed: int | None) -> LogicalPlanBuilder: ...

@@ -1,4 +1,4 @@
-use crate::{source_info::InMemoryInfo, PartitionSpec};
+use crate::{source_info::InMemoryInfo, ClusteringSpec};
 use daft_core::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -7,19 +7,19 @@ use std::sync::Arc;
 pub struct InMemoryScan {
     pub schema: SchemaRef,
     pub in_memory_info: InMemoryInfo,
-    pub partition_spec: Arc<PartitionSpec>,
+    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl InMemoryScan {
     pub(crate) fn new(
         schema: SchemaRef,
         in_memory_info: InMemoryInfo,
-        partition_spec: Arc<PartitionSpec>,
+        clustering_spec: Arc<ClusteringSpec>,
     ) -> Self {
         Self {
             schema,
             in_memory_info,
-            partition_spec,
+            clustering_spec,
         }
     }
 
@@ -29,8 +29,8 @@ impl InMemoryScan {
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.in_memory_info.size_bytes,));
         res.push(format!(
-            "Partition spec = {{ {} }}",
-            self.partition_spec.multiline_display().join(", ")
+            "Clustering spec = {{ {} }}",
+            self.clustering_spec.multiline_display().join(", ")
         ));
         res
     }

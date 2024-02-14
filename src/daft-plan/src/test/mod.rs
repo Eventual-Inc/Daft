@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use daft_core::{datatypes::Field, schema::Schema};
 use daft_scan::{
-    file_format::FileFormatConfig, storage_config::StorageConfig, AnonymousScanOperator, Pushdowns,
-    ScanOperator,
+    file_format::FileFormatConfig, storage_config::NativeStorageConfig,
+    storage_config::StorageConfig, AnonymousScanOperator, Pushdowns, ScanOperator,
 };
 
-use crate::{builder::LogicalPlanBuilder, NativeStorageConfig};
+use crate::builder::LogicalPlanBuilder;
 
 /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
 pub fn dummy_scan_operator(fields: Vec<Field>) -> Arc<dyn ScanOperator> {

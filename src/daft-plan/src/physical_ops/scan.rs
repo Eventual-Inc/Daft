@@ -2,20 +2,23 @@ use std::sync::Arc;
 
 use daft_scan::ScanTask;
 
-use crate::PartitionSpec;
+use crate::ClusteringSpec;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularScan {
     pub scan_tasks: Vec<Arc<ScanTask>>,
-    pub partition_spec: Arc<PartitionSpec>,
+    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl TabularScan {
-    pub(crate) fn new(scan_tasks: Vec<Arc<ScanTask>>, partition_spec: Arc<PartitionSpec>) -> Self {
+    pub(crate) fn new(
+        scan_tasks: Vec<Arc<ScanTask>>,
+        clustering_spec: Arc<ClusteringSpec>,
+    ) -> Self {
         Self {
             scan_tasks,
-            partition_spec,
+            clustering_spec,
         }
     }
 
@@ -33,8 +36,8 @@ impl TabularScan {
         res.push(format!("Estimated Scan Bytes = {total_bytes}",));
 
         res.push(format!(
-            "Partition spec = {{ {} }}",
-            self.partition_spec.multiline_display().join(", ")
+            "Clustering spec = {{ {} }}",
+            self.clustering_spec.multiline_display().join(", ")
         ));
         res
     }

@@ -30,7 +30,6 @@ from daft.daft import (
     IOConfig,
     JoinStrategy,
     JoinType,
-    PartitionScheme,
     ResourceRequest,
 )
 from daft.dataframe.preview import DataFramePreview
@@ -733,13 +732,9 @@ class DataFrame:
                 "No columns specified for repartition; If you do not require rebalancing of partitions, you may "
                 "instead prefer using `df.into_partitions(N)` which is a cheaper operation that avoids shuffling data."
             )
-            scheme = PartitionScheme.Random
-            exprs = []
+            builder = self._builder.random_shuffle(num)
         else:
-            scheme = PartitionScheme.Hash
-            exprs = self.__column_input_to_expression(partition_by)
-
-        builder = self._builder.repartition(num_partitions=num, partition_by=exprs, scheme=scheme)
+            builder = self._builder.hash_repartition(num, self.__column_input_to_expression(partition_by))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -758,11 +753,7 @@ class DataFrame:
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
         """
-        builder = self._builder.repartition(
-            num_partitions=num,
-            partition_by=[],
-            scheme=PartitionScheme.Unknown,
-        )
+        builder = self._builder.into_partitions(num)
         return DataFrame(builder)
 
     @DataframePublicAPI

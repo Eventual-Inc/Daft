@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from daft.daft import CountMode, FileFormat, IOConfig, JoinStrategy, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import (
-    PartitionScheme,
     PyDaftExecutionConfig,
     ResourceRequest,
     ScanOperatorHandle,
@@ -126,11 +125,17 @@ class LogicalPlanBuilder:
         builder = self._builder.sort(sort_by_pyexprs, descending)
         return LogicalPlanBuilder(builder)
 
-    def repartition(
-        self, num_partitions: int | None, partition_by: list[Expression], scheme: PartitionScheme
-    ) -> LogicalPlanBuilder:
+    def hash_repartition(self, num_partitions: int, partition_by: list[Expression]) -> LogicalPlanBuilder:
         partition_by_pyexprs = [expr._expr for expr in partition_by]
-        builder = self._builder.repartition(partition_by_pyexprs, scheme, num_partitions=num_partitions)
+        builder = self._builder.hash_repartition(partition_by_pyexprs, num_partitions=num_partitions)
+        return LogicalPlanBuilder(builder)
+
+    def random_shuffle(self, num_partitions: int) -> LogicalPlanBuilder:
+        builder = self._builder.random_shuffle(num_partitions)
+        return LogicalPlanBuilder(builder)
+
+    def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder:
+        builder = self._builder.into_partitions(num_partitions)
         return LogicalPlanBuilder(builder)
 
     def agg(
