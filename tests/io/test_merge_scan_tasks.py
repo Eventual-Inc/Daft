@@ -44,20 +44,20 @@ def test_merge_scan_task_exceed_max(csv_files):
 
 @pytest.mark.skipif(os.getenv("DAFT_MICROPARTITIONS", "1") == "0", reason="Test can only run on micropartitions")
 def test_merge_scan_task_below_max(csv_files):
-    with override_merge_scan_tasks_configs(1, 20):
+    with override_merge_scan_tasks_configs(21, 22):
         df = daft.read_csv(str(csv_files))
         assert (
             df.num_partitions() == 2
-        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the second merge is too large (>20 bytes)"
+        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the second merge is too large (>22 bytes)"
 
 
 @pytest.mark.skipif(os.getenv("DAFT_MICROPARTITIONS", "1") == "0", reason="Test can only run on micropartitions")
 def test_merge_scan_task_above_min(csv_files):
-    with override_merge_scan_tasks_configs(0, 40):
+    with override_merge_scan_tasks_configs(19, 40):
         df = daft.read_csv(str(csv_files))
         assert (
             df.num_partitions() == 2
-        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the first merge is above the minimum (>0 bytes)"
+        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the first merge is above the minimum (>19 bytes)"
 
 
 @pytest.mark.skipif(os.getenv("DAFT_MICROPARTITIONS", "1") == "0", reason="Test can only run on micropartitions")
