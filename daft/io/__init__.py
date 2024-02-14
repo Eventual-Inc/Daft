@@ -10,6 +10,7 @@ from daft.daft import (
     set_io_pool_num_threads,
 )
 from daft.io._csv import read_csv
+from daft.io._delta_lake import read_delta_lake
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
@@ -36,6 +37,7 @@ __all__ = [
     "from_glob_path",
     "read_parquet",
     "read_iceberg",
+    "read_delta_lake",
     "IOConfig",
     "S3Config",
     "AzureConfig",

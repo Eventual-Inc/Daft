@@ -66,6 +66,18 @@ Apache Iceberg
 
     read_iceberg
 
+Delta Lake
+~~~~~~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_delta_lake
+
+In-memory
+---------
+
 Arrow
 ~~~~~
 

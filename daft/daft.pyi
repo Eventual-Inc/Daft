@@ -494,6 +494,10 @@ class AzureConfig:
     I/O configuration for accessing Azure Blob Storage.
     """
 
+    storage_account: str | None
+    access_key: str | None
+    anonymous: str | None
+
     def __init__(
         self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
     ): ...
