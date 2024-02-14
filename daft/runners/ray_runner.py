@@ -721,6 +721,8 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[RayMaterializedResult]:
+        print("==== Running iter ====")
+
         # Grab and freeze the current DaftExecutionConfig
         daft_execution_config = get_context().daft_execution_config
 
@@ -737,6 +739,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             if entry.value is not None
         }
         result_uuid = str(uuid.uuid4())
+
+        print("==== starting plan ====")
+
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
                 self.scheduler_actor.start_plan.remote(
@@ -756,6 +761,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 results_buffer_size=results_buffer_size,
             )
 
+        print("==== plan started ====")
+
         try:
             while True:
                 if isinstance(self.ray_context, ray.client_builder.ClientContext):
@@ -770,6 +777,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
                 yield result
         finally:
+            print("==== finished plan ====")
             # Generator is out of scope, ensure that state has been cleaned up
             if isinstance(self.ray_context, ray.client_builder.ClientContext):
                 ray.get(self.scheduler_actor.stop_plan.remote(result_uuid))
