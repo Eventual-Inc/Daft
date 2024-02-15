@@ -705,6 +705,13 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def concat(self, other: str) -> Expression:
         """Concatenates two string expressions together
 
+        .. NOTE::
+            Another (easier!) way to invoke this functionality is using the Python `+` operator which is
+            aliased to using `.str.concat`. These are equivalent:
+
+            >>> col("x").str.concat(col("y"))
+            >>> col("x") + col("y")
+
         Args:
             other (Expression): a string expression to concatenate with
 
