@@ -531,6 +531,9 @@ class Scheduler:
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
                         dispatches_allowed = min(cores, dispatches_allowed)
 
+                        if len(inflight_tasks) == 0:
+                            dispatches_allowed = max(dispatches_allowed, 1)
+
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed and is_active():
                             if next_step is None:
