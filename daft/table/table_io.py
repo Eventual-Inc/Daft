@@ -372,7 +372,6 @@ def write_tabular(
     canonicalized_protocol = canonicalize_protocol(protocol)
 
     is_local_fs = canonicalized_protocol == "file"
-    print("is_local:", is_local_fs)
 
     tables_to_write: list[MicroPartition]
     part_keys_postfix_per_table: list[str | None]
