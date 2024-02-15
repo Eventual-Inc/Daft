@@ -1138,7 +1138,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: Optional[int] = None) -> "DataFrame":
+    def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results
 
         .. NOTE::
@@ -1155,6 +1155,8 @@ class DataFrame:
         assert self._result is not None
         if num_preview_rows is not None:
             self._num_preview_rows = num_preview_rows
+        else:
+            self._num_preview_rows = len(self._result)
         return self
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
