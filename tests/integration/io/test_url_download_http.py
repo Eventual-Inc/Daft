@@ -30,6 +30,7 @@ def test_url_download_http_error_codes(nginx_config, use_native_downloader, stat
     if status_code == 404:
         with pytest.raises(FileNotFoundError):
             df.collect()
+            df.__repr__()
     # When using fsspec, other error codes are bubbled up to the user as aiohttp.client_exceptions.ClientResponseError
     elif not use_native_downloader:
         # Ray runner has a pretty catastrophic failure when raising non-pickleable exceptions (ClientResponseError is not pickleable)
@@ -45,3 +46,4 @@ def test_url_download_http_error_codes(nginx_config, use_native_downloader, stat
         # user-facing I/O error with the error code
         with pytest.raises(ValueError, match=f"{status_code}") as e:
             df.collect()
+            df.__repr__()
