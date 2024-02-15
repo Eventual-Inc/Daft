@@ -526,13 +526,13 @@ class Scheduler:
                     while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
                         tasks_to_dispatch: list[PartitionTask] = []
 
-                        cores: int = max(next(num_cpus_provider) - self.reserved_cores, 0)
+                        # TODO: improve control loop code to be more understandable and dynamically adjust backlog
+                        cores: int = max(
+                            next(num_cpus_provider) - self.reserved_cores, 1
+                        )  # assume at least 1 CPU core for bootstrapping clusters that scale from zero
                         max_inflight_tasks = cores + self.max_task_backlog
                         dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
                         dispatches_allowed = min(cores, dispatches_allowed)
-
-                        if len(inflight_tasks) == 0:
-                            dispatches_allowed = max(dispatches_allowed, 1)
 
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed and is_active():
