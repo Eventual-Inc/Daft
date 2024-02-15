@@ -87,7 +87,7 @@ def test_empty_repr(make_df):
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
 
 
-@pytest.mark.parametrize("num_preview_rows", [None])
+@pytest.mark.parametrize("num_preview_rows", [9, 10, None])
 def test_repr_with_non_default_preview_rows(make_df, num_preview_rows):
     df = make_df({"A": [i for i in range(10)], "B": [i for i in range(10)]})
     df.collect(num_preview_rows=num_preview_rows)

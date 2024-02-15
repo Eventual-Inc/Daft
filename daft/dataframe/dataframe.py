@@ -242,9 +242,7 @@ class DataFrame:
             preview_results = preview_df._result
             assert preview_results is not None
 
-            print("here")
             preview_partition = preview_results._get_merged_vpartition()
-            print("not here")
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
                 dataframe_num_rows=len(self),
