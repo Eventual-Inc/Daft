@@ -24,7 +24,7 @@ def test_decimal_parquet_roundtrip() -> None:
         df.write_parquet(dirname)
         df_readback = daft.read_parquet(dirname).collect()
 
-    assert str(df.to_pydict()["decimal128"]) == str(df_readback.to_pydict()["decimal128"])
+        assert str(df.to_pydict()["decimal128"]) == str(df_readback.to_pydict()["decimal128"])
 
 
 def test_arrow_decimal() -> None:

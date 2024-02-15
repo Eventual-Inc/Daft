@@ -85,6 +85,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: Optional[PartitionCacheEntry] = None
         self._preview = DataFramePreview(preview_partition=None, dataframe_num_rows=None)
+        self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
     def _builder(self) -> LogicalPlanBuilder:
@@ -225,13 +226,37 @@ class DataFrame:
             for result in results_iter:
                 yield result.partition()
 
+    def _populate_preview(self) -> None:
+        """Populates the preview of the DataFrame, if it is not already populated."""
+        if self._result is None:
+            return
+
+        preview_partition_invalid = (
+            self._preview.preview_partition is None or len(self._preview.preview_partition) < self._num_preview_rows
+        )
+        if preview_partition_invalid:
+            preview_df = self
+            if self._num_preview_rows < len(self):
+                preview_df = preview_df.limit(self._num_preview_rows)
+            preview_df._materialize_results()
+            preview_results = preview_df._result
+            assert preview_results is not None
+
+            preview_partition = preview_results._get_merged_vpartition()
+            self._preview = DataFramePreview(
+                preview_partition=preview_partition,
+                dataframe_num_rows=len(self),
+            )
+
     @DataframePublicAPI
     def __repr__(self) -> str:
+        self._populate_preview()
         display = DataFrameDisplay(self._preview, self.schema())
         return display.__repr__()
 
     @DataframePublicAPI
     def _repr_html_(self) -> str:
+        self._populate_preview()
         display = DataFrameDisplay(self._preview, self.schema())
         return display._repr_html_()
 
@@ -1113,7 +1138,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
+    def collect(self, num_preview_rows: Optional[int] = None) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results
 
         .. NOTE::
@@ -1128,31 +1153,13 @@ class DataFrame:
         self._materialize_results()
 
         assert self._result is not None
-        dataframe_len = len(self._result)
-        requested_rows = dataframe_len if num_preview_rows is None else num_preview_rows
-
-        # Build a DataFramePreview and cache it if necessary
-        preview_partition_invalid = (
-            self._preview.preview_partition is None or len(self._preview.preview_partition) < requested_rows
-        )
-        if preview_partition_invalid:
-            preview_df = self
-            if num_preview_rows is not None:
-                preview_df = preview_df.limit(num_preview_rows)
-            preview_df._materialize_results()
-            preview_results = preview_df._result
-            assert preview_results is not None
-
-            preview_partition = preview_results._get_merged_vpartition()
-            self._preview = DataFramePreview(
-                preview_partition=preview_partition,
-                dataframe_num_rows=dataframe_len,
-            )
-
+        if num_preview_rows is not None:
+            self._num_preview_rows = num_preview_rows
         return self
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
         """Helper for .show() which will construct the underlying DataFrameDisplay object"""
+        self._populate_preview()
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 
