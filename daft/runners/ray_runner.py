@@ -518,18 +518,12 @@ class Scheduler:
                 except Full:
                     pass
 
-        print("==== start plan run ====")
-
         with profiler(profile_filename):
-            print("==== 1 ====")
             try:
                 next_step = next(tasks)
-                print("==== 2 ====")
 
                 while is_active():  # Loop: Dispatch -> await.
-                    print("==== 3 ====")
                     while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
-                        print("==== 4 ====")
                         tasks_to_dispatch: list[PartitionTask] = []
 
                         cores: int = max(next(num_cpus_provider) - self.reserved_cores, 0)
@@ -539,7 +533,6 @@ class Scheduler:
 
                         # Loop: Get a batch of tasks.
                         while len(tasks_to_dispatch) < dispatches_allowed and is_active():
-                            print("==== 5 ====")
                             if next_step is None:
                                 # Blocked on already dispatched tasks; await some tasks.
                                 break
@@ -564,7 +557,6 @@ class Scheduler:
                                 # Add the task to the batch.
                                 tasks_to_dispatch.append(next_step)
                                 next_step = next(tasks)
-                        print("==== 6 ====")
 
                         # Dispatch the batch of tasks.
                         logger.debug(
@@ -576,8 +568,6 @@ class Scheduler:
                         if not is_active():
                             break
 
-                        print("==== 7 ====")
-
                         for task in tasks_to_dispatch:
                             results = _build_partitions(daft_execution_config, task)
                             logger.debug("%s -> %s", task, results)
@@ -587,15 +577,12 @@ class Scheduler:
 
                             pbar.mark_task_start(task)
 
-                        print("==== 8 ====")
-
                         if dispatches_allowed == 0 or next_step is None:
                             break
 
                     # Await a batch of tasks.
                     # (Awaits the next task, and then the next batch of tasks within 10ms.)
 
-                    print("==== 9 ====")
                     dispatch = datetime.now()
                     completed_task_ids = []
                     for wait_for in ("next_one", "next_batch"):
@@ -633,7 +620,6 @@ class Scheduler:
 
                                 pbar.mark_task_done(task)
                                 del inflight_tasks[task_id]
-                    print("==== 10 ====")
 
                     logger.debug(
                         "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
@@ -641,8 +627,6 @@ class Scheduler:
 
                     if next_step is None:
                         next_step = next(tasks)
-
-                print("==== 11 ====")
 
             except StopIteration as e:
                 place_in_queue(e)
@@ -652,8 +636,6 @@ class Scheduler:
                 place_in_queue(e)
                 pbar.close()
                 raise
-            print("==== 12 ====")
-        print("==== 13 ====")
 
         pbar.close()
 
@@ -722,13 +704,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=True,
             )
-            print("==== using remote scheduler ====")
         else:
             self.scheduler = Scheduler(
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
-            print("==== using local scheduler ====")
 
         print("==== Got to after scheduler creation ====")
 
@@ -741,8 +721,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[RayMaterializedResult]:
-        print("==== Running iter ====")
-
         # Grab and freeze the current DaftExecutionConfig
         daft_execution_config = get_context().daft_execution_config
 
@@ -759,9 +737,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             if entry.value is not None
         }
         result_uuid = str(uuid.uuid4())
-
-        print("==== starting plan ====")
-
         if isinstance(self.ray_context, ray.client_builder.ClientContext):
             ray.get(
                 self.scheduler_actor.start_plan.remote(
@@ -781,16 +756,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 results_buffer_size=results_buffer_size,
             )
 
-        print("==== plan started ====")
-
         try:
             while True:
                 if isinstance(self.ray_context, ray.client_builder.ClientContext):
                     result = ray.get(self.scheduler_actor.next.remote(result_uuid))
                 else:
                     result = self.scheduler.next(result_uuid)
-
-                print("==== Got result ====")
 
                 if isinstance(result, StopIteration):
                     break
@@ -799,7 +770,6 @@ class RayRunner(Runner[ray.ObjectRef]):
 
                 yield result
         finally:
-            print("==== finished plan ====")
             # Generator is out of scope, ensure that state has been cleaned up
             if isinstance(self.ray_context, ray.client_builder.ClientContext):
                 ray.get(self.scheduler_actor.stop_plan.remote(result_uuid))
