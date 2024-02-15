@@ -87,7 +87,6 @@ def test_download_with_missing_urls_reraise_errors(files, use_native_downloader)
         # TODO: Change to a FileNotFound Error
         with pytest.raises(FileNotFoundError):
             df.collect()
-            df.__repr__()
 
 
 @pytest.mark.parametrize("use_native_downloader", [False, True])

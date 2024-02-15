@@ -242,7 +242,9 @@ class DataFrame:
             preview_results = preview_df._result
             assert preview_results is not None
 
+            print("here")
             preview_partition = preview_results._get_merged_vpartition()
+            print("not here")
             self._preview = DataFramePreview(
                 preview_partition=preview_partition,
                 dataframe_num_rows=len(self),
@@ -1153,10 +1155,11 @@ class DataFrame:
         self._materialize_results()
 
         assert self._result is not None
+        dataframe_len = len(self._result)
         if num_preview_rows is not None:
             self._num_preview_rows = num_preview_rows
         else:
-            self._num_preview_rows = len(self._result)
+            self._num_preview_rows = dataframe_len
         return self
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
