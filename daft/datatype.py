@@ -371,6 +371,8 @@ class DataType:
             return cls.time(timeunit)
         elif pa.types.is_timestamp(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
+            print(arrow_type, timeunit, arrow_type)
+            raise ValueError("Timestamps are not supported yet")
             return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
         elif pa.types.is_duration(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
