@@ -366,13 +366,7 @@ class DataType:
             return cls.decimal128(arrow_type.precision, arrow_type.scale)
         elif pa.types.is_date32(arrow_type):
             return cls.date()
-        elif pa.types.is_time(arrow_type) and (arrow_type.unit == "us" or arrow_type.unit == "ns"):
-            t = pa.time64("us")
-            print(t)
-            print(arrow_type is t)
-            print(arrow_type)
-            print(t.unit)
-            print(arrow_type.unit)
+        elif pa.types.is_time64(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
             return cls.time(timeunit)
         elif pa.types.is_timestamp(arrow_type):
