@@ -346,7 +346,18 @@ pub(crate) async fn glob(
     if !full_fragment.has_special_character() {
         let mut remaining_results = limit;
         let glob = full_fragment.escaped_str().to_string();
+
         return Ok(stream! {
+            if !glob.ends_with(GLOB_DELIMITER) {
+                // If doesn't have a glob character and doesn't end with a delimiter, assume its a file first.
+                let maybe_size = source.get_size(&glob, io_stats.clone()).await;
+                match maybe_size {
+                    Ok(size_bytes) => yield Ok(FileMetadata{filepath: glob.clone(), size: Some(size_bytes as u64), filetype: FileType::File  }),
+                    Err(crate::Error::NotFound {..}) => {},
+                    Err(err) => yield Err(err),
+                }
+            }
+
             let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
             while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
                 match result {
