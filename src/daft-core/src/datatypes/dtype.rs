@@ -340,6 +340,7 @@ impl DataType {
             self,
             DataType::Decimal128(..)
                 | DataType::Date
+                | DataType::Time(..)
                 | DataType::Timestamp(..)
                 | DataType::Duration(..)
                 | DataType::Embedding(..)

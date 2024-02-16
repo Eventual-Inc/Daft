@@ -28,6 +28,7 @@ impl Series {
             Utf8 => self.utf8()?.murmur3_32(),
             Binary => self.binary()?.murmur3_32(),
             Date => self.date()?.murmur3_32(),
+            Time(..) => self.time()?.murmur3_32(),
             Timestamp(..) => self.timestamp()?.murmur3_32(),
             Decimal128(..) => self.decimal128()?.murmur3_32(),
             v => panic!("murmur3 hash not implemented for datatype: {v}"),

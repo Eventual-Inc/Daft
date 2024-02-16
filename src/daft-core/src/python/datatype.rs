@@ -161,6 +161,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn time(timeunit: PyTimeUnit) -> PyResult<Self> {
+        Ok(DataType::Time(timeunit.timeunit).into())
+    }
+
+    #[staticmethod]
     pub fn timestamp(timeunit: PyTimeUnit, timezone: Option<String>) -> PyResult<Self> {
         Ok(DataType::Timestamp(timeunit.timeunit, timezone).into())
     }

@@ -35,6 +35,12 @@ pub fn date_lit(item: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Time(item, tu.timeunit));
+    Ok(expr.into())
+}
+
+#[pyfunction]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())

@@ -4,20 +4,20 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{
         growable::make_growable,
-        ops::image::ImageArraySidecarData,
-        ops::{from_arrow::FromArrow, full::FullNull},
+        ops::{from_arrow::FromArrow, full::FullNull, image::ImageArraySidecarData},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
-            TimestampArray,
+            TimeArray, TimestampArray,
         },
         DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, Int64Array, TimeUnit,
         UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
+    utils::display_table::display_time64,
     with_match_daft_logical_primitive_types,
 };
 use common_error::{DaftError, DaftResult};
@@ -72,7 +72,7 @@ where
         use DataType::*;
         let source_arrow_array = match source_dtype {
             // Wrapped primitives
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
                 with_match_daft_logical_primitive_types!(source_dtype, |$T| {
                     use arrow2::array::Array;
                     to_cast
@@ -115,7 +115,7 @@ where
             let target_physical_type = dtype.to_physical().to_arrow()?;
             match dtype {
                 // Primitive wrapper types: change the arrow2 array's type field to primitive
-                Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+                Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
                     with_match_daft_logical_primitive_types!(dtype, |$P| {
                         use arrow2::array::Array;
                         result_arrow_array
@@ -398,6 +398,35 @@ impl TimestampArray {
 
                 Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
             }
+            DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
+            DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
+            #[cfg(feature = "python")]
+            DataType::Python => cast_logical_to_python_array(self, dtype),
+            _ => arrow_cast(&self.physical, dtype),
+        }
+    }
+}
+
+impl TimeArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Time(..) => arrow_logical_cast(self, dtype),
+            DataType::Utf8 => {
+                let time_array = self.as_arrow();
+                let time_str: arrow2::array::Utf8Array<i64> = time_array
+                    .iter()
+                    .map(|val| {
+                        val.map(|val| {
+                            let DataType::Time(unit) = &self.field.dtype else {
+                                panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
+                            };
+                            display_time64(*val, unit)
+                        })
+                    })
+                    .collect();
+                Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
+            }
+            DataType::Int64 => Ok(self.physical.clone().into_series()),
             DataType::Float32 => self.cast(&DataType::Int64)?.cast(&DataType::Float32),
             DataType::Float64 => self.cast(&DataType::Int64)?.cast(&DataType::Float64),
             #[cfg(feature = "python")]

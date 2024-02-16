@@ -1,7 +1,7 @@
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, Decimal128Array, TimestampArray},
+        logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, Int16Array, Int32Array, Int64Array, Int8Array,
         NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
@@ -149,6 +149,12 @@ impl BinaryArray {
 }
 
 impl DateArray {
+    pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        self.physical.murmur3_32()
+    }
+}
+
+impl TimeArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
         self.physical.murmur3_32()
     }

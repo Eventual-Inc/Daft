@@ -5,7 +5,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int128Array,
         Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
@@ -192,6 +192,7 @@ impl_growable_array!(
 );
 impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a>);
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
+impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
 impl_growable_array!(
     EmbeddingArray,
     logical_growable::LogicalEmbeddingGrowable<'a>

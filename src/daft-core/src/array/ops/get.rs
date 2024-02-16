@@ -1,7 +1,9 @@
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
-        logical::{DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, TimestampArray},
+        logical::{
+            DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, TimeArray, TimestampArray,
+        },
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, NullArray,
         Utf8Array,
     },
@@ -66,6 +68,7 @@ impl_array_arrow_get!(BooleanArray, bool);
 impl_array_arrow_get!(BinaryArray, &[u8]);
 impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
+impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);
 impl_array_arrow_get!(TimestampArray, i64);
 

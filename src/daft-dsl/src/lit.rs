@@ -1,5 +1,7 @@
 use crate::expr::Expr;
 
+use daft_core::datatypes::logical::TimeArray;
+use daft_core::utils::display_table::display_time64;
 use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
@@ -55,6 +57,8 @@ pub enum LiteralValue {
     /// An [`i32`] representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days.
     Date(i32),
+    /// An [`i64`] representing a time in microseconds or nanoseconds since midnight.
+    Time(i64, TimeUnit),
     /// A 64-bit floating point number.
     Float64(f64),
     /// A list
@@ -81,6 +85,10 @@ impl Hash for LiteralValue {
             Int64(n) => n.hash(state),
             UInt64(n) => n.hash(state),
             Date(n) => n.hash(state),
+            Time(n, tu) => {
+                n.hash(state);
+                tu.hash(state);
+            }
             Timestamp(n, tu, tz) => {
                 n.hash(state);
                 tu.hash(state);
@@ -115,6 +123,7 @@ impl Display for LiteralValue {
             Int64(val) => write!(f, "{val}"),
             UInt64(val) => write!(f, "{val}"),
             Date(val) => write!(f, "{}", display_date32(*val)),
+            Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
             Series(series) => write!(f, "{}", display_series_literal(series)),
@@ -145,6 +154,7 @@ impl LiteralValue {
             Int64(_) => DataType::Int64,
             UInt64(_) => DataType::UInt64,
             Date(_) => DataType::Date,
+            Time(_, tu) => DataType::Time(*tu),
             Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Float64(_) => DataType::Float64,
             Series(series) => series.data_type().clone(),
@@ -169,6 +179,10 @@ impl LiteralValue {
             Date(val) => {
                 let physical = Int32Array::from(("literal", [*val].as_slice()));
                 DateArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
+            Time(val, ..) => {
+                let physical = Int64Array::from(("literal", [*val].as_slice()));
+                TimeArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
             Timestamp(val, ..) => {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));

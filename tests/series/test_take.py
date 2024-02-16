@@ -45,6 +45,21 @@ def test_series_date_take() -> None:
     assert taken.to_pylist() == days[::-1]
 
 
+def test_series_time_take() -> None:
+    from datetime import time
+
+    def time_maker(h, m, s, us):
+        if us is None:
+            return None
+        return time(h, m, s, us)
+
+    times = list(map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [5, 4, 1, None, 2, None]))
+    s = Series.from_pylist(times)
+    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
+    assert taken.datatype() == DataType.time("us")
+    assert taken.to_pylist() == times[::-1]
+
+
 def test_series_binary_take() -> None:
     data = pa.array([b"1", b"2", b"3", None, b"5", None])
 

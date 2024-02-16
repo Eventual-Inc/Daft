@@ -14,7 +14,7 @@ use crate::{
 
 use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeTensorArray,
-    ImageArray, TensorArray, TimestampArray,
+    ImageArray, TensorArray, TimeArray, TimestampArray,
 };
 use crate::datatypes::{
     BinaryArray, BooleanArray, ExtensionArray, Float32Array, Float64Array, Int16Array, Int32Array,
@@ -229,6 +229,7 @@ impl SeriesBinaryOps for ArrayWrapper<StructArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ExtensionArray> {}
 impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<DateArray> {}
+impl SeriesBinaryOps for ArrayWrapper<TimeArray> {}
 impl SeriesBinaryOps for ArrayWrapper<DurationArray> {
     fn add(&self, rhs: &Series) -> DaftResult<Series> {
         use DataType::*;

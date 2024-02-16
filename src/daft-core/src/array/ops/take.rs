@@ -6,7 +6,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, NullArray,
         Utf8Array,
@@ -70,6 +70,7 @@ impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
 impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
+impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
 impl_logicalarray_take!(TimestampArray);
 impl_logicalarray_take!(EmbeddingArray);

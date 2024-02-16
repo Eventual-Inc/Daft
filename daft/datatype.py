@@ -194,6 +194,13 @@ class DataType:
         return cls._from_pydatatype(PyDataType.date())
 
     @classmethod
+    def time(cls, timeunit: TimeUnit | str) -> DataType:
+        """Time DataType."""
+        if isinstance(timeunit, str):
+            timeunit = TimeUnit.from_str(timeunit)
+        return cls._from_pydatatype(PyDataType.time(timeunit._timeunit))
+
+    @classmethod
     def timestamp(cls, timeunit: TimeUnit | str, timezone: str | None = None) -> DataType:
         """Timestamp DataType."""
         if isinstance(timeunit, str):
@@ -359,6 +366,9 @@ class DataType:
             return cls.decimal128(arrow_type.precision, arrow_type.scale)
         elif pa.types.is_date32(arrow_type):
             return cls.date()
+        elif pa.types.is_time64(arrow_type):
+            timeunit = TimeUnit.from_str(arrow_type.unit)
+            return cls.time(timeunit)
         elif pa.types.is_timestamp(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
             return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
