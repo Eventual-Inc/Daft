@@ -367,12 +367,15 @@ class DataType:
         elif pa.types.is_date32(arrow_type):
             return cls.date()
         elif pa.types.is_time64(arrow_type):
+            print(arrow_type)
+            t = pa.time64("ns")
+            print(t)
+            print(t.unit)
+            print(arrow_type.unit)
             timeunit = TimeUnit.from_str(arrow_type.unit)
             return cls.time(timeunit)
         elif pa.types.is_timestamp(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
-            print(arrow_type, timeunit, arrow_type)
-            raise ValueError("Timestamps are not supported yet")
             return cls.timestamp(timeunit=timeunit, timezone=arrow_type.tz)
         elif pa.types.is_duration(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)
