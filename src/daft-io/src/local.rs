@@ -89,7 +89,6 @@ impl From<Error> for super::Error {
             }
             UnableToFetchFileMetadata { path, source } => {
                 use std::io::ErrorKind::*;
-                println!("{source:?}");
                 match source.kind() {
                     NotFound | IsADirectory => super::Error::NotFound {
                         path,
