@@ -607,6 +607,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
         partition_values: PyTable | None,
+        stats: PyTable | None,
     ) -> ScanTask | None:
         """
         Create a Catalog Scan Task

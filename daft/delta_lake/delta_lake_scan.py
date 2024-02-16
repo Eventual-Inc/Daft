@@ -100,16 +100,37 @@ class DeltaLakeScanOperator(ScanOperator):
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
                     try:
-                        arrow_arr = pa.array([part_values[field_name]], type=part_values[field_name].type)
-                    except pa.ArrowInvalid:
+                        arrow_arr = pa.array([part_values[field_name]], type=dtype.field(field_idx).type)
+                    except (pa.ArrowInvalid, pa.ArrowTypeError):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
-                        arrow_arr = pa.array([part_values[field_name].as_py()], type=part_values[field_name].type)
+                        arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
                 partition_values = daft.table.Table.from_pydict(arrays)._table
             else:
                 partition_values = None
 
-            # TODO(Clark): Add stats (column-wise min, max, null counts) into scan task.
+            # Populate scan task with column-wise stats.
+            dtype = add_actions.schema.field("min").type
+            min_values = add_actions["min"][task_idx]
+            max_values = add_actions["max"][task_idx]
+            # TODO(Clark): Add support for tracking null counts in column stats.
+            # null_counts = add_actions["null_count"][task_idx]
+            arrays = {}
+            for field_idx in range(dtype.num_fields):
+                field_name = dtype.field(field_idx).name
+                try:
+                    arrow_arr = pa.array(
+                        [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
+                    )
+                except (pa.ArrowInvalid, pa.ArrowTypeError):
+                    # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
+                    arrow_arr = pa.array(
+                        [min_values[field_name].as_py(), max_values[field_name].as_py()],
+                        type=dtype.field(field_idx).type,
+                    )
+                arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
+            stats = daft.table.Table.from_pydict(arrays)
+
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=file_format_config,
@@ -119,6 +140,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
+                stats=stats._table,
             )
             if st is None:
                 continue

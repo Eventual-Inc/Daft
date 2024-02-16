@@ -4,7 +4,7 @@ use std::{
     ops::{BitAnd, BitOr, Not},
 };
 
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
@@ -22,7 +22,22 @@ pub struct TableStatistics {
 }
 
 impl TableStatistics {
-    fn _from_table(table: &Table) -> Self {
+    pub fn from_stats_table(table: &Table) -> DaftResult<Self> {
+        // Assumed format is each column having 2 rows:
+        // - row 0: Minimum value for the column.
+        // - row 1: Maximum value for the column.
+        if table.len() != 2 {
+            return Err(DaftError::ValueError(format!("Expected stats table to have 2 rows, with min and max values for each column, but got {} rows: {}", table.len(), table)));
+        }
+        let mut columns = IndexMap::with_capacity(table.num_columns());
+        for name in table.column_names() {
+            let col = table.get_column(&name).unwrap();
+            let stats = ColumnRangeStatistics::new(Some(col.slice(0, 1)?), Some(col.slice(1, 2)?))?;
+            columns.insert(name, stats);
+        }
+        Ok(TableStatistics { columns })
+    }
+    pub fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -178,7 +193,7 @@ mod test {
         let table =
             Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
                 .unwrap();
-        let table_stats = TableStatistics::_from_table(&table);
+        let table_stats = TableStatistics::from_table(&table);
 
         // False case
         let expr = col("a").eq(&lit(0));
@@ -193,7 +208,7 @@ mod test {
         // True case
         let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
             .unwrap();
-        let table_stats = TableStatistics::_from_table(&table);
+        let table_stats = TableStatistics::from_table(&table);
 
         let expr = col("a").eq(&lit(0));
         let result = table_stats.eval_expression(&expr)?;
