@@ -65,18 +65,33 @@ enum Error {
 
     #[snafu(display("Unable to convert URL \"{}\" to local file path", path))]
     InvalidFilePath { path: String },
+
+    #[snafu(display("Attempted to Read Directory as File {}", path))]
+    IsADirectory { path: String },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            UnableToOpenFile { path, source }
-            | UnableToFetchFileMetadata { path, source }
-            | UnableToFetchDirectoryEntries { path, source } => {
+            UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
                     NotFound => super::Error::NotFound {
+                        path,
+                        source: source.into(),
+                    },
+                    _ => super::Error::UnableToOpenFile {
+                        path,
+                        source: source.into(),
+                    },
+                }
+            }
+            UnableToFetchFileMetadata { path, source } => {
+                use std::io::ErrorKind::*;
+                println!("{source:?}");
+                match source.kind() {
+                    NotFound | IsADirectory => super::Error::NotFound {
                         path,
                         source: source.into(),
                     },
@@ -139,7 +154,17 @@ impl ObjectSource for LocalSource {
             .context(UnableToFetchFileMetadataSnafu {
                 path: uri.to_string(),
             })?;
-        Ok(meta.len() as usize)
+
+        if meta.is_dir() {
+            Err(super::Error::NotFound {
+                path: uri.to_owned(),
+                source: Box::new(Error::IsADirectory {
+                    path: uri.to_owned(),
+                }),
+            })
+        } else {
+            Ok(meta.len() as usize)
+        }
     }
 
     async fn glob(
