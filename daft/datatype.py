@@ -367,7 +367,7 @@ class DataType:
         elif pa.types.is_date32(arrow_type):
             return cls.date()
         elif pa.types.is_time64(arrow_type):
-            timeunit = TimeUnit.from_str(arrow_type.unit)
+            timeunit = TimeUnit.from_str(pa.type_for_alias(str(arrow_type)).unit)
             return cls.time(timeunit)
         elif pa.types.is_timestamp(arrow_type):
             timeunit = TimeUnit.from_str(arrow_type.unit)

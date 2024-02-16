@@ -85,7 +85,7 @@ def lit(value: object) -> Expression:
         # pyo3 time (PyTime) is not available when running in abi3 mode, workaround
         pa_time = pa.scalar(value)
         i64_value = pa_time.cast(pa.int64()).as_py()
-        time_unit = TimeUnit.from_str(pa_time.type.unit)._timeunit
+        time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
