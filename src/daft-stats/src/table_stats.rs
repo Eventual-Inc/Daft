@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Display,
     ops::{BitAnd, BitOr, Not},
 };
@@ -121,13 +122,26 @@ impl TableStatistics {
     }
 
     pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
+        self.cast_to_schema_with_fill(schema, &None)
+    }
+
+    pub fn cast_to_schema_with_fill(
+        &self,
+        schema: SchemaRef,
+        fill_map: &Option<HashMap<&str, Expr>>,
+    ) -> crate::Result<TableStatistics> {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
             let crs = match self.columns.get(field_name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)
                     .unwrap_or(ColumnRangeStatistics::Missing),
-                None => ColumnRangeStatistics::Missing,
+                None => fill_map
+                    .as_ref()
+                    .and_then(|m| m.get(field_name.as_str()))
+                    .map(|e| self.eval_expression(e))
+                    .transpose()?
+                    .unwrap_or(ColumnRangeStatistics::Missing),
             };
             columns.insert(field_name.clone(), crs);
         }

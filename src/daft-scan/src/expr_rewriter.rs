@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_dsl::{
@@ -6,7 +6,7 @@ use daft_dsl::{
     common_treenode::{Transformed, TreeNode, VisitRecursion},
     functions::partitioning,
     null_lit,
-    optimization::{conjuct, split_conjuction},
+    optimization::split_conjuction,
     Expr, Operator,
 };
 
@@ -49,12 +49,40 @@ fn apply_partitioning_expr(expr: Expr, pfield: &PartitionField) -> Option<Expr> 
     }
 }
 
+/// Grouping of clauses in a conjunctive predicate around partitioning semantics.
+pub struct PredicateGroups {
+    pub identity_partition_filter: Vec<Expr>,
+    pub non_identity_partition_filter: Vec<Expr>,
+    pub partition_and_data_filter: Vec<Expr>,
+    pub data_only_filter: Vec<Expr>,
+}
+
+impl PredicateGroups {
+    pub fn new(
+        identity_partition_filter: Vec<Expr>,
+        non_identity_partition_filter: Vec<Expr>,
+        partition_and_data_filter: Vec<Expr>,
+        data_only_filter: Vec<Expr>,
+    ) -> Self {
+        Self {
+            identity_partition_filter,
+            non_identity_partition_filter,
+            partition_and_data_filter,
+            data_only_filter,
+        }
+    }
+
+    pub fn from_data_only(data_only_filter: Vec<Expr>) -> Self {
+        Self::new(vec![], vec![], vec![], data_only_filter)
+    }
+}
+
 pub fn rewrite_predicate_for_partitioning(
     predicate: Expr,
     pfields: &[PartitionField],
-) -> DaftResult<Option<Expr>> {
+) -> DaftResult<PredicateGroups> {
     if pfields.is_empty() {
-        return Ok(None);
+        return Ok(PredicateGroups::from_data_only(vec![predicate]));
     }
 
     let predicate = unalias(predicate)?;
@@ -149,24 +177,55 @@ pub fn rewrite_predicate_for_partitioning(
         }
     })?;
 
-    let p_keys = HashSet::<&str>::from_iter(pfields.iter().map(|p| p.field.name.as_ref()));
+    let pfields_map: HashMap<&str, &PartitionField> = pfields
+        .iter()
+        .map(|pfield| (pfield.field.name.as_str(), pfield))
+        .collect();
 
     let split = split_conjuction(&with_part_cols);
-    let filtered = split
-        .into_iter()
-        .filter(|p| {
-            let mut keep = true;
-            p.apply(&mut |e| {
-                if let Expr::Column(col_name) = e && !p_keys.contains(col_name.as_ref()) {
-                keep = false;
-
+    // Predicates that only involve identity transformations on partition columns.
+    let mut part_preds_identity = vec![];
+    // Predicates that only reference partition columns, but involve non-identity transformations.
+    let mut part_preds_non_identity = vec![];
+    // Predicates that reference both partition columns and data columns.
+    let mut part_and_data_preds = vec![];
+    // Predicates that only reference data columns (no partition column references).
+    let mut non_part_preds = vec![];
+    for e in split.into_iter() {
+        let mut all_part_keys = true;
+        let mut all_identity_part_keys = true;
+        let mut at_least_one_part_key = false;
+        e.apply(&mut |e| {
+            if let Expr::Column(col_name) = e {
+                if let Some(pfield) = pfields_map.get(col_name.as_ref()) {
+                    at_least_one_part_key = true;
+                    if !matches!(pfield.transform, Some(PartitionTransform::Identity) | None) {
+                        all_identity_part_keys = false;
+                    }
+                } else {
+                    all_part_keys = false;
+                    all_identity_part_keys = false;
+                }
             }
-                Ok(VisitRecursion::Continue)
-            })
-            .unwrap();
-            keep
+            Ok(VisitRecursion::Continue)
         })
-        .cloned()
-        .collect::<Vec<_>>();
-    Ok(conjuct(filtered))
+        .unwrap();
+
+        // Push to appropriate vec.
+        if all_identity_part_keys {
+            part_preds_identity.push(e.clone());
+        } else if all_part_keys {
+            part_preds_non_identity.push(e.clone());
+        } else if at_least_one_part_key {
+            part_and_data_preds.push(e.clone());
+        } else {
+            non_part_preds.push(e.clone());
+        }
+    }
+    Ok(PredicateGroups::new(
+        part_preds_identity,
+        part_preds_non_identity,
+        part_and_data_preds,
+        non_part_preds,
+    ))
 }

@@ -70,6 +70,6 @@ fn _split_conjuction<'a>(expr: &'a Expr, out_exprs: &mut Vec<&'a Expr>) {
     }
 }
 
-pub fn conjuct(exprs: Vec<Expr>) -> Option<Expr> {
+pub fn conjuct<T: IntoIterator<Item = Expr>>(exprs: T) -> Option<Expr> {
     exprs.into_iter().reduce(|acc, expr| acc.and(&expr))
 }

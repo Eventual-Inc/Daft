@@ -35,7 +35,7 @@ pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
 mod expr_rewriter;
-pub use expr_rewriter::rewrite_predicate_for_partitioning;
+pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]

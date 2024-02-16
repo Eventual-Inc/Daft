@@ -78,7 +78,7 @@ class DeltaLakeScanOperator(ScanOperator):
         scan_tasks = []
         is_partitioned = (
             "partition_values" in add_actions.schema.names
-            and add_actions.schema.field("partition_values").num_fields > 0
+            and add_actions.schema.field("partition_values").type.num_fields > 0
         )
         for task_idx in range(add_actions.num_rows):
             if limit_files and rows_left <= 0:
@@ -94,12 +94,17 @@ class DeltaLakeScanOperator(ScanOperator):
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
             if is_partitioned:
-                dtype = add_actions.schema.field("partition_values")
+                dtype = add_actions.schema.field("partition_values").type
                 part_values = add_actions["partition_values"][task_idx]
                 arrays = {}
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
-                    arrays[field_name] = daft.Series.from_arrow([part_values[field_name]], field_name)
+                    try:
+                        arrow_arr = pa.array([part_values[field_name]], type=part_values[field_name].type)
+                    except pa.ArrowInvalid:
+                        # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
+                        arrow_arr = pa.array([part_values[field_name].as_py()], type=part_values[field_name].type)
+                    arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
                 partition_values = daft.table.Table.from_pydict(arrays)._table
             else:
                 partition_values = None
