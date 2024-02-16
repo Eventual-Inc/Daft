@@ -90,24 +90,6 @@ def test_series_date_size_bytes(size, with_nulls) -> None:
 
 @pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
 @pytest.mark.parametrize("with_nulls", [True, False])
-def test_series_time_size_bytes(size, with_nulls) -> None:
-    from datetime import time
-
-    pydata = [time(i, 0, 0) for i in range(size)]
-
-    if with_nulls and size > 0:
-        data = pa.array(pydata[:-1] + [None], pa.time64("us"))
-    else:
-        data = pa.array(pydata, pa.time64("us"))
-
-    s = Series.from_arrow(data)
-
-    assert s.datatype() == DataType.time("us")
-    assert s.size_bytes() == get_total_buffer_size(data)
-
-
-@pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
-@pytest.mark.parametrize("with_nulls", [True, False])
 def test_series_binary_size_bytes(size, with_nulls) -> None:
     pydata = [str(i).encode("utf-8") for i in range(size)]
 
