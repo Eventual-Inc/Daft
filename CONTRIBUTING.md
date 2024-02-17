@@ -36,3 +36,12 @@ To set up your development environment:
 1. `make build`: recompile your code after modifying any Rust code in `src/`
 2. `make test`: run tests
 3. `DAFT_RUNNER=ray make test`: set the runner to the Ray runner and run tests (DAFT_RUNNER defaults to `py`)
+
+### Developing with Ray
+
+The simplest way to run a development version of Daft on Ray is to build on the same operating system version as your Ray nodes, in order to ensure that your binaries are executable on Ray.
+
+1. `mkdir wd`: this is the working directory, it will hold all the files to be submitted to Ray for a job
+2. `ln -s daft wd/daft`: create a symbolic link from the Python module to the working directory
+3. `make build-release`: an optimized build to ensure that the module is small enough to be successfully uploaded to Ray. Run this after modifying any Rust code in `src/`
+4. `ray job submit --working-dir wd --address "http://<head_node_host>:8265" -- python script.py`: submit `wd/script.py` to be run on Ray
