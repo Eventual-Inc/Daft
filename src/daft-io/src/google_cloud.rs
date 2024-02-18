@@ -48,7 +48,8 @@ enum Error {
     UnableToLoadCredentials {
         source: google_cloud_storage::client::google_cloud_auth::error::Error,
     },
-
+    #[snafu(display("Not a File: \"{}\"", path))]
+    NotAFile { path: String },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotFound { path: String },
 }
@@ -104,6 +105,7 @@ impl From<Error> for super::Error {
                 store: super::SourceType::GCS,
                 source: source.into(),
             },
+            NotAFile { path } => super::Error::NotAFile { path },
         }
     }
 }
@@ -132,6 +134,10 @@ impl GCSClientWrapper {
     ) -> super::Result<GetResult> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
         let client = &self.0;
         let req = GetObjectRequest {
             bucket: bucket.into(),
@@ -174,6 +180,9 @@ impl GCSClientWrapper {
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
         let (bucket, key) = parse_uri(&uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
         let client = &self.0;
         let req = GetObjectRequest {
             bucket: bucket.into(),

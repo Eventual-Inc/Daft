@@ -155,11 +155,8 @@ impl ObjectSource for LocalSource {
             })?;
 
         if meta.is_dir() {
-            Err(super::Error::NotFound {
+            Err(super::Error::NotAFile {
                 path: uri.to_owned(),
-                source: Box::new(Error::IsADirectory {
-                    path: uri.to_owned(),
-                }),
             })
         } else {
             Ok(meta.len() as usize)
