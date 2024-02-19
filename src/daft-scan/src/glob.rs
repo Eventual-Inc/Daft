@@ -5,8 +5,8 @@ use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use futures::{stream::BoxStream, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
-use snafu::{ResultExt, Snafu};
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use snafu::Snafu;
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
@@ -81,36 +81,34 @@ fn run_glob(
     Ok(Box::new(iterator))
 }
 
-
 fn run_glob_parallel(
     glob_paths: Vec<String>,
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
-// ) -> impl Iterator<Item = DaftResult<FileMetadata>> {
-
+    // ) -> impl Iterator<Item = DaftResult<FileMetadata>> {
 ) -> DaftResult<FileInfoIterator> {
-
     let num_parallel_tasks = 64;
 
     let owned_runtime = runtime.clone();
     let boxstream = futures::stream::iter(glob_paths.into_iter().map(move |path| {
-            let (_, parsed_glob_path) = parse_url(&path).unwrap();
-            let glob_input = parsed_glob_path.as_ref().to_string();
-            let io_client = io_client.clone();
-            let io_stats = io_stats.clone();
+        let (_, parsed_glob_path) = parse_url(&path).unwrap();
+        let glob_input = parsed_glob_path.as_ref().to_string();
+        let io_client = io_client.clone();
+        let io_stats = io_stats.clone();
 
-            runtime.spawn(async move {
-                let stream = io_client
-                    .glob(glob_input, None, None, None, io_stats).await?;
-                let results = stream.collect::<Vec<_>>().await;
-                Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
-
-            })
-        }))
-            .buffered(num_parallel_tasks).map(|v| {
-                v.map_err(|e| daft_io::Error::JoinError { source: e })?
-            }).try_flatten().boxed();
+        runtime.spawn(async move {
+            let stream = io_client
+                .glob(glob_input, None, None, None, io_stats)
+                .await?;
+            let results = stream.collect::<Vec<_>>().await;
+            Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
+        })
+    }))
+    .buffered(num_parallel_tasks)
+    .map(|v| v.map_err(|e| daft_io::Error::JoinError { source: e })?)
+    .try_flatten()
+    .boxed();
 
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
@@ -120,8 +118,6 @@ fn run_glob_parallel(
     let iterator = iterator.map(|fm| Ok(fm?));
     Ok(Box::new(iterator))
 }
-
-
 
 impl GlobScanOperator {
     pub fn try_new(
@@ -262,8 +258,12 @@ impl ScanOperator for GlobScanOperator {
             self.glob_paths
         ));
 
-
-        let files = run_glob_parallel(self.glob_paths.clone(), io_client.clone(), io_runtime.clone(), Some(io_stats.clone()))?;
+        let files = run_glob_parallel(
+            self.glob_paths.clone(),
+            io_client.clone(),
+            io_runtime.clone(),
+            Some(io_stats.clone()),
+        )?;
 
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
