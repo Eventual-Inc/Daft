@@ -5,8 +5,8 @@ use daft_core::schema::SchemaRef;
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use futures::{stream::BoxStream, SinkExt, StreamExt, TryStreamExt};
-use snafu::Snafu;
+use futures::{stream::BoxStream, SinkExt, StreamExt, TryFutureExt, TryStreamExt};
+use snafu::{ResultExt, Snafu};
 
 use crate::{
     file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
@@ -101,29 +101,16 @@ fn run_glob_parallel(
             let io_stats = io_stats.clone();
 
             runtime.spawn(async move {
-                let result = io_client
-                .glob(glob_input, None, None, None, io_stats).await.unwrap().peekable();
-                let mut result = Box::pin(result);
+                let stream = io_client
+                    .glob(glob_input, None, None, None, io_stats).await?;
+                let results = stream.collect::<Vec<_>>().await;
+                Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
 
-                let _val = result.as_mut().peek().await;
-                result
-                // futures::stream::iter(result.collect::<Vec<_>>().await)
             })
         }))
-            .buffered(num_parallel_tasks).try_flatten();
-
-    // owned_runtime.block_on(async move {
-    //     let vecs = boxstream.try_collect::<Vec<_>>().await?;
-        
-    //     Ok(vecs.with_flat_map(|v| ))
-    // })
-
-    // let boxstream = if let Some(limit) = limit {
-    //     boxstream.take(limit).boxed()
-    // } else {
-    //     boxstream.boxed()
-    // };
-    let boxstream = Box::pin(boxstream);
+            .buffered(num_parallel_tasks).map(|v| {
+                v.map_err(|e| daft_io::Error::JoinError { source: e })?
+            }).try_flatten().boxed();
 
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
