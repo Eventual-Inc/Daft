@@ -391,6 +391,7 @@ impl ObjectSource for GCSSource {
         glob(
             self,
             glob_path,
+            true,
             fanout_limit,
             page_size.or(Some(1000)),
             limit,

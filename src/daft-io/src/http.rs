@@ -260,7 +260,16 @@ impl ObjectSource for HttpSource {
         let fanout_limit = None;
         let page_size = None;
 
-        glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+        glob(
+            self,
+            glob_path,
+            false,
+            fanout_limit,
+            page_size,
+            limit,
+            io_stats,
+        )
+        .await
     }
 
     async fn ls(

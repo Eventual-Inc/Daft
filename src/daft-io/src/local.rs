@@ -185,6 +185,7 @@ impl ObjectSource for LocalSource {
             return glob(
                 self,
                 glob_path.as_str(),
+                true,
                 fanout_limit,
                 page_size,
                 limit,
@@ -193,7 +194,16 @@ impl ObjectSource for LocalSource {
             .await;
         }
 
-        glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+        glob(
+            self,
+            glob_path,
+            true,
+            fanout_limit,
+            page_size,
+            limit,
+            io_stats,
+        )
+        .await
     }
 
     async fn ls(
