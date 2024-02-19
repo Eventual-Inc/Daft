@@ -86,8 +86,7 @@ fn run_glob_parallel(
     io_client: Arc<IOClient>,
     runtime: Arc<tokio::runtime::Runtime>,
     io_stats: Option<IOStatsRef>,
-    // ) -> impl Iterator<Item = DaftResult<FileMetadata>> {
-) -> DaftResult<FileInfoIterator> {
+) -> DaftResult<impl Iterator<Item = DaftResult<FileMetadata>>> {
     let num_parallel_tasks = 64;
 
     let owned_runtime = runtime.clone();
@@ -108,6 +107,7 @@ fn run_glob_parallel(
     .buffered(num_parallel_tasks)
     .map(|v| v.map_err(|e| daft_io::Error::JoinError { source: e })?)
     .try_flatten()
+    .map(|v| Ok(v?))
     .boxed();
 
     // Construct a static-lifetime BoxStreamIterator
@@ -115,8 +115,7 @@ fn run_glob_parallel(
         boxstream,
         runtime_handle: owned_runtime.handle().clone(),
     };
-    let iterator = iterator.map(|fm| Ok(fm?));
-    Ok(Box::new(iterator))
+    Ok(iterator)
 }
 
 impl GlobScanOperator {
