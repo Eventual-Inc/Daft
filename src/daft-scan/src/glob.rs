@@ -102,8 +102,12 @@ fn run_glob_parallel(
 
             runtime.spawn(async move {
                 let result = io_client
-                .glob(glob_input, None, None, None, io_stats).await.unwrap();
-                futures::stream::iter(result.collect::<Vec<_>>().await)
+                .glob(glob_input, None, None, None, io_stats).await.unwrap().peekable();
+                let mut result = Box::pin(result);
+
+                let _val = result.as_mut().peek().await;
+                result
+                // futures::stream::iter(result.collect::<Vec<_>>().await)
             })
         }))
             .buffered(num_parallel_tasks).try_flatten();
