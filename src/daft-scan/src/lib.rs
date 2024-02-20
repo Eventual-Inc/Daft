@@ -1,6 +1,5 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-#![feature(async_closure)]
 use std::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
