@@ -109,10 +109,15 @@ impl OptimizerRule for PushDownFilter {
                             return Ok(Transformed::No(plan));
                         }
                         let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
-                        let PredicateGroups { identity_partition_filter, non_identity_partition_filter, partition_and_data_filter, data_only_filter } = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
-                        assert!(identity_partition_filter.len() + non_identity_partition_filter.len() + partition_and_data_filter.len() + data_only_filter.len() > 0);
+                        // We split the predicate into four groups:
+                        // 1. Partition filters, which can be applied directly to partition values.
+                        // 2. Non-identity transform partition filters, which must still be applied on the data.
+                        // 3. Filter referencing both partition and data columns, which must be applied to the data.
+                        // 4. Data filters (no partition column references), which will be applied on the data.
+                        let PredicateGroups { partition_filter, non_identity_partition_filter_for_data, partition_and_data_filter, data_only_filter } = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
+                        assert!(partition_filter.len() + non_identity_partition_filter_for_data.len() + partition_and_data_filter.len() + data_only_filter.len() > 0);
 
-                        if !partition_and_data_filter.is_empty() && identity_partition_filter.is_empty() && non_identity_partition_filter.is_empty() && data_only_filter.is_empty() {
+                        if !partition_and_data_filter.is_empty() && partition_filter.is_empty() && data_only_filter.is_empty() {
                             // If the filter predicate consists of only expressions that rely on both a partition
                             // column and a data column, then no pushdown into the scan is possible, so we
                             // short-circuit.
@@ -120,8 +125,8 @@ impl OptimizerRule for PushDownFilter {
                             return Ok(Transformed::No(plan));
                         }
 
-                        let data_filter = conjuct(non_identity_partition_filter.clone().into_iter().chain(data_only_filter));
-                        let partition_filter = conjuct(identity_partition_filter.into_iter().chain(non_identity_partition_filter));
+                        let data_filter = conjuct(non_identity_partition_filter_for_data.clone().into_iter().chain(data_only_filter));
+                        let partition_filter = conjuct(partition_filter);
                         assert!(data_filter.is_some() || partition_filter.is_some());
 
                         let new_pushdowns = if let Some(data_filter) = data_filter {

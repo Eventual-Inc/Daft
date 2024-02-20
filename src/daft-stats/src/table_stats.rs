@@ -37,6 +37,7 @@ impl TableStatistics {
         }
         Ok(TableStatistics { columns })
     }
+
     pub fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
@@ -46,9 +47,7 @@ impl TableStatistics {
         }
         TableStatistics { columns }
     }
-}
 
-impl TableStatistics {
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self
