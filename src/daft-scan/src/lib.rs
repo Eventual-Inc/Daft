@@ -403,10 +403,10 @@ impl ScanTask {
             })
             .or_else(|| {
                 // if num rows is provided, use that to estimate row size bytes
-                self.num_rows().and_then(|num_rows| {
+                self.num_rows().map(|num_rows| {
                     let row_size = schema.estimate_row_size_bytes();
                     let estimate = (num_rows as f64) * row_size;
-                    Some(estimate as usize)
+                    estimate as usize
                 })
             })
             // Fall back on on-disk size.

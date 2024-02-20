@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
 use arrow2::datatypes::DataType as ArrowType;
-use ndarray::Data;
 
 use crate::datatypes::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
@@ -355,12 +354,10 @@ impl DataType {
             DataType::Float64 => Some(8.),
             DataType::Utf8 => Some(VARIABLE_TYPE_SIZE),
             DataType::Binary => Some(VARIABLE_TYPE_SIZE),
-            DataType::FixedSizeList(dtype, len) => dtype
-                .estimate_size_bytes()
-                .and_then(|b| Some(b * (len as f64))),
-            DataType::List(dtype) => dtype
-                .estimate_size_bytes()
-                .and_then(|b| Some(b * DEFAULT_LIST_LEN)),
+            DataType::FixedSizeList(dtype, len) => {
+                dtype.estimate_size_bytes().map(|b| b * (len as f64))
+            }
+            DataType::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
             DataType::Struct(fields) => Some(
                 fields
                     .iter()
