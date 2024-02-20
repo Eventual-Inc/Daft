@@ -43,8 +43,8 @@ def read_csv(
 
     Args:
         path (str): Path to CSV (allows for wildcards)
-        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
-            disable all schema inference on data being read, and throw an error if data being read is incompatible.
+        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option
+            will override the specified columns on the inferred schema with the specified DataTypes
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         delimiter (Str): Delimiter used in the CSV, defaults to ","
         doubled_quote (bool): Whether to support double quote escapes, defaults to True

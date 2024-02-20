@@ -36,8 +36,8 @@ def read_json(
 
     Args:
         path (str): Path to JSON files (allows for wildcards)
-        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option will
-            disable all schema inference on data being read, and throw an error if data being read is incompatible.
+        schema_hints (dict[str, DataType]): A mapping between column names and datatypes - passing this option
+            will override the specified columns on the inferred schema with the specified DataTypes
         io_config (IOConfig): Config to be used with the native downloader
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
