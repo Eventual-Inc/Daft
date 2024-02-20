@@ -386,21 +386,47 @@ impl ScanTask {
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
-        None        
+        self.size_bytes_on_disk.map(|s| s as usize)
     }
 
-    pub fn in_memory_size_bytes(&self, config: &DaftExecutionConfig) -> Option<usize> {
+    pub fn in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
+        let schema = self.materialized_schema();
         self.statistics
             .as_ref()
             .and_then(|s| {
                 // Derive in-memory size estimate from table stats.
-                self.num_rows()
-                    .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
+                self.num_rows().and_then(|num_rows| {
+                    let row_size = s.estimate_row_size(Some(schema.as_ref())).ok()?;
+                    let estimate = (num_rows as f64) * row_size;
+                    Some(estimate as usize)
+                })
+            })
+            .or_else(|| {
+                // if num rows is provided, use that to estimate row size bytes
+                self.num_rows().and_then(|num_rows| {
+                    let row_size = schema.estimate_row_size_bytes();
+                    let estimate = (num_rows as f64) * row_size;
+                    Some(estimate as usize)
+                })
             })
             // Fall back on on-disk size.
-            .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
-    }
+            .or_else(|| {
+                let (parquet_inflation_factor, csv_inflation_factor) = if let Some(config) = config
+                {
+                    (config.parquet_inflation_factor, config.csv_inflation_factor)
+                } else {
+                    let config = DaftExecutionConfig::default();
+                    (config.parquet_inflation_factor, config.csv_inflation_factor)
+                };
 
+                let file_size = self.size_bytes_on_disk.map(|s| s as usize);
+                let inflation_factor = match self.file_format_config.as_ref() {
+                    FileFormatConfig::Parquet(_) => parquet_inflation_factor,
+                    FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => csv_inflation_factor,
+                };
+                file_size.map(|v| (((v as f64) * inflation_factor) as usize))
+            })
+    }
 
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {
         match self.sources.first() {
