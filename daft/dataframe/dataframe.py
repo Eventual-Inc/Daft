@@ -235,17 +235,7 @@ class DataFrame:
             self._preview.preview_partition is None or len(self._preview.preview_partition) < self._num_preview_rows
         )
         if preview_partition_invalid:
-            need = self._num_preview_rows
-            preview_parts = []
-            for part in self._result.values():
-                part_len = len(part)
-                if part_len >= need:  # if this part has enough rows, take what we need and break
-                    preview_parts.append(part.slice(0, need))
-                    break
-                else:  # otherwise, take the whole part and keep going
-                    need -= part_len
-                    preview_parts.append(part)
-
+            preview_parts = self._result._get_preview_vpartition(self._num_preview_rows)
             preview_results = LocalPartitionSet({i: part for i, part in enumerate(preview_parts)})
 
             preview_partition = preview_results._get_merged_vpartition()
@@ -1145,7 +1135,6 @@ class DataFrame:
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
         """Helper for .show() which will construct the underlying DataFrameDisplay object"""
-        self._populate_preview()
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 

@@ -51,6 +51,19 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
         return MicroPartition.concat([part for id, part in ids_and_partitions])
 
+    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+        ids_and_partitions = self.items()
+        preview_parts = []
+        for _, part in ids_and_partitions:
+            part_len = len(part)
+            if part_len >= num_rows:  # if this part has enough rows, take what we need and break
+                preview_parts.append(part.slice(0, num_rows))
+                break
+            else:  # otherwise, take the whole part and keep going
+                num_rows -= part_len
+                preview_parts.append(part)
+        return preview_parts
+
     def get_partition(self, idx: PartID) -> MicroPartition:
         return self._partitions[idx]
 
