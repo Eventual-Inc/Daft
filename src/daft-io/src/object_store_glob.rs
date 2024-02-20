@@ -328,7 +328,6 @@ fn _should_return(fm: &FileMetadata) -> bool {
 /// Arguments:
 /// * source: the ObjectSource to use for file listing
 /// * glob: the string to glob
-/// * allow_head_instead_of_list: use a head call if possible instead of a list call
 /// * fanout_limit: number of directories at which to fallback onto prefix listing, or None to never fall back.
 ///     A reasonable number here for a remote object store is something like 1024, which saturates the number of
 ///     parallel connections (usually defaulting to 64).
@@ -337,7 +336,6 @@ fn _should_return(fm: &FileMetadata) -> bool {
 pub(crate) async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
-    allow_head_instead_of_list: bool,
     fanout_limit: Option<usize>,
     page_size: Option<i32>,
     limit: Option<usize>,
@@ -351,7 +349,7 @@ pub(crate) async fn glob(
 
         return Ok(stream! {
             let mut attempt_as_dir = true;
-            if allow_head_instead_of_list && !glob.ends_with(GLOB_DELIMITER) {
+            if !glob.ends_with(GLOB_DELIMITER) {
                 attempt_as_dir = false;
                 // If doesn't have a glob character and doesn't end with a delimiter, assume its a file first.
                 let maybe_size = source.get_size(&glob, io_stats.clone()).await;

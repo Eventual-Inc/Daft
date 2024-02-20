@@ -495,7 +495,6 @@ impl ObjectSource for AzureBlobSource {
         glob(
             self,
             glob_path,
-            true,
             fanout_limit,
             page_size.or(Some(1000)),
             limit,

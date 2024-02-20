@@ -853,7 +853,6 @@ impl ObjectSource for S3LikeSource {
         glob(
             self,
             glob_path,
-            true,
             fanout_limit,
             page_size.or(Some(1000)),
             limit,
