@@ -21,6 +21,7 @@ mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod file_format;
 mod glob;
+use common_daft_config::DaftExecutionConfig;
 #[cfg(feature = "python")]
 pub mod py_object_serde;
 pub mod scan_task_iters;
@@ -385,6 +386,10 @@ impl ScanTask {
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
+        None        
+    }
+
+    pub fn in_memory_size_bytes(&self, config: &DaftExecutionConfig) -> Option<usize> {
         self.statistics
             .as_ref()
             .and_then(|s| {
@@ -395,6 +400,7 @@ impl ScanTask {
             // Fall back on on-disk size.
             .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
     }
+
 
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {
         match self.sources.first() {

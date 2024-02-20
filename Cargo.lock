@@ -1404,6 +1404,7 @@ name = "daft-scan"
 version = "0.2.0-dev0"
 dependencies = [
  "bincode",
+ "common-daft-config",
  "common-error",
  "common-io-config",
  "daft-core",
