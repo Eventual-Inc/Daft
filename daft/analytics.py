@@ -18,7 +18,7 @@ from typing import Any, Callable
 from daft import context
 
 _ANALYTICS_CLIENT = None
-_WRITE_KEY = "opL9scJXH6GKdIYgPdA0ncCj8i920LJq"
+_WRITE_KEY = "ZU2LLq6HFW0kMEY6TiGZoGnRzogXBUwa"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
 
 
@@ -34,8 +34,8 @@ class AnalyticsEvent:
 
 
 def _get_session_key():
-    # Restrict the cardinality of keys to 8000
-    return f"anon-{random.randint(1, 8000)}"
+    # Restrict the cardinality of keys to 800
+    return f"anon-{random.randint(1, 800)}"
 
 
 def _build_segment_batch_payload(
