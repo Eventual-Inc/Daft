@@ -103,7 +103,7 @@ def test_http_listing_absolute_urls(nginx_config, tmpdir):
     )
 
     with mount_data_nginx(nginx_config, tmpdir):
-        http_path = f"{nginx_http_url}/index.html"
+        http_path = f"{nginx_http_url}/"
         daft_ls_result = io_glob(http_path)
 
         # NOTE: Cannot use fsspec here because they do not correctly find the links
@@ -129,7 +129,7 @@ def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
     )
 
     with mount_data_nginx(nginx_config, tmpdir):
-        http_path = f"{nginx_http_url}/index.html"
+        http_path = f"{nginx_http_url}/"
         daft_ls_result = io_glob(http_path)
 
         # NOTE: Cannot use fsspec here because they do not correctly find the links

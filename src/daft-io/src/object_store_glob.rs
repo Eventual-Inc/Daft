@@ -355,7 +355,7 @@ pub(crate) async fn glob(
                 let maybe_size = source.get_size(&glob, io_stats.clone()).await;
                 match maybe_size {
                     Ok(size_bytes) => yield Ok(FileMetadata{filepath: glob.clone(), size: Some(size_bytes as u64), filetype: FileType::File  }),
-                    Err(crate::Error::NotAFile {..} | crate::Error::NotFound { .. }) => {attempt_as_dir = true;},
+                    Err(crate::Error::NotAFile {..} | crate::Error::NotFound { .. } | crate::Error::UnableToDetermineSize { .. }) => {attempt_as_dir = true;},
                     Err(err) => yield Err(err),
                 }
             }
