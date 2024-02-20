@@ -346,17 +346,31 @@ pub(crate) async fn glob(
     if !full_fragment.has_special_character() {
         let mut remaining_results = limit;
         let glob = full_fragment.escaped_str().to_string();
+
         return Ok(stream! {
-            let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
-            while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
-                match result {
-                    Ok(fm) => {
-                        if _should_return(&fm) {
-                            remaining_results = remaining_results.map(|rr| rr - 1);
-                            yield Ok(fm)
-                        }
-                    },
-                    Err(e) => yield Err(e),
+            let mut attempt_as_dir = true;
+            if !glob.ends_with(GLOB_DELIMITER) {
+                attempt_as_dir = false;
+                // If doesn't have a glob character and doesn't end with a delimiter, assume its a file first.
+                let maybe_size = source.get_size(&glob, io_stats.clone()).await;
+                match maybe_size {
+                    Ok(size_bytes) => yield Ok(FileMetadata{filepath: glob.clone(), size: Some(size_bytes as u64), filetype: FileType::File  }),
+                    Err(crate::Error::NotAFile {..} | crate::Error::NotFound { .. } | crate::Error::UnableToDetermineSize { .. }) => {attempt_as_dir = true;},
+                    Err(err) => yield Err(err),
+                }
+            }
+            if attempt_as_dir {
+                let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
+                while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
+                    match result {
+                        Ok(fm) => {
+                            if _should_return(&fm) {
+                                remaining_results = remaining_results.map(|rr| rr - 1);
+                                yield Ok(fm)
+                            }
+                        },
+                        Err(e) => yield Err(e),
+                    }
                 }
             }
         }

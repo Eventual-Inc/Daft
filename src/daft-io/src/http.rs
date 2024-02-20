@@ -152,6 +152,7 @@ impl From<Error> for super::Error {
                     source: source.into(),
                 },
             },
+            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
             _ => super::Error::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
