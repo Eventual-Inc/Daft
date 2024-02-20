@@ -454,7 +454,7 @@ impl MicroPartition {
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = guard.deref() {
-            scan_task.in_memory_size_bytes(None)
+            scan_task.estimate_in_memory_size_bytes(None)
         } else {
             // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
             // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
