@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
@@ -34,6 +37,7 @@ pub(crate) struct ParquetReaderBuilder {
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     predicate: Option<ExprRef>,
+    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
 }
 use parquet2::read::decompress;
 
@@ -206,6 +210,7 @@ impl ParquetReaderBuilder {
             row_groups: None,
             schema_inference_options: Default::default(),
             predicate: None,
+            field_id_to_colname_mapping: None,
         })
     }
 
@@ -267,6 +272,14 @@ impl ParquetReaderBuilder {
         self
     }
 
+    pub fn set_field_id_to_colname_mapping(
+        mut self,
+        field_id_to_colname_mapping: Vec<(i64, String)>,
+    ) -> Self {
+        self.field_id_to_colname_mapping = Some(field_id_to_colname_mapping);
+        self
+    }
+
     pub fn build(self) -> super::Result<ParquetFileReader> {
         let mut arrow_schema =
             infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
@@ -293,7 +306,13 @@ impl ParquetReaderBuilder {
             &self.uri,
         )?;
 
-        ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
+        ParquetFileReader::new(
+            self.uri,
+            self.metadata,
+            arrow_schema,
+            row_ranges,
+            self.field_id_to_colname_mapping,
+        )
     }
 }
 
@@ -309,6 +328,31 @@ pub(crate) struct ParquetFileReader {
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
+    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+}
+
+fn get_column_name_mapping(
+    field_id_to_colname_mapping: &[(i64, String)],
+    parquet_schema: &parquet2::metadata::SchemaDescriptor,
+) -> BTreeMap<String, String> {
+    // TODO: Convert field_id_to_colname_mapping to a BTreeMap as well
+    let field_id_to_colname_mapping: BTreeMap<i64, String> =
+        BTreeMap::from_iter(field_id_to_colname_mapping.iter().cloned());
+
+    // TODO: Handle recursive case as well somehow
+    let mapped = parquet_schema.fields().iter().map(|f| {
+        if let Some(mapped_colname) = f
+            .get_field_info()
+            .id
+            .and_then(|field_id| field_id_to_colname_mapping.get(&(field_id as i64)))
+        {
+            (f.name().to_string(), mapped_colname.clone())
+        } else {
+            (f.name().to_string(), f.name().to_string())
+        }
+    });
+
+    BTreeMap::from_iter(mapped)
 }
 
 impl ParquetFileReader {
@@ -317,12 +361,14 @@ impl ParquetFileReader {
         metadata: parquet2::metadata::FileMetaData,
         arrow_schema: arrow2::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
+        field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
     ) -> super::Result<Self> {
         Ok(ParquetFileReader {
             uri,
             metadata: Arc::new(metadata),
             arrow_schema: arrow_schema.into(),
             row_ranges: Arc::new(row_ranges),
+            field_id_to_colname_mapping,
         })
     }
 
@@ -555,6 +601,32 @@ impl ParquetFileReader {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
+
+        let column_name_mapping =
+            self.field_id_to_colname_mapping
+                .map(|field_id_to_colname_mapping| {
+                    get_column_name_mapping(&field_id_to_colname_mapping, metadata.schema())
+                });
+        let (daft_schema, all_series) = if let Some(column_name_mapping) = column_name_mapping {
+            let new_daft_fields = daft_schema.fields.into_iter().map(|(name, field)| {
+                match column_name_mapping.get(&name) {
+                    None => field,
+                    Some(mapped_name) => field.rename(mapped_name),
+                }
+            });
+            let new_daft_schema = daft_core::schema::Schema::new(new_daft_fields.collect())
+                .expect("Daft schema should be constructed from column name mapping");
+            let new_all_series = all_series
+                .into_iter()
+                .map(|s| match column_name_mapping.get(s.name()) {
+                    None => s,
+                    Some(mapped_name) => s.rename(mapped_name),
+                })
+                .collect();
+            (new_daft_schema, new_all_series)
+        } else {
+            (daft_schema, all_series)
+        };
 
         Table::new(daft_schema, all_series)
     }

@@ -66,6 +66,7 @@ async fn read_parquet_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
 ) -> DaftResult<Table> {
     let original_columns = columns;
     let original_num_rows = num_rows;
@@ -102,6 +103,12 @@ async fn read_parquet_single(
         let builder =
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
+
+        let builder = if let Some(field_id_to_colname_mapping) = field_id_to_colname_mapping {
+            builder.set_field_id_to_colname_mapping(field_id_to_colname_mapping)
+        } else {
+            builder
+        };
 
         let builder = if let Some(columns) = columns.as_ref() {
             builder.prune_columns(columns.as_slice())?
@@ -372,6 +379,7 @@ pub fn read_parquet(
             io_client,
             io_stats,
             schema_infer_options,
+            None, // TODO: Add field_id_to_colname_mapping
         )
         .await
     })
@@ -443,6 +451,7 @@ pub fn read_parquet_bulk(
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
+                let field_id_to_colname_mapping_clone = field_id_to_colname_mapping.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -459,6 +468,7 @@ pub fn read_parquet_bulk(
                             io_client,
                             io_stats,
                             schema_infer_options,
+                            field_id_to_colname_mapping_clone,
                         )
                         .await?,
                     ))
@@ -471,12 +481,7 @@ pub fn read_parquet_bulk(
         })
         .context(JoinSnafu { path: "UNKNOWN" })?;
 
-    let mut collected = tables.into_iter().map(|tbl| tbl.map(|(idx, tbl)| {
-        println!("TODO: use field ID mappings to cast tables here: {field_id_to_colname_mapping:?} on {tbl} with schema {}", tbl.schema);
-        let tbl_with_applied_field_ids = tbl;
-        (idx, tbl_with_applied_field_ids)
-    })).collect::<DaftResult<Vec<_>>>()?;
-
+    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
     collected.sort_by_key(|(idx, _)| *idx);
     Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
