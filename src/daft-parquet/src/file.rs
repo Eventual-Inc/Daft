@@ -39,7 +39,7 @@ pub(crate) struct ParquetReaderBuilder {
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     predicate: Option<ExprRef>,
-    field_id_mapping: Option<BTreeMap<i32, Field>>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 }
 use parquet2::read::decompress;
 
@@ -274,7 +274,7 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn set_field_id_mapping(mut self, field_id_mapping: BTreeMap<i32, Field>) -> Self {
+    pub fn set_field_id_mapping(mut self, field_id_mapping: Arc<BTreeMap<i32, Field>>) -> Self {
         self.field_id_mapping = Some(field_id_mapping);
         self
     }
@@ -327,7 +327,7 @@ pub(crate) struct ParquetFileReader {
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
-    field_id_mapping: Option<BTreeMap<i32, Field>>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 }
 
 fn get_column_name_mapping(
@@ -356,7 +356,7 @@ impl ParquetFileReader {
         metadata: parquet2::metadata::FileMetaData,
         arrow_schema: arrow2::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
-        field_id_mapping: Option<BTreeMap<i32, Field>>,
+        field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {
         Ok(ParquetFileReader {
             uri,

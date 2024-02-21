@@ -99,7 +99,7 @@ pub struct ParquetSourceConfig {
     /// data according to the provided field_ids.
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
-    pub field_id_mapping: Option<BTreeMap<i32, Field>>,
+    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 }
 
 impl ParquetSourceConfig {
@@ -136,8 +136,11 @@ impl ParquetSourceConfig {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds.into())
                 .into(),
-            field_id_mapping: field_id_mapping
-                .map(|map| BTreeMap::from_iter(map.into_iter().map(|(k, v)| (k, v.field)))),
+            field_id_mapping: field_id_mapping.map(|map| {
+                Arc::new(BTreeMap::from_iter(
+                    map.into_iter().map(|(k, v)| (k, v.field)),
+                ))
+            }),
         }
     }
 

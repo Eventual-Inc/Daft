@@ -711,7 +711,7 @@ pub(crate) fn read_parquet_into_micropartition(
     num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-    field_id_mapping: &Option<BTreeMap<i32, Field>>,
+    field_id_mapping: &Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset && so > 0 {
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
@@ -847,7 +847,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
-                field_id_mapping: field_id_mapping.clone(), // TODO: consider Arcing this, could be expensive to clone
+                field_id_mapping: field_id_mapping.clone(),
             })
             .into(),
             daft_schema.clone(),

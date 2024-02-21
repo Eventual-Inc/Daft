@@ -66,7 +66,7 @@ async fn read_parquet_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-    field_id_mapping: Option<BTreeMap<i32, Field>>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Table> {
     let original_columns = columns;
     let original_num_rows = num_rows;
@@ -427,7 +427,7 @@ pub fn read_parquet_bulk(
     num_parallel_tasks: usize,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-    field_id_mapping: &Option<BTreeMap<i32, Field>>,
+    field_id_mapping: &Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
