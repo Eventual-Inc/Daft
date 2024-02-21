@@ -39,7 +39,9 @@ To set up your development environment:
 
 ### Developing with Ray
 
-The simplest way to run a development version of Daft on Ray is to build on the same operating system version as your Ray nodes, in order to ensure that your binaries are executable on Ray.
+Running a development version of Daft on a local Ray cluster is as simple as including `daft.context.set_runner_ray()` in your Python script and then building and executing it as usual.
+
+To use a remote Ray cluster, run the following steps on the same operating system version as your Ray nodes, in order to ensure that your binaries are executable on Ray.
 
 1. `mkdir wd`: this is the working directory, it will hold all the files to be submitted to Ray for a job
 2. `ln -s daft wd/daft`: create a symbolic link from the Python module to the working directory
