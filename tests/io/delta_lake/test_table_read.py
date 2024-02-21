@@ -12,7 +12,7 @@ from daft.logical.schema import Schema
 
 
 @pytest.mark.integration()
-def test_daft_deltalake_read_basic(tmp_path):
+def test_deltalake_read_basic(tmp_path):
     pd_df = pd.DataFrame(
         {
             "a": [1, 2, 3],
@@ -28,7 +28,7 @@ def test_daft_deltalake_read_basic(tmp_path):
 
 
 @pytest.mark.integration()
-def test_daft_deltalake_read_full(local_deltalake_table):
+def test_deltalake_read_full(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
     assert df.schema() == Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
@@ -36,7 +36,7 @@ def test_daft_deltalake_read_full(local_deltalake_table):
 
 
 @pytest.mark.integration()
-def test_daft_deltalake_read_show(local_deltalake_table):
+def test_deltalake_read_show(local_deltalake_table):
     path, _ = local_deltalake_table
     df = daft.read_delta_lake(str(path))
     df.show()
