@@ -222,3 +222,33 @@ def test_series_utf8_length_all_null() -> None:
     s = Series.from_arrow(pa.array([None, None, None]))
     result = s.str.length()
     assert result.to_pylist() == [None, None, None]
+
+
+def test_series_utf8_lower() -> None:
+    s = Series.from_arrow(pa.array(["Foo", "BarBaz", "QUUX"]))
+    result = s.str.lower()
+    assert result.to_pylist() == ["foo", "barbaz", "quux"]
+
+
+def test_series_utf8_lower_with_nulls() -> None:
+    s = Series.from_arrow(pa.array(["Foo", None, "BarBaz", "QUUX"]))
+    result = s.str.lower()
+    assert result.to_pylist() == ["foo", None, "barbaz", "quux"]
+
+
+def test_series_utf8_lower_empty() -> None:
+    s = Series.from_arrow(pa.array([], type=pa.string()))
+    result = s.str.lower()
+    assert result.to_pylist() == []
+
+
+def test_series_utf8_lower_all_null() -> None:
+    s = Series.from_arrow(pa.array([None, None, None]))
+    result = s.str.lower()
+    assert result.to_pylist() == [None, None, None]
+
+
+def test_series_utf8_lower_all_numeric_strs() -> None:
+    s = Series.from_arrow(pa.array(["1", "2", "3"]))
+    result = s.str.lower()
+    assert result.to_pylist() == ["1", "2", "3"]

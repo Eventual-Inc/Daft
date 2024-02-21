@@ -590,6 +590,10 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_length())
 
+    def lower(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_lower())
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:
