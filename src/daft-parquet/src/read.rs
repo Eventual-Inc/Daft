@@ -419,6 +419,7 @@ pub fn read_parquet_bulk(
     num_parallel_tasks: usize,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
+    field_id_to_colname_mapping: &Option<Vec<(i64, String)>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -470,7 +471,12 @@ pub fn read_parquet_bulk(
         })
         .context(JoinSnafu { path: "UNKNOWN" })?;
 
-    let mut collected = tables.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    let mut collected = tables.into_iter().map(|tbl| tbl.map(|(idx, tbl)| {
+        println!("TODO: use field ID mappings to cast tables here: {field_id_to_colname_mapping:?} on {tbl} with schema {}", tbl.schema);
+        let tbl_with_applied_field_ids = tbl;
+        (idx, tbl_with_applied_field_ids)
+    })).collect::<DaftResult<Vec<_>>>()?;
+
     collected.sort_by_key(|(idx, _)| *idx);
     Ok(collected.into_iter().map(|(_, v)| v).collect())
 }
@@ -553,7 +559,6 @@ pub fn read_parquet_schema(
         ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats).await
     })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
-
     Schema::try_from(builder.build()?.arrow_schema().as_ref())
 }
 

@@ -106,6 +106,7 @@ fn materialize_scan_task(
                 // ********************
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
+                    field_id_to_colname_mapping,
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
@@ -123,6 +124,7 @@ fn materialize_scan_task(
                         8,
                         runtime_handle,
                         &inference_options,
+                        field_id_to_colname_mapping,
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -386,6 +388,7 @@ impl MicroPartition {
                 _,
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
+                    field_id_to_colname_mapping,
                 }),
                 StorageConfig::Native(cfg),
             ) => {
@@ -419,6 +422,7 @@ impl MicroPartition {
                     &ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
+                    field_id_to_colname_mapping,
                 )
                 .context(DaftCoreComputeSnafu)?;
 
@@ -707,6 +711,7 @@ pub(crate) fn read_parquet_into_micropartition(
     num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
+    field_id_to_colname_mapping: &Option<Vec<(i64, String)>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset && so > 0 {
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
@@ -729,6 +734,7 @@ pub(crate) fn read_parquet_into_micropartition(
             num_parallel_tasks,
             runtime_handle,
             schema_infer_options,
+            field_id_to_colname_mapping,
         )?;
 
         let unioned_schema = all_tables
@@ -841,6 +847,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
+                field_id_to_colname_mapping: field_id_to_colname_mapping.clone(), // TODO: consider Arcing this, could be expensive to clone
             })
             .into(),
             daft_schema.clone(),
@@ -888,6 +895,7 @@ pub(crate) fn read_parquet_into_micropartition(
             num_parallel_tasks,
             runtime_handle,
             schema_infer_options,
+            field_id_to_colname_mapping,
         )?;
         let all_tables = all_tables
             .into_iter()

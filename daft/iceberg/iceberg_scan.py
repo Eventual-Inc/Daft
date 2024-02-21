@@ -84,7 +84,9 @@ class IcebergScanOperator(ScanOperator):
         super().__init__()
         self._table = iceberg_table
         self._storage_config = storage_config
-        arrow_schema = schema_to_pyarrow(iceberg_table.schema())
+        iceberg_schema = iceberg_table.schema()
+        arrow_schema = schema_to_pyarrow(iceberg_schema)
+        self._field_id_mapping = [(f.field_id, f.name) for f in iceberg_schema.fields]
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
 
@@ -145,7 +147,9 @@ class IcebergScanOperator(ScanOperator):
             record_count = file.record_count
             file_format = file.file_format
             if file_format == "PARQUET":
-                file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
+                file_format_config = FileFormatConfig.from_parquet_config(
+                    ParquetSourceConfig(field_id_to_colname_mapping=self._field_id_mapping)
+                )
             else:
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")

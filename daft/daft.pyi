@@ -226,8 +226,13 @@ class ParquetSourceConfig:
     """
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
+    field_id_to_colname_mapping: list[tuple[int, str]] | None
 
-    def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None): ...
+    def __init__(
+        self,
+        coerce_int96_timestamp_unit: PyTimeUnit | None = None,
+        field_id_to_colname_mapping: list[tuple[int, str]] | None = None,
+    ): ...
 
 class CsvSourceConfig:
     """

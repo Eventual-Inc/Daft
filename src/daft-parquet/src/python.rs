@@ -160,6 +160,7 @@ pub mod pylib {
                 num_parallel_tasks.unwrap_or(128) as usize,
                 runtime_handle,
                 &schema_infer_options,
+                &None,
             )?
             .into_iter()
             .map(|v| v.into())

@@ -87,6 +87,16 @@ impl FileFormatConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
+
+    /// Mapping of field_id to column name
+    ///
+    /// Data Catalogs such as Iceberg rely on Parquet's field_id to identify fields in a Parquet file
+    /// in a way that is stable across operations such as column renaming. When reading Parquet files,
+    /// if the `field_id_to_colname_mapping` is provided, we must rename the (potentially stale) Parquet
+    /// data according to the provided field_ids.
+    ///
+    /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
+    pub field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
 }
 
 impl ParquetSourceConfig {
@@ -96,6 +106,16 @@ impl ParquetSourceConfig {
             "Coerce int96 timestamp unit = {}",
             self.coerce_int96_timestamp_unit
         ));
+        if let Some(mapping) = &self.field_id_to_colname_mapping {
+            res.push(format!(
+                "Field ID to column names = [{}]",
+                mapping
+                    .iter()
+                    .map(|(f, c)| format!("{f}: {c}"))
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ));
+        }
         res
     }
 }
@@ -105,11 +125,15 @@ impl ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    fn new(coerce_int96_timestamp_unit: Option<PyTimeUnit>) -> Self {
+    fn new(
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+    ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds.into())
                 .into(),
+            field_id_to_colname_mapping,
         }
     }
 
