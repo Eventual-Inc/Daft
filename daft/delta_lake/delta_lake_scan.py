@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
-import pyarrow as pa
 from deltalake.table import DeltaTable
 
 import daft
@@ -58,6 +57,8 @@ class DeltaLakeScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
+        import pyarrow as pa
+
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         add_actions: pa.RecordBatch = self._table.get_add_actions()
 

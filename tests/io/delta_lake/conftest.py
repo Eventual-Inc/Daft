@@ -25,6 +25,9 @@ def local_deltalake_table(request, tmp_path, partition_by) -> deltalake.DeltaTab
             "e": [datetime.datetime(2024, 2, 10), datetime.datetime(2024, 2, 11), datetime.datetime(2024, 2, 12)],
         }
     )
+    # Delta Lake casts timestamps to microsecond resolution on ingress, so we preemptively cast the Pandas DataFrame here
+    # to make equality assertions easier later.
+    base_df["e"] = base_df["e"].astype("datetime64[us]")
     dfs = []
     for part_idx in range(request.param):
         part_df = base_df.copy()

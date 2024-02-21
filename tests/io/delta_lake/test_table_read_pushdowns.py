@@ -7,11 +7,15 @@ import pytest
 
 deltalake = pytest.importorskip("deltalake")
 
+import pyarrow as pa
+
 import daft
 from daft.logical.schema import Schema
 
+PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="deltalake only supported if pyarrow >= 8.0.0")
 
-@pytest.mark.integration()
+
 def test_deltalake_read_predicate_pushdown_on_data(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
@@ -22,7 +26,6 @@ def test_deltalake_read_predicate_pushdown_on_data(local_deltalake_table):
     )
 
 
-@pytest.mark.integration()
 def test_deltalake_read_predicate_pushdown_on_part(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
@@ -33,7 +36,6 @@ def test_deltalake_read_predicate_pushdown_on_part(local_deltalake_table):
     )
 
 
-@pytest.mark.integration()
 def test_deltalake_read_predicate_pushdown_on_part_non_eq(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
@@ -44,7 +46,6 @@ def test_deltalake_read_predicate_pushdown_on_part_non_eq(local_deltalake_table)
     )
 
 
-@pytest.mark.integration()
 def test_deltalake_read_predicate_pushdown_on_part_and_data(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
@@ -58,7 +59,6 @@ def test_deltalake_read_predicate_pushdown_on_part_and_data(local_deltalake_tabl
     )
 
 
-@pytest.mark.integration()
 def test_deltalake_read_predicate_pushdown_on_part_and_data_same_clause(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
@@ -70,7 +70,6 @@ def test_deltalake_read_predicate_pushdown_on_part_and_data_same_clause(local_de
     )
 
 
-@pytest.mark.integration()
 def test_deltalake_read_predicate_pushdown_on_part_empty(local_deltalake_table):
     path, dfs = local_deltalake_table
     df = daft.read_delta_lake(str(path))
