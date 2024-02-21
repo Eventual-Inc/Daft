@@ -173,6 +173,10 @@ impl PyExpr {
         Ok(self.expr.max().into())
     }
 
+    pub fn any_value(&self) -> PyResult<Self> {
+        Ok(self.expr.any_value().into())
+    }
+
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.agg_list().into())
     }

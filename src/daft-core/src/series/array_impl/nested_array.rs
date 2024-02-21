@@ -60,6 +60,10 @@ macro_rules! impl_series_like_for_nested_arrays {
                 )))
             }
 
+            fn any_value(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {
+                todo!();
+            }
+
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 use crate::array::ops::DaftListAggable;
 

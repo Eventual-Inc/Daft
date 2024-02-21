@@ -97,6 +97,10 @@ impl Series {
         self.inner.max(groups)
     }
 
+    pub fn any_value(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        self.inner.any_value(groups)
+    }
+
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         self.inner.agg_list(groups)
     }

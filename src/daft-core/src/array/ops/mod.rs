@@ -1,4 +1,5 @@
 mod abs;
+mod any_value;
 mod apply;
 mod arange;
 mod arithmetic;
@@ -132,6 +133,12 @@ pub trait DaftCompareAggable {
     fn max(&self) -> Self::Output;
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output;
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftAnyValueAggable {
+    type Output;
+    fn any_value(&self) -> Self::Output;
+    fn grouped_any_value(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftListAggable {

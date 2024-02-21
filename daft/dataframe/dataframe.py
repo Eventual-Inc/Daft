@@ -1546,6 +1546,17 @@ class GroupedDataFrame:
 
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
+    def any_value(self, *cols: ColumnInputType) -> "DataFrame":
+        """Returns a single non-deterministic value from each group in this GroupedDataFrame
+
+        Args:
+            *cols (Union[str, Expression]): columns to get
+
+        Returns:
+            DataFrame: DataFrame with any values.
+        """
+        return self.df._agg([(c, "any_value") for c in cols], group_by=self.group_by)
+
     def count(self) -> "DataFrame":
         """Performs grouped count on this GroupedDataFrame.
 

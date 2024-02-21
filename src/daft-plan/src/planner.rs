@@ -441,6 +441,9 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                         .into()));
                                 final_exprs.push(Column(max_of_max_id.clone()).alias(output_name));
                             }
+                            AnyValue(_e) => {
+                                todo!()
+                            }
                             List(e) => {
                                 let list_id = agg_expr.semantic_id(&schema).id;
                                 let concat_of_list_id = Concat(Column(list_id.clone()).into())

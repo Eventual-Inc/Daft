@@ -340,6 +340,10 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
+    def _any_value(self) -> Expression:
+        expr = self._expr.any_value()
+        return Expression._from_pyexpr(expr)
+
     def _agg_list(self) -> Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
