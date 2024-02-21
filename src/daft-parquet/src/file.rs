@@ -5,7 +5,9 @@ use std::{
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series,
+};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
@@ -37,7 +39,7 @@ pub(crate) struct ParquetReaderBuilder {
     row_groups: Option<Vec<i64>>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     predicate: Option<ExprRef>,
-    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+    field_id_mapping: Option<BTreeMap<i32, Field>>,
 }
 use parquet2::read::decompress;
 
@@ -210,7 +212,7 @@ impl ParquetReaderBuilder {
             row_groups: None,
             schema_inference_options: Default::default(),
             predicate: None,
-            field_id_to_colname_mapping: None,
+            field_id_mapping: None,
         })
     }
 
@@ -272,11 +274,8 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn set_field_id_to_colname_mapping(
-        mut self,
-        field_id_to_colname_mapping: Vec<(i64, String)>,
-    ) -> Self {
-        self.field_id_to_colname_mapping = Some(field_id_to_colname_mapping);
+    pub fn set_field_id_mapping(mut self, field_id_mapping: BTreeMap<i32, Field>) -> Self {
+        self.field_id_mapping = Some(field_id_mapping);
         self
     }
 
@@ -311,7 +310,7 @@ impl ParquetReaderBuilder {
             self.metadata,
             arrow_schema,
             row_ranges,
-            self.field_id_to_colname_mapping,
+            self.field_id_mapping,
         )
     }
 }
@@ -328,25 +327,21 @@ pub(crate) struct ParquetFileReader {
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
-    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+    field_id_mapping: Option<BTreeMap<i32, Field>>,
 }
 
 fn get_column_name_mapping(
-    field_id_to_colname_mapping: &[(i64, String)],
+    field_id_mapping: &BTreeMap<i32, Field>,
     parquet_schema: &parquet2::metadata::SchemaDescriptor,
 ) -> BTreeMap<String, String> {
-    // TODO: Convert field_id_to_colname_mapping to a BTreeMap as well
-    let field_id_to_colname_mapping: BTreeMap<i64, String> =
-        BTreeMap::from_iter(field_id_to_colname_mapping.iter().cloned());
-
     // TODO: Handle recursive case as well somehow
     let mapped = parquet_schema.fields().iter().map(|f| {
-        if let Some(mapped_colname) = f
+        if let Some(mapped_field) = f
             .get_field_info()
             .id
-            .and_then(|field_id| field_id_to_colname_mapping.get(&(field_id as i64)))
+            .and_then(|field_id| field_id_mapping.get(&field_id))
         {
-            (f.name().to_string(), mapped_colname.clone())
+            (f.name().to_string(), mapped_field.name.clone())
         } else {
             (f.name().to_string(), f.name().to_string())
         }
@@ -361,14 +356,14 @@ impl ParquetFileReader {
         metadata: parquet2::metadata::FileMetaData,
         arrow_schema: arrow2::datatypes::Schema,
         row_ranges: Vec<RowGroupRange>,
-        field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+        field_id_mapping: Option<BTreeMap<i32, Field>>,
     ) -> super::Result<Self> {
         Ok(ParquetFileReader {
             uri,
             metadata: Arc::new(metadata),
             arrow_schema: arrow_schema.into(),
             row_ranges: Arc::new(row_ranges),
-            field_id_to_colname_mapping,
+            field_id_mapping,
         })
     }
 
@@ -602,11 +597,9 @@ impl ParquetFileReader {
             .collect::<DaftResult<Vec<_>>>()?;
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
 
-        let column_name_mapping =
-            self.field_id_to_colname_mapping
-                .map(|field_id_to_colname_mapping| {
-                    get_column_name_mapping(&field_id_to_colname_mapping, metadata.schema())
-                });
+        let column_name_mapping = self
+            .field_id_mapping
+            .map(|field_id_mapping| get_column_name_mapping(&field_id_mapping, metadata.schema()));
         let (daft_schema, all_series) = if let Some(column_name_mapping) = column_name_mapping {
             let new_daft_fields = daft_schema.fields.into_iter().map(|(name, field)| {
                 match column_name_mapping.get(&name) {

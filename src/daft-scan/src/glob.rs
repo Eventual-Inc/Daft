@@ -156,11 +156,11 @@ impl GlobScanOperator {
         let inferred_schema = match file_format_config.as_ref() {
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit,
-                field_id_to_colname_mapping: _field_id_to_colname_mapping,
+                field_id_mapping: _field_id_mapping,
             }) => {
                 debug_assert!(
-                    _field_id_to_colname_mapping.is_none(),
-                    "`field_id_to_colname_mapping` should not be provided when inferring schema from Parquet files",
+                    _field_id_mapping.is_none(),
+                    "`field_id_mapping` should not be provided when inferring schema from Parquet files",
                 );
                 let io_stats = IOStatsContext::new(format!(
                     "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"

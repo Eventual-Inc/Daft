@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 
 use daft_core::{
-    datatypes::{Int32Array, TimeUnit, UInt64Array, Utf8Array},
+    datatypes::{Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -66,7 +66,7 @@ async fn read_parquet_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
-    field_id_to_colname_mapping: Option<Vec<(i64, String)>>,
+    field_id_mapping: Option<BTreeMap<i32, Field>>,
 ) -> DaftResult<Table> {
     let original_columns = columns;
     let original_num_rows = num_rows;
@@ -104,8 +104,8 @@ async fn read_parquet_single(
             ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
-        let builder = if let Some(field_id_to_colname_mapping) = field_id_to_colname_mapping {
-            builder.set_field_id_to_colname_mapping(field_id_to_colname_mapping)
+        let builder = if let Some(field_id_mapping) = field_id_mapping {
+            builder.set_field_id_mapping(field_id_mapping)
         } else {
             builder
         };
@@ -379,7 +379,7 @@ pub fn read_parquet(
             io_client,
             io_stats,
             schema_infer_options,
-            None, // TODO: Add field_id_to_colname_mapping
+            None, // TODO: Add field_id_mapping
         )
         .await
     })
@@ -427,7 +427,7 @@ pub fn read_parquet_bulk(
     num_parallel_tasks: usize,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
-    field_id_to_colname_mapping: &Option<Vec<(i64, String)>>,
+    field_id_mapping: &Option<BTreeMap<i32, Field>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -451,7 +451,7 @@ pub fn read_parquet_bulk(
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
-                let field_id_to_colname_mapping_clone = field_id_to_colname_mapping.clone();
+                let field_id_mapping_clone = field_id_mapping.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -468,7 +468,7 @@ pub fn read_parquet_bulk(
                             io_client,
                             io_stats,
                             schema_infer_options,
-                            field_id_to_colname_mapping_clone,
+                            field_id_mapping_clone,
                         )
                         .await?,
                     ))
