@@ -732,6 +732,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_length())
 
+    def lower(self) -> Expression:
+        """Convert UTF-8 string to all lowercase
+
+        Example:
+            >>> col("x").str.lower()
+
+        Returns:
+            Expression: a String expression which is `self` lowercased
+        """
+        return Expression._from_pyexpr(self._expr.utf8_lower())
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

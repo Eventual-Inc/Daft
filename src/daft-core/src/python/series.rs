@@ -264,6 +264,10 @@ impl PySeries {
         Ok(self.series.utf8_length()?.into())
     }
 
+    pub fn utf8_lower(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_lower()?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }
