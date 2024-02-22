@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
+import deltalake
 from deltalake.table import DeltaTable
 
 import daft
@@ -24,6 +25,12 @@ from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 
 logger = logging.getLogger(__name__)
+
+deltalake_reversed_partition_ordering = tuple(int(s) for s in deltalake.__version__.split(".") if s.isnumeric()) < (
+    0,
+    15,
+    2,
+)
 
 
 class DeltaLakeScanOperator(ScanOperator):
@@ -147,6 +154,8 @@ class DeltaLakeScanOperator(ScanOperator):
                 continue
             rows_left -= record_count
             scan_tasks.append(st)
+        if deltalake_reversed_partition_ordering:
+            scan_tasks = list(reversed(scan_tasks))
         return iter(scan_tasks)
 
     def can_absorb_filter(self) -> bool:
