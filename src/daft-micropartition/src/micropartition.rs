@@ -454,6 +454,7 @@ impl MicroPartition {
                 .sum();
             Some(total_size)
         } else if let TableState::Unloaded(scan_task) = guard.deref() {
+            // TODO: pass in the execution config once we have it available
             scan_task.estimate_in_memory_size_bytes(None)
         } else {
             // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.

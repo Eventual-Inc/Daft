@@ -1,6 +1,7 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
 use std::{
+    borrow::Cow,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
@@ -416,18 +417,12 @@ impl ScanTask {
             .or_else(|| {
                 self.size_bytes_on_disk.map(|file_size| {
                     // use inflation factor from config
-                    let (parquet_inflation_factor, csv_inflation_factor) =
-                        if let Some(config) = config {
-                            (config.parquet_inflation_factor, config.csv_inflation_factor)
-                        } else {
-                            let config = DaftExecutionConfig::default();
-                            (config.parquet_inflation_factor, config.csv_inflation_factor)
-                        };
-
+                    let config = config
+                        .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
                     let inflation_factor = match self.file_format_config.as_ref() {
-                        FileFormatConfig::Parquet(_) => parquet_inflation_factor,
+                        FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
                         FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
-                            csv_inflation_factor
+                            config.csv_inflation_factor
                         }
                     };
 
