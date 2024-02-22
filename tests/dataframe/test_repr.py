@@ -4,6 +4,7 @@ import re
 
 import numpy as np
 import pandas as pd
+import pytest
 from PIL import Image
 
 import daft
@@ -84,6 +85,16 @@ def test_empty_repr(make_df):
     df.collect()
     assert df.__repr__() == "(No data to display: Dataframe has no columns)"
     assert df._repr_html_() == "<small>(No data to display: Dataframe has no columns)</small>"
+
+
+@pytest.mark.parametrize("num_preview_rows", [9, 10, None])
+def test_repr_with_non_default_preview_rows(make_df, num_preview_rows):
+    df = make_df({"A": [i for i in range(10)], "B": [i for i in range(10)]})
+    df.collect(num_preview_rows=num_preview_rows)
+    df.__repr__()
+
+    assert df._preview.dataframe_num_rows == 10
+    assert len(df._preview.preview_partition) == (num_preview_rows if num_preview_rows is not None else 10)
 
 
 def test_empty_df_repr(make_df):

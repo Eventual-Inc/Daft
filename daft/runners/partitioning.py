@@ -209,6 +209,9 @@ class PartitionSet(Generic[PartitionT]):
     def _get_merged_vpartition(self) -> MicroPartition:
         raise NotImplementedError()
 
+    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+        raise NotImplementedError()
+
     def to_pydict(self) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         merged_partition = self._get_merged_vpartition()

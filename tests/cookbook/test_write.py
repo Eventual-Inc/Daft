@@ -21,6 +21,8 @@ def test_parquet_write(tmp_path):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
+    assert pd_df._preview.preview_partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.preview_partition) == 1
 
 
@@ -33,6 +35,8 @@ def test_parquet_write_with_partitioning(tmp_path):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 5
+    assert pd_df._preview.preview_partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.preview_partition) == 5
 
 
@@ -41,6 +45,8 @@ def test_empty_parquet_write_without_partitioning(tmp_path):
     df = df.where(daft.lit(False))
     output_files = df.write_parquet(tmp_path)
     assert len(output_files) == 0
+    assert output_files._preview.preview_partition is None
+    output_files.__repr__()
     assert len(output_files._preview.preview_partition) == 0
 
 
@@ -49,6 +55,8 @@ def test_empty_parquet_write_with_partitioning(tmp_path):
     df = df.where(daft.lit(False))
     output_files = df.write_parquet(tmp_path, partition_cols=["Borough"])
     assert len(output_files) == 0
+    assert output_files._preview.preview_partition is None
+    output_files.__repr__()
     assert len(output_files._preview.preview_partition) == 0
 
 
@@ -69,6 +77,8 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 5
+    assert output_files._preview.preview_partition is None
+    output_files.__repr__()
     assert len(output_files._preview.preview_partition) == 5
 
 
@@ -193,6 +203,8 @@ def test_csv_write(tmp_path):
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
+    assert pd_df._preview.preview_partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.preview_partition) == 1
 
 

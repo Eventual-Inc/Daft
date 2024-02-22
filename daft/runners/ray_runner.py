@@ -151,6 +151,20 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         all_partitions = ray.get([part for id, part in ids_and_partitions])
         return MicroPartition.concat(all_partitions)
 
+    def _get_preview_vpartition(self, num_rows: int) -> list[MicroPartition]:
+        ids_and_partitions = self.items()
+        preview_parts = []
+        for _, part in ids_and_partitions:
+            part = ray.get(part)
+            part_len = len(part)
+            if part_len >= num_rows:  # if this part has enough rows, take what we need and break
+                preview_parts.append(part.slice(0, num_rows))
+                break
+            else:  # otherwise, take the whole part and keep going
+                num_rows -= part_len
+                preview_parts.append(part)
+        return preview_parts
+
     def to_ray_dataset(self) -> RayDataset:
         if not _RAY_FROM_ARROW_REFS_AVAILABLE:
             raise ImportError(

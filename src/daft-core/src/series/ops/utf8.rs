@@ -50,4 +50,24 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_lower(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.lower()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Lower not implemented for type {dt}"
+            ))),
+        }
+    }
+
+    pub fn utf8_upper(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.upper()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Upper not implemented for type {dt}"
+            ))),
+        }
+    }
 }

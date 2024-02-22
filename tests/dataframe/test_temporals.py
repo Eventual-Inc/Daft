@@ -90,7 +90,7 @@ def test_temporal_file_roundtrip(format, use_native_downloader) -> None:
             df.write_parquet(dirname)
             df_readback = daft.read_parquet(dirname, use_native_downloader=use_native_downloader).collect()
 
-    assert df.to_pydict() == df_readback.to_pydict()
+        assert df.to_pydict() == df_readback.to_pydict()
 
 
 @pytest.mark.parametrize(

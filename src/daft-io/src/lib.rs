@@ -1,6 +1,6 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
-
+#![feature(io_error_more)]
 mod azure_blob;
 mod google_cloud;
 mod http;
@@ -71,6 +71,9 @@ pub enum Error {
 
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+
+    #[snafu(display("Unable to determine size of {}", path))]
+    UnableToDetermineSize { path: String },
 
     #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },

@@ -98,6 +98,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.concat
    Expression.str.length
    Expression.str.split
+   Expression.str.lower
+   Expression.str.upper
 
 .. _api-expressions-temporal:
 

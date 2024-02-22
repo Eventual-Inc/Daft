@@ -71,6 +71,8 @@ enum Error {
         path: String,
         source: azure_storage::Error,
     },
+    #[snafu(display("Not a File: \"{}\"", path))]
+    NotAFile { path: String },
 }
 
 impl From<Error> for super::Error {
@@ -98,6 +100,7 @@ impl From<Error> for super::Error {
                 path: path.into(),
                 source: error.into(),
             },
+            NotAFile { path } => super::Error::NotAFile { path },
             _ => super::Error::Generic {
                 store: super::SourceType::AzureBlob,
                 source: error.into(),
@@ -414,6 +417,10 @@ impl ObjectSource for AzureBlobSource {
         }?;
         let key = parsed.path();
 
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
         let container_client = self.blob_client.container_client(container);
         let blob_client = container_client.blob_client(key);
         let request_builder = blob_client.get();
@@ -454,6 +461,10 @@ impl ObjectSource for AzureBlobSource {
             }),
         }?;
         let key = parsed.path();
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
 
         let container_client = self.blob_client.container_client(container);
         let blob_client = container_client.blob_client(key);
