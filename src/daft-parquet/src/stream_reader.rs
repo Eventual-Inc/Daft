@@ -109,6 +109,7 @@ pub(crate) fn local_parquet_read_into_arrow(
         &daft_schema,
         &metadata,
         uri,
+        &None,
     )?;
 
     let columns_iters_per_rg = row_ranges

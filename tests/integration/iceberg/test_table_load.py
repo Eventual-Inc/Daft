@@ -60,3 +60,14 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_filtered_collect_correct(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    df = daft.read_iceberg(tab)
+    df = df.where(df["pos"] <= 1)
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = daft_pandas.where(daft_pandas["pos"] <= 1)
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

@@ -126,6 +126,7 @@ fn rename_schema_recursively(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
@@ -134,6 +135,7 @@ pub(crate) fn build_row_ranges(
     schema: &Schema,
     metadata: &parquet2::metadata::FileMetaData,
     uri: &str,
+    field_id_mapping: &Option<Arc<BTreeMap<i32, Field>>>,
 ) -> super::Result<Vec<RowGroupRange>> {
     let limit = limit.map(|v| v as i64);
     let mut row_ranges = vec![];
@@ -155,10 +157,11 @@ pub(crate) fn build_row_ranges(
             }
             let rg = metadata.row_groups.get(i).unwrap();
             if let Some(ref pred) = predicate {
-                let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
-                    .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
-                        path: uri.to_string(),
-                    })?;
+                let stats =
+                    statistics::row_group_metadata_to_table_stats(rg, schema, field_id_mapping)
+                        .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
+                            path: uri.to_string(),
+                        })?;
 
                 let evaled = stats.eval_expression(pred).with_context(|_| {
                     UnableToRunExpressionOnStatsSnafu {
@@ -187,10 +190,11 @@ pub(crate) fn build_row_ranges(
                 continue;
             } else if rows_to_add > 0 {
                 if let Some(ref pred) = predicate {
-                    let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
-                        .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
-                            path: uri.to_string(),
-                        })?;
+                    let stats =
+                        statistics::row_group_metadata_to_table_stats(rg, schema, field_id_mapping)
+                            .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
+                                path: uri.to_string(),
+                            })?;
                     let evaled = stats.eval_expression(pred).with_context(|_| {
                         UnableToRunExpressionOnStatsSnafu {
                             path: uri.to_string(),
@@ -329,6 +333,7 @@ impl ParquetReaderBuilder {
             &daft_schema,
             &self.metadata,
             &self.uri,
+            &self.field_id_mapping,
         )?;
 
         ParquetFileReader::new(
@@ -596,7 +601,7 @@ impl ParquetFileReader {
                     rayon::spawn(move || {
                         let concated = if series_to_concat.is_empty() {
                             Ok(Series::empty(
-                                owned_field.name.as_str(),
+                                target_field_name.as_str(),
                                 &owned_field.data_type().into(),
                             ))
                         } else {

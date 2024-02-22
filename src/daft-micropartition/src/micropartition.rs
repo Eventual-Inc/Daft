@@ -342,7 +342,12 @@ impl MicroPartition {
         // Check and validate invariants with asserts
         for table in tables.iter() {
             assert!(
-                table.schema == schema,
+                table.schema.fields.len() == schema.fields.len()
+                    && table.schema.fields.iter().zip(schema.fields.iter()).all(
+                        |((s1, f1), (s2, f2))| s1 == s2
+                            && f1.name == f2.name
+                            && f1.dtype == f2.dtype
+                    ),
                 "Loaded MicroPartition's tables' schema must match its own schema exactly"
             );
         }
@@ -697,6 +702,31 @@ pub(crate) fn read_json_into_micropartition(
     }
 }
 
+// TODO: Deduplicate this with the other `rename_schema_recursively` function in file.rs
+fn rename_schema_recursively(
+    daft_schema: Schema,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> DaftResult<Schema> {
+    Schema::new(
+        daft_schema
+            .fields
+            .into_iter()
+            .map(|(_, field)| {
+                if let Some(field_id) = field.metadata.get("field_id") {
+                    let field_id = str::parse::<i32>(field_id).unwrap();
+                    let mapped_field = field_id_mapping.get(&field_id);
+                    match mapped_field {
+                        None => field,
+                        Some(mapped_field) => field.rename(&mapped_field.name),
+                    }
+                } else {
+                    field
+                }
+            })
+            .collect(),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn read_parquet_into_micropartition(
     uris: &[&str],
@@ -767,7 +797,7 @@ pub(crate) fn read_parquet_into_micropartition(
     })?;
 
     // Deserialize and collect relevant TableStatistics
-    let schemas = metadata
+    let pq_file_schemas = metadata
         .iter()
         .map(|m| {
             let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
@@ -783,11 +813,15 @@ pub(crate) fn read_parquet_into_micropartition(
     let stats = if any_stats_avail {
         let stat_per_table = metadata
             .iter()
-            .zip(schemas.iter())
-            .flat_map(|(fm, schema)| {
-                fm.row_groups
-                    .iter()
-                    .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
+            .zip(pq_file_schemas.iter())
+            .flat_map(|(fm, pq_file_schema)| {
+                fm.row_groups.iter().map(|rgm| {
+                    daft_parquet::row_group_metadata_to_table_stats(
+                        rgm,
+                        pq_file_schema,
+                        field_id_mapping,
+                    )
+                })
             })
             .collect::<DaftResult<Vec<TableStatistics>>>()?;
         stat_per_table.into_iter().try_reduce(|a, b| a.union(&b))?
@@ -796,7 +830,19 @@ pub(crate) fn read_parquet_into_micropartition(
     };
 
     // Union and prune the schema using the specified `columns`
-    let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
+    let resolved_schemas = if let Some(field_id_mapping) = field_id_mapping {
+        pq_file_schemas
+            .into_iter()
+            .map(|pq_file_schema| {
+                rename_schema_recursively(pq_file_schema, field_id_mapping.as_ref())
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+    } else {
+        pq_file_schemas
+    };
+    let unioned_schema = resolved_schemas
+        .into_iter()
+        .try_reduce(|l, r| l.union(&r))?;
     let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
     let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
 
@@ -873,6 +919,7 @@ pub(crate) fn read_parquet_into_micropartition(
             .keys()
             .map(|n| daft_dsl::col(n.as_str()))
             .collect::<Vec<_>>();
+
         // use schema to update stats
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
