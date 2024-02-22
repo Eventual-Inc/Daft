@@ -201,6 +201,11 @@ impl GlobScanOperator {
                 io_client,
                 Some(io_stats),
             )?,
+            FileFormatConfig::Database(_) => {
+                return Err(DaftError::ValueError(
+                    "Cannot glob a database source".to_string(),
+                ))
+            }
         };
 
         let schema = match schema_hint {

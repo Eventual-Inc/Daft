@@ -6,7 +6,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;
@@ -715,6 +715,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                 input_physical.into(),
                             )))
                         }
+                        _ => unimplemented!(),
                     }
                 }
             }

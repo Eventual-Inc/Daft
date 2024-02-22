@@ -12,6 +12,7 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
+from sqlalchemy import create_engine, text
 
 from daft.context import get_context
 from daft.daft import (
@@ -29,6 +30,7 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
+from daft.expressions.expressions import Expression
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -73,7 +75,6 @@ def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions,
     their corresponding dtype in `schema`, and column ordering/inclusion matches `read_options.column_names` (if provided).
     """
     pruned_schema = schema
-
     # If reading only a subset of fields, prune the schema
     if read_options.column_names is not None:
         pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
@@ -210,6 +211,57 @@ def read_parquet(
         )
 
     return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
+
+
+def read_sql(
+    sql: str,
+    url: str,
+    schema: Schema,
+    limit: int | None = None,
+    offset: int | None = None,
+    read_options: TableReadOptions = TableReadOptions(),
+    predicate: Expression | None = None,
+) -> MicroPartition:
+    """Reads a MicroPartition from a SQL query
+
+    Args:
+        sql (str): SQL query to execute
+        url (str): URL to the database
+        schema (Schema): Daft schema to read the SQL query into
+
+    Returns:
+        MicroPartition: MicroPartition from SQL query
+    """
+    columns = read_options.column_names
+    if columns is not None:
+        sql = f"SELECT {', '.join(columns)} FROM ({sql})"
+    else:
+        sql = f"SELECT * FROM ({sql})"
+
+    if limit is not None:
+        sql = f"{sql} LIMIT {limit}"
+
+    if offset is not None:
+        sql = f"{sql} OFFSET {offset}"
+
+    with create_engine(url).connect() as connection:
+        result = connection.execute(text(sql))
+        cursor = result.cursor
+
+        rows = cursor.fetchall()
+        columns = [column_description[0] for column_description in cursor.description]
+
+        pydict = {column: [row[i] for row in rows] for i, column in enumerate(columns)}
+
+    mp = MicroPartition.from_pydict(pydict)
+    if predicate is not None:
+        mp = mp.filter(ExpressionsProjection([predicate]))
+
+    num_rows = read_options.num_rows
+    if num_rows is not None:
+        mp = mp.head(num_rows)
+
+    return _cast_table_to_schema(mp, read_options=read_options, schema=schema)
 
 
 class PACSVStreamHelper:

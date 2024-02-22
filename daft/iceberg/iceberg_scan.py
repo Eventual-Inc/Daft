@@ -170,6 +170,7 @@ class IcebergScanOperator(ScanOperator):
                 continue
             rows_left -= record_count
             scan_tasks.append(st)
+
         return iter(scan_tasks)
 
     def can_absorb_filter(self) -> bool:

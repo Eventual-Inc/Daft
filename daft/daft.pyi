@@ -217,12 +217,23 @@ class JsonSourceConfig:
         chunk_size: int | None = None,
     ): ...
 
+class DatabaseSourceConfig:
+    """
+    Configuration of a database data source.
+    """
+
+    sql: str
+    limit: int | None
+    offset: int | None
+
+    def __init__(self, sql: str, limit: int | None = None, offset: int | None = None): ...
+
 class FileFormatConfig:
     """
     Configuration for parsing a particular file format (Parquet, CSV, JSON).
     """
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -240,6 +251,12 @@ class FileFormatConfig:
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """
         Create a JSON file format config.
+        """
+        ...
+    @staticmethod
+    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
+        """
+        Create a database file format config.
         """
         ...
     def file_format(self) -> FileFormat:
@@ -581,6 +598,18 @@ class ScanTask:
     ) -> ScanTask | None:
         """
         Create a Catalog Scan Task
+        """
+        ...
+    @staticmethod
+    def sql_scan_task(
+        url: str,
+        file_format: FileFormatConfig,
+        schema: PySchema,
+        storage_config: StorageConfig,
+        pushdowns: Pushdowns | None,
+    ) -> ScanTask:
+        """
+        Create a SQL Scan Task
         """
         ...
 

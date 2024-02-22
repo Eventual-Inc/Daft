@@ -135,32 +135,46 @@ pub enum DataFileSource {
         partition_spec: PartitionSpec,
         statistics: Option<TableStatistics>,
     },
+    DatabaseDataFile {
+        path: String,
+        chunk_spec: Option<ChunkSpec>,
+        size_bytes: Option<u64>,
+        metadata: Option<TableMetadata>,
+        partition_spec: Option<PartitionSpec>,
+        statistics: Option<TableStatistics>,
+    },
 }
 
 impl DataFileSource {
     pub fn get_path(&self) -> &str {
         match self {
-            Self::AnonymousDataFile { path, .. } | Self::CatalogDataFile { path, .. } => path,
+            Self::AnonymousDataFile { path, .. }
+            | Self::CatalogDataFile { path, .. }
+            | Self::DatabaseDataFile { path, .. } => path,
         }
     }
 
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::AnonymousDataFile { chunk_spec, .. }
-            | Self::CatalogDataFile { chunk_spec, .. } => chunk_spec.as_ref(),
+            | Self::CatalogDataFile { chunk_spec, .. }
+            | Self::DatabaseDataFile { chunk_spec, .. } => chunk_spec.as_ref(),
         }
     }
 
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
             Self::AnonymousDataFile { size_bytes, .. }
-            | Self::CatalogDataFile { size_bytes, .. } => *size_bytes,
+            | Self::CatalogDataFile { size_bytes, .. }
+            | Self::DatabaseDataFile { size_bytes, .. } => *size_bytes,
         }
     }
 
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
-            Self::AnonymousDataFile { metadata, .. } => metadata.as_ref(),
+            Self::AnonymousDataFile { metadata, .. } | Self::DatabaseDataFile { metadata, .. } => {
+                metadata.as_ref()
+            }
             Self::CatalogDataFile { metadata, .. } => Some(metadata),
         }
     }
@@ -168,13 +182,15 @@ impl DataFileSource {
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
             Self::AnonymousDataFile { statistics, .. }
-            | Self::CatalogDataFile { statistics, .. } => statistics.as_ref(),
+            | Self::CatalogDataFile { statistics, .. }
+            | Self::DatabaseDataFile { statistics, .. } => statistics.as_ref(),
         }
     }
 
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
-            Self::AnonymousDataFile { partition_spec, .. } => partition_spec.as_ref(),
+            Self::AnonymousDataFile { partition_spec, .. }
+            | Self::DatabaseDataFile { partition_spec, .. } => partition_spec.as_ref(),
             Self::CatalogDataFile { partition_spec, .. } => Some(partition_spec),
         }
     }
@@ -183,6 +199,14 @@ impl DataFileSource {
         let mut res = vec![];
         match self {
             Self::AnonymousDataFile {
+                path,
+                chunk_spec,
+                size_bytes,
+                metadata,
+                partition_spec,
+                statistics,
+            }
+            | Self::DatabaseDataFile {
                 path,
                 chunk_spec,
                 size_bytes,

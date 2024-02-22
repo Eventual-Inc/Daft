@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 
@@ -190,6 +190,12 @@ pub fn split_by_row_groups(
 
                                         curr_row_groups = Vec::new();
                                         curr_size_bytes = 0;
+                                    }
+                                    DataFileSource::DatabaseDataFile { .. } => {
+                                        return Err(DaftError::ValueError(
+                                            "Cannot split by row groups for database sources"
+                                                .to_string(),
+                                        ));
                                     }
                                 };
 

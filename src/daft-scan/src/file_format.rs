@@ -19,6 +19,7 @@ pub enum FileFormat {
     Parquet,
     Csv,
     Json,
+    Database,
 }
 
 impl FromStr for FileFormat {
@@ -33,6 +34,8 @@ impl FromStr for FileFormat {
             Ok(Csv)
         } else if file_format.trim().eq_ignore_ascii_case("json") {
             Ok(Json)
+        } else if file_format.trim().eq_ignore_ascii_case("database") {
+            Ok(Database)
         } else {
             Err(DaftError::TypeError(format!(
                 "FileFormat {} not supported!",
@@ -50,6 +53,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Parquet(_) => Self::Parquet,
             FileFormatConfig::Csv(_) => Self::Csv,
             FileFormatConfig::Json(_) => Self::Json,
+            FileFormatConfig::Database(_) => Self::Database,
         }
     }
 }
@@ -60,6 +64,7 @@ pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
+    Database(DatabaseSourceConfig),
 }
 
 impl FileFormatConfig {
@@ -70,6 +75,7 @@ impl FileFormatConfig {
             Parquet(_) => "Parquet",
             Csv(_) => "Csv",
             Json(_) => "Json",
+            Database(_) => "Database",
         }
     }
 
@@ -78,6 +84,7 @@ impl FileFormatConfig {
             Self::Parquet(source) => source.multiline_display(),
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
+            Self::Database(source) => source.multiline_display(),
         }
     }
 }
@@ -251,6 +258,45 @@ impl JsonSourceConfig {
 
 impl_bincode_py_state_serialization!(JsonSourceConfig);
 
+/// Configuration for a Database data source.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct DatabaseSourceConfig {
+    pub sql: String,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+impl DatabaseSourceConfig {
+    pub fn new_internal(sql: String, limit: Option<usize>, offset: Option<usize>) -> Self {
+        Self { sql, limit, offset }
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("SQL = {}", self.sql));
+        if let Some(limit) = self.limit {
+            res.push(format!("Limit = {}", limit));
+        }
+        if let Some(offset) = self.offset {
+            res.push(format!("Offset = {}", offset));
+        }
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl DatabaseSourceConfig {
+    /// Create a config for a Database data source.
+    #[new]
+    fn new(sql: &str, limit: Option<usize>, offset: Option<usize>) -> Self {
+        Self::new_internal(sql.to_string(), limit, offset)
+    }
+}
+
+impl_bincode_py_state_serialization!(DatabaseSourceConfig);
+
 /// Configuration for parsing a particular file format.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -281,6 +327,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Json(config)))
     }
 
+    /// Create a Database file format config.
+    #[staticmethod]
+    fn from_database_config(config: DatabaseSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Database(config)))
+    }
+
     /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyObject {
@@ -290,6 +342,7 @@ impl PyFileFormatConfig {
             Parquet(config) => config.clone().into_py(py),
             Csv(config) => config.clone().into_py(py),
             Json(config) => config.clone().into_py(py),
+            Database(config) => config.clone().into_py(py),
         }
     }
 

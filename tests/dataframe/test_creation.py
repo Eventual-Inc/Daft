@@ -5,8 +5,10 @@ import csv
 import decimal
 import json
 import os
+import sqlite3
 import tempfile
 import uuid
+from typing import Generator
 
 import numpy as np
 import pandas as pd
@@ -1032,3 +1034,42 @@ def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: li
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
+
+
+###
+# SQL tests
+###
+
+
+@pytest.fixture(name="temp_database")
+def temp_database() -> Generator[str, None, None]:
+    with tempfile.NamedTemporaryFile(suffix=".db") as file:
+        yield file.name
+
+
+def test_create_dataframe_sql(valid_data: list[dict[str, float]], temp_database: str) -> None:
+    connection = sqlite3.connect(temp_database)
+    connection.execute(
+        f"""
+        CREATE TABLE iris (
+            sepal_length REAL,
+            sepal_width REAL,
+            petal_length REAL,
+            petal_width REAL,
+            variety TEXT
+        )
+        """
+    )
+    connection.executemany(
+        "INSERT INTO iris VALUES (?, ?, ?, ?, ?)",
+        [(d["sepal_length"], d["sepal_width"], d["petal_length"], d["petal_width"], d["variety"]) for d in valid_data],
+    )
+    connection.commit()
+    connection.close()
+
+    df = daft.read_sql("SELECT * FROM iris", f"sqlite:///{temp_database}")
+    assert df.column_names == COL_NAMES
+
+    pd_df = df.to_pandas()
+    assert list(pd_df.columns) == COL_NAMES
+    assert len(pd_df) == len(valid_data)

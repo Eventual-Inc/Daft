@@ -73,6 +73,19 @@ class TableParseParquetOptions:
 
 
 @dataclass(frozen=True)
+class TableParseSQLOptions:
+    """Options for parsing SQL tables
+
+    Args:
+        limit: Number of rows to read, or None to read all rows
+        offset: Number of rows to skip before reading
+    """
+
+    limit: int | None = None
+    offset: int | None = None
+
+
+@dataclass(frozen=True)
 class PartialPartitionMetadata:
     num_rows: None | int
     size_bytes: None | int
