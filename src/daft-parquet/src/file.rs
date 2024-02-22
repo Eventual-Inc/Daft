@@ -250,6 +250,7 @@ impl ParquetReaderBuilder {
     }
 
     pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
+        // TODO: perform pruning of columns on names AFTER applying the field_id_mapping
         let avail_names = self
             .parquet_schema()
             .fields()
@@ -439,8 +440,7 @@ impl ParquetFileReader {
             .fields
             .iter()
             .map(|pq_arrow_field| {
-                // Retrieve the appropriate field name from the field_id mapping
-                // TODO: We should do this recursively as well
+                // Retrieve the intended target field name (might differ from the Parquet field name, depending on the field_id_mapping)
                 let target_field_name = if let (Some(field_id_mapping), Some(field_id)) = (
                     self.field_id_mapping.as_ref(),
                     pq_arrow_field.metadata.get("field_id"),
@@ -564,6 +564,8 @@ impl ParquetFileReader {
                                     all_arrays
                                         .into_iter()
                                         .map(|a| {
+                                            // TODO: Need to perform recursive renaming of Series here. Hopefully arrow array
+                                            // has the correct metadata and that was correctly transferred to the Series...
                                             Series::try_from((
                                                 cloned_target_field_name.as_str(),
                                                 cast_array_for_daft_if_needed(a),

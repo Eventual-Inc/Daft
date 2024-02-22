@@ -544,7 +544,7 @@ impl PyMicroPartition {
                 1,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
-                &None, // TODO: pass in field_id mapping
+                &None,
             )
         })?;
         Ok(mp.into())
@@ -586,7 +586,7 @@ impl PyMicroPartition {
                 num_parallel_tasks.unwrap_or(128) as usize,
                 multithreaded_io.unwrap_or(true),
                 &schema_infer_options,
-                &None, // TODO: pass in field_id mapping
+                &None,
             )
         })?;
         Ok(mp.into())

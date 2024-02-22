@@ -379,7 +379,7 @@ pub fn read_parquet(
             io_client,
             io_stats,
             schema_infer_options,
-            None, // TODO: Add field_id_mapping
+            None,
         )
         .await
     })

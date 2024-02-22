@@ -111,10 +111,10 @@ impl ParquetSourceConfig {
         ));
         if let Some(mapping) = &self.field_id_mapping {
             res.push(format!(
-                "Field ID to column names = [{}]",
+                "Field ID to Fields = {{{}}}",
                 mapping
                     .iter()
-                    .map(|(f, c)| format!("{f}: {c}"))
+                    .map(|(fid, f)| format!("{fid}: {f}"))
                     .collect::<Vec<String>>()
                     .join(",")
             ));
