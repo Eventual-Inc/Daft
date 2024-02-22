@@ -101,6 +101,31 @@ where
     }
 }
 
+fn rename_schema_recursively(
+    daft_schema: Schema,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> DaftResult<Schema> {
+    // TODO: perform this recursively
+    Schema::new(
+        daft_schema
+            .fields
+            .into_iter()
+            .map(|(_, field)| {
+                if let Some(field_id) = field.metadata.get("field_id") {
+                    let field_id = str::parse::<i32>(field_id).unwrap();
+                    let mapped_field = field_id_mapping.get(&field_id);
+                    match mapped_field {
+                        None => field,
+                        Some(mapped_field) => field.rename(&mapped_field.name),
+                    }
+                } else {
+                    field
+                }
+            })
+            .collect(),
+    )
+}
+
 pub(crate) fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
@@ -328,26 +353,6 @@ pub(crate) struct ParquetFileReader {
     arrow_schema_from_pq: arrow2::datatypes::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-}
-
-fn get_column_name_mapping(
-    field_id_mapping: &BTreeMap<i32, Field>,
-    parquet_schema: &parquet2::metadata::SchemaDescriptor,
-) -> BTreeMap<String, String> {
-    // TODO: Handle recursive case as well somehow
-    let mapped = parquet_schema.fields().iter().map(|f| {
-        if let Some(mapped_field) = f
-            .get_field_info()
-            .id
-            .and_then(|field_id| field_id_mapping.get(&field_id))
-        {
-            (f.name().to_string(), mapped_field.name.clone())
-        } else {
-            (f.name().to_string(), f.name().to_string())
-        }
-    });
-
-    BTreeMap::from_iter(mapped)
 }
 
 impl ParquetFileReader {
@@ -611,22 +616,10 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
+
         let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema_from_pq.as_ref())?;
-
-        // Apply `field_id_mapping` to the parsed daft_schema and data (if provided)
-        let column_name_mapping = self
-            .field_id_mapping
-            .map(|field_id_mapping| get_column_name_mapping(&field_id_mapping, metadata.schema()));
-        let daft_schema = if let Some(column_name_mapping) = column_name_mapping {
-            let new_daft_fields = daft_schema.fields.into_iter().map(|(name, field)| {
-                match column_name_mapping.get(&name) {
-                    None => field,
-                    Some(mapped_name) => field.rename(mapped_name),
-                }
-            });
-
-            daft_core::schema::Schema::new(new_daft_fields.collect())
-                .expect("Daft schema should be constructed from column name mapping")
+        let daft_schema = if let Some(field_id_mapping) = self.field_id_mapping {
+            rename_schema_recursively(daft_schema, field_id_mapping.as_ref())?
         } else {
             daft_schema
         };
