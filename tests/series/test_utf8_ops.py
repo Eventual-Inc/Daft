@@ -224,31 +224,41 @@ def test_series_utf8_length_all_null() -> None:
     assert result.to_pylist() == [None, None, None]
 
 
-def test_series_utf8_lower() -> None:
-    s = Series.from_arrow(pa.array(["Foo", "BarBaz", "QUUX"]))
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["Foo", "BarBaz", "QUUX"], ["foo", "barbaz", "quux"]),
+        # With at least one null
+        (["Foo", None, "BarBaz", "QUUX"], ["foo", None, "barbaz", "quux"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+        # With at least one numeric strings
+        (["Foo", "BarBaz", "QUUX", "2"], ["foo", "barbaz", "quux", "2"]),
+        # With all numeric strings
+        (["1", "2", "3"], ["1", "2", "3"]),
+    ],
+)
+def test_series_utf8_lower(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
     result = s.str.lower()
-    assert result.to_pylist() == ["foo", "barbaz", "quux"]
+    assert result.to_pylist() == expected
 
 
-def test_series_utf8_lower_with_nulls() -> None:
-    s = Series.from_arrow(pa.array(["Foo", None, "BarBaz", "QUUX"]))
-    result = s.str.lower()
-    assert result.to_pylist() == ["foo", None, "barbaz", "quux"]
-
-
-def test_series_utf8_lower_empty() -> None:
-    s = Series.from_arrow(pa.array([], type=pa.string()))
-    result = s.str.lower()
-    assert result.to_pylist() == []
-
-
-def test_series_utf8_lower_all_null() -> None:
-    s = Series.from_arrow(pa.array([None, None, None]))
-    result = s.str.lower()
-    assert result.to_pylist() == [None, None, None]
-
-
-def test_series_utf8_lower_all_numeric_strs() -> None:
-    s = Series.from_arrow(pa.array(["1", "2", "3"]))
-    result = s.str.lower()
-    assert result.to_pylist() == ["1", "2", "3"]
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["Foo", "BarBaz", "quux"], ["FOO", "BARBAZ", "QUUX"]),
+        # With at least one null
+        (["Foo", None, "BarBaz", "quux"], ["FOO", None, "BARBAZ", "QUUX"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+        # With at least one numeric strings
+        (["Foo", "BarBaz", "quux", "2"], ["FOO", "BARBAZ", "QUUX", "2"]),
+        # With all numeric strings
+        (["1", "2", "3"], ["1", "2", "3"]),
+    ],
+)
+def test_series_utf8_upper(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.upper()
+    assert result.to_pylist() == expected

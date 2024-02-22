@@ -338,6 +338,11 @@ impl PyExpr {
         Ok(lower(&self.expr).into())
     }
 
+    pub fn utf8_upper(&self) -> PyResult<Self> {
+        use crate::functions::utf8::upper;
+        Ok(upper(&self.expr).into())
+    }
+
     pub fn image_decode(&self) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(&self.expr).into())
