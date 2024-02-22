@@ -112,10 +112,11 @@ tokio-util = "0.7.8"
 url = "2.4.0"
 
 [workspace.dependencies.arrow2]
-# branch = "daft-fork"
+# TODO: Update this to daft-fork
+# branch = "jay/field-ids-in-metadata"
 git = "https://github.com/Eventual-Inc/arrow2"
 package = "arrow2"
-rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
+rev = "195649a0d9"
 
 [workspace.dependencies.bincode]
 version = "1.3.3"
