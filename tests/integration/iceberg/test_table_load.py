@@ -71,3 +71,14 @@ def test_daft_iceberg_table_filtered_collect_correct(local_iceberg_catalog):
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[iceberg_pandas["pos"] <= 1]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_column_pushdown_collect_correct(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    df = daft.read_iceberg(tab)
+    df = df.select("pos")
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[["pos"]]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

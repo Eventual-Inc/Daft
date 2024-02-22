@@ -362,11 +362,11 @@ spark.sql(
   CREATE OR REPLACE TABLE default.test_table_rename
   USING iceberg
   AS SELECT
-        1            AS idx
+        1            AS idx, 10  AS data
     UNION ALL SELECT
-        2            AS idx
+        2            AS idx, 20  AS data
     UNION ALL SELECT
-        3            AS idx
+        3            AS idx, 30  AS data
 """
 )
 
