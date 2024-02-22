@@ -315,6 +315,7 @@ impl ScanTask {
             pushdowns,
             size_bytes_on_disk,
             metadata,
+            // TODO: I think we also need to perform field_id renaming on statistics here?
             statistics,
         }
     }
