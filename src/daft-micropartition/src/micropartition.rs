@@ -923,8 +923,6 @@ pub(crate) fn read_parquet_into_micropartition(
         // use schema to update stats
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
-        // TODO: This is currently a BAD micropartition, because: the schema doesn't take into account the field_id mappings
-        // and the stats have not been properly renamed according to the field_id mappings.
         Ok(MicroPartition::new_unloaded(
             scan_task.materialized_schema(),
             Arc::new(scan_task),
