@@ -53,3 +53,13 @@ def test_str_lower():
         run_kernel=s.str.lower,
         resolvable=True,
     )
+
+
+def test_str_upper():
+    s = Series.from_arrow(pa.array(["Foo", "BarBaz", "quux"]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.upper(),
+        run_kernel=s.str.lower,
+        resolvable=True,
+    )

@@ -3,7 +3,7 @@ use crate::{
     datatypes::{BooleanArray, Field, UInt64Array, Utf8Array},
     DataType, Series,
 };
-use arrow2::{self};
+use arrow2;
 
 use common_error::{DaftError, DaftResult};
 
@@ -153,6 +153,19 @@ impl Utf8Array {
             .map(|val| {
                 let v = val?;
                 Some(v.to_lowercase())
+            })
+            .collect::<arrow2::array::Utf8Array<i64>>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn upper(&self) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                Some(v.to_uppercase())
             })
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());

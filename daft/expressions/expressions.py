@@ -743,6 +743,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_lower())
 
+    def upper(self) -> Expression:
+        """Convert UTF-8 string to all upper
+
+        Example:
+            >>> col("x").str.upper()
+
+        Returns:
+            Expression: a String expression which is `self` uppercased
+        """
+        return Expression._from_pyexpr(self._expr.utf8_upper())
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
