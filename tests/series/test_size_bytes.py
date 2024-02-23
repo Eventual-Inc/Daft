@@ -90,19 +90,20 @@ def test_series_date_size_bytes(size, with_nulls) -> None:
 
 @pytest.mark.parametrize("size", [0, 1, 2, 8, 9, 16])
 @pytest.mark.parametrize("with_nulls", [True, False])
-def test_series_time_size_bytes(size, with_nulls) -> None:
+@pytest.mark.parametrize("precision", ["us", "ns"])
+def test_series_time_size_bytes(size, with_nulls, precision) -> None:
     from datetime import time
 
-    pydata = [time(i, 0, 0) for i in range(size)]
+    pydata = [time(i, i, i, i) for i in range(size)]
 
     if with_nulls and size > 0:
-        data = pa.array(pydata[:-1] + [None], pa.time64("us"))
+        data = pa.array(pydata[:-1] + [None], pa.time64(precision))
     else:
-        data = pa.array(pydata, pa.time64("us"))
+        data = pa.array(pydata, pa.time64(precision))
 
     s = Series.from_arrow(data)
 
-    assert s.datatype() == DataType.time("us")
+    assert s.datatype() == DataType.time(precision)
     assert s.size_bytes() == get_total_buffer_size(data)
 
 

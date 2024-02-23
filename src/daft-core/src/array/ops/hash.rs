@@ -156,7 +156,10 @@ impl DateArray {
 
 impl TimeArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        self.physical.murmur3_32()
+        let us = self.cast(&crate::DataType::Time(
+            crate::datatypes::TimeUnit::Microseconds,
+        ))?;
+        us.time()?.physical.murmur3_32()
     }
 }
 

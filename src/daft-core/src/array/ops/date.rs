@@ -1,7 +1,7 @@
 use crate::{
     datatypes::{
-        logical::{DateArray, TimestampArray},
-        Field, Int32Array, UInt32Array,
+        logical::{DateArray, TimeArray, TimestampArray},
+        Field, Int32Array, Int64Array, TimeUnit, UInt32Array,
     },
     DataType,
 };
@@ -105,6 +105,78 @@ impl TimestampArray {
         Ok(DateArray::new(
             Field::new(self.name(), DataType::Date),
             Int32Array::from((self.name(), Box::new(date_arrow))),
+        ))
+    }
+
+    pub fn time(&self, timeunit_for_cast: &TimeUnit) -> DaftResult<TimeArray> {
+        let physical = self.physical.as_arrow();
+        let DataType::Timestamp(timeunit, tz) = self.data_type() else {
+            unreachable!("Timestamp array must have Timestamp datatype")
+        };
+        let tu = timeunit.to_arrow();
+        let timeunit_for_cast = if timeunit_for_cast == &TimeUnit::Nanoseconds {
+            TimeUnit::Nanoseconds
+        } else {
+            TimeUnit::Microseconds // default to microseconds
+        };
+        let time_arrow = match tz {
+            Some(tz) => match arrow2::temporal_conversions::parse_offset(tz) {
+                Ok(tz) => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+                    physical.iter().map(|ts| {
+                        ts.map(|ts| {
+                            let dt =
+                                arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &tz);
+                            match timeunit_for_cast {
+                                TimeUnit::Nanoseconds => {
+                                    let hour = dt.hour() as i64 * 3_600_000_000_000;
+                                    let minute = dt.minute() as i64 * 60_000_000_000;
+                                    let second = dt.second() as i64 * 1_000_000_000;
+                                    let nanosecond = dt.nanosecond() as i64;
+                                    hour + minute + second + nanosecond
+                                }
+                                _ => {
+                                    let hour = dt.hour() as i64 * 3_600_000_000;
+                                    let minute = dt.minute() as i64 * 60_000_000;
+                                    let second = dt.second() as i64 * 1_000_000;
+                                    let microsecond = dt.nanosecond() as i64 / 1_000;
+                                    hour + minute + second + microsecond
+                                }
+                            }
+                        })
+                    }),
+                )),
+                Err(e) => Err(DaftError::TypeError(format!(
+                    "Cannot parse timezone in Timestamp datatype: {}, error: {}",
+                    tz, e
+                ))),
+            },
+            None => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+                physical.iter().map(|ts| {
+                    ts.map(|ts| {
+                        let dt = arrow2::temporal_conversions::timestamp_to_naive_datetime(*ts, tu);
+                        match timeunit_for_cast {
+                            TimeUnit::Nanoseconds => {
+                                let hour = dt.hour() as i64 * 3_600_000_000_000;
+                                let minute = dt.minute() as i64 * 60_000_000_000;
+                                let second = dt.second() as i64 * 1_000_000_000;
+                                let nanosecond = dt.nanosecond() as i64;
+                                hour + minute + second + nanosecond
+                            }
+                            _ => {
+                                let hour = dt.hour() as i64 * 3_600_000_000;
+                                let minute = dt.minute() as i64 * 60_000_000;
+                                let second = dt.second() as i64 * 1_000_000;
+                                let microsecond = dt.nanosecond() as i64 / 1_000;
+                                hour + minute + second + microsecond
+                            }
+                        }
+                    })
+                }),
+            )),
+        }?;
+        Ok(TimeArray::new(
+            Field::new(self.name(), DataType::Time(timeunit_for_cast)),
+            Int64Array::from((self.name(), Box::new(time_arrow))),
         ))
     }
 

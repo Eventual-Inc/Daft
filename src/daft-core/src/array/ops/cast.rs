@@ -363,6 +363,7 @@ impl TimestampArray {
         match dtype {
             DataType::Timestamp(..) => arrow_logical_cast(self, dtype),
             DataType::Date => Ok(self.date()?.into_series()),
+            DataType::Time(tu) => Ok(self.time(tu)?.into_series()),
             DataType::Utf8 => {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())

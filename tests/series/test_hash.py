@@ -177,8 +177,16 @@ def test_murmur3_32_hash_date():
 
 
 def test_murmur3_32_hash_time():
-    arr = Series.from_pylist([time(22, 31, 8), None])
+    arr = Series.from_pylist([time(22, 31, 8, 0), None])
     assert arr.datatype() == DataType.time("us")
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-662762989, None]
+
+
+def test_murmur3_32_hash_time_nanoseconds():
+    arr = Series.from_pylist([time(22, 31, 8, 0), None])
+    arr = arr.cast(DataType.time("ns"))
+    assert arr.datatype() == DataType.time("ns")
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [-662762989, None]
 

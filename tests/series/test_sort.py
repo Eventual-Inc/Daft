@@ -112,7 +112,8 @@ def test_series_date_sorting() -> None:
     assert taken.to_pylist() == sorted_order[::-1]
 
 
-def test_series_time_sorting() -> None:
+@pytest.mark.parametrize("timeunit", ["us", "ns"])
+def test_series_time_sorting(timeunit) -> None:
     from datetime import time
 
     def time_maker(h, m, s, us):
@@ -125,7 +126,7 @@ def test_series_time_sorting() -> None:
     sorted_order = list(
         map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 2, 4, 5, None, None])
     )
-    s = s.cast(DataType.time("us"))
+    s = s.cast(DataType.time(timeunit))
     s_sorted = s.sort()
     assert len(s_sorted) == len(s)
     assert s_sorted.datatype() == s.datatype()

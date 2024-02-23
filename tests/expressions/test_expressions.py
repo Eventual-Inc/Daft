@@ -26,7 +26,7 @@ from daft.table import MicroPartition
         (None, DataType.null()),
         (Series.from_pylist([1, 2, 3]), DataType.int64()),
         (date(2023, 1, 1), DataType.date()),
-        (time(1, 2, 3), DataType.time(timeunit=TimeUnit.from_str("us"))),
+        (time(1, 2, 3, 4), DataType.time(timeunit=TimeUnit.from_str("us"))),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
         (datetime(2022, 1, 1, tzinfo=pytz.utc), DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="UTC")),
     ],

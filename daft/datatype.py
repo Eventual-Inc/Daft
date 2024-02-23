@@ -195,7 +195,7 @@ class DataType:
 
     @classmethod
     def time(cls, timeunit: TimeUnit | str) -> DataType:
-        """Time DataType."""
+        """Time DataType. Supported timeunits are "us", "ns"."""
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.time(timeunit._timeunit))

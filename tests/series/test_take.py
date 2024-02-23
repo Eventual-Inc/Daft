@@ -45,7 +45,8 @@ def test_series_date_take() -> None:
     assert taken.to_pylist() == days[::-1]
 
 
-def test_series_time_take() -> None:
+@pytest.mark.parametrize("time_unit", ["us", "ns"])
+def test_series_time_take(time_unit) -> None:
     from datetime import time
 
     def time_maker(h, m, s, us):
@@ -55,8 +56,9 @@ def test_series_time_take() -> None:
 
     times = list(map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [5, 4, 1, None, 2, None]))
     s = Series.from_pylist(times)
+    s = s.cast(DataType.time(time_unit))
     taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
-    assert taken.datatype() == DataType.time("us")
+    assert taken.datatype() == DataType.time(time_unit)
     assert taken.to_pylist() == times[::-1]
 
 

@@ -773,3 +773,22 @@ def test_cast_date_to_timestamp():
 
     back = casted.dt.date()
     assert (input == back).to_pylist() == [True]
+
+
+def test_cast_timestamp_to_time():
+    from datetime import datetime, time
+
+    """Microseconds"""
+    input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
+    casted = input.cast(DataType.time("us"))
+    assert casted.to_pylist() == [time(12, 34, 56, 78)]
+
+    """Nanoseconds"""
+    input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
+    casted = input.cast(DataType.time("ns"))
+    assert casted.to_pylist() == [time(12, 34, 56, 78)]
+
+    """Seconds"""
+    input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
+    casted = input.cast(DataType.time("s"))
+    assert casted.to_pylist() == [time(12, 34, 56, 78)]
