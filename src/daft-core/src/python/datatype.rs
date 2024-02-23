@@ -162,6 +162,12 @@ impl PyDataType {
 
     #[staticmethod]
     pub fn time(timeunit: PyTimeUnit) -> PyResult<Self> {
+        if timeunit.timeunit == TimeUnit::Seconds || timeunit.timeunit == TimeUnit::Milliseconds {
+            return Err(PyValueError::new_err(format!(
+                "The time unit for time types must be microseconds or nanoseconds, but got: {}",
+                timeunit.timeunit
+            )));
+        }
         Ok(DataType::Time(timeunit.timeunit).into())
     }
 

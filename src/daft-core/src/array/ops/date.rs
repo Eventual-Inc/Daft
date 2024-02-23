@@ -6,7 +6,7 @@ use crate::{
     DataType,
 };
 use arrow2::compute::arithmetics::ArraySub;
-use chrono::{NaiveDate, Timelike};
+use chrono::{NaiveDate, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
@@ -114,11 +114,12 @@ impl TimestampArray {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
         let tu = timeunit.to_arrow();
-        let timeunit_for_cast = if timeunit_for_cast == &TimeUnit::Nanoseconds {
-            TimeUnit::Nanoseconds
-        } else {
-            TimeUnit::Microseconds // default to microseconds
-        };
+        if !matches!(
+            timeunit_for_cast,
+            TimeUnit::Microseconds | TimeUnit::Nanoseconds
+        ) {
+            return Err(DaftError::ValueError(format!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}")));
+        }
         let time_arrow = match tz {
             Some(tz) => match arrow2::temporal_conversions::parse_offset(tz) {
                 Ok(tz) => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
@@ -126,22 +127,12 @@ impl TimestampArray {
                         ts.map(|ts| {
                             let dt =
                                 arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &tz);
-                            match timeunit_for_cast {
-                                TimeUnit::Nanoseconds => {
-                                    let hour = dt.hour() as i64 * 3_600_000_000_000;
-                                    let minute = dt.minute() as i64 * 60_000_000_000;
-                                    let second = dt.second() as i64 * 1_000_000_000;
-                                    let nanosecond = dt.nanosecond() as i64;
-                                    hour + minute + second + nanosecond
+                                let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
+                                match timeunit_for_cast {
+                                    TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                                    TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                                    _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
                                 }
-                                _ => {
-                                    let hour = dt.hour() as i64 * 3_600_000_000;
-                                    let minute = dt.minute() as i64 * 60_000_000;
-                                    let second = dt.second() as i64 * 1_000_000;
-                                    let microsecond = dt.nanosecond() as i64 / 1_000;
-                                    hour + minute + second + microsecond
-                                }
-                            }
                         })
                     }),
                 )),
@@ -154,28 +145,18 @@ impl TimestampArray {
                 physical.iter().map(|ts| {
                     ts.map(|ts| {
                         let dt = arrow2::temporal_conversions::timestamp_to_naive_datetime(*ts, tu);
+                        let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
                         match timeunit_for_cast {
-                            TimeUnit::Nanoseconds => {
-                                let hour = dt.hour() as i64 * 3_600_000_000_000;
-                                let minute = dt.minute() as i64 * 60_000_000_000;
-                                let second = dt.second() as i64 * 1_000_000_000;
-                                let nanosecond = dt.nanosecond() as i64;
-                                hour + minute + second + nanosecond
-                            }
-                            _ => {
-                                let hour = dt.hour() as i64 * 3_600_000_000;
-                                let minute = dt.minute() as i64 * 60_000_000;
-                                let second = dt.second() as i64 * 1_000_000;
-                                let microsecond = dt.nanosecond() as i64 / 1_000;
-                                hour + minute + second + microsecond
-                            }
+                            TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                            TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                            _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
                         }
                     })
                 }),
             )),
         }?;
         Ok(TimeArray::new(
-            Field::new(self.name(), DataType::Time(timeunit_for_cast)),
+            Field::new(self.name(), DataType::Time(*timeunit_for_cast)),
             Int64Array::from((self.name(), Box::new(time_arrow))),
         ))
     }
