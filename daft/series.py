@@ -598,6 +598,14 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_upper())
 
+    def lstrip(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_lstrip())
+
+    def rstrip(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_rstrip())
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:

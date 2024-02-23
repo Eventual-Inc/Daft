@@ -100,6 +100,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.split
    Expression.str.lower
    Expression.str.upper
+   Expression.str.lstrip
+   Expression.str.rstrip
 
 .. _api-expressions-temporal:
 

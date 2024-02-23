@@ -2,6 +2,8 @@ mod contains;
 mod endswith;
 mod length;
 mod lower;
+mod lstrip;
+mod rstrip;
 mod split;
 mod startswith;
 mod upper;
@@ -10,6 +12,8 @@ use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
+use lstrip::LstripEvaluator;
+use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
@@ -28,6 +32,8 @@ pub enum Utf8Expr {
     Length,
     Lower,
     Upper,
+    Lstrip,
+    Rstrip,
 }
 
 impl Utf8Expr {
@@ -42,6 +48,8 @@ impl Utf8Expr {
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
+            Lstrip => &LstripEvaluator {},
+            Rstrip => &RstripEvaluator {},
         }
     }
 }
@@ -91,6 +99,20 @@ pub fn lower(data: &Expr) -> Expr {
 pub fn upper(data: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Upper),
+        inputs: vec![data.clone()],
+    }
+}
+
+pub fn lstrip(data: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Lstrip),
+        inputs: vec![data.clone()],
+    }
+}
+
+pub fn rstrip(data: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Rstrip),
         inputs: vec![data.clone()],
     }
 }

@@ -754,6 +754,28 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_upper())
 
+    def lstrip(self) -> Expression:
+        """Strip whitespace from the left side of a UTF-8 string
+
+        Example:
+            >>> col("x").str.lstrip()
+
+        Returns:
+            Expression: a String expression which is `self` with leading whitespace stripped
+        """
+        return Expression._from_pyexpr(self._expr.utf8_lstrip())
+
+    def rstrip(self) -> Expression:
+        """Strip whitespace from the right side of a UTF-8 string
+
+        Example:
+            >>> col("x").str.rstrip()
+
+        Returns:
+            Expression: a String expression which is `self` with trailing whitespace stripped
+        """
+        return Expression._from_pyexpr(self._expr.utf8_rstrip())
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
