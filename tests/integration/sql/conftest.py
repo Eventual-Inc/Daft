@@ -14,5 +14,9 @@ TRINO_URL = "trino://user@localhost:8080/tpch"
 )
 @pytest.fixture(scope="session")
 def check_db_server_initialized() -> None:
-    with sqlalchemy.create_engine(TRINO_URL).connect() as conn:
-        conn.execute(sqlalchemy.text("SELECT 1"))
+    try:
+        with sqlalchemy.create_engine(TRINO_URL).connect() as conn:
+            conn.execute(sqlalchemy.text("SELECT 1"))
+    except Exception as e:
+        print(f"Connection failed with exception: {e}")
+        raise
