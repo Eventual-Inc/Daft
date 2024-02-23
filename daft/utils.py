@@ -124,7 +124,7 @@ def execute_sql_query_to_pyarrow_with_connectorx(sql: str, url: str) -> pa.Table
         table = cx.read_sql(conn=url, query=sql, return_type="arrow")
         return table
     except Exception as e:
-        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}") from e
+        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}, error: {e}") from e
 
 
 def execute_sql_query_to_pyarrow_with_sqlalchemy(sql: str, url: str) -> pa.Table:
@@ -139,7 +139,7 @@ def execute_sql_query_to_pyarrow_with_sqlalchemy(sql: str, url: str) -> pa.Table
             table = pa.Table.from_pandas(df)
             return table
     except Exception as e:
-        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}") from e
+        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}, error: {e}") from e
 
 
 def execute_sql_query_to_pyarrow(sql: str, url: str) -> pa.Table:

@@ -145,5 +145,5 @@ def test_sqllite_read_with_all_pushdowns(temp_sqllite_db) -> None:
 
 @pytest.mark.integration()
 def test_sqllite_bad_url() -> None:
-    with pytest.raises(RuntimeError, match="Unable to execute sql"):
+    with pytest.raises(RuntimeError, match="Failed to execute sql"):
         daft.read_sql("SELECT * FROM iris", "sqlite://")
