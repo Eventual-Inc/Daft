@@ -1,12 +1,12 @@
 use crate::{
     datatypes::{
-        logical::{DateArray, TimestampArray},
-        Field, Int32Array, UInt32Array,
+        logical::{DateArray, TimeArray, TimestampArray},
+        Field, Int32Array, Int64Array, TimeUnit, UInt32Array,
     },
     DataType,
 };
 use arrow2::compute::arithmetics::ArraySub;
-use chrono::{NaiveDate, Timelike};
+use chrono::{NaiveDate, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
@@ -105,6 +105,59 @@ impl TimestampArray {
         Ok(DateArray::new(
             Field::new(self.name(), DataType::Date),
             Int32Array::from((self.name(), Box::new(date_arrow))),
+        ))
+    }
+
+    pub fn time(&self, timeunit_for_cast: &TimeUnit) -> DaftResult<TimeArray> {
+        let physical = self.physical.as_arrow();
+        let DataType::Timestamp(timeunit, tz) = self.data_type() else {
+            unreachable!("Timestamp array must have Timestamp datatype")
+        };
+        let tu = timeunit.to_arrow();
+        if !matches!(
+            timeunit_for_cast,
+            TimeUnit::Microseconds | TimeUnit::Nanoseconds
+        ) {
+            return Err(DaftError::ValueError(format!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}")));
+        }
+        let time_arrow = match tz {
+            Some(tz) => match arrow2::temporal_conversions::parse_offset(tz) {
+                Ok(tz) => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+                    physical.iter().map(|ts| {
+                        ts.map(|ts| {
+                            let dt =
+                                arrow2::temporal_conversions::timestamp_to_datetime(*ts, tu, &tz);
+                                let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
+                                match timeunit_for_cast {
+                                    TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                                    TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                                    _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
+                                }
+                        })
+                    }),
+                )),
+                Err(e) => Err(DaftError::TypeError(format!(
+                    "Cannot parse timezone in Timestamp datatype: {}, error: {}",
+                    tz, e
+                ))),
+            },
+            None => Ok(arrow2::array::PrimitiveArray::<i64>::from_iter(
+                physical.iter().map(|ts| {
+                    ts.map(|ts| {
+                        let dt = arrow2::temporal_conversions::timestamp_to_naive_datetime(*ts, tu);
+                        let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
+                        match timeunit_for_cast {
+                            TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                            TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                            _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
+                        }
+                    })
+                }),
+            )),
+        }?;
+        Ok(TimeArray::new(
+            Field::new(self.name(), DataType::Time(*timeunit_for_cast)),
+            Int64Array::from((self.name(), Box::new(time_arrow))),
         ))
     }
 

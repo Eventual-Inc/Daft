@@ -15,6 +15,23 @@ pub fn display_date32(val: i32) -> String {
     format!("{date}")
 }
 
+pub fn display_time64(val: i64, unit: &TimeUnit) -> String {
+    let time = match unit {
+        TimeUnit::Nanoseconds => chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+            (val / 1_000_000_000) as u32,
+            (val % 1_000_000_000) as u32,
+        )
+        .unwrap(),
+        TimeUnit::Microseconds => chrono::NaiveTime::from_num_seconds_from_midnight_opt(
+            (val / 1_000_000) as u32,
+            ((val % 1_000_000) * 1_000) as u32,
+        )
+        .unwrap(),
+        _ => panic!("Unsupported time unit for time64: {unit}"),
+    };
+    format!("{time}")
+}
+
 pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -> String {
     use crate::array::ops::cast::{
         timestamp_to_str_naive, timestamp_to_str_offset, timestamp_to_str_tz,

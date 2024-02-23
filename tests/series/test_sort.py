@@ -112,6 +112,47 @@ def test_series_date_sorting() -> None:
     assert taken.to_pylist() == sorted_order[::-1]
 
 
+@pytest.mark.parametrize("timeunit", ["us", "ns"])
+def test_series_time_sorting(timeunit) -> None:
+    from datetime import time
+
+    def time_maker(h, m, s, us):
+        if us is None:
+            return None
+        return time(h, m, s, us)
+
+    times = list(map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [5, 4, 1, None, 2, None]))
+    s = Series.from_pylist(times)
+    sorted_order = list(
+        map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 2, 4, 5, None, None])
+    )
+    s = s.cast(DataType.time(timeunit))
+    s_sorted = s.sort()
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order
+
+    s_argsorted = s.argsort()
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order
+
+    ## Descending
+    s_sorted = s.sort(descending=True)
+    assert len(s_sorted) == len(s)
+    assert s_sorted.datatype() == s.datatype()
+    assert s_sorted.to_pylist() == sorted_order[::-1]
+
+    s_argsorted = s.argsort(descending=True)
+    assert len(s_argsorted) == len(s)
+
+    taken = s.take(s_argsorted)
+    assert len(taken) == len(s)
+    assert taken.to_pylist() == sorted_order[::-1]
+
+
 def test_series_string_sorting() -> None:
     data = pa.array(["hi", "bye", "thai", None, "2", None, "h", "by"])
     sorted_order = ["2", "by", "bye", "h", "hi", "thai", None, None]

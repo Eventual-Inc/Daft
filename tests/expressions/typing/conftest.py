@@ -226,6 +226,7 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
 
         # --- Across type hierarchies ---
         date_and_numeric = x == DataType.date() and is_numeric(y)
+        time_and_numeric = x == (DataType.time("us") or DataType.time("ns")) and is_numeric(y)
         timestamp_and_big_numeric = x._is_temporal_type() and is_numeric_bitwidth_gte_32(y)
 
         if (
@@ -234,6 +235,7 @@ def has_supertype(dt1: DataType, dt2: DataType) -> bool:
             or both_numeric
             or both_temporal
             or date_and_numeric
+            or time_and_numeric
             or timestamp_and_big_numeric
         ):
             return True

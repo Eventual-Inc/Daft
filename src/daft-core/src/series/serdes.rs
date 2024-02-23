@@ -10,7 +10,7 @@ use crate::{
     },
     datatypes::logical::{
         DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+        FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
     },
     with_match_daft_types, DataType, IntoSeries, Series,
 };
@@ -227,7 +227,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 .into_series(),
                         )
                     }
-                    Time(..) => panic!("Time Deserialization not implemented"),
+                    Time(..) => {
+                        type PType = <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            TimeArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
                     Duration(..) => {
                         type PType = <<DurationType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;

@@ -161,6 +161,20 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn time(timeunit: PyTimeUnit) -> PyResult<Self> {
+        if !matches!(
+            timeunit.timeunit,
+            TimeUnit::Microseconds | TimeUnit::Nanoseconds
+        ) {
+            return Err(PyValueError::new_err(format!(
+                "The time unit for time types must be microseconds or nanoseconds, but got: {}",
+                timeunit.timeunit
+            )));
+        }
+        Ok(DataType::Time(timeunit.timeunit).into())
+    }
+
+    #[staticmethod]
     pub fn timestamp(timeunit: PyTimeUnit, timezone: Option<String>) -> PyResult<Self> {
         Ok(DataType::Timestamp(timeunit.timeunit, timezone).into())
     }

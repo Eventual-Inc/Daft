@@ -4,7 +4,7 @@ use arrow2::array;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, Decimal128Array, DurationArray, TimestampArray},
+        logical::{DateArray, Decimal128Array, DurationArray, TimeArray, TimestampArray},
         BinaryArray, BooleanArray, DaftNumericType, NullArray, Utf8Array,
     },
 };
@@ -65,5 +65,6 @@ impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
 
 impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
+impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);
