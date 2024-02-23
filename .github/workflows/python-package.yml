@@ -92,7 +92,6 @@ jobs:
         # cargo llvm-cov --no-run --lcov --output-path report-output/rust-coverage-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}.lcov
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Build library and Test with pytest (windows)
       if: ${{ (matrix.os == 'windows') }}
       run: |
@@ -222,7 +221,6 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -298,7 +296,6 @@ jobs:
         pytest tests/integration/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -395,7 +392,6 @@ jobs:
         pytest tests/integration/io -m 'integration' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() }}
@@ -475,7 +471,6 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}

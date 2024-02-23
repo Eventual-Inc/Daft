@@ -1,6 +1,8 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
+#![feature(trait_upcasting)]
 use std::{
+    any::Any,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
@@ -536,7 +538,7 @@ impl Display for PartitionTransform {
     }
 }
 
-pub trait ScanOperator: Send + Sync + Debug {
+pub trait ScanOperator: Send + Sync + Debug + Any {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
 
@@ -544,6 +546,8 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
+    // fn is_eq(&self, _: &dyn ScanOperator) -> Option<bool>;
+    // fn hash_op(&self, state: &mut dyn Hasher) -> Option<()>;
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
@@ -577,6 +581,9 @@ impl Hash for ScanOperatorRef {
 impl PartialEq<ScanOperatorRef> for ScanOperatorRef {
     fn eq(&self, other: &ScanOperatorRef) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+        // self.0
+        //     .is_eq(other.0.as_ref())
+        //     .unwrap_or_else(|| Arc::ptr_eq(&self.0, &other.0))
     }
 }
 
@@ -607,6 +614,15 @@ impl ScanExternalInfo {
             scan_op,
             source_schema,
             partitioning_keys,
+            pushdowns,
+        }
+    }
+
+    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
+        Self {
+            scan_op: self.scan_op.clone(),
+            source_schema: self.source_schema.clone(),
+            partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,
         }
     }

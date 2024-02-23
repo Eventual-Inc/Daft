@@ -50,6 +50,19 @@ impl ScanOperator for AnonymousScanOperator {
         false
     }
 
+    // fn is_eq(&self, other: &dyn ScanOperator) -> Option<bool> {
+    //     Some(
+    //         (other as &dyn Any)
+    //             .downcast_ref::<Self>()
+    //             .map(|o| self == o)
+    //             .unwrap_or(false),
+    //     )
+    // }
+
+    // fn hash_op(&self, state: &mut dyn Hasher) -> Option<()> {
+    //     Some(self.hash(state))
+    // }
+
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![
             "AnonymousScanOperator".to_string(),

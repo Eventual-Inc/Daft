@@ -318,7 +318,7 @@ mod tests {
     use crate::{
         logical_ops::{Filter, Project},
         optimization::rules::{ApplyOrder, OptimizerRule, Transformed},
-        test::dummy_scan_node,
+        test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
 
@@ -336,7 +336,7 @@ mod tests {
             OptimizerConfig::new(5),
         );
         let plan: Arc<LogicalPlan> =
-            dummy_scan_node(vec![Field::new("a", DataType::Int64)]).build();
+            dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)])).build();
         let mut pass_count = 0;
         let mut did_transform = false;
         optimizer.optimize(plan.clone(), |new_plan, _, _, transformed, _| {
@@ -391,7 +391,7 @@ mod tests {
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+        let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .project(proj_exprs, Default::default())?
             .build();
         let mut pass_count = 0;
@@ -426,7 +426,7 @@ mod tests {
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
-        let plan = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+        let plan = dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]))
             .project(proj_exprs, Default::default())?
             .build();
         let mut pass_count = 0;
@@ -438,51 +438,6 @@ mod tests {
         assert!(did_transform);
         assert_eq!(pass_count, 4);
         Ok(())
-    }
-
-    #[derive(Debug)]
-    struct RotateProjection {
-        reverse_first: Mutex<bool>,
-    }
-
-    impl RotateProjection {
-        pub fn new(reverse_first: bool) -> Self {
-            Self {
-                reverse_first: Mutex::new(reverse_first),
-            }
-        }
-    }
-
-    impl OptimizerRule for RotateProjection {
-        fn apply_order(&self) -> ApplyOrder {
-            ApplyOrder::TopDown
-        }
-
-        fn try_optimize(
-            &self,
-            plan: Arc<LogicalPlan>,
-        ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-            let project = match plan.as_ref() {
-                LogicalPlan::Project(project) => project.clone(),
-                _ => return Ok(Transformed::No(plan)),
-            };
-            let mut exprs = project.projection.clone();
-            let mut reverse = self.reverse_first.lock().unwrap();
-            if *reverse {
-                exprs.reverse();
-                *reverse = false;
-            } else {
-                exprs.rotate_left(1);
-            }
-            Ok(Transformed::Yes(
-                LogicalPlan::from(Project::try_new(
-                    project.input.clone(),
-                    exprs,
-                    project.resource_request.clone(),
-                )?)
-                .into(),
-            ))
-        }
     }
 
     /// Tests that the optimizer applies multiple rule batches.
@@ -517,16 +472,16 @@ mod tests {
             ],
             OptimizerConfig::new(20),
         );
-        let fields = vec![Field::new("a", DataType::Int64)];
         let proj_exprs = vec![
             col("a") + lit(1),
             (col("a") + lit(2)).alias("b"),
             (col("a") + lit(3)).alias("c"),
         ];
         let filter_predicate = col("a").lt(&lit(2));
-        let plan = dummy_scan_node(fields.clone())
-            .project(proj_exprs, Default::default())?
-            .filter(filter_predicate)?
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj_exprs.clone(), Default::default())?
+            .filter(filter_predicate.clone())?
             .build();
         let mut pass_count = 0;
         let mut did_transform = false;
@@ -537,11 +492,24 @@ mod tests {
         assert!(did_transform);
         // 3 + 2 + 1 = 6
         assert_eq!(pass_count, 6);
-        let expected = "\
-        Filter: [[[col(a) < lit(2)] | lit(false)] | lit(false)] & lit(true)\
-        \n  Project: col(a) + lit(3) AS c, col(a) + lit(1), col(a) + lit(2) AS b\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, Native storage config = { Use multithreading = true }, Output schema = a#Int64";
-        assert_eq!(opt_plan.repr_indent(), expected);
+
+        let mut new_proj_exprs = proj_exprs.clone();
+        new_proj_exprs.rotate_left(2);
+        let new_pred = filter_predicate
+            .or(&lit(false))
+            .or(&lit(false))
+            .and(&lit(true));
+        let expected = dummy_scan_node(scan_op)
+            .project(new_proj_exprs, Default::default())?
+            .filter(new_pred)?
+            .build();
+        assert_eq!(
+            opt_plan,
+            expected,
+            "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false)
+        );
         Ok(())
     }
 
@@ -599,6 +567,51 @@ mod tests {
             let new_predicate = filter.predicate.and(&lit(true));
             Ok(Transformed::Yes(
                 LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
+            ))
+        }
+    }
+
+    #[derive(Debug)]
+    struct RotateProjection {
+        reverse_first: Mutex<bool>,
+    }
+
+    impl RotateProjection {
+        pub fn new(reverse_first: bool) -> Self {
+            Self {
+                reverse_first: Mutex::new(reverse_first),
+            }
+        }
+    }
+
+    impl OptimizerRule for RotateProjection {
+        fn apply_order(&self) -> ApplyOrder {
+            ApplyOrder::TopDown
+        }
+
+        fn try_optimize(
+            &self,
+            plan: Arc<LogicalPlan>,
+        ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+            let project = match plan.as_ref() {
+                LogicalPlan::Project(project) => project.clone(),
+                _ => return Ok(Transformed::No(plan)),
+            };
+            let mut exprs = project.projection.clone();
+            let mut reverse = self.reverse_first.lock().unwrap();
+            if *reverse {
+                exprs.reverse();
+                *reverse = false;
+            } else {
+                exprs.rotate_left(1);
+            }
+            Ok(Transformed::Yes(
+                LogicalPlan::from(Project::try_new(
+                    project.input.clone(),
+                    exprs,
+                    project.resource_request.clone(),
+                )?)
+                .into(),
             ))
         }
     }

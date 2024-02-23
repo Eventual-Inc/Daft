@@ -13,7 +13,7 @@ use crate::{
     storage_config::StorageConfig,
     DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug)]
 pub struct GlobScanOperator {
     glob_paths: Vec<String>,
     file_format_config: Arc<FileFormatConfig>,
@@ -235,6 +235,15 @@ impl ScanOperator for GlobScanOperator {
     fn can_absorb_limit(&self) -> bool {
         false
     }
+
+    // fn is_eq(&self, other: &dyn ScanOperator) -> Option<bool> {
+    //     Some(
+    //         (other as &dyn Any)
+    //             .downcast_ref::<Self>()
+    //             .map(|o| self == o)
+    //             .unwrap_or(false),
+    //     )
+    // }
 
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![

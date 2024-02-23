@@ -14,7 +14,7 @@ from daft.daft import (
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from daft.io.common import _get_tabular_files_scan
+from daft.io.common import get_tabular_files_scan
 
 
 @PublicAPI
@@ -56,5 +56,5 @@ def read_json(
         storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
     else:
         storage_config = StorageConfig.python(PythonStorageConfig(io_config=io_config))
-    builder = _get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
+    builder = get_tabular_files_scan(path, schema_hints, file_format_config, storage_config=storage_config)
     return DataFrame(builder)

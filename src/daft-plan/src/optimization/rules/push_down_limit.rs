@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_scan::ScanExternalInfo;
 
 use crate::{
     logical_ops::{Limit as LogicalLimit, Source},
-    source_info::{ExternalInfo, SourceInfo},
+    source_info::SourceInfo,
     LogicalPlan,
 };
 
@@ -57,27 +56,21 @@ impl OptimizerRule for PushDownLimit {
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::ExternalInfo(external_info)
                                 if let Some(existing_limit) =
-                                    external_info.pushdowns().limit && existing_limit <= limit =>
+                                    external_info.pushdowns.limit && existing_limit <= limit =>
                             {
                                 Ok(Transformed::No(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::ExternalInfo(external_info) => {
                                 let new_pushdowns =
-                                    external_info.pushdowns().with_limit(Some(limit));
+                                    external_info.pushdowns.with_limit(Some(limit));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
                                 let new_source = LogicalPlan::Source(Source::new(
                                     source.output_schema.clone(),
                                     SourceInfo::ExternalInfo(new_external_info).into(),
                                 ))
                                 .into();
-                                let out_plan =
-                                    match external_info {
-                                        ExternalInfo::Scan(ScanExternalInfo {
-                                            scan_op, ..
-                                        }) if scan_op.0.can_absorb_limit() => new_source,
-                                        _ => plan.with_new_children(&[new_source]).into(),
-                                    };
+                                let out_plan = if external_info.scan_op.0.can_absorb_limit() { new_source } else { plan.with_new_children(&[new_source]).into() };
                                 Ok(Transformed::Yes(out_plan))
                             }
                         }
@@ -120,46 +113,26 @@ mod tests {
     use daft_core::{datatypes::Field, schema::Schema, DataType};
     use daft_dsl::col;
     use daft_scan::Pushdowns;
+    use rstest::rstest;
     use std::sync::Arc;
 
     #[cfg(feature = "python")]
     use pyo3::Python;
 
     use crate::{
-        optimization::{
-            optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownLimit,
-            Optimizer,
-        },
-        test::{
-            dummy_scan_node, dummy_scan_node_with_pushdowns,
-            dummy_scan_operator_node_with_pushdowns,
-        },
+        optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},
+        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes
-    /// the provided plan with said optimizer, and compares the optimized plan's repr with
-    /// the provided expected repr.
-    fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
-        let optimizer = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![Box::new(PushDownLimit::new())],
-                RuleExecutionStrategy::Once,
-            )],
-            Default::default(),
-        );
-        let optimized_plan = optimizer
-            .optimize_with_rules(
-                optimizer.rule_batches[0].rules.as_slice(),
-                plan.clone(),
-                &optimizer.rule_batches[0].order,
-            )?
-            .unwrap()
-            .clone();
-        assert_eq!(optimized_plan.repr_indent(), expected);
-
-        Ok(())
+    /// the provided plan with said optimizer, and compares the optimized plan with
+    /// the provided expected plan.
+    fn assert_optimized_plan_eq(
+        plan: Arc<LogicalPlan>,
+        expected: Arc<LogicalPlan>,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownLimit::new())])
     }
 
     /// Tests that Limit pushes into external Source.
@@ -167,122 +140,101 @@ mod tests {
     /// Limit-Source -> Source[with_limit]
     #[test]
     fn limit_pushes_into_external_source() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+        let limit = 5;
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .limit(5, false)?
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
         .build();
-        let expected = "\
-        Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
-    /// Tests that Limit does not push into external Source with existing smaller limit.
+    /// Tests that Limit does not push into scan with existing smaller limit.
     ///
     /// Limit-Source[existing_limit] -> Source[existing_limit]
     #[test]
-    fn limit_does_not_push_into_external_source_if_smaller_limit() -> DaftResult<()> {
+    fn limit_does_not_push_into_scan_if_smaller_limit() -> DaftResult<()> {
+        let limit = 5;
+        let existing_limit = 3;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
         let plan = dummy_scan_node_with_pushdowns(
-            vec![
-                Field::new("a", DataType::Int64),
-                Field::new("b", DataType::Utf8),
-            ],
-            Pushdowns::default().with_limit(Some(3)),
+            scan_op.clone(),
+            Pushdowns::default().with_limit(Some(existing_limit)),
         )
-        .limit(5, false)?
+        .limit(limit, false)?
         .build();
-        let expected = "\
-        Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 3, Output schema = a#Int64, b#Utf8";
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(existing_limit)),
+        )
+        .limit(limit, false)?
+        .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
-    /// Tests that Limit does not push into external Source with existing smaller limit.
-    ///
-    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
-    #[test]
-    fn limit_folds_with_smaller_limit() -> DaftResult<()> {
-        let plan = dummy_scan_node_with_pushdowns(
-            vec![
-                Field::new("a", DataType::Int64),
-                Field::new("b", DataType::Utf8),
-            ],
-            Pushdowns::default(),
-        )
-        .limit(5, false)?
-        .limit(10, false)?
-        .build();
-        let expected = "\
-        Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that Limit does not push into external Source with existing smaller limit.
-    ///
-    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
-    #[test]
-    fn limit_folds_with_large_limit() -> DaftResult<()> {
-        let plan = dummy_scan_node_with_pushdowns(
-            vec![
-                Field::new("a", DataType::Int64),
-                Field::new("b", DataType::Utf8),
-            ],
-            Pushdowns::default().with_limit(Some(20)),
-        )
-        .limit(10, false)?
-        .limit(5, false)?
-        .build();
-        let expected = "\
-        Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that Limit does push into external Source with existing larger limit.
+    /// Tests that Limit does push into scan with existing larger limit.
     ///
     /// Limit-Source[existing_limit] -> Source[new_limit]
     #[test]
-    fn limit_does_push_into_external_source_if_larger_limit() -> DaftResult<()> {
+    fn limit_does_push_into_scan_if_larger_limit() -> DaftResult<()> {
+        let limit = 5;
+        let existing_limit = 10;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
         let plan = dummy_scan_node_with_pushdowns(
-            vec![
-                Field::new("a", DataType::Int64),
-                Field::new("b", DataType::Utf8),
-            ],
-            Pushdowns::default().with_limit(Some(10)),
+            scan_op.clone(),
+            Pushdowns::default().with_limit(Some(existing_limit)),
         )
-        .limit(5, false)?
+        .limit(limit, false)?
         .build();
-        let expected = "\
-        Limit: 5\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
-    /// Tests that Limit does push into external Source with existing larger limit.
+    /// Tests that multiple adjacent Limits fold into the smallest limit.
     ///
-    /// Limit-Source[existing_limit] -> Source[new_limit]
-    #[test]
-    fn limit_does_push_into_scan_operator_if_larger_limit() -> DaftResult<()> {
-        let plan = dummy_scan_operator_node_with_pushdowns(
-            vec![
-                Field::new("a", DataType::Int64),
-                Field::new("b", DataType::Utf8),
-            ],
-            Pushdowns::default().with_limit(Some(10)),
+    /// Limit[x]-Limit[y] -> Limit[min(x,y)]
+    #[rstest]
+    fn limit_folds_with_smaller_limit(
+        #[values(false, true)] smaller_first: bool,
+    ) -> DaftResult<()> {
+        let smaller_limit = 5;
+        let limit = 10;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .limit(if smaller_first { smaller_limit } else { limit }, false)?
+            .limit(if smaller_first { limit } else { smaller_limit }, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(smaller_limit as usize)),
         )
-        .limit(5, false)?
+        .limit(smaller_limit, false)?
         .build();
-        let expected = "\
-        Limit: 5\
-        \n  AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -299,10 +251,7 @@ mod tests {
             LogicalPlanBuilder::in_memory_scan("foo", py_obj, schema, Default::default(), 5)?
                 .limit(5, false)?
                 .build();
-        let expected = "\
-        Limit: 5\
-        \n . Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
-        assert_optimized_plan_eq(plan, expected)?;
+        assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }
 
@@ -311,21 +260,29 @@ mod tests {
     /// Limit-Repartition-Source -> Repartition-Source[with_limit]
     #[test]
     fn limit_commutes_with_repartition() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+        let limit = 5;
+        let num_partitions = Some(1);
+        let partition_by = vec![col("a")];
+        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .repartition(
-            Some(1),
-            vec![col("a")],
-            PartitionSchemeConfig::Hash(Default::default()),
-        )?
-        .limit(5, false)?
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .repartition(
+                num_partitions,
+                partition_by.clone(),
+                partition_scheme_config.clone(),
+            )?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .repartition(num_partitions, partition_by, partition_scheme_config)?
         .build();
-        let expected = "\
-        Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
-        \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -335,17 +292,23 @@ mod tests {
     /// Limit-Project-Source -> Project-Source[with_limit]
     #[test]
     fn limit_commutes_with_projection() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+        let limit = 5;
+        let proj = vec![col("a")];
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .project(vec![col("a")], Default::default())?
-        .limit(5, false)?
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj.clone(), Default::default())?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .project(proj, Default::default())?
         .build();
-        let expected = "\
-        Project: col(a)\
-        \n  Limit: 5\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Limit pushdown = 5, Output schema = a#Int64, b#Utf8";
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

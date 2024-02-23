@@ -33,11 +33,6 @@ impl PySchema {
         Ok(new_schema.into())
     }
 
-    pub fn apply_hints(&self, hints: &PySchema) -> PyResult<PySchema> {
-        let new_schema = Arc::new(self.schema.apply_hints(&hints.schema)?);
-        Ok(new_schema.into())
-    }
-
     pub fn eq(&self, other: &PySchema) -> PyResult<bool> {
         Ok(self.schema.fields.eq(&other.schema.fields))
     }

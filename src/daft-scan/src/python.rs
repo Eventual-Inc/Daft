@@ -190,6 +190,10 @@ pub mod pylib {
             self.can_absorb_select
         }
 
+        // fn is_eq(&self, _: &dyn ScanOperator) -> Option<bool> {
+        //     None
+        // }
+
         fn multiline_display(&self) -> Vec<String> {
             let lines = vec![format!("PythonScanOperator: {}", self.display_name)];
             lines

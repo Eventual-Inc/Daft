@@ -53,61 +53,54 @@ mod tests {
 
     use crate::{
         optimization::{
-            optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::drop_repartition::DropRepartition,
-            Optimizer,
+            rules::drop_repartition::DropRepartition, test::assert_optimized_plan_with_rules_eq,
         },
-        test::dummy_scan_node,
+        test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the DropRepartition rule registered, optimizes
-    /// the provided plan with said optimizer, and compares the optimized plan's repr with
-    /// the provided expected repr.
-    fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
-        let optimizer = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![Box::new(DropRepartition::new())],
-                RuleExecutionStrategy::Once,
-            )],
-            Default::default(),
-        );
-        let optimized_plan = optimizer
-            .optimize_with_rules(
-                optimizer.rule_batches[0].rules.as_slice(),
-                plan.clone(),
-                &optimizer.rule_batches[0].order,
-            )?
-            .unwrap()
-            .clone();
-        assert_eq!(optimized_plan.repr_indent(), expected);
-
-        Ok(())
+    /// the provided plan with said optimizer, and compares the optimized plan with
+    /// the provided expected plan.
+    fn assert_optimized_plan_eq(
+        plan: Arc<LogicalPlan>,
+        expected: Arc<LogicalPlan>,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(DropRepartition::new())])
     }
 
-    /// Tests that DropRepartition does drops the upstream Repartition in back-to-back Repartitions if .
+    /// Tests that DropRepartition does drops the upstream Repartition in back-to-back Repartitions.
     ///
     /// Repartition1-Repartition2 -> Repartition1
     #[test]
     fn repartition_dropped_in_back_to_back() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+        let num_partitions1 = Some(10);
+        let num_partitions2 = Some(5);
+        let partition_by = vec![col("a")];
+        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .repartition(
-            Some(10),
-            vec![col("a")],
-            PartitionSchemeConfig::Hash(Default::default()),
-        )?
-        .repartition(
-            Some(5),
-            vec![col("a")],
-            PartitionSchemeConfig::Hash(Default::default()),
-        )?
-        .build();
-        let expected = "\
-        Repartition: Scheme = Hash, Number of partitions = 5, Partition by = col(a)\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .repartition(
+                num_partitions1,
+                partition_by.clone(),
+                partition_scheme_config.clone(),
+            )?
+            .repartition(
+                num_partitions2,
+                partition_by.clone(),
+                partition_scheme_config.clone(),
+            )?
+            .build();
+        let expected = dummy_scan_node(scan_op)
+            .repartition(
+                num_partitions2,
+                partition_by.clone(),
+                partition_scheme_config.clone(),
+            )?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
