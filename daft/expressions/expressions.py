@@ -340,8 +340,8 @@ class Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
-    def _any_value(self) -> Expression:
-        expr = self._expr.any_value()
+    def _any_value(self, ignore_nulls=False) -> Expression:
+        expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
     def _agg_list(self) -> Expression:

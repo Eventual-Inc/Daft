@@ -137,8 +137,8 @@ pub trait DaftCompareAggable {
 
 pub trait DaftAnyValueAggable {
     type Output;
-    fn any_value(&self) -> Self::Output;
-    fn grouped_any_value(&self, groups: &GroupIndices) -> Self::Output;
+    fn any_value(&self, ignore_nulls: bool) -> Self::Output;
+    fn grouped_any_value(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output;
 }
 
 pub trait DaftListAggable {

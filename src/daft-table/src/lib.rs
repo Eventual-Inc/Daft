@@ -325,7 +325,9 @@ impl Table {
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
-            AnyValue(expr) => Series::any_value(&self.eval_expression(expr)?, groups),
+            AnyValue(expr, ignore_nulls) => {
+                Series::any_value(&self.eval_expression(expr)?, groups, *ignore_nulls)
+            }
             List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
             Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
             MapGroups { .. } => Err(DaftError::ValueError(

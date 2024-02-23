@@ -441,8 +441,22 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                         .into()));
                                 final_exprs.push(Column(max_of_max_id.clone()).alias(output_name));
                             }
-                            AnyValue(_e) => {
-                                todo!()
+                            AnyValue(e, ignore_nulls) => {
+                                let any_id = agg_expr.semantic_id(&schema).id;
+                                let any_of_any_id =
+                                    AnyValue(Column(any_id.clone()).into(), *ignore_nulls)
+                                        .semantic_id(&schema)
+                                        .id;
+                                first_stage_aggs.entry(any_id.clone()).or_insert(AnyValue(
+                                    e.alias(any_id.clone()).clone().into(),
+                                    *ignore_nulls,
+                                ));
+                                second_stage_aggs
+                                    .entry(any_of_any_id.clone())
+                                    .or_insert(AnyValue(
+                                        Column(any_id.clone()).alias(any_of_any_id.clone()).into(),
+                                        *ignore_nulls,
+                                    ));
                             }
                             List(e) => {
                                 let list_id = agg_expr.semantic_id(&schema).id;
