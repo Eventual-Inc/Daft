@@ -546,8 +546,6 @@ pub trait ScanOperator: Send + Sync + Debug + Any {
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
-    // fn is_eq(&self, _: &dyn ScanOperator) -> Option<bool>;
-    // fn hash_op(&self, state: &mut dyn Hasher) -> Option<()>;
     fn to_scan_tasks(
         &self,
         pushdowns: Pushdowns,
@@ -581,9 +579,6 @@ impl Hash for ScanOperatorRef {
 impl PartialEq<ScanOperatorRef> for ScanOperatorRef {
     fn eq(&self, other: &ScanOperatorRef) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
-        // self.0
-        //     .is_eq(other.0.as_ref())
-        //     .unwrap_or_else(|| Arc::ptr_eq(&self.0, &other.0))
     }
 }
 

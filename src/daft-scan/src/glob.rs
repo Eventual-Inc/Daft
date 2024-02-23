@@ -236,15 +236,6 @@ impl ScanOperator for GlobScanOperator {
         false
     }
 
-    // fn is_eq(&self, other: &dyn ScanOperator) -> Option<bool> {
-    //     Some(
-    //         (other as &dyn Any)
-    //             .downcast_ref::<Self>()
-    //             .map(|o| self == o)
-    //             .unwrap_or(false),
-    //     )
-    // }
-
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![
             "GlobScanOperator".to_string(),
