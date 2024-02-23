@@ -232,6 +232,72 @@ def test_table_sum_badtype() -> None:
         daft_table = daft_table.eval_expression_list([col("a")._sum()])
 
 
+test_micropartition_any_value_cases = [
+    (
+        MicroPartition.from_pydict({"a": [None, 1, None, None], "b": ["a", "a", "b", "b"]}),  # 1 table
+        {"a": True, "b": True},
+        {"a": False, "b": True},
+    ),
+    (
+        MicroPartition.concat(
+            [
+                MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+            ]
+        ),  # 2 tables
+        {"a": True, "b": True},
+        {"a": True, "b": False},
+    ),
+    (
+        MicroPartition.concat(
+            [
+                MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
+                MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+                MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
+            ]
+        ),  # 3 tables
+        {"a": True, "b": True},
+        {"a": False, "b": False},
+    ),
+]
+
+
+@pytest.mark.parametrize("mp,expected_nulls,expected_no_nulls", test_micropartition_any_value_cases)
+def test_micropartition_any_value(mp, expected_nulls, expected_no_nulls):
+    any_values = mp.agg([col("a")._any_value(False)], group_by=[col("b")]).to_pydict()
+    assert len(any_values["b"]) == len(expected_nulls)
+    for k, v in zip(any_values["b"], any_values["a"]):
+        assert expected_nulls[k] or v is not None
+
+    any_values = mp.agg([col("a")._any_value(True)], group_by=[col("b")]).to_pydict()
+    assert len(any_values["b"]) == len(expected_no_nulls)
+    for k, v in zip(any_values["b"], any_values["a"]):
+        assert expected_no_nulls[k] or v is not None
+
+
+test_table_any_value_cases = [
+    ({"a": [1], "b": ["a"]}, {"a": False}, {"a": False}),
+    ({"a": [None], "b": ["a"]}, {"a": True}, {"a": True}),
+    ({"a": [None, 1], "b": ["a", "a"]}, {"a": True}, {"a": False}),
+    ({"a": [1, None, 2], "b": ["a", "b", "b"]}, {"a": False, "b": True}, {"a": False, "b": False}),
+]
+
+
+@pytest.mark.parametrize("case,expected_nulls,expected_no_nulls", test_table_any_value_cases)
+def test_table_any_value(case, expected_nulls, expected_no_nulls):
+    daft_table = MicroPartition.from_pydict(case)
+
+    any_values = daft_table.agg([col("a")._any_value(False)], group_by=[col("b")]).to_pydict()
+    assert len(any_values["b"]) == len(expected_nulls)
+    for k, v in zip(any_values["b"], any_values["a"]):
+        assert expected_nulls[k] or v is not None
+
+    any_values = daft_table.agg([col("a")._any_value(True)], group_by=[col("b")]).to_pydict()
+    assert len(any_values["b"]) == len(expected_no_nulls)
+    for k, v in zip(any_values["b"], any_values["a"]):
+        assert expected_no_nulls[k] or v is not None
+
+
 test_table_agg_global_cases = [
     (
         [],

@@ -60,6 +60,9 @@ where
 
 macro_rules! impl_daft_any_value {
     ($arr:ident) => {
+
+        // there is a strange bug in the formatter which adds extra indentations to any_value
+        #[rustfmt::skip]
         impl DaftAnyValueAggable for $arr {
             type Output = DaftResult<$arr>;
 
