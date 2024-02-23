@@ -12,7 +12,6 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
-from sqlalchemy import create_engine, text
 
 from daft.context import get_context
 from daft.daft import (
@@ -44,6 +43,7 @@ from daft.runners.partitioning import (
 )
 from daft.series import Series
 from daft.table import MicroPartition
+from daft.utils import execute_sql_query_to_pyarrow
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -244,16 +244,7 @@ def read_sql(
     if offset is not None:
         sql = f"{sql} OFFSET {offset}"
 
-    with create_engine(url).connect() as connection:
-        result = connection.execute(text(sql))
-        cursor = result.cursor
-
-        rows = cursor.fetchall()
-        columns = [column_description[0] for column_description in cursor.description]
-
-        pydict = {column: [row[i] for row in rows] for i, column in enumerate(columns)}
-
-    mp = MicroPartition.from_pydict(pydict)
+    mp = MicroPartition.from_arrow(execute_sql_query_to_pyarrow(sql, url))
     if predicate is not None:
         mp = mp.filter(ExpressionsProjection([predicate]))
 

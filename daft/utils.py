@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import pickle
 import random
 import statistics
 from typing import Any, Callable
 
 import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
@@ -111,3 +114,46 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
     from daft.context import get_context
 
     return hasattr(pa, "fixed_shape_tensor") and (not get_context().is_ray_runner or ARROW_VERSION >= (13, 0, 0))
+
+
+def execute_sql_query_to_pyarrow_with_connectorx(sql: str, url: str) -> pa.Table:
+    import connectorx as cx
+
+    logger.info(f"Using connectorx to execute sql: {sql}")
+    try:
+        table = cx.read_sql(conn=url, query=sql, return_type="arrow")
+        return table
+    except Exception as e:
+        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}") from e
+
+
+def execute_sql_query_to_pyarrow_with_sqlalchemy(sql: str, url: str) -> pa.Table:
+    import pandas as pd
+    from sqlalchemy import create_engine, text
+
+    logger.info(f"Using sqlalchemy to execute sql: {sql}")
+    try:
+        with create_engine(url).connect() as connection:
+            result = connection.execute(text(sql))
+            df = pd.DataFrame(result.fetchall(), columns=result.keys())
+            table = pa.Table.from_pandas(df)
+            return table
+    except Exception as e:
+        raise RuntimeError(f"Failed to execute sql: {sql} with url: {url}") from e
+
+
+def execute_sql_query_to_pyarrow(sql: str, url: str) -> pa.Table:
+    # Supported DBs extracted from here https://github.com/sfu-db/connector-x/tree/7b3147436b7e20b96691348143d605e2249d6119?tab=readme-ov-file#sources
+    if (
+        url.startswith("postgres")
+        or url.startswith("mysql")
+        or url.startswith("mssql")
+        or url.startswith("oracle")
+        or url.startswith("bigquery")
+        or url.startswith("sqlite")
+        or url.startswith("clickhouse")
+        or url.startswith("redshift")
+    ):
+        return execute_sql_query_to_pyarrow_with_connectorx(sql, url)
+    else:
+        return execute_sql_query_to_pyarrow_with_sqlalchemy(sql, url)

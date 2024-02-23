@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import logging
 import math
 from collections.abc import Iterator
-
-import pyarrow as pa
-from sqlalchemy import create_engine, text
 
 from daft.daft import (
     DatabaseSourceConfig,
@@ -16,8 +12,7 @@ from daft.daft import (
 )
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
-
-logger = logging.getLogger(__name__)
+from daft.utils import execute_sql_query_to_pyarrow
 
 
 class SQLScanOperator(ScanOperator):
@@ -38,37 +33,23 @@ class SQLScanOperator(ScanOperator):
 
     def _check_limit_supported(self) -> bool:
         try:
-            with create_engine(self.url).connect() as connection:
-                connection.execute(text(f"SELECT * FROM ({self.sql}) AS subquery LIMIT 1 OFFSET 0"))
-
+            execute_sql_query_to_pyarrow(f"SELECT * FROM ({self.sql}) AS subquery LIMIT 1 OFFSET 0", self.url)
             return True
         except Exception:
             return False
 
     def _get_schema(self) -> Schema:
-        with create_engine(self.url).connect() as connection:
-            sql = f"SELECT * FROM ({self.sql}) AS subquery"
-            if self._limit_supported:
-                sql += " LIMIT 1 OFFSET 0"
+        sql = f"SELECT * FROM ({self.sql}) AS subquery"
+        if self._limit_supported:
+            sql += " LIMIT 1 OFFSET 0"
 
-            result = connection.execute(text(sql))
-
-            # Fetch the cursor from the result proxy to access column descriptions
-            cursor = result.cursor
-
-            rows = cursor.fetchall()
-            columns = [column_description[0] for column_description in cursor.description]
-
-            pydict = {column: [row[i] for row in rows] for i, column in enumerate(columns)}
-            pa_table = pa.Table.from_pydict(pydict)
-
-            return Schema.from_pyarrow_schema(pa_table.schema)
+        pa_table = execute_sql_query_to_pyarrow(sql, self.url)
+        return Schema.from_pyarrow_schema(pa_table.schema)
 
     def _get_num_rows(self) -> int:
-        with create_engine(self.url).connect() as connection:
-            result = connection.execute(text(f"SELECT COUNT(*) FROM ({self.sql}) AS subquery"))
-            cursor = result.cursor
-            return cursor.fetchone()[0]
+        sql = f"SELECT COUNT(*) FROM ({self.sql}) AS subquery"
+        pa_table = execute_sql_query_to_pyarrow(sql, self.url)
+        return pa_table.column(0)[0].as_py()
 
     def schema(self) -> Schema:
         return self._schema
@@ -107,11 +88,10 @@ class SQLScanOperator(ScanOperator):
         scan_tasks = []
         offset = 0
         for _ in range(num_scan_tasks):
-            limit = min(num_rows_per_scan_task, total_rows - offset)
+            limit = max(num_rows_per_scan_task, total_rows - offset)
             file_format_config = FileFormatConfig.from_database_config(
                 DatabaseSourceConfig(self.sql, limit=limit, offset=offset)
             )
-
             scan_tasks.append(
                 ScanTask.sql_scan_task(
                     url=self.url,

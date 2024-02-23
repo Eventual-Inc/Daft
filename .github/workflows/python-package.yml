@@ -491,6 +491,77 @@ jobs:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
+  integration-test-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+    - integration-test-build
+    env:
+      package-name: getdaft
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
+        daft-runner: [py, ray]
+        micropartitions: [1]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        architecture: x64
+        cache: pip
+        cache-dependency-path: |
+          pyproject.toml
+          requirements-dev.txt
+    - name: Download built wheels
+      uses: actions/download-artifact@v3
+      with:
+        name: wheels
+        path: dist
+    - name: Setup Virtual Env
+      run: |
+        python -m venv venv
+        echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+    - name: Install Daft and dev dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+        rm -rf daft
+    - name: Spin up services
+      run: |
+        pushd ./tests/integration/sql/docker-compose/
+        docker-compose -f ./docker-compose.yml up -d
+        popd
+    - name: Run sql integration tests
+      run: |
+        pytest tests/integration/sql -m 'integration' --durations=50
+      env:
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
+    - name: Send Slack notification on failure
+      uses: slackapi/slack-github-action@v1.24.0
+      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      with:
+        payload: |
+          {
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": ":rotating_light: [CI] Iceberg Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
   rust-tests:
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
