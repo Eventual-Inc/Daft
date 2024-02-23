@@ -9,7 +9,6 @@ TRINO_URL = "trino://user@localhost:8080/tpch"
 
 @tenacity.retry(
     stop=tenacity.stop_after_delay(60),
-    retry=tenacity.retry_if_exception_type(sqlalchemy.exc.DBAPIError),
     wait=tenacity.wait_fixed(5),
     reraise=True,
 )
