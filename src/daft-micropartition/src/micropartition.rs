@@ -357,13 +357,8 @@ impl MicroPartition {
         // Check and validate invariants with asserts
         for table in tables.iter() {
             assert!(
-                table.schema.fields.len() == schema.fields.len()
-                    && table.schema.fields.iter().zip(schema.fields.iter()).all(
-                        |((s1, f1), (s2, f2))| s1 == s2
-                            && f1.name == f2.name
-                            && f1.dtype == f2.dtype
-                    ),
-                "Loaded MicroPartition's tables' schema must match its own schema exactly"
+                table.schema == schema,
+                "Loaded MicroPartition's tables' schema must match its own schema exactly",
             );
         }
 
