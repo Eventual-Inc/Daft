@@ -1,8 +1,6 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-#![feature(trait_upcasting)]
 use std::{
-    any::Any,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
@@ -538,7 +536,7 @@ impl Display for PartitionTransform {
     }
 }
 
-pub trait ScanOperator: Send + Sync + Debug + Any {
+pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
 
