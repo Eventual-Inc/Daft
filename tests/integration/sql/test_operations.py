@@ -36,7 +36,7 @@ def temp_sqllite_db(test_items):
 def test_sqllite_create_dataframe_ok(temp_sqllite_db) -> None:
     df = daft.read_sql(
         "SELECT * FROM iris", f"sqlite://{temp_sqllite_db}"
-    )  # path here only has 2 slashes instead of 3 because connectorx is used
+    )  # path here only has 2 slashes instead of 3 because connectorx uses 2 slashes
     pd_df = pd.read_sql("SELECT * FROM iris", f"sqlite:///{temp_sqllite_db}")
 
     assert df.to_pandas().equals(pd_df)

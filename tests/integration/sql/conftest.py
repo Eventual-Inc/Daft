@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import random
+from typing import Generator
 
 import numpy as np
 import pytest
 import sqlalchemy
 import tenacity
 
-TRINO_URL = "trino://user@localhost:8080/tpch"
+URLS = {"trino": "trino://user@localhost:8080/tpch"}
 
 NUM_TEST_ROWS = 200
 
@@ -36,10 +37,14 @@ def check_database_connection(url) -> None:
 
 
 @pytest.fixture(scope="session")
-@pytest.mark.parametrize("url", [TRINO_URL])
-def check_db_server_initialized(url) -> bool:
-    try:
-        check_database_connection(url)
-        return True
-    except Exception as e:
-        pytest.fail(f"Failed to connect to {url}: {e}")
+def db_url() -> Generator[str, None, None]:
+    for url in URLS.values():
+        try:
+            check_database_connection(url)
+        except Exception as e:
+            pytest.fail(f"Failed to connect to {url}: {e}")
+
+    def db_url(db):
+        return URLS[db]
+
+    yield db_url
