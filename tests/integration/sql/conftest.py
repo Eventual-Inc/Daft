@@ -33,7 +33,7 @@ def test_items():
 )
 def check_database_connection(url) -> None:
     with sqlalchemy.create_engine(url).connect() as conn:
-        conn.execute("SELECT 1")
+        conn.execute(sqlalchemy.text("SELECT 1"))
 
 
 @pytest.fixture(scope="session")
