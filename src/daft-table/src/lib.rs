@@ -185,7 +185,7 @@ impl Table {
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
         let id_series = UInt64Array::from((column_name, ids)).into_series();
-        Self::from_columns([&[id_series], &self.columns[..]].concat())
+        Self::from_columns([&self.columns[..], &[id_series]].concat())
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
