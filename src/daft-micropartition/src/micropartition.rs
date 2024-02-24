@@ -311,11 +311,11 @@ impl MicroPartition {
     /// Schema invariants:
     /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
-        schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
         let statistics = statistics
             .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
@@ -379,7 +379,6 @@ impl MicroPartition {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
             (Some(metadata), Some(statistics), _, _) => Ok(Self::new_unloaded(
-                schema,
                 scan_task.clone(),
                 metadata.clone(),
                 statistics.clone(),
@@ -927,7 +926,6 @@ pub(crate) fn read_parquet_into_micropartition(
         );
 
         Ok(MicroPartition::new_unloaded(
-            scan_task.materialized_schema(),
             Arc::new(scan_task),
             TableMetadata { length: total_rows },
             stats,
