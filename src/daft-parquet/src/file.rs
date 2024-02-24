@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -254,21 +254,38 @@ impl ParquetReaderBuilder {
     }
 
     pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        // TODO: perform pruning of columns on names AFTER applying the field_id_mapping
+        // Construct mapping of {target_name: pq_file_name} of all available fields in the Parquet file
         let avail_names = self
             .parquet_schema()
             .fields()
             .iter()
-            .map(|f| f.name())
-            .collect::<HashSet<_>>();
+            .map(|f| {
+                if let (Some(field_id_mapping), Some(field_id)) =
+                    (self.field_id_mapping.as_ref(), f.get_field_info().id)
+                {
+                    let target_name = field_id_mapping
+                        .get(&field_id)
+                        .map(|f| f.name.as_str())
+                        .unwrap_or(f.name());
+                    (target_name, f.name())
+                } else {
+                    (f.name(), f.name())
+                }
+            })
+            .collect::<HashMap<&str, &str>>();
+
+        // Figure out which pq_file_names to keep using the target_names as the column names to prune
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
-            if avail_names.contains(col_name.as_ref()) {
-                names_to_keep.insert(col_name.to_string());
+            if let Some(pq_name) = avail_names.get(col_name.as_ref()) {
+                names_to_keep.insert(pq_name.to_string());
             } else {
                 return Err(super::Error::FieldNotFound {
                     field: col_name.to_string(),
-                    available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
+                    available_fields: avail_names
+                        .keys()
+                        .map(|target_name| target_name.to_string())
+                        .collect(),
                     path: self.uri,
                 });
             }
