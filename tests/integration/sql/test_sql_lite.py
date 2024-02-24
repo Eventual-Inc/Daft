@@ -1,59 +1,32 @@
 from __future__ import annotations
 
-import random
 import sqlite3
 import tempfile
 
-import numpy as np
 import pandas as pd
 import pytest
 
 import daft
 
-COL_NAMES = ["sepal_length", "sepal_width", "petal_length", "petal_width", "variety"]
-VARIETIES = ["Setosa", "Versicolor", "Virginica"]
-CREATE_TABLE_SQL = """
-CREATE TABLE iris (
-    sepal_length REAL,
-    sepal_width REAL,
-    petal_length REAL,
-    petal_width REAL,
-    variety TEXT
-)
-"""
-INSERT_SQL = "INSERT INTO iris VALUES (?, ?, ?, ?, ?)"
-NUM_ITEMS = 200
-
-
-def generate_test_items(num_items):
-    np.random.seed(42)
-    data = {
-        "sepal_length": np.round(np.random.uniform(4.3, 7.9, num_items), 1),
-        "sepal_width": np.round(np.random.uniform(2.0, 4.4, num_items), 1),
-        "petal_length": np.round(np.random.uniform(1.0, 6.9, num_items), 1),
-        "petal_width": np.round(np.random.uniform(0.1, 2.5, num_items), 1),
-        "variety": [random.choice(VARIETIES) for _ in range(num_items)],
-    }
-    return [
-        (
-            data["sepal_length"][i],
-            data["sepal_width"][i],
-            data["petal_length"][i],
-            data["petal_width"][i],
-            data["variety"][i],
-        )
-        for i in range(num_items)
-    ]
-
 
 # Fixture for temporary SQLite database
 @pytest.fixture(scope="module")
-def temp_sqllite_db():
-    test_items = generate_test_items(NUM_ITEMS)
+def temp_sqllite_db(test_items):
+    data = list(
+        zip(
+            test_items["sepal_length"],
+            test_items["sepal_width"],
+            test_items["petal_length"],
+            test_items["petal_width"],
+            test_items["variety"],
+        )
+    )
     with tempfile.NamedTemporaryFile(suffix=".db") as file:
         connection = sqlite3.connect(file.name)
-        connection.execute(CREATE_TABLE_SQL)
-        connection.executemany(INSERT_SQL, test_items)
+        connection.execute(
+            "CREATE TABLE iris (sepal_length REAL, sepal_width REAL, petal_length REAL, petal_width REAL, variety TEXT)"
+        )
+        connection.executemany("INSERT INTO iris VALUES (?, ?, ?, ?, ?)", data)
         connection.commit()
         connection.close()
         yield file.name
