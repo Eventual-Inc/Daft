@@ -12,4 +12,4 @@ def test_trino_create_dataframe_ok(db_url) -> None:
     df = daft.read_sql("SELECT * FROM tpch.sf1.nation", url)
     pd_df = pd.read_sql("SELECT * FROM tpch.sf1.nation", url)
 
-    assert df.equals(pd_df)
+    assert df.to_pandas().equals(pd_df)
