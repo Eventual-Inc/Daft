@@ -7,10 +7,7 @@ use crate::{
     partitioning::PartitionSchemeConfig,
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::{
-        ExternalInfo as ExternalSourceInfo, FileInfos as InputFileInfos, LegacyExternalInfo,
-        SourceInfo,
-    },
+    source_info::SourceInfo,
     JoinStrategy, JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
@@ -18,11 +15,7 @@ use common_io_config::IOConfig;
 use daft_core::schema::Schema;
 use daft_core::schema::SchemaRef;
 use daft_dsl::Expr;
-use daft_scan::{
-    file_format::{FileFormat, FileFormatConfig},
-    storage_config::{PyStorageConfig, StorageConfig},
-    Pushdowns, ScanExternalInfo, ScanOperatorRef,
-};
+use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperatorRef};
 
 #[cfg(feature = "python")]
 use {
@@ -30,7 +23,7 @@ use {
     common_daft_config::PyDaftExecutionConfig,
     daft_core::python::schema::PySchema,
     daft_dsl::python::PyExpr,
-    daft_scan::{file_format::PyFileFormatConfig, python::pylib::ScanOperatorHandle},
+    daft_scan::python::pylib::ScanOperatorHandle,
     pyo3::prelude::*,
 };
 
@@ -39,7 +32,7 @@ use {
 ///
 /// This builder holds the current root (sink) of the logical plan, and the building methods return
 /// a brand new builder holding a new plan; i.e., this is an immutable builder.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
@@ -72,56 +65,33 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn table_scan_with_scan_operator(
+    pub fn table_scan(
         scan_operator: ScanOperatorRef,
         pushdowns: Option<Pushdowns>,
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
-        let source_info =
-            SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo::new(
-                scan_operator.clone(),
-                schema.clone(),
-                partitioning_keys.into(),
-                pushdowns.unwrap_or_default(),
-            )));
+        let source_info = SourceInfo::ExternalInfo(ScanExternalInfo::new(
+            scan_operator.clone(),
+            schema.clone(),
+            partitioning_keys.into(),
+            pushdowns.clone().unwrap_or_default(),
+        ));
+        // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
+        let output_schema = if let Some(Pushdowns { columns: Some(columns), .. }) = &pushdowns && columns.len() < schema.fields.len() {
+            let pruned_upstream_schema = schema
+                .fields
+                .iter()
+                .filter_map(|(name, field)| {
+                    columns.contains(name).then(|| field.clone())
+                })
+                .collect::<Vec<_>>();
+            Arc::new(Schema::new(pruned_upstream_schema)?)
+        } else {
+            schema.clone()
+        };
         let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into()).into();
-        Ok(logical_plan.into())
-    }
-
-    pub fn table_scan(
-        file_infos: InputFileInfos,
-        schema: Arc<Schema>,
-        file_format_config: Arc<FileFormatConfig>,
-        storage_config: Arc<StorageConfig>,
-    ) -> DaftResult<Self> {
-        Self::table_scan_with_pushdowns(
-            file_infos,
-            schema,
-            file_format_config,
-            storage_config,
-            Default::default(),
-        )
-    }
-
-    pub fn table_scan_with_pushdowns(
-        file_infos: InputFileInfos,
-        schema: Arc<Schema>,
-        file_format_config: Arc<FileFormatConfig>,
-        storage_config: Arc<StorageConfig>,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Self> {
-        let source_info =
-            SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(LegacyExternalInfo::new(
-                schema.clone(),
-                file_infos.into(),
-                file_format_config,
-                storage_config,
-                pushdowns,
-            )));
-        let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into()).into();
+            logical_ops::Source::new(output_schema, source_info.into()).into();
         Ok(logical_plan.into())
     }
 
@@ -323,24 +293,8 @@ impl PyLogicalPlanBuilder {
     }
 
     #[staticmethod]
-    pub fn table_scan_with_scan_operator(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::table_scan_with_scan_operator(scan_operator.into(), None)?.into())
-    }
-
-    #[staticmethod]
-    pub fn table_scan(
-        file_infos: InputFileInfos,
-        schema: PySchema,
-        file_format_config: PyFileFormatConfig,
-        storage_config: PyStorageConfig,
-    ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::table_scan(
-            file_infos,
-            schema.into(),
-            file_format_config.into(),
-            storage_config.into(),
-        )?
-        .into())
+    pub fn table_scan(scan_operator: ScanOperatorHandle) -> PyResult<Self> {
+        Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
 
     pub fn project(

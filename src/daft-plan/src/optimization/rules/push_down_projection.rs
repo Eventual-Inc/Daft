@@ -159,7 +159,7 @@ impl PushDownProjection {
                             let new_source: LogicalPlan = Source::new(
                                 schema.into(),
                                 Arc::new(SourceInfo::ExternalInfo(external_info.with_pushdowns(
-                                    external_info.pushdowns().with_columns(Some(Arc::new(
+                                    external_info.pushdowns.with_columns(Some(Arc::new(
                                         required_columns.iter().cloned().collect(),
                                     ))),
                                 ))),
@@ -504,39 +504,26 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
+    use daft_scan::Pushdowns;
 
     use crate::{
-        optimization::{
-            optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownProjection,
-            Optimizer,
-        },
-        test::dummy_scan_node,
+        optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},
+        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the PushDownProjection rule registered, optimizes
-    /// the provided plan with said optimizer, and compares the optimized plan's repr with
-    /// the provided expected repr.
-    fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
-        let optimizer = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![Box::new(PushDownProjection::new())],
-                RuleExecutionStrategy::Once,
-            )],
-            Default::default(),
-        );
-        let optimized_plan = optimizer
-            .optimize_with_rules(
-                optimizer.rule_batches[0].rules.as_slice(),
-                plan.clone(),
-                &optimizer.rule_batches[0].order,
-            )?
-            .unwrap()
-            .clone();
-        assert_eq!(optimized_plan.repr_indent(), expected);
-
-        Ok(())
+    /// the provided plan with said optimizer, and compares the optimized plan with
+    /// the provided expected plan.
+    fn assert_optimized_plan_eq(
+        plan: Arc<LogicalPlan>,
+        expected: Arc<LogicalPlan>,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![Box::new(PushDownProjection::new())],
+        )
     }
 
     /// Projection merging: Ensure factored projections do not get merged.
@@ -546,12 +533,12 @@ mod tests {
         let a4 = &a2 + &a2;
         let a8 = &a4 + &a4;
         let expressions = vec![a8.alias("x")];
-        let unoptimized = dummy_scan_node(vec![Field::new("a", DataType::Int64)])
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let plan = dummy_scan_node(scan_op)
             .project(expressions, Default::default())?
             .build();
 
-        let expected = unoptimized.repr_indent();
-        assert_optimized_plan_eq(unoptimized, expected.as_str())?;
+        assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }
 
@@ -559,57 +546,65 @@ mod tests {
     /// in both the parent and the child.
     #[test]
     fn test_merge_projections() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
-        .project(
-            vec![col("a") + lit(1), col("b") + lit(2), col("a").alias("c")],
-            Default::default(),
-        )?
-        .project(
-            vec![col("a") + lit(3), col("b"), col("c") + lit(4)],
-            Default::default(),
-        )?
-        .build();
+        ]);
+        let proj1 = vec![col("a") + lit(1), col("b") + lit(2), col("a").alias("c")];
+        let proj2 = vec![col("a") + lit(3), col("b"), col("c") + lit(4)];
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj1, Default::default())?
+            .project(proj2, Default::default())?
+            .build();
 
-        let expected = "\
-        Project: [col(a) + lit(1)] + lit(3), col(b) + lit(2), col(a) + lit(4)\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        let merged_proj = vec![
+            col("a") + lit(1) + lit(3),
+            col("b") + lit(2),
+            col("a").alias("c") + lit(4),
+        ];
+        let expected = dummy_scan_node(scan_op)
+            .project(merged_proj, Default::default())?
+            .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Projection dropping: Test that a no-op projection is dropped.
     #[test]
     fn test_drop_projection() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
-        .project(vec![col("a"), col("b")], Default::default())?
-        .build();
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(vec![col("a"), col("b")], Default::default())?
+            .build();
 
-        let expected = "\
-        Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        let expected = dummy_scan_node(scan_op).build();
+
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }
+
     /// Projection dropping: Test that projections doing reordering are not dropped.
     #[test]
     fn test_dont_drop_projection() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
-        .project(vec![col("b"), col("a")], Default::default())?
-        .build();
+        ]);
+        let proj = vec![col("b"), col("a")];
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj.clone(), Default::default())?
+            .build();
 
-        let expected = "\
-        Project: col(b), col(a)\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        let expected = dummy_scan_node(scan_op)
+            .project(proj, Default::default())?
+            .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }
@@ -617,17 +612,24 @@ mod tests {
     /// Projection<-Source
     #[test]
     fn test_projection_source() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
-        .project(vec![col("b") + lit(3)], Default::default())?
+        ]);
+        let proj = vec![col("b") + lit(3)];
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj.clone(), Default::default())?
+            .build();
+
+        let proj_pushdown = vec!["b".to_string()];
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
+        )
+        .project(proj, Default::default())?
         .build();
 
-        let expected = "\
-        Project: col(b) + lit(3)\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, Native storage config = { Use multithreading = true }, Projection pushdown = [b], Output schema = b#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }
@@ -635,25 +637,24 @@ mod tests {
     /// Projection<-Projection column pruning
     #[test]
     fn test_projection_projection() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
-        .project(
-            vec![col("b") + lit(3), col("a"), col("a").alias("x")],
-            Default::default(),
-        )?
-        .project(
-            vec![col("a"), col("b"), col("b").alias("c")],
-            Default::default(),
-        )?
-        .build();
+        ]);
+        let proj1 = vec![col("b") + lit(3), col("a"), col("a").alias("x")];
+        let proj2 = vec![col("a"), col("b"), col("b").alias("c")];
+        let plan = dummy_scan_node(scan_op.clone())
+            .project(proj1, Default::default())?
+            .project(proj2.clone(), Default::default())?
+            .build();
 
-        let expected = "\
-        Project: col(a), col(b), col(b) AS c\
-        \n  Project: col(b) + lit(3), col(a)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        let new_proj1 = vec![col("b") + lit(3), col("a")];
+        let expected = dummy_scan_node(scan_op)
+            .project(new_proj1, Default::default())?
+            .project(proj2, Default::default())?
+            .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }
@@ -661,20 +662,30 @@ mod tests {
     /// Projection<-Aggregation column pruning
     #[test]
     fn test_projection_aggregation() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
-        ])
-        .aggregate(vec![col("a").mean(), col("b").mean()], vec![col("c")])?
-        .project(vec![col("a")], Default::default())?
+        ]);
+        let agg = vec![col("a").mean(), col("b").mean()];
+        let group_by = vec![col("c")];
+        let proj = vec![col("a")];
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(agg, group_by.clone())?
+            .project(proj.clone(), Default::default())?
+            .build();
+
+        let proj_pushdown = vec!["a".to_string(), "c".to_string()];
+        let new_agg = vec![col("a").mean()];
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
+        )
+        .aggregate(new_agg, group_by)?
+        .project(proj, Default::default())?
         .build();
 
-        let expected = "\
-        Project: col(a)\
-        \n  Aggregation: mean(col(a)), Group by = col(c), Output schema = c#Int64, a#Float64\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, c#Int64, Native storage config = { Use multithreading = true }, Projection pushdown = [a, c], Output schema = a#Int64, c#Int64";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }
@@ -682,20 +693,28 @@ mod tests {
     /// Projection<-X pushes down the combined required columns
     #[test]
     fn test_projection_pushdown() -> DaftResult<()> {
-        let unoptimized = dummy_scan_node(vec![
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
-        ])
-        .filter(col("b"))?
-        .project(vec![col("a")], Default::default())?
+        ]);
+        let pred = col("b");
+        let proj = vec![col("a")];
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(pred.clone())?
+            .project(proj.clone(), Default::default())?
+            .build();
+
+        let proj_pushdown = vec!["a".to_string(), "b".to_string()];
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
+        )
+        .filter(pred)?
+        .project(proj, Default::default())?
         .build();
 
-        let expected = "\
-        Project: col(a)\
-        \n  Filter: col(b)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Boolean, c#Int64, Native storage config = { Use multithreading = true }, Projection pushdown = [a, b], Output schema = a#Int64, b#Boolean";
-        assert_optimized_plan_eq(unoptimized, expected)?;
+        assert_optimized_plan_eq(plan, expected)?;
 
         Ok(())
     }

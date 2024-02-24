@@ -22,14 +22,7 @@ from collections import deque
 from typing import Generator, Generic, Iterable, Iterator, TypeVar, Union
 
 from daft.context import get_context
-from daft.daft import (
-    FileFormat,
-    FileFormatConfig,
-    IOConfig,
-    JoinType,
-    ResourceRequest,
-    StorageConfig,
-)
+from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -82,71 +75,6 @@ def partition_read(
         PartitionTaskBuilder[PartitionT](inputs=[partition], partial_metadatas=[metadata])
         for partition, metadata in zip(partitions, metadatas)
     )
-
-
-def file_read(
-    child_plan: InProgressPhysicalPlan[PartitionT],
-    # Max number of rows to read.
-    limit_rows: int | None,
-    schema: Schema,
-    storage_config: StorageConfig,
-    columns_to_read: list[str] | None,
-    file_format_config: FileFormatConfig,
-) -> InProgressPhysicalPlan[PartitionT]:
-    """child_plan represents partitions with filenames.
-
-    Yield a plan to read those filenames.
-    """
-    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    stage_id = next(stage_id_counter)
-    output_partition_index = 0
-
-    while True:
-        # Check if any inputs finished executing.
-        while len(materializations) > 0 and materializations[0].done():
-            done_task = materializations.popleft()
-
-            vpartition = done_task.vpartition()
-            file_infos = vpartition.to_pydict()
-            file_sizes_bytes = file_infos["size"]
-            file_rows = file_infos["num_rows"]
-
-            # Emit one partition for each file (NOTE: hardcoded for now).
-            for i in range(len(vpartition)):
-                file_read_step = PartitionTaskBuilder[PartitionT](
-                    inputs=[done_task.partition()],
-                    partial_metadatas=None,  # Child's metadata doesn't really matter for a file read
-                ).add_instruction(
-                    instruction=execution_step.ReadFile(
-                        index=i,
-                        file_rows=file_rows[i],
-                        limit_rows=limit_rows,
-                        schema=schema,
-                        storage_config=storage_config,
-                        columns_to_read=columns_to_read,
-                        file_format_config=file_format_config,
-                    ),
-                    # Set the filesize as the memory request.
-                    # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
-                    resource_request=ResourceRequest(memory_bytes=file_sizes_bytes[i]),
-                )
-                yield file_read_step
-                output_partition_index += 1
-
-        # Materialize a single dependency.
-        try:
-            child_step = next(child_plan)
-            if isinstance(child_step, PartitionTaskBuilder):
-                child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
-                materializations.append(child_step)
-            yield child_step
-
-        except StopIteration:
-            if len(materializations) > 0:
-                logger.debug("file_read blocked on completion of first source in: %s", materializations)
-                yield None
-            else:
-                return
 
 
 def file_write(

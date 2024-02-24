@@ -610,6 +610,15 @@ impl ScanExternalInfo {
             pushdowns,
         }
     }
+
+    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
+        Self {
+            scan_op: self.scan_op.clone(),
+            source_schema: self.source_schema.clone(),
+            partitioning_keys: self.partitioning_keys.clone(),
+            pushdowns,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

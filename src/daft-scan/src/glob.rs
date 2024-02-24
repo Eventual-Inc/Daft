@@ -13,7 +13,7 @@ use crate::{
     storage_config::StorageConfig,
     DataFileSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug)]
 pub struct GlobScanOperator {
     glob_paths: Vec<String>,
     file_format_config: Arc<FileFormatConfig>,

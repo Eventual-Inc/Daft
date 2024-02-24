@@ -109,5 +109,5 @@ def read_iceberg(
     iceberg_operator = IcebergScanOperator(pyiceberg_table, storage_config=storage_config)
 
     handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
-    builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(scan_operator=handle)
+    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)

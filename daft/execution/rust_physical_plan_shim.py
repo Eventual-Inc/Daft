@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, cast
 
 from daft.daft import (
     FileFormat,
-    FileFormatConfig,
     IOConfig,
     JoinType,
     PyExpr,
     PySchema,
-    PyTable,
     ResourceRequest,
     ScanTask,
-    StorageConfig,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
@@ -92,36 +88,6 @@ class EmptyScan(execution_step.SingleOutputInstruction):
                 size_bytes=0,
             )
         ]
-
-
-def tabular_scan(
-    schema: PySchema,
-    columns_to_read: list[str] | None,
-    file_info_table: PyTable,
-    file_format_config: FileFormatConfig,
-    storage_config: StorageConfig,
-    limit: int,
-    is_ray_runner: bool,
-) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    # TODO(Clark): Fix this Ray runner hack.
-    part = MicroPartition._from_pytable(file_info_table)
-    if is_ray_runner:
-        import ray
-
-        parts = [ray.put(part)]
-    else:
-        parts = [part]
-    parts_t = cast(Iterator[PartitionT], parts)
-
-    file_info_iter = physical_plan.partition_read(iter(parts_t))
-    return physical_plan.file_read(
-        child_plan=file_info_iter,
-        limit_rows=limit,
-        schema=Schema._from_pyschema(schema),
-        storage_config=storage_config,
-        columns_to_read=columns_to_read,
-        file_format_config=file_format_config,
-    )
 
 
 def project(

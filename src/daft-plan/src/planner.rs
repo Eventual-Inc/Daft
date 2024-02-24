@@ -10,7 +10,6 @@ use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;
-use daft_scan::file_format::FileFormatConfig;
 use daft_scan::ScanExternalInfo;
 
 use crate::logical_ops::{
@@ -24,7 +23,7 @@ use crate::logical_plan::LogicalPlan;
 use crate::partitioning::PartitionSchemeConfig;
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
-use crate::source_info::{ExternalInfo as ExternalSourceInfo, LegacyExternalInfo, SourceInfo};
+use crate::source_info::SourceInfo;
 use crate::FileFormat;
 use crate::{physical_ops::*, JoinStrategy, PartitionSpec};
 
@@ -34,56 +33,13 @@ use crate::physical_ops::InMemoryScan;
 /// Translate a logical plan to a physical plan.
 pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftResult<PhysicalPlan> {
     match logical_plan {
-        LogicalPlan::Source(Source {
-            output_schema,
-            source_info,
-        }) => match source_info.as_ref() {
-            SourceInfo::ExternalInfo(ExternalSourceInfo::Legacy(
-                ext_info @ LegacyExternalInfo {
-                    file_format_config,
-                    file_infos,
-                    pushdowns,
-                    ..
-                },
-            )) => {
-                let partition_spec = Arc::new(PartitionSpec::new(
-                    PartitionSchemeConfig::Unknown(Default::default()),
-                    file_infos.len(),
-                    None,
-                ));
-                match file_format_config.as_ref() {
-                    FileFormatConfig::Parquet(_) => {
-                        Ok(PhysicalPlan::TabularScanParquet(TabularScanParquet::new(
-                            output_schema.clone(),
-                            ext_info.clone(),
-                            partition_spec,
-                            pushdowns.clone(),
-                        )))
-                    }
-                    FileFormatConfig::Csv(_) => {
-                        Ok(PhysicalPlan::TabularScanCsv(TabularScanCsv::new(
-                            output_schema.clone(),
-                            ext_info.clone(),
-                            partition_spec,
-                            pushdowns.clone(),
-                        )))
-                    }
-                    FileFormatConfig::Json(_) => {
-                        Ok(PhysicalPlan::TabularScanJson(TabularScanJson::new(
-                            output_schema.clone(),
-                            ext_info.clone(),
-                            partition_spec,
-                            pushdowns.clone(),
-                        )))
-                    }
-                }
-            }
-            SourceInfo::ExternalInfo(ExternalSourceInfo::Scan(ScanExternalInfo {
+        LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
+            SourceInfo::ExternalInfo(ScanExternalInfo {
                 pushdowns,
                 scan_op,
                 source_schema,
                 ..
-            })) => {
+            }) => {
                 let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
 
                 let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
@@ -796,7 +752,7 @@ mod tests {
 
     use crate::physical_plan::PhysicalPlan;
     use crate::planner::plan;
-    use crate::test::dummy_scan_node;
+    use crate::test::{dummy_scan_node, dummy_scan_operator};
 
     /// Tests that planner drops a simple Repartition (e.g. df.into_partitions()) the child already has the desired number of partitions.
     ///
@@ -805,10 +761,10 @@ mod tests {
     fn repartition_dropped_redundant_into_partitions() -> DaftResult<()> {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
-        let builder = dummy_scan_node(vec![
+        let builder = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .repartition(Some(10), vec![], Default::default())?
         .filter(col("a").lt(&lit(2)))?;
         assert_eq!(
@@ -833,10 +789,10 @@ mod tests {
     fn repartition_dropped_single_partition() -> DaftResult<()> {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
-        let builder = dummy_scan_node(vec![
+        let builder = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
+        ]));
         assert_eq!(
             plan(builder.build().as_ref(), cfg.clone())?
                 .partition_spec()
@@ -847,7 +803,7 @@ mod tests {
             .repartition(Some(1), vec![col("a")], Default::default())?
             .build();
         let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
-        assert_matches!(physical_plan, PhysicalPlan::TabularScanJson(_));
+        assert_matches!(physical_plan, PhysicalPlan::TabularScan(_));
         Ok(())
     }
 
@@ -857,10 +813,10 @@ mod tests {
     #[test]
     fn repartition_dropped_same_partition_spec() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .repartition(Some(10), vec![col("a")], Default::default())?
         .filter(col("a").lt(&lit(2)))?
         .repartition(Some(10), vec![col("a")], Default::default())?
@@ -877,10 +833,10 @@ mod tests {
     #[test]
     fn repartition_dropped_same_partition_spec_agg() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
+        ]))
         .repartition(Some(10), vec![col("a")], Default::default())?
         .aggregate(
             vec![Expr::Agg(AggExpr::Sum(col("a").into()))],

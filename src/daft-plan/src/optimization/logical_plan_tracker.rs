@@ -71,22 +71,26 @@ mod tests {
     use std::{
         collections::hash_map::DefaultHasher,
         hash::{Hash, Hasher},
+        sync::Arc,
     };
 
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
 
-    use crate::{optimization::logical_plan_tracker::LogicalPlanDigest, test::dummy_scan_node};
+    use crate::{
+        optimization::logical_plan_tracker::LogicalPlanDigest,
+        test::{dummy_scan_node, dummy_scan_operator},
+    };
 
     #[test]
     fn node_count() -> DaftResult<()> {
         // plan is Filter -> Concat -> {Projection -> Source, Projection -> Source},
         // and should have a node count of 6.
-        let builder1 = dummy_scan_node(vec![
+        let builder1 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
+        ]));
         assert_eq!(
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
@@ -96,10 +100,10 @@ mod tests {
             LogicalPlanDigest::new(builder1.plan.as_ref(), &mut Default::default()).node_count,
             2usize.try_into().unwrap()
         );
-        let builder2 = dummy_scan_node(vec![
+        let builder2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ]);
+        ]));
         assert_eq!(
             LogicalPlanDigest::new(builder2.plan.as_ref(), &mut Default::default()).node_count,
             1usize.try_into().unwrap()
@@ -125,20 +129,14 @@ mod tests {
     #[test]
     fn same_plans_eq() -> DaftResult<()> {
         // Both plan1 and plan2 are Filter -> Project -> Source
-        let plan1 = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .project(vec![col("a")], Default::default())?
         .filter(col("a").lt(&lit(2)))?
         .build();
-        let plan2 = dummy_scan_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
+        let plan2 = Arc::new(plan1.as_ref().clone());
         // Double-check that logical plans are equal.
         assert_eq!(plan1, plan2);
 
@@ -157,17 +155,17 @@ mod tests {
     #[test]
     fn different_plans_not_eq_op_ordering() -> DaftResult<()> {
         // plan1 is Project -> Filter -> Source, while plan2 is Filter -> Project -> Source.
-        let plan1 = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .filter(col("a").lt(&lit(2)))?
         .project(vec![col("a")], Default::default())?
         .build();
-        let plan2 = dummy_scan_node(vec![
+        let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .project(vec![col("a")], Default::default())?
         .filter(col("a").lt(&lit(2)))?
         .build();
@@ -189,17 +187,17 @@ mod tests {
     #[test]
     fn different_plans_not_eq_same_order_diff_config() -> DaftResult<()> {
         // Both plan1 and plan2 are Filter -> Project -> Source, but with different filter predicates.
-        let plan1 = dummy_scan_node(vec![
+        let plan1 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .project(vec![col("a")], Default::default())?
         .filter(col("a").lt(&lit(2)))?
         .build();
-        let plan2 = dummy_scan_node(vec![
+        let plan2 = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .project(vec![col("a")], Default::default())?
         .filter(col("a").lt(&lit(4)))?
         .build();

@@ -32,7 +32,5 @@ class PhysicalPlanScheduler:
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)
 
-    def to_partition_tasks(
-        self, psets: dict[str, list[PartitionT]], is_ray_runner: bool
-    ) -> physical_plan.MaterializedPhysicalPlan:
-        return physical_plan.materialize(self._scheduler.to_partition_tasks(psets, is_ray_runner))
+    def to_partition_tasks(self, psets: dict[str, list[PartitionT]]) -> physical_plan.MaterializedPhysicalPlan:
+        return physical_plan.materialize(self._scheduler.to_partition_tasks(psets))

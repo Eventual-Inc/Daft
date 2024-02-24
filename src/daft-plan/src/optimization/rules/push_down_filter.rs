@@ -12,11 +12,11 @@ use daft_dsl::{
     },
     Expr,
 };
-use daft_scan::{rewrite_predicate_for_partitioning, ScanExternalInfo};
+use daft_scan::rewrite_predicate_for_partitioning;
 
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
-    source_info::{ExternalInfo, SourceInfo},
+    source_info::SourceInfo,
     LogicalPlan,
 };
 
@@ -77,16 +77,10 @@ impl OptimizerRule for PushDownFilter {
                     // Filter pushdown is not supported for in-memory sources.
                     #[cfg(feature = "python")]
                     SourceInfo::InMemoryInfo(_) => return Ok(Transformed::No(plan)),
-                    // Do not pushdown if Source node is already has a limit
+                    // Do not pushdown if Source node already has a limit
                     SourceInfo::ExternalInfo(external_info)
                         if let Some(existing_limit) =
-                            external_info.pushdowns().limit =>
-                    {
-                        return Ok(Transformed::No(plan))
-                    }
-                    // Do not pushdown if we are using python legacy scan info
-                    SourceInfo::ExternalInfo(external_info)
-                        if let ExternalInfo::Legacy(..) = external_info =>
+                            external_info.pushdowns.limit =>
                     {
                         return Ok(Transformed::No(plan))
                     }
@@ -115,14 +109,10 @@ impl OptimizerRule for PushDownFilter {
                         if has_udf {
                             return Ok(Transformed::No(plan));
                         }
-                        let new_predicate = external_info.pushdowns().filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
-                        let partition_filter = if let ExternalInfo::Scan(ScanExternalInfo {scan_op,  ..}) = &external_info {
-                            rewrite_predicate_for_partitioning(new_predicate.clone(), scan_op.0.partitioning_keys())?
-                        } else {
-                            None
-                        };
+                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        let partition_filter = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
                         let new_pushdowns =
-                            external_info.pushdowns().with_filters(Some(Arc::new(new_predicate)));
+                            external_info.pushdowns.with_filters(Some(Arc::new(new_predicate)));
 
                         let new_pushdowns = if let Some(pfilter) = partition_filter {
                             new_pushdowns.with_partition_filters(Some(Arc::new(pfilter)))
@@ -285,141 +275,151 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, lit};
+    use daft_scan::Pushdowns;
+    use rstest::rstest;
 
     use crate::{
-        optimization::{
-            optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownFilter,
-            Optimizer,
-        },
-        test::{dummy_scan_node, dummy_scan_operator_node},
+        optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
+        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         JoinType, LogicalPlan, PartitionSchemeConfig,
     };
 
     /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
-    /// the provided plan with said optimizer, and compares the optimized plan's repr with
-    /// the provided expected repr.
-    fn assert_optimized_plan_eq(plan: Arc<LogicalPlan>, expected: &str) -> DaftResult<()> {
-        let optimizer = Optimizer::with_rule_batches(
-            vec![RuleBatch::new(
-                vec![Box::new(PushDownFilter::new())],
-                RuleExecutionStrategy::Once,
-            )],
-            Default::default(),
-        );
-        let optimized_plan = optimizer
-            .optimize_with_rules(
-                optimizer.rule_batches[0].rules.as_slice(),
-                plan.clone(),
-                &optimizer.rule_batches[0].order,
-            )?
-            .unwrap()
-            .clone();
-        assert_eq!(optimized_plan.repr_indent(), expected);
+    /// the provided plan with said optimizer, and compares the optimized plan with
+    /// the provided expected plan.
+    fn assert_optimized_plan_eq(
+        plan: Arc<LogicalPlan>,
+        expected: Arc<LogicalPlan>,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownFilter::new())])
+    }
 
+    /// Tests that we can't pushdown a filter into a ScanOperator that has a limit.
+    #[test]
+    fn filter_not_pushed_down_into_scan_with_limit() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan =
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
+                .filter(col("a").lt(&lit(2)))?
+                .build();
+        // Plan should be unchanged after optimization.
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests combining of two Filters by merging their predicates.
-    #[test]
-    fn filter_combine_with_filter() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_combine_with_filter(#[values(false, true)] push_into_scan: bool) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .filter(col("a").lt(&lit(2)))?
-        .filter(col("b").eq(&lit("foo")))?
-        .build();
-        let expected = "\
-        Filter: [col(b) == lit(\"foo\")] & [col(a) < lit(2)]\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let p1 = col("a").lt(&lit(2));
+        let p2 = col("b").eq(&lit("foo"));
+        let plan = scan_plan.filter(p1.clone())?.filter(p2.clone())?.build();
+        let merged_filter = p2.and(&p1);
+        let expected = if push_into_scan {
+            // Merged filter should be pushed into scan.
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(merged_filter.into())),
+            )
+            .build()
+        } else {
+            // Merged filter should not be pushed into scan.
+            scan_plan.filter(merged_filter)?.build()
+        };
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
-    /// Tests combining of two Filters into a ScanOperator
+    /// Tests that we can't pushdown a filter into a ScanOperator if it has an udf-ish expression.
     #[test]
-    fn pushdown_filter_into_scan_operator() -> DaftResult<()> {
-        let plan = dummy_scan_operator_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .filter(col("a").lt(&lit(2)))?
-        .filter(col("b").eq(&lit("foo")))?
-        .build();
-        let expected = "\
-        AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Filter pushdown = [col(b) == lit(\"foo\")] & [col(a) < lit(2)], Output schema = a#Int64, b#Utf8";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that we cant pushdown a filter into a ScanOperator with a limit
-    #[test]
-    fn pushdown_filter_into_scan_operator_with_limit() -> DaftResult<()> {
-        let plan = dummy_scan_operator_node(vec![
-            Field::new("a", DataType::Int64),
-            Field::new("b", DataType::Utf8),
-        ])
-        .limit(1, false)?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Filter: col(a) < lit(2)\
-        \n  Limit: 1\
-        \n    AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Output schema = a#Int64, b#Utf8";
-        assert_optimized_plan_eq(plan, expected)?;
-        Ok(())
-    }
-
-    /// Tests that we cant pushdown a filter into a ScanOperator with an udf-ish expression
-    #[test]
-    fn pushdown_filter_into_scan_operator_with_udf() -> DaftResult<()> {
+    fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
         let pred = daft_dsl::functions::uri::download(&col("a"), 1, true, true, None);
-        let plan = dummy_scan_operator_node(vec![
+        let plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         .filter(pred.is_null())?
         .build();
-        let expected = "\
-        Filter: is_null(download(col(a)))\
-        \n  AnonymousScanOperator, File paths = [/foo], Use multithreading = true, File schema = a#Int64, b#Utf8, Partitioning keys = [], Output schema = a#Int64, b#Utf8";
+        let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Projections.
-    #[test]
-    fn filter_commutes_with_projection() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_projection(
+        #[values(false, true)] push_into_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .project(vec![col("a")], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Project: col(a)\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2));
+        let proj = vec![col("a")];
+        let plan = scan_plan
+            .project(proj.clone(), Default::default())?
+            .filter(pred.clone())?
+            .build();
+        let expected_scan_filter = if push_into_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_scan_filter
+            .project(proj, Default::default())?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that a Filter with multiple columns in its predicate commutes with a Projection on both of those columns.
-    #[test]
-    fn filter_commutes_with_projection_multi() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_projection_multi(
+        #[values(false, true)] push_into_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .project(vec![col("a"), col("b")], Default::default())?
-        .filter(col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo"))))?
-        .build();
-        let expected = "\
-        Project: col(a), col(b)\
-        \n  Filter: [col(a) < lit(2)] & [col(b) == lit(\"foo\")]\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2)).and(&col("b").eq(&lit("foo")));
+        let proj = vec![col("a"), col("b")];
+        let plan = scan_plan
+            .project(proj.clone(), Default::default())?
+            .filter(pred.clone())?
+            .build();
+        let expected_scan_filter = if push_into_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_scan_filter
+            .project(proj, Default::default())?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -427,19 +427,16 @@ mod tests {
     /// Tests that Filter does not commute with a Projection if the projection expression involves compute.
     #[test]
     fn filter_does_not_commute_with_projection_if_compute() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+        let plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
+        ]))
         // Projection involves compute on filtered column "a".
         .project(vec![col("a") + lit(1)], Default::default())?
         .filter(col("a").lt(&lit(2)))?
         .build();
         // Filter should NOT commute with Project, since this would involve redundant computation.
-        let expected = "\
-        Filter: col(a) < lit(2)\
-        \n  Project: col(a) + lit(1)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
@@ -447,166 +444,378 @@ mod tests {
     /// Tests that Filter commutes with Projection if projection expression involves deterministic compute.
     // REASON - No expression attribute indicating whether deterministic && (pure || idempotent).
     #[ignore]
-    #[test]
-    fn filter_commutes_with_projection_deterministic_compute() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_projection_deterministic_compute(
+        #[values(false, true)] push_into_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        // Projection involves compute on filtered column "a".
-        .project(vec![col("a") + lit(1)], Default::default())?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Project: col(a) + lit(1)\
-        \n  Filter: [col(a) + lit(1)] < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2));
+        let proj = vec![col("a") + lit(1)];
+        let plan = scan_plan
+            // Projection involves compute on filtered column "a".
+            .project(proj.clone(), Default::default())?
+            .filter(pred.clone())?
+            .build();
+        let expected_filter_scan = if push_into_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_filter_scan
+            .project(proj, Default::default())?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Sort.
-    #[test]
-    fn filter_commutes_with_sort() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_sort(#[values(false, true)] push_into_scan: bool) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .sort(vec![col("a")], vec![true])?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Sort: Sort by = (col(a), descending)\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
-        // TODO(Clark): For tests in which we only care about reordering of operators, maybe switch to a form that leverages the single-node display?
-        // let expected = format!("{sort}\n  {filter}\n    {source}");
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2));
+        let sort_by = vec![col("a")];
+        let descending = vec![true];
+        let plan = scan_plan
+            .sort(sort_by.clone(), descending.clone())?
+            .filter(pred.clone())?
+            .build();
+        let expected_filter_scan = if push_into_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_filter_scan.sort(sort_by, descending)?.build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Repartition.
-    #[test]
-    fn filter_commutes_with_repartition() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_repartition(
+        #[values(false, true)] push_into_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .repartition(
-            Some(1),
-            vec![col("a")],
-            PartitionSchemeConfig::Hash(Default::default()),
-        )?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Repartition: Scheme = Hash, Number of partitions = 1, Partition by = col(a)\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        ]);
+        let scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2));
+        let num_partitions = Some(1);
+        let repartition_by = vec![col("a")];
+        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
+        let plan = scan_plan
+            .repartition(
+                num_partitions,
+                repartition_by.clone(),
+                partition_scheme_config.clone(),
+            )?
+            .filter(pred.clone())?
+            .build();
+        let expected_filter_scan = if push_into_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            scan_plan.filter(pred)?
+        };
+        let expected = expected_filter_scan
+            .repartition(num_partitions, repartition_by, partition_scheme_config)?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter commutes with Concat.
-    #[test]
-    fn filter_commutes_with_concat() -> DaftResult<()> {
-        let fields = vec![
+    #[rstest]
+    fn filter_commutes_with_concat(
+        #[values(false, true)] push_into_left_scan: bool,
+        #[values(false, true)] push_into_right_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ];
-        let plan = dummy_scan_node(fields.clone())
-            .concat(&dummy_scan_node(fields))?
-            .filter(col("a").lt(&lit(2)))?
+        ]);
+        let left_scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
+        );
+        let right_scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
+        );
+        let pred = col("a").lt(&lit(2));
+        let plan = left_scan_plan
+            .concat(&right_scan_plan)?
+            .filter(pred.clone())?
             .build();
-        let expected = "\
-        Concat\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8";
+        let expected_left_filter_scan = if push_into_left_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op.clone(),
+                Pushdowns::default().with_filters(Some(pred.clone().into())),
+            )
+        } else {
+            left_scan_plan.filter(pred.clone())?
+        };
+        let expected_right_filter_scan = if push_into_right_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            right_scan_plan.filter(pred)?
+        };
+        let expected = expected_left_filter_scan
+            .concat(&expected_right_filter_scan)?
+            .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Filter commutes with Join.
+    #[rstest]
+    fn filter_commutes_with_join(
+        #[values(false, true)] push_into_left_scan: bool,
+        #[values(false, true)] push_into_right_scan: bool,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let left_scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
+        );
+        let right_scan_plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
+        );
+        let join_on = vec![col("b")];
+        let pred = col("a").lt(&lit(2));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        let expected_left_filter_scan = if push_into_left_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op.clone(),
+                Pushdowns::default().with_filters(Some(pred.clone().into())),
+            )
+        } else {
+            left_scan_plan.filter(pred.clone())?
+        };
+        let expected_right_filter_scan = if push_into_right_scan {
+            dummy_scan_node_with_pushdowns(
+                scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            right_scan_plan.filter(pred)?
+        };
+        let expected = expected_left_filter_scan
+            .join(
+                &expected_right_filter_scan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter can be pushed into the left side of a Join.
-    #[test]
-    fn filter_commutes_with_join_left_side() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_join_left_side(
+        #[values(false, true)] push_into_left_scan: bool,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .join(
-            &dummy_scan_node(vec![
-                Field::new("b", DataType::Utf8),
-                Field::new("c", DataType::Float64),
-            ]),
-            vec![col("b")],
-            vec![col("b")],
-            JoinType::Inner,
-            None,
-        )?
-        .filter(col("a").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Utf8, c#Float64\
-        \n  Filter: col(a) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
-        \n  Source: Json, File paths = [/foo], File schema = b#Utf8, c#Float64, Native storage config = { Use multithreading = true }, Output schema = b#Utf8, c#Float64";
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node_with_pushdowns(
+            left_scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
+        );
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let join_on = vec![col("b")];
+        let pred = col("a").lt(&lit(2));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        let expected_left_filter_scan = if push_into_left_scan {
+            dummy_scan_node_with_pushdowns(
+                left_scan_op.clone(),
+                Pushdowns::default().with_filters(Some(pred.clone().into())),
+            )
+        } else {
+            left_scan_plan.filter(pred.clone())?
+        };
+        let expected = expected_left_filter_scan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
     /// Tests that Filter can be pushed into the right side of a Join.
-    #[test]
-    fn filter_commutes_with_join_right_side() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
+    #[rstest]
+    fn filter_commutes_with_join_right_side(
+        #[values(false, true)] push_into_right_scan: bool,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
-        ])
-        .join(
-            &dummy_scan_node(vec![
-                Field::new("b", DataType::Utf8),
-                Field::new("c", DataType::Float64),
-            ]),
-            vec![col("b")],
-            vec![col("b")],
-            JoinType::Inner,
-            None,
-        )?
-        .filter(col("c").lt(&lit(2.0)))?
-        .build();
-        let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Utf8, c#Float64\
-        \n  Source: Json, File paths = [/foo], File schema = a#Int64, b#Utf8, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Utf8\
-        \n  Filter: col(c) < lit(2.0)\
-        \n    Source: Json, File paths = [/foo], File schema = b#Utf8, c#Float64, Native storage config = { Use multithreading = true }, Output schema = b#Utf8, c#Float64";
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Utf8),
+            Field::new("c", DataType::Float64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node_with_pushdowns(
+            right_scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
+        );
+        let join_on = vec![col("b")];
+        let pred = col("c").lt(&lit(2.0));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        let expected_right_filter_scan = if push_into_right_scan {
+            dummy_scan_node_with_pushdowns(
+                right_scan_op.clone(),
+                Pushdowns::default().with_filters(Some(pred.clone().into())),
+            )
+        } else {
+            right_scan_plan.filter(pred.clone())?
+        };
+        let expected = left_scan_plan
+            .join(
+                &expected_right_filter_scan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 
-    /// Tests that Filter can be pushed into both sides of a Join.
-    #[test]
-    fn filter_commutes_with_join_both_sides() -> DaftResult<()> {
-        let plan = dummy_scan_node(vec![
-            Field::new("a", DataType::Int64),
+    /// Tests that Filter on join key commutes with Join.
+    #[rstest]
+    fn filter_commutes_with_join_on_join_key(
+        #[values(false, true)] push_into_left_scan: bool,
+        #[values(false, true)] push_into_right_scan: bool,
+    ) -> DaftResult<()> {
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Utf8),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Float64),
-        ])
-        .join(
-            &dummy_scan_node(vec![Field::new("b", DataType::Int64)]),
-            vec![col("b")],
-            vec![col("b")],
-            JoinType::Inner,
-            None,
-        )?
-        .filter(col("b").lt(&lit(2)))?
-        .build();
-        let expected = "\
-        Join: Type = Inner, Strategy = Auto, On = col(b), Output schema = a#Int64, b#Int64, c#Float64\
-        \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = a#Int64, b#Int64, c#Float64, Native storage config = { Use multithreading = true }, Output schema = a#Int64, b#Int64, c#Float64\
-        \n  Filter: col(b) < lit(2)\
-        \n    Source: Json, File paths = [/foo], File schema = b#Int64, Native storage config = { Use multithreading = true }, Output schema = b#Int64";
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("b", DataType::Int64),
+            Field::new("d", DataType::Boolean),
+        ]);
+        let left_scan_plan = dummy_scan_node_with_pushdowns(
+            left_scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
+        );
+        let right_scan_plan = dummy_scan_node_with_pushdowns(
+            right_scan_op.clone(),
+            Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
+        );
+        let join_on = vec![col("b")];
+        let pred = col("b").lt(&lit(2));
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .filter(pred.clone())?
+            .build();
+        let expected_left_filter_scan = if push_into_left_scan {
+            dummy_scan_node_with_pushdowns(
+                left_scan_op.clone(),
+                Pushdowns::default().with_filters(Some(pred.clone().into())),
+            )
+        } else {
+            left_scan_plan.filter(pred.clone())?
+        };
+        let expected_right_filter_scan = if push_into_right_scan {
+            dummy_scan_node_with_pushdowns(
+                right_scan_op,
+                Pushdowns::default().with_filters(Some(pred.into())),
+            )
+        } else {
+            right_scan_plan.filter(pred)?
+        };
+        let expected = expected_left_filter_scan
+            .join(
+                &expected_right_filter_scan,
+                join_on.clone(),
+                join_on.clone(),
+                JoinType::Inner,
+                None,
+            )?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

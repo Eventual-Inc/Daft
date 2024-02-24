@@ -82,18 +82,22 @@ mod tests {
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{col, Expr};
 
-    use crate::{planner::plan, test::dummy_scan_node, PartitionSchemeConfig, PartitionSpec};
+    use crate::{
+        planner::plan,
+        test::{dummy_scan_node, dummy_scan_operator},
+        PartitionSchemeConfig, PartitionSpec,
+    };
 
     /// do not destroy the partition spec.
     #[test]
     fn test_partition_spec_preserving() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
 
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
-        ])
+        ]))
         .repartition(
             Some(3),
             vec![Expr::Column("a".into())],
@@ -123,11 +127,11 @@ mod tests {
     fn test_partition_spec_destroying() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
 
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
-        ])
+        ]))
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
