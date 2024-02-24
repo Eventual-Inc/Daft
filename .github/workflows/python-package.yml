@@ -503,7 +503,6 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
-        micropartitions: [1]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -541,7 +540,6 @@ jobs:
         pytest tests/integration/sql -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-        DAFT_MICROPARTITIONS: ${{ matrix.micropartitions }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.24.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}

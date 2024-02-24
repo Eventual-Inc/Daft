@@ -6,7 +6,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::count_mode::CountMode;
 use daft_core::DataType;
 use daft_dsl::Expr;

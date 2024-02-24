@@ -32,5 +32,5 @@ def read_sql(
 
     sql_operator = SQLScanOperator(sql, url, storage_config=storage_config)
     handle = ScanOperatorHandle.from_python_scan_operator(sql_operator)
-    builder = LogicalPlanBuilder.from_tabular_scan_with_scan_operator(scan_operator=handle)
+    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)
