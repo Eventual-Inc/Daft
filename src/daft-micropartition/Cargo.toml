@@ -18,6 +18,7 @@ pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
+tokio = {workspace = true}
 
 [features]
 default = ["python"]

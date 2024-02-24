@@ -26,9 +26,8 @@ use snafu::ResultExt;
 use crate::PyIOSnafu;
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-use daft_io::{IOConfig, IOStatsContext, IOStatsRef};
-use daft_stats::TableStatistics;
-use daft_stats::{PartitionSpec, TableMetadata};
+use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
@@ -427,6 +426,7 @@ impl MicroPartition {
                     &ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
+                    Some(schema.clone()),
                     field_id_mapping,
                 )
                 .context(DaftCoreComputeSnafu)?;
@@ -702,29 +702,66 @@ pub(crate) fn read_json_into_micropartition(
     }
 }
 
-// TODO: Deduplicate this with the other `rename_schema_recursively` function in file.rs
-fn rename_schema_recursively(
-    daft_schema: Schema,
-    field_id_mapping: &BTreeMap<i32, Field>,
-) -> DaftResult<Schema> {
-    Schema::new(
-        daft_schema
-            .fields
-            .into_iter()
-            .map(|(_, field)| {
-                if let Some(field_id) = field.metadata.get("field_id") {
-                    let field_id = str::parse::<i32>(field_id).unwrap();
-                    let mapped_field = field_id_mapping.get(&field_id);
-                    match mapped_field {
-                        None => field,
-                        Some(mapped_field) => field.rename(&mapped_field.name),
-                    }
-                } else {
-                    field
-                }
-            })
-            .collect(),
-    )
+#[allow(clippy::too_many_arguments)]
+fn _read_parquet_into_loaded_micropartition(
+    io_client: Arc<IOClient>,
+    runtime_handle: Arc<tokio::runtime::Runtime>,
+    uris: &[&str],
+    columns: Option<&[&str]>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicate: Option<ExprRef>,
+    io_stats: Option<IOStatsRef>,
+    num_parallel_tasks: usize,
+    schema_infer_options: &ParquetSchemaInferenceOptions,
+    catalog_provided_schema: Option<SchemaRef>,
+    field_id_mapping: &Option<Arc<BTreeMap<i32, Field>>>,
+) -> DaftResult<MicroPartition> {
+    let all_tables = read_parquet_bulk(
+        uris,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        predicate,
+        io_client,
+        io_stats,
+        num_parallel_tasks,
+        runtime_handle,
+        schema_infer_options,
+        field_id_mapping,
+    )?;
+
+    // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
+    let full_daft_schema = match catalog_provided_schema {
+        Some(catalog_provided_schema) => catalog_provided_schema,
+        None => {
+            let unioned_schema = all_tables
+                .iter()
+                .map(|t| t.schema.clone())
+                .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
+            unioned_schema.expect("we need at least 1 schema")
+        }
+    };
+
+    // Hack to avoid to owned schema
+    let full_daft_schema = Schema {
+        fields: full_daft_schema.fields.clone(),
+    };
+    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
+
+    let all_tables = all_tables
+        .into_iter()
+        .map(|t| t.cast_to_schema(&pruned_daft_schema))
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    // TODO: we can pass in stats here to optimize downstream workloads such as join
+    Ok(MicroPartition::new_loaded(
+        Arc::new(pruned_daft_schema),
+        all_tables.into(),
+        None,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -741,6 +778,7 @@ pub(crate) fn read_parquet_into_micropartition(
     num_parallel_tasks: usize,
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
+    catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: &Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset && so > 0 {
@@ -750,44 +788,24 @@ pub(crate) fn read_parquet_into_micropartition(
     // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-    if let Some(predicate) = predicate {
+
+    if predicate.is_some() {
         // We have a predicate, so we will perform eager read only reading what row groups we need.
-        let all_tables = read_parquet_bulk(
+        return _read_parquet_into_loaded_micropartition(
+            io_client,
+            runtime_handle,
             uris,
             columns,
-            None,
+            start_offset,
             num_rows,
             row_groups,
-            Some(predicate.clone()),
-            io_client,
+            predicate,
             io_stats,
             num_parallel_tasks,
-            runtime_handle,
             schema_infer_options,
+            catalog_provided_schema,
             field_id_mapping,
-        )?;
-
-        let unioned_schema = all_tables
-            .iter()
-            .map(|t| t.schema.clone())
-            .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
-        let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
-        // Hack to avoid to owned schema
-        let full_daft_schema = Schema {
-            fields: full_daft_schema.fields.clone(),
-        };
-        let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
-
-        let all_tables = all_tables
-            .into_iter()
-            .map(|t| t.cast_to_schema(&pruned_daft_schema))
-            .collect::<DaftResult<Vec<_>>>()?;
-        // TODO: we can pass in stats here to optimize downstream workloads such as join
-        return Ok(MicroPartition::new_loaded(
-            Arc::new(pruned_daft_schema),
-            all_tables.into(),
-            None,
-        ));
+        );
     }
 
     let meta_io_client = io_client.clone();
@@ -829,46 +847,40 @@ pub(crate) fn read_parquet_into_micropartition(
         None
     };
 
-    // Union and prune the schema using the specified `columns`
-    let resolved_schemas = if let Some(field_id_mapping) = field_id_mapping {
-        pq_file_schemas
-            .into_iter()
-            .map(|pq_file_schema| {
-                rename_schema_recursively(pq_file_schema, field_id_mapping.as_ref())
-            })
-            .collect::<DaftResult<Vec<_>>>()?
-    } else {
-        pq_file_schemas
-    };
-    let unioned_schema = resolved_schemas
-        .into_iter()
-        .try_reduce(|l, r| l.union(&r))?;
-    let full_daft_schema = unioned_schema.expect("we need at least 1 schema");
-    let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
-
-    // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
-    let total_rows_no_limit = match &row_groups {
-        None => metadata.iter().map(|fm| fm.num_rows).sum(),
-        Some(row_groups) => metadata
-            .iter()
-            .zip(row_groups.iter())
-            .map(|(fm, rg)| match rg {
-                Some(rg) => rg
-                    .iter()
-                    .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
-                    .sum::<usize>(),
-                None => fm.num_rows,
-            })
-            .sum(),
-    };
-    let total_rows = num_rows
-        .map(|num_rows| num_rows.min(total_rows_no_limit))
-        .unwrap_or(total_rows_no_limit);
-
     if let Some(stats) = stats {
+        // Statistics are provided by the Parquet file, so we create an unloaded MicroPartition
+        // by constructing an appropriate ScanTask
+
+        // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
+        let scan_task_daft_schema = match catalog_provided_schema {
+            Some(catalog_provided_schema) => catalog_provided_schema,
+            None => {
+                let unioned_schema = pq_file_schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
+                Arc::new(unioned_schema.expect("we need at least 1 schema"))
+            }
+        };
+
+        // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
+        let total_rows_no_limit = match &row_groups {
+            None => metadata.iter().map(|fm| fm.num_rows).sum(),
+            Some(row_groups) => metadata
+                .iter()
+                .zip(row_groups.iter())
+                .map(|(fm, rg)| match rg {
+                    Some(rg) => rg
+                        .iter()
+                        .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
+                        .sum::<usize>(),
+                    None => fm.num_rows,
+                })
+                .sum(),
+        };
+        let total_rows = num_rows
+            .map(|num_rows| num_rows.min(total_rows_no_limit))
+            .unwrap_or(total_rows_no_limit);
+
         let owned_urls = uris.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
-        let daft_schema = Arc::new(pruned_daft_schema);
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {
@@ -896,7 +908,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 field_id_mapping: field_id_mapping.clone(),
             })
             .into(),
-            daft_schema.clone(),
+            scan_task_daft_schema,
             StorageConfig::Native(
                 NativeStorageConfig::new_internal(
                     multithreaded_io,
@@ -914,15 +926,6 @@ pub(crate) fn read_parquet_into_micropartition(
             ),
         );
 
-        let exprs = daft_schema
-            .fields
-            .keys()
-            .map(|n| daft_dsl::col(n.as_str()))
-            .collect::<Vec<_>>();
-
-        // use schema to update stats
-        let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
-
         Ok(MicroPartition::new_unloaded(
             scan_task.materialized_schema(),
             Arc::new(scan_task),
@@ -930,29 +933,21 @@ pub(crate) fn read_parquet_into_micropartition(
             stats,
         ))
     } else {
-        let all_tables = read_parquet_bulk(
+        _read_parquet_into_loaded_micropartition(
+            io_client,
+            runtime_handle,
             uris,
             columns,
             start_offset,
             num_rows,
             row_groups,
-            None,
-            io_client,
+            predicate,
             io_stats,
             num_parallel_tasks,
-            runtime_handle,
             schema_infer_options,
+            catalog_provided_schema,
             field_id_mapping,
-        )?;
-        let all_tables = all_tables
-            .into_iter()
-            .map(|t| t.cast_to_schema(&pruned_daft_schema))
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(MicroPartition::new_loaded(
-            Arc::new(pruned_daft_schema),
-            all_tables.into(),
-            None,
-        ))
+        )
     }
 }
 
