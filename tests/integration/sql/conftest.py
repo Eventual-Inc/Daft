@@ -1,50 +1,83 @@
 from __future__ import annotations
 
-import random
+import tempfile
 from typing import Generator
 
 import numpy as np
+import pandas as pd
 import pytest
-import sqlalchemy
 import tenacity
-
-URLS = {"trino": "trino://user@localhost:8080/tpch"}
-
-NUM_TEST_ROWS = 200
-
-
-@pytest.fixture(scope="session")
-def test_items():
-    np.random.seed(42)
-    data = {
-        "sepal_length": np.round(np.random.uniform(4.3, 7.9, NUM_TEST_ROWS), 1),
-        "sepal_width": np.round(np.random.uniform(2.0, 4.4, NUM_TEST_ROWS), 1),
-        "petal_length": np.round(np.random.uniform(1.0, 6.9, NUM_TEST_ROWS), 1),
-        "petal_width": np.round(np.random.uniform(0.1, 2.5, NUM_TEST_ROWS), 1),
-        "variety": [random.choice(["Setosa", "Versicolor", "Virginica"]) for _ in range(NUM_TEST_ROWS)],
-    }
-    return data
-
-
-@tenacity.retry(
-    stop=tenacity.stop_after_delay(60),
-    wait=tenacity.wait_fixed(5),
-    reraise=True,
+from sqlalchemy import (
+    Column,
+    Engine,
+    Float,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    create_engine,
+    text,
 )
-def check_database_connection(url) -> None:
-    with sqlalchemy.create_engine(url).connect() as conn:
-        conn.execute(sqlalchemy.text("SELECT * FROM tpch.sf1.nation"))
+
+URLS = [
+    "trino://user@localhost:8080/memory/default",
+    "postgresql://username:password@localhost:5432/postgres",
+    "mysql+pymysql://username:password@localhost:3306/mysql",
+    "sqlite:///",
+]
+NUM_TEST_ROWS = 200
+NUM_ROWS_PER_PARTITION = 50
+TEST_TABLE_NAME = "example"
 
 
 @pytest.fixture(scope="session")
-def db_url() -> Generator[str, None, None]:
-    for url in URLS.values():
-        try:
-            check_database_connection(url)
-        except Exception as e:
-            pytest.fail(f"Failed to connect to {url}: {e}")
+def generated_data() -> pd.DataFrame:
+    data = {
+        "id": np.arange(NUM_TEST_ROWS),
+        "sepal_length": np.arange(NUM_TEST_ROWS, dtype=float),
+        "sepal_width": np.arange(NUM_TEST_ROWS, dtype=float),
+        "petal_length": np.arange(NUM_TEST_ROWS, dtype=float),
+        "petal_width": np.arange(NUM_TEST_ROWS, dtype=float),
+        "variety": ["setosa"] * 50 + ["versicolor"] * 50 + ["virginica"] * 50 + [None] * 50,
+    }
+    return pd.DataFrame(data)
 
-    def db_url(db):
-        return URLS[db]
 
-    yield db_url
+@pytest.fixture(scope="session", params=URLS)
+def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
+    db_url = request.param
+    if db_url.startswith("sqlite"):
+        with tempfile.NamedTemporaryFile(suffix=".db") as file:
+            db_url += file.name
+            setup_database(db_url, generated_data)
+            yield db_url
+    else:
+        setup_database(db_url, generated_data)
+        yield db_url
+
+
+@tenacity.retry(stop=tenacity.stop_after_delay(10), wait=tenacity.wait_fixed(5), reraise=True)
+def setup_database(db_url: str, data: pd.DataFrame) -> None:
+    engine = create_engine(db_url)
+    create_and_populate(engine, data)
+
+    # Ensure the table is created and populated
+    with engine.connect() as conn:
+        result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
+        assert result == NUM_TEST_ROWS
+
+
+def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
+    metadata = MetaData()
+    table = Table(
+        TEST_TABLE_NAME,
+        metadata,
+        Column("id", Integer),
+        Column("sepal_length", Float),
+        Column("sepal_width", Float),
+        Column("petal_length", Float),
+        Column("petal_width", Float),
+        Column("variety", String(50)),
+    )
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)

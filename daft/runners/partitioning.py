@@ -73,7 +73,7 @@ class TableParseParquetOptions:
 
 
 @dataclass(frozen=True)
-class TableParseSQLOptions:
+class TableReadSQLOptions:
     """Options for parsing SQL tables
 
     Args:
@@ -83,6 +83,10 @@ class TableParseSQLOptions:
 
     limit: int | None = None
     offset: int | None = None
+    limit_before_offset: bool | None = None
+
+    predicate_sql: str | None = None
+    predicate_expression: Expression | None = None
 
 
 @dataclass(frozen=True)

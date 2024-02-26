@@ -29,7 +29,6 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.expressions import ExpressionsProjection
-from daft.expressions.expressions import Expression
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -40,10 +39,11 @@ from daft.runners.partitioning import (
     TableParseCSVOptions,
     TableParseParquetOptions,
     TableReadOptions,
+    TableReadSQLOptions,
 )
 from daft.series import Series
+from daft.sql.sql_reader import SQLReader
 from daft.table import MicroPartition
-from daft.utils import execute_sql_query_to_pyarrow
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
@@ -217,10 +217,8 @@ def read_sql(
     sql: str,
     url: str,
     schema: Schema,
-    limit: int | None = None,
-    offset: int | None = None,
+    sql_options: TableReadSQLOptions = TableReadSQLOptions(),
     read_options: TableReadOptions = TableReadOptions(),
-    predicate: Expression | None = None,
 ) -> MicroPartition:
     """Reads a MicroPartition from a SQL query
 
@@ -232,25 +230,22 @@ def read_sql(
     Returns:
         MicroPartition: MicroPartition from SQL query
     """
-    columns = read_options.column_names
-    if columns is not None:
-        sql = f"SELECT {', '.join(columns)} FROM ({sql})"
-    else:
-        sql = f"SELECT * FROM ({sql})"
+    pa_table = SQLReader(
+        sql,
+        url,
+        limit=sql_options.limit,
+        offset=sql_options.offset,
+        limit_before_offset=sql_options.limit_before_offset,
+        projection=read_options.column_names,
+        predicate=sql_options.predicate_sql,
+    ).read()
+    mp = MicroPartition.from_arrow(pa_table)
 
-    if limit is not None:
-        sql = f"{sql} LIMIT {limit}"
+    if sql_options.predicate_sql is None and sql_options.predicate_expression is not None:
+        mp = mp.filter(ExpressionsProjection([sql_options.predicate_expression]))
 
-    if offset is not None:
-        sql = f"{sql} OFFSET {offset}"
-
-    mp = MicroPartition.from_arrow(execute_sql_query_to_pyarrow(sql, url))
-    if predicate is not None:
-        mp = mp.filter(ExpressionsProjection([predicate]))
-
-    num_rows = read_options.num_rows
-    if num_rows is not None:
-        mp = mp.head(num_rows)
+    if read_options.num_rows is not None:
+        mp = mp.head(read_options.num_rows)
 
     return _cast_table_to_schema(mp, read_options=read_options, schema=schema)
 

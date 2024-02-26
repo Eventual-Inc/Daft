@@ -308,8 +308,18 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(DatabaseSourceConfig { sql, limit, offset }) => {
-                    let py_expr = scan_task
+                FileFormatConfig::Database(DatabaseSourceConfig {
+                    sql,
+                    limit,
+                    offset,
+                    limit_before_offset,
+                }) => {
+                    let predicate_sql = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .and_then(|p| p.to_sql());
+                    let predicate_expr = scan_task
                         .pushdowns
                         .filters
                         .as_ref()
@@ -322,6 +332,9 @@ fn materialize_scan_task(
                                 url,
                                 *limit,
                                 *offset,
+                                *limit_before_offset,
+                                predicate_sql.clone(),
+                                predicate_expr.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task
                                     .pushdowns
@@ -329,7 +342,6 @@ fn materialize_scan_task(
                                     .as_ref()
                                     .map(|cols| cols.as_ref().clone()),
                                 scan_task.pushdowns.limit,
-                                py_expr.clone(),
                             )
                             .map(|t| t.into())
                             .context(PyIOSnafu)

@@ -265,11 +265,22 @@ pub struct DatabaseSourceConfig {
     pub sql: String,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub limit_before_offset: Option<bool>,
 }
 
 impl DatabaseSourceConfig {
-    pub fn new_internal(sql: String, limit: Option<usize>, offset: Option<usize>) -> Self {
-        Self { sql, limit, offset }
+    pub fn new_internal(
+        sql: String,
+        limit: Option<usize>,
+        offset: Option<usize>,
+        limit_before_offset: Option<bool>,
+    ) -> Self {
+        Self {
+            sql,
+            limit,
+            offset,
+            limit_before_offset,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -281,6 +292,9 @@ impl DatabaseSourceConfig {
         if let Some(offset) = self.offset {
             res.push(format!("Offset = {}", offset));
         }
+        if let Some(limit_before_offset) = self.limit_before_offset {
+            res.push(format!("Limit before offset = {}", limit_before_offset));
+        }
         res
     }
 }
@@ -290,8 +304,13 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, limit: Option<usize>, offset: Option<usize>) -> Self {
-        Self::new_internal(sql.to_string(), limit, offset)
+    fn new(
+        sql: &str,
+        limit: Option<usize>,
+        offset: Option<usize>,
+        limit_before_offset: Option<bool>,
+    ) -> Self {
+        Self::new_internal(sql.to_string(), limit, offset, limit_before_offset)
     }
 }
 

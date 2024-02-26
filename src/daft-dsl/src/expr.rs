@@ -568,6 +568,86 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn to_sql(&self) -> Option<String> {
+        match self {
+            Expr::Column(name) => Some(name.to_string()),
+            Expr::Literal(lit) => match lit {
+                lit::LiteralValue::Series(series) => match series.data_type() {
+                    DataType::Utf8 => {
+                        let s = lit.to_string();
+                        let trimmed = s.trim_matches(|c| c == '[' || c == ']').to_string();
+                        let quoted = trimmed
+                            .split(", ")
+                            .map(|s| format!("'{}'", s))
+                            .collect::<Vec<_>>();
+                        Some(quoted.join(", "))
+                    }
+                    _ => Some(
+                        lit.to_string()
+                            .trim_matches(|c| c == '[' || c == ']')
+                            .to_string(),
+                    ),
+                },
+                _ => Some(lit.to_string().replace('\"', "'")),
+            },
+            Expr::Alias(inner, ..) => {
+                let inner_sql = inner.to_sql()?;
+                Some(inner_sql)
+            }
+            Expr::BinaryOp { op, left, right } => {
+                let left_sql = left.to_sql()?;
+                let right_sql = right.to_sql()?;
+                let op = match op {
+                    Operator::Eq => "=".to_string(),
+                    Operator::NotEq => "!=".to_string(),
+                    Operator::Lt => "<".to_string(),
+                    Operator::LtEq => "<=".to_string(),
+                    Operator::Gt => ">".to_string(),
+                    Operator::GtEq => ">=".to_string(),
+                    Operator::And => "AND".to_string(),
+                    Operator::Or => "OR".to_string(),
+                    _ => return None,
+                };
+                Some(format!("{} {} {}", left_sql, op, right_sql))
+            }
+            Expr::Not(inner) => {
+                let inner_sql = inner.to_sql()?;
+                Some(format!("NOT {}", inner_sql))
+            }
+            Expr::IsNull(inner) => {
+                let inner_sql = inner.to_sql()?;
+                Some(format!("{} IS NULL", inner_sql))
+            }
+            Expr::NotNull(inner) => {
+                let inner_sql = inner.to_sql()?;
+                Some(format!("{} IS NOT NULL", inner_sql))
+            }
+            // TODO: Implement SQL translations for these expressions
+            Expr::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true_sql = if_true.to_sql()?;
+                let if_false_sql = if_false.to_sql()?;
+                let predicate_sql = predicate.to_sql()?;
+                Some(format!(
+                    "CASE WHEN {} THEN {} ELSE {} END",
+                    predicate_sql, if_true_sql, if_false_sql
+                ))
+            }
+            Expr::IsIn(inner, items) => {
+                let inner_sql = inner.to_sql()?;
+                let items_sql = items.to_sql()?;
+                Some(format!("{} IN ({})", inner_sql, items_sql))
+            }
+            // TODO: Implement SQL translations for these expressions if possible
+            Expr::Agg(..) => None,
+            Expr::Cast(..) => None,
+            Expr::Function { .. } => None,
+        }
+    }
 }
 
 impl Display for Expr {
