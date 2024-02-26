@@ -645,13 +645,19 @@ def _build_partitions(
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
 
     if isinstance(task.instructions[0], ReduceInstruction):
-        build_remote = reduce_and_fanout if task.instructions and isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
+        build_remote = (
+            reduce_and_fanout
+            if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
+            else reduce_pipeline
+        )
         build_remote = build_remote.options(**ray_options)
         [metadatas_ref, *partitions] = build_remote.remote(daft_execution_config_objref, task.instructions, task.inputs)
 
     else:
         build_remote = (
-            fanout_pipeline if task.instructions and isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
+            fanout_pipeline
+            if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
+            else single_partition_pipeline
         )
         if task.instructions and isinstance(task.instructions[0], ScanWithTask):
             ray_options["scheduling_strategy"] = "SPREAD"
