@@ -40,6 +40,7 @@ from daft.execution.execution_step import (
     MultiOutputPartitionTask,
     PartitionTask,
     ReduceInstruction,
+    ScanWithTask,
     SingleOutputPartitionTask,
 )
 from daft.filesystem import glob_path_with_stats
@@ -652,6 +653,8 @@ def _build_partitions(
         build_remote = (
             fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
         )
+        if isinstance(task.instructions[0], ScanWithTask):
+            ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options)
         [metadatas_ref, *partitions] = build_remote.remote(
             daft_execution_config_objref, task.instructions, *task.inputs

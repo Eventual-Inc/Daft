@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from daft.daft import (
     FileFormat,
     IOConfig,
@@ -15,7 +13,7 @@ from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartialPartitionMetadata, PartitionT
+from daft.runners.partitioning import PartitionT
 from daft.table import MicroPartition
 
 
@@ -30,7 +28,7 @@ def scan_with_tasks(
     # We can instead right-size and bundle the ScanTask into single-instruction bulk reads.
     for scan_task in scan_tasks:
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
-            instruction=ScanWithTask(scan_task),
+            instruction=execution_step.ScanWithTask(scan_task),
             # Set the filesize as the memory request.
             # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
             resource_request=ResourceRequest(memory_bytes=scan_task.size_bytes()),
@@ -43,51 +41,10 @@ def empty_scan(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     """yield a plan to create an empty Partition"""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
-        instruction=EmptyScan(schema=schema),
+        instruction=execution_step.EmptyScan(schema=schema),
         resource_request=ResourceRequest(memory_bytes=0),
     )
     yield scan_step
-
-
-@dataclass(frozen=True)
-class ScanWithTask(execution_step.SingleOutputInstruction):
-    scan_task: ScanTask
-
-    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._scan(inputs)
-
-    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        assert len(inputs) == 0
-        table = MicroPartition._from_scan_task(self.scan_task)
-        return [table]
-
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 0
-
-        return [
-            PartialPartitionMetadata(
-                num_rows=self.scan_task.num_rows(),
-                size_bytes=self.scan_task.size_bytes(),
-            )
-        ]
-
-
-@dataclass(frozen=True)
-class EmptyScan(execution_step.SingleOutputInstruction):
-    schema: Schema
-
-    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return [MicroPartition.empty(self.schema)]
-
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 0
-
-        return [
-            PartialPartitionMetadata(
-                num_rows=0,
-                size_bytes=0,
-            )
-        ]
 
 
 def project(
