@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import os
 
 import pandas as pd
 import pytest
@@ -14,11 +13,7 @@ import daft
 from daft.logical.schema import Schema
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-micropartitions_disabled = os.getenv("DAFT_MICROPARTITIONS", "1") != "1"
-pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0 or micropartitions_disabled,
-    reason="deltalake only supported if pyarrow >= 8.0.0 and micropartitions are enabled",
-)
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="deltalake only supported if pyarrow >= 8.0.0")
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 
 
