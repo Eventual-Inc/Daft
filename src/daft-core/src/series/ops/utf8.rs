@@ -90,4 +90,14 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_reverse(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.reverse()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Reverse not implemented for type {dt}"
+            ))),
+        }
+    }
 }

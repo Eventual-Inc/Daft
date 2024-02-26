@@ -102,6 +102,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.upper
    Expression.str.lstrip
    Expression.str.rstrip
+   Expression.str.reverse
 
 .. _api-expressions-temporal:
 
