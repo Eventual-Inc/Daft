@@ -327,7 +327,7 @@ pub mod pylib {
             storage_config: PyStorageConfig,
             pushdowns: Option<PyPushdowns>,
         ) -> PyResult<Self> {
-            let data_source = DataFileSource::DatabaseDataFile {
+            let data_source = DataFileSource::AnonymousDataFile {
                 path: url,
                 chunk_spec: None,
                 size_bytes: None,

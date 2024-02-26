@@ -97,12 +97,13 @@ def test_sql_read_with_all_pushdowns(test_db) -> None:
 
 
 @pytest.mark.integration()
-def test_sql_read_with_limit_pushdown(test_db) -> None:
+@pytest.mark.parametrize("limit", [0, 1, 10, 100, 200])
+def test_sql_read_with_limit_pushdown(test_db, limit) -> None:
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
-    df = df.limit(100)
+    df = df.limit(limit)
 
     df = df.collect()
-    assert len(df) == 100
+    assert len(df) == limit
 
 
 @pytest.mark.integration()

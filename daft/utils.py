@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import logging
 import pickle
 import random
 import statistics
 from typing import Any, Callable
 
 import pyarrow as pa
-
-logger = logging.getLogger(__name__)
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 

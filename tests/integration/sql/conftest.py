@@ -47,6 +47,7 @@ def generated_data() -> pd.DataFrame:
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
     if db_url.startswith("sqlite"):
+        # No docker container for sqlite, so we need to create a temporary file
         with tempfile.NamedTemporaryFile(suffix=".db") as file:
             db_url += file.name
             setup_database(db_url, generated_data)

@@ -229,7 +229,7 @@ fn materialize_scan_task(
                 }
                 FileFormatConfig::Database(_) => {
                     return Err(common_error::DaftError::TypeError(
-                        "Native reads for Database file format not yet implemented".to_string(),
+                        "Native reads for Database file format not implemented".to_string(),
                     ))
                     .context(DaftCoreComputeSnafu);
                 }

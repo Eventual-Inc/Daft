@@ -715,7 +715,9 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                 input_physical.into(),
                             )))
                         }
-                        _ => unimplemented!(),
+                        FileFormat::Database => Err(common_error::DaftError::ValueError(
+                            "Database sink not yet implemented".to_string(),
+                        )),
                     }
                 }
             }

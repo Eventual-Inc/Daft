@@ -623,7 +623,6 @@ impl Expr {
                 let inner_sql = inner.to_sql()?;
                 Some(format!("{} IS NOT NULL", inner_sql))
             }
-            // TODO: Implement SQL translations for these expressions
             Expr::IfElse {
                 if_true,
                 if_false,
