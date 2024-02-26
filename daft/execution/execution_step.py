@@ -11,7 +11,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
+from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
@@ -288,6 +288,47 @@ class Instruction(Protocol):
 class SingleOutputInstruction(Instruction):
     def num_outputs(self) -> int:
         return 1
+
+
+@dataclass(frozen=True)
+class ScanWithTask(SingleOutputInstruction):
+    scan_task: ScanTask
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._scan(inputs)
+
+    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        assert len(inputs) == 0
+        table = MicroPartition._from_scan_task(self.scan_task)
+        return [table]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 0
+
+        return [
+            PartialPartitionMetadata(
+                num_rows=self.scan_task.num_rows(),
+                size_bytes=self.scan_task.size_bytes(),
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class EmptyScan(SingleOutputInstruction):
+    schema: Schema
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return [MicroPartition.empty(self.schema)]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 0
+
+        return [
+            PartialPartitionMetadata(
+                num_rows=0,
+                size_bytes=0,
+            )
+        ]
 
 
 @dataclass(frozen=True)
