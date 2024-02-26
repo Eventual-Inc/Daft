@@ -63,7 +63,7 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
 
 
 @pytest.mark.integration()
-def test_daft_iceberg_table_filtered_collect_correct(local_iceberg_catalog):
+def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
     df = daft.read_iceberg(tab)
     df = df.where(df["pos"] <= 1)
@@ -74,7 +74,7 @@ def test_daft_iceberg_table_filtered_collect_correct(local_iceberg_catalog):
 
 
 @pytest.mark.integration()
-def test_daft_iceberg_table_column_pushdown_collect_correct(local_iceberg_catalog):
+def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
     df = daft.read_iceberg(tab)
     df = df.select("pos")
