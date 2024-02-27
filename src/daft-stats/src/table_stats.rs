@@ -74,12 +74,32 @@ impl TableStatistics {
         })
     }
 
-    pub fn estimate_row_size(&self) -> super::Result<usize> {
-        let mut sum_so_far = 0;
+    pub fn estimate_row_size(&self, schema: Option<&Schema>) -> super::Result<f64> {
+        let mut sum_so_far = 0.;
 
-        for elem_size in self.columns.values().map(|c| c.element_size()) {
-            sum_so_far += elem_size?;
+        if let Some(schema) = schema {
+            // if schema provided, use it
+            for field in schema.fields.values() {
+                let name = field.name.as_str();
+                let elem_size = if let Some(stats) = self.columns.get(name) {
+                    // first try to use column stats
+                    stats.element_size()?
+                } else {
+                    None
+                }
+                .or_else(|| {
+                    // failover to use dtype estimate
+                    field.dtype.estimate_size_bytes()
+                })
+                .unwrap_or(0.);
+                sum_so_far += elem_size;
+            }
+        } else {
+            for elem_size in self.columns.values().map(|c| c.element_size()) {
+                sum_so_far += elem_size?.unwrap_or(0.);
+            }
         }
+
         Ok(sum_so_far)
     }
 

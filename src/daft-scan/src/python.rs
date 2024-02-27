@@ -35,7 +35,7 @@ pub mod pylib {
     use crate::file_format::PyFileFormatConfig;
     use crate::glob::GlobScanOperator;
     use crate::storage_config::PyStorageConfig;
-
+    use common_daft_config::PyDaftExecutionConfig;
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -244,6 +244,17 @@ pub mod pylib {
 
         pub fn size_bytes(&self) -> PyResult<Option<i64>> {
             Ok(self.0.size_bytes().map(i64::try_from).transpose()?)
+        }
+
+        pub fn estimate_in_memory_size_bytes(
+            &self,
+            cfg: PyDaftExecutionConfig,
+        ) -> PyResult<Option<i64>> {
+            Ok(self
+                .0
+                .estimate_in_memory_size_bytes(Some(cfg.config.as_ref()))
+                .map(i64::try_from)
+                .transpose()?)
         }
     }
 

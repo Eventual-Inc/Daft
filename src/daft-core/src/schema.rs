@@ -161,6 +161,13 @@ impl Schema {
         );
         format!("{}\n", table)
     }
+
+    pub fn estimate_row_size_bytes(&self) -> f64 {
+        self.fields
+            .values()
+            .map(|f| f.dtype.estimate_size_bytes().unwrap_or(0.))
+            .sum()
+    }
 }
 
 impl Eq for Schema {}

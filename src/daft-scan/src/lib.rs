@@ -1,6 +1,7 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
 use std::{
+    borrow::Cow,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
@@ -21,6 +22,7 @@ mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod file_format;
 mod glob;
+use common_daft_config::DaftExecutionConfig;
 #[cfg(feature = "python")]
 pub mod py_object_serde;
 pub mod scan_task_iters;
@@ -385,15 +387,55 @@ impl ScanTask {
     }
 
     pub fn size_bytes(&self) -> Option<usize> {
+        self.size_bytes_on_disk.map(|s| s as usize)
+    }
+
+    pub fn estimate_in_memory_size_bytes(
+        &self,
+        config: Option<&DaftExecutionConfig>,
+    ) -> Option<usize> {
+        let mat_schema = self.materialized_schema();
         self.statistics
             .as_ref()
             .and_then(|s| {
                 // Derive in-memory size estimate from table stats.
-                self.num_rows()
-                    .and_then(|num_rows| Some(num_rows * s.estimate_row_size().ok()?))
+                self.num_rows().and_then(|num_rows| {
+                    let row_size = s.estimate_row_size(Some(mat_schema.as_ref())).ok()?;
+                    let estimate = (num_rows as f64) * row_size;
+                    Some(estimate as usize)
+                })
+            })
+            .or_else(|| {
+                // if num rows is provided, use that to estimate row size bytes
+                self.num_rows().map(|num_rows| {
+                    let row_size = mat_schema.estimate_row_size_bytes();
+                    let estimate = (num_rows as f64) * row_size;
+                    estimate as usize
+                })
             })
             // Fall back on on-disk size.
-            .or_else(|| self.size_bytes_on_disk.map(|s| s as usize))
+            .or_else(|| {
+                self.size_bytes_on_disk.map(|file_size| {
+                    // use inflation factor from config
+                    let config = config
+                        .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
+                    let inflation_factor = match self.file_format_config.as_ref() {
+                        FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
+                        FileFormatConfig::Csv(_) | FileFormatConfig::Json(_) => {
+                            config.csv_inflation_factor
+                        }
+                    };
+
+                    // estimate number of rows from read schema
+                    let in_mem_size: f64 = (file_size as f64) * inflation_factor;
+                    let read_row_size = self.schema.estimate_row_size_bytes();
+                    let approx_rows = in_mem_size / read_row_size;
+
+                    // estimate in memory size using mat schema estimate
+                    let proj_schema_size = mat_schema.estimate_row_size_bytes();
+                    (approx_rows * proj_schema_size) as usize
+                })
+            })
     }
 
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {

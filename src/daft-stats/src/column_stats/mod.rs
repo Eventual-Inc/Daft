@@ -118,12 +118,14 @@ impl ColumnRangeStatistics {
         }
     }
 
-    pub(crate) fn element_size(&self) -> crate::Result<usize> {
+    pub(crate) fn element_size(&self) -> crate::Result<Option<f64>> {
         match self {
-            Self::Missing => Ok(0),
-            Self::Loaded(l, u) => Ok((l.size_bytes().context(DaftCoreComputeSnafu)?
-                + u.size_bytes().context(DaftCoreComputeSnafu)?)
-                / 2),
+            Self::Missing => Ok(None),
+            Self::Loaded(l, u) => Ok(Some(
+                ((l.size_bytes().context(DaftCoreComputeSnafu)?
+                    + u.size_bytes().context(DaftCoreComputeSnafu)?) as f64)
+                    / 2.,
+            )),
         }
     }
 

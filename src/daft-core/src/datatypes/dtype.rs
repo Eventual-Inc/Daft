@@ -334,6 +334,43 @@ impl DataType {
         }
     }
 
+    pub fn estimate_size_bytes(&self) -> Option<f64> {
+        const VARIABLE_TYPE_SIZE: f64 = 20.;
+        const DEFAULT_LIST_LEN: f64 = 4.;
+
+        let elem_size = match self.to_physical() {
+            DataType::Null => Some(0.),
+            DataType::Boolean => Some(0.125),
+            DataType::Int8 => Some(1.),
+            DataType::Int16 => Some(2.),
+            DataType::Int32 => Some(4.),
+            DataType::Int64 => Some(8.),
+            DataType::Int128 => Some(16.),
+            DataType::UInt8 => Some(1.),
+            DataType::UInt16 => Some(2.),
+            DataType::UInt32 => Some(4.),
+            DataType::UInt64 => Some(8.),
+            DataType::Float32 => Some(4.),
+            DataType::Float64 => Some(8.),
+            DataType::Utf8 => Some(VARIABLE_TYPE_SIZE),
+            DataType::Binary => Some(VARIABLE_TYPE_SIZE),
+            DataType::FixedSizeList(dtype, len) => {
+                dtype.estimate_size_bytes().map(|b| b * (len as f64))
+            }
+            DataType::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
+            DataType::Struct(fields) => Some(
+                fields
+                    .iter()
+                    .map(|f| f.dtype.estimate_size_bytes().unwrap_or(0f64))
+                    .sum(),
+            ),
+            DataType::Extension(_, dtype, _) => dtype.estimate_size_bytes(),
+            _ => None,
+        };
+        // add bitmap
+        elem_size.map(|e| e + 0.125)
+    }
+
     #[inline]
     pub fn is_logical(&self) -> bool {
         matches!(
