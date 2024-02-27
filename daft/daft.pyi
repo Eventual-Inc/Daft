@@ -225,6 +225,8 @@ class ParquetSourceConfig:
     Configuration of a Parquet data source.
     """
 
+    coerce_int96_timestamp_unit: PyTimeUnit | None
+
     def __init__(self, coerce_int96_timestamp_unit: PyTimeUnit | None = None): ...
 
 class CsvSourceConfig:
