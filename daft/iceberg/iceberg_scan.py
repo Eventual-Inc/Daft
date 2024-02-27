@@ -88,8 +88,9 @@ class IcebergScanOperator(ScanOperator):
         iceberg_schema = iceberg_table.schema()
         arrow_schema = schema_to_pyarrow(iceberg_schema)
         self._field_id_mapping = {
-            f.field_id: PyField.create(f.name, DataType.from_arrow_type(schema_to_pyarrow(f.field_type))._dtype)
-            for f in iceberg_schema.fields
+            # NOTE: A little dangerous here to use a private API
+            field_id: PyField.create(field.name, DataType.from_arrow_type(schema_to_pyarrow(field.field_type))._dtype)
+            for field_id, field in iceberg_schema._lazy_id_to_field.items()
         }
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
