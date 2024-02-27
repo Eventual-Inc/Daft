@@ -11,18 +11,7 @@ if sys.version_info < (3, 8):
 else:
     from typing import Protocol
 
-from daft.daft import (
-    CsvSourceConfig,
-    FileFormat,
-    FileFormatConfig,
-    IOConfig,
-    JoinType,
-    JsonReadOptions,
-    JsonSourceConfig,
-    ParquetSourceConfig,
-    ResourceRequest,
-    StorageConfig,
-)
+from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
@@ -32,8 +21,6 @@ from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionMetadata,
     PartitionT,
-    TableParseCSVOptions,
-    TableReadOptions,
 )
 from daft.table import MicroPartition, table_io
 
@@ -304,125 +291,44 @@ class SingleOutputInstruction(Instruction):
 
 
 @dataclass(frozen=True)
-class ReadFile(SingleOutputInstruction):
-    index: int | None
-    # Known number of rows.
-    file_rows: int | None
-    # Max number of rows to read.
-    limit_rows: int | None
-    schema: Schema
-    storage_config: StorageConfig
-    columns_to_read: list[str] | None
-    file_format_config: FileFormatConfig
+class ScanWithTask(SingleOutputInstruction):
+    scan_task: ScanTask
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._read_file(inputs)
+        return self._scan(inputs)
 
-    def _read_file(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        assert len(inputs) == 1
-        [filepaths_partition] = inputs
-        partition = self._handle_tabular_files_scan(
-            filepaths_partition=filepaths_partition,
-        )
-        return [partition]
+    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        assert len(inputs) == 0
+        table = MicroPartition._from_scan_task(self.scan_task)
+        return [table]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 1
-
-        num_rows = self.file_rows
-        # Only take the file read limit into account if we know how big the file is to begin with.
-        if num_rows is not None and self.limit_rows is not None:
-            num_rows = min(num_rows, self.limit_rows)
+        assert len(input_metadatas) == 0
 
         return [
             PartialPartitionMetadata(
-                num_rows=num_rows,
-                size_bytes=None,
+                num_rows=self.scan_task.num_rows(),
+                size_bytes=self.scan_task.size_bytes(),
             )
         ]
 
-    def _handle_tabular_files_scan(
-        self,
-        filepaths_partition: MicroPartition,
-    ) -> MicroPartition:
-        data = filepaths_partition.to_pydict()
-        filepaths = data["path"]
 
-        if self.index is not None:
-            filepaths = [filepaths[self.index]]
+@dataclass(frozen=True)
+class EmptyScan(SingleOutputInstruction):
+    schema: Schema
 
-        # Common options for reading vPartition
-        read_options = TableReadOptions(
-            num_rows=self.limit_rows,
-            column_names=self.columns_to_read,  # read only specified columns
-        )
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return [MicroPartition.empty(self.schema)]
 
-        file_format = self.file_format_config.file_format()
-        format_config = self.file_format_config.config
-        if file_format == FileFormat.Csv:
-            assert isinstance(format_config, CsvSourceConfig)
-            table = MicroPartition.concat(
-                [
-                    table_io.read_csv(
-                        file=fp,
-                        schema=self.schema,
-                        storage_config=self.storage_config,
-                        csv_options=TableParseCSVOptions(
-                            delimiter=format_config.delimiter,
-                            header_index=0 if format_config.has_headers else None,
-                            double_quote=format_config.double_quote,
-                            quote=format_config.quote,
-                            escape_char=format_config.escape_char,
-                            comment=format_config.comment,
-                            buffer_size=format_config.buffer_size,
-                            chunk_size=format_config.chunk_size,
-                        ),
-                        read_options=read_options,
-                    )
-                    for fp in filepaths
-                ]
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 0
+
+        return [
+            PartialPartitionMetadata(
+                num_rows=0,
+                size_bytes=0,
             )
-        elif file_format == FileFormat.Json:
-            assert isinstance(format_config, JsonSourceConfig)
-            table = MicroPartition.concat(
-                [
-                    table_io.read_json(
-                        file=fp,
-                        schema=self.schema,
-                        storage_config=self.storage_config,
-                        json_read_options=JsonReadOptions(
-                            buffer_size=format_config.buffer_size, chunk_size=format_config.chunk_size
-                        ),
-                        read_options=read_options,
-                    )
-                    for fp in filepaths
-                ]
-            )
-        elif file_format == FileFormat.Parquet:
-            assert isinstance(format_config, ParquetSourceConfig)
-            table = MicroPartition.concat(
-                [
-                    table_io.read_parquet(
-                        file=fp,
-                        schema=self.schema,
-                        storage_config=self.storage_config,
-                        read_options=read_options,
-                    )
-                    for fp in filepaths
-                ]
-            )
-        else:
-            raise NotImplementedError(f"PyRunner has not implemented scan: {file_format}")
-
-        expected_schema = (
-            Schema._from_fields([self.schema[name] for name in read_options.column_names])
-            if read_options.column_names is not None
-            else self.schema
-        )
-        assert (
-            table.schema() == expected_schema
-        ), f"Expected table to have schema:\n{expected_schema}\n\nReceived instead:\n{table.schema()}"
-        return table
+        ]
 
 
 @dataclass(frozen=True)

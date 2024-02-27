@@ -424,11 +424,7 @@ def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]
             writer.writerows([[item[col] for col in header] for item in valid_data])
             f.flush()
 
-        cnames = (
-            [f"column_{i}" for i in range(1, 6)]
-            if use_native_downloader or os.environ.get("DAFT_MICROPARTITIONS", "1") == "1"
-            else [f"f{i}" for i in range(5)]
-        )
+        cnames = [f"column_{i}" for i in range(1, 6)]
         df = daft.read_csv(fname, has_headers=False, use_native_downloader=use_native_downloader)
         assert df.column_names == cnames
 
@@ -523,15 +519,6 @@ def test_create_dataframe_csv_specify_schema_no_headers(
             "column_4": DataType.float64(),
             "column_5": DataType.string(),
         }
-
-        if use_native_downloader == False and os.environ.get("DAFT_MICROPARTITIONS") == "0":
-            schema_hints_for_csv_without_headers = {
-                "f0": DataType.float64(),
-                "f1": DataType.float64(),
-                "f2": DataType.float64(),
-                "f3": DataType.float64(),
-                "f4": DataType.string(),
-            }
 
         df = daft.read_csv(
             fname,

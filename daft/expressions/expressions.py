@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
 
 import pyarrow as pa
@@ -15,6 +15,7 @@ from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
+from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import udf as _udf
 from daft.datatype import DataType, TimeUnit
@@ -80,6 +81,12 @@ def lit(value: object) -> Expression:
         # pyo3 date (PyDate) is not available when running in abi3 mode, workaround
         epoch_time = value - date(1970, 1, 1)
         lit_value = _date_lit(epoch_time.days)
+    elif isinstance(value, time):
+        # pyo3 time (PyTime) is not available when running in abi3 mode, workaround
+        pa_time = pa.scalar(value)
+        i64_value = pa_time.cast(pa.int64()).as_py()
+        time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
+        lit_value = _time_lit(i64_value, time_unit)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
     else:
@@ -753,6 +760,28 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` uppercased
         """
         return Expression._from_pyexpr(self._expr.utf8_upper())
+
+    def lstrip(self) -> Expression:
+        """Strip whitespace from the left side of a UTF-8 string
+
+        Example:
+            >>> col("x").str.lstrip()
+
+        Returns:
+            Expression: a String expression which is `self` with leading whitespace stripped
+        """
+        return Expression._from_pyexpr(self._expr.utf8_lstrip())
+
+    def rstrip(self) -> Expression:
+        """Strip whitespace from the right side of a UTF-8 string
+
+        Example:
+            >>> col("x").str.rstrip()
+
+        Returns:
+            Expression: a String expression which is `self` with trailing whitespace stripped
+        """
+        return Expression._from_pyexpr(self._expr.utf8_rstrip())
 
 
 class ExpressionListNamespace(ExpressionNamespace):

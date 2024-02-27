@@ -23,6 +23,7 @@ macro_rules! with_match_daft_types {(
         Float64 => __with_ty__! { Float64Type },
         Timestamp(_, _) => __with_ty__! { TimestampType },
         Date => __with_ty__! { DateType },
+        Time(_) => __with_ty__! { TimeType },
         Duration(_) => __with_ty__! { DurationType },
         Binary => __with_ty__! { BinaryType },
         Utf8 => __with_ty__! { Utf8Type },
@@ -38,7 +39,6 @@ macro_rules! with_match_daft_types {(
         Tensor(..) => __with_ty__! { TensorType },
         FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
         Decimal128(..) => __with_ty__! { Decimal128Type },
-        Time(_) => unimplemented!("Array for Time DataType not implemented"),
         // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
         Unknown => unimplemented!("Array for Unknown DataType not implemented"),
 
@@ -218,6 +218,7 @@ macro_rules! with_match_daft_logical_primitive_types {(
         Decimal128(..) => __with_ty__! { i128 },
         Duration(..) => __with_ty__! { i64 },
         Date => __with_ty__! { i32 },
+        Time(..) => __with_ty__! { i64 },
         Timestamp(..) => __with_ty__! { i64 },
         _ => panic!("no logical -> primitive conversion available for {:?}", $key_type)
     }

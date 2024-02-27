@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import decimal
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 import numpy as np
 import pytest
@@ -174,6 +174,21 @@ def test_murmur3_32_hash_date():
     assert arr.datatype() == DataType.date()
     hashes = arr.murmur3_32()
     assert hashes.to_pylist() == [-653330422, None]
+
+
+def test_murmur3_32_hash_time():
+    arr = Series.from_pylist([time(22, 31, 8, 0), None])
+    assert arr.datatype() == DataType.time("us")
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-662762989, None]
+
+
+def test_murmur3_32_hash_time_nanoseconds():
+    arr = Series.from_pylist([time(22, 31, 8, 0), None])
+    arr = arr.cast(DataType.time("ns"))
+    assert arr.datatype() == DataType.time("ns")
+    hashes = arr.murmur3_32()
+    assert hashes.to_pylist() == [-662762989, None]
 
 
 def test_murmur3_32_hash_timestamp():

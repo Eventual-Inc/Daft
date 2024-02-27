@@ -5,12 +5,12 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
         UInt64Array, Utf8Array,
     },
-    utils::display_table::{display_date32, display_timestamp},
+    utils::display_table::{display_date32, display_time64, display_timestamp},
     with_match_daft_types, DataType, Series,
 };
 use common_error::DaftResult;
@@ -146,6 +146,21 @@ impl DateArray {
             None => Ok("None".to_string()),
             Some(v) => Ok(display_date32(v)),
         }
+    }
+}
+
+impl TimeArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |val| -> String {
+                let DataType::Time(unit) = &self.field.dtype else {
+                    panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
+                };
+                display_time64(val, unit)
+            },
+        );
+        Ok(res)
     }
 }
 
@@ -328,6 +343,7 @@ impl_array_html_value!(StructArray);
 impl_array_html_value!(ExtensionArray);
 impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
+impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);

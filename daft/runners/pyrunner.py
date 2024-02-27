@@ -9,19 +9,12 @@ from typing import Iterable, Iterator
 import psutil
 
 from daft.context import get_context
-from daft.daft import (
-    FileFormatConfig,
-    FileInfos,
-    IOConfig,
-    ResourceRequest,
-    StorageConfig,
-)
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, PartitionTask
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.logical.builder import LogicalPlanBuilder
-from daft.logical.schema import Schema
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -113,17 +106,6 @@ class PyRunnerIO(runner_io.RunnerIO):
 
         return file_infos
 
-    def get_schema_from_first_filepath(
-        self,
-        file_infos: FileInfos,
-        file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
-    ) -> Schema:
-        if len(file_infos) == 0:
-            raise ValueError("No files to get schema from")
-        # Naively retrieve the first filepath in the PartitionSet
-        return runner_io.sample_schema(file_infos[0].file_path, file_format_config, storage_config)
-
 
 class PyRunner(Runner[MicroPartition]):
     def __init__(self, use_thread_pool: bool | None) -> None:
@@ -163,7 +145,7 @@ class PyRunner(Runner[MicroPartition]):
         plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
         psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
         # Get executable tasks from planner.
-        tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=False)
+        tasks = plan_scheduler.to_partition_tasks(psets)
         with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
             results_gen = self._physical_plan_to_partitions(tasks)
             yield from results_gen

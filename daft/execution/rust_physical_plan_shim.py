@@ -1,26 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterator, cast
-
-from daft.context import get_context
 from daft.daft import (
     FileFormat,
-    FileFormatConfig,
     IOConfig,
     JoinType,
     PyExpr,
     PySchema,
-    PyTable,
     ResourceRequest,
     ScanTask,
-    StorageConfig,
 )
 from daft.execution import execution_step, physical_plan
 from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartialPartitionMetadata, PartitionT
+from daft.runners.partitioning import PartitionT
 from daft.table import MicroPartition
 
 
@@ -35,7 +28,7 @@ def scan_with_tasks(
     # We can instead right-size and bundle the ScanTask into single-instruction bulk reads.
     for scan_task in scan_tasks:
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
-            instruction=ScanWithTask(scan_task),
+            instruction=execution_step.ScanWithTask(scan_task),
             # Set the filesize as the memory request.
             # (Note: this is very conservative; file readers empirically use much more peak memory than 1x file size.)
             resource_request=ResourceRequest(memory_bytes=scan_task.size_bytes()),
@@ -48,81 +41,10 @@ def empty_scan(
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     """yield a plan to create an empty Partition"""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](inputs=[], partial_metadatas=None,).add_instruction(
-        instruction=EmptyScan(schema=schema),
+        instruction=execution_step.EmptyScan(schema=schema),
         resource_request=ResourceRequest(memory_bytes=0),
     )
     yield scan_step
-
-
-@dataclass(frozen=True)
-class ScanWithTask(execution_step.SingleOutputInstruction):
-    scan_task: ScanTask
-
-    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return self._scan(inputs)
-
-    def _scan(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        assert len(inputs) == 0
-        table = MicroPartition._from_scan_task(self.scan_task)
-        return [table]
-
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 0
-        cfg = get_context().daft_execution_config
-        return [
-            PartialPartitionMetadata(
-                num_rows=self.scan_task.num_rows(),
-                size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
-            )
-        ]
-
-
-@dataclass(frozen=True)
-class EmptyScan(execution_step.SingleOutputInstruction):
-    schema: Schema
-
-    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        return [MicroPartition.empty(self.schema)]
-
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
-        assert len(input_metadatas) == 0
-
-        return [
-            PartialPartitionMetadata(
-                num_rows=0,
-                size_bytes=0,
-            )
-        ]
-
-
-def tabular_scan(
-    schema: PySchema,
-    columns_to_read: list[str] | None,
-    file_info_table: PyTable,
-    file_format_config: FileFormatConfig,
-    storage_config: StorageConfig,
-    limit: int,
-    is_ray_runner: bool,
-) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    # TODO(Clark): Fix this Ray runner hack.
-    part = MicroPartition._from_pytable(file_info_table)
-    if is_ray_runner:
-        import ray
-
-        parts = [ray.put(part)]
-    else:
-        parts = [part]
-    parts_t = cast(Iterator[PartitionT], parts)
-
-    file_info_iter = physical_plan.partition_read(iter(parts_t))
-    return physical_plan.file_read(
-        child_plan=file_info_iter,
-        limit_rows=limit,
-        schema=Schema._from_pyschema(schema),
-        storage_config=storage_config,
-        columns_to_read=columns_to_read,
-        file_format_config=file_format_config,
-    )
 
 
 def project(

@@ -70,4 +70,24 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_lstrip(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.lstrip()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Lstrip not implemented for type {dt}"
+            ))),
+        }
+    }
+
+    pub fn utf8_rstrip(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.rstrip()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Rstrip not implemented for type {dt}"
+            ))),
+        }
+    }
 }

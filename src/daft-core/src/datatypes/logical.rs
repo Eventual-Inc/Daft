@@ -9,7 +9,7 @@ use common_error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, TensorType,
+    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, TensorType, TimeType,
     TimestampType,
 };
 
@@ -94,7 +94,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
         use crate::datatypes::DataType::*;
         match daft_type {
             // For wrapped primitive types, switch the datatype label on the arrow2 Array.
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) => {
+            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
                 with_match_daft_logical_primitive_types!(daft_type, |$P| {
                     use arrow2::array::Array;
                     physical_arrow_array
@@ -148,6 +148,7 @@ pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
 pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
+pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;

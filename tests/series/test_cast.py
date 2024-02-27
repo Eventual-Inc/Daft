@@ -773,3 +773,21 @@ def test_cast_date_to_timestamp():
 
     back = casted.dt.date()
     assert (input == back).to_pylist() == [True]
+
+
+@pytest.mark.parametrize("timeunit", ["us", "ns"])
+def test_cast_timestamp_to_time(timeunit):
+    from datetime import datetime, time
+
+    input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
+    casted = input.cast(DataType.time(timeunit))
+    assert casted.to_pylist() == [time(12, 34, 56, 78)]
+
+
+@pytest.mark.parametrize("timeunit", ["s", "ms"])
+def test_cast_timestamp_to_time_unsupported_timeunit(timeunit):
+    from datetime import datetime
+
+    input = Series.from_pylist([datetime(2022, 1, 6, 12, 34, 56, 78)])
+    with pytest.raises(ValueError):
+        input.cast(DataType.time(timeunit))

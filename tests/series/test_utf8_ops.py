@@ -262,3 +262,35 @@ def test_series_utf8_upper(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.upper()
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["\ta\t", "\nb\n", "\vc\t", "\td ", "e"], ["a\t", "b\n", "c\t", "d ", "e"]),
+        # With at least one null
+        (["\ta\t", None, "\vc\t", "\td ", "e"], ["a\t", None, "c\t", "d ", "e"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_lstrip(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.lstrip()
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["\ta\t", "\nb\n", "\vc\t", "\td ", "e"], ["\ta", "\nb", "\vc", "\td", "e"]),
+        # With at least one null
+        (["\ta\t", None, "\vc\t", "\td ", "e"], ["\ta", None, "\vc", "\td", "e"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_rstrip(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.rstrip()
+    assert result.to_pylist() == expected

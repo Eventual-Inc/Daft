@@ -272,6 +272,14 @@ impl PySeries {
         Ok(self.series.utf8_upper()?.into())
     }
 
+    pub fn utf8_lstrip(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_lstrip()?.into())
+    }
+
+    pub fn utf8_rstrip(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_rstrip()?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

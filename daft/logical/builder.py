@@ -3,22 +3,13 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING
 
-from daft.daft import (
-    CountMode,
-    FileFormat,
-    FileFormatConfig,
-    FileInfos,
-    IOConfig,
-    JoinStrategy,
-    JoinType,
-)
+from daft.daft import CountMode, FileFormat, IOConfig, JoinStrategy, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import (
     PartitionScheme,
     PyDaftExecutionConfig,
     ResourceRequest,
     ScanOperatorHandle,
-    StorageConfig,
 )
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
@@ -83,24 +74,12 @@ class LogicalPlanBuilder:
         return cls(builder)
 
     @classmethod
-    def from_tabular_scan_with_scan_operator(
+    def from_tabular_scan(
         cls,
         *,
         scan_operator: ScanOperatorHandle,
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.table_scan_with_scan_operator(scan_operator)
-        return cls(builder)
-
-    @classmethod
-    def from_tabular_scan(
-        cls,
-        *,
-        file_infos: FileInfos,
-        schema: Schema,
-        file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
-    ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.table_scan(file_infos, schema._schema, file_format_config, storage_config)
+        builder = _LogicalPlanBuilder.table_scan(scan_operator)
         return cls(builder)
 
     def project(

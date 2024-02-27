@@ -1,5 +1,7 @@
 use crate::array::{FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::logical::{DateArray, Decimal128Array, FixedShapeImageArray, TimestampArray};
+use crate::datatypes::logical::{
+    DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray,
+};
 use crate::datatypes::*;
 use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
@@ -96,6 +98,10 @@ impl Series {
     }
 
     pub fn date(&self) -> DaftResult<&DateArray> {
+        self.downcast()
+    }
+
+    pub fn time(&self) -> DaftResult<&TimeArray> {
         self.downcast()
     }
 

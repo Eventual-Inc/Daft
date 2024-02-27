@@ -63,3 +63,23 @@ def test_str_upper():
         run_kernel=s.str.lower,
         resolvable=True,
     )
+
+
+def test_str_lstrip():
+    s = Series.from_arrow(pa.array(["\ta\t", "\nb\n", "\vc\t", " c\t"]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.lstrip(),
+        run_kernel=s.str.lstrip,
+        resolvable=True,
+    )
+
+
+def test_str_rstrip():
+    s = Series.from_arrow(pa.array(["\ta\t", "\nb\n", "\vc\t", "\tc "]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.rstrip(),
+        run_kernel=s.str.rstrip,
+        resolvable=True,
+    )

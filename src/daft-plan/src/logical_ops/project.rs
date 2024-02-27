@@ -407,7 +407,11 @@ mod tests {
     use daft_core::{datatypes::Field, DataType};
     use daft_dsl::{binary_op, col, lit, Operator};
 
-    use crate::{logical_ops::Project, test::dummy_scan_node, LogicalPlan};
+    use crate::{
+        logical_ops::Project,
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlan,
+    };
 
     /// Test that nested common subexpressions are correctly split
     /// into multiple levels of projections.
@@ -419,10 +423,10 @@ mod tests {
     /// 3: a+a as aa
     #[test]
     fn test_nested_subexpression() -> DaftResult<()> {
-        let source = dummy_scan_node(vec![
+        let source = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
+        ]))
         .build();
         let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
         let a4 = binary_op(Operator::Plus, &a2, &a2);
@@ -463,10 +467,10 @@ mod tests {
     /// 2. a+a as aa, a
     #[test]
     fn test_shared_subexpression() -> DaftResult<()> {
-        let source = dummy_scan_node(vec![
+        let source = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
+        ]))
         .build();
         let a2 = binary_op(Operator::Plus, &col("a"), &col("a"));
         let expressions = vec![
@@ -500,10 +504,10 @@ mod tests {
     /// (unchanged)
     #[test]
     fn test_vacuous_subexpression() -> DaftResult<()> {
-        let source = dummy_scan_node(vec![
+        let source = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
-        ])
+        ]))
         .build();
         let expressions = vec![
             lit(3).alias("x"),

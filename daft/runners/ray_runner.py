@@ -32,7 +32,6 @@ from daft.daft import (
     IOConfig,
     PyDaftExecutionConfig,
     ResourceRequest,
-    StorageConfig,
 )
 from daft.datatype import DataType
 from daft.execution.execution_step import (
@@ -41,6 +40,7 @@ from daft.execution.execution_step import (
     MultiOutputPartitionTask,
     PartitionTask,
     ReduceInstruction,
+    ScanWithTask,
     SingleOutputPartitionTask,
 )
 from daft.filesystem import glob_path_with_stats
@@ -124,17 +124,6 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef[pd.DataFrame]) -> ray.Object
         return df
     else:
         raise ValueError("Expected a Ray object ref or a Pandas DataFrame, " f"got {type(df)}")
-
-
-@ray.remote
-def sample_schema_from_filepath(
-    first_file_path: str,
-    file_format_config: FileFormatConfig,
-    storage_config: StorageConfig,
-) -> Schema:
-    """Ray remote function to run schema sampling on top of a MicroPartition containing a single filepath"""
-    # Currently just samples the Schema from the first file
-    return runner_io.sample_schema(first_file_path, file_format_config, storage_config)
 
 
 @dataclass
@@ -242,24 +231,6 @@ class RayRunnerIO(runner_io.RunnerIO):
             ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
             .to_table()
             ._table
-        )
-
-    def get_schema_from_first_filepath(
-        self,
-        file_infos: FileInfos,
-        file_format_config: FileFormatConfig,
-        storage_config: StorageConfig,
-    ) -> Schema:
-        if len(file_infos) == 0:
-            raise ValueError("No files to get schema from")
-        # Naively retrieve the first filepath in the file info table.
-        first_path = file_infos[0].file_path
-        return ray.get(
-            sample_schema_from_filepath.remote(
-                first_path,
-                file_format_config,
-                storage_config,
-            )
         )
 
     def partition_set_from_ray_dataset(
@@ -507,7 +478,7 @@ class Scheduler:
         result_uuid: str,
     ) -> None:
         # Get executable tasks from plan scheduler.
-        tasks = plan_scheduler.to_partition_tasks(psets, is_ray_runner=True)
+        tasks = plan_scheduler.to_partition_tasks(psets)
 
         daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
@@ -674,14 +645,22 @@ def _build_partitions(
         ray_options = {**ray_options, **_get_ray_task_options(task.resource_request)}
 
     if isinstance(task.instructions[0], ReduceInstruction):
-        build_remote = reduce_and_fanout if isinstance(task.instructions[-1], FanoutInstruction) else reduce_pipeline
+        build_remote = (
+            reduce_and_fanout
+            if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
+            else reduce_pipeline
+        )
         build_remote = build_remote.options(**ray_options)
         [metadatas_ref, *partitions] = build_remote.remote(daft_execution_config_objref, task.instructions, task.inputs)
 
     else:
         build_remote = (
-            fanout_pipeline if isinstance(task.instructions[-1], FanoutInstruction) else single_partition_pipeline
+            fanout_pipeline
+            if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
+            else single_partition_pipeline
         )
+        if task.instructions and isinstance(task.instructions[0], ScanWithTask):
+            ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options)
         [metadatas_ref, *partitions] = build_remote.remote(
             daft_execution_config_objref, task.instructions, *task.inputs

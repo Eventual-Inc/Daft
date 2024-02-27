@@ -235,7 +235,10 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        partitioning::PartitionSchemeConfig, planner::plan, test::dummy_scan_node, PartitionSpec,
+        partitioning::PartitionSchemeConfig,
+        planner::plan,
+        test::{dummy_scan_node, dummy_scan_operator},
+        PartitionSpec,
     };
 
     /// Test that projections preserving column inputs, even through aliasing,
@@ -248,11 +251,11 @@ mod tests {
             col("b"),
             col("a").alias("aa"),
         ];
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
-        ])
+        ]))
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
@@ -292,11 +295,11 @@ mod tests {
         use crate::partitioning::PartitionSchemeConfig;
 
         let cfg = DaftExecutionConfig::default().into();
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
-        ])
+        ]))
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
@@ -324,11 +327,11 @@ mod tests {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
 
-        let logical_plan = dummy_scan_node(vec![
+        let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
-        ])
+        ]))
         .repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],

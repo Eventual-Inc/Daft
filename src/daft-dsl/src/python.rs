@@ -35,6 +35,12 @@ pub fn date_lit(item: i32) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Time(item, tu.timeunit));
+    Ok(expr.into())
+}
+
+#[pyfunction]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
     Ok(expr.into())
@@ -341,6 +347,16 @@ impl PyExpr {
     pub fn utf8_upper(&self) -> PyResult<Self> {
         use crate::functions::utf8::upper;
         Ok(upper(&self.expr).into())
+    }
+
+    pub fn utf8_lstrip(&self) -> PyResult<Self> {
+        use crate::functions::utf8::lstrip;
+        Ok(lstrip(&self.expr).into())
+    }
+
+    pub fn utf8_rstrip(&self) -> PyResult<Self> {
+        use crate::functions::utf8::rstrip;
+        Ok(rstrip(&self.expr).into())
     }
 
     pub fn image_decode(&self) -> PyResult<Self> {
