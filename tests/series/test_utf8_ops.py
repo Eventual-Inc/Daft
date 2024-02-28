@@ -304,6 +304,10 @@ def test_series_utf8_rstrip(data, expected) -> None:
         (["abc", None, "def", "ghi"], ["cba", None, "fed", "ihg"]),
         # With all nulls
         ([None] * 4, [None] * 4),
+        # With emojis
+        (["😃😌😝"], ["😝😌😃"]),
+        # With non-latin alphabet
+        (["こんにちは"], ["はちにんこ"]),
     ],
 )
 def test_series_utf8_reverse(data, expected) -> None:
