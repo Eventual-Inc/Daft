@@ -254,6 +254,7 @@ def set_execution_config(
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
+    read_sql_partition_size_bytes: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -283,6 +284,7 @@ def set_execution_config(
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
         shuffle_aggregation_default_partitions: Minimum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
+        read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -302,6 +304,7 @@ def set_execution_config(
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
+            read_sql_partition_size_bytes=read_sql_partition_size_bytes,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

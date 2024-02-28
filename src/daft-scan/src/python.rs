@@ -324,14 +324,18 @@ pub mod pylib {
             url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
+            num_rows: i64,
             storage_config: PyStorageConfig,
+            size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
         ) -> PyResult<Self> {
-            let data_source = DataFileSource::AnonymousDataFile {
+            let data_source = DataFileSource::DatabaseDataSource {
                 path: url,
                 chunk_spec: None,
-                size_bytes: None,
-                metadata: None,
+                size_bytes,
+                metadata: TableMetadata {
+                    length: num_rows as usize,
+                },
                 partition_spec: None,
                 statistics: None,
             };

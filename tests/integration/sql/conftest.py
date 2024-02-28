@@ -25,20 +25,24 @@ URLS = [
     "mysql+pymysql://username:password@localhost:3306/mysql",
     "sqlite:///",
 ]
-NUM_TEST_ROWS = 200
-NUM_ROWS_PER_PARTITION = 50
 TEST_TABLE_NAME = "example"
 
 
-@pytest.fixture(scope="session")
-def generated_data() -> pd.DataFrame:
+@pytest.fixture(scope="session", params=[{"num_rows": 200}])
+def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
+    num_rows = request.param["num_rows"]
+    num_rows_per_variety = num_rows // 4
+    variety_arr = (
+        ["setosa"] * num_rows_per_variety + ["versicolor"] * num_rows_per_variety + ["virginica"] * num_rows_per_variety
+    )
+
     data = {
-        "id": np.arange(NUM_TEST_ROWS),
-        "sepal_length": np.arange(NUM_TEST_ROWS, dtype=float),
-        "sepal_width": np.arange(NUM_TEST_ROWS, dtype=float),
-        "petal_length": np.arange(NUM_TEST_ROWS, dtype=float),
-        "petal_width": np.arange(NUM_TEST_ROWS, dtype=float),
-        "variety": ["setosa"] * 50 + ["versicolor"] * 50 + ["virginica"] * 50 + [None] * 50,
+        "id": np.arange(num_rows),
+        "sepal_length": np.arange(num_rows, dtype=float),
+        "sepal_width": np.arange(num_rows, dtype=float),
+        "petal_length": np.arange(num_rows, dtype=float),
+        "petal_width": np.arange(num_rows, dtype=float),
+        "variety": variety_arr + [None] * (num_rows - len(variety_arr)),
     }
     return pd.DataFrame(data)
 
@@ -65,7 +69,7 @@ def setup_database(db_url: str, data: pd.DataFrame) -> None:
     # Ensure the table is created and populated
     with engine.connect() as conn:
         result = conn.execute(text(f"SELECT COUNT(*) FROM {TEST_TABLE_NAME}")).fetchone()[0]
-        assert result == NUM_TEST_ROWS
+        assert result == len(data)
 
 
 def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:

@@ -608,7 +608,9 @@ class ScanTask:
         url: str,
         file_format: FileFormatConfig,
         schema: PySchema,
+        num_rows: int,
         storage_config: StorageConfig,
+        size_bytes: int | None,
         pushdowns: Pushdowns | None,
     ) -> ScanTask:
         """
@@ -858,6 +860,7 @@ class PySchema:
     def names(self) -> list[str]: ...
     def union(self, other: PySchema) -> PySchema: ...
     def eq(self, other: PySchema) -> bool: ...
+    def estimate_row_size_bytes(self) -> float: ...
     @staticmethod
     def from_field_name_and_types(names_and_types: list[tuple[str, PyDataType]]) -> PySchema: ...
     @staticmethod
@@ -1250,6 +1253,7 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
+        read_sql_partition_size_bytes: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1275,6 +1279,8 @@ class PyDaftExecutionConfig:
     def csv_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
+    @property
+    def read_sql_partition_size_bytes(self) -> int: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(

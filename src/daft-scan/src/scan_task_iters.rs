@@ -184,7 +184,7 @@ pub fn split_by_row_groups(
                                         chunk_spec,
                                         size_bytes,
                                         ..
-                                    } => {
+                                    } | DataFileSource::DatabaseDataSource { chunk_spec, size_bytes, .. } => {
                                         *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                         *size_bytes = Some(curr_size_bytes as u64);
 

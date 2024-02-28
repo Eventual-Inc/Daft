@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 import pyarrow as pa
 
@@ -29,44 +30,50 @@ class SQLReader:
         self.projection = projection
         self.predicate = predicate
 
-    def get_num_rows(self) -> int:
-        sql = f"SELECT COUNT(*) FROM ({self.sql}) AS subquery"
-        pa_table = self._execute_sql_query(sql)
-        return pa_table.column(0)[0].as_py()
-
     def read(self) -> pa.Table:
         sql = self._construct_sql_query()
         return self._execute_sql_query(sql)
 
     def _construct_sql_query(self) -> str:
+        clauses = ["SELECT"]
         if self.projection is not None:
-            columns = ", ".join(self.projection)
+            clauses.append(", ".join(self.projection))
         else:
-            columns = "*"
+            clauses.append("*")
 
-        sql = f"SELECT {columns} FROM ({self.sql}) AS subquery"
+        clauses.append(f"FROM ({self.sql}) AS subquery")
 
         if self.predicate is not None:
-            sql += f" WHERE {self.predicate}"
+            clauses.append(f" WHERE {self.predicate}")
 
         if self.limit is not None and self.offset is not None:
-            if self.limit_before_offset:
-                sql += f" LIMIT {self.limit} OFFSET {self.offset}"
+            if self.limit_before_offset is True:
+                clauses.append(f" LIMIT {self.limit} OFFSET {self.offset}")
             else:
-                sql += f" OFFSET {self.offset} LIMIT {self.limit}"
+                clauses.append(f" OFFSET {self.offset} LIMIT {self.limit}")
         elif self.limit is not None:
-            sql += f" LIMIT {self.limit}"
+            clauses.append(f" LIMIT {self.limit}")
         elif self.offset is not None:
-            sql += f" OFFSET {self.offset}"
+            clauses.append(f" OFFSET {self.offset}")
 
-        return sql
+        return "\n".join(clauses)
 
     def _execute_sql_query(self, sql: str) -> pa.Table:
         # Supported DBs extracted from here https://github.com/sfu-db/connector-x/tree/7b3147436b7e20b96691348143d605e2249d6119?tab=readme-ov-file#sources
-        supported_dbs = {"postgres", "mysql", "mssql", "oracle", "bigquery", "sqlite", "clickhouse", "redshift"}
+        supported_dbs = {
+            "postgres",
+            "postgresql",
+            "mysql",
+            "mssql",
+            "oracle",
+            "bigquery",
+            "sqlite",
+            "clickhouse",
+            "redshift",
+        }
 
-        # Extract the database type from the URL
-        db_type = self.url.split("://")[0]
+        db_type = urlparse(self.url).scheme
+        db_type = db_type.strip().lower()
 
         # Check if the database type is supported
         if db_type in supported_dbs:
@@ -85,15 +92,18 @@ class SQLReader:
             raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str) -> pa.Table:
-        import pandas as pd
         from sqlalchemy import create_engine, text
 
         logger.info(f"Using sqlalchemy to execute sql: {sql}")
         try:
             with create_engine(self.url).connect() as connection:
                 result = connection.execute(text(sql))
-                df = pd.DataFrame(result.fetchall(), columns=result.keys())
-                table = pa.Table.from_pandas(df)
-                return table
+                cursor = result.cursor
+
+                columns = [column_description[0] for column_description in cursor.description]
+                rows = result.fetchall()
+                pydict = {column: [row[i] for row in rows] for i, column in enumerate(columns)}
+
+                return pa.Table.from_pydict(pydict)
         except Exception as e:
             raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e
