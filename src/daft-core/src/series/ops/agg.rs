@@ -130,7 +130,10 @@ impl Series {
             }
         };
 
-        self.take(&Series::from_arrow(self.field().clone().into(), indices)?)
+        self.take(&Series::from_arrow(
+            Field::new("", DataType::UInt64).into(),
+            indices,
+        )?)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
