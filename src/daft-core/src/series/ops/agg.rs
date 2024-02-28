@@ -2,6 +2,7 @@ use crate::array::ListArray;
 use crate::count_mode::CountMode;
 use crate::series::IntoSeries;
 use crate::{array::ops::GroupIndices, series::Series, with_match_physical_daft_types};
+use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 
 use crate::datatypes::*;
@@ -102,7 +103,34 @@ impl Series {
         groups: Option<&GroupIndices>,
         ignore_nulls: bool,
     ) -> DaftResult<Series> {
-        self.inner.any_value(groups, ignore_nulls)
+        let indices = match groups {
+            Some(groups) => {
+                if self.data_type().is_null() {
+                    Box::new(PrimitiveArray::new_null(arrow2::datatypes::DataType::UInt64, groups.len()))
+                } else if ignore_nulls && let Some(validity) = self.validity() {
+                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| {
+                        g.iter().find(|i| validity.get_bit(**i as usize)).copied()
+                    })))
+                } else {
+                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().cloned())))
+                }
+            },
+            None => {
+                let idx = if self.data_type().is_null() {
+                    None
+                } else if ignore_nulls && let Some(validity) = self.validity() {
+                    validity.iter().position(|v| v).map(|i| i as u64)
+                } else if self.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                };
+
+                Box::new(PrimitiveArray::from([idx]))
+            }
+        };
+
+        self.take(&Series::from_arrow(self.field().clone().into(), indices)?)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

@@ -60,25 +60,6 @@ macro_rules! impl_series_like_for_nested_arrays {
                 )))
             }
 
-            fn any_value(
-                &self,
-                groups: Option<&GroupIndices>,
-                ignore_nulls: bool,
-            ) -> DaftResult<Series> {
-                use crate::array::ops::DaftAnyValueAggable;
-                match groups {
-                    Some(groups) => {
-                        Ok(
-                            DaftAnyValueAggable::grouped_any_value(&self.0, groups, ignore_nulls)?
-                                .into_series(),
-                        )
-                    }
-                    None => {
-                        Ok(DaftAnyValueAggable::any_value(&self.0, ignore_nulls)?.into_series())
-                    }
-                }
-            }
-
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 use crate::array::ops::DaftListAggable;
 
