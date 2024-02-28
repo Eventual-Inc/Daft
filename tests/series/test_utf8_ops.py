@@ -294,3 +294,23 @@ def test_series_utf8_rstrip(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.rstrip()
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["abc", "def", "ghi"], ["cba", "fed", "ihg"]),
+        # With at least one null
+        (["abc", None, "def", "ghi"], ["cba", None, "fed", "ihg"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+        # With emojis
+        (["😃😌😝", "abc😃😄😅"], ["😝😌😃", "😅😄😃cba"]),
+        # With non-latin alphabet
+        (["こんにちは", "こんにちはa", "こんにちはa😄😃"], ["はちにんこ", "aはちにんこ", "😃😄aはちにんこ"]),
+    ],
+)
+def test_series_utf8_reverse(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.reverse()
+    assert result.to_pylist() == expected

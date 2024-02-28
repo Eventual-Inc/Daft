@@ -198,6 +198,19 @@ impl Utf8Array {
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
     }
 
+    pub fn reverse(&self) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                Some(v.chars().rev().collect::<String>())
+            })
+            .collect::<arrow2::array::Utf8Array<i64>>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
     fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,

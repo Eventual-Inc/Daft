@@ -280,6 +280,10 @@ impl PySeries {
         Ok(self.series.utf8_rstrip()?.into())
     }
 
+    pub fn utf8_reverse(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_reverse()?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

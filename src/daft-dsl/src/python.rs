@@ -359,6 +359,11 @@ impl PyExpr {
         Ok(rstrip(&self.expr).into())
     }
 
+    pub fn utf8_reverse(&self) -> PyResult<Self> {
+        use crate::functions::utf8::reverse;
+        Ok(reverse(&self.expr).into())
+    }
+
     pub fn image_decode(&self) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(&self.expr).into())

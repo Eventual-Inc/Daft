@@ -83,3 +83,13 @@ def test_str_rstrip():
         run_kernel=s.str.rstrip,
         resolvable=True,
     )
+
+
+def test_str_reverse():
+    s = Series.from_arrow(pa.array(["abc", "def", "ghi", None, ""]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.reverse(),
+        run_kernel=s.str.reverse,
+        resolvable=True,
+    )
