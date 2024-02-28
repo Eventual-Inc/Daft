@@ -305,9 +305,9 @@ def test_series_utf8_rstrip(data, expected) -> None:
         # With all nulls
         ([None] * 4, [None] * 4),
         # With emojis
-        (["😃😌😝"], ["😝😌😃"]),
+        (["😃😌😝", "abc😃😄😅"], ["😝😌😃", "😅😄😃cba"]),
         # With non-latin alphabet
-        (["こんにちは"], ["はちにんこ"]),
+        (["こんにちは", "こんにちはa", "こんにちはa😄😃"], ["はちにんこ", "aはちにんこ", "😃😄aはちにんこ"]),
     ],
 )
 def test_series_utf8_reverse(data, expected) -> None:
