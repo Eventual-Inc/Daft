@@ -1547,7 +1547,8 @@ class GroupedDataFrame:
         return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
 
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
-        """Returns an arbitrary value on this GroupedDataFrame
+        """Returns an arbitrary value on this GroupedDataFrame.
+        Values for each column are not guaranteed to be from the same row.
 
         Args:
             *cols (Union[str, Expression]): columns to get
