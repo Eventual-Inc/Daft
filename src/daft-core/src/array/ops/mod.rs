@@ -134,12 +134,6 @@ pub trait DaftCompareAggable {
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output;
 }
 
-pub trait DaftAnyValueAggable {
-    type Output;
-    fn any_value(&self, ignore_nulls: bool) -> Self::Output;
-    fn grouped_any_value(&self, groups: &GroupIndices, ignore_nulls: bool) -> Self::Output;
-}
-
 pub trait DaftListAggable {
     type Output;
     fn list(&self) -> Self::Output;

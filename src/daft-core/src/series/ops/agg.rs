@@ -116,12 +116,10 @@ impl Series {
                 }
             },
             None => {
-                let idx = if self.data_type().is_null() {
+                let idx = if self.data_type().is_null() || self.is_empty(){
                     None
                 } else if ignore_nulls && let Some(validity) = self.validity() {
                     validity.iter().position(|v| v).map(|i| i as u64)
-                } else if self.is_empty() {
-                    None
                 } else {
                     Some(0)
                 };
