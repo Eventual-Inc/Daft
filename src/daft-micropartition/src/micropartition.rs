@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
@@ -10,7 +10,7 @@ use daft_core::schema::{Schema, SchemaRef};
 
 use daft_core::DataType;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{Expr, ExprRef, Literal};
+use daft_dsl::ExprRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
@@ -294,29 +294,14 @@ fn materialize_scan_task(
 
     // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
     // into the table when casting the schema.
-    let fill_map = scan_task.partition_spec().map(partition_spec_to_fill_map);
+    let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
 
     table_values = table_values
         .iter()
-        .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), &fill_map))
+        .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
     Ok((table_values, cast_to_schema))
-}
-
-fn partition_spec_to_fill_map(partition_spec: &PartitionSpec) -> HashMap<&str, Expr> {
-    partition_spec
-        .keys
-        .schema
-        .fields
-        .iter()
-        .map(|(col, _)| {
-            (
-                col.as_str(),
-                partition_spec.keys.get_column(col).unwrap().clone().lit(),
-            )
-        })
-        .collect()
 }
 
 impl MicroPartition {
@@ -330,9 +315,9 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        let fill_map = scan_task.partition_spec().map(partition_spec_to_fill_map);
+        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
         let statistics = statistics
-            .cast_to_schema_with_fill(schema.clone(), &fill_map)
+            .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
             .expect("Statistics cannot be casted to schema");
         MicroPartition {
             schema,
@@ -437,8 +422,8 @@ impl MicroPartition {
                 )
                 .context(DaftCoreComputeSnafu)?;
 
-                let fill_map = scan_task.partition_spec().map(partition_spec_to_fill_map);
-                mp.cast_to_schema_with_fill(schema, &fill_map)
+                let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+                mp.cast_to_schema_with_fill(schema, fill_map.as_ref())
                     .context(DaftCoreComputeSnafu)
             }
 

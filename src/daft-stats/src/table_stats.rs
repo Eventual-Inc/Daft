@@ -136,13 +136,13 @@ impl TableStatistics {
     }
 
     pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
-        self.cast_to_schema_with_fill(schema, &None)
+        self.cast_to_schema_with_fill(schema, None)
     }
 
     pub fn cast_to_schema_with_fill(
         &self,
         schema: SchemaRef,
-        fill_map: &Option<HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, Expr>>,
     ) -> crate::Result<TableStatistics> {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {

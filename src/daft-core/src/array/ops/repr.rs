@@ -10,7 +10,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
         UInt64Array, Utf8Array,
     },
-    utils::display_table::{display_date32, display_time64, display_timestamp},
+    utils::display_table::{display_date32, display_decimal128, display_time64, display_timestamp},
     with_match_daft_types, DataType, Series,
 };
 use common_error::DaftResult;
@@ -184,12 +184,11 @@ impl Decimal128Array {
         let res = self.get(idx).map_or_else(
             || "None".to_string(),
             |val| -> String {
-                use crate::array::ops::cast::decimal128_to_str;
                 use crate::datatypes::DataType::Decimal128;
                 let Decimal128(precision, scale) = &self.field.dtype else {
                     panic!("Wrong dtype for Decimal128Array: {}", self.field.dtype)
                 };
-                decimal128_to_str(val, *precision as u8, *scale as i8)
+                display_decimal128(val, *precision as u8, *scale as i8)
             },
         );
         Ok(res)

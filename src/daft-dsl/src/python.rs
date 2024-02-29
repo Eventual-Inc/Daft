@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
+use common_error::DaftError;
 use daft_core::python::datatype::PyTimeUnit;
 use daft_core::python::PySeries;
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,55 @@ pub fn time_lit(item: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Timestamp(val, tu.timeunit, tz));
+    Ok(expr.into())
+}
+
+fn decimal_from_digits(digits: Vec<u8>, exp: i32) -> Option<(i128, usize)> {
+    const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
+    let mut v = 0_i128;
+    for (i, d) in digits.into_iter().map(i128::from).enumerate() {
+        if i < 38 {
+            v = v * 10 + d;
+        } else {
+            v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
+        }
+    }
+    // We only support non-negative scales, and therefore non-positive exponents.
+    let scale = if exp > 0 {
+        // Decimal may be in a non-canonical representation, try to fix it first.
+        v = 10_i128
+            .checked_pow(exp as u32)
+            .and_then(|factor| v.checked_mul(factor))?;
+        0
+    } else {
+        (-exp) as usize
+    };
+    if v <= MAX_ABS_DEC {
+        Some((v, scale))
+    } else {
+        None
+    }
+}
+
+#[pyfunction]
+pub fn decimal_lit(sign: bool, digits: Vec<u8>, exp: i32) -> PyResult<PyExpr> {
+    let num_digits = digits.len();
+    let (mut v, scale) = decimal_from_digits(digits, exp).ok_or_else(|| {
+        DaftError::ValueError("Decimal is too large to fit into Decimal128 type.".to_string())
+    })?;
+    let precision = if exp < 0 {
+        std::cmp::max(num_digits, (-exp) as usize)
+    } else {
+        num_digits + (exp as usize)
+    };
+    if sign {
+        v = -v;
+    }
+    let expr = Expr::Literal(LiteralValue::Decimal(
+        v,
+        u8::try_from(precision)?,
+        i8::try_from(scale)?,
+    ));
     Ok(expr.into())
 }
 

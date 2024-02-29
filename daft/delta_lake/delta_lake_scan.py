@@ -26,7 +26,8 @@ from daft.logical.schema import Schema
 
 logger = logging.getLogger(__name__)
 
-deltalake_reversed_partition_ordering = tuple(int(s) for s in deltalake.__version__.split(".") if s.isnumeric()) < (
+# Before deltalake-rs 0.15.2, the partition ordering returned from the transaction log was reversed.
+_DELTALAKE_REVERSED_PARTITION_ORDERING = tuple(int(s) for s in deltalake.__version__.split(".") if s.isnumeric()) < (
     0,
     15,
     2,
@@ -154,7 +155,8 @@ class DeltaLakeScanOperator(ScanOperator):
                 continue
             rows_left -= record_count
             scan_tasks.append(st)
-        if deltalake_reversed_partition_ordering:
+        # Before deltalake-rs 0.15.2, the partition ordering returned from the transaction log was reversed.
+        if _DELTALAKE_REVERSED_PARTITION_ORDERING:
             scan_tasks = list(reversed(scan_tasks))
         return iter(scan_tasks)
 

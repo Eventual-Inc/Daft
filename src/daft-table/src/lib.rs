@@ -431,13 +431,13 @@ impl Table {
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
-        self.cast_to_schema_with_fill(schema, &None)
+        self.cast_to_schema_with_fill(schema, None)
     }
 
     pub fn cast_to_schema_with_fill(
         &self,
         schema: &Schema,
-        fill_map: &Option<HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, Expr>>,
     ) -> DaftResult<Self> {
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
         let null_lit = null_lit();

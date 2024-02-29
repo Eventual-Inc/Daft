@@ -8,13 +8,13 @@ use crate::micropartition::{MicroPartition, TableState};
 
 impl MicroPartition {
     pub fn cast_to_schema(&self, schema: SchemaRef) -> DaftResult<Self> {
-        self.cast_to_schema_with_fill(schema, &None)
+        self.cast_to_schema_with_fill(schema, None)
     }
 
     pub fn cast_to_schema_with_fill(
         &self,
         schema: SchemaRef,
-        fill_map: &Option<HashMap<&str, Expr>>,
+        fill_map: Option<&HashMap<&str, Expr>>,
     ) -> DaftResult<Self> {
         let schema_owned = schema.clone();
         let pruned_statistics = self

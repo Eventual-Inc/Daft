@@ -1,7 +1,7 @@
 use crate::expr::Expr;
 
-use daft_core::datatypes::logical::TimeArray;
-use daft_core::utils::display_table::display_time64;
+use daft_core::datatypes::logical::{Decimal128Array, TimeArray};
+use daft_core::utils::display_table::{display_decimal128, display_time64};
 use daft_core::utils::hashable_float_wrapper::FloatWrapper;
 use daft_core::{array::ops::full::FullNull, datatypes::DataType};
 use daft_core::{
@@ -61,6 +61,8 @@ pub enum LiteralValue {
     Time(i64, TimeUnit),
     /// A 64-bit floating point number.
     Float64(f64),
+    /// An [`i128`] representing a decimal number with the provided precision and scale.
+    Decimal(i128, u8, i8),
     /// A list
     Series(Series),
     /// Python object.
@@ -96,6 +98,11 @@ impl Hash for LiteralValue {
             }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
+            Decimal(n, precision, scale) => {
+                n.hash(state);
+                precision.hash(state);
+                scale.hash(state);
+            }
             Series(series) => {
                 let hash_result = series.hash(None);
                 match hash_result {
@@ -126,6 +133,9 @@ impl Display for LiteralValue {
             Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Float64(val) => write!(f, "{val:.1}"),
+            Decimal(val, precision, scale) => {
+                write!(f, "{}", display_decimal128(*val, *precision, *scale))
+            }
             Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Python(pyobj) => write!(f, "PyObject({})", {
@@ -157,6 +167,9 @@ impl LiteralValue {
             Time(_, tu) => DataType::Time(*tu),
             Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Float64(_) => DataType::Float64,
+            Decimal(_, precision, scale) => {
+                DataType::Decimal128(*precision as usize, *scale as usize)
+            }
             Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
@@ -189,6 +202,10 @@ impl LiteralValue {
                 TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
+            Decimal(val, ..) => {
+                let physical = Int128Array::from(("literal", [*val].as_slice()));
+                Decimal128Array::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
             Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
             Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),

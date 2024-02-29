@@ -54,6 +54,24 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
     )
 }
 
+pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
+    if scale < 0 {
+        unimplemented!();
+    } else {
+        let modulus = i128::pow(10, scale as u32);
+        let integral = val / modulus;
+        if scale == 0 {
+            format!("{}", integral)
+        } else {
+            let sign = if val < 0 { "-" } else { "" };
+            let integral = integral.abs();
+            let decimals = (val % modulus).abs();
+            let scale = scale as usize;
+            format!("{}{}.{:0scale$}", sign, integral, decimals)
+        }
+    }
+}
+
 pub fn display_series_literal(series: &Series) -> String {
     if !series.is_empty() {
         format!(
