@@ -15,6 +15,7 @@ mod count;
 mod date;
 mod filter;
 mod float;
+mod floor;
 pub mod from_arrow;
 pub mod full;
 mod get;

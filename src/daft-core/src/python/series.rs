@@ -112,6 +112,10 @@ impl PySeries {
         Ok(self.series.ceil()?.into())
     }
 
+    pub fn floor(&self) -> PyResult<Self> {
+        Ok(self.series.floor()?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }
