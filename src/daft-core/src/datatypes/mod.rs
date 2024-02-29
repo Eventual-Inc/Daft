@@ -132,6 +132,26 @@ macro_rules! impl_daft_logical_fixed_size_list_datatype {
     };
 }
 
+macro_rules! impl_daft_logical_list_datatype {
+    ($ca:ident, $variant:ident) => {
+        #[derive(Clone, Debug)]
+        pub struct $ca {}
+
+        impl DaftDataType for $ca {
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+
+            type ArrayType = logical::LogicalArray<$ca>;
+        }
+
+        impl DaftLogicalType for $ca {
+            type PhysicalType = ListType;
+        }
+    };
+}
+
 macro_rules! impl_nested_datatype {
     ($ca:ident, $array_type:ident) => {
         #[derive(Clone, Debug)]
@@ -181,6 +201,7 @@ impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
+impl_daft_logical_list_datatype!(MapType, Unknown);
 
 #[cfg(feature = "python")]
 impl_daft_non_arrow_datatype!(PythonType, Python);

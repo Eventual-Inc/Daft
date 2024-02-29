@@ -76,6 +76,8 @@ pub enum DataType {
     List(Box<DataType>),
     /// A nested [`DataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
+    /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
+    Map(Box<DataType>),
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
     // Stop ArrowTypes
@@ -156,6 +158,14 @@ impl DataType {
             DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
+            DataType::Map(field) => Ok(ArrowType::Map(
+                Box::new(arrow2::datatypes::Field::new(
+                    "item",
+                    field.to_arrow()?,
+                    true,
+                )),
+                false,
+            )),
             DataType::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
@@ -201,6 +211,7 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
+            Map(child_dtype) => List(Box::new(child_dtype.to_physical())),
             Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
@@ -311,6 +322,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_map(&self) -> bool {
+        matches!(self, DataType::Map(..))
+    }
+
+    #[inline]
     pub fn is_null(&self) -> bool {
         match self {
             DataType::Null => true,
@@ -385,6 +401,7 @@ impl DataType {
                 | DataType::FixedShapeImage(..)
                 | DataType::Tensor(..)
                 | DataType::FixedShapeTensor(..)
+                | DataType::Map(..)
         )
     }
 
@@ -398,7 +415,10 @@ impl DataType {
         let p: DataType = self.to_physical();
         matches!(
             p,
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Struct(..)
+            DataType::List(..)
+                | DataType::FixedSizeList(..)
+                | DataType::Struct(..)
+                | DataType::Map(..)
         )
     }
 
@@ -449,6 +469,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::FixedSizeList(field, size) => {
                 DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
+            ArrowType::Map(field, ..) => DataType::Map(Box::new(field.as_ref().data_type().into())),
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)
@@ -492,6 +513,9 @@ impl Display for DataType {
             DataType::List(nested) => write!(f, "List[{}]", nested),
             DataType::FixedSizeList(inner, size) => {
                 write!(f, "FixedSizeList[{}; {}]", inner, size)
+            }
+            DataType::Map(inner, ..) => {
+                write!(f, "Map[{}]", inner)
             }
             DataType::Struct(fields) => {
                 let fields: String = fields

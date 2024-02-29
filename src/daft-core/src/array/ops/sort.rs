@@ -3,7 +3,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, Float32Array,
         Float64Array, NullArray, Utf8Array,
@@ -571,6 +571,12 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for ListArray")
+    }
+}
+
+impl MapArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for MapArray")
     }
 }
 

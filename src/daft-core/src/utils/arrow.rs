@@ -1,3 +1,5 @@
+use arrow2::array::Array;
+use arrow2::datatypes::DataType;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -42,6 +44,20 @@ fn coerce_to_daft_compatible_type(
                 )
                 .with_metadata(field.metadata.clone()),
             )))
+        }
+        arrow2::datatypes::DataType::Map(field, sorted) => {
+            let new_field = match coerce_to_daft_compatible_type(field.data_type()) {
+                Some(new_inner_dtype) => Box::new(
+                    arrow2::datatypes::Field::new(
+                        field.name.clone(),
+                        new_inner_dtype,
+                        field.is_nullable,
+                    )
+                    .with_metadata(field.metadata.clone()),
+                ),
+                None => field.clone(),
+            };
+            Some(arrow2::datatypes::DataType::Map(new_field, *sorted))
         }
         arrow2::datatypes::DataType::FixedSizeList(field, size) => {
             let new_inner_dtype = coerce_to_daft_compatible_type(field.data_type())?;
@@ -95,15 +111,30 @@ pub fn cast_array_for_daft_if_needed(
     arrow_array: Box<dyn arrow2::array::Array>,
 ) -> Box<dyn arrow2::array::Array> {
     match coerce_to_daft_compatible_type(arrow_array.data_type()) {
-        Some(coerced_dtype) => cast::cast(
-            arrow_array.as_ref(),
-            &coerced_dtype,
-            cast::CastOptions {
-                wrapped: true,
-                partial: false,
-            },
-        )
-        .unwrap(),
+        Some(coerced_dtype) => match coerced_dtype {
+            DataType::Map(to_field, sorted) => {
+                let map_array = arrow_array
+                    .as_any()
+                    .downcast_ref::<arrow2::array::MapArray>()
+                    .unwrap();
+                let casted = cast_array_for_daft_if_needed(map_array.field().clone());
+                Box::new(arrow2::array::MapArray::new(
+                    DataType::Map(to_field.clone(), sorted),
+                    map_array.offsets().clone(),
+                    casted,
+                    map_array.validity().cloned(),
+                ))
+            }
+            _ => cast::cast(
+                arrow_array.as_ref(),
+                &coerced_dtype,
+                cast::CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )
+            .unwrap(),
+        },
         None => arrow_array,
     }
 }

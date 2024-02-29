@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -30,7 +31,10 @@ where
 {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         let data_array_field = Arc::new(Field::new(field.name.clone(), field.dtype.to_physical()));
-        let physical_arrow_arr = arrow_arr.to_type(data_array_field.dtype.to_arrow()?);
+        let physical_arrow_arr = match field.dtype {
+            DataType::Map(..) => arrow_arr,
+            _ => arrow_arr.to_type(data_array_field.dtype.to_arrow()?),
+        };
         let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
             data_array_field,
             physical_arrow_arr,
@@ -64,13 +68,26 @@ impl FromArrow for FixedSizeListArray {
 impl FromArrow for ListArray {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         match (&field.dtype, arrow_arr.data_type()) {
-            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::List(arrow_child_field)) |
-            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::LargeList(arrow_child_field))
-            => {
-                let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()));
-                let arrow_arr = arrow_arr.as_any().downcast_ref::<arrow2::array::ListArray<i64>>().unwrap();
+            (
+                DataType::List(daft_child_dtype),
+                arrow2::datatypes::DataType::List(arrow_child_field),
+            )
+            | (
+                DataType::List(daft_child_dtype),
+                arrow2::datatypes::DataType::LargeList(arrow_child_field),
+            ) => {
+                let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::LargeList(
+                    arrow_child_field.clone(),
+                ));
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow2::array::ListArray<i64>>()
+                    .unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = Series::from_arrow(Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())), arrow_child_array.clone())?;
+                let child_series = Series::from_arrow(
+                    Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
+                    arrow_child_array.clone(),
+                )?;
                 Ok(ListArray::new(
                     field.clone(),
                     child_series,
@@ -78,7 +95,34 @@ impl FromArrow for ListArray {
                     arrow_arr.validity().cloned(),
                 ))
             }
-            (d, a) => Err(DaftError::TypeError(format!("Attempting to create Daft FixedSizeListArray with type {} from arrow array with type {:?}", d, a)))
+            (
+                DataType::List(daft_child_dtype),
+                arrow2::datatypes::DataType::Map(arrow_child_field, keys_sorted),
+            ) => {
+                let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::Map(
+                    arrow_child_field.clone(),
+                    *keys_sorted,
+                ));
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow2::array::MapArray>()
+                    .unwrap();
+                let arrow_child_array = arrow_arr.field();
+                let child_series = Series::from_arrow(
+                    Arc::new(Field::new("map", daft_child_dtype.as_ref().clone())),
+                    arrow_child_array.clone(),
+                )?;
+                Ok(ListArray::new(
+                    field.clone(),
+                    child_series,
+                    arrow_arr.offsets().try_into().unwrap(),
+                    arrow_arr.validity().cloned(),
+                ))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft ListArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
         }
     }
 }

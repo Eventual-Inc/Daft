@@ -88,6 +88,31 @@ def test_series_concat_list_array(chunks, fixed) -> None:
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_map_array(chunks) -> None:
+    series = []
+    for i in range(chunks):
+        series.append(
+            Series.from_arrow(
+                pa.array(
+                    [{"a": i + j, "b": float(i * j)} for j in range(i)],
+                    type=pa.map_(pa.string(), pa.float64()),
+                )
+            )
+        )
+
+    concated = Series.concat(series)
+
+    assert concated.datatype() == DataType.map(DataType.struct({"key": DataType.string(), "value": DataType.float64()}))
+    concated_list = concated.to_pylist()
+    counter = 0
+    for i in range(chunks):
+        for j in range(i):
+            assert concated_list[counter][0][1] == i + j
+            assert concated_list[counter][1][1] == float(i * j)
+            counter += 1
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_struct_array(chunks) -> None:
     series = []
     for i in range(chunks):

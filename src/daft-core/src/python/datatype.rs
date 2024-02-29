@@ -201,6 +201,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn map(data_type: Self) -> PyResult<Self> {
+        Ok(DataType::Map(Box::new(data_type.dtype)).into())
+    }
+
+    #[staticmethod]
     pub fn r#struct(fields: &PyDict) -> PyResult<Self> {
         Ok(DataType::Struct(
             fields
@@ -348,6 +353,10 @@ impl PyDataType {
 
     pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
         Ok(self.dtype.is_fixed_shape_tensor())
+    }
+
+    pub fn is_map(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_map())
     }
 
     pub fn is_logical(&self) -> PyResult<bool> {

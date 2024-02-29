@@ -6,7 +6,7 @@ use crate::{
     datatypes::{
         logical::LogicalArray, DaftDataType, DaftLogicalType, DateType, Decimal128Type,
         DurationType, EmbeddingType, Field, FixedShapeImageType, FixedShapeTensorType, ImageType,
-        TensorType, TimeType, TimestampType,
+        MapType, TensorType, TimeType, TimestampType,
     },
     DataType, IntoSeries, Series,
 };
@@ -84,3 +84,4 @@ impl_logical_growable!(LogicalFixedShapeTensorGrowable, FixedShapeTensorType);
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
+impl_logical_growable!(LogicalMapGrowable, MapType);

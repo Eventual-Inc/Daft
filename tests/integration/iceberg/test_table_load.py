@@ -21,7 +21,7 @@ def test_daft_iceberg_table_open(local_iceberg_tables):
 
 
 WORKING_SHOW_COLLECT = [
-    # "test_all_types", # ValueError: DaftError::ArrowError Not yet implemented: Deserializing type Decimal(10, 2) from parquet
+    "test_all_types",  # ValueError: DaftError::ArrowError Not yet implemented: Deserializing type Decimal(10, 2) from parquet
     "test_limit",
     "test_null_nan",
     "test_null_nan_rewritten",

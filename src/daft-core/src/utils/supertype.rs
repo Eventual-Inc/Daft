@@ -195,6 +195,11 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let inner_st = get_supertype(inner_left_dtype.as_ref(), inner_right_dtype.as_ref())?;
                 Some(DataType::List(Box::new(inner_st)))
             }
+            // TODO(Colin): Add support for getting supertype for two maps once StructArray supports such a cast.
+            // (Map(inner_left_dtype), Map(inner_right_dtype)) => {
+            //     let inner_st = get_supertype(inner_left_dtype.as_ref(), inner_right_dtype.as_ref())?;
+            //     Some(DataType::Map(Box::new(inner_st)))
+            // }
             // TODO(Clark): Add support for getting supertype for two fixed size lists once Arrow2 supports such a cast.
             // (FixedSizeList(inner_left_field, inner_left_size), FixedSizeList(inner_right_field, inner_right_size)) if inner_left_size == inner_right_size => {
             //     let inner_st = inner(&inner_left_field.dtype, &inner_right_field.dtype)?;

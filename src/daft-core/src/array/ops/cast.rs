@@ -10,8 +10,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, TensorArray,
-            TimeArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, LogicalArray, LogicalArrayImpl, MapArray,
+            TensorArray, TimeArray, TimestampArray,
         },
         DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode, Int64Array, TimeUnit,
         UInt64Array, Utf8Array,
@@ -1727,8 +1727,19 @@ impl ListArray {
                     }
                 }
             }
+            DataType::Map(..) => Ok(MapArray::new(
+                Field::new(self.name(), dtype.clone()),
+                self.clone(),
+            )
+            .into_series()),
             _ => unimplemented!("List casting not implemented for dtype: {}", dtype),
         }
+    }
+}
+
+impl MapArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        self.physical.cast(dtype)
     }
 }
 
