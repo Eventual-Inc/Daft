@@ -115,7 +115,7 @@ class DeltaLakeScanOperator(ScanOperator):
                     field_name = dtype.field(field_idx).name
                     try:
                         arrow_arr = pa.array([part_values[field_name]], type=dtype.field(field_idx).type)
-                    except (pa.ArrowInvalid, pa.ArrowTypeError):
+                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
                         # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                         arrow_arr = pa.array([part_values[field_name].as_py()], type=dtype.field(field_idx).type)
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)

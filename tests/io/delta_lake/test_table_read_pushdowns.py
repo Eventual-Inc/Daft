@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 
-import pyarrow as pa
 import pytest
 
 deltalake = pytest.importorskip("deltalake")
@@ -34,7 +33,6 @@ def test_deltalake_read_predicate_pushdown_on_part(local_deltalake_table, partit
     part_value = partition_generator(part_idx)
     if part_value is None:
         part_value = part_idx
-    print(type(part_value), part_value)
     df = df.where(df["part_idx"] == part_value)
     assert df.schema() == Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
     assert_pyarrow_tables_equal(
