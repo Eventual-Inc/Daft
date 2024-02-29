@@ -157,6 +157,7 @@ macro_rules! impl_series_like_for_logical_array {
                 };
                 Ok($da::new(self.0.field.clone(), data_array).into_series())
             }
+
             fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
                 use crate::array::{ops::DaftListAggable, ListArray};
                 let data_array = match groups {

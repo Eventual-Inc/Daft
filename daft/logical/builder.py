@@ -150,6 +150,8 @@ class LogicalPlanBuilder:
                 exprs.append(expr._max())
             elif op == "mean":
                 exprs.append(expr._mean())
+            elif op == "any_value":
+                exprs.append(expr._any_value())
             elif op == "list":
                 exprs.append(expr._agg_list())
             elif op == "concat":

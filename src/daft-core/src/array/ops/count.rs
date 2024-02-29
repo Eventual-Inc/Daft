@@ -30,7 +30,11 @@ fn grouped_count_arrow_bitmap(
             None => repeat(0).take(groups.len()).collect(), // None of the values are Null
             Some(validity) => groups
                 .iter()
-                .map(|g| g.iter().map(|i| validity.get_bit(*i as usize) as u64).sum())
+                .map(|g| {
+                    g.iter()
+                        .map(|i| validity.get_bit(!*i as usize) as u64)
+                        .sum()
+                })
                 .collect(),
         },
     }
@@ -46,11 +50,11 @@ fn count_arrow_bitmap(
         CountMode::All => arr_len as u64,
         CountMode::Valid => match arrow_bitmap {
             None => arr_len as u64,
-            Some(validity) => validity.into_iter().map(|b| b as u64).sum(),
+            Some(validity) => (validity.len() - validity.unset_bits()) as u64,
         },
         CountMode::Null => match arrow_bitmap {
             None => 0,
-            Some(validity) => validity.into_iter().map(|b| !b as u64).sum(),
+            Some(validity) => validity.unset_bits() as u64,
         },
     }
 }

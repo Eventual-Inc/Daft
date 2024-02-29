@@ -21,6 +21,7 @@ impl TreeNode for Expr {
                     | Mean(expr)
                     | Min(expr)
                     | Max(expr)
+                    | AnyValue(expr, _)
                     | List(expr)
                     | Concat(expr) => vec![expr.as_ref()],
                     MapGroups { func: _, inputs } => inputs.iter().collect::<Vec<_>>(),
@@ -65,6 +66,9 @@ impl TreeNode for Expr {
                     Mean(expr) => transform(expr.as_ref().clone())?.mean(),
                     Min(expr) => transform(expr.as_ref().clone())?.min(),
                     Max(expr) => transform(expr.as_ref().clone())?.max(),
+                    AnyValue(expr, ignore_nulls) => {
+                        transform(expr.as_ref().clone())?.any_value(ignore_nulls)
+                    }
                     List(expr) => transform(expr.as_ref().clone())?.agg_list(),
                     Concat(expr) => transform(expr.as_ref().clone())?.agg_concat(),
                     MapGroups { func, inputs } => Expr::Agg(MapGroups {

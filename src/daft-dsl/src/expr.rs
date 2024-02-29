@@ -58,6 +58,7 @@ pub enum AggExpr {
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
+    AnyValue(ExprRef, bool),
     List(ExprRef),
     Concat(ExprRef),
     MapGroups {
@@ -87,6 +88,7 @@ impl AggExpr {
             | Mean(expr)
             | Min(expr)
             | Max(expr)
+            | AnyValue(expr, _)
             | List(expr)
             | Concat(expr) => expr.name(),
             MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
@@ -116,6 +118,12 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_max()"))
             }
+            AnyValue(expr, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_any_value(ignore_nulls={ignore_nulls})"
+                ))
+            }
             List(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
@@ -136,6 +144,7 @@ impl AggExpr {
             | Mean(expr)
             | Min(expr)
             | Max(expr)
+            | AnyValue(expr, _)
             | List(expr)
             | Concat(expr) => vec![expr.clone()],
             MapGroups { func: _, inputs } => inputs.iter().map(|e| e.clone().into()).collect(),
@@ -196,7 +205,7 @@ impl AggExpr {
                     },
                 ))
             }
-            Min(expr) | Max(expr) => {
+            Min(expr) | Max(expr) | AnyValue(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
@@ -277,6 +286,10 @@ impl Expr {
 
     pub fn max(&self) -> Self {
         Expr::Agg(AggExpr::Max(self.clone().into()))
+    }
+
+    pub fn any_value(&self, ignore_nulls: bool) -> Self {
+        Expr::Agg(AggExpr::AnyValue(self.clone().into(), ignore_nulls))
     }
 
     pub fn agg_list(&self) -> Self {
@@ -604,6 +617,9 @@ impl Display for AggExpr {
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),
+            AnyValue(expr, ignore_nulls) => {
+                write!(f, "any_value({expr}, ignore_nulls={ignore_nulls})")
+            }
             List(expr) => write!(f, "list({expr})"),
             Concat(expr) => write!(f, "list({expr})"),
             MapGroups { func, inputs } => function_display(f, func, inputs),

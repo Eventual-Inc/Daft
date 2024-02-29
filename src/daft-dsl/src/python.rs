@@ -184,6 +184,10 @@ impl PyExpr {
         Ok(self.expr.max().into())
     }
 
+    pub fn any_value(&self, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.any_value(ignore_nulls).into())
+    }
+
     pub fn agg_list(&self) -> PyResult<Self> {
         Ok(self.expr.agg_list().into())
     }
