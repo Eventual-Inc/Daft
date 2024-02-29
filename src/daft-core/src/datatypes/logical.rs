@@ -62,6 +62,8 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
 
 macro_rules! impl_logical_type {
     ($physical_array_type:ident) => {
+        // Clippy triggers false positives here for the MapArray implementation
+        // This is added to suppress the warning
         #[allow(clippy::len_without_is_empty)]
         pub fn len(&self) -> usize {
             self.physical.len()

@@ -494,6 +494,9 @@ class DataType:
         return self._dtype.is_temporal()
 
     def _should_cast_to_python(self) -> builtins.bool:
+        # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
+        # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
+        # which we can handle without casting to Python.
         return self._is_logical_type() and not self._is_map()
 
     def __repr__(self) -> str:
