@@ -2,29 +2,29 @@ from __future__ import annotations
 
 import os
 
-###
-# Set up code coverage for when running code coverage with ray
-###
-if "COV_CORE_SOURCE" in os.environ:
-    try:
-        from pytest_cov.embed import init
+from daft.daft import build_type as _build_type
+from daft.daft import version as _version
 
-        init()
-    except Exception as exc:
-        import sys
+# ###
+# # Set up code coverage for when running code coverage with ray
+# ###
+# if "COV_CORE_SOURCE" in os.environ:
+#     try:
+#         from pytest_cov.embed import init
 
-        sys.stderr.write(
-            "pytest-cov: Failed to setup subprocess coverage. "
-            "Environ: {!r} "
-            "Exception: {!r}\n".format({k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc)
-        )
+#         init()
+#     except Exception as exc:
+#         import sys
+
+#         sys.stderr.write(
+#             "pytest-cov: Failed to setup subprocess coverage. "
+#             "Environ: {!r} "
+#             "Exception: {!r}\n".format({k: v for k, v in os.environ.items() if k.startswith("COV_CORE")}, exc)
+#         )
 
 ###
 # Get build constants from Rust .so
 ###
-
-from daft.daft import build_type as _build_type
-from daft.daft import version as _version
 
 
 def get_version() -> str:
