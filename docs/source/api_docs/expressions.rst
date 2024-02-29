@@ -47,6 +47,7 @@ Numeric
     Expression.__truediv__
     Expression.__mod__
     Expression.ceil
+    Expression.floor
 
 .. _api-comparison-expression:
 

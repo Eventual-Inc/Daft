@@ -180,3 +180,25 @@ def test_table_ceil_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to ceil to be numeric"):
         table.eval_expression_list([col("a").ceil()])
+
+
+def test_table_numeric_floor() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": [None, -1.0, -0.5, 0.0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+    )
+
+    floor_table = table.eval_expression_list([col("a").floor(), col("b").floor()])
+
+    assert [math.floor(v) if v is not None else v for v in table.get_column("a").to_pylist()] == floor_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [math.floor(v) if v is not None else v for v in table.get_column("b").to_pylist()] == floor_table.get_column(
+        "b"
+    ).to_pylist()
+
+
+def test_table_floor_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to floor to be numeric"):
+        table.eval_expression_list([col("a").floor()])

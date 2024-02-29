@@ -15,6 +15,7 @@ pub mod date;
 pub mod downcast;
 pub mod filter;
 pub mod float;
+pub mod floor;
 pub mod groups;
 pub mod hash;
 pub mod if_else;
