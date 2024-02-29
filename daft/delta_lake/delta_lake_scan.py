@@ -68,6 +68,7 @@ class DeltaLakeScanOperator(ScanOperator):
         import pyarrow as pa
 
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
+        # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
         add_actions: pa.RecordBatch = self._table.get_add_actions()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
@@ -76,11 +77,15 @@ class DeltaLakeScanOperator(ScanOperator):
             )
 
         # TODO(Clark): Add support for deletion vectors.
+        # Issue: https://github.com/Eventual-Inc/Daft/issues/1954
         if "deletionVector" in add_actions.schema.names:
             raise NotImplementedError(
                 "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
                 "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html"
             )
+
+        # TODO(Clark): Add support for column mappings.
+        # Issue: https://github.com/Eventual-Inc/Daft/issues/1955
 
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
