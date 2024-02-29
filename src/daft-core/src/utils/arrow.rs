@@ -1,4 +1,3 @@
-use arrow2::array::Array;
 use arrow2::datatypes::DataType;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -125,7 +124,7 @@ pub fn cast_array_for_daft_if_needed(
                     DataType::Map(to_field.clone(), sorted),
                     map_array.offsets().clone(),
                     casted,
-                    map_array.validity().cloned(),
+                    arrow_array.validity().cloned(),
                 ))
             }
             _ => cast::cast(

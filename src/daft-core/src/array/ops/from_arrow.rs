@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -105,11 +104,11 @@ impl FromArrow for ListArray {
                     arrow_child_field.clone(),
                     *keys_sorted,
                 ));
-                let arrow_arr = arrow_arr
+                let map_arr = arrow_arr
                     .as_any()
                     .downcast_ref::<arrow2::array::MapArray>()
                     .unwrap();
-                let arrow_child_array = arrow_arr.field();
+                let arrow_child_array = map_arr.field();
                 let child_series = Series::from_arrow(
                     Arc::new(Field::new("map", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
@@ -117,7 +116,7 @@ impl FromArrow for ListArray {
                 Ok(ListArray::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.offsets().try_into().unwrap(),
+                    map_arr.offsets().try_into().unwrap(),
                     arrow_arr.validity().cloned(),
                 ))
             }
