@@ -131,7 +131,7 @@ class DeltaLakeScanOperator(ScanOperator):
                     arrow_arr = pa.array(
                         [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
                     )
-                except (pa.ArrowInvalid, pa.ArrowTypeError):
+                except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
                     # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
                     arrow_arr = pa.array(
                         [min_values[field_name].as_py(), max_values[field_name].as_py()],
