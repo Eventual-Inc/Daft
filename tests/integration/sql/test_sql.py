@@ -21,14 +21,13 @@ def test_sql_create_dataframe_ok(test_db, generated_data) -> None:
 @pytest.mark.parametrize("num_partitions", [2, 3, 4])
 def test_sql_partitioned_read(test_db, num_partitions, generated_data) -> None:
     row_size_bytes = daft.from_pandas(generated_data).schema().estimate_row_size_bytes()
-    num_rows_per_partition = len(generated_data) // num_partitions
-    limit = num_rows_per_partition * num_partitions
+    num_rows_per_partition = len(generated_data) / num_partitions
     set_execution_config(read_sql_partition_size_bytes=math.ceil(row_size_bytes * num_rows_per_partition))
 
-    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME} LIMIT {limit}", test_db)
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
     assert df.num_partitions() == num_partitions
     df = df.collect()
-    assert len(df) == limit
+    assert len(df) == len(generated_data)
 
 
 @pytest.mark.integration()

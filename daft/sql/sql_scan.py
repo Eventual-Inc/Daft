@@ -75,7 +75,7 @@ class SQLScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         total_rows = self._get_num_rows()
-        estimate_row_size_bytes = math.ceil(self.schema().estimate_row_size_bytes())
+        estimate_row_size_bytes = self.schema().estimate_row_size_bytes()
         total_size = total_rows * estimate_row_size_bytes
 
         if not self._limit_and_offset_supported:
@@ -89,7 +89,7 @@ class SQLScanOperator(ScanOperator):
                         schema=self._schema._schema,
                         num_rows=total_rows,
                         storage_config=self.storage_config,
-                        size_bytes=total_size,
+                        size_bytes=math.ceil(total_size),
                         pushdowns=pushdowns,
                     )
                 ]
@@ -101,11 +101,14 @@ class SQLScanOperator(ScanOperator):
             else self._num_partitions
         )
         num_rows_per_scan_task = total_rows // num_scan_tasks
+        num_scan_tasks_with_extra_row = total_rows % num_scan_tasks
 
         scan_tasks = []
         offset = 0
-        for _ in range(num_scan_tasks):
-            limit = max(num_rows_per_scan_task, total_rows - offset)
+        for i in range(num_scan_tasks):
+            limit = num_rows_per_scan_task
+            if i < num_scan_tasks_with_extra_row:
+                limit += 1
             file_format_config = FileFormatConfig.from_database_config(
                 DatabaseSourceConfig(
                     self.sql, limit=limit, offset=offset, limit_before_offset=self._limit_before_offset
@@ -118,7 +121,7 @@ class SQLScanOperator(ScanOperator):
                     schema=self._schema._schema,
                     num_rows=limit,
                     storage_config=self.storage_config,
-                    size_bytes=limit * estimate_row_size_bytes,
+                    size_bytes=math.ceil(limit * estimate_row_size_bytes),
                     pushdowns=pushdowns,
                 )
             )
