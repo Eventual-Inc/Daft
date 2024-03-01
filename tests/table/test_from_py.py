@@ -291,12 +291,12 @@ def test_from_pydict_arrow_fixed_size_list_array() -> None:
 
 
 def test_from_pydict_arrow_map_array() -> None:
-    data = [[("a", 1), ("b", 2)], None, [("c", 3), ("d", 4)]]
-    arrow_arr = pa.array(data, pa.map_(pa.string(), pa.int64()))
+    data = [[(1, 2.0), (3, 4.0)], None, [(5, 6.0), (7, 8.0)]]
+    arrow_arr = pa.array(data, pa.map_(pa.int64(), pa.float64()))
     daft_table = MicroPartition.from_pydict({"a": arrow_arr})
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
-    expected = arrow_arr.cast(pa.map_(pa.large_string(), pa.int64()))
+    expected = arrow_arr.cast(pa.map_(pa.int64(), pa.float64()))
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
     assert daft_table.to_pydict()["a"] == data
 
@@ -507,12 +507,12 @@ def test_from_arrow_struct_array() -> None:
 
 
 def test_from_arrow_map_array() -> None:
-    data = [[("a", 1), ("b", 2)], None, [("c", 3), ("d", 4)]]
-    arrow_arr = pa.array(data, pa.map_(pa.string(), pa.int64()))
+    data = [[(1.0, 1), (2.0, 2)], [(3.0, 3), (4.0, 4)]]
+    arrow_arr = pa.array(data, pa.map_(pa.float32(), pa.int32()))
     daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     assert "a" in daft_table.column_names()
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
-    expected = arrow_arr.cast(pa.map_(pa.large_string(), pa.int64()))
+    expected = arrow_arr.cast(pa.map_(pa.float32(), pa.int32()))
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
     assert daft_table.to_pydict()["a"] == data
 
