@@ -225,10 +225,14 @@ class DatabaseSourceConfig:
     sql: str
     limit: int | None
     offset: int | None
-    limit_before_offset: bool | None
+    apply_limit_before_offset: bool | None
 
     def __init__(
-        self, sql: str, limit: int | None = None, offset: int | None = None, limit_before_offset: bool | None = None
+        self,
+        sql: str,
+        limit: int | None = None,
+        offset: int | None = None,
+        apply_limit_before_offset: bool | None = None,
     ): ...
 
 class FileFormatConfig:

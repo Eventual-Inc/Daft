@@ -235,7 +235,7 @@ def read_sql(
         url,
         limit=sql_options.limit,
         offset=sql_options.offset,
-        limit_before_offset=sql_options.limit_before_offset,
+        apply_limit_before_offset=sql_options.apply_limit_before_offset,
         projection=read_options.column_names,
         predicate=sql_options.predicate_sql,
     ).read()

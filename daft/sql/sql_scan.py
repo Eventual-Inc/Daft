@@ -32,16 +32,16 @@ class SQLScanOperator(ScanOperator):
         self._initialize_schema_and_features()
 
     def _initialize_schema_and_features(self) -> None:
-        self._schema, self._limit_and_offset_supported, self._limit_before_offset = self._attempt_schema_read()
+        self._schema, self._limit_and_offset_supported, self._apply_limit_before_offset = self._attempt_schema_read()
 
     def _attempt_schema_read(self) -> tuple[Schema, bool, bool]:
-        for limit_before_offset in [True, False]:
+        for apply_limit_before_offset in [True, False]:
             try:
                 pa_table = SQLReader(
-                    self.sql, self.url, limit=1, offset=0, limit_before_offset=limit_before_offset
+                    self.sql, self.url, limit=1, offset=0, apply_limit_before_offset=apply_limit_before_offset
                 ).read()
                 schema = Schema.from_pyarrow_schema(pa_table.schema)
-                return schema, True, limit_before_offset
+                return schema, True, apply_limit_before_offset
             except Exception:
                 continue
 
@@ -111,7 +111,7 @@ class SQLScanOperator(ScanOperator):
                 limit += 1
             file_format_config = FileFormatConfig.from_database_config(
                 DatabaseSourceConfig(
-                    self.sql, limit=limit, offset=offset, limit_before_offset=self._limit_before_offset
+                    self.sql, limit=limit, offset=offset, apply_limit_before_offset=self._apply_limit_before_offset
                 )
             )
             scan_tasks.append(

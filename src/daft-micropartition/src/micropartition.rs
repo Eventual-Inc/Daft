@@ -312,7 +312,7 @@ fn materialize_scan_task(
                     sql,
                     limit,
                     offset,
-                    limit_before_offset,
+                    apply_limit_before_offset,
                 }) => {
                     let predicate_sql = scan_task
                         .pushdowns
@@ -332,7 +332,7 @@ fn materialize_scan_task(
                                 url,
                                 *limit,
                                 *offset,
-                                *limit_before_offset,
+                                *apply_limit_before_offset,
                                 predicate_sql.clone(),
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),

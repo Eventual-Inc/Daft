@@ -15,18 +15,18 @@ class SQLReader:
         url: str,
         limit: int | None = None,
         offset: int | None = None,
-        limit_before_offset: bool | None = None,
+        apply_limit_before_offset: bool | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
     ) -> None:
-        if limit is not None and offset is not None and limit_before_offset is None:
-            raise ValueError("limit_before_offset must be specified when limit and offset are both specified")
+        if limit is not None and offset is not None and apply_limit_before_offset is None:
+            raise ValueError("apply_limit_before_offset must be specified when limit and offset are both specified")
 
         self.sql = sql
         self.url = url
         self.limit = limit
         self.offset = offset
-        self.limit_before_offset = limit_before_offset
+        self.apply_limit_before_offset = apply_limit_before_offset
         self.projection = projection
         self.predicate = predicate
 
@@ -47,7 +47,7 @@ class SQLReader:
             clauses.append(f" WHERE {self.predicate}")
 
         if self.limit is not None and self.offset is not None:
-            if self.limit_before_offset is True:
+            if self.apply_limit_before_offset is True:
                 clauses.append(f" LIMIT {self.limit} OFFSET {self.offset}")
             else:
                 clauses.append(f" OFFSET {self.offset} LIMIT {self.limit}")

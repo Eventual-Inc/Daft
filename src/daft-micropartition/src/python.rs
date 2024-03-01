@@ -794,7 +794,7 @@ pub(crate) fn read_sql_into_py_table(
     url: &str,
     limit: Option<usize>,
     offset: Option<usize>,
-    limit_before_offset: Option<bool>,
+    apply_limit_before_offset: Option<bool>,
     predicate_sql: Option<String>,
     predicate_expr: Option<PyExpr>,
     schema: PySchema,
@@ -821,7 +821,7 @@ pub(crate) fn read_sql_into_py_table(
         .call1((
             limit,
             offset,
-            limit_before_offset,
+            apply_limit_before_offset,
             predicate_sql,
             predicate_pyexpr,
         ))?;

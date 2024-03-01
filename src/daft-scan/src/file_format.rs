@@ -265,7 +265,7 @@ pub struct DatabaseSourceConfig {
     pub sql: String,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
-    pub limit_before_offset: Option<bool>,
+    pub apply_limit_before_offset: Option<bool>,
 }
 
 impl DatabaseSourceConfig {
@@ -273,13 +273,13 @@ impl DatabaseSourceConfig {
         sql: String,
         limit: Option<usize>,
         offset: Option<usize>,
-        limit_before_offset: Option<bool>,
+        apply_limit_before_offset: Option<bool>,
     ) -> Self {
         Self {
             sql,
             limit,
             offset,
-            limit_before_offset,
+            apply_limit_before_offset,
         }
     }
 
@@ -292,8 +292,11 @@ impl DatabaseSourceConfig {
         if let Some(offset) = self.offset {
             res.push(format!("Offset = {}", offset));
         }
-        if let Some(limit_before_offset) = self.limit_before_offset {
-            res.push(format!("Limit before offset = {}", limit_before_offset));
+        if let Some(apply_limit_before_offset) = self.apply_limit_before_offset {
+            res.push(format!(
+                "Limit before offset = {}",
+                apply_limit_before_offset
+            ));
         }
         res
     }
@@ -308,9 +311,9 @@ impl DatabaseSourceConfig {
         sql: &str,
         limit: Option<usize>,
         offset: Option<usize>,
-        limit_before_offset: Option<bool>,
+        apply_limit_before_offset: Option<bool>,
     ) -> Self {
-        Self::new_internal(sql.to_string(), limit, offset, limit_before_offset)
+        Self::new_internal(sql.to_string(), limit, offset, apply_limit_before_offset)
     }
 }
 
