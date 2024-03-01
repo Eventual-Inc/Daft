@@ -97,14 +97,7 @@ impl FromArrow for ListArray {
                     arrow_arr.validity().cloned(),
                 ))
             }
-            (
-                DataType::List(daft_child_dtype),
-                arrow2::datatypes::DataType::Map(arrow_child_field, keys_sorted),
-            ) => {
-                let arrow_arr = arrow_arr.to_type(arrow2::datatypes::DataType::Map(
-                    arrow_child_field.clone(),
-                    *keys_sorted,
-                ));
+            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map(..)) => {
                 let map_arr = arrow_arr
                     .as_any()
                     .downcast_ref::<arrow2::array::MapArray>()

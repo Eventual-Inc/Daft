@@ -290,6 +290,17 @@ def test_from_pydict_arrow_fixed_size_list_array() -> None:
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
 
 
+def test_from_pydict_arrow_map_array() -> None:
+    data = [[("a", 1), ("b", 2)], None, [("c", 3), ("d", 4)]]
+    arrow_arr = pa.array(data, pa.map_(pa.string(), pa.int64()))
+    daft_table = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_table.column_names()
+    # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
+    expected = arrow_arr.cast(pa.map_(pa.large_string(), pa.int64()))
+    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_table.to_pydict()["a"] == data
+
+
 def test_from_pydict_arrow_struct_array() -> None:
     data = [{"a": "foo", "b": "bar"}, {"b": "baz", "c": "quux"}]
     arrow_arr = pa.array(data)
@@ -347,6 +358,10 @@ def test_from_pydict_arrow_deeply_nested() -> None:
             pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "c": 6}]),
             pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
         ),
+        (
+            pa.array([[(1, 2), (3, 4)], None, [(5, 6), (7, 8)]], pa.map_(pa.int64(), pa.int64())),
+            pa.map_(pa.int64(), pa.int64()),
+        ),
     ],
 )
 @pytest.mark.parametrize("chunked", [False, True])
@@ -373,6 +388,10 @@ def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> Non
             pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, {"a": 6, "c": 7}]),
             pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
         ),
+        (
+            pa.array([[(1, 2), (3, 4)], [(5, 6)], [(7, 8)]], pa.map_(pa.int64(), pa.int64())),
+            pa.map_(pa.int64(), pa.int64()),
+        ),
         # Contains nulls.
         (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
@@ -382,6 +401,10 @@ def test_from_pydict_arrow_with_nulls_roundtrip(data, out_dtype, chunked) -> Non
         (
             pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "c": 6}]),
             pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        (
+            pa.array([[(1, 2), (3, 4)], None, [(7, 8)]], pa.map_(pa.int64(), pa.int64())),
+            pa.map_(pa.int64(), pa.int64()),
         ),
     ],
 )
@@ -419,6 +442,10 @@ def test_from_pydict_series() -> None:
             pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, {"a": 5}, {"a": 6, "c": 7}]),
             pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
         ),
+        (
+            pa.array([[(1, 2), (3, 4)], [(5, 6)], [(7, 8)]], pa.map_(pa.int64(), pa.int64())),
+            pa.map_(pa.int64(), pa.int64()),
+        ),
         # Contains nulls.
         (pa.array([1, 2, None, 4], type=pa.int64()), pa.int64()),
         (pa.array(["a", "b", None, "d"], type=pa.string()), pa.large_string()),
@@ -428,6 +455,10 @@ def test_from_pydict_series() -> None:
         (
             pa.array([{"a": 1, "b": 2}, {"b": 3, "c": 4}, None, {"a": 5, "c": 6}]),
             pa.struct([("a", pa.int64()), ("b", pa.int64()), ("c", pa.int64())]),
+        ),
+        (
+            pa.array([[(1, 2), (3, 4)], None, [(7, 8)]], pa.map_(pa.int64(), pa.int64())),
+            pa.map_(pa.int64(), pa.int64()),
         ),
     ],
 )
@@ -473,6 +504,17 @@ def test_from_arrow_struct_array() -> None:
         data, type=pa.struct([("a", pa.large_string()), ("b", pa.large_string()), ("c", pa.large_string())])
     )
     assert daft_table.to_arrow()["a"].combine_chunks() == expected
+
+
+def test_from_arrow_map_array() -> None:
+    data = [[("a", 1), ("b", 2)], None, [("c", 3), ("d", 4)]]
+    arrow_arr = pa.array(data, pa.map_(pa.string(), pa.int64()))
+    daft_table = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_table.column_names()
+    # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
+    expected = arrow_arr.cast(pa.map_(pa.large_string(), pa.int64()))
+    assert daft_table.to_arrow()["a"].combine_chunks() == expected
+    assert daft_table.to_pydict()["a"] == data
 
 
 @pytest.mark.skipif(
