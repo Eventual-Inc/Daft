@@ -35,7 +35,7 @@ def read_sql(sql: str, url: str, num_partitions: Optional[int] = None) -> DataFr
     handle = ScanOperatorHandle.from_python_scan_operator(sql_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
 
-    if num_partitions is not None and num_partitions > 1 and not sql_operator._limit_and_offset_supported:
+    if num_partitions is not None and num_partitions > 1 and not sql_operator.can_partition_read():
         return DataFrame(builder).into_partitions(num_partitions)
     else:
         return DataFrame(builder)

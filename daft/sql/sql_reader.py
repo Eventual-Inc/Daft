@@ -98,11 +98,8 @@ class SQLReader:
         try:
             with create_engine(self.url).connect() as connection:
                 result = connection.execute(text(sql))
-                cursor = result.cursor
-
-                columns = [column_description[0] for column_description in cursor.description]
                 rows = result.fetchall()
-                pydict = {column: [row[i] for row in rows] for i, column in enumerate(columns)}
+                pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
 
                 return pa.Table.from_pydict(pydict)
         except Exception as e:

@@ -17,6 +17,7 @@ use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display, Formatter, Result},
+    io::{self, Write},
     sync::Arc,
 };
 
@@ -570,80 +571,96 @@ impl Expr {
     }
 
     pub fn to_sql(&self) -> Option<String> {
-        self.to_sql_inner()
-    }
-
-    fn to_sql_inner(&self) -> Option<String> {
-        match self {
-            Expr::Column(name) => Some(name.to_string()),
-            Expr::Literal(lit) => match lit {
-                lit::LiteralValue::Series(series) => match series.data_type() {
-                    DataType::Utf8 => {
-                        let s = lit.to_string();
-                        let trimmed = s.trim_matches(|c| c == '[' || c == ']').to_string();
-                        let quoted = trimmed
-                            .split(", ")
-                            .map(|s| format!("'{}'", s))
-                            .collect::<Vec<_>>();
-                        Some(quoted.join(", "))
-                    }
-                    _ => Some(
-                        lit.to_string()
-                            .trim_matches(|c| c == '[' || c == ']')
-                            .to_string(),
-                    ),
+        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
+            match expr {
+                Expr::Column(name) => write!(buffer, "{}", name),
+                Expr::Literal(lit) => match lit {
+                    lit::LiteralValue::Series(series) => match series.data_type() {
+                        DataType::Utf8 => {
+                            let trimmed_and_quoted = lit
+                                .to_string()
+                                .trim_matches(|c| c == '[' || c == ']')
+                                .split(", ")
+                                .map(|s| format!("'{}'", s))
+                                .collect::<Vec<_>>();
+                            write!(buffer, "{}", trimmed_and_quoted.join(", "))
+                        }
+                        _ => write!(
+                            buffer,
+                            "{}",
+                            lit.to_string().trim_matches(|c| c == '[' || c == ']')
+                        ),
+                    },
+                    _ => write!(buffer, "{}", lit.to_string().replace('\"', "'")),
                 },
-                _ => Some(lit.to_string().replace('\"', "'")),
-            },
-            Expr::Alias(inner, ..) => inner.to_sql_inner(),
-            Expr::BinaryOp { op, left, right } => {
-                let left_sql = left.to_sql_inner()?;
-                let right_sql = right.to_sql_inner()?;
-                let op = match op {
-                    Operator::Eq => "=".to_string(),
-                    Operator::NotEq => "!=".to_string(),
-                    Operator::Lt => "<".to_string(),
-                    Operator::LtEq => "<=".to_string(),
-                    Operator::Gt => ">".to_string(),
-                    Operator::GtEq => ">=".to_string(),
-                    Operator::And => "AND".to_string(),
-                    Operator::Or => "OR".to_string(),
-                    _ => return None,
-                };
-                Some(format!("({}) {} ({})", left_sql, op, right_sql))
+                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::BinaryOp { op, left, right } => {
+                    to_sql_inner(left, buffer)?;
+                    let op = match op {
+                        Operator::Eq => "=".to_string(),
+                        Operator::NotEq => "!=".to_string(),
+                        Operator::Lt => "<".to_string(),
+                        Operator::LtEq => "<=".to_string(),
+                        Operator::Gt => ">".to_string(),
+                        Operator::GtEq => ">=".to_string(),
+                        Operator::And => "AND".to_string(),
+                        Operator::Or => "OR".to_string(),
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                "Unsupported operator for SQL translation",
+                            ))
+                        }
+                    };
+                    write!(buffer, " {} ", op)?;
+                    to_sql_inner(right, buffer)
+                }
+                Expr::Not(inner) => {
+                    write!(buffer, "NOT (")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ")")
+                }
+                Expr::IsNull(inner) => {
+                    write!(buffer, "(")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ") IS NULL")
+                }
+                Expr::NotNull(inner) => {
+                    write!(buffer, "(")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ") IS NOT NULL")
+                }
+                Expr::IfElse {
+                    if_true,
+                    if_false,
+                    predicate,
+                } => {
+                    write!(buffer, "CASE WHEN ")?;
+                    to_sql_inner(predicate, buffer)?;
+                    write!(buffer, " THEN ")?;
+                    to_sql_inner(if_true, buffer)?;
+                    write!(buffer, " ELSE ")?;
+                    to_sql_inner(if_false, buffer)?;
+                    write!(buffer, " END")
+                }
+                Expr::IsIn(inner, items) => {
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, " IN (")?;
+                    to_sql_inner(items, buffer)?;
+                    write!(buffer, ")")
+                }
+                // TODO: Implement SQL translations for these expressions if possible
+                Expr::Agg(..) | Expr::Cast(..) | Expr::Function { .. } => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Unsupported expression for SQL translation",
+                )),
             }
-            Expr::Not(inner) => inner
-                .to_sql_inner()
-                .map(|inner_sql| format!("NOT ({})", inner_sql)),
-            Expr::IsNull(inner) => inner
-                .to_sql_inner()
-                .map(|inner_sql| format!("({}) IS NULL", inner_sql)),
-            Expr::NotNull(inner) => inner
-                .to_sql_inner()
-                .map(|inner_sql| format!("({}) IS NOT NULL", inner_sql)),
-            Expr::IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => {
-                let if_true_sql = if_true.to_sql_inner()?;
-                let if_false_sql = if_false.to_sql_inner()?;
-                let predicate_sql = predicate.to_sql_inner()?;
-                Some(format!(
-                    "CASE WHEN {} THEN {} ELSE {} END",
-                    predicate_sql, if_true_sql, if_false_sql
-                ))
-            }
-            Expr::IsIn(inner, items) => {
-                let inner_sql = inner.to_sql_inner()?;
-                let items_sql = items.to_sql_inner()?;
-                Some(format!("{} IN ({})", inner_sql, items_sql))
-            }
-            // TODO: Implement SQL translations for these expressions if possible
-            Expr::Agg(..) => None,
-            Expr::Cast(..) => None,
-            Expr::Function { .. } => None,
         }
+
+        let mut buffer = Vec::new();
+        to_sql_inner(self, &mut buffer)
+            .ok()
+            .and_then(|_| String::from_utf8(buffer).ok())
     }
 }
 

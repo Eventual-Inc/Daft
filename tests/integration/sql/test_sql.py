@@ -93,7 +93,8 @@ def test_sql_read_with_if_else_filter_pushdown(test_db, generated_data) -> None:
 @pytest.mark.integration()
 def test_sql_read_with_all_pushdowns(test_db) -> None:
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
-    df = df.where(~(df["sepal_length"] > 1))
+    df = df.where(~(df["sepal_length"] < 1))
+    df = df.where(df["variety"].is_in(["setosa", "versicolor"]))
     df = df.select(df["sepal_length"], df["variety"])
     df = df.limit(1)
 

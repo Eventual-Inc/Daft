@@ -137,3 +137,6 @@ class SQLScanOperator(ScanOperator):
 
     def can_absorb_select(self) -> bool:
         return False
+
+    def can_partition_read(self) -> bool:
+        return self._limit_and_offset_supported
