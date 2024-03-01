@@ -25,13 +25,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import (
-    FileFormat,
-    IOConfig,
-    JoinStrategy,
-    JoinType,
-    ResourceRequest,
-)
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
