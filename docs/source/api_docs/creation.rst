@@ -20,6 +20,24 @@ Python Objects
     from_pylist
     from_pydict
 
+Arrow
+~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_arrow
+
+Pandas
+~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_pandas
+
 Files
 -----
 
@@ -54,6 +72,15 @@ JSON
 
     read_json
 
+File Paths
+~~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_glob_path
+
 Data Catalogs
 -------------
 
@@ -85,30 +112,7 @@ Arrow
     :nosignatures:
     :toctree: doc_gen/io_functions
 
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_arrow
-
-Pandas
-~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_pandas
-
-File Paths
-~~~~~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_glob_path
+    read_sql
 
 Integrations
 ------------
