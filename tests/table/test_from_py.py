@@ -99,7 +99,7 @@ ARROW_TYPE_ARRAYS = {
     "list": pa.array(PYTHON_TYPE_ARRAYS["list"], pa.list_(pa.int64())),
     "fixed_size_list": pa.array([[1, 2], [3, 4]], pa.list_(pa.int64(), 2)),
     "map": pa.array(
-        [{"a": 1, "b": 2}, {"c": 3, "d": 4}],
+        [[("a", 1), ("b", 2)], [("c", 3), ("d", 4)]],
         pa.map_(pa.string(), pa.int32()),
     ),
     "struct": pa.array(PYTHON_TYPE_ARRAYS["struct"], pa.struct([("a", pa.int64()), ("b", pa.float64())])),

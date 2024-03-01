@@ -32,7 +32,8 @@ where
         let data_array_field = Arc::new(Field::new(field.name.clone(), field.dtype.to_physical()));
         let physical_arrow_arr = match field.dtype {
             // TODO: Consolidate Map to use the same .to_type conversion as other logical types
-            // Currently, .to_type is not implemented for Map in Arrow2, so the conversion is done instead in the from_arrow implementation for ListArray
+            // Currently, .to_type does not work for Map in Arrow2 because it requires physical types to be equivalent,
+            // but the physical type of MapArray in Arrow2 is a MapArray, not a ListArray
             DataType::Map(..) => arrow_arr,
             _ => arrow_arr.to_type(data_array_field.dtype.to_arrow()?),
         };

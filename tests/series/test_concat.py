@@ -94,7 +94,7 @@ def test_series_concat_map_array(chunks) -> None:
         series.append(
             Series.from_arrow(
                 pa.array(
-                    [{"a": i + j, "b": float(i * j)} for j in range(i)],
+                    [[("a", i + j), ("b", float(i * j))] for j in range(i)],
                     type=pa.map_(pa.string(), pa.float64()),
                 )
             )
@@ -102,7 +102,7 @@ def test_series_concat_map_array(chunks) -> None:
 
     concated = Series.concat(series)
 
-    assert concated.datatype() == DataType.map(DataType.struct({"key": DataType.string(), "value": DataType.float64()}))
+    assert concated.datatype() == DataType.map(DataType.string(), DataType.float64())
     concated_list = concated.to_pylist()
     counter = 0
     for i in range(chunks):

@@ -174,7 +174,7 @@ def test_schema_from_pyarrow():
             ("int", DataType.int64()),
             ("str", DataType.string()),
             ("list", DataType.list(DataType.int64())),
-            ("map", DataType.map(DataType.struct({"key": DataType.string(), "value": DataType.int64()}))),
+            ("map", DataType.map(DataType.string(), DataType.int64())),
         ]
     )
 

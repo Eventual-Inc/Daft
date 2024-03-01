@@ -237,13 +237,13 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(dtype._dtype, size))
 
     @classmethod
-    def map(cls, dtype: DataType) -> DataType:
-        """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs.
-            The dtype of map is guaranteed to be a struct with two fields: key and value.
+    def map(cls, key_type: DataType, value_type: DataType) -> DataType:
+        """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs with two fields, key and value.
         Args:
-            dtype: DataType of each value in the map
+            key_type: DataType of the keys in the map
+            value_type: DataType of the values in the map
         """
-        return cls._from_pydatatype(PyDataType.map(dtype._dtype))
+        return cls._from_pydatatype(PyDataType.map(key_type._dtype, value_type._dtype))
 
     @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
@@ -398,15 +398,10 @@ class DataType:
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
         elif pa.types.is_map(arrow_type):
             assert isinstance(arrow_type, pa.MapType)
-            t = cls.map(
-                cls.struct(
-                    {
-                        "key": cls.from_arrow_type(arrow_type.key_type),
-                        "value": cls.from_arrow_type(arrow_type.item_type),
-                    }
-                )
+            return cls.map(
+                key_type=cls.from_arrow_type(arrow_type.key_type),
+                value_type=cls.from_arrow_type(arrow_type.item_type),
             )
-            return t
         elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
             scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
             shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
