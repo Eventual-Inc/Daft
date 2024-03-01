@@ -5,7 +5,7 @@ use crate::{
     logical_plan::LogicalPlan,
     optimization::Optimizer,
     partitioning::{
-        ClusteringSpec, HashPartitioningConfig, RandomPartitioningConfig, UnknownPartitioningConfig,
+        HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
@@ -133,21 +133,21 @@ impl LogicalPlanBuilder {
 
     pub fn hash_repartition(
         &self,
-        num_partitions: usize,
+        num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
-            ClusteringSpec::Hash(HashPartitioningConfig::new(num_partitions, partition_by)),
+            RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
         )?
         .into();
         Ok(logical_plan.into())
     }
 
-    pub fn random_shuffle(&self, num_partitions: usize) -> DaftResult<Self> {
+    pub fn random_shuffle(&self, num_partitions: Option<usize>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
-            ClusteringSpec::Random(RandomPartitioningConfig::new(num_partitions)),
+            RepartitionSpec::Random(RandomShuffleConfig::new(num_partitions)),
         )?
         .into();
         Ok(logical_plan.into())
@@ -156,7 +156,7 @@ impl LogicalPlanBuilder {
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
-            ClusteringSpec::Unknown(UnknownPartitioningConfig::new(num_partitions)),
+            RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )?
         .into();
         Ok(logical_plan.into())
@@ -353,7 +353,7 @@ impl PyLogicalPlanBuilder {
     pub fn hash_repartition(
         &self,
         partition_by: Vec<PyExpr>,
-        num_partitions: usize,
+        num_partitions: Option<usize>,
     ) -> PyResult<Self> {
         let partition_by_exprs: Vec<Expr> = partition_by
             .iter()
@@ -365,7 +365,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn random_shuffle(&self, num_partitions: usize) -> PyResult<Self> {
+    pub fn random_shuffle(&self, num_partitions: Option<usize>) -> PyResult<Self> {
         Ok(self.builder.random_shuffle(num_partitions)?.into())
     }
 

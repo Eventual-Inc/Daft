@@ -5,7 +5,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use itertools::Itertools;
 
 use crate::{
-    partitioning::{HashPartitioningConfig, RangePartitioningConfig, UnknownPartitioningConfig},
+    partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
     physical_plan::PhysicalPlanRef,
     ClusteringSpec,
 };
@@ -38,7 +38,7 @@ impl Explode {
             // If the scheme is vacuous, the result partiiton spec is the same.
             Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
-            Range(RangePartitioningConfig { by, .. }) | Hash(HashPartitioningConfig { by, .. }) => {
+            Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 let required_cols_for_clustering_spec = by
                     .iter()
                     .flat_map(get_required_columns)
@@ -47,7 +47,7 @@ impl Explode {
                     let newname = expr.name().unwrap().to_string();
                     // if we clobber one of the required columns for the clustering_spec, invalidate it.
                     if required_cols_for_clustering_spec.contains(&newname) {
-                        return ClusteringSpec::Unknown(UnknownPartitioningConfig::new(
+                        return ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                             input_clustering_spec.num_partitions(),
                         ))
                         .into();
@@ -80,7 +80,7 @@ mod tests {
     use daft_dsl::{col, Expr};
 
     use crate::{
-        partitioning::{HashPartitioningConfig, UnknownPartitioningConfig},
+        partitioning::{HashClusteringConfig, UnknownClusteringConfig},
         planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
         ClusteringSpec,
@@ -96,14 +96,14 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(3, vec![Expr::Column("a".into())])?
+        .hash_repartition(Some(3), vec![Expr::Column("a".into())])?
         .explode(vec![col("b")])?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_clustering_spec =
-            ClusteringSpec::Hash(HashPartitioningConfig::new(3, vec![col("a")]));
+            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a")]));
 
         assert_eq!(
             expected_clustering_spec,
@@ -123,13 +123,16 @@ mod tests {
             Field::new("b", DataType::List(Box::new(DataType::Int64))),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(3, vec![Expr::Column("a".into()), Expr::Column("b".into())])?
+        .hash_repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+        )?
         .explode(vec![col("b")])?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_clustering_spec = ClusteringSpec::Unknown(UnknownPartitioningConfig::new(3));
+        let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
 
         assert_eq!(
             expected_clustering_spec,

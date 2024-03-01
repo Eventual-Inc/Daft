@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::{
-    partitioning::{HashPartitioningConfig, RangePartitioningConfig, UnknownPartitioningConfig},
+    partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
     physical_plan::PhysicalPlanRef,
     ClusteringSpec, ResourceRequest,
 };
@@ -49,7 +49,7 @@ impl Project {
             // If the scheme is vacuous, the result partiiton spec is the same.
             Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
-            Range(RangePartitioningConfig { by, .. }) | Hash(HashPartitioningConfig { by, .. }) => {
+            Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 // See what columns the projection directly translates into new columns.
                 let mut old_colname_to_new_colname = IndexMap::new();
                 for expr in projection {
@@ -70,29 +70,26 @@ impl Project {
                     .collect::<std::result::Result<Vec<_>, _>>();
                 maybe_new_clustering_spec.map_or_else(
                     |()| {
-                        ClusteringSpec::Unknown(UnknownPartitioningConfig::new(
+                        ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                             input_clustering_spec.num_partitions(),
                         ))
                         .into()
                     },
                     |new_clustering_spec: Vec<Expr>| match input_clustering_spec.as_ref() {
-                        Range(RangePartitioningConfig {
+                        Range(RangeClusteringConfig {
                             num_partitions,
                             descending,
                             ..
-                        }) => ClusteringSpec::Range(RangePartitioningConfig::new(
+                        }) => ClusteringSpec::Range(RangeClusteringConfig::new(
                             *num_partitions,
                             new_clustering_spec,
                             descending.clone(),
                         ))
                         .into(),
-                        Hash(HashPartitioningConfig { num_partitions, .. }) => {
-                            ClusteringSpec::Hash(HashPartitioningConfig::new(
-                                *num_partitions,
-                                new_clustering_spec,
-                            ))
-                            .into()
-                        }
+                        Hash(HashClusteringConfig { num_partitions, .. }) => ClusteringSpec::Hash(
+                            HashClusteringConfig::new(*num_partitions, new_clustering_spec),
+                        )
+                        .into(),
                         _ => unreachable!(),
                     },
                 )
@@ -245,7 +242,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        partitioning::{ClusteringSpec, HashPartitioningConfig, UnknownPartitioningConfig},
+        partitioning::{ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig},
         planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
     };
@@ -265,14 +262,17 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(3, vec![Expr::Column("a".into()), Expr::Column("b".into())])?
+        .hash_repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+        )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_clustering_spec =
-            ClusteringSpec::Hash(HashPartitioningConfig::new(3, vec![col("aa"), col("b")]));
+            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
 
         assert_eq!(
             expected_clustering_spec,
@@ -302,13 +302,16 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(3, vec![Expr::Column("a".into()), Expr::Column("b".into())])?
+        .hash_repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+        )?
         .project(projection, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_clustering_spec = ClusteringSpec::Unknown(UnknownPartitioningConfig::new(3));
+        let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
         assert_eq!(
             expected_clustering_spec,
             physical_plan.clustering_spec().as_ref().clone()
@@ -329,14 +332,17 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .hash_repartition(3, vec![Expr::Column("a".into()), Expr::Column("b".into())])?
+        .hash_repartition(
+            Some(3),
+            vec![Expr::Column("a".into()), Expr::Column("b".into())],
+        )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
         let expected_clustering_spec =
-            ClusteringSpec::Hash(HashPartitioningConfig::new(3, vec![col("a"), col("b")]));
+            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));
 
         assert_eq!(
             expected_clustering_spec,

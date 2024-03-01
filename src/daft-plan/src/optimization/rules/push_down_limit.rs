@@ -266,7 +266,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .hash_repartition(num_partitions, partition_by.clone())?
+            .hash_repartition(Some(num_partitions), partition_by.clone())?
             .limit(limit, false)?
             .build();
         let expected = dummy_scan_node_with_pushdowns(
@@ -274,7 +274,7 @@ mod tests {
             Pushdowns::default().with_limit(Some(limit as usize)),
         )
         .limit(limit, false)?
-        .hash_repartition(num_partitions, partition_by)?
+        .hash_repartition(Some(num_partitions), partition_by)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

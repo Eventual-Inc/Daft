@@ -526,7 +526,7 @@ mod tests {
         let num_partitions = 1;
         let repartition_by = vec![col("a")];
         let plan = scan_plan
-            .hash_repartition(num_partitions, repartition_by.clone())?
+            .hash_repartition(Some(num_partitions), repartition_by.clone())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
@@ -538,7 +538,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_filter_scan
-            .hash_repartition(num_partitions, repartition_by)?
+            .hash_repartition(Some(num_partitions), repartition_by)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

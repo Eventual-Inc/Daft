@@ -21,8 +21,8 @@ use std::{cmp::max, sync::Arc};
 use crate::{
     display::TreeDisplay,
     partitioning::{
-        ClusteringSpec, HashPartitioningConfig, RandomPartitioningConfig, RangePartitioningConfig,
-        UnknownPartitioningConfig,
+        ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
+        UnknownClusteringConfig,
     },
     physical_ops::*,
 };
@@ -92,7 +92,7 @@ impl PhysicalPlan {
                 sort_by,
                 descending,
                 ..
-            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
                 input.clustering_spec().num_partitions(),
                 sort_by.clone(),
                 descending.clone(),
@@ -101,20 +101,21 @@ impl PhysicalPlan {
             Self::Split(Split {
                 output_num_partitions,
                 ..
-            }) => ClusteringSpec::Unknown(UnknownPartitioningConfig::new(*output_num_partitions))
-                .into(),
+            }) => {
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(*output_num_partitions)).into()
+            }
             Self::Coalesce(Coalesce { num_to, .. }) => {
-                ClusteringSpec::Unknown(UnknownPartitioningConfig::new(*num_to)).into()
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(*num_to)).into()
             }
             Self::Flatten(Flatten { input }) => input.clustering_spec(),
             Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => {
-                ClusteringSpec::Random(RandomPartitioningConfig::new(*num_partitions)).into()
+                ClusteringSpec::Random(RandomClusteringConfig::new(*num_partitions)).into()
             }
             Self::FanoutByHash(FanoutByHash {
                 num_partitions,
                 partition_by,
                 ..
-            }) => ClusteringSpec::Hash(HashPartitioningConfig::new(
+            }) => ClusteringSpec::Hash(HashClusteringConfig::new(
                 *num_partitions,
                 partition_by.clone(),
             ))
@@ -124,7 +125,7 @@ impl PhysicalPlan {
                 sort_by,
                 descending,
                 ..
-            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
                 *num_partitions,
                 sort_by.clone(),
                 descending.clone(),
@@ -138,7 +139,7 @@ impl PhysicalPlan {
                 } else if groupby.is_empty() {
                     ClusteringSpec::Unknown(Default::default()).into()
                 } else {
-                    ClusteringSpec::Hash(HashPartitioningConfig::new(
+                    ClusteringSpec::Hash(HashClusteringConfig::new(
                         input.clustering_spec().num_partitions(),
                         groupby.clone(),
                     ))
@@ -146,7 +147,7 @@ impl PhysicalPlan {
                 }
             }
             Self::Concat(Concat { input, other }) => {
-                ClusteringSpec::Unknown(UnknownPartitioningConfig::new(
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                     input.clustering_spec().num_partitions()
                         + other.clustering_spec().num_partitions(),
                 ))
@@ -168,7 +169,7 @@ impl PhysicalPlan {
                     // TODO(Clark): Consolidate this logic with the planner logic when we push the partition spec
                     // to be an entirely planner-side concept.
                     1 => input_clustering_spec,
-                    num_partitions => ClusteringSpec::Hash(HashPartitioningConfig::new(
+                    num_partitions => ClusteringSpec::Hash(HashClusteringConfig::new(
                         num_partitions,
                         left_on.clone(),
                     ))
@@ -183,7 +184,7 @@ impl PhysicalPlan {
                 right,
                 left_on,
                 ..
-            }) => ClusteringSpec::Range(RangePartitioningConfig::new(
+            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
                 max(
                     left.clustering_spec().num_partitions(),
                     right.clustering_spec().num_partitions(),
