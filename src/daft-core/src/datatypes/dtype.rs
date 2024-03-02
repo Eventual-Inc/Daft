@@ -463,18 +463,9 @@ impl From<&ArrowType> for DataType {
             }
             ArrowType::Utf8 | ArrowType::LargeUtf8 => DataType::Utf8,
             ArrowType::Decimal(precision, scale) => DataType::Decimal128(*precision, *scale),
-            ArrowType::List(field) | ArrowType::LargeList(field) => match field.data_type() {
-                // When reading from parquet, Arrow2's infer_schema will infer MapArrays as ListArrays of Structs with two fields, key and value
-                // This match is required to coerce the inferred ListArray to a MapArray
-                ArrowType::Struct(fields)
-                    if fields.len() == 2
-                        && fields[0].name == "key"
-                        && fields[1].name == "value" =>
-                {
-                    DataType::Map(Box::new(field.as_ref().data_type().into()))
-                }
-                _ => DataType::List(Box::new(field.as_ref().data_type().into())),
-            },
+            ArrowType::List(field) | ArrowType::LargeList(field) => {
+                DataType::List(Box::new(field.as_ref().data_type().into()))
+            }
             ArrowType::FixedSizeList(field, size) => {
                 DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }

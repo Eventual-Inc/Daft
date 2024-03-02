@@ -118,12 +118,14 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
         "struct_nested_timestamp": pa.array(
             [{"foo": [dt]} for _ in range(3)], type=pa.struct({"foo": pa.list_(pa.timestamp("ns"))})
         ),
+        "map_timestamp": pa.array([[("foo", dt)] for _ in range(3)], type=pa.map_(pa.string(), pa.timestamp("ns"))),
     }
     schema = [
         ("timestamp", DataType.timestamp(coerce_to)),
         ("nested_timestamp", DataType.list(DataType.timestamp(coerce_to))),
         ("struct_timestamp", DataType.struct({"foo": DataType.timestamp(coerce_to)})),
         ("struct_nested_timestamp", DataType.struct({"foo": DataType.list(DataType.timestamp(coerce_to))})),
+        ("map_timestamp", DataType.map(DataType.string(), DataType.timestamp(coerce_to))),
     ]
     expected = Schema._from_field_name_and_types(schema)
 
