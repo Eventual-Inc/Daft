@@ -105,7 +105,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.4"
-source = "git+https://github.com/Eventual-Inc/arrow2?rev=d5685eebf1d65c3f3d854370ad39f93dcd91971a#d5685eebf1d65c3f3d854370ad39f93dcd91971a"
+source = "git+https://github.com/Eventual-Inc/arrow2?rev=c0764b00cc05126c80c7ce17ebd7a95d87f815c1#c0764b00cc05126c80c7ce17ebd7a95d87f815c1"
 dependencies = [
  "ahash",
  "arrow-format",
