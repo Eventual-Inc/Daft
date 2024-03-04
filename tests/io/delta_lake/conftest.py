@@ -134,8 +134,8 @@ def s3_server(s3_server_ip: str, s3_server_port: int, s3_log_file: io.IOBase) ->
 @pytest.fixture(scope="function")
 def reset_s3(s3_server) -> None:
     # Clears local S3 server of all objects and buckets.
-    requests.post(f"{s3_server}/moto-api/reset")
     yield None
+    requests.post(f"{s3_server}/moto-api/reset")
 
 
 @pytest.fixture(scope="session")
