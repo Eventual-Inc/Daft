@@ -118,7 +118,7 @@ def s3_server(s3_server_ip: str, s3_server_port: int, s3_log_file: io.IOBase) ->
     s3_server_url = f"http://{s3_server_ip}:{s3_server_port}"
     old_env = os.environ.copy()
     # Set required S3 environment variables before starting server.
-    # Required for to opt out of concurrent writing, since we don't provide a LockClient.
+    # Required to opt out of concurrent writing, since we don't provide a LockClient.
     os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
     try:
         # Start moto server.
