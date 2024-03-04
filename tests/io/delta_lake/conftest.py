@@ -161,6 +161,7 @@ def s3_path(
     io_config = daft.io.IOConfig(
         s3=daft.io.S3Config(
             endpoint_url=s3_server,
+            region_name="us-west-2",
             key_id=s3_credentials["AWS_ACCESS_KEY_ID"],
             access_key=s3_credentials["AWS_SECRET_ACCESS_KEY"],
             session_token=s3_credentials["AWS_SESSION_TOKEN"],
