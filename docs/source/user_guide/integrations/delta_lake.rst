@@ -109,7 +109,7 @@ When reading from a Delta Lake table into Daft:
 +-----------------------------+------------------------------------------------------------------------------------------+
 | `list(child_type)`          | :meth:`daft.DataType.list(child_type) <daft.DataType.list>`                              |
 +-----------------------------+------------------------------------------------------------------------------------------+
-| `map(K, V)`                 | :meth:`daft.DataType.struct({"key": K, "value": V}) <daft.DataType.struct>`              |
+| `map(key_type, value_type)` | :meth:`daft.DataType.map(key_type, value_type) <daft.DataType.map>`                      |
 +-----------------------------+------------------------------------------------------------------------------------------+
 
 Roadmap
