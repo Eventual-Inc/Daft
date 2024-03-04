@@ -242,7 +242,7 @@ def read_sql(
     ).read()
     mp = MicroPartition.from_arrow(pa_table)
 
-    if sql_options.predicate_sql is None and sql_options.predicate_expression is not None:
+    if sql_options.predicate_expression is not None:
         mp = mp.filter(ExpressionsProjection([sql_options.predicate_expression]))
 
     if read_options.num_rows is not None:
