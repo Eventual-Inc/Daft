@@ -5,7 +5,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, ExtensionArray, ImageFormat, NullArray,
         UInt64Array, Utf8Array,
@@ -227,6 +227,16 @@ impl FixedSizeListArray {
     }
 }
 
+impl MapArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => series_as_list_str(&v),
+        }
+    }
+}
+
 impl EmbeddingArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
@@ -338,6 +348,7 @@ impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
+impl_array_html_value!(MapArray);
 impl_array_html_value!(StructArray);
 impl_array_html_value!(ExtensionArray);
 impl_array_html_value!(Decimal128Array);

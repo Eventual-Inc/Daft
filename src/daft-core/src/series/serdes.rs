@@ -10,7 +10,7 @@ use crate::{
     },
     datatypes::logical::{
         DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-        FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
+        FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
     },
     with_match_daft_types, DataType, IntoSeries, Series,
 };
@@ -153,6 +153,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
+                    }
+                    Map(..) => {
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MapArray::new(
+                            Arc::new(field),
+                            physical.downcast::<ListArray>().unwrap().clone(),
+                        )
+                        .into_series())
                     }
                     Struct(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;

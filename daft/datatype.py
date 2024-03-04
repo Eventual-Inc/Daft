@@ -237,6 +237,15 @@ class DataType:
         return cls._from_pydatatype(PyDataType.fixed_size_list(dtype._dtype, size))
 
     @classmethod
+    def map(cls, key_type: DataType, value_type: DataType) -> DataType:
+        """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs with two fields, key and value.
+        Args:
+            key_type: DataType of the keys in the map
+            value_type: DataType of the values in the map
+        """
+        return cls._from_pydatatype(PyDataType.map(key_type._dtype, value_type._dtype))
+
+    @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types
 
@@ -387,6 +396,12 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+        elif pa.types.is_map(arrow_type):
+            assert isinstance(arrow_type, pa.MapType)
+            return cls.map(
+                key_type=cls.from_arrow_type(arrow_type.key_type),
+                value_type=cls.from_arrow_type(arrow_type.item_type),
+            )
         elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
             scalar_dtype = cls.from_arrow_type(arrow_type.scalar_type)
             shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
@@ -464,11 +479,20 @@ class DataType:
     def _is_fixed_shape_image_type(self) -> builtins.bool:
         return self._dtype.is_fixed_shape_image()
 
+    def _is_map(self) -> builtins.bool:
+        return self._dtype.is_map()
+
     def _is_logical_type(self) -> builtins.bool:
         return self._dtype.is_logical()
 
     def _is_temporal_type(self) -> builtins.bool:
         return self._dtype.is_temporal()
+
+    def _should_cast_to_python(self) -> builtins.bool:
+        # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.
+        # Map is a logical type, but we don't want to cast it to Python because the underlying physical type is a List,
+        # which we can handle without casting to Python.
+        return self._is_logical_type() and not self._is_map()
 
     def __repr__(self) -> str:
         return self._dtype.__repr__()

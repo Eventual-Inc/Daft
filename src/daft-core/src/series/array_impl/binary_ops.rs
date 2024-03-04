@@ -7,7 +7,10 @@ use crate::{
         ops::{DaftCompare, DaftLogical},
         FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::{logical::Decimal128Array, Int128Array},
+    datatypes::{
+        logical::{Decimal128Array, MapArray},
+        Int128Array,
+    },
     series::series_like::SeriesLike,
     with_match_comparable_daft_types, with_match_numeric_daft_types, DataType,
 };
@@ -226,6 +229,7 @@ impl SeriesBinaryOps for ArrayWrapper<Utf8Array> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedSizeListArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ListArray> {}
 impl SeriesBinaryOps for ArrayWrapper<StructArray> {}
+impl SeriesBinaryOps for ArrayWrapper<MapArray> {}
 impl SeriesBinaryOps for ArrayWrapper<ExtensionArray> {}
 impl SeriesBinaryOps for ArrayWrapper<Decimal128Array> {}
 impl SeriesBinaryOps for ArrayWrapper<DateArray> {}

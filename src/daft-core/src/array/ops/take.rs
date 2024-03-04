@@ -6,7 +6,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray, NullArray,
         Utf8Array,
@@ -78,6 +78,7 @@ impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
 impl_logicalarray_take!(TensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
+impl_logicalarray_take!(MapArray);
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {

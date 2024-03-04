@@ -2,7 +2,8 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, MapArray, TimeArray,
+            TimestampArray,
         },
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray, NullArray,
         Utf8Array,
@@ -156,6 +157,13 @@ impl ListArray {
         } else {
             None
         }
+    }
+}
+
+impl MapArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<Series> {
+        self.physical.get(idx)
     }
 }
 

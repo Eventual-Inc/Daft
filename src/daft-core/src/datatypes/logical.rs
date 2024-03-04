@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    array::StructArray,
+    array::{ListArray, StructArray},
     datatypes::{DaftLogicalType, DateType, Field},
     with_match_daft_logical_primitive_types,
 };
@@ -9,8 +9,8 @@ use common_error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, TensorType, TimeType,
-    TimestampType,
+    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
+    TimeType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -62,6 +62,9 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
 
 macro_rules! impl_logical_type {
     ($physical_array_type:ident) => {
+        // Clippy triggers false positives here for the MapArray implementation
+        // This is added to suppress the warning
+        #[allow(clippy::len_without_is_empty)]
         pub fn len(&self) -> usize {
             self.physical.len()
         }
@@ -144,6 +147,20 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     }
 }
 
+impl MapArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        Box::new(arrow2::array::MapArray::new(
+            arrow_dtype,
+            self.physical.offsets().try_into().unwrap(),
+            self.physical.flat_child.to_arrow(),
+            self.physical.validity().cloned(),
+        ))
+    }
+}
+
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
 pub type Decimal128Array = LogicalArray<Decimal128Type>;
@@ -156,7 +173,7 @@ pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
-
+pub type MapArray = LogicalArray<MapType>;
 pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}

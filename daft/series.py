@@ -279,7 +279,7 @@ class Series:
         """
         if self.datatype()._is_python_type():
             return self._series.to_pylist()
-        elif self.datatype()._is_logical_type():
+        elif self.datatype()._should_cast_to_python():
             return self._series.cast(DataType.python()._dtype).to_pylist()
         else:
             return self._series.to_arrow().to_pylist()

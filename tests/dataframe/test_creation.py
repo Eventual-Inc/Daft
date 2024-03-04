@@ -351,6 +351,27 @@ def test_create_dataframe_pandas_tensor(valid_data: list[dict[str, float]]) -> N
         ),
         pytest.param(pa.array([[1, 2, 3], [1, 2], [1]]), DataType.list(DataType.int64()), id="pa_nested"),
         pytest.param(
+            pa.array([[("a", 1), ("b", 2)], [("c", 3), ("d", 4)]], type=pa.map_(pa.string(), pa.int64())),
+            DataType.map(DataType.string(), DataType.int64()),
+            id="pa_map",
+        ),
+        # TODO(Colin): Enable this test once cast_array_for_daft_if_needed in src/daft-core/src/utils/arrow.rs supports nested maps
+        # pytest.param(
+        #     pa.array(
+        #         [{"a": {"b": 1}, "c": {"d": 2}}, {"e": {"f": 3}, "g": {"h": 4}}],
+        #         type=pa.map_(pa.string(), pa.map_(pa.string(), pa.int64())),
+        #     ),
+        #     DataType.map(
+        #         DataType.struct(
+        #             {
+        #                 "key": DataType.string(),
+        #                 "value": DataType.map(DataType.struct({"key": DataType.string(), "value": DataType.int64()})),
+        #             }
+        #         )
+        #     ),
+        #     id="pa_nested_map",
+        # ),
+        pytest.param(
             pa.chunked_array([pa.array([[1, 2, 3], [1, 2], [1]])]),
             DataType.list(DataType.int64()),
             id="pa_nested_chunked",

@@ -51,6 +51,11 @@ PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeri
         # TODO: Crashes when parsing fixed size lists
         # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
         ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
+        (
+            [[("a", 1), ("b", 2)], [], None],
+            pa.map_(pa.large_string(), pa.int64()),
+            DataType.map(DataType.string(), DataType.int64()),
+        ),
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
