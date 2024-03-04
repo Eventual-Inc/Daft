@@ -314,13 +314,11 @@ fn materialize_scan_task(
                     offset,
                     apply_limit_before_offset,
                 }) => {
-                    // TODO(Colin): Do more rigorous testing for predicate pushdowns into sql
-                    // let predicate_sql = scan_task
-                    //     .pushdowns
-                    //     .filters
-                    //     .as_ref()
-                    //     .and_then(|p| p.to_sql());
-                    let predicate_sql = None;
+                    let predicate_sql = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .and_then(|p| p.to_sql());
                     let predicate_expr = scan_task
                         .pushdowns
                         .filters

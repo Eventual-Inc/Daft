@@ -236,8 +236,9 @@ def read_sql(
         limit=sql_options.limit,
         offset=sql_options.offset,
         apply_limit_before_offset=sql_options.apply_limit_before_offset,
-        projection=read_options.column_names,
-        predicate=sql_options.predicate_sql,
+        # TODO(Colin): Enable pushdowns
+        projection=None,
+        predicate=None,
     ).read()
     mp = MicroPartition.from_arrow(pa_table)
 
