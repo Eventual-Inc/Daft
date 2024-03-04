@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use daft_core::array::ops::DaftCompare;
+use daft_dsl::{Expr, Literal};
 use daft_table::Table;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -11,6 +14,20 @@ impl PartitionSpec {
         let mut res = vec![];
         res.push(format!("Keys = {}", self.keys));
         res
+    }
+
+    pub fn to_fill_map(&self) -> HashMap<&str, Expr> {
+        self.keys
+            .schema
+            .fields
+            .iter()
+            .map(|(col, _)| {
+                (
+                    col.as_str(),
+                    self.keys.get_column(col).unwrap().clone().lit(),
+                )
+            })
+            .collect()
     }
 }
 

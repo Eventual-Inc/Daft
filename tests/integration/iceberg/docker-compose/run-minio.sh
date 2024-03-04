@@ -23,8 +23,8 @@ set -ex
 if [ $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]; then
     echo "Minio backend running"
 else
-    docker-compose -f dev/docker-compose.yml kill
-    docker-compose -f dev/docker-compose.yml up -d
+    docker-compose -f docker-compose.yml kill
+    docker-compose -f docker-compose.yml up -d
     while [ -z $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]
     do
       echo "Waiting for Minio"

@@ -13,7 +13,7 @@ pub use common_treenode;
 pub use expr::binary_op;
 pub use expr::col;
 pub use expr::{AggExpr, Expr, ExprRef, Operator};
-pub use lit::{lit, null_lit, LiteralValue};
+pub use lit::{lit, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
@@ -26,6 +26,7 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
     parent.add_wrapped(wrap_pyfunction!(python::date_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::time_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::timestamp_lit))?;
+    parent.add_wrapped(wrap_pyfunction!(python::decimal_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::series_lit))?;
     parent.add_wrapped(wrap_pyfunction!(python::udf))?;
     parent.add_wrapped(wrap_pyfunction!(python::eq))?;

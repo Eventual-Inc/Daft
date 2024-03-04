@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     fmt::Display,
     ops::{BitAnd, BitOr, Not},
 };
 
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::{IndexMap, IndexSet};
@@ -21,7 +22,23 @@ pub struct TableStatistics {
 }
 
 impl TableStatistics {
-    fn _from_table(table: &Table) -> Self {
+    pub fn from_stats_table(table: &Table) -> DaftResult<Self> {
+        // Assumed format is each column having 2 rows:
+        // - row 0: Minimum value for the column.
+        // - row 1: Maximum value for the column.
+        if table.len() != 2 {
+            return Err(DaftError::ValueError(format!("Expected stats table to have 2 rows, with min and max values for each column, but got {} rows: {}", table.len(), table)));
+        }
+        let mut columns = IndexMap::with_capacity(table.num_columns());
+        for name in table.column_names() {
+            let col = table.get_column(&name).unwrap();
+            let stats = ColumnRangeStatistics::new(Some(col.slice(0, 1)?), Some(col.slice(1, 2)?))?;
+            columns.insert(name, stats);
+        }
+        Ok(TableStatistics { columns })
+    }
+
+    pub fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
             let col = table.get_column(&name).unwrap();
@@ -30,9 +47,7 @@ impl TableStatistics {
         }
         TableStatistics { columns }
     }
-}
 
-impl TableStatistics {
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
         // maybe use the schema from micropartition instead
         let unioned_columns = self
@@ -141,13 +156,26 @@ impl TableStatistics {
     }
 
     pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
+        self.cast_to_schema_with_fill(schema, None)
+    }
+
+    pub fn cast_to_schema_with_fill(
+        &self,
+        schema: SchemaRef,
+        fill_map: Option<&HashMap<&str, Expr>>,
+    ) -> crate::Result<TableStatistics> {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
             let crs = match self.columns.get(field_name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)
                     .unwrap_or(ColumnRangeStatistics::Missing),
-                None => ColumnRangeStatistics::Missing,
+                None => fill_map
+                    .as_ref()
+                    .and_then(|m| m.get(field_name.as_str()))
+                    .map(|e| self.eval_expression(e))
+                    .transpose()?
+                    .unwrap_or(ColumnRangeStatistics::Missing),
             };
             columns.insert(field_name.clone(), crs);
         }
@@ -184,7 +212,7 @@ mod test {
         let table =
             Table::from_columns(vec![Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()])
                 .unwrap();
-        let table_stats = TableStatistics::_from_table(&table);
+        let table_stats = TableStatistics::from_table(&table);
 
         // False case
         let expr = col("a").eq(&lit(0));
@@ -199,7 +227,7 @@ mod test {
         // True case
         let table = Table::from_columns(vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()])
             .unwrap();
-        let table_stats = TableStatistics::_from_table(&table);
+        let table_stats = TableStatistics::from_table(&table);
 
         let expr = col("a").eq(&lit(0));
         let result = table_stats.eval_expression(&expr)?;

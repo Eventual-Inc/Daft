@@ -448,6 +448,7 @@ class S3Config:
     num_tries: int
     retry_mode: str | None
     anonymous: bool
+    use_ssl: bool
     verify_ssl: bool
     check_hostname_ssl: bool
     requester_pays: bool | None
@@ -466,6 +467,7 @@ class S3Config:
         num_tries: int | None = None,
         retry_mode: str | None = None,
         anonymous: bool | None = None,
+        use_ssl: bool | None = None,
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
@@ -484,6 +486,7 @@ class S3Config:
         num_tries: int | None = None,
         retry_mode: str | None = None,
         anonymous: bool | None = None,
+        use_ssl: bool | None = None,
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
@@ -495,6 +498,10 @@ class AzureConfig:
     """
     I/O configuration for accessing Azure Blob Storage.
     """
+
+    storage_account: str | None
+    access_key: str | None
+    anonymous: str | None
 
     def __init__(
         self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
@@ -610,6 +617,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
         partition_values: PyTable | None,
+        stats: PyTable | None,
     ) -> ScanTask | None:
         """
         Create a Catalog Scan Task
@@ -948,6 +956,7 @@ def lit(item: Any) -> PyExpr: ...
 def date_lit(item: int) -> PyExpr: ...
 def time_lit(item: int, tu: PyTimeUnit) -> PyExpr: ...
 def timestamp_lit(item: int, tu: PyTimeUnit, tz: str | None) -> PyExpr: ...
+def decimal_lit(sign: bool, digits: tuple[int, ...], exp: int) -> PyExpr: ...
 def series_lit(item: PySeries) -> PyExpr: ...
 def udf(func: Callable, expressions: list[PyExpr], return_dtype: PyDataType) -> PyExpr: ...
 

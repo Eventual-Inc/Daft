@@ -27,8 +27,8 @@ use crate::PyIOSnafu;
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 use daft_io::{IOConfig, IOStatsContext, IOStatsRef};
-use daft_stats::TableMetadata;
 use daft_stats::TableStatistics;
+use daft_stats::{PartitionSpec, TableMetadata};
 
 pub(crate) enum TableState {
     Unloaded(Arc<ScanTask>),
@@ -86,7 +86,7 @@ fn materialize_scan_task(
         .map(|v| v.iter().map(|s| s.as_ref()).collect::<Vec<&str>>());
     let urls = scan_task.sources.iter().map(|s| s.get_path());
 
-    let table_values = match scan_task.storage_config.as_ref() {
+    let mut table_values = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
             let runtime_handle =
                 daft_io::get_runtime(native_storage_config.multithreaded_io).unwrap();
@@ -292,12 +292,16 @@ fn materialize_scan_task(
     // Note that we need to apply column pruning here if specified by the ScanTask
     let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.materialized_schema());
 
-    let casted_table_values = table_values
+    // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
+    // into the table when casting the schema.
+    let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+
+    table_values = table_values
         .iter()
-        .map(|tbl| tbl.cast_to_schema(cast_to_schema.as_ref()))
+        .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
         .collect::<DaftResult<Vec<_>>>()
         .context(DaftCoreComputeSnafu)?;
-    Ok((casted_table_values, cast_to_schema))
+    Ok((table_values, cast_to_schema))
 }
 
 impl MicroPartition {
@@ -311,15 +315,15 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        let statistics = statistics
+            .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
+            .expect("Statistics cannot be casted to schema");
         MicroPartition {
-            schema: schema.clone(),
+            schema,
             state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
-            statistics: Some(
-                statistics
-                    .cast_to_schema(schema)
-                    .expect("Statistics cannot be casted to schema"),
-            ),
+            statistics: Some(statistics),
         }
     }
 
@@ -404,6 +408,7 @@ impl MicroPartition {
                     scan_task.pushdowns.limit,
                     row_groups,
                     scan_task.pushdowns.filters.clone(),
+                    scan_task.partition_spec(),
                     cfg.io_config
                         .clone()
                         .map(|c| Arc::new(c.clone()))
@@ -417,7 +422,9 @@ impl MicroPartition {
                 )
                 .context(DaftCoreComputeSnafu)?;
 
-                mp.cast_to_schema(schema).context(DaftCoreComputeSnafu)
+                let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+                mp.cast_to_schema_with_fill(schema, fill_map.as_ref())
+                    .context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
@@ -694,6 +701,7 @@ pub(crate) fn read_parquet_into_micropartition(
     num_rows: Option<usize>,
     row_groups: Option<Vec<Option<Vec<i64>>>>,
     predicate: Option<ExprRef>,
+    partition_spec: Option<&PartitionSpec>,
     io_config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
@@ -707,7 +715,6 @@ pub(crate) fn read_parquet_into_micropartition(
     // Run the required I/O to retrieve all the Parquet FileMetaData
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
-
     if let Some(predicate) = predicate {
         // We have a predicate, so we will perform eager read only reading what row groups we need.
         let all_tables = read_parquet_bulk(
@@ -828,7 +835,7 @@ pub(crate) fn read_parquet_into_micropartition(
                     chunk_spec: rgs.map(ChunkSpec::Parquet),
                     size_bytes: Some(size_bytes),
                     metadata: None,
-                    partition_spec: None,
+                    partition_spec: partition_spec.cloned(),
                     statistics: None,
                 })
                 .collect::<Vec<_>>(),

@@ -164,6 +164,7 @@ class IcebergScanOperator(ScanOperator):
                 size_bytes=file.file_size_in_bytes,
                 pushdowns=pushdowns,
                 partition_values=pspec._table if pspec is not None else None,
+                stats=None,
             )
             if st is None:
                 continue

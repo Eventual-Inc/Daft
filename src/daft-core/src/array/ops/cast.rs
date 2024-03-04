@@ -127,10 +127,10 @@ where
                             .to_boxed()
                     })
                 }
-                _ => arrow2::compute::cast::cast(
+                _ => cast(
                     result_arrow_array.as_ref(),
                     &target_physical_type,
-                    arrow2::compute::cast::CastOptions {
+                    CastOptions {
                         wrapped: true,
                         partial: false,
                     },
@@ -302,24 +302,6 @@ impl DateArray {
     }
 }
 
-pub(super) fn decimal128_to_str(val: i128, _precision: u8, scale: i8) -> String {
-    if scale < 0 {
-        unimplemented!();
-    } else {
-        let modulus = i128::pow(10, scale as u32);
-        let integral = val / modulus;
-        if scale == 0 {
-            format!("{}", integral)
-        } else {
-            let sign = if val < 0 { "-" } else { "" };
-            let integral = integral.abs();
-            let decimals = (val % modulus).abs();
-            let scale = scale as usize;
-            format!("{}{}.{:0scale$}", sign, integral, decimals)
-        }
-    }
-}
-
 pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts =
         { arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow()) };
@@ -455,6 +437,7 @@ impl Decimal128Array {
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => cast_logical_to_python_array(self, dtype),
+            DataType::Int128 => Ok(self.physical.clone().into_series()),
             _ => arrow_logical_cast(self, dtype),
         }
     }

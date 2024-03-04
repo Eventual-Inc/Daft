@@ -6,13 +6,12 @@ use std::{
 use common_error::DaftResult;
 use daft_dsl::{
     col,
-    functions::FunctionExpr,
     optimization::{
         conjuct, get_required_columns, replace_columns_with_expressions, split_conjuction,
     },
     Expr,
 };
-use daft_scan::rewrite_predicate_for_partitioning;
+use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
@@ -88,44 +87,57 @@ impl OptimizerRule for PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::ExternalInfo(external_info) => {
                         let predicate = &filter.predicate;
-                        use common_treenode::{TreeNode, VisitRecursion};
+                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
+                        // We split the predicate into three groups:
+                        // 1. All partition-only filters, which can be applied directly to partition values and can be
+                        //    dropped from the data-level filter.
+                        // 2. Predicates that only reference data columns (no partition column references) or only
+                        //    reference partition columns but involve non-identity transformations; these need to be
+                        //    applied to the data, but don't require a separate filter op (i.e. they can be pushed into
+                        //    the scan).
+                        // 3. Filters needing their own dedicated filter op (unable to be pushed into scan); this
+                        //    includes predicates involving both partition and data columns, and predicates containing
+                        //    UDFs.
+                        let PredicateGroups { partition_only_filter, data_only_filter, needing_filter_op } = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
+                        assert!(partition_only_filter.len() + data_only_filter.len() + needing_filter_op.len() > 0);
 
-                        let mut has_udf = false;
-                        predicate.apply(&mut |e: &Expr| {
-
-                            match e {
-                                #[cfg(feature = "python")]
-                                Expr::Function{func: FunctionExpr::Python(..), .. } => {
-                                    has_udf = true;
-                                    Ok(VisitRecursion::Stop)
-                                },
-                                Expr::Function{func: FunctionExpr::Uri(..), .. } => {
-                                    has_udf = true;
-                                    Ok(VisitRecursion::Stop)
-                                },
-                                _ => Ok(VisitRecursion::Continue)
-                            }
-                        })?;
-                        if has_udf {
+                        if !needing_filter_op.is_empty() && partition_only_filter.is_empty() && data_only_filter.is_empty() {
+                            // If the filter predicate consists of only expressions that rely on both a partition
+                            // column and a data column (or contain a UDF), then no pushdown into the scan is possible,
+                            // so we short-circuit.
+                            // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
                             return Ok(Transformed::No(plan));
                         }
-                        let new_predicate = external_info.pushdowns.filters.as_ref().map(|f| predicate.and(f)).unwrap_or(predicate.clone());
-                        let partition_filter = rewrite_predicate_for_partitioning(new_predicate.clone(), external_info.scan_op.0.partitioning_keys())?;
-                        let new_pushdowns =
-                            external_info.pushdowns.with_filters(Some(Arc::new(new_predicate)));
 
-                        let new_pushdowns = if let Some(pfilter) = partition_filter {
-                            new_pushdowns.with_partition_filters(Some(Arc::new(pfilter)))
+                        let data_filter = conjuct(data_only_filter);
+                        let partition_filter = conjuct(partition_only_filter);
+                        assert!(data_filter.is_some() || partition_filter.is_some());
+
+                        let new_pushdowns = if let Some(data_filter) = data_filter {
+                            external_info.pushdowns.with_filters(Some(Arc::new(data_filter)))
+                        } else {
+                            external_info.pushdowns.clone()
+                        };
+                        let new_pushdowns = if let Some(partition_filter) = partition_filter {
+                            new_pushdowns.with_partition_filters(Some(Arc::new(partition_filter)))
                         } else {
                             new_pushdowns
                         };
                         let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                        let new_source = LogicalPlan::Source(Source::new(
+                        let new_source: LogicalPlan = Source::new(
                             source.output_schema.clone(),
                             SourceInfo::ExternalInfo(new_external_info).into(),
-                        ))
+                        )
                         .into();
-                        return Ok(Transformed::Yes(new_source))
+                        if !needing_filter_op.is_empty() {
+                            // We need to apply any filter predicates that reference both partition and data columns after the scan.
+                            // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
+                            let filter_op: LogicalPlan =
+                                Filter::try_new(new_source.into(), conjuct(needing_filter_op).unwrap())?.into();
+                            return Ok(Transformed::Yes(filter_op.into()));
+                        } else {
+                            return Ok(Transformed::Yes(new_source.into()));
+                        }
                     }
                 }
             }

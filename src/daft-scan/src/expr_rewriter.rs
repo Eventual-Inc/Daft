@@ -1,12 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode, VisitRecursion},
-    functions::partitioning,
+    functions::{partitioning, FunctionExpr},
     null_lit,
-    optimization::{conjuct, split_conjuction},
+    optimization::split_conjuction,
     Expr, Operator,
 };
 
@@ -49,12 +49,101 @@ fn apply_partitioning_expr(expr: Expr, pfield: &PartitionField) -> Option<Expr> 
     }
 }
 
+/// Grouping of clauses in a conjunctive predicate around partitioning semantics.
+pub struct PredicateGroups {
+    // All partition-only filters, which can be applied directly to partition values and can be dropped from the
+    // data-level filter.
+    pub partition_only_filter: Vec<Expr>,
+    // Predicates that only reference data columns (no partition column references) or only reference partition columns
+    // but involve non-identity transformations; these need to be applied to the data, but don't require a separate
+    // filter op (i.e. they can be pushed into the scan).
+    pub data_only_filter: Vec<Expr>,
+    // Filters needing their own dedicated filter op (unable to be pushed into scan); this includes predicates
+    // involving both partition and data columns, and predicates containing UDFs.
+    pub needing_filter_op: Vec<Expr>,
+}
+
+impl PredicateGroups {
+    pub fn new(
+        partition_only_filter: Vec<Expr>,
+        data_only_filter: Vec<Expr>,
+        needing_filter_op: Vec<Expr>,
+    ) -> Self {
+        Self {
+            partition_only_filter,
+            data_only_filter,
+            needing_filter_op,
+        }
+    }
+}
+
 pub fn rewrite_predicate_for_partitioning(
     predicate: Expr,
     pfields: &[PartitionField],
-) -> DaftResult<Option<Expr>> {
+) -> DaftResult<PredicateGroups> {
+    let pfields_map: HashMap<&str, &PartitionField> = pfields
+        .iter()
+        .map(|pfield| (pfield.field.name.as_str(), pfield))
+        .collect();
+
+    // Before rewriting predicate for partition filter pushdown, partition predicate clauses into groups that will need
+    // to be applied at the data level (i.e. any clauses that aren't pure partition predicates with identity
+    // transformations).
+    let data_split = split_conjuction(&predicate);
+    // Predicates that reference both partition columns and data columns.
+    let mut needs_filter_op_preds = vec![];
+    // Predicates that only reference data columns (no partition column references) or only reference partition columns
+    // but involve non-identity transformations.
+    let mut data_preds = vec![];
+    for e in data_split.into_iter() {
+        let mut all_data_keys = true;
+        let mut all_part_keys = true;
+        let mut any_non_identity_part_keys = false;
+        let mut has_udf = false;
+        e.apply(&mut |e| match e {
+            #[cfg(feature = "python")]
+            Expr::Function {
+                func: FunctionExpr::Python(..),
+                ..
+            } => {
+                has_udf = true;
+                Ok(VisitRecursion::Stop)
+            }
+            Expr::Function {
+                func: FunctionExpr::Uri(..),
+                ..
+            } => {
+                has_udf = true;
+                Ok(VisitRecursion::Stop)
+            }
+            Expr::Column(col_name) => {
+                if let Some(pfield) = pfields_map.get(col_name.as_ref()) {
+                    all_data_keys = false;
+                    if !matches!(pfield.transform, Some(PartitionTransform::Identity) | None) {
+                        any_non_identity_part_keys = true;
+                    }
+                } else {
+                    all_part_keys = false;
+                }
+                Ok(VisitRecursion::Continue)
+            }
+            _ => Ok(VisitRecursion::Continue),
+        })
+        .unwrap();
+
+        // Push to appropriate vec.
+        if has_udf || (!all_data_keys && !all_part_keys) {
+            needs_filter_op_preds.push(e.clone());
+        } else if all_data_keys || all_part_keys && any_non_identity_part_keys {
+            data_preds.push(e.clone());
+        }
+    }
     if pfields.is_empty() {
-        return Ok(None);
+        return Ok(PredicateGroups::new(
+            vec![],
+            data_preds,
+            needs_filter_op_preds,
+        ));
     }
 
     let predicate = unalias(predicate)?;
@@ -149,24 +238,27 @@ pub fn rewrite_predicate_for_partitioning(
         }
     })?;
 
-    let p_keys = HashSet::<&str>::from_iter(pfields.iter().map(|p| p.field.name.as_ref()));
-
+    // Filter to predicate clauses that only involve partition columns.
     let split = split_conjuction(&with_part_cols);
-    let filtered = split
-        .into_iter()
-        .filter(|p| {
-            let mut keep = true;
-            p.apply(&mut |e| {
-                if let Expr::Column(col_name) = e && !p_keys.contains(col_name.as_ref()) {
-                keep = false;
-
+    let mut part_preds = vec![];
+    for e in split.into_iter() {
+        let mut all_part_keys = true;
+        e.apply(&mut |e| {
+            if let Expr::Column(col_name) = e && !pfields_map.contains_key(col_name.as_ref()) {
+                all_part_keys = false;
             }
-                Ok(VisitRecursion::Continue)
-            })
-            .unwrap();
-            keep
+            Ok(VisitRecursion::Continue)
         })
-        .cloned()
-        .collect::<Vec<_>>();
-    Ok(conjuct(filtered))
+        .unwrap();
+
+        // Push to partition preds vec.
+        if all_part_keys {
+            part_preds.push(e.clone());
+        }
+    }
+    Ok(PredicateGroups::new(
+        part_preds,
+        data_preds,
+        needs_filter_op_preds,
+    ))
 }

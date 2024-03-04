@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter, Result};
 
 use daft_core::array::ops::full::FullNull;
@@ -434,7 +434,16 @@ impl Table {
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
+        self.cast_to_schema_with_fill(schema, None)
+    }
+
+    pub fn cast_to_schema_with_fill(
+        &self,
+        schema: &Schema,
+        fill_map: Option<&HashMap<&str, Expr>>,
+    ) -> DaftResult<Self> {
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
+        let null_lit = null_lit();
         let exprs: Vec<_> = schema
             .fields
             .iter()
@@ -443,8 +452,14 @@ impl Table {
                     // For any fields already in the table, perform a cast
                     col(name.clone()).cast(&field.dtype)
                 } else {
-                    // For any fields in schema that are not in self.schema, create all-null arrays
-                    null_lit().alias(name.clone()).cast(&field.dtype)
+                    // For any fields in schema that are not in self.schema, use fill map to fill with an expression.
+                    // If no entry for column name, fall back to null literal (i.e. create a null array for that column).
+                    fill_map
+                        .as_ref()
+                        .and_then(|m| m.get(name.as_str()))
+                        .unwrap_or(&null_lit)
+                        .alias(name.clone())
+                        .cast(&field.dtype)
                 }
             })
             .collect();

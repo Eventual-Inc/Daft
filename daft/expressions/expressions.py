@@ -4,6 +4,7 @@ import builtins
 import os
 import sys
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, TypeVar, overload
 
 import pyarrow as pa
@@ -13,6 +14,7 @@ from daft.daft import CountMode, ImageFormat
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
+from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
 from daft.daft import time_lit as _time_lit
@@ -87,6 +89,9 @@ def lit(value: object) -> Expression:
         i64_value = pa_time.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
+    elif isinstance(value, Decimal):
+        sign, digits, exponent = value.as_tuple()
+        lit_value = _decimal_lit(sign == 1, digits, exponent)
     elif isinstance(value, Series):
         lit_value = _series_lit(value._series)
     else:
