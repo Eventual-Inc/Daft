@@ -58,11 +58,10 @@ def base_table() -> pa.Table:
             ),
             "i": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
             "j": [{"x": 1, "y": False}, {"y": True, "z": "foo"}, {"x": 5, "z": "bar"}],
-            # TODO(Clark): Uncomment test case when MapArray support is merged.
-            # "k": pa.array(
-            #     [[("x", 1), ("y", 0)], [("a", 2), ("b", 45)], [("c", 4), ("d", 18)]],
-            #     type=pa.map_(pa.string(), pa.int64()),
-            # ),
+            "k": pa.array(
+                [[("x", 1), ("y", 0)], [("a", 2), ("b", 45)], [("c", 4), ("d", 18)]],
+                type=pa.map_(pa.string(), pa.int64()),
+            ),
             # TODO(Clark): Wait for more temporal type support in Delta Lake.
             # "l": [
             #     datetime.time(hour=1, minute=2, second=4, microsecond=5),
