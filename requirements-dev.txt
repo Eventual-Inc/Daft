@@ -55,7 +55,8 @@ s3fs==2023.12.0; python_version >= '3.8'
 urllib3<2; python_version < '3.8'
 boto3==1.33.13; python_version < '3.8'
 boto3==1.34.54; python_version >= '3.8'
-moto[s3,server]==5.0.2
+moto[s3,server]==4.2.14; python_version < '3.8'
+moto[s3,server]==5.0.2; python_version >= '3.8'
 
 # Azure
 adlfs==2022.2.0; python_version < '3.8'
