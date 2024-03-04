@@ -16,7 +16,7 @@ Daft internally uses the `deltalake <https://pypi.org/project/deltalake/>`__ Pyt
 
 .. code-block:: shell
 
-    pip install -U getdaft[deltalake]
+    pip install -U "getdaft[deltalake]"
 
 Reading a Table
 ***************
