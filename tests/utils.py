@@ -17,5 +17,6 @@ def sort_arrow_table(tbl: pa.Table, sort_by: str):
 
 
 def assert_pyarrow_tables_equal(from_daft: pa.Table, expected: pa.Table):
+    # Do a round-trip with Daft in order to cast pyarrow dtypes to Daft's supported Arrow dtypes (e.g. string -> large_string).
     expected = Table.from_arrow(expected).to_arrow()
     assert from_daft == expected, f"from_daft = {from_daft}\n\nexpected = {expected}"

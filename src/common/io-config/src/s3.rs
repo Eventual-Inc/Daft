@@ -18,6 +18,7 @@ pub struct S3Config {
     pub num_tries: u32,
     pub retry_mode: Option<String>,
     pub anonymous: bool,
+    pub use_ssl: bool,
     pub verify_ssl: bool,
     pub check_hostname_ssl: bool,
     pub requester_pays: bool,
@@ -56,6 +57,7 @@ impl S3Config {
             res.push(format!("Retry mode = {}", retry_mode));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
+        res.push(format!("Use SSL = {}", self.use_ssl));
         res.push(format!("Verify SSL = {}", self.verify_ssl));
         res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
         res.push(format!("Requester pays = {}", self.requester_pays));
@@ -80,6 +82,7 @@ impl Default for S3Config {
             num_tries: 25,
             retry_mode: Some("adaptive".to_string()),
             anonymous: false,
+            use_ssl: true,
             verify_ssl: true,
             check_hostname_ssl: true,
             requester_pays: false,
@@ -104,6 +107,7 @@ impl Display for S3Config {
     num_tries: {:?},
     retry_mode: {:?},
     anonymous: {},
+    use_ssl: {},
     verify_ssl: {},
     check_hostname_ssl: {}
     requester_pays: {}",
@@ -119,6 +123,7 @@ impl Display for S3Config {
             self.num_tries,
             self.retry_mode,
             self.anonymous,
+            self.use_ssl,
             self.verify_ssl,
             self.check_hostname_ssl,
             self.requester_pays

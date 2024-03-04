@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
-import deltalake
 from deltalake.table import DeltaTable
 
 import daft
@@ -14,6 +13,7 @@ from daft.daft import (
     AzureConfig,
     FileFormatConfig,
     GCSConfig,
+    IOConfig,
     NativeStorageConfig,
     ParquetSourceConfig,
     Pushdowns,
@@ -25,13 +25,6 @@ from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 
 logger = logging.getLogger(__name__)
-
-# Before deltalake-rs 0.15.2, the partition ordering returned from the transaction log was reversed.
-_DELTALAKE_REVERSED_PARTITION_ORDERING = tuple(int(s) for s in deltalake.__version__.split(".") if s.isnumeric()) < (
-    0,
-    15,
-    2,
-)
 
 
 class DeltaLakeScanOperator(ScanOperator):
@@ -160,9 +153,6 @@ class DeltaLakeScanOperator(ScanOperator):
                 continue
             rows_left -= record_count
             scan_tasks.append(st)
-        # Before deltalake-rs 0.15.2, the partition ordering returned from the transaction log was reversed.
-        if _DELTALAKE_REVERSED_PARTITION_ORDERING:
-            scan_tasks = list(reversed(scan_tasks))
         return iter(scan_tasks)
 
     def can_absorb_filter(self) -> bool:
@@ -175,7 +165,7 @@ class DeltaLakeScanOperator(ScanOperator):
         return True
 
 
-def _storage_config_to_storage_options(storage_config: StorageConfig, table_uri: str) -> dict:
+def _storage_config_to_storage_options(storage_config: StorageConfig, table_uri: str) -> dict[str, str] | None:
     """
     Converts the Daft storage config to a storage options dict that deltalake/object_store
     understands.
@@ -183,6 +173,10 @@ def _storage_config_to_storage_options(storage_config: StorageConfig, table_uri:
     config = storage_config.config
     assert isinstance(config, NativeStorageConfig)
     io_config = config.io_config
+    return _io_config_to_storage_options(io_config, table_uri)
+
+
+def _io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
     scheme = urlparse(table_uri).scheme
     if scheme == "s3" or scheme == "s3a":
         return _s3_config_to_storage_options(io_config.s3)
@@ -191,10 +185,10 @@ def _storage_config_to_storage_options(storage_config: StorageConfig, table_uri:
     elif scheme == "az" or scheme == "abfs":
         return _azure_config_to_storage_options(io_config.azure)
     else:
-        return {}
+        return None
 
 
-def _s3_config_to_storage_options(s3_config: S3Config) -> dict:
+def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
     storage_options: dict[str, Any] = {}
     if s3_config.region_name is not None:
         storage_options["region"] = s3_config.region_name
@@ -206,14 +200,16 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict:
         storage_options["session_token"] = s3_config.session_token
     if s3_config.access_key is not None:
         storage_options["secret_access_key"] = s3_config.access_key
+    if s3_config.use_ssl is not None:
+        storage_options["allow_http"] = "false" if s3_config.use_ssl else "true"
     if s3_config.verify_ssl is not None:
-        storage_options["allow_invalid_certificates"] = s3_config.verify_ssl
+        storage_options["allow_invalid_certificates"] = "false" if s3_config.verify_ssl else "true"
     if s3_config.connect_timeout_ms is not None:
-        storage_options["connect_timeout"] = s3_config.connect_timeout_ms
+        storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
     return storage_options
 
 
-def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict:
+def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict[str, str]:
     storage_options = {}
     if azure_config.storage_account is not None:
         storage_options["account_name"] = azure_config.storage_account
@@ -222,5 +218,5 @@ def _azure_config_to_storage_options(azure_config: AzureConfig) -> dict:
     return storage_options
 
 
-def _gcs_config_to_storage_options(_: GCSConfig) -> dict:
+def _gcs_config_to_storage_options(_: GCSConfig) -> dict[str, str]:
     return {}

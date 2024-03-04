@@ -446,6 +446,7 @@ class S3Config:
     num_tries: int
     retry_mode: str | None
     anonymous: bool
+    use_ssl: bool
     verify_ssl: bool
     check_hostname_ssl: bool
     requester_pays: bool | None
@@ -464,6 +465,7 @@ class S3Config:
         num_tries: int | None = None,
         retry_mode: str | None = None,
         anonymous: bool | None = None,
+        use_ssl: bool | None = None,
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
@@ -482,6 +484,7 @@ class S3Config:
         num_tries: int | None = None,
         retry_mode: str | None = None,
         anonymous: bool | None = None,
+        use_ssl: bool | None = None,
         verify_ssl: bool | None = None,
         check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,

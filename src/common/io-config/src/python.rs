@@ -21,6 +21,7 @@ use crate::config;
 ///     num_tries: Number of attempts to make a connection, defaults to 5
 ///     retry_mode: Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
 ///     anonymous: Whether or not to use "anonymous mode", which will access S3 without any credentials
+///     use_ssl: Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
 ///     verify_ssl: Whether or not to verify ssl certificates, which will access S3 without checking if the certs are valid, defaults to True
 ///     check_hostname_ssl: Whether or not to verify the hostname when verifying ssl certificates, this was the legacy behavior for openssl, defaults to True
 ///     requester_pays: Whether or not the authenticated user will assume transfer costs, which is required by some providers of bulk data, defaults to False
@@ -181,6 +182,7 @@ impl S3Config {
         num_tries: Option<u32>,
         retry_mode: Option<String>,
         anonymous: Option<bool>,
+        use_ssl: Option<bool>,
         verify_ssl: Option<bool>,
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
@@ -202,6 +204,7 @@ impl S3Config {
                 num_tries: num_tries.unwrap_or(def.num_tries),
                 retry_mode: retry_mode.or(def.retry_mode),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+                use_ssl: use_ssl.unwrap_or(def.use_ssl),
                 verify_ssl: verify_ssl.unwrap_or(def.verify_ssl),
                 check_hostname_ssl: check_hostname_ssl.unwrap_or(def.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(def.requester_pays),
@@ -224,6 +227,7 @@ impl S3Config {
         num_tries: Option<u32>,
         retry_mode: Option<String>,
         anonymous: Option<bool>,
+        use_ssl: Option<bool>,
         verify_ssl: Option<bool>,
         check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
@@ -244,6 +248,7 @@ impl S3Config {
                 num_tries: num_tries.unwrap_or(self.config.num_tries),
                 retry_mode: retry_mode.or_else(|| self.config.retry_mode.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
                 verify_ssl: verify_ssl.unwrap_or(self.config.verify_ssl),
                 check_hostname_ssl: check_hostname_ssl.unwrap_or(self.config.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(self.config.requester_pays),
@@ -325,6 +330,12 @@ impl S3Config {
     #[getter]
     pub fn anonymous(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.anonymous))
+    }
+
+    /// AWS Use SSL
+    #[getter]
+    pub fn use_ssl(&self) -> PyResult<Option<bool>> {
+        Ok(Some(self.config.use_ssl))
     }
 
     /// AWS Verify SSL
