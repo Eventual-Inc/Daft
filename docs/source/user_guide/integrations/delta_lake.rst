@@ -5,9 +5,9 @@ Delta Lake
 
 Daft currently supports:
 
-1. **Parallel + Distributed Reads:** Daft parallelizes Delta Lake table reading over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the :ref:`distributed Ray runner <scaling_up>`.
+1. **Parallel + Distributed Reads:** Daft parallelizes Delta Lake table reads over all cores of your machine, if using the default multithreading runner, or all cores + machines of your Ray cluster, if using the :ref:`distributed Ray runner <scaling_up>`.
 2. **Skipping Filtered Data:** Daft ensures that only data that matches your :meth:`df.where(...) <daft.DataFrame.where>` filter will be read, often skipping entire files/partitions.
-3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS.
+3. **Multi-cloud Support:** Daft supports reading Delta Lake tables from AWS S3, Azure Blob Store, and GCS, as well as local files.
 
 Installing Daft with Delta Lake Support
 ***************************************
@@ -49,7 +49,7 @@ After writing this local test table, we can easily read it into a Daft DataFrame
 
     df = daft.read_delta_lake("some-table")
 
-Subsequent filters on the partition column will efficiently skip data that doesn't match. In the below example, the ``group != 2`` partitions (files) will never even be read into memory!
+Subsequent filters on the partition column will efficiently skip data that doesn't match. In the below example, the ``group != 2`` partitions (files) will be pruned, i.e. they will never be read into memory.
 
 .. code:: python
 
@@ -115,7 +115,7 @@ When reading from a Delta Lake table into Daft:
 Roadmap
 *******
 
-Here are features of Delta Lake that are on our roadmap. Please let us know if you would like to see support for any of these features!
+Here are Delta Lake features that are on our roadmap. Please let us know if you would like to see support for any of these features!
 
 1. Read support for `deletion vectors <https://docs.delta.io/latest/delta-deletion-vectors.html>`__ (`issue <https://github.com/Eventual-Inc/Daft/issues/1954>`__).
 2. Read support for `column mappings <https://docs.delta.io/latest/delta-column-mapping.html>`__ (`issue <https://github.com/Eventual-Inc/Daft/issues/1955>`__).
