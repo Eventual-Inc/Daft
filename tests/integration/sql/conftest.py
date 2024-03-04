@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import tempfile
+from datetime import date, datetime, time, timedelta
 from typing import Generator
 
 import numpy as np
@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 import tenacity
 from sqlalchemy import (
+    Boolean,
     Column,
+    Date,
     Engine,
     Float,
     Integer,
@@ -23,7 +25,6 @@ URLS = [
     "trino://user@localhost:8080/memory/default",
     "postgresql://username:password@localhost:5432/postgres",
     "mysql+pymysql://username:password@localhost:3306/mysql",
-    "sqlite:///",
 ]
 TEST_TABLE_NAME = "example"
 
@@ -31,18 +32,20 @@ TEST_TABLE_NAME = "example"
 @pytest.fixture(scope="session", params=[{"num_rows": 200}])
 def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
     num_rows = request.param["num_rows"]
-    num_rows_per_variety = num_rows // 4
-    variety_arr = (
-        ["setosa"] * num_rows_per_variety + ["versicolor"] * num_rows_per_variety + ["virginica"] * num_rows_per_variety
-    )
 
     data = {
         "id": np.arange(num_rows),
-        "sepal_length": np.arange(num_rows, dtype=float),
-        "sepal_width": np.arange(num_rows, dtype=float),
-        "petal_length": np.arange(num_rows, dtype=float),
-        "petal_width": np.arange(num_rows, dtype=float),
-        "variety": variety_arr + [None] * (num_rows - len(variety_arr)),
+        "float_col": np.arange(num_rows, dtype=float),
+        "string_col": [f"row_{i}" for i in range(num_rows)],
+        "bool_col": [True for _ in range(num_rows // 2)] + [False for _ in range(num_rows // 2)],
+        "date_col": [date(2021, 1, 1) + timedelta(days=i) for i in range(num_rows)],
+        # TODO(Colin): ConnectorX parses datetime as pyarrow date64 type, which we currently cast to Python, causing our assertions to fail.
+        # One possible solution is to cast date64 into Timestamp("ms") in our from_arrow code.
+        # "date_time_col": [datetime(2020, 1, 1, 10, 0, 0) + timedelta(hours=i) for i in range(num_rows)],
+        "time_col": [
+            (datetime.combine(datetime.today(), time(0, 0)) + timedelta(minutes=x)).time() for x in range(200)
+        ],
+        "null_col": [None if i % 2 == 1 else f"not_null_{i}" for i in range(num_rows)],
     }
     return pd.DataFrame(data)
 
@@ -50,15 +53,8 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
 @pytest.fixture(scope="session", params=URLS)
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
-    if db_url.startswith("sqlite"):
-        # No docker container for sqlite, so we need to create a temporary file
-        with tempfile.NamedTemporaryFile(suffix=".db") as file:
-            db_url += file.name
-            setup_database(db_url, generated_data)
-            yield db_url
-    else:
-        setup_database(db_url, generated_data)
-        yield db_url
+    setup_database(db_url, generated_data)
+    yield db_url
 
 
 @tenacity.retry(stop=tenacity.stop_after_delay(10), wait=tenacity.wait_fixed(5), reraise=True)
@@ -78,11 +74,11 @@ def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
         TEST_TABLE_NAME,
         metadata,
         Column("id", Integer),
-        Column("sepal_length", Float),
-        Column("sepal_width", Float),
-        Column("petal_length", Float),
-        Column("petal_width", Float),
-        Column("variety", String(50)),
+        Column("float_col", Float),
+        Column("string_col", String(50)),
+        Column("bool_col", Boolean),
+        Column("date_col", Date),
+        Column("null_col", String(50)),
     )
     metadata.create_all(engine)
     data.to_sql(table.name, con=engine, if_exists="replace", index=False)

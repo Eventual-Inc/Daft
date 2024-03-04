@@ -574,25 +574,16 @@ impl Expr {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
                 Expr::Column(name) => write!(buffer, "{}", name),
-                Expr::Literal(lit) => match lit {
-                    lit::LiteralValue::Series(series) => match series.data_type() {
-                        DataType::Utf8 => {
-                            let trimmed_and_quoted = lit
-                                .to_string()
-                                .trim_matches(|c| c == '[' || c == ']')
-                                .split(", ")
-                                .map(|s| format!("'{}'", s))
-                                .collect::<Vec<_>>();
-                            write!(buffer, "{}", trimmed_and_quoted.join(", "))
-                        }
-                        _ => write!(
-                            buffer,
-                            "{}",
-                            lit.to_string().trim_matches(|c| c == '[' || c == ']')
-                        ),
-                    },
-                    _ => write!(buffer, "{}", lit.to_string().replace('\"', "'")),
-                },
+                Expr::Literal(lit) => {
+                    if let Some(s) = lit.to_sql() {
+                        write!(buffer, "{}", s)
+                    } else {
+                        Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "Unsupported literal for SQL translation",
+                        ))
+                    }
+                }
                 Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
@@ -643,17 +634,13 @@ impl Expr {
                     to_sql_inner(if_false, buffer)?;
                     write!(buffer, " END")
                 }
-                Expr::IsIn(inner, items) => {
-                    to_sql_inner(inner, buffer)?;
-                    write!(buffer, " IN (")?;
-                    to_sql_inner(items, buffer)?;
-                    write!(buffer, ")")
-                }
                 // TODO: Implement SQL translations for these expressions if possible
-                Expr::Agg(..) | Expr::Cast(..) | Expr::Function { .. } => Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Unsupported expression for SQL translation",
-                )),
+                Expr::Agg(..) | Expr::Cast(..) | Expr::IsIn(..) | Expr::Function { .. } => {
+                    Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Unsupported expression for SQL translation",
+                    ))
+                }
             }
         }
 

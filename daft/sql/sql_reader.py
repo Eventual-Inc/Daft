@@ -48,13 +48,13 @@ class SQLReader:
 
         if self.limit is not None and self.offset is not None:
             if self.apply_limit_before_offset is True:
-                clauses.append(f" LIMIT {self.limit} OFFSET {self.offset}")
+                clauses.append(f"ORDER BY 1 LIMIT {self.limit} OFFSET {self.offset}")
             else:
-                clauses.append(f" OFFSET {self.offset} LIMIT {self.limit}")
+                clauses.append(f"ORDER BY 1 OFFSET {self.offset} LIMIT {self.limit}")
         elif self.limit is not None:
-            clauses.append(f" LIMIT {self.limit}")
+            clauses.append(f"ORDER BY 1 LIMIT {self.limit}")
         elif self.offset is not None:
-            clauses.append(f" OFFSET {self.offset}")
+            clauses.append(f"ORDER BY 1 OFFSET {self.offset}")
 
         return "\n".join(clauses)
 

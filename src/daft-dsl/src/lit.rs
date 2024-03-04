@@ -212,6 +212,29 @@ impl LiteralValue {
         };
         result
     }
+
+    pub fn to_sql(&self) -> Option<String> {
+        use LiteralValue::*;
+        match self {
+            Null | Boolean(..) | Int32(..) | UInt32(..) | Int64(..) | UInt64(..) | Float64(..) => {
+                self.to_string().into()
+            }
+            Utf8(val) => format!("'{}'", val).into(),
+            Binary(val) => format!("x'{}'", val.len()).into(),
+            Date(val) => format!("DATE '{}'", display_date32(*val)).into(),
+            // TODO(Colin): Reading time from Postgres is parsed as Time(Nanoseconds), while from MySQL it is parsed as Duration(Microseconds)
+            // Need to fix our time comparison code to handle this.
+            Time(..) => None,
+            Timestamp(val, tu, tz) => format!(
+                "TIMESTAMP '{}'",
+                display_timestamp(*val, tu, tz).replace('T', " ")
+            )
+            .into(),
+            Series(..) => None,
+            #[cfg(feature = "python")]
+            Python(..) => None,
+        }
+    }
 }
 
 pub trait Literal {
