@@ -222,15 +222,13 @@ impl LiteralValue {
             Utf8(val) => format!("'{}'", val).into(),
             Binary(val) => format!("x'{}'", val.len()).into(),
             Date(val) => format!("DATE '{}'", display_date32(*val)).into(),
-            // TODO(Colin): Reading time from Postgres is parsed as Time(Nanoseconds), while from MySQL it is parsed as Duration(Microseconds)
-            // Need to fix our time comparison code to handle this.
-            Time(..) => None,
             Timestamp(val, tu, tz) => format!(
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             )
             .into(),
-            Series(..) => None,
+            // TODO(Colin): Implement the rest of the types in future work for SQl pushdowns.
+            Decimal(..) | Series(..) | Time(..) => None,
             #[cfg(feature = "python")]
             Python(..) => None,
         }

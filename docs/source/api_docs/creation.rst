@@ -102,17 +102,6 @@ Delta Lake
 
     read_delta_lake
 
-In-memory
----------
-
-Arrow
-~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    read_sql
 
 Integrations
 ------------
@@ -136,3 +125,12 @@ Dask
     :toctree: doc_gen/io_functions
 
     from_dask_dataframe
+
+Databases
+~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_sql
