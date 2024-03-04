@@ -12,7 +12,7 @@ Daft currently supports:
 Installing Daft with Delta Lake Support
 ***************************************
 
-Daft internally uses the `deltalake <https://pypi.org/project/deltalake/>`__ Python package to fetch metadata about the Delta Lake table, such as paths to the underlying Parquet files that make up a Delta Lake table and table statistics. The ``deltalake`` package must therefore be installed, either manually or with the below "extra dependencies" install of Daft.
+Daft internally uses the `deltalake <https://pypi.org/project/deltalake/>`__ Python package to fetch metadata about the Delta Lake table, such as paths to the underlying Parquet files and table statistics. The ``deltalake`` package therefore must be installed to read Delta Lake tables with Daft, either manually or with the below ``getdaft[deltalake]`` extras install of Daft.
 
 .. code-block:: shell
 
@@ -23,7 +23,7 @@ Reading a Table
 
 A Delta Lake table can be read by providing :func:`daft.read_delta_lake` with the URI for your table.
 
-The below example uses the `deltalake <https://pypi.org/project/deltalake/>`__ Python package to create a local Delta Lake table for Daft to read, but Daft can also read Delta Lake table from all of the major cloud stores.
+The below example uses the `deltalake <https://pypi.org/project/deltalake/>`__ Python package to create a local Delta Lake table for Daft to read, but Daft can also read Delta Lake tables from all of the major cloud stores.
 
 .. code:: python
 
@@ -40,7 +40,7 @@ The below example uses the `deltalake <https://pypi.org/project/deltalake/>`__ P
     # This will write out separate partitions for group=1, group=2, group=3, group=4.
     write_deltalake("some-table", df, partition_by="group")
 
-After writing this local test table, we can easily read it into a Daft DataFrame.
+After writing this local example table, we can easily read it into a Daft DataFrame.
 
 .. code:: python
 
@@ -49,7 +49,7 @@ After writing this local test table, we can easily read it into a Daft DataFrame
 
     df = daft.read_delta_lake("some-table")
 
-Subsequent filters on the partition column will efficiently skip data that doesn't match. In the below example, the ``group != 2`` partitions (files) will be pruned, i.e. they will never be read into memory.
+Subsequent filters on the partition column ``"group"`` will efficiently skip data that doesn't match the predicate. In the below example, the ``group != 2`` partitions (files) will be pruned, i.e. they will never be read into memory.
 
 .. code:: python
 
@@ -57,7 +57,7 @@ Subsequent filters on the partition column will efficiently skip data that doesn
     df2 = df.where(df["group"] == 2)
     df2.show()
 
-Filters on non-partition columns will still benefit from automatic file pruning via file-level statistics. In the below example, the ``group=2`` partition (file) will have ``2 <= df["num"] <= 3`` lower/upper bounds for the ``"num"`` column, and since the filter predicate is ``df["num"] < 2``, Daft will prune the file from the read. Similar is true for ``group=3`` and ``group=4`` partitions.
+Filters on non-partition columns will still benefit from automatic file pruning via file-level statistics. In the below example, the ``group=2`` partition (file) will have ``2 <= df["num"] <= 3`` lower/upper bounds for the ``"num"`` column, and since the filter predicate is ``df["num"] < 2``, Daft will prune the file from the read. Similar is true for ``group=3`` and ``group=4`` partitions, with none of the data from those files being read into memory.
 
 .. code:: python
 
@@ -120,4 +120,4 @@ Here are Delta Lake features that are on our roadmap. Please let us know if you 
 1. Read support for `deletion vectors <https://docs.delta.io/latest/delta-deletion-vectors.html>`__ (`issue <https://github.com/Eventual-Inc/Daft/issues/1954>`__).
 2. Read support for `column mappings <https://docs.delta.io/latest/delta-column-mapping.html>`__ (`issue <https://github.com/Eventual-Inc/Daft/issues/1955>`__).
 3. Writing new Delta Lake tables (`issue <https://github.com/Eventual-Inc/Daft/issues/1967>`__).
-3. Writing back to an existing table with appends, overwrites, upserts, or deletes (`issue <https://github.com/Eventual-Inc/Daft/issues/1968>`__).
+4. Writing back to an existing table with appends, overwrites, upserts, or deletes (`issue <https://github.com/Eventual-Inc/Daft/issues/1968>`__).
