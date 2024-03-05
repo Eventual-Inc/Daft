@@ -365,6 +365,8 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         anonymous: Option<bool>,
+        endpoint_url: Option<String>,
+        use_ssl: Option<bool>,
     ) -> Self {
         let def = crate::AzureConfig::default();
         AzureConfig {
@@ -372,6 +374,8 @@ impl AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.or(def.access_key),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+                endpoint_url: endpoint_url.or(def.endpoint_url),
+                use_ssl: use_ssl.unwrap_or(def.use_ssl),
             },
         }
     }
@@ -381,12 +385,16 @@ impl AzureConfig {
         storage_account: Option<String>,
         access_key: Option<String>,
         anonymous: Option<bool>,
+        endpoint_url: Option<String>,
+        use_ssl: Option<bool>,
     ) -> Self {
         AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key.or_else(|| self.config.access_key.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
+                use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
             },
         }
     }
@@ -405,6 +413,24 @@ impl AzureConfig {
     #[getter]
     pub fn access_key(&self) -> PyResult<Option<String>> {
         Ok(self.config.access_key.clone())
+    }
+
+    /// Whether access is anonymous
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<bool> {
+        Ok(self.config.anonymous)
+    }
+
+    /// Azure Secret Access Key
+    #[getter]
+    pub fn endpoint_url(&self) -> PyResult<Option<String>> {
+        Ok(self.config.endpoint_url.clone())
+    }
+
+    /// Whether SSL (HTTPS) is required
+    #[getter]
+    pub fn use_ssl(&self) -> PyResult<bool> {
+        Ok(self.config.use_ssl)
     }
 }
 

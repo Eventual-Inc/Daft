@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use azure_storage::prelude::*;
+use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
     container::{operations::BlobItem, Container},
     prelude::*,
@@ -120,9 +120,9 @@ impl AzureBlobSource {
         } else if let Ok(storage_account) = std::env::var("AZURE_STORAGE_ACCOUNT") {
             storage_account
         } else {
+            // TODO(Clark): Allow no storage account + anonymous access + custom endpoint.
             return Err(Error::StorageAccountNotSet.into());
         };
-
         let storage_credentials = if config.anonymous {
             StorageCredentials::anonymous()
         } else if let Some(access_key) = &config.access_key {
@@ -133,7 +133,22 @@ impl AzureBlobSource {
             log::warn!("Azure access key not found, Set either `AzureConfig.access_key` or the `AZURE_STORAGE_KEY` environment variable. Defaulting to anonymous mode.");
             StorageCredentials::anonymous()
         };
-        let blob_client = BlobServiceClient::new(storage_account, storage_credentials);
+        let endpoint_url = if let Some(endpoint_url) = &config.endpoint_url {
+            Some(endpoint_url.clone())
+        } else if let Ok(endpoint_url) = std::env::var("AZURE_ENDPOINT_URL") {
+            Some(endpoint_url)
+        } else {
+            None
+        };
+        let blob_client = if let Some(endpoint_url) = endpoint_url {
+            ClientBuilder::with_location(
+                CloudLocation::Custom { uri: endpoint_url },
+                storage_credentials,
+            )
+            .blob_service_client()
+        } else {
+            BlobServiceClient::new(storage_account, storage_credentials)
+        };
 
         Ok(AzureBlobSource {
             blob_client: blob_client.into(),

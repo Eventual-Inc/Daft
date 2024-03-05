@@ -6,11 +6,15 @@ import io
 import os
 import pathlib
 import posixpath
+import time
+from collections.abc import Iterator
 
 import boto3
+import docker
 import pyarrow as pa
 import pytest
 import requests
+from azure.storage.blob import BlobServiceClient
 from pytest_lazyfixture import lazy_fixture
 
 import daft
@@ -22,7 +26,7 @@ deltalake = pytest.importorskip("deltalake")
 
 @pytest.fixture(params=[1, 2, 8])
 def num_partitions(request) -> int:
-    yield request.param
+    return request.param
 
 
 @pytest.fixture(
@@ -37,13 +41,13 @@ def num_partitions(request) -> int:
         pytest.param((lambda i: decimal.Decimal(str(1000 + i) + ".567"), "h"), id="decimal_partitioned"),
     ]
 )
-def partition_generator(request) -> (callable, str):
-    yield request.param
+def partition_generator(request) -> tuple[callable, str]:
+    return request.param
 
 
 @pytest.fixture
 def base_table() -> pa.Table:
-    yield pa.table(
+    return pa.table(
         {
             "a": [1, 2, 3],
             "b": [1.1, 2.2, 3.3],
@@ -78,8 +82,18 @@ def base_table() -> pa.Table:
 
 
 @pytest.fixture(scope="session")
+def data_dir() -> str:
+    return "test_data"
+
+
+############################
+### S3-specific fixtures ###
+############################
+
+
+@pytest.fixture(scope="session")
 def s3_credentials() -> dict[str, str]:
-    yield {
+    return {
         "AWS_ACCESS_KEY_ID": "testing",
         "AWS_SECRET_ACCESS_KEY": "testing",
         "AWS_SESSION_TOKEN": "testing",
@@ -88,16 +102,16 @@ def s3_credentials() -> dict[str, str]:
 
 @pytest.fixture(scope="session")
 def s3_server_ip() -> str:
-    yield "127.0.0.1"
+    return "127.0.0.1"
 
 
 @pytest.fixture(scope="session")
 def s3_server_port() -> int:
-    yield 5000
+    return 5000
 
 
 @pytest.fixture(scope="session")
-def s3_log_file(tmp_path_factory: pytest.TempPathFactory) -> io.IOBase:
+def s3_log_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[io.IOBase]:
     # NOTE(Clark): We have to use a log file for the mock S3 server's stdout/sterr.
     # - If we use None, then the server output will spam stdout.
     # - If we use PIPE, then the server will deadlock if the (relatively small) buffer fills, and the server is pretty
@@ -111,7 +125,7 @@ def s3_log_file(tmp_path_factory: pytest.TempPathFactory) -> io.IOBase:
 
 
 @pytest.fixture(scope="session")
-def s3_server(s3_server_ip: str, s3_server_port: int, s3_log_file: io.IOBase) -> str:
+def s3_server(s3_server_ip: str, s3_server_port: int, s3_log_file: io.IOBase) -> Iterator[str]:
     # NOTE(Clark): The background-threaded moto server tends to lock up under concurrent access, so we run a background
     # moto_server process.
     s3_server_url = f"http://{s3_server_ip}:{s3_server_port}"
@@ -131,21 +145,16 @@ def s3_server(s3_server_ip: str, s3_server_port: int, s3_log_file: io.IOBase) ->
 
 
 @pytest.fixture(scope="function")
-def reset_s3(s3_server) -> None:
+def reset_s3(s3_server) -> Iterator[None]:
     # Clears local S3 server of all objects and buckets.
-    yield None
+    yield
     requests.post(f"{s3_server}/moto-api/reset")
-
-
-@pytest.fixture(scope="session")
-def data_dir() -> str:
-    yield "test_data"
 
 
 @pytest.fixture(scope="function")
 def s3_path(
     tmp_path: pathlib.Path, data_dir: str, s3_server: str, s3_credentials: dict[str, str], reset_s3: None
-) -> (str, daft.io.IOConfig):
+) -> tuple[str, daft.io.IOConfig]:
     path = posixpath.join(tmp_path, data_dir).strip("/")
 
     s3 = boto3.resource(
@@ -170,16 +179,91 @@ def s3_path(
     # Create bucket for first element of tmp path.
     bucket = s3.Bucket(path.split("/")[0])
     bucket.create(CreateBucketConfiguration={"LocationConstraint": "us-west-2"})
-    yield "s3://" + path, io_config
     # Bucket will get cleared by reset_s3 fixture, so we don't need to delete it at the end of the test via the
     # typical try-yield-finally block.
+    return "s3://" + path, io_config
+
+
+###############################
+### Azure-specific fixtures ###
+###############################
+
+
+@pytest.fixture(scope="session")
+def az_credentials() -> dict[str, str]:
+    return {
+        # These are the well-known values
+        # https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=visual-studio#well-known-storage-account-and-key
+        "ACCOUNT_NAME": "devstoreaccount1",
+        "KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+    }
+
+
+@pytest.fixture(scope="session")
+def az_server_ip() -> str:
+    return "0.0.0.0"
+
+
+@pytest.fixture(scope="session")
+def az_server_port() -> int:
+    return 10000
+
+
+@pytest.fixture(scope="session")
+def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
+    az_server_url = f"http://{az_server_ip}:{az_server_port}"
+    client = docker.from_env()
+    azurite = client.containers.run(
+        "mcr.microsoft.com/azure-storage/azurite",
+        f"azurite-blob --loose --blobHost {az_server_ip}",
+        detach=True,
+        ports={str(az_server_port): str(az_server_port)},
+    )
+    for _ in range(100):
+        if azurite.status == "running":
+            break
+        elif azurite.status == "exited":
+            output = azurite.logs()
+            print(f"Azurite container exited without executing tests: {output}")
+            pytest.fail(f"Cannot start mock Azure Blob Storage server")
+        time.sleep(0.1)
+        azurite.reload()
+    try:
+        yield az_server_url
+    finally:
+        azurite.stop()
 
 
 @pytest.fixture(scope="function")
-def local_path(tmp_path: pathlib.Path, data_dir: str) -> (str, None):
+def az_path(data_dir: str, az_server: str, az_credentials: dict[str, str]) -> Iterator[tuple[str, daft.io.IOConfig]]:
+    path = data_dir.strip("/").replace("_", "-")
+    account_name = az_credentials["ACCOUNT_NAME"]
+    key = az_credentials["KEY"]
+    endpoint_url = f"{az_server}/{account_name}"
+    conn_str = f"DefaultEndpointsProtocol=http;AccountName={account_name};AccountKey={key};BlobEndpoint={endpoint_url};"
+
+    io_config = daft.io.IOConfig(
+        azure=daft.io.AzureConfig(
+            storage_account=az_credentials["ACCOUNT_NAME"],
+            access_key=az_credentials["KEY"],
+            endpoint_url=endpoint_url,
+            use_ssl=False,
+        )
+    )
+    bbs = BlobServiceClient.from_connection_string(conn_str)
+    container = path.split("/")[0]
+    bbs.create_container(container)
+    try:
+        yield "az://" + path, io_config
+    finally:
+        bbs.delete_container(container)
+
+
+@pytest.fixture(scope="function")
+def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None]:
     path = os.path.join(tmp_path, data_dir)
     os.mkdir(path)
-    yield path, None
+    return path, None
 
 
 @pytest.fixture(
@@ -187,11 +271,12 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> (str, None):
     params=[
         lazy_fixture("local_path"),
         lazy_fixture("s3_path"),
+        lazy_fixture("az_path"),
     ],
 )
 def deltalake_table(
     request, base_table: pa.Table, num_partitions: int, partition_generator: callable
-) -> (str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]):
+) -> tuple[str, daft.io.IOConfig | None, dict[str, str], list[pa.Table]]:
     partition_generator, _ = partition_generator
     path, io_config = request.param
     storage_options = _io_config_to_storage_options(io_config, path) if io_config is not None else None
@@ -208,4 +293,4 @@ def deltalake_table(
         partition_by="part_idx" if partition_generator(0) is not None else None,
         storage_options=storage_options,
     )
-    yield path, io_config, parts
+    return path, io_config, parts

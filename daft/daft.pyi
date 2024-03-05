@@ -502,12 +502,24 @@ class AzureConfig:
     storage_account: str | None
     access_key: str | None
     anonymous: str | None
+    endpoint_url: str | None = None
+    use_ssl: bool | None = None
 
     def __init__(
-        self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
+        self,
+        storage_account: str | None = None,
+        access_key: str | None = None,
+        anonymous: str | None = None,
+        endpoint_url: str | None = None,
+        use_ssl: bool | None = None,
     ): ...
     def replace(
-        self, storage_account: str | None = None, access_key: str | None = None, anonymous: str | None = None
+        self,
+        storage_account: str | None = None,
+        access_key: str | None = None,
+        anonymous: str | None = None,
+        endpoint_url: str | None = None,
+        use_ssl: bool | None = None,
     ) -> AzureConfig:
         """Replaces values if provided, returning a new AzureConfig"""
         ...

@@ -4,11 +4,25 @@ use std::fmt::Formatter;
 use serde::Deserialize;
 use serde::Serialize;
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct AzureConfig {
     pub storage_account: Option<String>,
     pub access_key: Option<String>,
     pub anonymous: bool,
+    pub endpoint_url: Option<String>,
+    pub use_ssl: bool,
+}
+
+impl Default for AzureConfig {
+    fn default() -> Self {
+        Self {
+            storage_account: None,
+            access_key: None,
+            anonymous: false,
+            endpoint_url: None,
+            use_ssl: true,
+        }
+    }
 }
 
 impl AzureConfig {
@@ -21,6 +35,10 @@ impl AzureConfig {
             res.push(format!("Access key = {}", access_key));
         }
         res.push(format!("Anoynmous = {}", self.anonymous));
+        if let Some(endpoint_url) = &self.endpoint_url {
+            res.push(format!("Endpoint URL = {}", endpoint_url));
+        }
+        res.push(format!("Use SSL = {}", self.use_ssl));
         res
     }
 }
@@ -32,8 +50,10 @@ impl Display for AzureConfig {
             "AzureConfig
     storage_account: {:?}
     access_key: {:?}
-    anonymous: {:?}",
-            self.storage_account, self.access_key, self.anonymous
+    anonymous: {:?}
+    endpoint_url: {:?}
+    use_ssl: {:?}",
+            self.storage_account, self.access_key, self.anonymous, self.endpoint_url, self.use_ssl
         )
     }
 }
