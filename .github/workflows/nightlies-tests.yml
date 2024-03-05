@@ -9,6 +9,9 @@ on:
     types:
     - completed
 
+env:
+  DAFT_ANALYTICS_ENABLED: '0'
+
 jobs:
   integration-test-tpch:
     runs-on: ${{ matrix.runner-name }}
