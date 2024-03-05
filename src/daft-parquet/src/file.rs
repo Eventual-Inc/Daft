@@ -133,6 +133,8 @@ fn rename_dtype_recursively(
                 ))
             }
         }
+        DataType::Map(list_child) => rename_dtype_recursively(list_child, field_id_mapping)
+            .map(|new_dtype| DataType::Map(Box::new(new_dtype))),
         // All other types are renamed only at the top-level
         _ => None,
     }
@@ -158,7 +160,7 @@ fn rename_field_recursively(
                 new_name.unwrap_or(&field.name),
                 new_dtype.unwrap_or(field.dtype.clone()),
             )
-            .with_metadata(field.metadata.clone()),
+            .with_metadata(BTreeMap::new()), // Wipe the FieldID
         ),
     }
 }
@@ -235,6 +237,36 @@ fn rename_series_recursively(
                         )
                     }
                 }
+                DataType::Map(_) => {
+                    use daft_core::array::ListArray;
+                    use daft_core::datatypes::logical::MapArray;
+
+                    let new_array = new_series.map().expect(
+                        "Series renaming: Expected a MapArray for a Series with DataType::Map",
+                    );
+                    let new_array_child_flat_struct =
+                        rename_series_recursively(&new_array.physical.flat_child, field_id_mapping);
+
+                    match new_array_child_flat_struct {
+                        Some(new_array_child_flat_struct) => Some(
+                            MapArray::new(
+                                new_field,
+                                ListArray::new(
+                                    rename_field_recursively(
+                                        &new_array.physical.field,
+                                        field_id_mapping,
+                                    )
+                                    .unwrap_or_else(|| new_array.physical.field.as_ref().clone()),
+                                    new_array_child_flat_struct,
+                                    new_array.physical.offsets().clone(),
+                                    new_array.physical.validity().cloned(),
+                                ),
+                            )
+                            .into_series(),
+                        ),
+                        None => Some(new_series),
+                    }
+                }
                 _ => Some(new_series),
             }
         }
@@ -256,6 +288,7 @@ fn rename_schema_recursively(
                     Some(new_field) => new_field,
                 },
             )
+            .map(|field| field.with_metadata(BTreeMap::new())) // wipe the metadata
             .collect(),
     )
 }
