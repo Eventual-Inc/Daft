@@ -82,6 +82,7 @@ impl Series {
     pub fn field(&self) -> &Field {
         self.inner.field()
     }
+
     pub fn as_physical(&self) -> DaftResult<Series> {
         let physical_dtype = self.data_type().to_physical();
         if &physical_dtype == self.data_type() {

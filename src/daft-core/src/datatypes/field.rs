@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
-#[derive(Clone, Debug, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
@@ -127,18 +127,5 @@ impl From<&ArrowField> for Field {
 impl Display for Field {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "{}#{}", self.name, self.dtype)
-    }
-}
-
-impl PartialEq for Field {
-    fn eq(&self, other: &Self) -> bool {
-        self.dtype == other.dtype && self.name == other.name
-    }
-}
-
-impl std::hash::Hash for Field {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.dtype.hash(state);
     }
 }

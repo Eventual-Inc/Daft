@@ -7,6 +7,8 @@ use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
 
+use self::logical::MapArray;
+
 impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
         match self.inner.as_any().downcast_ref() {
@@ -78,6 +80,10 @@ impl Series {
     }
 
     pub fn utf8(&self) -> DaftResult<&Utf8Array> {
+        self.downcast()
+    }
+
+    pub fn map(&self) -> DaftResult<&MapArray> {
         self.downcast()
     }
 
