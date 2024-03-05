@@ -207,7 +207,9 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
     if s3_config.connect_timeout_ms is not None:
         storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
     if s3_config.anonymous is not None:
-        raise ValueError("Reading from DeltaLake does not support anonymous mode! Please supply credentials correctly.")
+        raise ValueError(
+            "Reading from DeltaLake does not support anonymous mode! Please supply credentials via your S3Config."
+        )
     return storage_options
 
 
