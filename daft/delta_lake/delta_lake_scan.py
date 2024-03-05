@@ -206,7 +206,7 @@ def _s3_config_to_storage_options(s3_config: S3Config) -> dict[str, str]:
         storage_options["allow_invalid_certificates"] = "false" if s3_config.verify_ssl else "true"
     if s3_config.connect_timeout_ms is not None:
         storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
-    if s3_config.anonymous is not None:
+    if s3_config.anonymous:
         raise ValueError(
             "Reading from DeltaLake does not support anonymous mode! Please supply credentials via your S3Config."
         )
