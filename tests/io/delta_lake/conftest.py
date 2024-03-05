@@ -6,6 +6,7 @@ import io
 import os
 import pathlib
 import posixpath
+import shutil
 import time
 from collections.abc import Iterator
 
@@ -201,37 +202,102 @@ def az_credentials() -> dict[str, str]:
 
 @pytest.fixture(scope="session")
 def az_server_ip() -> str:
-    return "0.0.0.0"
+    return "127.0.0.1"
 
 
 @pytest.fixture(scope="session")
 def az_server_port() -> int:
-    return 10000
+    return 5001
 
 
 @pytest.fixture(scope="session")
-def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
+def az_log_file(tmp_path_factory: pytest.TempPathFactory) -> Iterator[io.IOBase]:
+    # NOTE(Clark): We have to use a log file for the mock Azure server's stdout/sterr.
+    # - If we use None, then the server output will spam stdout.
+    # - If we use PIPE, then the server will deadlock if the (relatively small) buffer fills, and the server is pretty
+    #   noisy.
+    # - If we use DEVNULL, all log output is lost.
+    # With a tmp_path log file, we can prevent spam and deadlocks while also providing an avenue for debuggability, via
+    # changing this fixture to something persistent, or dumping the file to stdout before closing the file, etc.
+    tmp_path = tmp_path_factory.mktemp("azure_logging")
+    with open(tmp_path / "azure_log.txt", "w") as f:
+        yield f
+
+
+@pytest.fixture(scope="session")
+def az_server(
+    tmp_path_factory: pytest.TempPathFactory, az_server_ip: str, az_server_port: int, az_credentials, az_log_file
+) -> Iterator[str]:
+    import time
+    import subprocess
+
     az_server_url = f"http://{az_server_ip}:{az_server_port}"
-    client = docker.from_env()
-    azurite = client.containers.run(
-        "mcr.microsoft.com/azure-storage/azurite",
-        f"azurite-blob --loose --blobHost {az_server_ip}",
-        detach=True,
-        ports={str(az_server_port): str(az_server_port)},
-    )
-    for _ in range(100):
-        if azurite.status == "running":
+    start = time.perf_counter()
+    azurite_svr_path = shutil.which("azurite-blob")
+    if not azurite_svr_path:
+        pytest.skip("azurite not installed")
+    tmp_path = tmp_path_factory.mktemp("azure_blob_storage")
+    args = [
+        azurite_svr_path,
+        "--blobHost",
+        az_server_ip,
+        "--blobPort",
+        str(az_server_port),
+        # "--location",
+        # str(tmp_path),
+        "--loose",
+    ]
+    print("starting azurite server: ", args)
+    process = subprocess.Popen(args, stdout=az_log_file, stderr=subprocess.STDOUT)
+    # process = subprocess.run(args)
+    # process = subprocess.Popen(args, stdout=None, stderr=None)
+    account_name = az_credentials["ACCOUNT_NAME"]
+    key = az_credentials["KEY"]
+    endpoint_url = f"{az_server_url}/{account_name}"
+    conn_str = f"DefaultEndpointsProtocol=http;AccountName={account_name};AccountKey={key};BlobEndpoint={endpoint_url};"
+    bbs = BlobServiceClient.from_connection_string(conn_str)
+    for _ in range(0, 100):
+        output = process.poll()
+        if output is not None:
+            print(f"azurite-blob exited status {output}")
+            pytest.fail(f"Cannot start azurite-blob mock server")
+
+        try:
+            print("getting account info")
+            # list(bbs.list_containers())
             break
-        elif azurite.status == "exited":
-            output = azurite.logs()
-            print(f"Azurite container exited without executing tests: {output}")
-            pytest.fail(f"Cannot start mock Azure Blob Storage server")
+            # r = requests.get(healthcheck_url, headers={"Accept": "application/xml"}, timeout=5)
+            # print(r.status_code, r.content)
+            # if r.status_code == 200:
+            #     break
+        except requests.exceptions.ConnectionError:
+            pass
+
         time.sleep(0.1)
-        azurite.reload()
+    else:
+        stop_process(process)  # pytest.fail doesn't call stop_process
+    #     pytest.fail(f"Cannot start azurite-blob mock server")
+    print("Mock azure-blob server started:", time.perf_counter() - start)
+    # client = docker.from_env()
+    # azurite = client.containers.run(
+    #     "mcr.microsoft.com/azure-storage/azurite",
+    #     f"azurite-blob --loose --blobHost {az_server_ip}",
+    #     detach=True,
+    #     ports={str(az_server_port): str(az_server_port)},
+    # )
+    # for _ in range(100):
+    #     if azurite.status == "running":
+    #         break
+    #     elif azurite.status == "exited":
+    #         output = azurite.logs()
+    #         print(f"Azurite container exited without executing tests: {output}")
+    #         pytest.fail(f"Cannot start mock Azure Blob Storage server")
+    #     time.sleep(0.1)
+    #     azurite.reload()
     try:
         yield az_server_url
     finally:
-        azurite.stop()
+        stop_process(process)
 
 
 @pytest.fixture(scope="function")
