@@ -310,9 +310,8 @@ fn materialize_scan_task(
                 })?,
                 FileFormatConfig::Database(DatabaseSourceConfig {
                     sql,
-                    limit,
-                    offset,
-                    apply_limit_before_offset,
+                    left_bound,
+                    right_bound,
                 }) => {
                     let predicate_sql = scan_task
                         .pushdowns
@@ -330,9 +329,8 @@ fn materialize_scan_task(
                                 py,
                                 sql,
                                 url,
-                                *limit,
-                                *offset,
-                                *apply_limit_before_offset,
+                                left_bound.as_deref(),
+                                right_bound.as_deref(),
                                 predicate_sql.clone(),
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),

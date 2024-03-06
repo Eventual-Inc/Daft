@@ -479,6 +479,9 @@ class DataType:
     def _is_fixed_shape_image_type(self) -> builtins.bool:
         return self._dtype.is_fixed_shape_image()
 
+    def _is_numeric_type(self) -> builtins.bool:
+        return self._dtype.is_numeric()
+
     def _is_map(self) -> builtins.bool:
         return self._dtype.is_map()
 

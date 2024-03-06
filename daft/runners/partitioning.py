@@ -77,17 +77,15 @@ class TableReadSQLOptions:
     """Options for parsing SQL tables
 
     Args:
-        limit: Number of rows to read, or None to read all rows
-        offset: Number of rows to skip before reading
-        apply_limit_before_offset: Whether to apply the limit before the offset
+        left_bound: Lower bound of the table to read
+        right_bound: Upper bound of the table to read
 
         predicate_sql: SQL predicate to apply to the table
         predicate_expression: Expression predicate to apply to the table
     """
 
-    limit: int | None = None
-    offset: int | None = None
-    apply_limit_before_offset: bool | None = None
+    left_bound: str | None = None
+    right_bound: str | None = None
 
     predicate_sql: str | None = None
     predicate_expression: Expression | None = None

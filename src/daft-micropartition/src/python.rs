@@ -792,9 +792,8 @@ pub(crate) fn read_sql_into_py_table(
     py: Python,
     sql: &str,
     url: &str,
-    limit: Option<usize>,
-    offset: Option<usize>,
-    apply_limit_before_offset: Option<bool>,
+    left_bound: Option<&str>,
+    right_bound: Option<&str>,
     predicate_sql: Option<String>,
     predicate_expr: Option<PyExpr>,
     schema: PySchema,
@@ -818,13 +817,7 @@ pub(crate) fn read_sql_into_py_table(
     let sql_options = py
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadSQLOptions"))?
-        .call1((
-            limit,
-            offset,
-            apply_limit_before_offset,
-            predicate_sql,
-            predicate_pyexpr,
-        ))?;
+        .call1((left_bound, right_bound, predicate_sql, predicate_pyexpr))?;
     let read_options = py
         .import(pyo3::intern!(py, "daft.runners.partitioning"))?
         .getattr(pyo3::intern!(py, "TableReadOptions"))?

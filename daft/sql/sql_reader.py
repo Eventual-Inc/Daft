@@ -13,20 +13,18 @@ class SQLReader:
         self,
         sql: str,
         url: str,
+        left_bound: str | None = None,
+        right_bound: str | None = None,
         limit: int | None = None,
-        offset: int | None = None,
-        apply_limit_before_offset: bool | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
     ) -> None:
-        if limit is not None and offset is not None and apply_limit_before_offset is None:
-            raise ValueError("apply_limit_before_offset must be specified when limit and offset are both specified")
 
         self.sql = sql
         self.url = url
+        self.left_bound = left_bound
+        self.right_bound = right_bound
         self.limit = limit
-        self.offset = offset
-        self.apply_limit_before_offset = apply_limit_before_offset
         self.projection = projection
         self.predicate = predicate
 
@@ -35,26 +33,27 @@ class SQLReader:
         return self._execute_sql_query(sql)
 
     def _construct_sql_query(self) -> str:
-        clauses = ["SELECT"]
-        if self.projection is not None:
-            clauses.append(", ".join(self.projection))
-        else:
-            clauses.append("*")
+        base_query = f"SELECT * FROM ({self.sql}) AS subquery"
+        if self.left_bound is not None and self.right_bound is not None:
+            base_query = f"{base_query} WHERE {self.left_bound} AND {self.right_bound}"
+        elif self.left_bound is not None:
+            base_query = f"{base_query} WHERE {self.left_bound}"
+        elif self.right_bound is not None:
+            base_query = f"{base_query} WHERE {self.right_bound}"
 
-        clauses.append(f"FROM ({self.sql}) AS subquery")
+        clauses = []
+        if self.projection is not None:
+            clauses.append(f"SELECT {', '.join(self.projection)}")
+        else:
+            clauses.append("SELECT *")
+
+        clauses.append(f"FROM ({base_query}) AS subquery")
 
         if self.predicate is not None:
-            clauses.append(f" WHERE {self.predicate}")
+            clauses.append(f"WHERE {self.predicate}")
 
-        if self.limit is not None and self.offset is not None:
-            if self.apply_limit_before_offset is True:
-                clauses.append(f"ORDER BY 1 LIMIT {self.limit} OFFSET {self.offset}")
-            else:
-                clauses.append(f"ORDER BY 1 OFFSET {self.offset} LIMIT {self.limit}")
-        elif self.limit is not None:
-            clauses.append(f"ORDER BY 1 LIMIT {self.limit}")
-        elif self.offset is not None:
-            clauses.append(f"ORDER BY 1 OFFSET {self.offset}")
+        if self.limit is not None:
+            clauses.append(f"LIMIT {self.limit}")
 
         return "\n".join(clauses)
 

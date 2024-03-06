@@ -227,7 +227,7 @@ impl LiteralValue {
                 display_timestamp(*val, tu, tz).replace('T', " ")
             )
             .into(),
-            // TODO(Colin): Implement the rest of the types in future work for SQl pushdowns.
+            // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Decimal(..) | Series(..) | Time(..) => None,
             #[cfg(feature = "python")]
             Python(..) => None,

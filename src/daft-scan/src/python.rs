@@ -324,8 +324,8 @@ pub mod pylib {
             url: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            num_rows: i64,
             storage_config: PyStorageConfig,
+            num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
         ) -> PyResult<Self> {
@@ -333,9 +333,7 @@ pub mod pylib {
                 path: url,
                 chunk_spec: None,
                 size_bytes,
-                metadata: TableMetadata {
-                    length: num_rows as usize,
-                },
+                metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
                 partition_spec: None,
                 statistics: None,
             };

@@ -139,7 +139,7 @@ pub enum DataFileSource {
         path: String,
         chunk_spec: Option<ChunkSpec>,
         size_bytes: Option<u64>,
-        metadata: TableMetadata,
+        metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
     },
@@ -172,10 +172,9 @@ impl DataFileSource {
 
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
-            Self::AnonymousDataFile { metadata, .. } => metadata.as_ref(),
-            Self::CatalogDataFile { metadata, .. } | Self::DatabaseDataSource { metadata, .. } => {
-                Some(metadata)
-            }
+            Self::AnonymousDataFile { metadata, .. }
+            | Self::DatabaseDataSource { metadata, .. } => metadata.as_ref(),
+            Self::CatalogDataFile { metadata, .. } => Some(metadata),
         }
     }
 
@@ -199,6 +198,14 @@ impl DataFileSource {
         let mut res = vec![];
         match self {
             Self::AnonymousDataFile {
+                path,
+                chunk_spec,
+                size_bytes,
+                metadata,
+                partition_spec,
+                statistics,
+            }
+            | Self::DatabaseDataSource {
                 path,
                 chunk_spec,
                 size_bytes,
@@ -258,38 +265,6 @@ impl DataFileSource {
                     "Partition spec = {}",
                     partition_spec.multiline_display().join(", ")
                 ));
-                if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
-                }
-            }
-            Self::DatabaseDataSource {
-                path,
-                chunk_spec,
-                size_bytes,
-                metadata,
-                partition_spec,
-                statistics,
-            } => {
-                res.push(format!("Path = {}", path));
-                if let Some(chunk_spec) = chunk_spec {
-                    res.push(format!(
-                        "Chunk spec = {{ {} }}",
-                        chunk_spec.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
-                }
-                res.push(format!(
-                    "Metadata = {}",
-                    metadata.multiline_display().join(", ")
-                ));
-                if let Some(partition_spec) = partition_spec {
-                    res.push(format!(
-                        "Partition spec = {}",
-                        partition_spec.multiline_display().join(", ")
-                    ));
-                }
                 if let Some(statistics) = statistics {
                     res.push(format!("Statistics = {}", statistics));
                 }

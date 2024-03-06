@@ -263,40 +263,31 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-    pub apply_limit_before_offset: Option<bool>,
+    pub left_bound: Option<String>,
+    pub right_bound: Option<String>,
 }
 
 impl DatabaseSourceConfig {
     pub fn new_internal(
         sql: String,
-        limit: Option<usize>,
-        offset: Option<usize>,
-        apply_limit_before_offset: Option<bool>,
+        left_bound: Option<String>,
+        right_bound: Option<String>,
     ) -> Self {
         Self {
             sql,
-            limit,
-            offset,
-            apply_limit_before_offset,
+            left_bound,
+            right_bound,
         }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("SQL = {}", self.sql));
-        if let Some(limit) = self.limit {
-            res.push(format!("Limit = {}", limit));
+        if let Some(left_bound) = &self.left_bound {
+            res.push(format!("Left bound = {}", left_bound));
         }
-        if let Some(offset) = self.offset {
-            res.push(format!("Offset = {}", offset));
-        }
-        if let Some(apply_limit_before_offset) = self.apply_limit_before_offset {
-            res.push(format!(
-                "Limit before offset = {}",
-                apply_limit_before_offset
-            ));
+        if let Some(right_bound) = &self.right_bound {
+            res.push(format!("Right bound = {}", right_bound));
         }
         res
     }
@@ -307,13 +298,12 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(
-        sql: &str,
-        limit: Option<usize>,
-        offset: Option<usize>,
-        apply_limit_before_offset: Option<bool>,
-    ) -> Self {
-        Self::new_internal(sql.to_string(), limit, offset, apply_limit_before_offset)
+    fn new(sql: &str, left_bound: Option<&str>, right_bound: Option<&str>) -> Self {
+        Self::new_internal(
+            sql.to_string(),
+            left_bound.map(str::to_string),
+            right_bound.map(str::to_string),
+        )
     }
 }
 
