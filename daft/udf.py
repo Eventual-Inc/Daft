@@ -31,17 +31,16 @@ class PartialUDF:
 
     def expressions(self) -> dict[str, Expression]:
         parsed_expressions = {}
-
         for key, val in self.bound_args.arguments.items():
             if isinstance(val, Expression):
                 parsed_expressions[key] = val
             elif isinstance(val, tuple) and all(isinstance(x, Expression) for x in val):
                 for idx, x in enumerate(val):
                     parsed_expressions[f"{key}{idx}"] = x
+
         return parsed_expressions
 
     def arg_keys(self) -> list[str]:
-        """Gets argument keys."""
         parsed_arg_keys = []
         for key, value in self.bound_args.arguments.items():
             if key in self.bound_args.kwargs:
