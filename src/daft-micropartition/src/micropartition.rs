@@ -916,10 +916,14 @@ pub(crate) fn read_parquet_into_micropartition(
             ),
         );
 
+        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
+        let casted_stats =
+            stats.cast_to_schema_with_fill(scan_task.materialized_schema(), fill_map.as_ref())?;
+
         Ok(MicroPartition::new_unloaded(
             Arc::new(scan_task),
             TableMetadata { length: total_rows },
-            stats,
+            casted_stats,
         ))
     } else {
         // If no TableStatistics are available, we perform an eager read
