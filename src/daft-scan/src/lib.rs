@@ -256,6 +256,10 @@ pub struct ScanTask {
     pub sources: Vec<DataFileSource>,
 
     /// Schema to use when reading the DataFileSources.
+    ///
+    /// Schema to use when reading the DataFileSources. This should always be passed in by the
+    /// ScanOperator implementation and should not have had any "pruning" applied.
+    ///
     /// Note that this is different than the schema of the data after pushdowns have been applied,
     /// which can be obtained with [`ScanTask::materialized_schema`] instead.
     pub schema: SchemaRef,

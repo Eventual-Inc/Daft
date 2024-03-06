@@ -60,23 +60,39 @@ impl Display for TableState {
     }
 }
 pub(crate) struct MicroPartition {
+    /// Schema of the MicroPartition
+    ///
+    /// This is technically redundant with the schema in `state`:
+    /// 1. If [`TableState::Loaded`]: the schema should match every underlying [`Table`]
+    /// 2. If [`TableState::Unloaded`]: the schema should match the underlying [`ScanTask::materialized_schema`]
+    ///
+    /// However this is still useful as an easy-to-access copy of the schema, as well as to handle the corner-case
+    /// of having 0 underlying [`Table`] objects (in an empty [`MicroPartition`])
     pub(crate) schema: SchemaRef,
+
+    /// State of the MicroPartition. Can be Loaded or Unloaded.
     pub(crate) state: Mutex<TableState>,
+
+    /// Metadata about the MicroPartition
     pub(crate) metadata: TableMetadata,
+
+    /// Statistics about the MicroPartition
+    ///
+    /// If present, this must have the same [`Schema`] as [`MicroPartition::schema`], and this invariant
+    /// is enforced in the `MicroPartition::new_*` constructors.
     pub(crate) statistics: Option<TableStatistics>,
 }
 
-/// Helper to run all the IO and compute required to materialize a ScanTask into a Vec<Table>
+/// Helper to run all the IO and compute required to materialize a [`ScanTask`] into a `Vec<Table>`
+///
+/// All [`Table`] objects returned will have the same [`Schema`] as [`ScanTask::materialized_schema`].
 ///
 /// # Arguments
 ///
 /// * `scan_task` - a batch of ScanTasks to materialize as Tables
-/// * `cast_to_schema` - an Optional schema to cast all the resulting Tables to. If not provided, will use the schema
-///     provided by the ScanTask
 /// * `io_stats` - an optional IOStats object to record the IO operations performed
 fn materialize_scan_task(
     scan_task: Arc<ScanTask>,
-    cast_to_schema: Option<SchemaRef>,
     io_stats: Option<IOStatsRef>,
 ) -> crate::Result<(Vec<Table>, SchemaRef)> {
     let column_names = scan_task
@@ -288,9 +304,8 @@ fn materialize_scan_task(
         }
     };
 
-    // Schema to cast resultant tables into, ensuring that all Tables have the same schema.
-    // Note that we need to apply column pruning here if specified by the ScanTask
-    let cast_to_schema = cast_to_schema.unwrap_or_else(|| scan_task.materialized_schema());
+    // Ensure that all Tables have the schema as specified by [`ScanTask::materialized_schema`]
+    let cast_to_schema = scan_task.materialized_schema();
 
     // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
     // into the table when casting the schema.
@@ -310,11 +325,11 @@ impl MicroPartition {
     /// Schema invariants:
     /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
     pub fn new_unloaded(
-        schema: SchemaRef,
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
         let statistics = statistics
             .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
@@ -373,7 +388,6 @@ impl MicroPartition {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
             (Some(metadata), Some(statistics), _, _) => Ok(Self::new_unloaded(
-                schema,
                 scan_task.clone(),
                 metadata.clone(),
                 statistics.clone(),
@@ -431,7 +445,7 @@ impl MicroPartition {
             // Perform an eager **data** read
             _ => {
                 let statistics = scan_task.statistics.clone();
-                let (tables, schema) = materialize_scan_task(scan_task, None, Some(io_stats))?;
+                let (tables, schema) = materialize_scan_task(scan_task, Some(io_stats))?;
                 Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
             }
         }
@@ -475,11 +489,7 @@ impl MicroPartition {
         let mut guard = self.state.lock().unwrap();
         match guard.deref() {
             TableState::Unloaded(scan_task) => {
-                let (tables, _) = materialize_scan_task(
-                    scan_task.clone(),
-                    Some(self.schema.clone()),
-                    Some(io_stats),
-                )?;
+                let (tables, _) = materialize_scan_task(scan_task.clone(), Some(io_stats))?;
                 let table_values = Arc::new(tables);
 
                 // Cache future accesses by setting the state to TableState::Loaded
@@ -870,7 +880,6 @@ pub(crate) fn read_parquet_into_micropartition(
         let stats = stats.eval_expression_list(exprs.as_slice(), daft_schema.as_ref())?;
 
         Ok(MicroPartition::new_unloaded(
-            scan_task.materialized_schema(),
             Arc::new(scan_task),
             TableMetadata { length: total_rows },
             stats,
