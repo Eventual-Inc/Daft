@@ -324,10 +324,6 @@ impl PyExpr {
         Ok(self.expr.name()?)
     }
 
-    pub fn to_sql(&self) -> PyResult<Option<String>> {
-        Ok(self.expr.to_sql())
-    }
-
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
         Ok(self.expr.to_field(&schema.schema)?.into())
     }

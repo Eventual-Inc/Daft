@@ -1,11 +1,13 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::TimeUnit, impl_bincode_py_state_serialization};
+use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 
 #[cfg(feature = "python")]
 use {
     daft_core::python::datatype::PyTimeUnit,
+    daft_dsl::python::PyExpr,
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
         PyTypeInfo, Python, ToPyObject,
@@ -260,21 +262,24 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 
 /// Configuration for a Database data source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
-    pub left_bound: Option<String>,
-    pub right_bound: Option<String>,
+    pub partition_col: Option<String>,
+    pub left_bound: Option<ExprRef>,
+    pub right_bound: Option<ExprRef>,
 }
 
 impl DatabaseSourceConfig {
     pub fn new_internal(
         sql: String,
-        left_bound: Option<String>,
-        right_bound: Option<String>,
+        partition_col: Option<String>,
+        left_bound: Option<ExprRef>,
+        right_bound: Option<ExprRef>,
     ) -> Self {
         Self {
             sql,
+            partition_col,
             left_bound,
             right_bound,
         }
@@ -283,6 +288,9 @@ impl DatabaseSourceConfig {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("SQL = {}", self.sql));
+        if let Some(partition_col) = &self.partition_col {
+            res.push(format!("Partition column = {}", partition_col));
+        }
         if let Some(left_bound) = &self.left_bound {
             res.push(format!("Left bound = {}", left_bound));
         }
@@ -298,11 +306,17 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, left_bound: Option<&str>, right_bound: Option<&str>) -> Self {
+    fn new(
+        sql: &str,
+        partition_col: Option<&str>,
+        left_bound: Option<PyExpr>,
+        right_bound: Option<PyExpr>,
+    ) -> Self {
         Self::new_internal(
             sql.to_string(),
-            left_bound.map(str::to_string),
-            right_bound.map(str::to_string),
+            partition_col.map(|s| s.to_string()),
+            left_bound.map(|e| e.expr.into()),
+            right_bound.map(|e| e.expr.into()),
         )
     }
 }

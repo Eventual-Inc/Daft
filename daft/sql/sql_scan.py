@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import warnings
 from collections.abc import Iterator
 from typing import Any
 
@@ -45,7 +44,7 @@ class SQLScanOperator(ScanOperator):
             schema = Schema.from_pyarrow_schema(pa_table.schema)
             return schema
         except Exception:
-            # If both attempts fail, read without limit and offset
+            # If limit fails, try to read the entire table
             pa_table = SQLReader(self.sql, self.url).read()
             schema = Schema.from_pyarrow_schema(pa_table.schema)
             return schema
@@ -110,28 +109,13 @@ class SQLScanOperator(ScanOperator):
                 ).read()
                 min_val = pa_table.column(0)[0].as_py()
                 max_val = pa_table.column(1)[0].as_py()
-                return [min_val + (max_val - min_val) * i / num_scan_tasks for i in range(1, num_scan_tasks)], "min_max"
+                range_size = (max_val - min_val) / num_scan_tasks
+                return [min_val + range_size * i for i in range(1, num_scan_tasks)], "min_max"
 
             except Exception:
                 raise ValueError(
                     f"Failed to get partition bounds from {self._partition_col}. Please ensure that the column exists, and is numeric or temporal."
                 )
-
-    def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
-        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(self.sql))
-        return iter(
-            [
-                ScanTask.sql_scan_task(
-                    url=self.url,
-                    file_format=file_format_config,
-                    schema=self._schema._schema,
-                    num_rows=total_rows,
-                    storage_config=self.storage_config,
-                    size_bytes=math.ceil(total_size),
-                    pushdowns=pushdowns,
-                )
-            ]
-        )
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         total_rows = self._get_num_rows()
@@ -144,24 +128,32 @@ class SQLScanOperator(ScanOperator):
         )
 
         if num_scan_tasks == 1 or self._partition_col is None:
-            return self._single_scan_task(pushdowns, total_rows, total_size)
+            file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(self.sql))
+            return iter(
+                [
+                    ScanTask.sql_scan_task(
+                        url=self.url,
+                        file_format=file_format_config,
+                        schema=self._schema._schema,
+                        num_rows=total_rows,
+                        storage_config=self.storage_config,
+                        size_bytes=math.ceil(total_size),
+                        pushdowns=pushdowns,
+                    )
+                ]
+            )
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
-        partition_bounds = [lit(bound)._to_sql() for bound in partition_bounds]
-
-        if any(bound is None for bound in partition_bounds):
-            warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
-            return self._single_scan_task(pushdowns, total_rows, total_size)
-
         size_bytes = None if strategy == "min_max" else math.ceil(total_size / num_scan_tasks)
         scan_tasks = []
         for i in range(num_scan_tasks):
-            left_bound = None if i == 0 else f"{self._partition_col} > {partition_bounds[i - 1]}"
-            right_bound = None if i == num_scan_tasks - 1 else f"{self._partition_col} <= {partition_bounds[i]}"
+            left_bound = None if i == 0 else lit(partition_bounds[i - 1])._expr
+            right_bound = None if i == num_scan_tasks - 1 else lit(partition_bounds[i])._expr
 
             file_format_config = FileFormatConfig.from_database_config(
                 DatabaseSourceConfig(
                     self.sql,
+                    partition_col=self._partition_col,
                     left_bound=left_bound,
                     right_bound=right_bound,
                 )

@@ -22,8 +22,8 @@ def read_sql(
 
     .. NOTE::
         If partition_col is specified, this function will partition the query by the specified column. You may specify the number of partitions, or let Daft determine the number of partitions.
-        Daft will attempt to partition the query on the percentiles of the specified column, and will attempt to balance the number of rows in each partition.
-        If the database does not support the necessary SQL syntax to partition the query, Daft will partition the query via ranges between the min and max values of the specified column.
+        Daft will first calculate percentiles of the specified column. For example if num_partitions is 3, Daft will calculate the 33rd and 66th percentiles of the specified column, and use these values to partition the query.
+        If the database does not support the necessary SQL syntax to calculate percentiles, Daft will calculate the min and max of the specified column and partition the query into equal ranges.
 
     Args:
         sql (str): SQL query to execute

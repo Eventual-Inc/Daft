@@ -310,6 +310,7 @@ fn materialize_scan_task(
                 })?,
                 FileFormatConfig::Database(DatabaseSourceConfig {
                     sql,
+                    partition_col,
                     left_bound,
                     right_bound,
                 }) => {
@@ -323,14 +324,17 @@ fn materialize_scan_task(
                         .filters
                         .as_ref()
                         .map(|p| (*p.as_ref()).clone().into());
+                    let left_bound = left_bound.as_ref().and_then(|lb| lb.to_sql());
+                    let right_bound = right_bound.as_ref().and_then(|rb| rb.to_sql());
                     Python::with_gil(|py| {
                         urls.map(|url| {
                             crate::python::read_sql_into_py_table(
                                 py,
                                 sql,
                                 url,
-                                left_bound.as_deref(),
-                                right_bound.as_deref(),
+                                partition_col.clone(),
+                                left_bound.clone(),
+                                right_bound.clone(),
                                 predicate_sql.clone(),
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),

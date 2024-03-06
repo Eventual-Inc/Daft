@@ -77,6 +77,7 @@ class TableReadSQLOptions:
     """Options for parsing SQL tables
 
     Args:
+        partition_col: Column to use for partitioning the table
         left_bound: Lower bound of the table to read
         right_bound: Upper bound of the table to read
 
@@ -84,6 +85,7 @@ class TableReadSQLOptions:
         predicate_expression: Expression predicate to apply to the table
     """
 
+    partition_col: str | None = None
     left_bound: str | None = None
     right_bound: str | None = None
 

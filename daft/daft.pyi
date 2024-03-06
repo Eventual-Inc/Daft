@@ -223,14 +223,16 @@ class DatabaseSourceConfig:
     """
 
     sql: str
-    left_bound: str | None
-    right_bound: str | None
+    partition_col: str | None
+    left_bound: PyExpr | None
+    right_bound: PyExpr | None
 
     def __init__(
         self,
         sql: str,
-        left_bound: str | None = None,
-        right_bound: str | None = None,
+        partition_col: str | None = None,
+        left_bound: PyExpr | None = None,
+        right_bound: PyExpr | None = None,
     ): ...
 
 class FileFormatConfig:
@@ -912,7 +914,6 @@ class PyExpr:
     def not_null(self) -> PyExpr: ...
     def is_in(self, other: PyExpr) -> PyExpr: ...
     def name(self) -> str: ...
-    def to_sql(self) -> str | None: ...
     def to_field(self, schema: PySchema) -> PyField: ...
     def __repr__(self) -> str: ...
     def __hash__(self) -> int: ...
