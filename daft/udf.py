@@ -30,11 +30,33 @@ class PartialUDF:
     bound_args: inspect.BoundArguments
 
     def expressions(self) -> dict[str, Expression]:
-        return {key: val for key, val in self.bound_args.arguments.items() if isinstance(val, Expression)}
+        parsed_expressions = {}
+
+        for key, val in self.bound_args.arguments.items():
+            if isinstance(val, Expression):
+                parsed_expressions[key] = val
+            elif isinstance(val, tuple) and all(isinstance(x, Expression) for x in val):
+                for idx, x in enumerate(val):
+                    parsed_expressions[f"{key}{idx}"] = x
+        return parsed_expressions
+
+    def arg_keys(self) -> list[str]:
+        """Gets argument keys."""
+        parsed_arg_keys = []
+        for key, value in self.bound_args.arguments.items():
+            if key in self.bound_args.kwargs:
+                continue
+            if isinstance(value, tuple):
+                for idx, _ in enumerate(value):
+                    parsed_arg_keys.append(f"{key}{idx}")
+            else:
+                parsed_arg_keys.append(key)
+
+        return parsed_arg_keys
 
     def __call__(self, evaluated_expressions: list[Series]) -> PySeries:
         kwarg_keys = list(self.bound_args.kwargs.keys())
-        arg_keys = [k for k in self.bound_args.arguments.keys() if k not in self.bound_args.kwargs.keys()]
+        arg_keys = self.arg_keys()
         pyvalues = {key: val for key, val in self.bound_args.arguments.items() if not isinstance(val, Expression)}
         expressions = self.expressions()
         assert len(evaluated_expressions) == len(
