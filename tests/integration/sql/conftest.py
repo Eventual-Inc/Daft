@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    DateTime,
     Engine,
     Float,
     Integer,
@@ -39,9 +40,7 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
         "string_col": [f"row_{i}" for i in range(num_rows)],
         "bool_col": [True for _ in range(num_rows // 2)] + [False for _ in range(num_rows // 2)],
         "date_col": [date(2021, 1, 1) + timedelta(days=i) for i in range(num_rows)],
-        # TODO(Colin): ConnectorX parses datetime as pyarrow date64 type, which we currently cast to Python, causing our assertions to fail.
-        # One possible solution is to cast date64 into Timestamp("ms") in our from_arrow code.
-        # "date_time_col": [datetime(2020, 1, 1, 10, 0, 0) + timedelta(hours=i) for i in range(num_rows)],
+        "date_time_col": [datetime(2020, 1, 1, 10, 0, 0) + timedelta(hours=i) for i in range(num_rows)],
         "time_col": [
             (datetime.combine(datetime.today(), time(0, 0)) + timedelta(minutes=x)).time() for x in range(200)
         ],
@@ -79,6 +78,7 @@ def create_and_populate(engine: Engine, data: pd.DataFrame) -> None:
         Column("string_col", String(50)),
         Column("bool_col", Boolean),
         Column("date_col", Date),
+        Column("date_time_col", DateTime),
         Column("null_col", String(50)),
         Column("non_uniformly_distributed_col", Integer),
     )

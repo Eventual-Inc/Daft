@@ -233,9 +233,6 @@ def read_sql(
     pa_table = SQLReader(
         sql,
         url,
-        partition_col=sql_options.partition_col,
-        left_bound=sql_options.left_bound,
-        right_bound=sql_options.right_bound,
         # TODO(Colin): Enable pushdowns
         projection=None,
         predicate=None,

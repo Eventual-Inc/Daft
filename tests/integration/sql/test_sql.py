@@ -36,7 +36,7 @@ def test_sql_partitioned_read(test_db, num_partitions) -> None:
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
-@pytest.mark.parametrize("partition_col", ["id", "float_col", "date_col"])
+@pytest.mark.parametrize("partition_col", ["id", "float_col", "date_col", "date_time_col"])
 def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
     test_db, num_partitions, partition_col
 ) -> None:
@@ -89,12 +89,7 @@ def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
         ("string_col", "row_100"),
         ("bool_col", True),
         ("date_col", datetime.date(2021, 1, 1)),
-        # TODO(Colin) - ConnectorX parses datetime as pyarrow date64 type, which we currently cast to Python, causing our assertions to fail.
-        # One possible solution is to cast date64 into Timestamp("ms") in our from_arrow code.
-        # ("date_time_col", datetime.datetime(2020, 1, 1, 10, 0, 0)),
-        # TODO(Colin) - Reading time from Postgres is parsed as Time(Nanoseconds), while from MySQL it is parsed as Duration(Microseconds)
-        # Need to fix our time comparison code to handle this.
-        # ("time_col", datetime.time(10, 0, 0)),
+        ("date_time_col", datetime.datetime(2020, 1, 1, 10, 0, 0)),
     ],
 )
 @pytest.mark.parametrize("num_partitions", [1, 2])
@@ -157,6 +152,17 @@ def test_sql_read_with_if_else_filter_pushdown(test_db, num_partitions) -> None:
     pdf = pd.read_sql_query(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]
 
+    assert_df_equals(df.to_pandas(), pdf, sort_key="id")
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("num_partitions", [1, 2])
+def test_sql_read_with_is_in_filter_pushdown(test_db, num_partitions) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id", num_partitions=num_partitions)
+    df = df.where(df["id"].is_in([1, 2, 3]))
+
+    pdf = pd.read_sql_query(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
+    pdf = pdf[pdf["id"].isin([1, 2, 3])]
     assert_df_equals(df.to_pandas(), pdf, sort_key="id")
 
 

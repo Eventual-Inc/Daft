@@ -375,6 +375,8 @@ class DataType:
             return cls.decimal128(arrow_type.precision, arrow_type.scale)
         elif pa.types.is_date32(arrow_type):
             return cls.date()
+        elif pa.types.is_date64(arrow_type):
+            return cls.timestamp(TimeUnit.ms())
         elif pa.types.is_time64(arrow_type):
             timeunit = TimeUnit.from_str(pa.type_for_alias(str(arrow_type)).unit)
             return cls.time(timeunit)

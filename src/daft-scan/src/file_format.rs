@@ -1,13 +1,11 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::TimeUnit, impl_bincode_py_state_serialization};
-use daft_dsl::ExprRef;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 
 #[cfg(feature = "python")]
 use {
     daft_core::python::datatype::PyTimeUnit,
-    daft_dsl::python::PyExpr,
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
         PyTypeInfo, Python, ToPyObject,
@@ -265,38 +263,16 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
-    pub partition_col: Option<String>,
-    pub left_bound: Option<ExprRef>,
-    pub right_bound: Option<ExprRef>,
 }
 
 impl DatabaseSourceConfig {
-    pub fn new_internal(
-        sql: String,
-        partition_col: Option<String>,
-        left_bound: Option<ExprRef>,
-        right_bound: Option<ExprRef>,
-    ) -> Self {
-        Self {
-            sql,
-            partition_col,
-            left_bound,
-            right_bound,
-        }
+    pub fn new_internal(sql: String) -> Self {
+        Self { sql }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("SQL = {}", self.sql));
-        if let Some(partition_col) = &self.partition_col {
-            res.push(format!("Partition column = {}", partition_col));
-        }
-        if let Some(left_bound) = &self.left_bound {
-            res.push(format!("Left bound = {}", left_bound));
-        }
-        if let Some(right_bound) = &self.right_bound {
-            res.push(format!("Right bound = {}", right_bound));
-        }
         res
     }
 }
@@ -306,18 +282,8 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(
-        sql: &str,
-        partition_col: Option<&str>,
-        left_bound: Option<PyExpr>,
-        right_bound: Option<PyExpr>,
-    ) -> Self {
-        Self::new_internal(
-            sql.to_string(),
-            partition_col.map(|s| s.to_string()),
-            left_bound.map(|e| e.expr.into()),
-            right_bound.map(|e| e.expr.into()),
-        )
+    fn new(sql: &str) -> Self {
+        Self::new_internal(sql.to_string())
     }
 }
 

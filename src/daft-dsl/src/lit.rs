@@ -220,15 +220,20 @@ impl LiteralValue {
                 self.to_string().into()
             }
             Utf8(val) => format!("'{}'", val).into(),
-            Binary(val) => format!("x'{}'", val.len()).into(),
             Date(val) => format!("DATE '{}'", display_date32(*val)).into(),
-            Timestamp(val, tu, tz) => format!(
-                "TIMESTAMP '{}'",
-                display_timestamp(*val, tu, tz).replace('T', " ")
-            )
-            .into(),
+            Timestamp(val, tu, tz) => {
+                if tz.is_some() {
+                    // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
+                    return None;
+                }
+                format!(
+                    "TIMESTAMP '{}'",
+                    display_timestamp(*val, tu, tz).replace('T', " ")
+                )
+                .into()
+            }
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
-            Decimal(..) | Series(..) | Time(..) => None,
+            Decimal(..) | Series(..) | Time(..) | Binary(..) => None,
             #[cfg(feature = "python")]
             Python(..) => None,
         }

@@ -308,12 +308,7 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(DatabaseSourceConfig {
-                    sql,
-                    partition_col,
-                    left_bound,
-                    right_bound,
-                }) => {
+                FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
                     let predicate_sql = scan_task
                         .pushdowns
                         .filters
@@ -324,17 +319,12 @@ fn materialize_scan_task(
                         .filters
                         .as_ref()
                         .map(|p| (*p.as_ref()).clone().into());
-                    let left_bound = left_bound.as_ref().and_then(|lb| lb.to_sql());
-                    let right_bound = right_bound.as_ref().and_then(|rb| rb.to_sql());
                     Python::with_gil(|py| {
                         urls.map(|url| {
                             crate::python::read_sql_into_py_table(
                                 py,
                                 sql,
                                 url,
-                                partition_col.as_deref(),
-                                left_bound.as_deref(),
-                                right_bound.as_deref(),
                                 predicate_sql.as_deref(),
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),

@@ -13,9 +13,6 @@ class SQLReader:
         self,
         sql: str,
         url: str,
-        left_bound: str | None = None,
-        right_bound: str | None = None,
-        partition_col: str | None = None,
         limit: int | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
@@ -23,9 +20,6 @@ class SQLReader:
 
         self.sql = sql
         self.url = url
-        self.left_bound = left_bound
-        self.right_bound = right_bound
-        self.partition_col = partition_col
         self.limit = limit
         self.projection = projection
         self.predicate = predicate
@@ -35,22 +29,13 @@ class SQLReader:
         return self._execute_sql_query(sql)
 
     def _construct_sql_query(self) -> str:
-        base_query = f"SELECT * FROM ({self.sql}) AS subquery"
-        if self.partition_col is not None:
-            if self.left_bound is not None and self.right_bound is not None:
-                base_query = f"{base_query} WHERE {self.partition_col} > {self.left_bound} AND {self.partition_col} <= {self.right_bound}"
-            elif self.left_bound is not None:
-                base_query = f"{base_query} WHERE {self.partition_col} > {self.left_bound}"
-            elif self.right_bound is not None:
-                base_query = f"{base_query} WHERE {self.partition_col} <= {self.right_bound}"
-
         clauses = []
         if self.projection is not None:
             clauses.append(f"SELECT {', '.join(self.projection)}")
         else:
             clauses.append("SELECT *")
 
-        clauses.append(f"FROM ({base_query}) AS subquery")
+        clauses.append(f"FROM ({self.sql}) AS subquery")
 
         if self.predicate is not None:
             clauses.append(f"WHERE {self.predicate}")
