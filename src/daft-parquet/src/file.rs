@@ -1,8 +1,13 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series,
+};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
@@ -191,12 +196,14 @@ impl ParquetReaderBuilder {
         uri: &str,
         io_client: Arc<daft_io::IOClient>,
         io_stats: Option<IOStatsRef>,
+        field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {
         // TODO(sammy): We actually don't need this since we can do negative offsets when reading the metadata
         let size = io_client
             .single_url_get_size(uri.into(), io_stats.clone())
             .await?;
-        let metadata = read_parquet_metadata(uri, size, io_client, io_stats).await?;
+        let metadata =
+            read_parquet_metadata(uri, size, io_client, io_stats, field_id_mapping).await?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
             metadata,

@@ -18,6 +18,7 @@ from daft.daft import (
     ParquetSourceConfig,
     PartitionTransform,
     Pushdowns,
+    PyField,
     ScanTask,
     StorageConfig,
 )
@@ -84,7 +85,13 @@ class IcebergScanOperator(ScanOperator):
         super().__init__()
         self._table = iceberg_table
         self._storage_config = storage_config
-        arrow_schema = schema_to_pyarrow(iceberg_table.schema())
+        iceberg_schema = iceberg_table.schema()
+        arrow_schema = schema_to_pyarrow(iceberg_schema)
+        self._field_id_mapping = {
+            # NOTE: A little dangerous here to use a private API
+            field_id: PyField.create(field.name, DataType.from_arrow_type(schema_to_pyarrow(field.field_type))._dtype)
+            for field_id, field in iceberg_schema._lazy_id_to_field.items()
+        }
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
 
@@ -145,7 +152,9 @@ class IcebergScanOperator(ScanOperator):
             record_count = file.record_count
             file_format = file.file_format
             if file_format == "PARQUET":
-                file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
+                file_format_config = FileFormatConfig.from_parquet_config(
+                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
+                )
             else:
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")

@@ -1,11 +1,14 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::TimeUnit, impl_bincode_py_state_serialization};
+use daft_core::{
+    datatypes::{Field, TimeUnit},
+    impl_bincode_py_state_serialization,
+};
 use serde::{Deserialize, Serialize};
-use std::{str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
 #[cfg(feature = "python")]
 use {
-    daft_core::python::datatype::PyTimeUnit,
+    daft_core::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
         PyTypeInfo, Python, ToPyObject,
@@ -87,6 +90,16 @@ impl FileFormatConfig {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
+
+    /// Mapping of field_id to Daft field
+    ///
+    /// Data Catalogs such as Iceberg rely on Parquet's field_id to identify fields in a Parquet file
+    /// in a way that is stable across operations such as column renaming. When reading Parquet files,
+    /// if the `field_id_mapping` is provided, we must rename the (potentially stale) Parquet
+    /// data according to the provided field_ids.
+    ///
+    /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
+    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 }
 
 impl ParquetSourceConfig {
@@ -96,6 +109,16 @@ impl ParquetSourceConfig {
             "Coerce int96 timestamp unit = {}",
             self.coerce_int96_timestamp_unit
         ));
+        if let Some(mapping) = &self.field_id_mapping {
+            res.push(format!(
+                "Field ID to Fields = {{{}}}",
+                mapping
+                    .iter()
+                    .map(|(fid, f)| format!("{fid}: {f}"))
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ));
+        }
         res
     }
 }
@@ -105,11 +128,19 @@ impl ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    fn new(coerce_int96_timestamp_unit: Option<PyTimeUnit>) -> Self {
+    fn new(
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+        field_id_mapping: Option<BTreeMap<i32, PyField>>,
+    ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds.into())
                 .into(),
+            field_id_mapping: field_id_mapping.map(|map| {
+                Arc::new(BTreeMap::from_iter(
+                    map.into_iter().map(|(k, v)| (k, v.field)),
+                ))
+            }),
         }
     }
 

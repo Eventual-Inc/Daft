@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
+use daft_core::datatypes::Field;
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
@@ -12,11 +13,20 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
+fn rename_parquet_metadata_with_field_ids(
+    file_metadata: FileMetaData,
+    _field_id_mapping: &BTreeMap<i32, Field>,
+) -> super::Result<FileMetaData> {
+    // TODO: rename all the fields in this metadata object
+    Ok(file_metadata)
+}
+
 pub(crate) async fn read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> super::Result<FileMetaData> {
     const FOOTER_SIZE: usize = 8;
     const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
@@ -81,7 +91,7 @@ pub(crate) async fn read_parquet_metadata(
         });
     }
     // use rayon here
-    tokio::task::spawn_blocking(move || {
+    let file_metadata = tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;
         deserialize_metadata(reader, max_size)
@@ -90,7 +100,13 @@ pub(crate) async fn read_parquet_metadata(
     .context(JoinSnafu {
         path: uri.to_string(),
     })?
-    .context(UnableToParseMetadataSnafu { path: uri })
+    .context(UnableToParseMetadataSnafu { path: uri });
+
+    if let Some(field_id_mapping) = field_id_mapping {
+        rename_parquet_metadata_with_field_ids(file_metadata?, field_id_mapping.as_ref())
+    } else {
+        file_metadata
+    }
 }
 
 #[cfg(test)]
@@ -111,7 +127,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let metadata = read_parquet_metadata(file, size, io_client.clone(), None).await?;
+        let metadata = read_parquet_metadata(file, size, io_client.clone(), None, None).await?;
         assert_eq!(metadata.num_rows, 100);
 
         Ok(())

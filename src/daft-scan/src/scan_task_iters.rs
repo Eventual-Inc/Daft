@@ -5,8 +5,9 @@ use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 
 use crate::{
-    file_format::FileFormatConfig, storage_config::StorageConfig, ChunkSpec, DataFileSource,
-    ScanTask, ScanTaskRef,
+    file_format::{FileFormatConfig, ParquetSourceConfig},
+    storage_config::StorageConfig,
+    ChunkSpec, DataFileSource, ScanTask, ScanTaskRef,
 };
 
 type BoxScanTaskIter = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>;
@@ -136,7 +137,7 @@ pub fn split_by_row_groups(
                         - have size past split threshold
                     */
                     if let (
-                        FileFormatConfig::Parquet(_),
+                        FileFormatConfig::Parquet(ParquetSourceConfig{field_id_mapping, ..}),
                         StorageConfig::Native(_),
                         [source],
                         Some(None),
@@ -162,6 +163,7 @@ pub fn split_by_row_groups(
                             path,
                             io_client,
                             Some(io_stats),
+                            field_id_mapping.clone(),
                         ))?;
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();

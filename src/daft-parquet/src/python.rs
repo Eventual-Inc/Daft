@@ -160,6 +160,7 @@ pub mod pylib {
                 num_parallel_tasks.unwrap_or(128) as usize,
                 runtime_handle,
                 &schema_infer_options,
+                None,
             )?
             .into_iter()
             .map(|v| v.into())
@@ -235,6 +236,7 @@ pub mod pylib {
                 io_client,
                 Some(io_stats),
                 schema_infer_options,
+                None, // TODO: allow passing in of field_id_mapping through Python API?
             )?)
             .into())
         })
@@ -255,8 +257,13 @@ pub mod pylib {
                 io_config.unwrap_or_default().config.into(),
             )?;
             Ok(
-                crate::read::read_parquet_statistics(&uris.series, io_client, Some(io_stats))?
-                    .into(),
+                crate::read::read_parquet_statistics(
+                    &uris.series,
+                    io_client,
+                    Some(io_stats),
+                    None,
+                )?
+                .into(),
             )
         })
     }
