@@ -554,7 +554,10 @@ impl MicroPartition {
     }
 }
 
-fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftResult<Schema> {
+fn prune_fields_from_schema(
+    schema: Arc<Schema>,
+    columns: Option<&[&str]>,
+) -> DaftResult<Arc<Schema>> {
     if let Some(columns) = columns {
         let avail_names = schema
             .fields
@@ -574,11 +577,13 @@ fn prune_fields_from_schema(schema: Schema, columns: Option<&[&str]>) -> DaftRes
             }
         }
         let filtered_columns = schema
+            .as_ref()
             .fields
-            .into_values()
+            .values()
             .filter(|field| names_to_keep.contains(field.name.as_str()))
+            .cloned()
             .collect::<Vec<_>>();
-        Schema::new(filtered_columns)
+        Ok(Arc::new(Schema::new(filtered_columns)?))
     } else {
         Ok(schema)
     }
@@ -742,10 +747,6 @@ fn _read_parquet_into_loaded_micropartition(
         }
     };
 
-    // Hack to avoid to owned schema
-    let full_daft_schema = Schema {
-        fields: full_daft_schema.fields.clone(),
-    };
     let pruned_daft_schema = prune_fields_from_schema(full_daft_schema, columns)?;
 
     let fill_map = partition_spec.map(|pspec| pspec.to_fill_map());
@@ -754,9 +755,10 @@ fn _read_parquet_into_loaded_micropartition(
         .map(|t| t.cast_to_schema_with_fill(&pruned_daft_schema, fill_map.as_ref()))
         .collect::<DaftResult<Vec<_>>>()?;
 
-    // TODO: we can pass in stats here to optimize downstream workloads such as join
+    // TODO: we can pass in stats here to optimize downstream workloads such as join. Make sure to correctly
+    // cast those statistics to the appropriate schema + fillmap as well.
     Ok(MicroPartition::new_loaded(
-        Arc::new(pruned_daft_schema),
+        pruned_daft_schema,
         all_tables.into(),
         None,
     ))
