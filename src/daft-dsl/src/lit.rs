@@ -222,10 +222,14 @@ impl LiteralValue {
             Utf8(val) => format!("'{}'", val).into(),
             Date(val) => format!("DATE '{}'", display_date32(*val)).into(),
             Timestamp(val, tu, tz) => {
+                // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
                 if tz.is_some() {
-                    // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
                     return None;
                 }
+                // Note: Our display_timestamp function returns a string in the ISO 8601 format "YYYY-MM-DDTHH:MM:SS.fffff".
+                // However, the ANSI SQL standard replaces the 'T' with a space. See: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.htm
+                // While many databases support the 'T', some such as Trino, do not. So we replace the 'T' with a space here.
+                // We also don't use the i64 unix timestamp directly, because different databases have different functions to convert unix timestamps to timestamps, e.g. Trino uses from_unixtime, while PostgreSQL uses to_timestamp.
                 format!(
                     "TIMESTAMP '{}'",
                     display_timestamp(*val, tu, tz).replace('T', " ")
