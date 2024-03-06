@@ -34,9 +34,10 @@ class PartialUDF:
         for key, val in self.bound_args.arguments.items():
             if isinstance(val, Expression):
                 parsed_expressions[key] = val
-            elif isinstance(val, tuple) and all(isinstance(x, Expression) for x in val):
+            elif isinstance(val, tuple):
                 for idx, x in enumerate(val):
-                    parsed_expressions[f"{key}{idx}"] = x
+                    if isinstance(x, Expression):
+                        parsed_expressions[f"{key}-{idx}"] = x
 
         return parsed_expressions
 
@@ -47,7 +48,7 @@ class PartialUDF:
                 continue
             if isinstance(value, tuple):
                 for idx, _ in enumerate(value):
-                    parsed_arg_keys.append(f"{key}{idx}")
+                    parsed_arg_keys.append(f"{key}-{idx}")
             else:
                 parsed_arg_keys.append(key)
 
