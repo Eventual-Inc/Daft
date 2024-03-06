@@ -51,6 +51,8 @@ impl From<ParquetSchemaInferenceOptions>
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         arrow2::io::parquet::read::schema::SchemaInferenceOptions {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+            // TODO: Figure out how to piggyback this?
+            field_id_mapping: None,
         }
     }
 }

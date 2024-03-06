@@ -3,11 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
+use arrow2::io::parquet::read::schema::{infer_schema_with_options, SchemaInferenceOptions};
 use common_error::DaftResult;
 use daft_core::{
-    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, DataType,
-    IntoSeries, Series,
+    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series,
 };
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
@@ -15,8 +14,10 @@ use daft_stats::TruthValue;
 use daft_table::Table;
 use futures::{future::try_join_all, StreamExt};
 use parquet2::{
+    metadata::{ColumnChunkMetaData, ColumnDescriptor, Descriptor},
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
+    schema::types::{FieldInfo, ParquetType, PrimitiveType},
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
@@ -30,6 +31,158 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
+
+struct ParquetMetadataAccessor {
+    metadata: Arc<parquet2::metadata::FileMetaData>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    // TODO: Add column pruning logic here
+    // columns: Vec<String>,
+}
+
+fn rename_parquet_type(
+    parquet_type: &ParquetType,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> ParquetType {
+    match parquet_type {
+        ParquetType::PrimitiveType(primitive_type) => {
+            let field_id = primitive_type.field_info.id;
+            let new_name = field_id
+                .and_then(|field_id| field_id_mapping.get(&field_id))
+                .map(|matched_field| matched_field.name.clone())
+                .unwrap_or_else(|| primitive_type.field_info.name.clone());
+            let new_field_info = FieldInfo {
+                name: new_name.clone(),
+                ..primitive_type.field_info
+            };
+            let new_primitive_type = PrimitiveType {
+                field_info: new_field_info,
+                ..primitive_type.clone()
+            };
+            ParquetType::PrimitiveType(new_primitive_type)
+        }
+        ParquetType::GroupType {
+            field_info,
+            fields,
+            logical_type,
+            converted_type,
+        } => {
+            let field_id = field_info.id;
+            let new_name = field_id
+                .and_then(|field_id| field_id_mapping.get(&field_id))
+                .map(|matched_field| matched_field.name.clone())
+                .unwrap_or_else(|| field_info.name.clone());
+            let new_field_info = FieldInfo {
+                name: new_name.clone(),
+                ..field_info.clone()
+            };
+            let new_fields = fields
+                .iter()
+                .map(|parquet_type| rename_parquet_type(parquet_type, field_id_mapping))
+                .collect();
+            ParquetType::GroupType {
+                field_info: new_field_info,
+                fields: new_fields,
+                logical_type: *logical_type,
+                converted_type: *converted_type,
+            }
+        }
+    }
+}
+
+impl ParquetMetadataAccessor {
+    fn arrow2_schema(&self) -> DaftResult<arrow2::datatypes::Schema> {
+        // TODO: recursively rename the arrow2 schema... fuck this not sure how to do it?
+        Ok(infer_schema_with_options(
+            self.metadata.as_ref(),
+            &Some(SchemaInferenceOptions {
+                field_id_mapping: self.field_id_mapping.as_ref().map(|m| {
+                    m.as_ref()
+                        .iter()
+                        .map(|(field_id, field)| (*field_id, field.name.clone()))
+                        .collect()
+                }),
+                ..SchemaInferenceOptions::default()
+            }),
+        )
+        .context(UnableToParseSchemaFromMetadataSnafu::<String> {
+            path: "TODO".to_string(),
+        })?)
+    }
+
+    fn daft_schema(&self) -> DaftResult<Schema> {
+        let arrow2_schema = self.arrow2_schema()?;
+        Schema::try_from(&arrow2_schema)
+    }
+
+    fn get_row_group(&self, idx: usize) -> Option<parquet2::metadata::RowGroupMetaData> {
+        if let Some(field_id_mapping) = &self.field_id_mapping {
+            self.metadata.row_groups.get(idx).map(|rg| {
+                let columns = rg
+                    .columns()
+                    .iter()
+                    .map(|column| {
+                        let field_id = column.descriptor().descriptor.primitive_type.field_info.id;
+                        let new_name = field_id
+                            .and_then(|field_id| field_id_mapping.get(&field_id))
+                            .map(|matched_field| matched_field.name.clone())
+                            .unwrap_or_else(|| {
+                                column
+                                    .descriptor()
+                                    .descriptor
+                                    .primitive_type
+                                    .field_info
+                                    .name
+                                    .clone()
+                            });
+                        let new_field_info = FieldInfo {
+                            name: new_name.clone(),
+                            ..column.descriptor().descriptor.primitive_type.field_info
+                        };
+                        let new_primitive_type = PrimitiveType {
+                            field_info: new_field_info,
+                            ..column.descriptor().descriptor.primitive_type
+                        };
+                        let new_descriptor = Descriptor {
+                            primitive_type: new_primitive_type,
+                            ..column.descriptor().descriptor
+                        };
+                        let new_base_type = rename_parquet_type(
+                            &column.descriptor().base_type,
+                            field_id_mapping.as_ref(),
+                        );
+
+                        // PROBLEM: This new path in schema only replaces the leaf name, but doesn't replace any potentially renamed parents
+                        // This means that the path_to_schema is now corrupted and shouldn't be relied upon!!!
+                        let new_path_in_schema = column
+                            .descriptor()
+                            .path_in_schema
+                            .clone()
+                            .into_iter()
+                            .take(column.descriptor().path_in_schema.len() - 1)
+                            .chain(std::iter::once(new_name.clone()))
+                            .collect();
+                        println!("New base type: {:?}", new_base_type);
+                        println!("New path in schema: {:?}", new_path_in_schema);
+
+                        let new_column_descr = ColumnDescriptor::new(
+                            new_descriptor,
+                            new_path_in_schema,
+                            new_base_type,
+                        );
+                        ColumnChunkMetaData::new(column.column_chunk().clone(), new_column_descr)
+                    })
+                    .collect();
+                parquet2::metadata::RowGroupMetaData::new(
+                    columns,
+                    rg.num_rows(),
+                    rg.total_byte_size(),
+                )
+            })
+        } else {
+            self.metadata.as_ref().row_groups.get(idx).cloned()
+        }
+    }
+}
 
 pub(crate) struct ParquetReaderBuilder {
     pub uri: String,
@@ -100,213 +253,6 @@ where
     fn get(&self) -> Option<&Self::Item> {
         self.curr.as_ref()
     }
-}
-
-fn resolve_dtype_recursively(
-    dtype: &DataType,
-    field_id_mapping: Option<&BTreeMap<i32, Field>>,
-) -> Option<DataType> {
-    match dtype {
-        // Ensure recursive renaming for nested types
-        DataType::List(child) => resolve_dtype_recursively(child.as_ref(), field_id_mapping)
-            .map(|new_dtype| DataType::List(Box::new(new_dtype))),
-        DataType::FixedSizeList(child, size) => {
-            resolve_dtype_recursively(child.as_ref(), field_id_mapping)
-                .map(|new_dtype| DataType::FixedSizeList(Box::new(new_dtype), *size))
-        }
-        DataType::Struct(original_children) => {
-            let new_fields = original_children
-                .iter()
-                .map(|field| resolve_field_recursively(field, field_id_mapping))
-                .collect::<Vec<_>>();
-            if new_fields.iter().all(|f| f.is_none()) {
-                None
-            } else {
-                Some(DataType::Struct(
-                    new_fields
-                        .into_iter()
-                        .zip(original_children.iter())
-                        .map(|(maybe_new_field, old_field)| {
-                            maybe_new_field
-                                .unwrap_or_else(|| old_field.clone().with_metadata(BTreeMap::new()))
-                        })
-                        .collect(),
-                ))
-            }
-        }
-        DataType::Map(list_child) => resolve_dtype_recursively(list_child, field_id_mapping)
-            .map(|new_dtype| DataType::Map(Box::new(new_dtype))),
-        // All other types are renamed only at the top-level
-        _ => None,
-    }
-}
-
-fn resolve_field_recursively(
-    field: &Field,
-    field_id_mapping: Option<&BTreeMap<i32, Field>>,
-) -> Option<Field> {
-    let new_name = if let (Some(field_id), Some(field_id_mapping)) =
-        (field.metadata.get("field_id"), field_id_mapping)
-    {
-        let field_id = str::parse::<i32>(field_id).unwrap();
-        let mapped_field = field_id_mapping.get(&field_id);
-        mapped_field.map(|mapped_field| &mapped_field.name)
-    } else {
-        None
-    };
-    let new_dtype = resolve_dtype_recursively(&field.dtype, field_id_mapping);
-
-    match (new_name, new_dtype, &field.metadata) {
-        (None, None, meta) => {
-            if meta.is_empty() {
-                None
-            } else {
-                Some(Field::new(&field.name, field.dtype.clone()))
-            }
-        }
-        (new_name, new_dtype, _) => Some(
-            Field::new(
-                new_name.unwrap_or(&field.name),
-                new_dtype.unwrap_or(field.dtype.clone()),
-            )
-            .with_metadata(BTreeMap::new()),
-        ),
-    }
-}
-
-/// Resolves a Series that was retrieved from Parquet -> arrow2 -> Daft:
-/// 1. Renames any Series' names using the provided `field_id_mapping`
-/// 2. Sanitizes any Series' fields to remove any provided field metadata
-fn resolve_series_recursively(
-    daft_series: &Series,
-    field_id_mapping: Option<&BTreeMap<i32, Field>>,
-) -> Option<Series> {
-    let new_field = resolve_field_recursively(daft_series.field(), field_id_mapping);
-    match new_field {
-        Some(new_field) => {
-            // Rename the current series then recursively rename child Series objects if a nested dtype is detected
-            let new_series = daft_series.rename(&new_field.name);
-            match &new_field.dtype {
-                DataType::List(..) => {
-                    use daft_core::array::ListArray;
-
-                    let new_array = new_series.list().expect(
-                        "Series renaming: Expected a ListArray for a Series with DataType::List",
-                    );
-                    let child = &new_array.flat_child;
-                    resolve_series_recursively(child, field_id_mapping)
-                        .map(|new_child| {
-                            ListArray::new(
-                                new_field,
-                                new_child,
-                                new_array.offsets().clone(),
-                                new_array.validity().cloned(),
-                            )
-                            .into_series()
-                        })
-                        .or(Some(new_series))
-                }
-                DataType::FixedSizeList(..) => {
-                    use daft_core::array::FixedSizeListArray;
-
-                    let new_array = new_series.fixed_size_list().expect("Series renaming: Expected a FixedSizeListArray for a Series with DataType::FixedSizeList");
-                    let child = &new_array.flat_child;
-                    resolve_series_recursively(child, field_id_mapping)
-                        .map(|new_child| {
-                            FixedSizeListArray::new(
-                                new_field,
-                                new_child,
-                                new_array.validity().cloned(),
-                            )
-                            .into_series()
-                        })
-                        .or(Some(new_series))
-                }
-                DataType::Struct(..) => {
-                    use daft_core::array::StructArray;
-
-                    let new_array = new_series.struct_().expect("Series renaming: Expected a StructArray for a Series with DataType::Struct");
-                    let new_children = new_array
-                        .children
-                        .iter()
-                        .map(|child| resolve_series_recursively(child, field_id_mapping))
-                        .collect::<Vec<_>>();
-
-                    if new_children.iter().all(|maybe_child| maybe_child.is_none()) {
-                        Some(new_series)
-                    } else {
-                        Some(
-                            StructArray::new(
-                                new_field,
-                                new_children
-                                    .into_iter()
-                                    .zip(new_array.children.iter())
-                                    .map(|(renamed, original)| renamed.unwrap_or(original.clone()))
-                                    .collect(),
-                                new_array.validity().cloned(),
-                            )
-                            .into_series(),
-                        )
-                    }
-                }
-                DataType::Map(_) => {
-                    use daft_core::array::ListArray;
-                    use daft_core::datatypes::logical::MapArray;
-
-                    let new_array = new_series.map().expect(
-                        "Series renaming: Expected a MapArray for a Series with DataType::Map",
-                    );
-                    let new_array_child_flat_struct = resolve_series_recursively(
-                        &new_array.physical.flat_child,
-                        field_id_mapping,
-                    );
-
-                    match new_array_child_flat_struct {
-                        Some(new_array_child_flat_struct) => Some(
-                            MapArray::new(
-                                new_field,
-                                ListArray::new(
-                                    resolve_field_recursively(
-                                        &new_array.physical.field,
-                                        field_id_mapping,
-                                    )
-                                    .unwrap_or_else(|| new_array.physical.field.as_ref().clone()),
-                                    new_array_child_flat_struct,
-                                    new_array.physical.offsets().clone(),
-                                    new_array.physical.validity().cloned(),
-                                ),
-                            )
-                            .into_series(),
-                        ),
-                        None => Some(new_series),
-                    }
-                }
-                _ => Some(new_series),
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Resolves a schema that was retrieved from Parquet -> arrow2 -> Daft:
-/// 1. Renames any fields using the provided `field_id_mapping`
-/// 2. Sanitizes the schema to remove any provided field metadata
-fn resolve_schema_recursively(
-    daft_schema: Schema,
-    field_id_mapping: Option<&BTreeMap<i32, Field>>,
-) -> DaftResult<Schema> {
-    Schema::new(
-        daft_schema
-            .fields
-            .into_iter()
-            .map(
-                |(_, field)| match resolve_field_recursively(&field, field_id_mapping) {
-                    None => field,
-                    Some(new_field) => new_field,
-                },
-            )
-            .collect(),
-    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -639,41 +585,31 @@ impl ParquetFileReader {
         self,
         ranges: Arc<RangesContainer>,
     ) -> DaftResult<Table> {
-        // Retrieve an Option<&BTreeMap> handle to the field_id_mapping
-        let field_id_mapping = self.field_id_mapping.clone();
-        let field_id_mapping = field_id_mapping.as_ref().map(|m| m.as_ref());
+        let metadata = Arc::new(ParquetMetadataAccessor {
+            metadata: self.metadata.clone(),
+            field_id_mapping: self.field_id_mapping,
+        });
+        let arrow2_schema = metadata.arrow2_schema()?;
 
-        let metadata = self.metadata;
-        let all_handles = self
-            .arrow_schema_from_pq
+        let all_handles =
+            // TODO: need to apply column pruning to these fields
+            arrow2_schema
             .fields
-            .iter()
-            .map(|pq_arrow_field| {
-                // Retrieve the intended target field name (might differ from the Parquet field name, depending on the field_id_mapping)
-                let target_field_name = if let (Some(field_id_mapping), Some(field_id)) = (
-                    self.field_id_mapping.as_ref(),
-                    pq_arrow_field.metadata.get("field_id"),
-                ) {
-                    field_id_mapping
-                        .get(&str::parse::<i32>(field_id).unwrap())
-                        .map(|f| f.name.clone())
-                        .unwrap_or(pq_arrow_field.name.clone())
-                } else {
-                    pq_arrow_field.name.clone()
-                };
-
+            .into_iter()
+            .map(|arrow_field| {
+                println!("Reading arrow field: {arrow_field:?}");
                 let owned_row_ranges = self.row_ranges.clone();
+                let owned_field = arrow_field.clone();
 
                 let field_handles = owned_row_ranges
                     .iter()
                     .map(|row_range| {
                         let row_range = *row_range;
                         let rt_handle = tokio::runtime::Handle::current();
-                        let pq_arrow_field = pq_arrow_field.clone();
                         let owned_uri = self.uri.clone();
-                        let rg = metadata
-                            .row_groups
-                            .get(row_range.row_group_index)
+
+                        let rg: &parquet2::metadata::RowGroupMetaData = &metadata
+                            .get_row_group(row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let columns = rg.columns();
@@ -681,10 +617,14 @@ impl ParquetFileReader {
                             .iter()
                             .enumerate()
                             .filter(|(_, x)| {
-                                x.descriptor().path_in_schema[0] == pq_arrow_field.name
+                                x.descriptor().base_type.get_field_info().name == owned_field.name
                             })
                             .map(|(i, _)| i)
                             .collect::<Vec<_>>();
+
+                        println!("Field: {:?}", owned_field);
+                        println!("RG columns: {:?}", rg.columns());
+                        println!("Filtered cols idx: {:?}", filtered_cols_idx);
 
                         let range_readers = filtered_cols_idx
                             .iter()
@@ -700,7 +640,7 @@ impl ParquetFileReader {
                             })
                             .collect::<Vec<_>>();
                         let metadata = metadata.clone();
-                        let cloned_target_field_name = target_field_name.clone();
+                        let owned_field = owned_field.clone();
                         let handle = tokio::task::spawn(async move {
                             let mut decompressed_iters =
                                 Vec::with_capacity(filtered_cols_idx.len());
@@ -709,10 +649,10 @@ impl ParquetFileReader {
                             for (col_idx, range_reader) in
                                 filtered_cols_idx.into_iter().zip(range_readers)
                             {
-                                let col = metadata
-                                    .row_groups
-                                    .get(row_range.row_group_index)
-                                    .expect("Row Group index should be in bounds")
+                                let rg = metadata
+                                    .get_row_group(row_range.row_group_index)
+                                    .expect("Row Group index should be in bounds");
+                                let col = rg
                                     .columns()
                                     .get(col_idx)
                                     .expect("Column index should be in bounds");
@@ -746,7 +686,7 @@ impl ParquetFileReader {
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
                                     ptypes.iter().collect(),
-                                    pq_arrow_field.clone(),
+                                    owned_field.clone(),
                                     Some(2048),
                                     num_rows,
                                 );
@@ -774,7 +714,7 @@ impl ParquetFileReader {
                                         .into_iter()
                                         .map(|a| {
                                             Series::try_from((
-                                                cloned_target_field_name.as_str(),
+                                                owned_field.name.as_str(),
                                                 cast_array_for_daft_if_needed(a),
                                             ))
                                         })
@@ -789,7 +729,6 @@ impl ParquetFileReader {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
                 let owned_uri = self.uri.clone();
-                let owned_field = pq_arrow_field.clone();
                 let concated_handle = tokio::task::spawn(async move {
                     let series_to_concat =
                         try_join_all(field_handles).await.context(JoinSnafu {
@@ -803,7 +742,7 @@ impl ParquetFileReader {
                     rayon::spawn(move || {
                         let concated = if series_to_concat.is_empty() {
                             Ok(Series::empty(
-                                target_field_name.as_str(),
+                                owned_field.name.as_str(),
                                 &owned_field.data_type().into(),
                             ))
                         } else {
@@ -823,15 +762,9 @@ impl ParquetFileReader {
                 path: self.uri.to_string(),
             })?
             .into_iter()
-            .map(|series| {
-                series.map(|series| {
-                    resolve_series_recursively(&series, field_id_mapping).unwrap_or(series)
-                })
-            })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema_from_pq.as_ref())?;
-        let daft_schema = resolve_schema_recursively(daft_schema, field_id_mapping)?;
+        let daft_schema = metadata.daft_schema()?;
 
         Table::new(daft_schema, all_series)
     }
