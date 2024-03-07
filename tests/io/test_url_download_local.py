@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 import daft
-from tests.integration.io.conftest import YieldFixture
+from tests.integration.io.conftest import *
 
 
 @pytest.fixture(scope="function")
