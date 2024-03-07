@@ -723,8 +723,9 @@ class DataFrame:
         """
         if len(partition_by) == 0:
             warnings.warn(
-                "No columns specified for repartition; If you do not require rebalancing of partitions, you may "
-                "instead prefer using `df.into_partitions(N)` which is a cheaper operation that avoids shuffling data."
+                "No columns specified for repartition, so doing a random shuffle. If you do not require rebalancing of "
+                "partitions, you may instead prefer using `df.into_partitions(N)` which is a cheaper operation that "
+                "avoids shuffling data."
             )
             builder = self._builder.random_shuffle(num)
         else:
