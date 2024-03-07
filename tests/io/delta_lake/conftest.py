@@ -23,14 +23,6 @@ from tests.io.delta_lake.mock_s3_server import start_service, stop_process
 deltalake = pytest.importorskip("deltalake")
 
 
-# def pytest_collection_modifyitems(items):
-#     for item in items:
-#         if "s3" in getattr(item, "fixturenames", ()):
-#             item.add_marker("s3")
-#         elif "az" in getattr(item, "fixturenames", ()):
-#             item.add_marker("az")
-
-
 @pytest.fixture(params=[1, 2, 8])
 def num_partitions(request) -> int:
     return request.param
