@@ -54,5 +54,5 @@ def test_url_download_local_no_read_permissions(local_image_data_fixture, tmpdir
     df = daft.from_pydict(data)
     df = df.with_column("data", df["urls"].url.download(on_error="raise"))
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(ValueError, match="Permission denied"):
         df.collect()
