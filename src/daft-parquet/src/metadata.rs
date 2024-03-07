@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use daft_core::schema::Schema;
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
-use parquet2::read::deserialize_metadata;
+use parquet2::{metadata::ColumnChunkMetaData, read::deserialize_metadata};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -12,7 +13,7 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
-pub(crate) async fn read_parquet_metadata(
+async fn _read_parquet_metadata(
     uri: &str,
     size: usize,
     io_client: Arc<IOClient>,
@@ -93,6 +94,88 @@ pub(crate) async fn read_parquet_metadata(
     .context(UnableToParseMetadataSnafu { path: uri })
 }
 
+/// Wrapper on top of a raw parquet2::metadata::FileMetaData which allows
+/// us to have a narrow-waist of logic that needs to be applied on top of
+/// raw FileMetaData parsed from the file (e.g. renaming columns, pruning columns etc)
+#[derive(Clone)]
+pub struct ParquetFileMetadata {
+    pub row_groups: Vec<ParquetRowGroupMetadata>,
+}
+
+#[derive(Clone)]
+pub struct ParquetRowGroupMetadata {
+    _raw_parquet2_rgm: RowGroupMetaData,
+}
+
+impl ParquetRowGroupMetadata {
+    fn from_parquet2(raw_parquet2_rgm: RowGroupMetaData) -> Self {
+        Self {
+            _raw_parquet2_rgm: raw_parquet2_rgm,
+        }
+    }
+
+    pub fn num_rows(&self) -> usize {
+        todo!();
+    }
+
+    pub fn columns(&self) -> &[ColumnChunkMetaData] {
+        todo!("This might need some work.... Maybe we need to expose our own ParquetColumnChunkMetaData wrapper which do not expose names, just the byte ranges");
+    }
+
+    pub fn parquet2_row_group_metadata(&self) -> &RowGroupMetaData {
+        todo!();
+    }
+
+    pub fn compressed_size(&self) -> usize {
+        todo!();
+    }
+
+    pub fn total_byte_size(&self) -> usize {
+        todo!();
+    }
+}
+
+impl ParquetFileMetadata {
+    pub fn from_parquet2(raw_parquet2_fm: FileMetaData) -> Self {
+        let row_groups = raw_parquet2_fm
+            .row_groups
+            .into_iter()
+            .map(ParquetRowGroupMetadata::from_parquet2)
+            .collect();
+        ParquetFileMetadata { row_groups }
+    }
+
+    pub async fn from_uri_async(
+        uri: &str,
+        size: usize,
+        io_client: Arc<IOClient>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<Self> {
+        let raw_file_metadata = _read_parquet_metadata(uri, size, io_client, io_stats).await?;
+        Ok(Self::from_parquet2(raw_file_metadata))
+    }
+
+    pub fn daft_schema(&self) -> &Schema {
+        todo!()
+    }
+
+    pub fn arrow_schema(&self) -> &arrow2::datatypes::Schema {
+        todo!()
+    }
+
+    pub fn num_rows(&self) -> usize {
+        todo!();
+    }
+
+    pub fn num_row_groups(&self) -> usize {
+        todo!();
+    }
+
+    pub fn version(&self) -> i32 {
+        todo!();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -100,7 +183,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_io::{IOClient, IOConfig};
 
-    use super::read_parquet_metadata;
+    use super::ParquetFileMetadata;
 
     #[tokio::test]
     async fn test_parquet_metadata_from_s3() -> DaftResult<()> {
@@ -111,8 +194,9 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let metadata = read_parquet_metadata(file, size, io_client.clone(), None).await?;
-        assert_eq!(metadata.num_rows, 100);
+        let metadata =
+            ParquetFileMetadata::from_uri_async(file, size, io_client.clone(), None).await?;
+        assert_eq!(metadata.num_rows(), 100);
 
         Ok(())
     }

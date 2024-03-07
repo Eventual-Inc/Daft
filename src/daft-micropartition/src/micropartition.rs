@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_core::schema::{Schema, SchemaRef};
@@ -816,8 +815,7 @@ pub(crate) fn read_parquet_into_micropartition(
     let schemas = metadata
         .iter()
         .map(|m| {
-            let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
-            let daft_schema = daft_core::schema::Schema::try_from(&schema)?;
+            let daft_schema = m.daft_schema();
             DaftResult::Ok(daft_schema)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -848,14 +846,16 @@ pub(crate) fn read_parquet_into_micropartition(
         let scan_task_daft_schema = match catalog_provided_schema {
             Some(catalog_provided_schema) => catalog_provided_schema,
             None => {
-                let unioned_schema = schemas.into_iter().try_reduce(|l, r| l.union(&r))?;
-                Arc::new(unioned_schema.expect("we need at least 1 schema"))
+                let unioned_schema = schemas
+                    .into_iter()
+                    .try_fold(Ok(Schema::empty()), |l, r| l.map(|l| l.union(r)))??;
+                Arc::new(unioned_schema)
             }
         };
 
         // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
         let total_rows_no_limit = match &row_groups {
-            None => metadata.iter().map(|fm| fm.num_rows).sum(),
+            None => metadata.iter().map(|fm| fm.num_rows()).sum(),
             Some(row_groups) => metadata
                 .iter()
                 .zip(row_groups.iter())
@@ -864,7 +864,7 @@ pub(crate) fn read_parquet_into_micropartition(
                         .iter()
                         .map(|rg_idx| fm.row_groups.get(*rg_idx as usize).unwrap().num_rows())
                         .sum::<usize>(),
-                    None => fm.num_rows,
+                    None => fm.num_rows(),
                 })
                 .sum(),
         };

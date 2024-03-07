@@ -18,7 +18,7 @@ use itertools::Itertools;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 
-use crate::{file::ParquetReaderBuilder, JoinSnafu};
+use crate::{file::ParquetReaderBuilder, metadata::ParquetFileMetadata, JoinSnafu};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -141,9 +141,9 @@ async fn read_parquet_single(
         .map(|m| m.num_rows())
         .collect::<Vec<_>>();
 
-    let metadata_num_rows = metadata.num_rows;
+    let metadata_num_rows = metadata.num_rows();
 
-    let metadata_num_columns = metadata.schema().fields().len();
+    let metadata_num_columns = metadata.daft_schema().fields.len();
 
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concating, rather than after
@@ -260,7 +260,7 @@ async fn read_parquet_single_into_arrow(
 
         let parquet_reader = builder.build()?;
 
-        let schema = parquet_reader.arrow_schema().clone();
+        let schema = parquet_reader.pruned_arrow_schema().clone();
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         let all_arrays = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
@@ -274,9 +274,9 @@ async fn read_parquet_single_into_arrow(
         .map(|m| m.num_rows())
         .collect::<Vec<_>>();
 
-    let metadata_num_rows = metadata.num_rows;
+    let metadata_num_rows = metadata.num_rows();
 
-    let metadata_num_columns = metadata.schema().fields().len();
+    let metadata_num_columns = metadata.daft_schema().fields.len();
 
     let len_per_col = all_arrays
         .iter()
@@ -554,14 +554,14 @@ pub fn read_parquet_schema(
     })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
-    Schema::try_from(builder.build()?.arrow_schema().as_ref())
+    Schema::try_from(builder.build()?.pruned_arrow_schema().as_ref())
 }
 
 pub async fn read_parquet_metadata(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<parquet2::metadata::FileMetaData> {
+) -> DaftResult<ParquetFileMetadata> {
     let builder = ParquetReaderBuilder::from_uri(uri, io_client, io_stats).await?;
     Ok(builder.metadata)
 }
@@ -569,7 +569,7 @@ pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
+) -> DaftResult<Vec<ParquetFileMetadata>> {
     let handles_iter = uris.iter().map(|uri| {
         let owned_string = uri.to_string();
         let owned_client = io_client.clone();
@@ -611,9 +611,9 @@ pub fn read_parquet_statistics(
         tokio::spawn(async move {
             if let Some(owned_string) = owned_string {
                 let metadata = read_parquet_metadata(&owned_string, owned_client, io_stats).await?;
-                let num_rows = metadata.num_rows;
+                let num_rows = metadata.num_rows();
                 let num_row_groups = metadata.row_groups.len();
-                let version_num = metadata.version;
+                let version_num = metadata.version();
 
                 Ok((Some(num_rows), Some(num_row_groups), Some(version_num)))
             } else {

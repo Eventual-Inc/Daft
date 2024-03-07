@@ -1,6 +1,5 @@
 use std::{collections::HashSet, sync::Arc};
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
 use daft_dsl::ExprRef;
@@ -16,18 +15,17 @@ use parquet2::{
 use snafu::ResultExt;
 
 use crate::{
-    metadata::read_parquet_metadata,
+    metadata::ParquetFileMetadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics, JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
-    UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
+    UnableToCreateParquetPageStreamSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 use arrow2::io::parquet::read::column_iter_to_arrays;
 
 pub(crate) struct ParquetReaderBuilder {
     pub uri: String,
-    pub metadata: parquet2::metadata::FileMetaData,
+    pub metadata: ParquetFileMetadata,
     selected_columns: Option<HashSet<String>>,
     row_start_offset: usize,
     limit: Option<usize>,
@@ -101,7 +99,7 @@ pub(crate) fn build_row_ranges(
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
     schema: &Schema,
-    metadata: &parquet2::metadata::FileMetaData,
+    metadata: &ParquetFileMetadata,
     uri: &str,
 ) -> super::Result<Vec<RowGroupRange>> {
     let limit = limit.map(|v| v as i64);
@@ -112,11 +110,11 @@ pub(crate) fn build_row_ranges(
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
             let i = *i as usize;
-            if !(0..metadata.row_groups.len()).contains(&i) {
+            if !(0..metadata.num_row_groups()).contains(&i) {
                 return Err(super::Error::ParquetRowGroupOutOfIndex {
                     path: uri.to_string(),
                     row_group: i as i64,
-                    total_row_groups: metadata.row_groups.len() as i64,
+                    total_row_groups: metadata.num_row_groups() as i64,
                 });
             }
             if rows_to_add <= 0 {
@@ -148,7 +146,7 @@ pub(crate) fn build_row_ranges(
             row_ranges.push(range_to_add);
         }
     } else {
-        let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
+        let mut rows_to_add = limit.unwrap_or(metadata.num_rows() as i64);
 
         for (i, rg) in metadata.row_groups.iter().enumerate() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
@@ -196,7 +194,7 @@ impl ParquetReaderBuilder {
         let size = io_client
             .single_url_get_size(uri.into(), io_stats.clone())
             .await?;
-        let metadata = read_parquet_metadata(uri, size, io_client, io_stats).await?;
+        let metadata = ParquetFileMetadata::from_uri_async(uri, size, io_client, io_stats).await?;
         Ok(ParquetReaderBuilder {
             uri: uri.into(),
             metadata,
@@ -209,20 +207,17 @@ impl ParquetReaderBuilder {
         })
     }
 
-    pub fn metadata(&self) -> &parquet2::metadata::FileMetaData {
+    pub fn metadata(&self) -> &ParquetFileMetadata {
         &self.metadata
-    }
-
-    pub fn parquet_schema(&self) -> &parquet2::metadata::SchemaDescriptor {
-        self.metadata().schema()
     }
 
     pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
         let avail_names = self
-            .parquet_schema()
-            .fields()
+            .metadata()
+            .daft_schema()
+            .fields
             .iter()
-            .map(|f| f.name())
+            .map(|(name, _)| name.as_str())
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
@@ -268,32 +263,20 @@ impl ParquetReaderBuilder {
     }
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
-        let mut arrow_schema =
-            infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
-                .context(UnableToParseSchemaFromMetadataSnafu::<String> {
-                    path: self.uri.clone(),
-                })?;
+        // TODO: Implement column pruning here
+        let daft_schema = self.metadata().daft_schema();
 
-        if let Some(names_to_keep) = self.selected_columns {
-            arrow_schema
-                .fields
-                .retain(|f| names_to_keep.contains(f.name.as_str()));
-        }
-        let daft_schema =
-            Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
-                path: self.uri.to_string(),
-            })?;
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,
             self.row_groups.as_deref(),
             self.predicate.clone(),
-            &daft_schema,
+            daft_schema,
             &self.metadata,
             &self.uri,
         )?;
 
-        ParquetFileReader::new(self.uri, self.metadata, arrow_schema, row_ranges)
+        ParquetFileReader::new(self.uri, self.metadata, self.selected_columns, row_ranges)
     }
 }
 
@@ -306,32 +289,35 @@ pub(crate) struct RowGroupRange {
 
 pub(crate) struct ParquetFileReader {
     uri: String,
-    metadata: Arc<parquet2::metadata::FileMetaData>,
-    arrow_schema: arrow2::datatypes::SchemaRef,
+    metadata: Arc<ParquetFileMetadata>,
+    pruned_arrow_schema: Arc<arrow2::datatypes::Schema>,
     row_ranges: Arc<Vec<RowGroupRange>>,
 }
 
 impl ParquetFileReader {
     fn new(
         uri: String,
-        metadata: parquet2::metadata::FileMetaData,
-        arrow_schema: arrow2::datatypes::Schema,
+        metadata: ParquetFileMetadata,
+        _selected_columns: Option<HashSet<String>>,
         row_ranges: Vec<RowGroupRange>,
     ) -> super::Result<Self> {
+        // TODO: apply column pruning
+        let pruned_arrow_schema = metadata.arrow_schema().clone();
+
         Ok(ParquetFileReader {
             uri,
             metadata: Arc::new(metadata),
-            arrow_schema: arrow_schema.into(),
+            pruned_arrow_schema: Arc::new(pruned_arrow_schema),
             row_ranges: Arc::new(row_ranges),
         })
     }
 
-    pub fn arrow_schema(&self) -> &Arc<arrow2::datatypes::Schema> {
-        &self.arrow_schema
+    pub fn pruned_arrow_schema(&self) -> &Arc<arrow2::datatypes::Schema> {
+        &self.pruned_arrow_schema
     }
 
     fn naive_read_plan(&self) -> super::Result<ReadPlanner> {
-        let arrow_fields = &self.arrow_schema.fields;
+        let arrow_fields = &self.pruned_arrow_schema.fields;
 
         let mut read_planner = ReadPlanner::new(&self.uri);
 
@@ -389,7 +375,7 @@ impl ParquetFileReader {
     ) -> DaftResult<Table> {
         let metadata = self.metadata;
         let all_handles = self
-            .arrow_schema
+            .pruned_arrow_schema
             .fields
             .iter()
             .map(|field| {
@@ -554,7 +540,7 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
+        let daft_schema = daft_core::schema::Schema::try_from(self.pruned_arrow_schema.as_ref())?;
 
         Table::new(daft_schema, all_series)
     }
@@ -565,7 +551,7 @@ impl ParquetFileReader {
     ) -> DaftResult<Vec<Vec<Box<dyn arrow2::array::Array>>>> {
         let metadata = self.metadata;
         let all_handles = self
-            .arrow_schema
+            .pruned_arrow_schema
             .fields
             .iter()
             .map(|field| {

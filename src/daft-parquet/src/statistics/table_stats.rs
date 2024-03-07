@@ -3,12 +3,14 @@ use daft_core::schema::Schema;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
+use crate::metadata::ParquetRowGroupMetadata;
+
 use super::column_range::parquet_statistics_to_column_range_statistics;
 
 use indexmap::IndexMap;
 
 pub fn row_group_metadata_to_table_stats(
-    metadata: &crate::metadata::RowGroupMetaData,
+    metadata: &ParquetRowGroupMetadata,
     schema: &Schema,
 ) -> DaftResult<TableStatistics> {
     // Create a map from {field_name: statistics} from the RowGroupMetaData for easy access
