@@ -354,6 +354,7 @@ def write_tabular(
     file_format: FileFormat,
     path: str | pathlib.Path,
     schema: Schema,
+    timestamp: int,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,
@@ -421,6 +422,7 @@ def write_tabular(
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
+    files_to_delete = []
     for i, (tab, pf) in enumerate(zip(tables_to_write, part_keys_postfix_per_table)):
         full_path = resolved_path
         if pf is not None and len(pf) > 0:
@@ -455,7 +457,7 @@ def write_tabular(
         pads.write_dataset(
             arrow_table,
             base_dir=full_path,
-            basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+            basename_template=f"timestamp={timestamp}_" + str(uuid4()) + "-{i}." + format.default_extname,
             format=format,
             partitioning=None,
             file_options=opts,
@@ -465,6 +467,20 @@ def write_tabular(
             filesystem=fs,
             **kwargs,
         )
+
+        file_selector = pa.fs.FileSelector(full_path, recursive=True)
+        file_infos = fs.get_file_info(file_selector)
+        file_paths = [f.path for f in file_infos]
+        # delete files if they are not prefixed with "timestamp" or if the timestamp is less than the current timestamp
+        for f in file_paths:
+            if not f.startswith(f"{full_path}/timestamp=") or int(f.split("timestamp=")[1].split("_")[0]) < timestamp:
+                files_to_delete.append(f)
+
+    for f in files_to_delete:
+        try:
+            fs.delete_file(f)
+        except FileNotFoundError:
+            pass
 
     data_dict: dict[str, Any] = {
         schema.column_names()[0]: Series.from_pylist(visited_paths, name=schema.column_names()[0]).cast(
