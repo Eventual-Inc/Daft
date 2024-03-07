@@ -5,6 +5,7 @@ use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::read::deserialize_metadata;
+use parquet2::schema::types::{FieldInfo, ParquetType, PrimitiveType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -13,12 +14,114 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
+fn rename_parquet_type(
+    parquet_type: &ParquetType,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> ParquetType {
+    match parquet_type {
+        ParquetType::PrimitiveType(primitive_type) => {
+            let field_id = primitive_type.field_info.id;
+            let new_name = field_id
+                .and_then(|field_id| field_id_mapping.get(&field_id))
+                .map(|matched_field| matched_field.name.clone())
+                .unwrap_or_else(|| primitive_type.field_info.name.clone());
+            let new_field_info = FieldInfo {
+                name: new_name.clone(),
+                ..primitive_type.field_info
+            };
+            let new_primitive_type = PrimitiveType {
+                field_info: new_field_info,
+                ..primitive_type.clone()
+            };
+            ParquetType::PrimitiveType(new_primitive_type)
+        }
+        ParquetType::GroupType {
+            field_info,
+            fields,
+            logical_type,
+            converted_type,
+        } => {
+            let field_id = field_info.id;
+            let new_name = field_id
+                .and_then(|field_id| field_id_mapping.get(&field_id))
+                .map(|matched_field| matched_field.name.clone())
+                .unwrap_or_else(|| field_info.name.clone());
+            let new_field_info = FieldInfo {
+                name: new_name.clone(),
+                ..field_info.clone()
+            };
+            let new_fields = fields
+                .iter()
+                .map(|parquet_type| rename_parquet_type(parquet_type, field_id_mapping))
+                .collect();
+            ParquetType::GroupType {
+                field_info: new_field_info,
+                fields: new_fields,
+                logical_type: *logical_type,
+                converted_type: *converted_type,
+            }
+        }
+    }
+}
+
 fn rename_parquet_metadata_with_field_ids(
     file_metadata: FileMetaData,
-    _field_id_mapping: &BTreeMap<i32, Field>,
+    field_id_mapping: &BTreeMap<i32, Field>,
 ) -> super::Result<FileMetaData> {
-    // TODO: rename all the fields in this metadata object
-    Ok(file_metadata)
+    use parquet2::metadata::{ColumnChunkMetaData, SchemaDescriptor};
+
+    // Construct a new Parquet Schema after applying renaming using field_ids
+    let new_schema_descr = SchemaDescriptor::new(
+        file_metadata.schema_descr.name().to_string(),
+        file_metadata
+            .schema_descr
+            .fields()
+            .iter()
+            .map(|pq_type| rename_parquet_type(pq_type, field_id_mapping))
+            .collect(),
+    );
+
+    // Get a mapping of {field_id: ColumnDescriptor} to use in modifying the redundant ColumnDescriptors in our RowGroupMetadata
+    let field_id_to_column_descriptor_mapping = new_schema_descr
+        .columns()
+        .iter()
+        .filter_map(|col_descr| {
+            col_descr
+                .descriptor
+                .primitive_type
+                .field_info
+                .id
+                .map(|field_id| (field_id, col_descr))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let new_row_groups = file_metadata
+        .row_groups
+        .iter()
+        .map(|rg| {
+            let columns = rg
+                .columns()
+                .iter()
+                .map(|column| {
+                    let field_id = column.descriptor().descriptor.primitive_type.field_info.id;
+                    let col_descr = field_id_to_column_descriptor_mapping
+                        .get(
+                            &field_id
+                                .expect("TODO: Need a field ID, figure out what to do without one"),
+                        )
+                        .expect("Should have a corresponding entry in the schema");
+                    ColumnChunkMetaData::new(column.column_chunk().clone(), (*col_descr).clone())
+                })
+                .collect();
+            parquet2::metadata::RowGroupMetaData::new(columns, rg.num_rows(), rg.total_byte_size())
+        })
+        .collect();
+
+    Ok(FileMetaData {
+        row_groups: new_row_groups,
+        schema_descr: new_schema_descr,
+        ..file_metadata
+    })
 }
 
 pub(crate) async fn read_parquet_metadata(
