@@ -168,3 +168,35 @@ def test_udf_repr():
         pass
 
     assert single_arg_udf(col("x"), "y", z=20).__repr__() == "@udf[single_arg_udf](col('x'), 'y', z=20)"
+
+
+def test_udf_arbitrary_number_of_args():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.int64())
+    def add_cols_elementwise(*args):
+        return Series.from_pylist([sum(x) for x in zip(*[arg.to_pylist() for arg in args])])
+
+    expr = add_cols_elementwise(col("a"), col("b"), col("c"))
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.int64()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": [3, 6, 9]}
+
+
+def test_udf_arbitrary_number_of_args_with_kwargs():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
+
+    @udf(return_dtype=DataType.int64())
+    def add_cols_elementwise(*args, multiplier: float):
+        return Series.from_pylist([multiplier * sum(x) for x in zip(*[arg.to_pylist() for arg in args])])
+
+    expr = add_cols_elementwise(col("a"), col("b"), col("c"), multiplier=2)
+    field = expr._to_field(table.schema())
+    assert field.name == "a"
+    assert field.dtype == DataType.int64()
+
+    result = table.eval_expression_list([expr])
+    assert result.to_pydict() == {"a": [6, 12, 18]}
