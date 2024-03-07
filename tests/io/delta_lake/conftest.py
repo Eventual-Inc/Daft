@@ -10,7 +10,6 @@ import time
 from collections.abc import Iterator
 
 import boto3
-import docker
 import pyarrow as pa
 import pytest
 import requests
@@ -22,6 +21,14 @@ from daft.delta_lake.delta_lake_scan import _io_config_to_storage_options
 from tests.io.delta_lake.mock_s3_server import start_service, stop_process
 
 deltalake = pytest.importorskip("deltalake")
+
+
+# def pytest_collection_modifyitems(items):
+#     for item in items:
+#         if "s3" in getattr(item, "fixturenames", ()):
+#             item.add_marker("s3")
+#         elif "az" in getattr(item, "fixturenames", ()):
+#             item.add_marker("az")
 
 
 @pytest.fixture(params=[1, 2, 8])
@@ -211,6 +218,7 @@ def az_server_port() -> int:
 
 @pytest.fixture(scope="session")
 def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
+    docker = pytest.importorskip("docker")
     az_server_url = f"http://{az_server_ip}:{az_server_port}"
     client = docker.from_env()
     azurite = client.containers.run(
@@ -269,9 +277,9 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None]:
 @pytest.fixture(
     scope="function",
     params=[
-        lazy_fixture("local_path"),
-        lazy_fixture("s3_path"),
-        lazy_fixture("az_path"),
+        pytest.param(lazy_fixture("local_path"), marks=pytest.mark.local),
+        pytest.param(lazy_fixture("s3_path"), marks=pytest.mark.s3),
+        pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
     ],
 )
 def deltalake_table(
