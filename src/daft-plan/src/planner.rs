@@ -20,12 +20,14 @@ use crate::logical_ops::{
     Sort as LogicalSort, Source,
 };
 use crate::logical_plan::LogicalPlan;
-use crate::partitioning::PartitionSchemeConfig;
+use crate::partitioning::{
+    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+};
 use crate::physical_plan::PhysicalPlan;
 use crate::sink_info::{OutputFileInfo, SinkInfo};
 use crate::source_info::SourceInfo;
 use crate::FileFormat;
-use crate::{physical_ops::*, JoinStrategy, PartitionSpec};
+use crate::{physical_ops::*, JoinStrategy};
 
 #[cfg(feature = "python")]
 use crate::physical_ops::InMemoryScan;
@@ -57,26 +59,21 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 );
                 let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
-                    let partition_spec = Arc::new(PartitionSpec::new(
-                        PartitionSchemeConfig::Unknown(Default::default()),
-                        1,
-                        None,
-                    ));
+                    let clustering_spec =
+                        Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)));
 
                     Ok(PhysicalPlan::EmptyScan(EmptyScan::new(
                         source_schema.clone(),
-                        partition_spec,
+                        clustering_spec,
                     )))
                 } else {
-                    let partition_spec = Arc::new(PartitionSpec::new(
-                        PartitionSchemeConfig::Unknown(Default::default()),
-                        scan_tasks.len(),
-                        None,
+                    let clustering_spec = Arc::new(ClusteringSpec::Unknown(
+                        UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
 
                     Ok(PhysicalPlan::TabularScan(TabularScan::new(
                         scan_tasks,
-                        partition_spec,
+                        clustering_spec,
                     )))
                 }
             }
@@ -85,12 +82,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
-                    PartitionSpec::new(
-                        PartitionSchemeConfig::Unknown(Default::default()),
-                        mem_info.num_partitions,
-                        None,
-                    )
-                    .into(),
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
+                        .into(),
                 ));
                 Ok(scan)
             }
@@ -102,12 +95,12 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             ..
         }) => {
             let input_physical = plan(input, cfg)?;
-            let partition_spec = input_physical.partition_spec().clone();
+            let clustering_spec = input_physical.clustering_spec().clone();
             Ok(PhysicalPlan::Project(Project::try_new(
                 input_physical.into(),
                 projection.clone(),
                 resource_request.clone(),
-                partition_spec,
+                clustering_spec,
             )?))
         }
         LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
@@ -123,7 +116,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             eager,
         }) => {
             let input_physical = plan(input, cfg)?;
-            let num_partitions = input_physical.partition_spec().num_partitions;
+            let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Limit(Limit::new(
                 input_physical.into(),
                 *limit,
@@ -146,7 +139,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             descending,
         }) => {
             let input_physical = plan(input, cfg)?;
-            let num_partitions = input_physical.partition_spec().num_partitions;
+            let num_partitions = input_physical.clustering_spec().num_partitions();
             Ok(PhysicalPlan::Sort(Sort::new(
                 input_physical.into(),
                 sort_by.clone(),
@@ -156,37 +149,25 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
         }
         LogicalPlan::Repartition(LogicalRepartition {
             input,
-            num_partitions,
-            partition_by,
-            scheme_config,
+            repartition_spec,
         }) => {
-            // Below partition-dropping optimization assumes we are NOT repartitioning using a range partitioning scheme.
-            // A range repartitioning of an existing range-partitioned DataFrame is only redundant if the partition boundaries
-            // are consistent, which is only the case if boundary sampling is deterministic within a query.
-            assert!(!matches!(scheme_config, PartitionSchemeConfig::Range(_)));
-
             let input_physical = plan(input, cfg)?;
-            let input_partition_spec = input_physical.partition_spec();
-            let input_num_partitions = input_partition_spec.num_partitions;
-            let num_partitions = num_partitions.unwrap_or(input_num_partitions);
-            // Partition spec after repartitioning.
-            let repartitioned_partition_spec = PartitionSpec::new(
-                scheme_config.clone(),
-                num_partitions,
-                Some(partition_by.clone()),
-            );
+            let input_clustering_spec = input_physical.clustering_spec();
+            let input_num_partitions = input_clustering_spec.num_partitions();
+            let clustering_spec = repartition_spec.to_clustering_spec(input_num_partitions);
+            let num_partitions = clustering_spec.num_partitions();
             // Drop the repartition if the output of the repartition would yield the same partitioning as the input.
             if (input_num_partitions == 1 && num_partitions == 1)
                 // Simple split/coalesce repartition to the same # of partitions is a no-op, no matter the upstream partitioning scheme.
-                || (num_partitions == input_num_partitions && matches!(scheme_config, PartitionSchemeConfig::Unknown(_)))
+                || (num_partitions == input_num_partitions && matches!(clustering_spec, ClusteringSpec::Unknown(_)))
                 // Repartitioning to the same partition spec as the input is always a no-op.
-                || (&repartitioned_partition_spec == input_partition_spec.as_ref())
+                || (&clustering_spec == input_clustering_spec.as_ref())
             {
                 return Ok(input_physical);
             }
             let input_physical = Arc::new(input_physical);
-            let repartitioned_plan = match scheme_config {
-                PartitionSchemeConfig::Unknown(_) => {
+            let repartitioned_plan = match clustering_spec {
+                ClusteringSpec::Unknown(_) => {
                     match num_partitions.cmp(&input_num_partitions) {
                         Ordering::Greater => {
                             // Split input partitions into num_partitions.
@@ -212,22 +193,22 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         }
                     }
                 }
-                PartitionSchemeConfig::Random(_) => {
+                ClusteringSpec::Random(_) => {
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
                         input_physical,
                         num_partitions,
                     ));
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
-                PartitionSchemeConfig::Hash(_) => {
+                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                         input_physical,
                         num_partitions,
-                        partition_by.clone(),
+                        by.clone(),
                     ));
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
-                PartitionSchemeConfig::Range(_) => {
+                ClusteringSpec::Range(_) => {
                     unreachable!("Repartitioning by range is not supported")
                 }
             };
@@ -246,7 +227,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 vec![],
                 col_exprs.clone(),
             ));
-            let num_partitions = agg_op.partition_spec().num_partitions;
+            let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                     agg_op.into(),
@@ -287,7 +268,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             use daft_dsl::Expr::Column;
             let input_plan = plan(input, cfg.clone())?;
 
-            let num_input_partitions = input_plan.partition_spec().num_partitions;
+            let num_input_partitions = input_plan.clustering_spec().num_partitions();
 
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
@@ -497,12 +478,12 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         groupby.clone(),
                     ));
 
-                    let partition_spec = second_stage_agg.partition_spec().clone();
+                    let clustering_spec = second_stage_agg.clustering_spec().clone();
                     PhysicalPlan::Project(Project::try_new(
                         second_stage_agg.into(),
                         final_exprs,
                         Default::default(),
-                        partition_spec,
+                        clustering_spec,
                     )?)
                 }
             };
@@ -530,54 +511,45 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             let mut left_physical = plan(left, cfg.clone())?;
             let mut right_physical = plan(right, cfg.clone())?;
 
-            let left_pspec = left_physical.partition_spec();
-            let right_pspec = right_physical.partition_spec();
-            let num_partitions = max(left_pspec.num_partitions, right_pspec.num_partitions);
-            let new_left_hash_pspec = Arc::new(PartitionSpec::new(
-                PartitionSchemeConfig::Hash(Default::default()),
-                num_partitions,
-                Some(left_on.clone()),
+            let left_clustering_spec = left_physical.clustering_spec();
+            let right_clustering_spec = right_physical.clustering_spec();
+            let num_partitions = max(
+                left_clustering_spec.num_partitions(),
+                right_clustering_spec.num_partitions(),
+            );
+            let new_left_hash_clustering_spec = Arc::new(ClusteringSpec::Hash(
+                HashClusteringConfig::new(num_partitions, left_on.clone()),
             ));
-            let new_right_hash_pspec = Arc::new(PartitionSpec::new(
-                PartitionSchemeConfig::Hash(Default::default()),
-                num_partitions,
-                Some(right_on.clone()),
+            let new_right_hash_clustering_spec = Arc::new(ClusteringSpec::Hash(
+                HashClusteringConfig::new(num_partitions, right_on.clone()),
             ));
 
-            let is_left_hash_partitioned = left_pspec == new_left_hash_pspec;
-            let is_right_hash_partitioned = right_pspec == new_right_hash_pspec;
+            let is_left_hash_partitioned = left_clustering_spec == new_left_hash_clustering_spec;
+            let is_right_hash_partitioned = right_clustering_spec == new_right_hash_clustering_spec;
 
             // Left-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
             let is_left_sort_partitioned =
-                if let PartitionSchemeConfig::Range(range_config) = &left_pspec.scheme_config {
-                    left_pspec
-                        .by
-                        .as_ref()
-                        .map(|e| {
-                            e.len() >= left_on.len()
-                                && e.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
-                        })
-                        .unwrap_or(false)
-                        // TODO(Clark): Add support for descending sort orders.
-                        && range_config.descending.iter().all(|v| !*v)
+                if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
+                    left_clustering_spec.as_ref()
+                {
+                    by.len() >= left_on.len()
+                    && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
+                    // TODO(Clark): Add support for descending sort orders.
+                    && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
             // Right-side of join is considered to be sort-partitioned on the join key if it is sort-partitioned on a
             // sequence of expressions that has the join key as a prefix.
             let is_right_sort_partitioned =
-                if let PartitionSchemeConfig::Range(range_config) = &right_pspec.scheme_config {
-                    right_pspec
-                        .by
-                        .as_ref()
-                        .map(|e| {
-                            e.len() >= right_on.len()
-                                && e.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
-                        })
-                        .unwrap_or(false)
-                        // TODO(Clark): Add support for descending sort orders.
-                        && range_config.descending.iter().all(|v| !*v)
+                if let ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) =
+                    right_clustering_spec.as_ref()
+                {
+                    by.len() >= right_on.len()
+                    && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
+                    // TODO(Clark): Add support for descending sort orders.
+                    && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -681,7 +653,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                     )))
                 }
                 JoinStrategy::Hash => {
-                    if (num_partitions > 1 || left_pspec.num_partitions != num_partitions)
+                    if (num_partitions > 1
+                        || left_clustering_spec.num_partitions() != num_partitions)
                         && !is_left_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
@@ -692,7 +665,8 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         left_physical =
                             PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
                     }
-                    if (num_partitions > 1 || right_pspec.num_partitions != num_partitions)
+                    if (num_partitions > 1
+                        || right_clustering_spec.num_partitions() != num_partitions)
                         && !is_right_hash_partitioned
                     {
                         let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
@@ -777,22 +751,20 @@ mod tests {
     #[test]
     fn repartition_dropped_redundant_into_partitions() -> DaftResult<()> {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
-        // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
+        // dummy_scan_node() will create the default ClusteringSpec, which only has a single partition.
         let builder = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .repartition(Some(10), vec![], Default::default())?
+        .into_partitions(10)?
         .filter(col("a").lt(&lit(2)))?;
         assert_eq!(
             plan(builder.build().as_ref(), cfg.clone())?
-                .partition_spec()
-                .num_partitions,
+                .clustering_spec()
+                .num_partitions(),
             10
         );
-        let logical_plan = builder
-            .repartition(Some(10), vec![], Default::default())?
-            .build();
+        let logical_plan = builder.into_partitions(10)?.build();
         let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
         // Check that the last repartition was dropped (the last op should be the filter).
         assert_matches!(physical_plan, PhysicalPlan::Filter(_));
@@ -805,20 +777,18 @@ mod tests {
     #[test]
     fn repartition_dropped_single_partition() -> DaftResult<()> {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
-        // dummy_scan_node() will create the default PartitionSpec, which only has a single partition.
+        // dummy_scan_node() will create the default ClusteringSpec, which only has a single partition.
         let builder = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]));
         assert_eq!(
             plan(builder.build().as_ref(), cfg.clone())?
-                .partition_spec()
-                .num_partitions,
+                .clustering_spec()
+                .num_partitions(),
             1
         );
-        let logical_plan = builder
-            .repartition(Some(1), vec![col("a")], Default::default())?
-            .build();
+        let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
         let physical_plan = plan(logical_plan.as_ref(), cfg.clone())?;
         assert_matches!(physical_plan, PhysicalPlan::TabularScan(_));
         Ok(())
@@ -828,15 +798,15 @@ mod tests {
     ///
     /// Repartition-upstream_op -> upstream_op
     #[test]
-    fn repartition_dropped_same_partition_spec() -> DaftResult<()> {
+    fn repartition_dropped_same_clustering_spec() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]))
-        .repartition(Some(10), vec![col("a")], Default::default())?
+        .hash_repartition(Some(10), vec![col("a")])?
         .filter(col("a").lt(&lit(2)))?
-        .repartition(Some(10), vec![col("a")], Default::default())?
+        .hash_repartition(Some(10), vec![col("a")])?
         .build();
         let physical_plan = plan(logical_plan.as_ref(), cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
@@ -848,18 +818,18 @@ mod tests {
     ///
     /// Repartition-Aggregation -> Aggregation
     #[test]
-    fn repartition_dropped_same_partition_spec_agg() -> DaftResult<()> {
+    fn repartition_dropped_same_clustering_spec_agg() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]))
-        .repartition(Some(10), vec![col("a")], Default::default())?
+        .hash_repartition(Some(10), vec![col("a")])?
         .aggregate(
             vec![Expr::Agg(AggExpr::Sum(col("a").into()))],
             vec![col("b")],
         )?
-        .repartition(Some(10), vec![col("b")], Default::default())?
+        .hash_repartition(Some(10), vec![col("b")])?
         .build();
         let physical_plan = plan(logical_plan.as_ref(), cfg)?;
         // Check that the last repartition was dropped (the last op should be a projection for a multi-partition aggregation).

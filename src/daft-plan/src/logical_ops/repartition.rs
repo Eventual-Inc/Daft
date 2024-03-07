@@ -1,64 +1,34 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use daft_dsl::Expr;
-use itertools::Itertools;
+use common_error::DaftResult;
 
-use crate::{partitioning::PartitionSchemeConfig, LogicalPlan};
+use crate::{partitioning::RepartitionSpec, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Repartition {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
-    pub num_partitions: Option<usize>,
-    pub partition_by: Vec<Expr>,
-    pub scheme_config: PartitionSchemeConfig,
+    pub repartition_spec: RepartitionSpec,
 }
 
 impl Repartition {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
-        num_partitions: Option<usize>,
-        partition_by: Vec<Expr>,
-        scheme_config: PartitionSchemeConfig,
+        repartition_spec: RepartitionSpec,
     ) -> DaftResult<Self> {
-        if matches!(scheme_config, PartitionSchemeConfig::Range(_)) {
-            return Err(DaftError::ValueError(
-                "Repartitioning with the Range partition scheme is not supported.".to_string(),
-            ));
-        }
         Ok(Self {
             input,
-            num_partitions,
-            partition_by,
-            scheme_config,
+            repartition_spec,
         })
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        let scheme_config = self.scheme_config.multiline_display();
         res.push(format!(
-            "Repartition: Scheme = {}{}",
-            self.scheme_config.var_name(),
-            if scheme_config.is_empty() {
-                "".to_string()
-            } else {
-                format!("({})", scheme_config.join(", "))
-            }
+            "Repartition: Scheme = {}",
+            self.repartition_spec.var_name(),
         ));
-        res.push(format!(
-            "Number of partitions = {}",
-            self.num_partitions
-                .map(|n| n.to_string())
-                .unwrap_or("Unknown".to_string())
-        ));
-        if !self.partition_by.is_empty() {
-            res.push(format!(
-                "Partition by = {}",
-                self.partition_by.iter().map(|e| e.to_string()).join(", ")
-            ));
-        }
+        res.extend(self.repartition_spec.multiline_display());
         res
     }
 }

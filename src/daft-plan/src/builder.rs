@@ -4,11 +4,13 @@ use crate::{
     logical_ops,
     logical_plan::LogicalPlan,
     optimization::Optimizer,
-    partitioning::PartitionSchemeConfig,
+    partitioning::{
+        HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
+    },
     planner::plan,
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
-    JoinStrategy, JoinType, PartitionScheme, PhysicalPlanScheduler, ResourceRequest,
+    JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
 };
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
@@ -129,17 +131,32 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
-    pub fn repartition(
+    pub fn hash_repartition(
         &self,
         num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
-        scheme_config: PartitionSchemeConfig,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
-            num_partitions,
-            partition_by,
-            scheme_config,
+            RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
+        )?
+        .into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn random_shuffle(&self, num_partitions: Option<usize>) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
+            self.plan.clone(),
+            RepartitionSpec::Random(RandomShuffleConfig::new(num_partitions)),
+        )?
+        .into();
+        Ok(logical_plan.into())
+    }
+
+    pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
+            self.plan.clone(),
+            RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )?
         .into();
         Ok(logical_plan.into())
@@ -333,51 +350,27 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.sort(sort_by_exprs, descending)?.into())
     }
 
-    pub fn repartition(
+    pub fn hash_repartition(
         &self,
-        py: Python<'_>,
         partition_by: Vec<PyExpr>,
-        scheme: PartitionScheme,
         num_partitions: Option<usize>,
-        scheme_config: Option<PyObject>,
     ) -> PyResult<Self> {
         let partition_by_exprs: Vec<Expr> = partition_by
             .iter()
             .map(|expr| expr.clone().into())
             .collect();
-        let partition_scheme_config = match scheme {
-            PartitionScheme::Range => {
-                if let Some(scheme_config) = scheme_config {
-                    PartitionSchemeConfig::Range(scheme_config.extract(py)?)
-                } else {
-                    return Err(DaftError::ValueError(
-                        "Must provide a scheme config with ascending/descending list if repartitioning by range.".to_string(),
-                    ).into());
-                }
-            }
-            PartitionScheme::Hash => PartitionSchemeConfig::Hash(
-                scheme_config
-                    .map(|c| c.extract(py))
-                    .transpose()?
-                    .unwrap_or_default(),
-            ),
-            PartitionScheme::Random => PartitionSchemeConfig::Random(
-                scheme_config
-                    .map(|c| c.extract(py))
-                    .transpose()?
-                    .unwrap_or_default(),
-            ),
-            PartitionScheme::Unknown => PartitionSchemeConfig::Unknown(
-                scheme_config
-                    .map(|c| c.extract(py))
-                    .transpose()?
-                    .unwrap_or_default(),
-            ),
-        };
         Ok(self
             .builder
-            .repartition(num_partitions, partition_by_exprs, partition_scheme_config)?
+            .hash_repartition(num_partitions, partition_by_exprs)?
             .into())
+    }
+
+    pub fn random_shuffle(&self, num_partitions: Option<usize>) -> PyResult<Self> {
+        Ok(self.builder.random_shuffle(num_partitions)?.into())
+    }
+
+    pub fn into_partitions(&self, num_partitions: usize) -> PyResult<Self> {
+        Ok(self.builder.into_partitions(num_partitions)?.into())
     }
 
     pub fn distinct(&self) -> PyResult<Self> {

@@ -293,7 +293,7 @@ mod tests {
     use crate::{
         optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
-        JoinType, LogicalPlan, PartitionSchemeConfig,
+        JoinType, LogicalPlan,
     };
 
     /// Helper that creates an optimizer with the PushDownFilter rule registered, optimizes
@@ -535,15 +535,10 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_scan { None } else { Some(1) }),
         );
         let pred = col("a").lt(&lit(2));
-        let num_partitions = Some(1);
+        let num_partitions = 1;
         let repartition_by = vec![col("a")];
-        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
         let plan = scan_plan
-            .repartition(
-                num_partitions,
-                repartition_by.clone(),
-                partition_scheme_config.clone(),
-            )?
+            .hash_repartition(Some(num_partitions), repartition_by.clone())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
@@ -555,7 +550,7 @@ mod tests {
             scan_plan.filter(pred)?
         };
         let expected = expected_filter_scan
-            .repartition(num_partitions, repartition_by, partition_scheme_config)?
+            .hash_repartition(Some(num_partitions), repartition_by)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

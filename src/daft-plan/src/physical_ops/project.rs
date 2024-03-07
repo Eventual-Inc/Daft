@@ -6,8 +6,9 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 
 use crate::{
-    partitioning::PartitionSchemeConfig, physical_plan::PhysicalPlanRef, PartitionSpec,
-    ResourceRequest,
+    partitioning::{HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig},
+    physical_plan::PhysicalPlanRef,
+    ClusteringSpec, ResourceRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +18,7 @@ pub struct Project {
     pub input: PhysicalPlanRef,
     pub projection: Vec<Expr>,
     pub resource_request: ResourceRequest,
-    pub partition_spec: Arc<PartitionSpec>,
+    pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl Project {
@@ -25,30 +26,30 @@ impl Project {
         input: PhysicalPlanRef,
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
-        partition_spec: Arc<PartitionSpec>,
+        clustering_spec: Arc<ClusteringSpec>,
     ) -> DaftResult<Self> {
-        let partition_spec = Self::translate_partition_spec(partition_spec, &projection);
+        let clustering_spec = Self::translate_clustering_spec(clustering_spec, &projection);
         Ok(Self {
             input,
             projection,
             resource_request,
-            partition_spec,
+            clustering_spec,
         })
     }
 
-    fn translate_partition_spec(
-        input_pspec: Arc<PartitionSpec>,
+    fn translate_clustering_spec(
+        input_clustering_spec: Arc<ClusteringSpec>,
         projection: &Vec<Expr>,
-    ) -> Arc<PartitionSpec> {
+    ) -> Arc<ClusteringSpec> {
         // Given an input partition spec, and a new projection,
         // produce the new partition spec.
 
-        use crate::partitioning::PartitionSchemeConfig::*;
-        match input_pspec.scheme_config {
+        use crate::partitioning::ClusteringSpec::*;
+        match input_clustering_spec.as_ref() {
             // If the scheme is vacuous, the result partiiton spec is the same.
-            Random(_) | Unknown(_) => input_pspec.clone(),
+            Random(_) | Unknown(_) => input_clustering_spec,
             // Otherwise, need to reevaluate the partition scheme for each expression.
-            Range(_) | Hash(_) => {
+            Range(RangeClusteringConfig { by, .. }) | Hash(HashClusteringConfig { by, .. }) => {
                 // See what columns the projection directly translates into new columns.
                 let mut old_colname_to_new_colname = IndexMap::new();
                 for expr in projection {
@@ -63,37 +64,41 @@ impl Project {
                 }
 
                 // Then, see if we can fully translate the partition spec.
-                let maybe_new_pspec = input_pspec
-                    .by
-                    .as_ref()
-                    .unwrap()
+                let maybe_new_clustering_spec = by
                     .iter()
-                    .map(|e| Self::translate_partition_spec_expr(e, &old_colname_to_new_colname))
+                    .map(|e| Self::translate_clustering_spec_expr(e, &old_colname_to_new_colname))
                     .collect::<std::result::Result<Vec<_>, _>>();
-                maybe_new_pspec.map_or_else(
+                maybe_new_clustering_spec.map_or_else(
                     |()| {
-                        PartitionSpec::new(
-                            PartitionSchemeConfig::Unknown(Default::default()),
-                            input_pspec.num_partitions,
-                            None,
-                        )
+                        ClusteringSpec::Unknown(UnknownClusteringConfig::new(
+                            input_clustering_spec.num_partitions(),
+                        ))
                         .into()
                     },
-                    |new_pspec: Vec<Expr>| {
-                        PartitionSpec::new(
-                            input_pspec.scheme_config.clone(),
-                            input_pspec.num_partitions,
-                            Some(new_pspec),
+                    |new_clustering_spec: Vec<Expr>| match input_clustering_spec.as_ref() {
+                        Range(RangeClusteringConfig {
+                            num_partitions,
+                            descending,
+                            ..
+                        }) => ClusteringSpec::Range(RangeClusteringConfig::new(
+                            *num_partitions,
+                            new_clustering_spec,
+                            descending.clone(),
+                        ))
+                        .into(),
+                        Hash(HashClusteringConfig { num_partitions, .. }) => ClusteringSpec::Hash(
+                            HashClusteringConfig::new(*num_partitions, new_clustering_spec),
                         )
-                        .into()
+                        .into(),
+                        _ => unreachable!(),
                     },
                 )
             }
         }
     }
 
-    fn translate_partition_spec_expr(
-        pspec_expr: &Expr,
+    fn translate_clustering_spec_expr(
+        clustering_spec_expr: &Expr,
         old_colname_to_new_colname: &IndexMap<String, String>,
     ) -> std::result::Result<Expr, ()> {
         // Given a single expression of an input partition spec,
@@ -102,23 +107,25 @@ impl Project {
         //  - Ok(expr) with expr being the translation, or
         //  - Err(()) if no translation is possible in the new projection.
 
-        match pspec_expr {
+        match clustering_spec_expr {
             Expr::Column(name) => match old_colname_to_new_colname.get(name.as_ref()) {
                 Some(newname) => Ok(Expr::Column(newname.as_str().into())),
                 None => Err(()),
             },
-            Expr::Literal(_) => Ok(pspec_expr.clone()),
+            Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
             Expr::Alias(child, name) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
                 Ok(Expr::Alias(newchild.into(), name.clone()))
             }
             Expr::BinaryOp { op, left, right } => {
-                let newleft =
-                    Self::translate_partition_spec_expr(left.as_ref(), old_colname_to_new_colname)?;
-                let newright = Self::translate_partition_spec_expr(
+                let newleft = Self::translate_clustering_spec_expr(
+                    left.as_ref(),
+                    old_colname_to_new_colname,
+                )?;
+                let newright = Self::translate_clustering_spec_expr(
                     right.as_ref(),
                     old_colname_to_new_colname,
                 )?;
@@ -129,7 +136,7 @@ impl Project {
                 })
             }
             Expr::Cast(child, dtype) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
@@ -138,7 +145,7 @@ impl Project {
             Expr::Function { func, inputs } => {
                 let new_inputs = inputs
                     .iter()
-                    .map(|e| Self::translate_partition_spec_expr(e, old_colname_to_new_colname))
+                    .map(|e| Self::translate_clustering_spec_expr(e, old_colname_to_new_colname))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Expr::Function {
                     func: func.clone(),
@@ -146,32 +153,32 @@ impl Project {
                 })
             }
             Expr::Not(child) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
                 Ok(Expr::Not(newchild.into()))
             }
             Expr::IsNull(child) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
                 Ok(Expr::IsNull(newchild.into()))
             }
             Expr::NotNull(child) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
                 Ok(Expr::NotNull(newchild.into()))
             }
             Expr::IsIn(child, items) => {
-                let newchild = Self::translate_partition_spec_expr(
+                let newchild = Self::translate_clustering_spec_expr(
                     child.as_ref(),
                     old_colname_to_new_colname,
                 )?;
-                let newitems = Self::translate_partition_spec_expr(
+                let newitems = Self::translate_clustering_spec_expr(
                     items.as_ref(),
                     old_colname_to_new_colname,
                 )?;
@@ -182,15 +189,15 @@ impl Project {
                 if_false,
                 predicate,
             } => {
-                let newtrue = Self::translate_partition_spec_expr(
+                let newtrue = Self::translate_clustering_spec_expr(
                     if_true.as_ref(),
                     old_colname_to_new_colname,
                 )?;
-                let newfalse = Self::translate_partition_spec_expr(
+                let newfalse = Self::translate_clustering_spec_expr(
                     if_false.as_ref(),
                     old_colname_to_new_colname,
                 )?;
-                let newpred = Self::translate_partition_spec_expr(
+                let newpred = Self::translate_clustering_spec_expr(
                     predicate.as_ref(),
                     old_colname_to_new_colname,
                 )?;
@@ -212,8 +219,8 @@ impl Project {
             self.projection.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
-            "Partition spec = {{ {} }}",
-            self.partition_spec.multiline_display().join(", ")
+            "Clustering spec = {{ {} }}",
+            self.clustering_spec.multiline_display().join(", ")
         ));
         let resource_request = self.resource_request.multiline_display();
         if !resource_request.is_empty() {
@@ -235,16 +242,15 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        partitioning::PartitionSchemeConfig,
+        partitioning::{ClusteringSpec, HashClusteringConfig, UnknownClusteringConfig},
         planner::plan,
         test::{dummy_scan_node, dummy_scan_operator},
-        PartitionSpec,
     };
 
     /// Test that projections preserving column inputs, even through aliasing,
     /// do not destroy the partition spec.
     #[test]
-    fn test_partition_spec_preserving() -> DaftResult<()> {
+    fn test_clustering_spec_preserving() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![
             (col("a") % lit(2)), // this is now "a"
@@ -256,25 +262,21 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .repartition(
+        .hash_repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec = PartitionSpec::new(
-            PartitionSchemeConfig::Hash(Default::default()),
-            3,
-            Some(vec![col("aa"), col("b")]),
-        );
+        let expected_clustering_spec =
+            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("aa"), col("b")]));
 
         assert_eq!(
-            expected_pspec,
-            physical_plan.partition_spec().as_ref().clone()
+            expected_clustering_spec,
+            physical_plan.clustering_spec().as_ref().clone()
         );
 
         Ok(())
@@ -283,7 +285,7 @@ mod tests {
     /// Test that projections destroying even a single column input from the partition spec
     /// destroys the entire partition spec.
     #[rstest]
-    fn test_partition_spec_destroying(
+    fn test_clustering_spec_destroying(
         #[values(
             vec![col("a"), col("c").alias("b")], // original "b" is gone even though "b" is present
             vec![col("b")],                      // original "a" dropped
@@ -292,7 +294,7 @@ mod tests {
         )]
         projection: Vec<Expr>,
     ) -> DaftResult<()> {
-        use crate::partitioning::PartitionSchemeConfig;
+        use crate::partitioning::ClusteringSpec;
 
         let cfg = DaftExecutionConfig::default().into();
         let logical_plan = dummy_scan_node(dummy_scan_operator(vec![
@@ -300,21 +302,19 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .repartition(
+        .hash_repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(projection, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec =
-            PartitionSpec::new(PartitionSchemeConfig::Unknown(Default::default()), 3, None);
+        let expected_clustering_spec = ClusteringSpec::Unknown(UnknownClusteringConfig::new(3));
         assert_eq!(
-            expected_pspec,
-            physical_plan.partition_spec().as_ref().clone()
+            expected_clustering_spec,
+            physical_plan.clustering_spec().as_ref().clone()
         );
 
         Ok(())
@@ -323,7 +323,7 @@ mod tests {
     /// Test that new partition specs favor existing instead of new names.
     /// i.e. ("a", "a" as "b") remains partitioned by "a", not "b"
     #[test]
-    fn test_partition_spec_prefer_existing_names() -> DaftResult<()> {
+    fn test_clustering_spec_prefer_existing_names() -> DaftResult<()> {
         let cfg = DaftExecutionConfig::default().into();
         let expressions = vec![col("a").alias("y"), col("a"), col("a").alias("z"), col("b")];
 
@@ -332,25 +332,21 @@ mod tests {
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]))
-        .repartition(
+        .hash_repartition(
             Some(3),
             vec![Expr::Column("a".into()), Expr::Column("b".into())],
-            PartitionSchemeConfig::Hash(Default::default()),
         )?
         .project(expressions, Default::default())?
         .build();
 
         let physical_plan = plan(&logical_plan, cfg)?;
 
-        let expected_pspec = PartitionSpec::new(
-            PartitionSchemeConfig::Hash(Default::default()),
-            3,
-            Some(vec![col("a"), col("b")]),
-        );
+        let expected_clustering_spec =
+            ClusteringSpec::Hash(HashClusteringConfig::new(3, vec![col("a"), col("b")]));
 
         assert_eq!(
-            expected_pspec,
-            physical_plan.partition_spec().as_ref().clone()
+            expected_clustering_spec,
+            physical_plan.clustering_spec().as_ref().clone()
         );
 
         Ok(())

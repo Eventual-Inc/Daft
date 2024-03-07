@@ -25,14 +25,7 @@ from typing import (
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import (
-    FileFormat,
-    IOConfig,
-    JoinStrategy,
-    JoinType,
-    PartitionScheme,
-    ResourceRequest,
-)
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, ResourceRequest
 from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -730,16 +723,13 @@ class DataFrame:
         """
         if len(partition_by) == 0:
             warnings.warn(
-                "No columns specified for repartition; If you do not require rebalancing of partitions, you may "
-                "instead prefer using `df.into_partitions(N)` which is a cheaper operation that avoids shuffling data."
+                "No columns specified for repartition, so doing a random shuffle. If you do not require rebalancing of "
+                "partitions, you may instead prefer using `df.into_partitions(N)` which is a cheaper operation that "
+                "avoids shuffling data."
             )
-            scheme = PartitionScheme.Random
-            exprs = []
+            builder = self._builder.random_shuffle(num)
         else:
-            scheme = PartitionScheme.Hash
-            exprs = self.__column_input_to_expression(partition_by)
-
-        builder = self._builder.repartition(num_partitions=num, partition_by=exprs, scheme=scheme)
+            builder = self._builder.hash_repartition(num, self.__column_input_to_expression(partition_by))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -758,11 +748,7 @@ class DataFrame:
         Returns:
             DataFrame: Dataframe with ``num`` partitions.
         """
-        builder = self._builder.repartition(
-            num_partitions=num,
-            partition_by=[],
-            scheme=PartitionScheme.Unknown,
-        )
+        builder = self._builder.into_partitions(num)
         return DataFrame(builder)
 
     @DataframePublicAPI

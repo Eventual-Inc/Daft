@@ -122,7 +122,7 @@ mod tests {
     use crate::{
         optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
-        LogicalPlan, PartitionSchemeConfig,
+        LogicalPlan, LogicalPlanBuilder,
     };
 
     /// Helper that creates an optimizer with the PushDownLimit rule registered, optimizes
@@ -243,8 +243,6 @@ mod tests {
     #[test]
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
-        use crate::LogicalPlanBuilder;
-
         let py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
         let plan =
@@ -261,19 +259,14 @@ mod tests {
     #[test]
     fn limit_commutes_with_repartition() -> DaftResult<()> {
         let limit = 5;
-        let num_partitions = Some(1);
+        let num_partitions = 1;
         let partition_by = vec![col("a")];
-        let partition_scheme_config = PartitionSchemeConfig::Hash(Default::default());
         let scan_op = dummy_scan_operator(vec![
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .repartition(
-                num_partitions,
-                partition_by.clone(),
-                partition_scheme_config.clone(),
-            )?
+            .hash_repartition(Some(num_partitions), partition_by.clone())?
             .limit(limit, false)?
             .build();
         let expected = dummy_scan_node_with_pushdowns(
@@ -281,7 +274,7 @@ mod tests {
             Pushdowns::default().with_limit(Some(limit as usize)),
         )
         .limit(limit, false)?
-        .repartition(num_partitions, partition_by, partition_scheme_config)?
+        .hash_repartition(Some(num_partitions), partition_by)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
