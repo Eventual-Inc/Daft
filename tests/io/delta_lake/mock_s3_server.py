@@ -26,7 +26,7 @@ def start_service(service_name: str, host: str, port: int, log_file: io.IOBase):
     # Use static data fetch as healthcheck API.
     url = f"http://{host}:{port}/moto-api/data.json"
 
-    for _ in range(0, 30):
+    for _ in range(0, 100):
         output = process.poll()
         if output is not None:
             print(f"moto_server exited status {output}")
@@ -40,7 +40,7 @@ def start_service(service_name: str, host: str, port: int, log_file: io.IOBase):
         except requests.exceptions.ConnectionError:
             pass
 
-        time.sleep(0.5)
+        time.sleep(0.1)
     else:
         stop_process(process)  # pytest.fail doesn't call stop_process
         pytest.fail(f"Cannot start service: {service_name}")
