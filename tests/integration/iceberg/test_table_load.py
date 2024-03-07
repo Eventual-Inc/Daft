@@ -66,10 +66,10 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
 def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
     df = daft.read_iceberg(tab)
-    df = df.where(df["pos"] <= 1)
+    df = df.where(df["idx_renamed"] <= 1)
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
-    iceberg_pandas = iceberg_pandas[iceberg_pandas["pos"] <= 1]
+    iceberg_pandas = iceberg_pandas[iceberg_pandas["idx_renamed"] <= 1]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
@@ -77,8 +77,8 @@ def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catal
 def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceberg_catalog):
     tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
     df = daft.read_iceberg(tab)
-    df = df.select("pos")
+    df = df.select("idx_renamed")
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
-    iceberg_pandas = iceberg_pandas[["pos"]]
+    iceberg_pandas = iceberg_pandas[["idx_renamed"]]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
