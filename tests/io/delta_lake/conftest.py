@@ -7,6 +7,7 @@ import os
 import pathlib
 import posixpath
 import time
+import unittest.mock as mock
 from collections.abc import Iterator
 
 import boto3
@@ -135,6 +136,73 @@ def glue_table(
     )
 
 
+##############################
+### Unity-specific fixtures ###
+##############################
+
+
+@pytest.fixture(scope="session")
+def unity_catalog_id() -> str:
+    return "unity_catalog"
+
+
+@pytest.fixture(scope="session")
+def unity_database_name() -> str:
+    return "unity_db"
+
+
+@pytest.fixture(scope="session")
+def unity_table_name() -> str:
+    return "unity_table"
+
+
+@pytest.fixture(scope="function")
+def unity_table_s3(
+    s3_uri: str,
+    unity_catalog_id: str,
+    unity_database_name: str,
+    unity_table_name: str,
+) -> Iterator[DataCatalogTable]:
+    yield from _unity_table(s3_uri, unity_catalog_id, unity_database_name, unity_table_name)
+
+
+@pytest.fixture(scope="function")
+def unity_table_az(
+    az_uri: str,
+    unity_catalog_id: str,
+    unity_database_name: str,
+    unity_table_name: str,
+) -> Iterator[DataCatalogTable]:
+    yield from _unity_table(az_uri, unity_catalog_id, unity_database_name, unity_table_name)
+
+
+def _unity_table(
+    uri: str,
+    unity_catalog_id: str,
+    unity_database_name: str,
+    unity_table_name: str,
+) -> Iterator[DataCatalogTable]:
+    from databricks.sdk.service.catalog import TableInfo
+
+    with mock.patch("databricks.sdk.WorkspaceClient", autospec=True) as mock_workspace_client:
+        instance = mock_workspace_client.return_value
+        instance.tables.get.return_value = TableInfo(storage_location=uri)
+        # Set required Databricks environment variables before using SDK.
+        # NOTE: This URI won't be used by the Databricks SDK since we mock the WorkspaceClient.
+        old_env = os.environ.copy()
+        os.environ["DATABRICKS_HOST"] = "http://localhost"
+        try:
+            yield DataCatalogTable(
+                catalog=DataCatalog.UNITY,
+                database_name=unity_database_name,
+                table_name=unity_table_name,
+                catalog_id=unity_catalog_id,
+            )
+        finally:
+            # Restore old set of environment variables.
+            os.environ = old_env
+
+
 ############################
 ### AWS-specific fixtures ###
 ############################
@@ -211,6 +279,7 @@ def s3_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
     params=[
         None,
         pytest.param(lazy_fixture("glue_table"), marks=pytest.mark.glue),
+        pytest.param(lazy_fixture("unity_table_s3"), marks=pytest.mark.unity),
     ],
 )
 def s3_path(
@@ -268,6 +337,12 @@ def az_server_port() -> int:
     return 10000
 
 
+@pytest.fixture(scope="function")
+def az_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
+    path = data_dir.strip("/").replace("_", "-")
+    return "az://" + path
+
+
 @pytest.fixture(scope="session")
 def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
     docker = pytest.importorskip("docker")
@@ -294,11 +369,16 @@ def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
         azurite.stop()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(
+    scope="function",
+    params=[
+        None,
+        pytest.param(lazy_fixture("unity_table_az"), marks=pytest.mark.unity),
+    ],
+)
 def az_path(
-    data_dir: str, az_server: str, az_credentials: dict[str, str]
+    az_uri: str, az_server: str, az_credentials: dict[str, str]
 ) -> Iterator[tuple[str, daft.io.IOConfig, None]]:
-    path = data_dir.strip("/").replace("_", "-")
     account_name = az_credentials["ACCOUNT_NAME"]
     key = az_credentials["KEY"]
     endpoint_url = f"{az_server}/{account_name}"
@@ -313,10 +393,10 @@ def az_path(
         )
     )
     bbs = BlobServiceClient.from_connection_string(conn_str)
-    container = path.split("/")[0]
+    container = az_uri[5:].split("/")[0]
     bbs.create_container(container)
     try:
-        yield "az://" + path, io_config, None
+        yield az_uri, io_config, None
     finally:
         bbs.delete_container(container)
 
@@ -333,6 +413,8 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
     params=[
         pytest.param(lazy_fixture("local_path"), marks=pytest.mark.local),
         pytest.param(lazy_fixture("s3_path"), marks=pytest.mark.s3),
+        # Azure tests require starting a Docker container + mock server that (1) requires a dev Docker dependency, and
+        # (2) takes 15+ seconds to start on every run, so we current mark it as an integration test.
         pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
     ],
 )

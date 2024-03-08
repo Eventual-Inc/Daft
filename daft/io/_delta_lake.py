@@ -1,5 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
+import os
 from typing import Optional, Union
 
 from daft import context
@@ -69,9 +70,32 @@ def read_delta_lake(
             # TODO(Clark): Fetch more than just the table URI from Glue Data Catalog.
             table_uri = glue_table["Table"]["StorageDescriptor"]["Location"]
         elif table.catalog == DataCatalog.UNITY:
-            raise NotImplementedError(
-                "Delta Lake reader doesn't support Unity Catalog yet. https://github.com/Eventual-Inc/Daft/issues/1989"
-            )
+            # Use Databricks SDK to get the table from the Unity Catalog.
+            from databricks.sdk import WorkspaceClient
+
+            # TODO(Clark): Populate WorkspaceClient with user-facing catalog configs (with some fields sourced from
+            # IOConfig) rather than relying on environment variable configuration.
+            workspace_client = WorkspaceClient()
+            # TODO(Clark): Expose Databricks/Unity host as user-facing catalog config.
+            try:
+                workspace_url = os.environ["DATABRICKS_HOST"]
+            except KeyError:
+                raise ValueError(
+                    "DATABRICKS_HOST or UNITY_HOST environment variable must be set for Daft to create a workspace URL."
+                )
+            catalog_url = f"{workspace_url}/api/2.1/unity-catalog"
+            catalog_id = table.catalog_id
+            # TODO(Clark): Use default (workspace) catalog if no catalog ID is specified?
+            if catalog_id is None:
+                raise ValueError("DataCatalogTable.catalog_id must be set for reading from Unity catalogs.")
+            database_name = table.database_name
+            table_name = table.table_name
+            full_table_name = f"{catalog_id}.{database_name}.{table_name}"
+            unity_table = workspace_client.tables.get(f"{catalog_url}/tables/{full_table_name}")
+            # TODO(Clark): Propagate more than just storage location.
+            table_uri = unity_table.storage_location
+            if table_uri is None:
+                raise ValueError(f"Storage location is missing from Unity Catalog table: {unity_table}")
     else:
         raise ValueError(
             f"table argument must be a table URI string or a DataCatalogTable instance, but got: {type(table)}, {table}"
