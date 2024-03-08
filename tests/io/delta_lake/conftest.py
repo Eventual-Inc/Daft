@@ -184,7 +184,7 @@ def _unity_table(
 ) -> Iterator[DataCatalogTable]:
     from databricks.sdk.service.catalog import TableInfo
 
-    with mock.patch("databricks.sdk.WorkspaceClient", autospec=True) as mock_workspace_client:
+    with mock.patch("databricks.sdk.WorkspaceClient") as mock_workspace_client:
         instance = mock_workspace_client.return_value
         instance.tables.get.return_value = TableInfo(storage_location=uri)
         # Set required Databricks environment variables before using SDK.
