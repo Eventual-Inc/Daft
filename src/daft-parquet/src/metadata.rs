@@ -1,11 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use common_error::DaftResult;
 use daft_core::datatypes::Field;
+use daft_dsl::common_treenode::{TreeNode, TreeNodeRewriter, VisitRecursion};
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::read::deserialize_metadata;
-use parquet2::schema::types::{FieldInfo, GroupLogicalType, ParquetType, PrimitiveType};
+use parquet2::schema::types::ParquetType;
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -14,93 +16,137 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
+struct ParquetTypeWrapper(ParquetType);
+
+impl TreeNode for ParquetTypeWrapper {
+    fn apply_children<F>(&self, op: &mut F) -> DaftResult<VisitRecursion>
+    where
+        F: FnMut(&Self) -> DaftResult<VisitRecursion>,
+    {
+        match &self.0 {
+            ParquetType::PrimitiveType(..) => Ok(VisitRecursion::Skip),
+            ParquetType::GroupType { fields, .. } => {
+                for child in fields.iter() {
+                    // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
+                    match op(&ParquetTypeWrapper(child.clone()))? {
+                        VisitRecursion::Continue => {}
+                        VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
+                        VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
+                    }
+                }
+                Ok(VisitRecursion::Continue)
+            }
+        }
+    }
+
+    fn map_children<F>(self, transform: F) -> DaftResult<Self>
+    where
+        F: FnMut(Self) -> DaftResult<Self>,
+    {
+        let mut transform = transform;
+
+        match self.0 {
+            ParquetType::PrimitiveType(..) => Ok(self),
+            ParquetType::GroupType {
+                field_info,
+                logical_type,
+                converted_type,
+                fields,
+            } => Ok(ParquetTypeWrapper(ParquetType::GroupType {
+                fields: fields
+                    .into_iter()
+                    .map(|child| transform(ParquetTypeWrapper(child)).map(|wrapper| wrapper.0))
+                    .collect::<DaftResult<Vec<_>>>()?,
+                field_info,
+                logical_type,
+                converted_type,
+            })),
+        }
+    }
+}
+
+struct ParquetTypeFieldIdRewriter<'a> {
+    field_id_mapping: &'a BTreeMap<i32, Field>,
+}
+
+impl<'a> TreeNodeRewriter for ParquetTypeFieldIdRewriter<'a> {
+    type N = ParquetTypeWrapper;
+
+    fn mutate(&mut self, node: Self::N) -> DaftResult<Self::N> {
+        match node.0 {
+            ParquetType::PrimitiveType(mut primitive_type) => {
+                // Fix the `node`'s name
+                let field_id = primitive_type.field_info.id;
+                if let Some(mapped_field) =
+                    field_id.and_then(|field_id| self.field_id_mapping.get(&field_id))
+                {
+                    primitive_type.field_info.name = mapped_field.name.clone();
+                }
+                Ok(ParquetTypeWrapper(ParquetType::PrimitiveType(
+                    primitive_type,
+                )))
+            }
+            ParquetType::GroupType {
+                mut field_info,
+                fields,
+                logical_type,
+                converted_type,
+            } => {
+                // Fix the `node`'s name
+                let field_id = field_info.id;
+                if let Some(mapped_field) =
+                    field_id.and_then(|field_id| self.field_id_mapping.get(&field_id))
+                {
+                    field_info.name = mapped_field.name.clone();
+                }
+
+                let fields = match logical_type {
+                    // GroupTypes with logical types List/Map have intermediate child nested fields without field_ids,
+                    // but we need to keep recursing on them to keep renaming on their children.
+                    Some(_) => fields,
+                    // GroupTypes without logical_types are just structs, and we can go ahead with removing
+                    // any fields that don't have field IDs with a corresponding match in the mapping
+                    None => fields
+                        .into_iter()
+                        .filter(|f| {
+                            f.get_field_info()
+                                .id
+                                .and_then(|field_id| self.field_id_mapping.get(&field_id))
+                                .is_some()
+                        })
+                        .collect(),
+                };
+
+                Ok(ParquetTypeWrapper(ParquetType::GroupType {
+                    field_info,
+                    logical_type,
+                    converted_type,
+                    fields,
+                }))
+            }
+        }
+    }
+}
+
 /// Applies field_ids to a ParquetType, returns `None` if the field ID is not found
 /// in the `field_id_mapping`, or if the field has no field ID.
 fn apply_field_ids_to_parquet_type(
-    parquet_type: &ParquetType,
+    parquet_type: ParquetType,
     field_id_mapping: &BTreeMap<i32, Field>,
 ) -> Option<ParquetType> {
-    match parquet_type {
-        ParquetType::PrimitiveType(primitive_type) => {
-            let field_id = primitive_type.field_info.id;
-            field_id
-                .and_then(|field_id| field_id_mapping.get(&field_id))
-                .map(|matched_field| {
-                    ParquetType::PrimitiveType(PrimitiveType {
-                        field_info: FieldInfo {
-                            name: matched_field.name.clone(),
-                            ..primitive_type.field_info
-                        },
-                        ..primitive_type.clone()
-                    })
-                })
-        }
-        // GroupTypes without logical_types are just structs, and we can naively recurse
-        ParquetType::GroupType {
-            field_info,
-            fields,
-            logical_type: None,
-            converted_type,
-        } => {
-            let field_id = field_info.id;
-            field_id
-                .and_then(|field_id| field_id_mapping.get(&field_id))
-                .map(|matched_field| ParquetType::GroupType {
-                    field_info: FieldInfo {
-                        name: matched_field.name.clone(),
-                        ..field_info.clone()
-                    },
-                    fields: fields
-                        .iter()
-                        .filter_map(|parquet_type| {
-                            apply_field_ids_to_parquet_type(parquet_type, field_id_mapping)
-                        })
-                        .collect(),
-                    logical_type: None,
-                    converted_type: *converted_type,
-                })
-        }
-        // The intermediate "list"/"map" GroupType have a nested GroupType field
-        // which won't have a field_id, but we need to keep recursing on them
-        ParquetType::GroupType {
-            field_info,
-            fields,
-            logical_type:
-                logical_type @ Some(GroupLogicalType::List) | logical_type @ Some(GroupLogicalType::Map),
-            converted_type,
-        } => {
-            let [nested_field] = fields.as_slice() else {
-                panic!(
-                    "Encountered nested ParquetType with more than 1 child field: {parquet_type:?}"
-                )
-            };
-            match nested_field {
-                ParquetType::GroupType {
-                    field_info: child_field_info,
-                    logical_type: child_logical_type,
-                    converted_type: child_converted_type,
-                    fields: child_fields,
-                } => Some(ParquetType::GroupType {
-                    fields: vec![ParquetType::GroupType {
-                        fields: child_fields
-                            .iter()
-                            .filter_map(|parquet_type| {
-                                apply_field_ids_to_parquet_type(parquet_type, field_id_mapping)
-                            })
-                            .collect(),
-                        field_info: child_field_info.clone(),
-                        logical_type: *child_logical_type,
-                        converted_type: *child_converted_type,
-                    }],
-                    field_info: field_info.clone(),
-                    logical_type: *logical_type,
-                    converted_type: *converted_type,
-                }),
-                ParquetType::PrimitiveType(..) => {
-                    panic!("Encountered nested ParquetType with a non-GroupType child")
-                }
-            }
-        }
+    let field_id = parquet_type.get_field_info().id;
+    if field_id
+        .and_then(|field_id| field_id_mapping.get(&field_id))
+        .is_some()
+    {
+        let mut pq_type_rewriter = ParquetTypeFieldIdRewriter { field_id_mapping };
+        let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
+            .rewrite(&mut pq_type_rewriter)
+            .unwrap()
+            .0;
+        Some(rewritten_pq_type)
+    } else {
+        None
     }
 }
 
@@ -120,7 +166,9 @@ fn apply_field_ids_to_parquet_file_metadata(
             .schema_descr
             .fields()
             .iter()
-            .filter_map(|pq_type| apply_field_ids_to_parquet_type(pq_type, field_id_mapping))
+            .filter_map(|pq_type| {
+                apply_field_ids_to_parquet_type(pq_type.clone(), field_id_mapping)
+            })
             .collect(),
     );
 
