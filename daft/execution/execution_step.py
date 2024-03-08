@@ -336,7 +336,6 @@ class WriteFile(SingleOutputInstruction):
     file_format: FileFormat
     schema: Schema
     root_dir: str | pathlib.Path
-    timestamp: int
     compression: str | None
     partition_cols: ExpressionsProjection | None
     io_config: IOConfig | None
@@ -369,7 +368,6 @@ class WriteFile(SingleOutputInstruction):
             compression=self.compression,
             partition_cols=self.partition_cols,
             io_config=self.io_config,
-            timestamp=self.timestamp,
         )
 
 

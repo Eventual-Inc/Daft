@@ -356,7 +356,6 @@ def write_tabular(
     file_format: FileFormat,
     path: str | pathlib.Path,
     schema: Schema,
-    timestamp: int,
     partition_cols: ExpressionsProjection | None = None,
     compression: str | None = None,
     io_config: IOConfig | None = None,

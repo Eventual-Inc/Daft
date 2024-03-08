@@ -18,7 +18,6 @@ import itertools
 import logging
 import math
 import pathlib
-import time
 from collections import deque
 from typing import Generator, Generic, Iterable, Iterator, TypeVar, Union
 
@@ -89,7 +88,6 @@ def file_write(
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into files described by `write_info`."""
 
-    timestamp = int(time.time() * 1000)
     yield from (
         step.add_instruction(
             execution_step.WriteFile(
@@ -99,7 +97,6 @@ def file_write(
                 compression=compression,
                 partition_cols=partition_cols,
                 io_config=io_config,
-                timestamp=timestamp,
             ),
         )
         if isinstance(step, PartitionTaskBuilder)
