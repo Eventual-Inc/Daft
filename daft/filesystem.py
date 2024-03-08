@@ -6,6 +6,8 @@ import pathlib
 import sys
 import urllib.parse
 
+from fsspec.implementations.arrow import ArrowFSWrapper
+
 if sys.version_info < (3, 8):
     from typing_extensions import Literal
 else:
@@ -16,7 +18,7 @@ from typing import Any
 
 import fsspec
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSelector, FileSystem, FileType, LocalFileSystem, S3FileSystem
+from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -329,37 +331,16 @@ def glob_path_with_stats(
 ###
 
 
-def remove_files_for_overwrite(
+def remove_sentinel_files(
+    paths: list[str],
     root_dir: str | pathlib.Path,
     io_config: IOConfig | None,
 ) -> None:
 
-    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-    file_selector = FileSelector(resolved_path, recursive=True)
-    file_infos = fs.get_file_info(file_selector)
-
-    all_file_paths_and_names = []
-    dont_delete_files_starting_with_these_prefixes = set()
-    delete_files_from_these_partitions = set()
-
-    for file_info in file_infos:
-        if file_info.type == FileType.File:
-            file_path = file_info.path
-            file_name = os.path.basename(file_path)
-            all_file_paths_and_names.append((file_path, file_name))
-
-            if file_name.endswith(".sentinel"):
-                dont_delete_files_starting_with_these_prefixes.add(
-                    file_name[:36]
-                )  # 36 is the length of a UUID, which is the prefix of a daft written file
-                partition = os.path.basename(os.path.dirname(file_path))
-                delete_files_from_these_partitions.add(partition)
-                fs.delete_file(file_path)
-
-    for path, name in all_file_paths_and_names:
-        prefix = name[:36]
-        partition = os.path.basename(os.path.dirname(path))
-        if prefix in dont_delete_files_starting_with_these_prefixes:
-            continue
-        if partition in delete_files_from_these_partitions:
-            fs.delete_file(path)
+    _, fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+    fsspec_fs = ArrowFSWrapper(fs)
+    for path in paths:
+        path_without_extension, _ = os.path.splitext(path)
+        sentinel_file = path_without_extension + ".sentinel"
+        if fsspec_fs.exists(sentinel_file):
+            fsspec_fs.rm(sentinel_file)

@@ -458,7 +458,7 @@ def write_tabular(
 
         # Use empty sentinel files to mark that this is a new file that was written
         uuid = str(uuid4())
-        sentinel_file_path = os.path.join(full_path, f"{uuid}.sentinel")
+        sentinel_file_path = os.path.join(full_path, f"{uuid}-0.sentinel")
         if not fsspec.exists(full_path):
             fsspec.mkdir(full_path, create_parents=True)
         fsspec.touch(sentinel_file_path)
@@ -476,6 +476,19 @@ def write_tabular(
             filesystem=fs,
             **kwargs,
         )
+
+        # Delete all files that are not marked with a sentinel file
+        all_files = fsspec.ls(full_path, detail=True)
+        prefixes_to_keep = [os.path.splitext(f["name"])[0] for f in all_files if f["name"].endswith(".sentinel")]
+
+        for f in all_files:
+            path = f["name"]
+            prefix, ext = os.path.splitext(path)
+            if prefix not in prefixes_to_keep and ext != ".sentinel":
+                try:
+                    fsspec.rm(path)
+                except FileNotFoundError:
+                    pass
 
     data_dict: dict[str, Any] = {
         schema.column_names()[0]: Series.from_pylist(visited_paths, name=schema.column_names()[0]).cast(
