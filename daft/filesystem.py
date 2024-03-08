@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import sys
 import urllib.parse
@@ -15,7 +16,7 @@ from typing import Any
 
 import fsspec
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
+from pyarrow.fs import FileSelector, FileSystem, FileType, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -321,3 +322,44 @@ def glob_path_with_stats(
         num_rows.append(infos.get("rows"))
 
     return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
+
+
+###
+# File removal for overwrites
+###
+
+
+def remove_files_for_overwrite(
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+) -> None:
+
+    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+    file_selector = FileSelector(resolved_path, recursive=True)
+    file_infos = fs.get_file_info(file_selector)
+
+    all_file_paths_and_names = []
+    dont_delete_files_starting_with_these_prefixes = set()
+    delete_files_from_these_partitions = set()
+
+    for file_info in file_infos:
+        if file_info.type == FileType.File:
+            file_path = file_info.path
+            file_name = os.path.basename(file_path)
+            all_file_paths_and_names.append((file_path, file_name))
+
+            if file_name.endswith(".sentinel"):
+                dont_delete_files_starting_with_these_prefixes.add(
+                    file_name[:36]
+                )  # 36 is the length of a UUID, which is the prefix of a daft written file
+                partition = os.path.basename(os.path.dirname(file_path))
+                delete_files_from_these_partitions.add(partition)
+                fs.delete_file(file_path)
+
+    for path, name in all_file_paths_and_names:
+        prefix = name[:36]
+        partition = os.path.basename(os.path.dirname(path))
+        if prefix in dont_delete_files_starting_with_these_prefixes:
+            continue
+        if partition in delete_files_from_these_partitions:
+            fs.delete_file(path)

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import pathlib
 from collections.abc import Callable, Generator
 from typing import IO, Any, Union
 from uuid import uuid4
 
 import pyarrow as pa
+from fsspec.implementations.arrow import ArrowFSWrapper
 from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
@@ -422,7 +424,7 @@ def write_tabular(
     else:
         raise ValueError(f"Unsupported file format {file_format}")
 
-    files_to_delete = []
+    fsspec = ArrowFSWrapper(fs)
     for i, (tab, pf) in enumerate(zip(tables_to_write, part_keys_postfix_per_table)):
         full_path = resolved_path
         if pf is not None and len(pf) > 0:
@@ -454,10 +456,17 @@ def write_tabular(
         if ARROW_VERSION >= (8, 0, 0) and not is_local_fs:
             kwargs["create_dir"] = False
 
+        # Use empty sentinel files to mark that this is a new file that was written
+        uuid = str(uuid4())
+        sentinel_file_path = os.path.join(full_path, f"{uuid}.sentinel")
+        if not fsspec.exists(full_path):
+            fsspec.mkdir(full_path, create_parents=True)
+        fsspec.touch(sentinel_file_path)
+
         pads.write_dataset(
             arrow_table,
             base_dir=full_path,
-            basename_template=f"timestamp={timestamp}_" + str(uuid4()) + "-{i}." + format.default_extname,
+            basename_template=uuid + "-{i}." + format.default_extname,
             format=format,
             partitioning=None,
             file_options=opts,
@@ -467,20 +476,6 @@ def write_tabular(
             filesystem=fs,
             **kwargs,
         )
-
-        file_selector = pa.fs.FileSelector(full_path, recursive=True)
-        file_infos = fs.get_file_info(file_selector)
-        file_paths = [f.path for f in file_infos]
-        # delete files if they are not prefixed with "timestamp" or if the timestamp is less than the current timestamp
-        for f in file_paths:
-            if not f.startswith(f"{full_path}/timestamp=") or int(f.split("timestamp=")[1].split("_")[0]) < timestamp:
-                files_to_delete.append(f)
-
-    for f in files_to_delete:
-        try:
-            fs.delete_file(f)
-        except FileNotFoundError:
-            pass
 
     data_dict: dict[str, Any] = {
         schema.column_names()[0]: Series.from_pylist(visited_paths, name=schema.column_names()[0]).cast(

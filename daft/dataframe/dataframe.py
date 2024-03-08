@@ -30,6 +30,7 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import remove_files_for_overwrite
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -373,6 +374,8 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
+        remove_files_for_overwrite(root_dir=root_dir, io_config=io_config)
+
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
@@ -420,6 +423,8 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        remove_files_for_overwrite(root_dir=root_dir, io_config=io_config)
 
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
