@@ -47,21 +47,31 @@ def read_delta_lake(
     if isinstance(table, str):
         table_uri = table
     elif isinstance(table, DataCatalogTable):
-        from deltalake import DataCatalog as DeltaDataCatalog
-        from deltalake import DeltaTable
 
         assert table.catalog == DataCatalog.GLUE or table.catalog == DataCatalog.UNITY
         if table.catalog == DataCatalog.GLUE:
-            delta_data_catalog = DeltaDataCatalog.AWS
+            # Use boto3 to get the table from AWS Glue Data Catalog.
+            import boto3
+
+            s3_config = io_config.s3
+
+            glue = boto3.client(
+                "glue",
+                region_name=s3_config.region_name,
+                use_ssl=s3_config.use_ssl,
+                verify=s3_config.verify_ssl,
+                endpoint_url=s3_config.endpoint_url,
+                aws_access_key_id=s3_config.key_id,
+                aws_secret_access_key=s3_config.access_key,
+                aws_session_token=s3_config.session_token,
+            )
+            glue_table = glue.get_table(DatabaseName=table.database_name, Name=table.table_name)
+            # TODO(Clark): Fetch more than just the table URI from Glue Data Catalog.
+            table_uri = glue_table["Table"]["StorageDescriptor"]["Location"]
         elif table.catalog == DataCatalog.UNITY:
-            delta_data_catalog = DeltaDataCatalog.UNITY
-        delta_table = DeltaTable.from_data_catalog(
-            data_catalog=delta_data_catalog,
-            database_name=table.database_name,
-            table_name=table.table_name,
-            data_catalog_id=table.catalog_id,
-        )
-        table_uri = delta_table.table_uri
+            raise NotImplementedError(
+                "Delta Lake reader doesn't support Unity Catalog yet. https://github.com/Eventual-Inc/Daft/issues/1989"
+            )
     else:
         raise ValueError(
             f"table argument must be a table URI string or a DataCatalogTable instance, but got: {type(table)}, {table}"
