@@ -341,8 +341,8 @@ def overwrite_files(
     file_paths = [f.path for f in file_infos]
 
     written_paths = table.to_pydict()["path"]
-    directories_to_remove = {os.path.dirname(p) for p in written_paths}
+    written_directories = {os.path.dirname(p) for p in written_paths}
     written_path_set = set(written_paths)
     for file_path in file_paths:
-        if file_path not in written_path_set and os.path.dirname(file_path) in directories_to_remove:
+        if file_path not in written_path_set and os.path.dirname(file_path) in written_directories:
             fs.delete_file(file_path)
