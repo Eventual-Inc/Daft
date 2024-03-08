@@ -14,7 +14,7 @@ from daft.io._delta_lake import read_delta_lake
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
-from daft.io.catalog import DataCatalog, DataCatalogTable
+from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 
 
@@ -44,6 +44,6 @@ __all__ = [
     "AzureConfig",
     "GCSConfig",
     "set_io_pool_num_threads",
-    "DataCatalog",
+    "DataCatalogType",
     "DataCatalogTable",
 ]

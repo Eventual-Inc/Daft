@@ -68,8 +68,8 @@ from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import Expression, col, lit
 from daft.io import (
-    DataCatalog,
     DataCatalogTable,
+    DataCatalogType,
     from_glob_path,
     read_csv,
     read_delta_lake,
@@ -94,7 +94,7 @@ __all__ = [
     "read_parquet",
     "read_iceberg",
     "read_delta_lake",
-    "DataCatalog",
+    "DataCatalogType",
     "DataCatalogTable",
     "DataFrame",
     "Expression",

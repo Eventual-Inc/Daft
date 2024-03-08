@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 
 
-class DataCatalog(Enum):
+class DataCatalogType(Enum):
     """Supported data catalogs."""
 
     GLUE = "glue"
@@ -26,7 +26,7 @@ class DataCatalogTable:
     See :class:`~.DataCatalog`
     """
 
-    catalog: DataCatalog
+    catalog: DataCatalogType
     database_name: str
     table_name: str
     catalog_id: Optional[str] = None

@@ -7,7 +7,7 @@ from daft import context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
-from daft.io.catalog import DataCatalog, DataCatalogTable
+from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.logical.builder import LogicalPlanBuilder
 
 
@@ -49,8 +49,8 @@ def read_delta_lake(
         table_uri = table
     elif isinstance(table, DataCatalogTable):
 
-        assert table.catalog == DataCatalog.GLUE or table.catalog == DataCatalog.UNITY
-        if table.catalog == DataCatalog.GLUE:
+        assert table.catalog == DataCatalogType.GLUE or table.catalog == DataCatalogType.UNITY
+        if table.catalog == DataCatalogType.GLUE:
             # Use boto3 to get the table from AWS Glue Data Catalog.
             import boto3
 
@@ -69,7 +69,7 @@ def read_delta_lake(
             glue_table = glue.get_table(DatabaseName=table.database_name, Name=table.table_name)
             # TODO(Clark): Fetch more than just the table URI from Glue Data Catalog.
             table_uri = glue_table["Table"]["StorageDescriptor"]["Location"]
-        elif table.catalog == DataCatalog.UNITY:
+        elif table.catalog == DataCatalogType.UNITY:
             # Use Databricks SDK to get the table from the Unity Catalog.
             from databricks.sdk import WorkspaceClient
 

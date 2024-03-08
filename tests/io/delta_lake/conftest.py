@@ -18,7 +18,7 @@ from azure.storage.blob import BlobServiceClient
 from pytest_lazyfixture import lazy_fixture
 
 import daft
-from daft import DataCatalog, DataCatalogTable
+from daft import DataCatalogTable, DataCatalogType
 from daft.delta_lake.delta_lake_scan import _io_config_to_storage_options
 from tests.io.delta_lake.mock_aws_server import start_service, stop_process
 
@@ -130,7 +130,7 @@ def glue_table(
         },
     )
     return DataCatalogTable(
-        catalog=DataCatalog.GLUE,
+        catalog=DataCatalogType.GLUE,
         database_name=glue_database_name,
         table_name=glue_table_name,
     )
@@ -193,7 +193,7 @@ def _unity_table(
         os.environ["DATABRICKS_HOST"] = "http://localhost"
         try:
             yield DataCatalogTable(
-                catalog=DataCatalog.UNITY,
+                catalog=DataCatalogType.UNITY,
                 database_name=unity_database_name,
                 table_name=unity_table_name,
                 catalog_id=unity_catalog_id,
