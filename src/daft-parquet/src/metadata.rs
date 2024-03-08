@@ -5,7 +5,7 @@ use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::read::deserialize_metadata;
-use parquet2::schema::types::{FieldInfo, ParquetType, PrimitiveType};
+use parquet2::schema::types::{FieldInfo, GroupLogicalType, ParquetType, PrimitiveType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -14,57 +14,100 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
-fn rename_parquet_type(
+/// Applies field_ids to a ParquetType, returns `None` if the field ID is not found
+/// in the `field_id_mapping`, or if the field has no field ID.
+fn apply_field_ids_to_parquet_type(
     parquet_type: &ParquetType,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> ParquetType {
+) -> Option<ParquetType> {
     match parquet_type {
         ParquetType::PrimitiveType(primitive_type) => {
             let field_id = primitive_type.field_info.id;
-            let new_name = field_id
+            field_id
                 .and_then(|field_id| field_id_mapping.get(&field_id))
-                .map(|matched_field| matched_field.name.clone())
-                .unwrap_or_else(|| primitive_type.field_info.name.clone());
-            let new_field_info = FieldInfo {
-                name: new_name.clone(),
-                ..primitive_type.field_info
-            };
-            let new_primitive_type = PrimitiveType {
-                field_info: new_field_info,
-                ..primitive_type.clone()
-            };
-            ParquetType::PrimitiveType(new_primitive_type)
+                .map(|matched_field| {
+                    ParquetType::PrimitiveType(PrimitiveType {
+                        field_info: FieldInfo {
+                            name: matched_field.name.clone(),
+                            ..primitive_type.field_info
+                        },
+                        ..primitive_type.clone()
+                    })
+                })
         }
+        // GroupTypes without logical_types are just structs, and we can naively recurse
         ParquetType::GroupType {
             field_info,
             fields,
-            logical_type,
+            logical_type: None,
             converted_type,
         } => {
             let field_id = field_info.id;
-            let new_name = field_id
+            field_id
                 .and_then(|field_id| field_id_mapping.get(&field_id))
-                .map(|matched_field| matched_field.name.clone())
-                .unwrap_or_else(|| field_info.name.clone());
-            let new_field_info = FieldInfo {
-                name: new_name.clone(),
-                ..field_info.clone()
+                .map(|matched_field| ParquetType::GroupType {
+                    field_info: FieldInfo {
+                        name: matched_field.name.clone(),
+                        ..field_info.clone()
+                    },
+                    fields: fields
+                        .iter()
+                        .filter_map(|parquet_type| {
+                            apply_field_ids_to_parquet_type(parquet_type, field_id_mapping)
+                        })
+                        .collect(),
+                    logical_type: None,
+                    converted_type: *converted_type,
+                })
+        }
+        // The intermediate "list"/"map" GroupType have a nested GroupType field
+        // which won't have a field_id, but we need to keep recursing on them
+        ParquetType::GroupType {
+            field_info,
+            fields,
+            logical_type:
+                logical_type @ Some(GroupLogicalType::List) | logical_type @ Some(GroupLogicalType::Map),
+            converted_type,
+        } => {
+            let [nested_field] = fields.as_slice() else {
+                panic!(
+                    "Encountered nested ParquetType with more than 1 child field: {parquet_type:?}"
+                )
             };
-            let new_fields = fields
-                .iter()
-                .map(|parquet_type| rename_parquet_type(parquet_type, field_id_mapping))
-                .collect();
-            ParquetType::GroupType {
-                field_info: new_field_info,
-                fields: new_fields,
-                logical_type: *logical_type,
-                converted_type: *converted_type,
+            match nested_field {
+                ParquetType::GroupType {
+                    field_info: child_field_info,
+                    logical_type: child_logical_type,
+                    converted_type: child_converted_type,
+                    fields: child_fields,
+                } => Some(ParquetType::GroupType {
+                    fields: vec![ParquetType::GroupType {
+                        fields: child_fields
+                            .iter()
+                            .filter_map(|parquet_type| {
+                                apply_field_ids_to_parquet_type(parquet_type, field_id_mapping)
+                            })
+                            .collect(),
+                        field_info: child_field_info.clone(),
+                        logical_type: *child_logical_type,
+                        converted_type: *child_converted_type,
+                    }],
+                    field_info: field_info.clone(),
+                    logical_type: *logical_type,
+                    converted_type: *converted_type,
+                }),
+                ParquetType::PrimitiveType(..) => {
+                    panic!("Encountered nested ParquetType with a non-GroupType child")
+                }
             }
         }
     }
 }
 
-fn rename_parquet_metadata_with_field_ids(
+/// Applies field_ids to a parquet2 FileMetaData struct
+/// 1. Rename columns based on the `field_id_mapping`
+/// 2. Drop any columns that don't have a `field_id`, or that don't have a corresponding entry in the `field_id_mapping`
+fn apply_field_ids_to_parquet_file_metadata(
     file_metadata: FileMetaData,
     field_id_mapping: &BTreeMap<i32, Field>,
 ) -> super::Result<FileMetaData> {
@@ -77,7 +120,7 @@ fn rename_parquet_metadata_with_field_ids(
             .schema_descr
             .fields()
             .iter()
-            .map(|pq_type| rename_parquet_type(pq_type, field_id_mapping))
+            .filter_map(|pq_type| apply_field_ids_to_parquet_type(pq_type, field_id_mapping))
             .collect(),
     );
 
@@ -99,21 +142,30 @@ fn rename_parquet_metadata_with_field_ids(
         .row_groups
         .iter()
         .map(|rg| {
-            let columns = rg
+            let new_columns = rg
                 .columns()
                 .iter()
-                .map(|column| {
+                .filter_map(|column| {
                     let field_id = column.descriptor().descriptor.primitive_type.field_info.id;
-                    let col_descr = field_id_to_column_descriptor_mapping
-                        .get(
-                            &field_id
-                                .expect("TODO: Need a field ID, figure out what to do without one"),
-                        )
-                        .expect("Should have a corresponding entry in the schema");
-                    ColumnChunkMetaData::new(column.column_chunk().clone(), (*col_descr).clone())
+                    field_id
+                        .and_then(|field_id| field_id_to_column_descriptor_mapping.get(&field_id))
+                        .map(|col_descr| {
+                            ColumnChunkMetaData::new(
+                                column.column_chunk().clone(),
+                                (*col_descr).clone(),
+                            )
+                        })
                 })
-                .collect();
-            parquet2::metadata::RowGroupMetaData::new(columns, rg.num_rows(), rg.total_byte_size())
+                .collect::<Vec<_>>();
+            let new_total_uncompressed_size = new_columns
+                .iter()
+                .map(|c| c.uncompressed_size() as usize)
+                .sum::<usize>();
+            parquet2::metadata::RowGroupMetaData::new(
+                new_columns,
+                rg.num_rows(),
+                new_total_uncompressed_size,
+            )
         })
         .collect();
 
@@ -206,7 +258,7 @@ pub(crate) async fn read_parquet_metadata(
     .context(UnableToParseMetadataSnafu { path: uri });
 
     if let Some(field_id_mapping) = field_id_mapping {
-        rename_parquet_metadata_with_field_ids(file_metadata?, field_id_mapping.as_ref())
+        apply_field_ids_to_parquet_file_metadata(file_metadata?, field_id_mapping.as_ref())
     } else {
         file_metadata
     }

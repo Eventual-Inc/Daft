@@ -72,7 +72,6 @@ async fn read_parquet_single(
     let original_num_rows = num_rows;
     let mut num_rows = num_rows;
     let mut columns = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
-    let requested_columns = columns.as_ref().map(|v| v.len());
     if let Some(ref pred) = predicate {
         if num_rows.is_some() {
             num_rows = None;
@@ -149,8 +148,6 @@ async fn read_parquet_single(
 
     let metadata_num_rows = metadata.num_rows;
 
-    let metadata_num_columns = metadata.schema().fields().len();
-
     if let Some(predicate) = predicate {
         // TODO ideally pipeline this with IO and before concating, rather than after
         table = table.filter(&[predicate])?;
@@ -196,21 +193,6 @@ async fn read_parquet_single(
             }),
             _ => Ok(()),
         }?;
-    }
-
-    let expected_num_columns = if let Some(columns) = requested_columns {
-        columns
-    } else {
-        metadata_num_columns
-    };
-
-    if table.num_columns() != expected_num_columns {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table.num_columns(),
-        }
-        .into());
     }
 
     Ok(table)
@@ -288,8 +270,6 @@ async fn read_parquet_single_into_arrow(
 
     let metadata_num_rows = metadata.num_rows;
 
-    let metadata_num_columns = metadata.schema().fields().len();
-
     let len_per_col = all_arrays
         .iter()
         .map(|v| v.iter().map(|a| a.len()).sum())
@@ -300,8 +280,6 @@ async fn read_parquet_single_into_arrow(
     }
 
     let table_len = *len_per_col.first().unwrap_or(&0);
-
-    let table_ncol = all_arrays.len();
 
     if let Some(row_groups) = &row_groups {
         let expected_rows: usize = row_groups
@@ -340,21 +318,6 @@ async fn read_parquet_single_into_arrow(
             _ => Ok(()),
         }?;
     };
-
-    let expected_num_columns = if let Some(columns) = columns {
-        columns.len()
-    } else {
-        metadata_num_columns
-    };
-
-    if table_ncol != expected_num_columns {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table_ncol,
-        }
-        .into());
-    }
 
     Ok((schema, all_arrays))
 }

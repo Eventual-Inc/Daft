@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
-from pyiceberg.types import FixedType, NestedField, UUIDType
+from pyiceberg.types import FixedType, NestedField, StringType, UUIDType
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import array, col, current_date, date_add, expr, struct
 
@@ -369,6 +369,7 @@ renaming_columns_dataframe = (
     .withColumn("structcol", struct("idx"))
     .withColumn("structcol_oldname", struct("idx"))
     .withColumn("nested_list_struct_col", array("structcol", "structcol", "structcol"))
+    .withColumn("deleted_and_then_overwritten_col", col("idx"))
 )
 renaming_columns_dataframe.writeTo("default.test_table_rename").tableProperty("format-version", "2").createOrReplace()
 spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN idx TO idx_renamed")
@@ -378,3 +379,8 @@ spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN structcol_oldname
 test_table_rename_tbl = catalog.load_table("default.test_table_rename")
 with test_table_rename_tbl.update_schema() as txn:
     txn.rename_column("nested_list_struct_col.idx", "idx_renamed")
+
+
+with test_table_rename_tbl.update_schema() as txn:
+    txn.delete_column("deleted_and_then_overwritten_col")
+    txn.add_column("deleted_and_then_overwritten_col", StringType())
