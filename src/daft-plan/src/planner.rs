@@ -697,22 +697,43 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                 SinkInfo::OutputFileInfo(file_info @ OutputFileInfo { file_format, .. }) => {
                     match file_format {
                         FileFormat::Parquet => {
-                            Ok(PhysicalPlan::TabularWriteParquet(TabularWriteParquet::new(
-                                schema.clone(),
+                            let write =
+                                PhysicalPlan::TabularWriteParquet(TabularWriteParquet::new(
+                                    schema.clone(),
+                                    file_info.clone(),
+                                    input_physical.into(),
+                                ));
+                            let reduce_merge =
+                                PhysicalPlan::ReduceMerge(ReduceMerge::new(write.into()));
+                            Ok(PhysicalPlan::OverwriteFiles(OverwriteFiles::new(
+                                reduce_merge.into(),
                                 file_info.clone(),
-                                input_physical.into(),
                             )))
                         }
-                        FileFormat::Csv => Ok(PhysicalPlan::TabularWriteCsv(TabularWriteCsv::new(
-                            schema.clone(),
-                            file_info.clone(),
-                            input_physical.into(),
-                        ))),
-                        FileFormat::Json => {
-                            Ok(PhysicalPlan::TabularWriteJson(TabularWriteJson::new(
+                        FileFormat::Csv => {
+                            let write = PhysicalPlan::TabularWriteCsv(TabularWriteCsv::new(
                                 schema.clone(),
                                 file_info.clone(),
                                 input_physical.into(),
+                            ));
+                            let reduce_merge =
+                                PhysicalPlan::ReduceMerge(ReduceMerge::new(write.into()));
+                            Ok(PhysicalPlan::OverwriteFiles(OverwriteFiles::new(
+                                reduce_merge.into(),
+                                file_info.clone(),
+                            )))
+                        }
+                        FileFormat::Json => {
+                            let write = PhysicalPlan::TabularWriteJson(TabularWriteJson::new(
+                                schema.clone(),
+                                file_info.clone(),
+                                input_physical.into(),
+                            ));
+                            let reduce_merge =
+                                PhysicalPlan::ReduceMerge(ReduceMerge::new(write.into()));
+                            Ok(PhysicalPlan::OverwriteFiles(OverwriteFiles::new(
+                                reduce_merge.into(),
+                                file_info.clone(),
                             )))
                         }
                     }

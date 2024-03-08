@@ -30,7 +30,6 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
-from daft.filesystem import remove_sentinel_files
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
@@ -374,8 +373,6 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        remove_sentinel_files(paths=write_df.to_pydict()["path"], root_dir=root_dir, io_config=io_config)
-
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
@@ -423,8 +420,6 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-
-        remove_sentinel_files(paths=write_df.to_pydict()["path"], root_dir=root_dir, io_config=io_config)
 
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)

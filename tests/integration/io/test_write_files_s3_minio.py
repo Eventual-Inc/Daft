@@ -71,6 +71,7 @@ def test_writing_parquet_overwrite(minio_io_config, bucket):
 
     # read, data should have been overwritten
     df_read = daft.read_parquet(path, io_config=minio_io_config).collect()
+    print(df_read)
     assert len(df_read) == 3
 
     pydict = df_read.to_pydict()
@@ -117,6 +118,7 @@ def test_writing_parquet_overwrite_partitions(minio_io_config, bucket):
     # read, data from two partitions should have been overwritten
     paths = [f"{path}/bar={bar}" for bar in ["a", "b", "c"]]
     df_read = daft.read_parquet(paths, io_config=minio_io_config).collect()
+    print(df_read)
     assert len(df_read) == 3
 
     pydict = df_read.to_pydict()

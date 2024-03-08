@@ -253,3 +253,13 @@ def write_file(
         expr_projection,
         io_config,
     )
+
+
+def overwrite_files(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT], root_dir: str, io_config: IOConfig | None
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=execution_step.OverwriteFiles(root_dir=root_dir, io_config=io_config),
+        resource_request=ResourceRequest(),
+    )
