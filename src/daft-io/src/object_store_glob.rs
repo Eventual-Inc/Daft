@@ -309,6 +309,15 @@ fn _should_return(fm: &FileMetadata) -> bool {
         {
             false
         }
+        // These are marker files used by Spark that we don't want to return
+        FileType::File
+            if fm.filepath.ends_with("_metadata")
+                || fm.filepath.ends_with("_common_metadata")
+                || fm.filepath.ends_with(".crc")
+                || fm.filepath.ends_with("_SUCCESS") =>
+        {
+            false
+        }
         // Return all other File entries
         FileType::File => true,
         // Globbing does not return Directory results

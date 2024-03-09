@@ -36,3 +36,25 @@ def test_minio_parquet_read_no_files(minio_io_config):
 
         with pytest.raises(FileNotFoundError, match="Glob path had no matches:"):
             daft.read_parquet("s3://data-engineering-prod/foo/**.parquet", io_config=minio_io_config)
+
+
+@pytest.mark.integration()
+def test_minio_parquet_ignore_marker_files(minio_io_config):
+    bucket_name = "data-engineering-prod"
+    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+        target_paths = [
+            f"s3://{bucket_name}/Y",
+            f"s3://{bucket_name}/Z",
+        ]
+        data = {"x": [1, 2, 3, 4]}
+        df = daft.from_pydict(data)
+        for path in target_paths:
+            df.write_parquet(path, io_config=minio_io_config)
+
+        marker_files = ["_metadata", "_SUCCESS", "_common_metadata", "a.crc"]
+        for marker in marker_files:
+            fs.touch(f"s3://{bucket_name}/Y/{marker}")
+            fs.touch(f"s3://{bucket_name}/Z/{marker}")
+
+        read = daft.read_parquet(f"s3://{bucket_name}/**", io_config=minio_io_config)
+        assert read.to_pydict() == {"x": [1, 2, 3, 4] * 2}
