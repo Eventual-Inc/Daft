@@ -26,10 +26,10 @@ requires-python = ">=3.7"
 
 [project.optional-dependencies]
 all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake]"]
-aws = ["s3fs"]
-azure = ["adlfs"]
+aws = ["boto3"]
+azure = []
 deltalake = ["deltalake"]
-gcp = ["gcsfs"]
+gcp = []
 iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 numpy = ["numpy"]
 pandas = ["pandas"]
