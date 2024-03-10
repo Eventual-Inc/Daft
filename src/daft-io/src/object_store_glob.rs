@@ -26,6 +26,9 @@ const SCHEME_SUFFIX_LEN: usize = "://".len();
 /// the `glob` utility can only be used with POSIX-style paths.
 const GLOB_DELIMITER: &str = "/";
 
+// NOTE: We use the following suffixes to filter out Spark marker files
+const MARKER_SUFFIXES: [&str; 4] = ["_metadata", "_common_metadata", ".crc", "_success"];
+
 #[derive(Clone)]
 pub(crate) struct GlobState {
     // Current path in dirtree and glob_fragments
@@ -309,12 +312,11 @@ fn _should_return(fm: &FileMetadata) -> bool {
         {
             false
         }
-        // These are marker files used by Spark that we don't want to return
+        // Do not return Spark marker files
         FileType::File
-            if fm.filepath.ends_with("_metadata")
-                || fm.filepath.ends_with("_common_metadata")
-                || fm.filepath.ends_with(".crc")
-                || fm.filepath.ends_with("_SUCCESS") =>
+            if MARKER_SUFFIXES
+                .iter()
+                .any(|suffix| fm.filepath.to_lowercase().ends_with(suffix)) =>
         {
             false
         }
