@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import daft
-from daft import DataFrame
+from daft import DataFrame, col
 
 NUM_SAMPLES = 1_000_000
 
@@ -154,7 +154,7 @@ def test_join_withdata(benchmark, num_samples, num_partitions) -> None:
 
     # Make sure the result is correct.
     assert (result.sort("mykey").to_pandas()["mykey"].to_numpy() == np.arange(num_samples)).all()
-    assert result.groupby("left_data", "right_data").agg([("mykey", "count")]).to_pydict() == {
+    assert result.groupby("left_data", "right_data").agg(col("mykey").count()).to_pydict() == {
         "left_data": [long_A],
         "right_data": [long_B],
         "mykey": [num_samples],

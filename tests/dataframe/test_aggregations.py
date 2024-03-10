@@ -26,12 +26,12 @@ def test_agg_global(make_df, repartition_nparts):
     )
     daft_df = daft_df.agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
     expected = {"sum": [3], "mean": [1.5], "min": [1], "max": [2], "count": [2], "list": [[1, None, 2]]}
@@ -58,12 +58,12 @@ def test_agg_global_all_null(make_df, repartition_nparts):
     )
     daft_df = daft_df.where(col("id") != 0).agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
     expected = {
@@ -91,12 +91,12 @@ def test_agg_global_empty(make_df):
     )
     daft_df = daft_df.where(col("id") != 0).agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
     expected = {
@@ -125,12 +125,12 @@ def test_agg_groupby(make_df, repartition_nparts):
     )
     daft_df = daft_df.groupby("group").agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
     expected = {
@@ -170,12 +170,12 @@ def test_agg_groupby_all_null(make_df, repartition_nparts):
     daft_df = daft_df.where(col("id") != 0)
     daft_df = daft_df.groupby(col("group")).agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
 
@@ -208,11 +208,7 @@ def test_agg_groupby_null_type_column(make_df):
     daft_df = daft_df.groupby(col("group"))
 
     with pytest.raises(ValueError):
-        daft_df.agg(
-            [
-                (col("values").alias("sum"), "sum"),
-            ]
-        )
+        daft_df.agg(col("values").sum().alias("sum"))
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
@@ -226,11 +222,7 @@ def test_null_groupby_keys(make_df, repartition_nparts):
         repartition=repartition_nparts,
     )
 
-    daft_df = daft_df.groupby(col("group")).agg(
-        [
-            (col("values").alias("mean"), "mean"),
-        ]
-    )
+    daft_df = daft_df.groupby(col("group")).agg(col("values").mean().alias("mean"))
 
     expected = {
         "group": [0, 1, 2, None],
@@ -257,10 +249,8 @@ def test_all_null_groupby_keys(make_df, repartition_nparts):
         daft_df.with_column("group", daft_df["group"].cast(DataType.int64()))
         .groupby(col("group"))
         .agg(
-            [
-                (col("values").alias("mean"), "mean"),
-                (col("values").alias("list"), "list"),
-            ]
+            col("values").agg_list().alias("list"),
+            col("values").mean().alias("mean"),
         )
     )
 
@@ -298,12 +288,12 @@ def test_agg_groupby_empty(make_df):
     daft_df = daft_df.where(col("id") != 0)
     daft_df = daft_df.groupby(col("group")).agg(
         [
-            (col("values").alias("sum"), "sum"),
-            (col("values").alias("mean"), "mean"),
-            (col("values").alias("min"), "min"),
-            (col("values").alias("max"), "max"),
-            (col("values").alias("count"), "count"),
-            (col("values").alias("list"), "list"),
+            col("values").sum().alias("sum"),
+            col("values").mean().alias("mean"),
+            col("values").min().alias("min"),
+            col("values").max().alias("max"),
+            col("values").count().alias("count"),
+            col("values").agg_list().alias("list"),
         ]
     )
 
@@ -335,8 +325,8 @@ def test_agg_pyobjects():
     df = df.into_partitions(2)
     df = df.agg(
         [
-            (col("objs").alias("count"), "count"),
-            (col("objs").alias("list"), "list"),
+            col("objs").count().alias("count"),
+            col("objs").agg_list().alias("list"),
         ]
     )
     df.collect()
@@ -354,8 +344,8 @@ def test_groupby_agg_pyobjects():
         df.groupby(col("groups"))
         .agg(
             [
-                (col("objects").alias("count"), "count"),
-                (col("objects").alias("list"), "list"),
+                col("objects").count().alias("count"),
+                col("objects").agg_list().alias("list"),
             ]
         )
         .sort(col("groups"))
@@ -384,12 +374,28 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
 
         df = df.groupby(col("group")).agg(
             [
-                (col("value").alias("sum"), "sum"),
-                (col("value").alias("mean"), "mean"),
-                (col("value").alias("min"), "min"),
+                col("value").sum().alias("sum"),
+                col("value").mean().alias("mean"),
+                col("value").min().alias("min"),
             ]
         )
 
         df = df.collect()
 
         assert df.num_partitions() == min(min_partitions, partition_size)
+
+
+def test_agg_deprecation():
+    with pytest.deprecated_call():
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [True, False, True]})
+        df = df.agg([("a", "sum"), ("b", "count")])
+        df.collect()
+
+        assert df.to_pydict() == {"a": [6], "b": [3]}
+
+    with pytest.deprecated_call():
+        df = daft.from_pydict({"a": [1, 2, 3], "b": [True, False, True]})
+        df = df.groupby("b").agg([("a", "sum")])
+        df.collect()
+
+        assert df.to_pydict() == {"b": [True, False], "a": [4, 2]}

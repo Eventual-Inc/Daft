@@ -337,35 +337,35 @@ class Expression:
         expr = self._expr.floor()
         return Expression._from_pyexpr(expr)
 
-    def _count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
-    def _sum(self) -> Expression:
+    def sum(self) -> Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def _mean(self) -> Expression:
+    def mean(self) -> Expression:
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
-    def _min(self) -> Expression:
+    def min(self) -> Expression:
         expr = self._expr.min()
         return Expression._from_pyexpr(expr)
 
-    def _max(self) -> Expression:
+    def max(self) -> Expression:
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
-    def _any_value(self, ignore_nulls=False) -> Expression:
+    def any_value(self, ignore_nulls=False) -> Expression:
         expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
-    def _agg_list(self) -> Expression:
+    def agg_list(self) -> Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
-    def _agg_concat(self) -> Expression:
+    def agg_concat(self) -> Expression:
         expr = self._expr.agg_concat()
         return Expression._from_pyexpr(expr)
 

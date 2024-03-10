@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import daft
-from daft import DataFrame
+from daft import DataFrame, col
 
 
 @pytest.mark.benchmark(group="sorts")
@@ -111,7 +111,7 @@ def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
 
     # Make sure the result is correct.
     assert (result.to_pandas()["mykey"].to_numpy() == np.arange(num_samples)).all()
-    assert result.groupby("data").agg([("mykey", "count")]).to_pydict() == {
+    assert result.groupby("data").agg(col("mykey").count()).to_pydict() == {
         "data": [long_A],
         "mykey": [num_samples],
     }

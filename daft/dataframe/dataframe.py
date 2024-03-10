@@ -11,6 +11,7 @@ from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     Iterable,
     Iterator,
@@ -57,6 +58,8 @@ from daft.logical.schema import Schema
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 
 ColumnInputType = Union[Expression, str]
+
+ColumnInputOrListType = Union[ColumnInputType, List[ColumnInputType]]
 
 
 class DataFrame:
@@ -440,6 +443,15 @@ class DataFrame:
 
     def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> List[Expression]:
         return [col(c) if isinstance(c, str) else c for c in columns]
+
+    def _inputs_to_expressions(self, inputs: Tuple[ColumnInputOrListType, ...]) -> List[Expression]:
+        """
+        Inputs to dataframe operations can be passed in as individual arguments or a list.
+        In addition, they may be strings or Expressions.
+        This method normalizes the inputs to a list of Expressions.
+        """
+        cols = inputs[0] if (len(inputs) == 1 and isinstance(inputs[0], list)) else inputs
+        return [col(c) if isinstance(c, str) else c for c in cols]  # type: ignore
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
@@ -941,22 +953,61 @@ class DataFrame:
         builder = self._builder.explode(parsed_exprs)
         return DataFrame(builder)
 
-    def _agg(
-        self, to_agg: List[Tuple[ColumnInputType, str]], group_by: Optional[ExpressionsProjection] = None
-    ) -> "DataFrame":
-        exprs_to_agg: List[Tuple[Expression, str]] = list(
-            zip(self.__column_input_to_expression([c for c, _ in to_agg]), [op for _, op in to_agg])
+    def _agg(self, to_agg: List[Expression], group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
+        builder = self._builder.agg(to_agg, list(group_by) if group_by is not None else None)
+        return DataFrame(builder)
+
+    def _agg_tuple_to_expression(self, agg_tuple: Tuple[ColumnInputType, str]) -> Expression:
+        warnings.warn(
+            "Tuple arguments in aggregations is deprecated and will be removed "
+            "in Daft v0.3. Please use aggregation expressions instead.",
+            DeprecationWarning,
         )
 
-        builder = self._builder.agg(exprs_to_agg, list(group_by) if group_by is not None else None)
-        return DataFrame(builder)
+        expr, op = agg_tuple
+
+        if isinstance(expr, str):
+            expr = col(expr)
+
+        if op == "sum":
+            return expr.sum()
+        elif op == "count":
+            return expr.count()
+        elif op == "min":
+            return expr.min()
+        elif op == "max":
+            return expr.max()
+        elif op == "mean":
+            return expr.mean()
+        elif op == "any_value":
+            return expr.any_value()
+        elif op == "list":
+            return expr.agg_list()
+        elif op == "concat":
+            return expr.agg_concat()
+
+        raise NotImplementedError(f"Aggregation {op} is not implemented.")
+
+    def _agg_helper(
+        self,
+        fn: Callable[[Expression], Expression],
+        cols: Tuple[ColumnInputOrListType, ...],
+        group_by: Optional[ExpressionsProjection] = None,
+    ) -> "DataFrame":
+        if len(cols) == 0:
+            warnings.warn("No columns specified; performing aggregation on all columns.")
+
+            groupby_name_set = set() if group_by is None else group_by.to_name_set()
+            cols = tuple(c for c in self.column_names if c not in groupby_name_set)
+        exprs = self._inputs_to_expressions(cols)
+        return self._agg([fn(c) for c in exprs], group_by)
 
     def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
         builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def sum(self, *cols: ColumnInputType) -> "DataFrame":
+    def sum(self, *cols: ColumnInputOrListType) -> "DataFrame":
         """Performs a global sum on the DataFrame
 
         Args:
@@ -964,12 +1015,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated sums. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing sum on all columns. Specify columns using df.sum('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "sum") for c in cols])
+        return self._agg_helper(Expression.sum, cols)
 
     @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
@@ -980,12 +1026,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated mean. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing mean on all columns. Specify columns using df.mean('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "mean") for c in cols])
+        return self._agg_helper(Expression.mean, cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -996,12 +1037,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated min. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing min on all columns. Specify columns using df.min('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "min") for c in cols])
+        return self._agg_helper(Expression.min, cols)
 
     @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1012,12 +1048,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated max. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing max on all columns. Specify columns using df.max('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "max") for c in cols])
+        return self._agg_helper(Expression.max, cols)
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1028,12 +1059,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing count on all columns. Specify columns using df.count('col1', 'col2', ...) or use df.count_rows() for row counts."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "count") for c in cols])
+        return self._agg_helper(Expression.count, cols)
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1044,12 +1070,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing agg_list on all columns. Specify columns using df.agg_list('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "list") for c in cols])
+        return self._agg_helper(Expression.agg_list, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1060,37 +1081,35 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        if len(cols) == 0:
-            warnings.warn(
-                "No columns specified; performing agg_concat on all columns. Specify columns using df.agg_concat('col1', 'col2', ...)."
-            )
-            cols = tuple(self.columns)
-        return self._agg([(c, "concat") for c in cols])
+        return self._agg_helper(Expression.agg_concat, cols)
 
     @DataframePublicAPI
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":
+    def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
         """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
         Will return a single row that aggregated the entire DataFrame.
 
         Example:
-            >>> df = df.agg([
-            >>>     ('x', 'sum'),
-            >>>     ('x', 'mean'),
-            >>>     ('y', 'min'),
-            >>>     ('y', 'max'),
-            >>>     (col('x') + col('y'), 'max'),
-            >>> ])
+            >>> df = df.agg(
+            >>>     col('x').sum(),
+            >>>     col('x').mean(),
+            >>>     col('y').min(),
+            >>>     col('y').max(),
+            >>>     (col('x') + col('y')).max(),
+            >>> )
 
         Args:
-            to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
+            *to_agg (Expression): aggregation expressions
 
         Returns:
             DataFrame: DataFrame with aggregated results
         """
-        return self._agg(to_agg, group_by=None)
+        exprs = [
+            self._agg_tuple_to_expression(c) if isinstance(c, tuple) else c for c in self._inputs_to_expressions(to_agg)  # type: ignore
+        ]
+        return self._agg(exprs, group_by=None)
 
     @DataframePublicAPI
-    def groupby(self, *group_by: ColumnInputType) -> "GroupedDataFrame":
+    def groupby(self, *group_by: ColumnInputOrListType) -> "GroupedDataFrame":
         """Performs a GroupBy on the DataFrame for aggregation
 
         Args:
@@ -1099,7 +1118,7 @@ class DataFrame:
         Returns:
             GroupedDataFrame: DataFrame to Aggregate
         """
-        return GroupedDataFrame(self, ExpressionsProjection(self.__column_input_to_expression(group_by)))
+        return GroupedDataFrame(self, ExpressionsProjection(self._inputs_to_expressions(group_by)))
 
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
@@ -1509,7 +1528,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped sums.
         """
-        return self.df._agg([(c, "sum") for c in cols], group_by=self.group_by)
+        return self.df._agg_helper(Expression.sum, cols, self.group_by)
 
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped mean on this GroupedDataFrame.
@@ -1520,8 +1539,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped mean.
         """
-
-        return self.df._agg([(c, "mean") for c in cols], group_by=self.group_by)
+        return self.df._agg_helper(Expression.mean, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.
@@ -1532,7 +1550,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped min.
         """
-        return self.df._agg([(c, "min") for c in cols], group_by=self.group_by)
+        return self.df._agg_helper(Expression.min, cols, self.group_by)
 
     def max(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped max on this GroupedDataFrame.
@@ -1543,8 +1561,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped max.
         """
-
-        return self.df._agg([(c, "max") for c in cols], group_by=self.group_by)
+        return self.df._agg_helper(Expression.max, cols, self.group_by)
 
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this GroupedDataFrame.
@@ -1556,59 +1573,54 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with any values.
         """
-        return self.df._agg([(c, "any_value") for c in cols], group_by=self.group_by)
+        return self.df._agg_helper(Expression.any_value, cols, self.group_by)
 
-    def count(self) -> "DataFrame":
+    def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped count on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped count per column.
         """
-        groupby_name_set = self.group_by.to_name_set()
-        return self.df._agg(
-            [(c, "count") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
-        )
+        return self.df._agg_helper(Expression.count, cols, self.group_by)
 
-    def agg_list(self) -> "DataFrame":
+    def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped list on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped list per column.
         """
-        groupby_name_set = self.group_by.to_name_set()
-        return self.df._agg(
-            [(c, "list") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
-        )
+        return self.df._agg_helper(Expression.agg_list, cols, self.group_by)
 
-    def agg_concat(self) -> "DataFrame":
+    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped concat on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped concatenated list per column.
         """
-        groupby_name_set = self.group_by.to_name_set()
-        return self.df._agg(
-            [(c, "concat") for c in self.df.column_names if c not in groupby_name_set], group_by=self.group_by
-        )
+        return self.df._agg_helper(Expression.agg_concat, cols, self.group_by)
 
-    def agg(self, to_agg: List[Tuple[ColumnInputType, str]]) -> "DataFrame":
+    def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Example:
-            >>> df = df.groupby('x').agg([
-            >>>     ('x', 'sum'),
-            >>>     ('x', 'mean'),
-            >>>     ('y', 'min'),
-            >>>     ('y', 'max'),
-            >>> ])
+            >>> df = df.groupby('x').agg(
+            >>>     col('x').sum(),
+            >>>     col('x').mean(),
+            >>>     col('y').min(),
+            >>>     col('y').max().
+            >>> )
 
         Args:
-            to_agg (List[Tuple[ColumnInputType, str]]): list of (column, agg_type)
+            *to_agg (Expression): aggregation expressions
 
         Returns:
             DataFrame: DataFrame with grouped aggregations
         """
-        return self.df._agg(to_agg, group_by=self.group_by)
+        exprs = [
+            self.df._agg_tuple_to_expression(c) if isinstance(c, tuple) else c  # type: ignore
+            for c in self.df._inputs_to_expressions(to_agg)
+        ]
+        return self.df._agg(exprs, group_by=self.group_by)
 
     def map_groups(self, udf: Expression) -> "DataFrame":
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.

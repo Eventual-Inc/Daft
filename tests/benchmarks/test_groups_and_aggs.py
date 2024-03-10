@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import daft
-from daft import DataFrame
+from daft import DataFrame, col
 
 NUM_SAMPLES = [1_000_000, 10_000_000]
 
@@ -106,7 +106,7 @@ def test_groupby(benchmark, num_samples, num_groups) -> None:
 
     # Run the benchmark.
     def bench() -> DataFrame:
-        return df.groupby("keys").agg([("data", "count")]).collect()
+        return df.groupby("keys").agg(col("data").count()).collect()
 
     result = benchmark(bench)
 
@@ -141,7 +141,7 @@ def test_groupby_string(benchmark, num_samples, num_groups) -> None:
 
     # Run the benchmark.
     def bench() -> DataFrame:
-        return df.groupby("keys").agg([("data", "count")]).collect()
+        return df.groupby("keys").agg(col("data").count()).collect()
 
     result = benchmark(bench)
 
@@ -179,7 +179,7 @@ def test_multicolumn_groupby(benchmark, num_columns, num_samples) -> None:
     group_cols = ["keys_a", "keys"][-num_columns:]
 
     def bench() -> DataFrame:
-        return df.groupby(*group_cols).agg([("data", "count")]).collect()
+        return df.groupby(*group_cols).agg(col("data").count()).collect()
 
     result = benchmark(bench)
 

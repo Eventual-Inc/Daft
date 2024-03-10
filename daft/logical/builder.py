@@ -107,7 +107,7 @@ class LogicalPlanBuilder:
     def count(self) -> LogicalPlanBuilder:
         # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
         first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col._count(CountMode.All)._expr], [])
+        builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
         builder = builder.project([first_col.alias("count")._expr], ResourceRequest())
         return LogicalPlanBuilder(builder)
 
@@ -135,32 +135,11 @@ class LogicalPlanBuilder:
 
     def agg(
         self,
-        to_agg: list[tuple[Expression, str]],
+        to_agg: list[Expression],
         group_by: list[Expression] | None,
     ) -> LogicalPlanBuilder:
-        exprs = []
-        for expr, op in to_agg:
-            if op == "sum":
-                exprs.append(expr._sum())
-            elif op == "count":
-                exprs.append(expr._count())
-            elif op == "min":
-                exprs.append(expr._min())
-            elif op == "max":
-                exprs.append(expr._max())
-            elif op == "mean":
-                exprs.append(expr._mean())
-            elif op == "any_value":
-                exprs.append(expr._any_value())
-            elif op == "list":
-                exprs.append(expr._agg_list())
-            elif op == "concat":
-                exprs.append(expr._agg_concat())
-            else:
-                raise NotImplementedError(f"Aggregation {op} is not implemented.")
-
         group_by_pyexprs = [expr._expr for expr in group_by] if group_by is not None else []
-        builder = self._builder.aggregate([expr._expr for expr in exprs], group_by_pyexprs)
+        builder = self._builder.aggregate([expr._expr for expr in to_agg], group_by_pyexprs)
         return LogicalPlanBuilder(builder)
 
     def map_groups(self, udf: Expression, group_by: list[Expression] | None) -> LogicalPlanBuilder:

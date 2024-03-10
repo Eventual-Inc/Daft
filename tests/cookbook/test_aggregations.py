@@ -76,10 +76,10 @@ def test_global_agg(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg(
         [
-            (col("Unique Key").alias("unique_key_mean"), "mean"),
-            (col("Unique Key").alias("unique_key_sum"), "sum"),
-            (col("Borough").alias("borough_min"), "min"),
-            (col("Borough").alias("borough_max"), "max"),
+            col("Unique Key").mean().alias("unique_key_mean"),
+            col("Unique Key").sum().alias("unique_key_sum"),
+            col("Borough").min().alias("borough_min"),
+            col("Borough").max().alias("borough_max"),
         ]
     )
     service_requests_csv_pd_df = pd.DataFrame.from_records(
