@@ -49,6 +49,6 @@ def test_count(unary_data_fixture):
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
         expr=col(arg.name()).count(),
-        run_kernel=lambda: arg._count(),
+        run_kernel=lambda: arg.count(),
         resolvable=True,
     )

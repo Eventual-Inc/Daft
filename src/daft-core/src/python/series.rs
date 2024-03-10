@@ -190,27 +190,27 @@ impl PySeries {
         Ok((&self.series).not()?.into())
     }
 
-    pub fn _count(&self, mode: CountMode) -> PyResult<Self> {
+    pub fn count(&self, mode: CountMode) -> PyResult<Self> {
         Ok((self.series).count(None, mode)?.into())
     }
 
-    pub fn _sum(&self) -> PyResult<Self> {
+    pub fn sum(&self) -> PyResult<Self> {
         Ok((self.series).sum(None)?.into())
     }
 
-    pub fn _mean(&self) -> PyResult<Self> {
+    pub fn mean(&self) -> PyResult<Self> {
         Ok((self.series).mean(None)?.into())
     }
 
-    pub fn _min(&self) -> PyResult<Self> {
+    pub fn min(&self) -> PyResult<Self> {
         Ok((self.series).min(None)?.into())
     }
 
-    pub fn _max(&self) -> PyResult<Self> {
+    pub fn max(&self) -> PyResult<Self> {
         Ok((self.series).max(None)?.into())
     }
 
-    pub fn _agg_list(&self) -> PyResult<Self> {
+    pub fn agg_list(&self) -> PyResult<Self> {
         Ok((self.series).agg_list(None)?.into())
     }
 
