@@ -9,7 +9,7 @@ use serde_json::Value;
 
 impl Utf8Array {
     pub fn json_query(&self, query: &str) -> DaftResult<Utf8Array> {
-        // parse the filter
+        // parse the query string
         let (filter, errs) = jaq_parse::parse(query, jaq_parse::main());
         if !errs.is_empty() {
             return Err(DaftError::ValueError(format!(
@@ -18,10 +18,12 @@ impl Utf8Array {
             )));
         }
 
-        // compile the filter in the context of the given definitions
+        // set up the parse context with the core and std libraries https://github.com/01mf02/jaq/tree/main?tab=readme-ov-file#features
         let mut defs = ParseCtx::new(Vec::new());
         defs.insert_natives(jaq_core::core());
         defs.insert_defs(jaq_std::std());
+
+        // compile the filter executable
         let compiled_filter = defs.compile(filter.unwrap());
         if !defs.errs.is_empty() {
             return Err(DaftError::ComputeError(format!(
