@@ -1,7 +1,7 @@
 use async_stream::stream;
 use futures::stream::{BoxStream, StreamExt};
 use itertools::Itertools;
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 use tokio::sync::mpsc::Sender;
 
 use globset::{GlobBuilder, GlobMatcher};
@@ -25,6 +25,11 @@ const SCHEME_SUFFIX_LEN: usize = "://".len();
 /// directories. The concept of a "glob" is a Unix concept anyways, and so even for Windows machines
 /// the `glob` utility can only be used with POSIX-style paths.
 const GLOB_DELIMITER: &str = "/";
+
+// NOTE: We use the following suffixes to filter out Spark marker files
+const MARKER_SUFFIXES: [&str; 1] = [".crc"];
+// NOTE: We use the following file names to filter out Spark marker files
+const MARKER_FILES: [&str; 3] = ["_metadata", "_common_metadata", "_success"];
 
 #[derive(Clone)]
 pub(crate) struct GlobState {
@@ -300,12 +305,24 @@ async fn ls_with_prefix_fallback(
 
 /// Helper to filter FileMetadata entries that should not be returned by globbing
 fn _should_return(fm: &FileMetadata) -> bool {
+    let file_path = fm.filepath.to_lowercase();
+    let file_name = Path::new(&file_path).file_name().and_then(|f| f.to_str());
     match fm.filetype {
         // Do not return size-0 File entries that end with "/"
         // These are usually used to demarcate "empty folders", since S3 is not really a filesystem
         // However they can lead to unexpected globbing behavior since most users do not expect them to exist
         FileType::File
-            if fm.filepath.ends_with(GLOB_DELIMITER) && fm.size.is_some_and(|s| s == 0) =>
+            if file_path.ends_with(GLOB_DELIMITER) && fm.size.is_some_and(|s| s == 0) =>
+        {
+            false
+        }
+        // Do not return Spark marker files
+        FileType::File
+            if MARKER_SUFFIXES
+                .iter()
+                .any(|suffix| file_path.ends_with(suffix))
+                || file_name
+                    .is_some_and(|file| MARKER_FILES.iter().any(|m_file| file == *m_file)) =>
         {
             false
         }
