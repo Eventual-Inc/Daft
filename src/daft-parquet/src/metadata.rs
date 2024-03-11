@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
-use daft_dsl::common_treenode::{TreeNode, TreeNodeRewriter, VisitRecursion};
+use daft_dsl::common_treenode::{Transformed, TreeNode, VisitRecursion};
 use daft_io::{IOClient, IOStatsRef};
 
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
@@ -65,63 +65,63 @@ impl TreeNode for ParquetTypeWrapper {
     }
 }
 
-struct ParquetTypeFieldIdRewriter<'a> {
-    field_id_mapping: &'a BTreeMap<i32, Field>,
-}
-
-impl<'a> TreeNodeRewriter for ParquetTypeFieldIdRewriter<'a> {
-    type N = ParquetTypeWrapper;
-
-    fn mutate(&mut self, node: Self::N) -> DaftResult<Self::N> {
-        match node.0 {
-            ParquetType::PrimitiveType(mut primitive_type) => {
-                // Fix the `node`'s name
-                let field_id = primitive_type.field_info.id;
-                if let Some(mapped_field) =
-                    field_id.and_then(|field_id| self.field_id_mapping.get(&field_id))
-                {
-                    primitive_type.field_info.name = mapped_field.name.clone();
-                }
-                Ok(ParquetTypeWrapper(ParquetType::PrimitiveType(
-                    primitive_type,
-                )))
-            }
-            ParquetType::GroupType {
-                mut field_info,
-                mut fields,
-                logical_type,
-                converted_type,
-            } => {
-                // Fix the `node`'s name
-                let field_id = field_info.id;
-                if let Some(mapped_field) =
-                    field_id.and_then(|field_id| self.field_id_mapping.get(&field_id))
-                {
-                    field_info.name = mapped_field.name.clone();
-                }
-
-                match logical_type {
-                    // GroupTypes with logical types List/Map have intermediate child nested fields without field_ids,
-                    // but we need to keep recursing on them to keep renaming on their children.
-                    Some(_) => (),
-                    // GroupTypes without logical_types are just structs, and we can go ahead with removing
-                    // any fields that don't have field IDs with a corresponding match in the mapping
-                    None => fields.retain(|f| {
-                        f.get_field_info()
-                            .id
-                            .map(|field_id| self.field_id_mapping.contains_key(&field_id))
-                            .unwrap_or(false)
-                    }),
-                };
-
-                Ok(ParquetTypeWrapper(ParquetType::GroupType {
-                    field_info,
-                    logical_type,
-                    converted_type,
-                    fields,
-                }))
+fn rewrite_parquet_type_with_field_id_mapping(
+    mut pq_type: ParquetTypeWrapper,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> DaftResult<Transformed<ParquetTypeWrapper>> {
+    let mut transformed = false;
+    match pq_type.0 {
+        ParquetType::PrimitiveType(ref mut primitive_type) => {
+            let field_id = primitive_type.field_info.id;
+            if let Some(mapped_field) =
+                field_id.and_then(|field_id| field_id_mapping.get(&field_id))
+            {
+                // Fix the `pq_type`'s name
+                primitive_type.field_info.name = mapped_field.name.clone();
+                transformed = true;
             }
         }
+        ParquetType::GroupType {
+            ref mut field_info,
+            ref mut fields,
+            ref logical_type,
+            ..
+        } => {
+            let field_id = field_info.id;
+            if let Some(mapped_field) =
+                field_id.and_then(|field_id| field_id_mapping.get(&field_id))
+            {
+                // Fix the `pq_type`'s name
+                field_info.name = mapped_field.name.clone();
+                transformed = true;
+            }
+
+            // Fix the `pq_type`'s fields, keeping only the fields that are correctly mapped to a field_id
+            match logical_type {
+                // GroupTypes with logical types List/Map have intermediate child nested fields without field_ids,
+                // but we need to keep recursing on them to keep renaming on their children.
+                Some(_) => {}
+                // GroupTypes without logical_types are just structs, and we can go ahead with removing
+                // any fields that don't have field IDs with a corresponding match in the mapping
+                None => {
+                    let old_field_length = fields.len();
+                    fields.retain(|f| {
+                        f.get_field_info()
+                            .id
+                            .map(|field_id| field_id_mapping.contains_key(&field_id))
+                            .unwrap_or(false)
+                    });
+                    if fields.len() != old_field_length {
+                        transformed = true;
+                    }
+                }
+            };
+        }
+    };
+    if transformed {
+        Ok(Transformed::Yes(pq_type))
+    } else {
+        Ok(Transformed::No(pq_type))
     }
 }
 
@@ -136,9 +136,10 @@ fn apply_field_ids_to_parquet_type(
         .map(|field_id| field_id_mapping.contains_key(&field_id))
         .unwrap_or(false)
     {
-        let mut pq_type_rewriter = ParquetTypeFieldIdRewriter { field_id_mapping };
         let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
-            .rewrite(&mut pq_type_rewriter)
+            .transform(&|pq_type| {
+                rewrite_parquet_type_with_field_id_mapping(pq_type, field_id_mapping)
+            })
             .unwrap()
             .0;
         Some(rewritten_pq_type)
