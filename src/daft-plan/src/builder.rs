@@ -75,6 +75,8 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
                 },
             }
         }),
+        // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions
+        // as long as the final value always has a cardinality of 1.
         _ => Err(DaftError::ValueError(format!(
             "Expected aggregation expression, but got: {expr}"
         ))),

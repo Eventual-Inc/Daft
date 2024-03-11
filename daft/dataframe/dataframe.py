@@ -988,7 +988,7 @@ class DataFrame:
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
-    def _agg_helper(
+    def _apply_agg_fn(
         self,
         fn: Callable[[Expression], Expression],
         cols: Tuple[ColumnInputOrListType, ...],
@@ -1015,7 +1015,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated sums. Should be a single row.
         """
-        return self._agg_helper(Expression.sum, cols)
+        return self._apply_agg_fn(Expression.sum, cols)
 
     @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1026,7 +1026,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated mean. Should be a single row.
         """
-        return self._agg_helper(Expression.mean, cols)
+        return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1037,7 +1037,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated min. Should be a single row.
         """
-        return self._agg_helper(Expression.min, cols)
+        return self._apply_agg_fn(Expression.min, cols)
 
     @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1048,7 +1048,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated max. Should be a single row.
         """
-        return self._agg_helper(Expression.max, cols)
+        return self._apply_agg_fn(Expression.max, cols)
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1059,7 +1059,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
         """
-        return self._agg_helper(Expression.count, cols)
+        return self._apply_agg_fn(Expression.count, cols)
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1070,7 +1070,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        return self._agg_helper(Expression.agg_list, cols)
+        return self._apply_agg_fn(Expression.agg_list, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -1081,7 +1081,7 @@ class DataFrame:
         Returns:
             DataFrame: Globally aggregated list. Should be a single row.
         """
-        return self._agg_helper(Expression.agg_concat, cols)
+        return self._apply_agg_fn(Expression.agg_concat, cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
@@ -1528,7 +1528,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped sums.
         """
-        return self.df._agg_helper(Expression.sum, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.sum, cols, self.group_by)
 
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped mean on this GroupedDataFrame.
@@ -1539,7 +1539,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped mean.
         """
-        return self.df._agg_helper(Expression.mean, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.
@@ -1550,7 +1550,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped min.
         """
-        return self.df._agg_helper(Expression.min, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.min, cols, self.group_by)
 
     def max(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped max on this GroupedDataFrame.
@@ -1561,7 +1561,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped max.
         """
-        return self.df._agg_helper(Expression.max, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.max, cols, self.group_by)
 
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this GroupedDataFrame.
@@ -1573,7 +1573,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with any values.
         """
-        return self.df._agg_helper(Expression.any_value, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.any_value, cols, self.group_by)
 
     def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped count on this GroupedDataFrame.
@@ -1581,7 +1581,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped count per column.
         """
-        return self.df._agg_helper(Expression.count, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.count, cols, self.group_by)
 
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped list on this GroupedDataFrame.
@@ -1589,7 +1589,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped list per column.
         """
-        return self.df._agg_helper(Expression.agg_list, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.agg_list, cols, self.group_by)
 
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped concat on this GroupedDataFrame.
@@ -1597,7 +1597,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped concatenated list per column.
         """
-        return self.df._agg_helper(Expression.agg_concat, cols, self.group_by)
+        return self.df._apply_agg_fn(Expression.agg_concat, cols, self.group_by)
 
     def agg(self, *to_agg: ColumnInputOrListType) -> "DataFrame":
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
