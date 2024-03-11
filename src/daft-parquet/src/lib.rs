@@ -145,6 +145,18 @@ pub enum Error {
     ParquetColumnsDontHaveEqualRows { path: String },
 
     #[snafu(display(
+        "Parquet file: {} metadata listed {} columns but only read: {} ",
+        path,
+        metadata_num_columns,
+        read_columns
+    ))]
+    ParquetNumColumnMismatch {
+        path: String,
+        metadata_num_columns: usize,
+        read_columns: usize,
+    },
+
+    #[snafu(display(
         "Parquet file: {} unable to convert row group metadata to stats\nDetails:\n{source}",
         path,
     ))]
