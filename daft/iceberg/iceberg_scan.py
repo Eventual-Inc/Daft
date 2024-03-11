@@ -9,6 +9,7 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.schema import visit
 from pyiceberg.table import Table
 from pyiceberg.typedef import Record
 
@@ -18,11 +19,11 @@ from daft.daft import (
     ParquetSourceConfig,
     PartitionTransform,
     Pushdowns,
-    PyField,
     ScanTask,
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -87,11 +88,7 @@ class IcebergScanOperator(ScanOperator):
         self._storage_config = storage_config
         iceberg_schema = iceberg_table.schema()
         arrow_schema = schema_to_pyarrow(iceberg_schema)
-        self._field_id_mapping = {
-            # NOTE: A little dangerous here to use a private API
-            field_id: PyField.create(field.name, DataType.from_arrow_type(schema_to_pyarrow(field.field_type))._dtype)
-            for field_id, field in iceberg_schema._lazy_id_to_field.items()
-        }
+        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
 
