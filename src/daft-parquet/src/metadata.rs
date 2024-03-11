@@ -88,7 +88,7 @@ impl<'a> TreeNodeRewriter for ParquetTypeFieldIdRewriter<'a> {
             }
             ParquetType::GroupType {
                 mut field_info,
-                fields,
+                mut fields,
                 logical_type,
                 converted_type,
             } => {
@@ -100,21 +100,18 @@ impl<'a> TreeNodeRewriter for ParquetTypeFieldIdRewriter<'a> {
                     field_info.name = mapped_field.name.clone();
                 }
 
-                let fields = match logical_type {
+                match logical_type {
                     // GroupTypes with logical types List/Map have intermediate child nested fields without field_ids,
                     // but we need to keep recursing on them to keep renaming on their children.
-                    Some(_) => fields,
+                    Some(_) => (),
                     // GroupTypes without logical_types are just structs, and we can go ahead with removing
                     // any fields that don't have field IDs with a corresponding match in the mapping
-                    None => fields
-                        .into_iter()
-                        .filter(|f| {
-                            f.get_field_info()
-                                .id
-                                .and_then(|field_id| self.field_id_mapping.get(&field_id))
-                                .is_some()
-                        })
-                        .collect(),
+                    None => fields.retain(|f| {
+                        f.get_field_info()
+                            .id
+                            .map(|field_id| self.field_id_mapping.contains_key(&field_id))
+                            .unwrap_or(false)
+                    }),
                 };
 
                 Ok(ParquetTypeWrapper(ParquetType::GroupType {
@@ -136,8 +133,8 @@ fn apply_field_ids_to_parquet_type(
 ) -> Option<ParquetType> {
     let field_id = parquet_type.get_field_info().id;
     if field_id
-        .and_then(|field_id| field_id_mapping.get(&field_id))
-        .is_some()
+        .map(|field_id| field_id_mapping.contains_key(&field_id))
+        .unwrap_or(false)
     {
         let mut pq_type_rewriter = ParquetTypeFieldIdRewriter { field_id_mapping };
         let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
@@ -188,7 +185,7 @@ fn apply_field_ids_to_parquet_file_metadata(
 
     let new_row_groups = file_metadata
         .row_groups
-        .iter()
+        .into_iter()
         .map(|rg| {
             let new_columns = rg
                 .columns()
