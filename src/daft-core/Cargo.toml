@@ -11,6 +11,10 @@ fnv = "1.0.7"
 html-escape = {workspace = true}
 indexmap = {workspace = true, features = ["serde"]}
 itertools = {workspace = true}
+jaq-core = {workspace = true}
+jaq-interpret = {workspace = true}
+jaq-parse = {workspace = true}
+jaq-std = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 mur3 = "0.1.0"

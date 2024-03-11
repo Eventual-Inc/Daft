@@ -1,5 +1,6 @@
 pub mod float;
 pub mod image;
+pub mod json;
 pub mod list;
 pub mod numeric;
 pub mod partitioning;
@@ -11,6 +12,7 @@ pub mod utf8;
 use std::fmt::{Formatter, Result};
 
 use self::image::ImageExpr;
+use self::json::JsonExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
 use self::partitioning::PartitioningExpr;
@@ -38,6 +40,7 @@ pub enum FunctionExpr {
     Temporal(TemporalExpr),
     List(ListExpr),
     Struct(StructExpr),
+    Json(JsonExpr),
     Image(ImageExpr),
     #[cfg(feature = "python")]
     Python(PythonUDF),
@@ -62,6 +65,7 @@ impl FunctionExpr {
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
+            Json(expr) => expr.query_evaluator(),
             Image(expr) => expr.get_evaluator(),
             Uri(expr) => expr.get_evaluator(),
             #[cfg(feature = "python")]

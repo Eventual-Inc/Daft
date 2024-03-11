@@ -24,6 +24,7 @@ mod hash;
 mod if_else;
 pub(crate) mod image;
 mod is_in;
+mod json;
 mod len;
 mod list;
 mod list_agg;

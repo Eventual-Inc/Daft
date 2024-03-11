@@ -160,6 +160,11 @@ class Expression:
         """Access methods that support partitioning operators"""
         return ExpressionPartitioningNamespace.from_expression(self)
 
+    @accessor_namespace_property
+    def json(self) -> ExpressionJsonNamespace:
+        """Access methods that work on columns of json"""
+        return ExpressionJsonNamespace.from_expression(self)
+
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
@@ -1098,3 +1103,17 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
             Expression: Expression of the Same Type of the input
         """
         return Expression._from_pyexpr(self._expr.partitioning_iceberg_truncate(w))
+
+
+class ExpressionJsonNamespace(ExpressionNamespace):
+    def query(self, jq_query: str) -> Expression:
+        """Query JSON data in a column using a JQ filter https://jqlang.github.io/jq/manual/
+
+        Args:
+            jq_query (str): JQ query string
+
+        Returns:
+            Expression: Expression with the result of the JQ query
+        """
+
+        return Expression._from_pyexpr(self._expr.json_query(jq_query))
