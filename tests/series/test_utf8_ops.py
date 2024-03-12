@@ -314,3 +314,27 @@ def test_series_utf8_reverse(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.reverse()
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        (["Foo", "BarBaz", "quux"], ["Foo", "Barbaz", "Quux"]),
+        # With at least one null
+        (["Foo", None, "BarBaz", "quux"], ["Foo", None, "Barbaz", "Quux"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+        # With at least one numeric strings
+        (["Foo", "BarBaz", "quux", "2"], ["Foo", "Barbaz", "Quux", "2"]),
+        # With all numeric strings
+        (["1", "2", "3"], ["1", "2", "3"]),
+        # With empty string
+        (["", "Foo", "BarBaz", "quux"], ["", "Foo", "Barbaz", "Quux"]),
+        # With emojis
+        (["😃😌😝", "abc😃😄😅"], ["😃😌😝", "Abc😃😄😅"]),
+    ],
+)
+def test_series_utf8_capitalize(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.capitalize()
+    assert result.to_pylist() == expected

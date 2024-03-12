@@ -93,3 +93,13 @@ def test_str_reverse():
         run_kernel=s.str.reverse,
         resolvable=True,
     )
+
+
+def test_str_capitalize():
+    s = Series.from_arrow(pa.array(["foo", "Bar", "BUZZ"]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.capitalize(),
+        run_kernel=s.str.capitalize,
+        resolvable=True,
+    )

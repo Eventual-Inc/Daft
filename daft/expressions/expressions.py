@@ -808,6 +808,17 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_reverse())
 
+    def capitalize(self) -> Expression:
+        """Capitalize a UTF-8 string
+
+        Example:
+            >>> col("x").str.capitalize()
+
+        Returns:
+            Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
+        """
+        return Expression._from_pyexpr(self._expr.utf8_capitalize())
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

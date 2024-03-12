@@ -423,6 +423,11 @@ impl PyExpr {
         Ok(reverse(&self.expr).into())
     }
 
+    pub fn utf8_capitalize(&self) -> PyResult<Self> {
+        use crate::functions::utf8::capitalize;
+        Ok(capitalize(&self.expr).into())
+    }
+
     pub fn image_decode(&self) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(&self.expr).into())

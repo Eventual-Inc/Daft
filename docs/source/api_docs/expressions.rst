@@ -104,6 +104,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.lstrip
    Expression.str.rstrip
    Expression.str.reverse
+   Expression.str.capitalize
 
 .. _api-expressions-temporal:
 
