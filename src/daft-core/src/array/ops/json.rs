@@ -1,39 +1,55 @@
+use std::sync::Mutex;
+
 use crate::datatypes::Utf8Array;
 use arrow2;
 
 use super::as_arrow::AsArrow;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
-use jaq_interpret::{Ctx, FilterT, ParseCtx, RcIter};
+use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter};
+use lazy_static::lazy_static;
 use serde_json::Value;
+
+fn setup_parse_ctx() -> ParseCtx {
+    // set up the parse context with the core and std libraries https://github.com/01mf02/jaq/tree/main?tab=readme-ov-file#features
+    let mut defs = ParseCtx::new(Vec::new());
+    defs.insert_natives(jaq_core::core());
+    defs.insert_defs(jaq_std::std());
+    defs
+}
+
+lazy_static! {
+    static ref PARSE_CTX: Mutex<ParseCtx> = Mutex::new(setup_parse_ctx());
+}
+
+fn compile_filter(query: &str) -> DaftResult<Filter> {
+    // parse the filter
+    let (filter, errs) = jaq_parse::parse(query, jaq_parse::main());
+    if !errs.is_empty() {
+        return Err(DaftError::ValueError(format!(
+            "Error parsing json query ({query}): {}",
+            errs.iter().map(|e| e.to_string()).join(", ")
+        )));
+    }
+
+    // compile the filter executable
+    let mut defs = PARSE_CTX.lock().unwrap();
+    let compiled_filter = defs.compile(filter.unwrap());
+    if !defs.errs.is_empty() {
+        return Err(DaftError::ComputeError(format!(
+            "Error compiling json query ({query}): {}",
+            defs.errs.iter().map(|(e, _)| e.to_string()).join(", ")
+        )));
+    }
+
+    Ok(compiled_filter)
+}
 
 impl Utf8Array {
     pub fn json_query(&self, query: &str) -> DaftResult<Utf8Array> {
-        // parse the query string
-        let (filter, errs) = jaq_parse::parse(query, jaq_parse::main());
-        if !errs.is_empty() {
-            return Err(DaftError::ValueError(format!(
-                "Error parsing json query ({query}): {}",
-                errs.iter().map(|e| e.to_string()).join(", ")
-            )));
-        }
-
-        // set up the parse context with the core and std libraries https://github.com/01mf02/jaq/tree/main?tab=readme-ov-file#features
-        let mut defs = ParseCtx::new(Vec::new());
-        defs.insert_natives(jaq_core::core());
-        defs.insert_defs(jaq_std::std());
-
-        // compile the filter executable
-        let compiled_filter = defs.compile(filter.unwrap());
-        if !defs.errs.is_empty() {
-            return Err(DaftError::ComputeError(format!(
-                "Error compiling json query ({query}): {}",
-                defs.errs.iter().map(|(e, _)| e.to_string()).join(", ")
-            )));
-        }
-
-        // run the filter
+        let compiled_filter = compile_filter(query)?;
         let inputs = RcIter::new(core::iter::empty());
+
         let self_arrow = self.as_arrow();
         let arrow_result = self_arrow
             .iter()
@@ -52,7 +68,7 @@ impl Utf8Array {
                                     })
                                 })
                                 .collect::<Result<Vec<_>, _>>()
-                                .map(|values| Some(values.join(", ")))
+                                .map(|values| Some(values.join("\n")))
                         })
                 })
             })

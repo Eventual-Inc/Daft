@@ -1129,7 +1129,7 @@ class ExpressionJsonNamespace(ExpressionNamespace):
             jq_query (str): JQ query string
 
         Returns:
-            Expression: Expression with the result of the JQ query
+            Expression: Expression representing the result of the JQ query as a column of JSON-compatible strings
         """
 
         return Expression._from_pyexpr(self._expr.json_query(jq_query))

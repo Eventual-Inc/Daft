@@ -37,7 +37,7 @@ from daft.table import MicroPartition
         # Test map
         pytest.param(["[0, 1, 2, 3]"], "map(.*2) | [.[] | select(. < 5)]", ["[0,2,4]"], id="map"),
         # Test iteration
-        pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]"], ".[]", ["1, 2, 3", "4, 5, 6", "7, 8, 9"], id="iteration"),
+        pytest.param(["[1, 2, 3]", "[4, 5, 6]", "[7, 8, 9]"], ".[]", ["1\n2\n3", "4\n5\n6", "7\n8\n9"], id="iteration"),
     ],
 )
 def test_json_query_ok(data, query, expected):
