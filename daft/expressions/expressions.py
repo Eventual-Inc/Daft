@@ -1107,7 +1107,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
 class ExpressionJsonNamespace(ExpressionNamespace):
     def query(self, jq_query: str) -> Expression:
-        """Query JSON data in a column using a JQ stylefilter https://jqlang.github.io/jq/manual/
+        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/
         This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
 
         Example:

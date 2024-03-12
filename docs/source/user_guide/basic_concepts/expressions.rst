@@ -204,6 +204,38 @@ Daft provides the :meth:`.url.* <daft.expressions.Expression.url>` method namesp
 
 This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
 
+JSON Expressions
+^^^^^^^^^^^^^^^^
+
+If you have a column of JSON strings, Daft provides the :meth:`.json.* <daft.expressions.Expression.json>` method namespace to run `JQ-style filters <https://stedolan.github.io/jq/manual/>`_ on them. For example, to extract a value from a JSON object:
+
+.. code:: python
+
+    df = daft.from_pydict({
+        "json": [
+            '{"a": 1, "b": 2}',
+            '{"a": 3, "b": 4}',
+        ],
+    })
+    df = df.with_column("a", df["json"].json.query(".a"))
+    df.collect()
+
+.. code:: none
+
+    ╭──────────────────┬──────╮
+    │ json             ┆ a    │
+    │ ---              ┆ ---  │
+    │ Utf8             ┆ Utf8 │
+    ╞══════════════════╪══════╡
+    │ {"a": 1, "b": 2} ┆ 1    │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ {"a": 3, "b": 4} ┆ 3    │
+    ╰──────────────────┴──────╯
+
+    (Showing first 2 of 2 rows)
+
+Daft uses `jaq <https://github.com/01mf02/jaq/tree/main>`_ as the underlying executor, so you can find the full list of supported filters in the `jaq documentation <https://github.com/01mf02/jaq/tree/main>`_.
+
 .. _userguide-logical-expressions:
 
 Logical Expressions
