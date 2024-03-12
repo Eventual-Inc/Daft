@@ -183,3 +183,13 @@ URLs
    :template: autosummary/accessor_method.rst
 
    Expression.url.download
+
+JSON
+####
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc_gen/expression_methods
+   :template: autosummary/accessor_method.rst
+
+   Expression.json.query

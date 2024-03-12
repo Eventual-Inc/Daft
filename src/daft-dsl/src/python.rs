@@ -503,6 +503,11 @@ impl PyExpr {
         Ok(iceberg_truncate(self.expr.clone(), w).into())
     }
 
+    pub fn json_query(&self, _query: &str) -> PyResult<Self> {
+        use crate::functions::json::query;
+        Ok(query(&self.expr, _query).into())
+    }
+
     pub fn url_download(
         &self,
         max_connections: i64,
