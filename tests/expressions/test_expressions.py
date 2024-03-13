@@ -142,9 +142,9 @@ def test_repr_functions_day_of_week() -> None:
 
 
 def test_expr_structurally_equal() -> None:
-    e1 = (col("a")._max() == col("b").alias("moo") - 3).is_null()
-    e2 = (col("a")._max() == col("b").alias("moo") - 3).is_null()
-    e3 = (col("a")._max() == col("b").alias("moo") - 4).is_null()
+    e1 = (col("a").max() == col("b").alias("moo") - 3).is_null()
+    e2 = (col("a").max() == col("b").alias("moo") - 3).is_null()
+    e3 = (col("a").max() == col("b").alias("moo") - 4).is_null()
     assert expr_structurally_equal(e1, e2)
     assert not expr_structurally_equal(e2, e3)
 

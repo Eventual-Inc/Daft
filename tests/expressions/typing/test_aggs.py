@@ -13,8 +13,8 @@ from tests.expressions.typing.conftest import (
 @pytest.mark.parametrize(
     "op",
     [
-        pytest.param(lambda x: x._min(), id="min"),
-        pytest.param(lambda x: x._max(), id="max"),
+        pytest.param(lambda x: x.min(), id="min"),
+        pytest.param(lambda x: x.max(), id="max"),
     ],
 )
 def test_comparable_aggs(unary_data_fixture, op):
@@ -30,8 +30,8 @@ def test_comparable_aggs(unary_data_fixture, op):
 @pytest.mark.parametrize(
     "op",
     [
-        pytest.param(lambda x: x._sum(), id="sum"),
-        pytest.param(lambda x: x._mean(), id="mean"),
+        pytest.param(lambda x: x.sum(), id="sum"),
+        pytest.param(lambda x: x.mean(), id="mean"),
     ],
 )
 def test_numeric_aggs(unary_data_fixture, op):
@@ -48,7 +48,7 @@ def test_count(unary_data_fixture):
     arg = unary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
-        expr=col(arg.name())._count(),
-        run_kernel=lambda: arg._count(),
+        expr=col(arg.name()).count(),
+        run_kernel=lambda: arg.count(),
         resolvable=True,
     )

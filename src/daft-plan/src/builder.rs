@@ -46,6 +46,45 @@ impl LogicalPlanBuilder {
     }
 }
 
+fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
+    use Expr::*;
+
+    match expr {
+        Agg(agg_expr) => Ok(agg_expr.clone()),
+        Function { func, inputs } => Ok(daft_dsl::AggExpr::MapGroups {
+            func: func.clone(),
+            inputs: inputs.clone(),
+        }),
+        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
+            use daft_dsl::AggExpr::*;
+
+            // reorder expressions so that alias goes before agg
+            match agg_expr {
+                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
+                Sum(e) => Sum(Alias(e, name.clone()).into()),
+                Mean(e) => Mean(Alias(e, name.clone()).into()),
+                Min(e) => Min(Alias(e, name.clone()).into()),
+                Max(e) => Max(Alias(e, name.clone()).into()),
+                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
+                List(e) => List(Alias(e, name.clone()).into()),
+                Concat(e) => Concat(Alias(e, name.clone()).into()),
+                MapGroups { func, inputs } => MapGroups {
+                    func,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| Alias(input.into(), name.clone()))
+                        .collect(),
+                },
+            }
+        }),
+        // TODO(Kevin): Support a mix of aggregation and non-aggregation expressions
+        // as long as the final value always has a cardinality of 1.
+        _ => Err(DaftError::ValueError(format!(
+            "Expected aggregation expression, but got: {expr}"
+        ))),
+    }
+}
+
 impl LogicalPlanBuilder {
     #[cfg(feature = "python")]
     pub fn in_memory_scan(
@@ -181,16 +220,7 @@ impl LogicalPlanBuilder {
     pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
-            .map(|expr| match expr {
-                Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
-                Expr::Function { func, inputs } => Ok(daft_dsl::AggExpr::MapGroups {
-                    func: func.clone(),
-                    inputs: inputs.clone(),
-                }),
-                _ => Err(DaftError::ValueError(format!(
-                    "Expected aggregation expression, but got: {expr}"
-                ))),
-            })
+            .map(extract_agg_expr)
             .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
         let logical_plan: LogicalPlan =

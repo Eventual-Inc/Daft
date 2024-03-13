@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from daft import DataType, lit
+from daft import DataType, col, lit
 from tests.conftest import assert_df_equals
 
 
@@ -26,7 +26,7 @@ def test_literal_column_computation(daft_df, service_requests_csv_pd_df):
 
 def test_literal_column_aggregation(daft_df, service_requests_csv_pd_df):
     """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
-    daft_df = daft_df.repartition(2).groupby("Borough").agg([("Unique Key", "sum")])
+    daft_df = daft_df.repartition(2).groupby("Borough").agg(col("Unique Key").sum())
     daft_df = daft_df.with_column("literal_col", lit(1) + 1)
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby("Borough").agg({"Unique Key": "sum"})

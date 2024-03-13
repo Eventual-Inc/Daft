@@ -17,16 +17,14 @@ def q1(get_df: GetDFFunc) -> DataFrame:
         lineitem.where(col("L_SHIPDATE") <= datetime.date(1998, 9, 2))
         .groupby(col("L_RETURNFLAG"), col("L_LINESTATUS"))
         .agg(
-            [
-                (col("L_QUANTITY").alias("sum_qty"), "sum"),
-                (col("L_EXTENDEDPRICE").alias("sum_base_price"), "sum"),
-                (discounted_price.alias("sum_disc_price"), "sum"),
-                (taxed_discounted_price.alias("sum_charge"), "sum"),
-                (col("L_QUANTITY").alias("avg_qty"), "mean"),
-                (col("L_EXTENDEDPRICE").alias("avg_price"), "mean"),
-                (col("L_DISCOUNT").alias("avg_disc"), "mean"),
-                (col("L_QUANTITY").alias("count_order"), "count"),
-            ]
+            col("L_QUANTITY").sum().alias("sum_qty"),
+            col("L_EXTENDEDPRICE").sum().alias("sum_base_price"),
+            discounted_price.sum().alias("sum_disc_price"),
+            taxed_discounted_price.sum().alias("sum_charge"),
+            col("L_QUANTITY").mean().alias("avg_qty"),
+            col("L_EXTENDEDPRICE").mean().alias("avg_price"),
+            col("L_DISCOUNT").mean().alias("avg_disc"),
+            col("L_QUANTITY").count().alias("count_order"),
         )
         .sort(["L_RETURNFLAG", "L_LINESTATUS"])
     )
@@ -52,11 +50,7 @@ def q2(get_df: GetDFFunc) -> DataFrame:
         left_on=col("P_PARTKEY"),
         right_on=col("PS_PARTKEY"),
     )
-    min_cost = brass.groupby(col("P_PARTKEY")).agg(
-        [
-            (col("PS_SUPPLYCOST").alias("min"), "min"),
-        ]
-    )
+    min_cost = brass.groupby(col("P_PARTKEY")).agg(col("PS_SUPPLYCOST").min().alias("min"))
 
     daft_df = (
         brass.join(min_cost, on=col("P_PARTKEY"))
@@ -96,7 +90,7 @@ def q3(get_df: GetDFFunc) -> DataFrame:
             col("O_SHIPPRIORITY"),
         )
         .groupby(col("O_ORDERKEY"), col("O_ORDERDATE"), col("O_SHIPPRIORITY"))
-        .agg([(col("volume").alias("revenue"), "sum")])
+        .agg(col("volume").sum().alias("revenue"))
         .sort(by=["revenue", "O_ORDERDATE"], desc=[True, False])
         .limit(10)
         .select("O_ORDERKEY", "revenue", "O_ORDERDATE", "O_SHIPPRIORITY")
@@ -117,7 +111,7 @@ def q4(get_df: GetDFFunc) -> DataFrame:
     daft_df = (
         lineitems.join(orders, left_on=col("L_ORDERKEY"), right_on=col("O_ORDERKEY"))
         .groupby(col("O_ORDERPRIORITY"))
-        .agg([(col("L_ORDERKEY").alias("order_count"), "count")])
+        .agg(col("L_ORDERKEY").count().alias("order_count"))
         .sort(col("O_ORDERPRIORITY"))
     )
     return daft_df
@@ -142,7 +136,7 @@ def q5(get_df: GetDFFunc) -> DataFrame:
         .join(customer, left_on=[col("O_CUSTKEY"), col("N_NATIONKEY")], right_on=[col("C_CUSTKEY"), col("C_NATIONKEY")])
         .select(col("N_NAME"), (col("L_EXTENDEDPRICE") * (1 - col("L_DISCOUNT"))).alias("value"))
         .groupby(col("N_NAME"))
-        .agg([(col("value").alias("revenue"), "sum")])
+        .agg(col("value").sum().alias("revenue"))
         .sort(col("revenue"), desc=True)
     )
     return daft_df
@@ -200,7 +194,7 @@ def q7(get_df: GetDFFunc) -> DataFrame:
             decrease(col("L_EXTENDEDPRICE"), col("L_DISCOUNT")).alias("volume"),
         )
         .groupby(col("supp_nation"), col("cust_nation"), col("l_year"))
-        .agg([(col("volume").alias("revenue"), "sum")])
+        .agg(col("volume").sum().alias("revenue"))
         .sort(by=["supp_nation", "cust_nation", "l_year"])
     )
     return daft_df
@@ -247,7 +241,7 @@ def q8(get_df: GetDFFunc) -> DataFrame:
             (col("N_NAME") == "BRAZIL").if_else(col("volume"), 0.0).alias("case_volume"),
         )
         .groupby(col("o_year"))
-        .agg([(col("case_volume").alias("case_volume_sum"), "sum"), (col("volume").alias("volume_sum"), "sum")])
+        .agg(col("case_volume").sum().alias("case_volume_sum"), col("volume").sum().alias("volume_sum"))
         .select(col("o_year"), col("case_volume_sum") / col("volume_sum"))
         .sort(col("o_year"))
     )
@@ -281,7 +275,7 @@ def q9(get_df: GetDFFunc) -> DataFrame:
             expr(col("L_EXTENDEDPRICE"), col("L_DISCOUNT"), col("PS_SUPPLYCOST"), col("L_QUANTITY")).alias("amount"),
         )
         .groupby(col("N_NAME"), col("o_year"))
-        .agg([(col("amount"), "sum")])
+        .agg(col("amount").sum())
         .sort(by=["N_NAME", "o_year"], desc=[False, True])
     )
 
@@ -323,7 +317,7 @@ def q10(get_df: GetDFFunc) -> DataFrame:
             col("C_ADDRESS"),
             col("C_COMMENT"),
         )
-        .agg([(col("volume").alias("revenue"), "sum")])
+        .agg(col("volume").sum().alias("revenue"))
         .sort(col("revenue"), desc=True)
         .select(
             col("O_CUSTKEY"),

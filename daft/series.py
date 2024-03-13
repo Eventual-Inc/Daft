@@ -443,25 +443,25 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
-    def _count(self, mode: CountMode = CountMode.Valid) -> Series:
+    def count(self, mode: CountMode = CountMode.Valid) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._count(mode))
+        return Series._from_pyseries(self._series.count(mode))
 
-    def _min(self) -> Series:
+    def min(self) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._min())
+        return Series._from_pyseries(self._series.min())
 
-    def _max(self) -> Series:
+    def max(self) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._max())
+        return Series._from_pyseries(self._series.max())
 
-    def _mean(self) -> Series:
+    def mean(self) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._mean())
+        return Series._from_pyseries(self._series.mean())
 
-    def _sum(self) -> Series:
+    def sum(self) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series._sum())
+        return Series._from_pyseries(self._series.sum())
 
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):
