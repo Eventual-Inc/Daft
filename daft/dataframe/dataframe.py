@@ -447,7 +447,7 @@ class DataFrame:
     def _inputs_to_expressions(self, inputs: Tuple[ColumnInputOrListType, ...]) -> List[Expression]:
         """
         Inputs to dataframe operations can be passed in as individual arguments or a list.
-        In addition, they may be strings or Expressions.
+        In addition, they may be strings, Expressions, or tuples (deprecated).
         This method normalizes the inputs to a list of Expressions.
         """
         cols = inputs[0] if (len(inputs) == 1 and isinstance(inputs[0], list)) else inputs
@@ -458,6 +458,8 @@ class DataFrame:
                 exprs.append(col(c))
             elif isinstance(c, Expression):
                 exprs.append(c)
+            elif isinstance(c, tuple):
+                exprs.append(self._agg_tuple_to_expression(c))
             else:
                 raise ValueError(f"Unknown column type: {type(c)}")
 
@@ -1113,10 +1115,7 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with aggregated results
         """
-        exprs = [
-            self._agg_tuple_to_expression(c) if isinstance(c, tuple) else c for c in self._inputs_to_expressions(to_agg)  # type: ignore
-        ]
-        return self._agg(exprs, group_by=None)
+        return self._agg(self._inputs_to_expressions(to_agg), group_by=None)
 
     @DataframePublicAPI
     def groupby(self, *group_by: ColumnInputOrListType) -> "GroupedDataFrame":
@@ -1626,11 +1625,7 @@ class GroupedDataFrame:
         Returns:
             DataFrame: DataFrame with grouped aggregations
         """
-        exprs = [
-            self.df._agg_tuple_to_expression(c) if isinstance(c, tuple) else c  # type: ignore
-            for c in self.df._inputs_to_expressions(to_agg)
-        ]
-        return self.df._agg(exprs, group_by=self.group_by)
+        return self.df._agg(self.df._inputs_to_expressions(to_agg), group_by=self.group_by)
 
     def map_groups(self, udf: Expression) -> "DataFrame":
         """Apply a user-defined function to each group. The name of the resultant column will default to the name of the first input column.
