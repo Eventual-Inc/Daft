@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 
 use daft_core::{
-    datatypes::{Int32Array, TimeUnit, UInt64Array, Utf8Array},
+    datatypes::{Field, Int32Array, TimeUnit, UInt64Array, Utf8Array},
     schema::Schema,
     DataType, IntoSeries, Series,
 };
@@ -66,7 +66,9 @@ async fn read_parquet_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Table> {
+    let field_id_mapping_provided = field_id_mapping.is_some();
     let original_columns = columns;
     let original_num_rows = num_rows;
     let mut num_rows = num_rows;
@@ -99,8 +101,13 @@ async fn read_parquet_single(
         )
         .await
     } else {
-        let builder =
-            ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
+        let builder = ParquetReaderBuilder::from_uri(
+            uri,
+            io_client.clone(),
+            io_stats.clone(),
+            field_id_mapping,
+        )
+        .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = columns.as_ref() {
@@ -142,7 +149,6 @@ async fn read_parquet_single(
         .collect::<Vec<_>>();
 
     let metadata_num_rows = metadata.num_rows;
-
     let metadata_num_columns = metadata.schema().fields().len();
 
     if let Some(predicate) = predicate {
@@ -198,7 +204,9 @@ async fn read_parquet_single(
         metadata_num_columns
     };
 
-    if table.num_columns() != expected_num_columns {
+    if (!field_id_mapping_provided && table.num_columns() != expected_num_columns)
+        || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
+    {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),
             metadata_num_columns: expected_num_columns,
@@ -220,7 +228,9 @@ async fn read_parquet_single_into_arrow(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>)> {
+    let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, schema, all_arrays) = if matches!(source_type, SourceType::File) {
         let (metadata, schema, all_arrays) =
@@ -236,8 +246,13 @@ async fn read_parquet_single_into_arrow(
             .await?;
         (metadata, Arc::new(schema), all_arrays)
     } else {
-        let builder =
-            ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats.clone()).await?;
+        let builder = ParquetReaderBuilder::from_uri(
+            uri,
+            io_client.clone(),
+            io_stats.clone(),
+            field_id_mapping,
+        )
+        .await?;
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = columns {
@@ -275,7 +290,6 @@ async fn read_parquet_single_into_arrow(
         .collect::<Vec<_>>();
 
     let metadata_num_rows = metadata.num_rows;
-
     let metadata_num_columns = metadata.schema().fields().len();
 
     let len_per_col = all_arrays
@@ -288,7 +302,6 @@ async fn read_parquet_single_into_arrow(
     }
 
     let table_len = *len_per_col.first().unwrap_or(&0);
-
     let table_ncol = all_arrays.len();
 
     if let Some(row_groups) = &row_groups {
@@ -335,7 +348,9 @@ async fn read_parquet_single_into_arrow(
         metadata_num_columns
     };
 
-    if table_ncol != expected_num_columns {
+    if (!field_id_mapping_provided && table_ncol != expected_num_columns)
+        || (field_id_mapping_provided && table_ncol > expected_num_columns)
+    {
         return Err(super::Error::ParquetNumColumnMismatch {
             path: uri.into(),
             metadata_num_columns: expected_num_columns,
@@ -372,6 +387,7 @@ pub fn read_parquet(
             io_client,
             io_stats,
             schema_infer_options,
+            None,
         )
         .await
     })
@@ -401,6 +417,7 @@ pub fn read_parquet_into_pyarrow(
             io_client,
             io_stats,
             schema_infer_options,
+            None,
         )
         .await
     })
@@ -419,6 +436,7 @@ pub fn read_parquet_bulk(
     num_parallel_tasks: usize,
     runtime_handle: Arc<Runtime>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Vec<Table>> {
     let _rt_guard = runtime_handle.enter();
     let owned_columns = columns.map(|s| s.iter().map(|v| String::from(*v)).collect::<Vec<_>>());
@@ -442,6 +460,7 @@ pub fn read_parquet_bulk(
                 let io_client = io_client.clone();
                 let io_stats = io_stats.clone();
                 let schema_infer_options = *schema_infer_options;
+                let owned_field_id_mapping = field_id_mapping.clone();
                 tokio::task::spawn(async move {
                     let columns = owned_columns
                         .as_ref()
@@ -458,6 +477,7 @@ pub fn read_parquet_bulk(
                             io_client,
                             io_stats,
                             schema_infer_options,
+                            owned_field_id_mapping,
                         )
                         .await?,
                     ))
@@ -526,6 +546,7 @@ pub fn read_parquet_into_pyarrow_bulk(
                             io_client,
                             io_stats,
                             schema_infer_options,
+                            None,
                         )
                         .await?,
                     ))
@@ -546,11 +567,12 @@ pub fn read_parquet_schema(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Schema> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
     let builder = runtime_handle.block_on(async {
-        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats).await
+        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats, field_id_mapping).await
     })?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
@@ -561,21 +583,31 @@ pub async fn read_parquet_metadata(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<parquet2::metadata::FileMetaData> {
-    let builder = ParquetReaderBuilder::from_uri(uri, io_client, io_stats).await?;
+    let builder =
+        ParquetReaderBuilder::from_uri(uri, io_client, io_stats, field_id_mapping).await?;
     Ok(builder.metadata)
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
     let handles_iter = uris.iter().map(|uri| {
         let owned_string = uri.to_string();
         let owned_client = io_client.clone();
         let owned_io_stats = io_stats.clone();
+        let owned_field_id_mapping = field_id_mapping.clone();
         tokio::spawn(async move {
-            read_parquet_metadata(&owned_string, owned_client, owned_io_stats).await
+            read_parquet_metadata(
+                &owned_string,
+                owned_client,
+                owned_io_stats,
+                owned_field_id_mapping,
+            )
+            .await
         })
     });
     let all_metadatas = try_join_all(handles_iter)
@@ -588,6 +620,7 @@ pub fn read_parquet_statistics(
     uris: &Series,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Table> {
     let runtime_handle = get_runtime(true)?;
     let _rt_guard = runtime_handle.enter();
@@ -607,10 +640,17 @@ pub fn read_parquet_statistics(
         let owned_string = uri.map(|v| v.to_string());
         let owned_client = io_client.clone();
         let io_stats = io_stats.clone();
+        let owned_field_id_mapping = field_id_mapping.clone();
 
         tokio::spawn(async move {
             if let Some(owned_string) = owned_string {
-                let metadata = read_parquet_metadata(&owned_string, owned_client, io_stats).await?;
+                let metadata = read_parquet_metadata(
+                    &owned_string,
+                    owned_client,
+                    io_stats,
+                    owned_field_id_mapping,
+                )
+                .await?;
                 let num_rows = metadata.num_rows;
                 let num_row_groups = metadata.row_groups.len();
                 let version_num = metadata.version;

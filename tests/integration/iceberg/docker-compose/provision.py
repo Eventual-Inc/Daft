@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
-from pyiceberg.types import FixedType, NestedField, UUIDType
+from pyiceberg.types import FixedType, NestedField, StringType, UUIDType
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_date, date_add, expr
+from pyspark.sql.functions import array, col, current_date, date_add, expr, struct
 
 spark = SparkSession.builder.getOrCreate()
 
@@ -325,7 +325,7 @@ VALUES
 
 spark.sql(
     """
-  CREATE OR REPLACE TABLE default.add_new_column
+  CREATE OR REPLACE TABLE default.test_add_new_column
   USING iceberg
   AS SELECT
         1            AS idx
@@ -336,5 +336,51 @@ spark.sql(
 """
 )
 
-spark.sql("ALTER TABLE default.add_new_column ADD COLUMN name STRING")
-spark.sql("INSERT INTO default.add_new_column VALUES (3, 'abc'), (4, 'def')")
+spark.sql("ALTER TABLE default.test_add_new_column ADD COLUMN name STRING")
+spark.sql("INSERT INTO default.test_add_new_column VALUES (3, 'abc'), (4, 'def')")
+
+# In Iceberg the data and schema evolves independently. We can add a column
+# that should show up when querying the data, but is not yet represented in a Parquet file
+
+spark.sql(
+    """
+  CREATE OR REPLACE TABLE default.test_new_column_with_no_data
+  USING iceberg
+  AS SELECT
+        1            AS idx
+    UNION ALL SELECT
+        2            AS idx
+    UNION ALL SELECT
+        3            AS idx
+"""
+)
+
+spark.sql("ALTER TABLE default.test_new_column_with_no_data ADD COLUMN name STRING")
+
+
+###
+# Renaming columns test table
+###
+
+renaming_columns_dataframe = (
+    spark.range(1, 2, 3)
+    .withColumnRenamed("id", "idx")
+    .withColumn("data", col("idx") * 10)
+    .withColumn("structcol", struct("idx"))
+    .withColumn("structcol_oldname", struct("idx"))
+    .withColumn("nested_list_struct_col", array("structcol", "structcol", "structcol"))
+    .withColumn("deleted_and_then_overwritten_col", col("idx"))
+)
+renaming_columns_dataframe.writeTo("default.test_table_rename").tableProperty("format-version", "2").createOrReplace()
+spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN idx TO idx_renamed")
+spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN structcol.idx TO idx_renamed")
+spark.sql("ALTER TABLE default.test_table_rename RENAME COLUMN structcol_oldname TO structcol_2")
+
+test_table_rename_tbl = catalog.load_table("default.test_table_rename")
+with test_table_rename_tbl.update_schema() as txn:
+    txn.rename_column("nested_list_struct_col.idx", "idx_renamed")
+
+
+with test_table_rename_tbl.update_schema() as txn:
+    txn.delete_column("deleted_and_then_overwritten_col")
+    txn.add_column("deleted_and_then_overwritten_col", StringType())

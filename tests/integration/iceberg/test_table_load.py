@@ -37,7 +37,9 @@ WORKING_SHOW_COLLECT = [
     # "test_table_sanitized_character", # Bug in scan().to_arrow().to_arrow()
     "test_table_version",  # we have bugs when loading no files
     "test_uuid_and_fixed_unpartitioned",
-    "add_new_column",
+    "test_add_new_column",
+    "test_new_column_with_no_data",
+    "test_table_rename",
 ]
 
 
@@ -57,4 +59,26 @@ def test_daft_iceberg_table_collect_correct(table_name, local_iceberg_catalog):
     df.collect()
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    df = daft.read_iceberg(tab)
+    df = df.where(df["idx_renamed"] <= 1)
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[iceberg_pandas["idx_renamed"] <= 1]
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
+
+
+@pytest.mark.integration()
+def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceberg_catalog):
+    tab = local_iceberg_catalog.load_table(f"default.test_table_rename")
+    df = daft.read_iceberg(tab)
+    df = df.select("idx_renamed")
+    daft_pandas = df.to_pandas()
+    iceberg_pandas = tab.scan().to_arrow().to_pandas()
+    iceberg_pandas = iceberg_pandas[["idx_renamed"]]
     assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

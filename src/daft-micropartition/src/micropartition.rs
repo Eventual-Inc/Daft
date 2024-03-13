@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Display;
 use std::sync::Arc;
 use std::{ops::Deref, sync::Mutex};
@@ -122,6 +122,7 @@ fn materialize_scan_task(
                 // ********************
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
+                    field_id_mapping,
                 }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
@@ -139,6 +140,7 @@ fn materialize_scan_task(
                         8,
                         runtime_handle,
                         &inference_options,
+                        field_id_mapping.clone(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -400,6 +402,7 @@ impl MicroPartition {
                 _,
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
+                    field_id_mapping,
                 }),
                 StorageConfig::Native(cfg),
             ) => {
@@ -434,6 +437,7 @@ impl MicroPartition {
                         coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
                     },
                     Some(schema.clone()),
+                    field_id_mapping.clone(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -720,6 +724,7 @@ fn _read_parquet_into_loaded_micropartition(
     num_parallel_tasks: usize,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
     let all_tables = read_parquet_bulk(
         uris,
@@ -733,6 +738,7 @@ fn _read_parquet_into_loaded_micropartition(
         num_parallel_tasks,
         runtime_handle,
         schema_infer_options,
+        field_id_mapping,
     )?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
@@ -779,6 +785,7 @@ pub(crate) fn read_parquet_into_micropartition(
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset && so > 0 {
         return Err(common_error::DaftError::ValueError("Micropartition Parquet Reader does not support non-zero start offsets".to_string()));
@@ -804,14 +811,16 @@ pub(crate) fn read_parquet_into_micropartition(
             num_parallel_tasks,
             schema_infer_options,
             catalog_provided_schema,
+            field_id_mapping,
         );
     }
 
     // Attempt to read TableStatistics from the Parquet file
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
+    let meta_field_id_mapping = field_id_mapping.clone();
     let metadata = runtime_handle.block_on(async move {
-        read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats).await
+        read_parquet_metadata_bulk(uris, meta_io_client, meta_io_stats, meta_field_id_mapping).await
     })?;
     let schemas = metadata
         .iter()
@@ -898,6 +907,7 @@ pub(crate) fn read_parquet_into_micropartition(
                 .collect::<Vec<_>>(),
             FileFormatConfig::Parquet(ParquetSourceConfig {
                 coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
+                field_id_mapping,
             })
             .into(),
             scan_task_daft_schema,
@@ -943,6 +953,7 @@ pub(crate) fn read_parquet_into_micropartition(
             num_parallel_tasks,
             schema_infer_options,
             catalog_provided_schema,
+            field_id_mapping,
         )
     }
 }

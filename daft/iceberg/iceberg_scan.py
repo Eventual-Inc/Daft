@@ -9,6 +9,7 @@ from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.partitioning import PartitionField as IcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.schema import visit
 from pyiceberg.table import Table
 from pyiceberg.typedef import Record
 
@@ -22,6 +23,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
 
@@ -84,7 +86,9 @@ class IcebergScanOperator(ScanOperator):
         super().__init__()
         self._table = iceberg_table
         self._storage_config = storage_config
-        arrow_schema = schema_to_pyarrow(iceberg_table.schema())
+        iceberg_schema = iceberg_table.schema()
+        arrow_schema = schema_to_pyarrow(iceberg_schema)
+        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         self._schema = Schema.from_pyarrow_schema(arrow_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(self._table.schema(), self._table.spec())
 
@@ -145,7 +149,9 @@ class IcebergScanOperator(ScanOperator):
             record_count = file.record_count
             file_format = file.file_format
             if file_format == "PARQUET":
-                file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
+                file_format_config = FileFormatConfig.from_parquet_config(
+                    ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
+                )
             else:
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
