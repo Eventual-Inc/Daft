@@ -319,6 +319,35 @@ pub mod pylib {
             Ok(Some(PyScanTask(scan_task.into())))
         }
 
+        #[staticmethod]
+        pub fn sql_scan_task(
+            url: String,
+            file_format: PyFileFormatConfig,
+            schema: PySchema,
+            storage_config: PyStorageConfig,
+            num_rows: Option<i64>,
+            size_bytes: Option<u64>,
+            pushdowns: Option<PyPushdowns>,
+        ) -> PyResult<Self> {
+            let data_source = DataFileSource::DatabaseDataSource {
+                path: url,
+                chunk_spec: None,
+                size_bytes,
+                metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
+                partition_spec: None,
+                statistics: None,
+            };
+
+            let scan_task = ScanTask::new(
+                vec![data_source],
+                file_format.into(),
+                schema.schema,
+                storage_config.into(),
+                pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+            );
+            Ok(PyScanTask(scan_task.into()))
+        }
+
         pub fn __repr__(&self) -> PyResult<String> {
             Ok(format!("{:?}", self.0))
         }

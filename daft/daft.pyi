@@ -222,12 +222,21 @@ class JsonSourceConfig:
         chunk_size: int | None = None,
     ): ...
 
+class DatabaseSourceConfig:
+    """
+    Configuration of a database data source.
+    """
+
+    sql: str
+
+    def __init__(self, sql: str): ...
+
 class FileFormatConfig:
     """
     Configuration for parsing a particular file format (Parquet, CSV, JSON).
     """
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -245,6 +254,12 @@ class FileFormatConfig:
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """
         Create a JSON file format config.
+        """
+        ...
+    @staticmethod
+    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
+        """
+        Create a database file format config.
         """
         ...
     def file_format(self) -> FileFormat:
@@ -588,6 +603,20 @@ class ScanTask:
         Create a Catalog Scan Task
         """
         ...
+    @staticmethod
+    def sql_scan_task(
+        url: str,
+        file_format: FileFormatConfig,
+        schema: PySchema,
+        num_rows: int | None,
+        storage_config: StorageConfig,
+        size_bytes: int | None,
+        pushdowns: Pushdowns | None,
+    ) -> ScanTask:
+        """
+        Create a SQL Scan Task
+        """
+        ...
 
 class ScanOperatorHandle:
     """
@@ -805,6 +834,7 @@ class PyDataType:
     @staticmethod
     def python() -> PyDataType: ...
     def to_arrow(self, cast_tensor_type_for_ray: builtins.bool | None = None) -> pyarrow.DataType: ...
+    def is_numeric(self) -> builtins.bool: ...
     def is_image(self) -> builtins.bool: ...
     def is_fixed_shape_image(self) -> builtins.bool: ...
     def is_tensor(self) -> builtins.bool: ...
@@ -831,6 +861,7 @@ class PySchema:
     def names(self) -> list[str]: ...
     def union(self, other: PySchema) -> PySchema: ...
     def eq(self, other: PySchema) -> bool: ...
+    def estimate_row_size_bytes(self) -> float: ...
     @staticmethod
     def from_field_name_and_types(names_and_types: list[tuple[str, PyDataType]]) -> PySchema: ...
     @staticmethod
@@ -880,6 +911,7 @@ class PyExpr:
     def is_in(self, other: PyExpr) -> PyExpr: ...
     def name(self) -> str: ...
     def to_field(self, schema: PySchema) -> PyField: ...
+    def to_sql(self) -> str | None: ...
     def __repr__(self) -> str: ...
     def __hash__(self) -> int: ...
     def __reduce__(self) -> tuple: ...
@@ -1226,6 +1258,7 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
+        read_sql_partition_size_bytes: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1251,6 +1284,8 @@ class PyDaftExecutionConfig:
     def csv_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
+    @property
+    def read_sql_partition_size_bytes(self) -> int: ...
 
 class PyDaftPlanningConfig:
     def with_config_values(

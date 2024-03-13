@@ -73,6 +73,17 @@ class TableParseParquetOptions:
 
 
 @dataclass(frozen=True)
+class TableReadSQLOptions:
+    """Options for parsing SQL tables
+
+    Args:
+        predicate_expression: Expression predicate to apply to the table
+    """
+
+    predicate_expression: Expression | None = None
+
+
+@dataclass(frozen=True)
 class PartialPartitionMetadata:
     num_rows: None | int
     size_bytes: None | int

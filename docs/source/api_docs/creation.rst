@@ -20,6 +20,24 @@ Python Objects
     from_pylist
     from_pydict
 
+Arrow
+~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_arrow
+
+Pandas
+~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_pandas
+
 Files
 -----
 
@@ -54,6 +72,15 @@ JSON
 
     read_json
 
+File Paths
+~~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    from_glob_path
+
 Data Catalogs
 -------------
 
@@ -75,40 +102,6 @@ Delta Lake
 
     read_delta_lake
 
-In-memory
----------
-
-Arrow
-~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_arrow
-
-Pandas
-~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_pandas
-
-File Paths
-~~~~~~~~~~
-
-.. autosummary::
-    :nosignatures:
-    :toctree: doc_gen/io_functions
-
-    from_glob_path
 
 Integrations
 ------------
@@ -132,3 +125,12 @@ Dask
     :toctree: doc_gen/io_functions
 
     from_dask_dataframe
+
+Databases
+~~~~~~~~~
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/io_functions
+
+    read_sql

@@ -72,6 +72,23 @@ For testing, or small datasets that fit in memory, you may also create DataFrame
 
 To learn more, consult the API documentation on :ref:`creating DataFrames from in-memory data structures <df-io-in-memory>`.
 
+From Databases
+^^^^^^^^^^^^^^
+
+Daft can also read data from a variety of databases, including PostgreSQL, MySQL, Trino, and SQLite using the :func:`daft.read_sql` method.
+In order to partition the data, you can specify a partition column, which will allow Daft to read the data in parallel.
+
+.. code:: python
+
+    # Read from a PostgreSQL database
+    uri = "postgresql://user:password@host:port/database"
+    df = daft.read_sql(uri, "SELECT * FROM my_table")
+
+    # Read with a partition column
+    df = daft.read_sql(uri, "SELECT * FROM my_table", partition_col="date")
+
+To learn more, consult the API documentation on :func:`daft.read_sql`.
+
 Writing Data
 ------------
 

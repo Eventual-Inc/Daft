@@ -478,6 +478,9 @@ class Expression:
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
+    def _to_sql(self) -> builtins.str | None:
+        return self._expr.to_sql()
+
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 

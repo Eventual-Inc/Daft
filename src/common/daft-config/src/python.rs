@@ -90,6 +90,7 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        read_sql_partition_size_bytes: Option<usize>,
     ) -> PyResult<PyDaftExecutionConfig> {
         let mut config = self.config.as_ref().clone();
 
@@ -135,6 +136,9 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
+        }
+        if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
+            config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
 
         Ok(PyDaftExecutionConfig {
@@ -200,6 +204,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
+    }
+
+    #[getter]
+    fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
+        Ok(self.config.read_sql_partition_size_bytes)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
