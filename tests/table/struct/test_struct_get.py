@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from daft.expressions import col
@@ -21,6 +23,23 @@ def test_struct_get():
     result = table.eval_expression_list([col("col").struct.get("foo"), col("col").struct.get("bar")])
 
     assert result.to_pydict() == {"foo": [1, None, None, 4], "bar": ["a", "b", None, None]}
+
+
+def test_struct_get_logical_type():
+    table = MicroPartition.from_pydict(
+        {
+            "col": [
+                {"foo": datetime.date(2022, 1, 1)},
+                {"foo": datetime.date(2022, 1, 2)},
+                {"foo": None},
+                None,
+            ]
+        }
+    )
+
+    result = table.eval_expression_list([col("col").struct.get("foo")])
+
+    assert result.to_pydict() == {"foo": [datetime.date(2022, 1, 1), datetime.date(2022, 1, 2), None, None]}
 
 
 def test_struct_get_bad_field():
