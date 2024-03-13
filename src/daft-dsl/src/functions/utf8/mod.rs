@@ -86,16 +86,16 @@ pub fn contains(data: &Expr, pattern: &Expr) -> Expr {
     }
 }
 
-pub fn split(data: &Expr, pattern: &Expr) -> Expr {
+pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::Split),
+        func: super::FunctionExpr::Utf8(Utf8Expr::Match),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }
 
-pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
+pub fn split(data: &Expr, pattern: &Expr) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::Match),
+        func: super::FunctionExpr::Utf8(Utf8Expr::Split),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }

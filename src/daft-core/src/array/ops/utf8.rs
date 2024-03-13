@@ -74,6 +74,12 @@ impl Utf8Array {
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.contains(pat)))
     }
 
+    pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
+            Ok(regex::Regex::new(pat)?.is_match(data))
+        })
+    }
+
     pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
@@ -131,12 +137,6 @@ impl Utf8Array {
                 "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
-    }
-
-    pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
-            Ok(regex::Regex::new(pat)?.is_match(data))
-        })
     }
 
     pub fn length(&self) -> DaftResult<UInt64Array> {

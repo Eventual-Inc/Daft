@@ -32,20 +32,20 @@ impl Series {
         }
     }
 
-    pub fn utf8_split(&self, pattern: &Series) -> DaftResult<Series> {
-        match self.data_type() {
-            DataType::Utf8 => Ok(self.utf8()?.split(pattern.utf8()?)?.into_series()),
-            dt => Err(DaftError::TypeError(format!(
-                "Split not implemented for type {dt}"
-            ))),
-        }
-    }
-
     pub fn utf8_match(&self, pattern: &Series) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => Ok(self.utf8()?.match_(pattern.utf8()?)?.into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "Match not implemented for type {dt}"
+            ))),
+        }
+    }
+
+    pub fn utf8_split(&self, pattern: &Series) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.split(pattern.utf8()?)?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Split not implemented for type {dt}"
             ))),
         }
     }
