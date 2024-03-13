@@ -397,7 +397,6 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
-            compression (str, optional): compression algorithm. Defaults to "snappy".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
