@@ -389,11 +389,13 @@ impl MicroPartition {
         ) {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _, _) => Ok(Self::new_unloaded(
-                scan_task.clone(),
-                metadata.clone(),
-                statistics.clone(),
-            )),
+            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+                Ok(Self::new_unloaded(
+                    scan_task.clone(),
+                    metadata.clone(),
+                    statistics.clone(),
+                ))
+            }
 
             // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
             // We can perform an eager **metadata** read to create an unloaded MicroPartition
