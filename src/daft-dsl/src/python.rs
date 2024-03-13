@@ -397,6 +397,11 @@ impl PyExpr {
         Ok(split(&self.expr, &pattern.expr).into())
     }
 
+    pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::match_;
+        Ok(match_(&self.expr, &pattern.expr).into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
         Ok(length(&self.expr).into())

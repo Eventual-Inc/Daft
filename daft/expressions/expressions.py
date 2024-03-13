@@ -731,6 +731,33 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr))
 
+    def match(self, pattern: str | Expression) -> Expression:
+        """Checks whether each string matches the given regular expression pattern in a string column
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df.with_column("match", df["x"].str.match("ba.")).collect()
+            ╭─────────╮
+            │ match   │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ╰─────────╯
+
+        Args:
+            pattern: Regex pattern to search for as string or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_match(pattern_expr._expr))
+
     def concat(self, other: str) -> Expression:
         """Concatenates two string expressions together
 

@@ -63,15 +63,15 @@ where
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.ends_with(pat))
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.ends_with(pat)))
     }
 
     pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.starts_with(pat))
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.starts_with(pat)))
     }
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| data.contains(pat))
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.contains(pat)))
     }
 
     pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
@@ -131,6 +131,12 @@ impl Utf8Array {
                 "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
+    }
+
+    pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
+            Ok(regex::Regex::new(pat)?.is_match(data))
+        })
     }
 
     pub fn length(&self) -> DaftResult<UInt64Array> {
@@ -240,19 +246,22 @@ impl Utf8Array {
         operation: ScalarKernel,
     ) -> DaftResult<BooleanArray>
     where
-        ScalarKernel: Fn(&str, &str) -> bool,
+        ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
     {
         let self_arrow = self.as_arrow();
         let other_arrow = other.as_arrow();
         match (self.len(), other.len()) {
             // Matching len case:
             (self_len, other_len) if self_len == other_len => {
-                let arrow_result: arrow2::array::BooleanArray = self_arrow
+                let arrow_result: DaftResult<arrow2::array::BooleanArray> = self_arrow
                     .into_iter()
                     .zip(other_arrow)
-                    .map(|(val, pat)| Some(operation(val?, pat?)))
+                    .map(|(self_v, other_v)| match (self_v, other_v) {
+                        (Some(self_v), Some(other_v)) => operation(self_v, other_v).map(Some),
+                        _ => Ok(None),
+                    })
                     .collect();
-                Ok(BooleanArray::from((self.name(), arrow_result)))
+                Ok(BooleanArray::from((self.name(), arrow_result?)))
             }
             // Broadcast other case:
             (self_len, 1) => {
@@ -264,11 +273,14 @@ impl Utf8Array {
                         self_len,
                     )),
                     Some(other_v) => {
-                        let arrow_result: arrow2::array::BooleanArray = self_arrow
+                        let arrow_result: DaftResult<arrow2::array::BooleanArray> = self_arrow
                             .into_iter()
-                            .map(|self_v| Some(operation(self_v?, other_v)))
+                            .map(|self_v| match self_v {
+                                Some(self_v) => operation(self_v, other_v).map(Some),
+                                None => Ok(None),
+                            })
                             .collect();
-                        Ok(BooleanArray::from((self.name(), arrow_result)))
+                        Ok(BooleanArray::from((self.name(), arrow_result?)))
                     }
                 }
             }
@@ -282,11 +294,14 @@ impl Utf8Array {
                         other_len,
                     )),
                     Some(self_v) => {
-                        let arrow_result: arrow2::array::BooleanArray = other_arrow
+                        let arrow_result: DaftResult<arrow2::array::BooleanArray> = other_arrow
                             .into_iter()
-                            .map(|other_v| Some(operation(self_v, other_v?)))
+                            .map(|other_v| match other_v {
+                                Some(other_v) => operation(self_v, other_v).map(Some),
+                                None => Ok(None),
+                            })
                             .collect();
-                        Ok(BooleanArray::from((self.name(), arrow_result)))
+                        Ok(BooleanArray::from((self.name(), arrow_result?)))
                     }
                 }
             }

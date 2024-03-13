@@ -66,6 +66,13 @@ impl From<io::Error> for DaftError {
         DaftError::IoError(error)
     }
 }
+
+impl From<regex::Error> for DaftError {
+    fn from(error: regex::Error) -> Self {
+        DaftError::ValueError(error.to_string())
+    }
+}
+
 #[cfg(feature = "python")]
 impl std::convert::From<DaftError> for pyo3::PyErr {
     fn from(err: DaftError) -> pyo3::PyErr {
