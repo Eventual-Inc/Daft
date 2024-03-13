@@ -44,7 +44,8 @@ macro_rules! impl_series_like_for_logical_array {
                 &self,
                 validity: Option<arrow2::bitmap::Bitmap>,
             ) -> DaftResult<Series> {
-                Ok(self.0.physical.with_validity(validity)?.into_series())
+                let new_array = self.0.physical.with_validity(validity)?;
+                Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
             fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
