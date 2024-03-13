@@ -26,7 +26,7 @@ impl FunctionEvaluator for MatchEvaluator {
                             Ok(Field::new(data_field.name, DataType::Boolean))
                         }
                         _ => Err(DaftError::TypeError(format!(
-                            "Expects inputs to contains to be utf8, but received {data_field} and {pattern_field}",
+                            "Expects inputs to match to be utf8, but received {data_field} and {pattern_field}",
                         ))),
                     }
                 }
