@@ -451,7 +451,17 @@ class DataFrame:
         This method normalizes the inputs to a list of Expressions.
         """
         cols = inputs[0] if (len(inputs) == 1 and isinstance(inputs[0], list)) else inputs
-        return [col(c) if isinstance(c, str) else c for c in cols]  # type: ignore
+
+        exprs = []
+        for c in cols:
+            if isinstance(c, str):
+                exprs.append(col(c))
+            elif isinstance(c, Expression):
+                exprs.append(c)
+            else:
+                raise ValueError(f"Unknown column type: {type(c)}")
+
+        return exprs
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
