@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter, Result};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use arrow2::datatypes::Field as ArrowField;
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
+#[derive(Clone, Debug, Eq, Deserialize, Serialize)]
 pub struct Field {
     pub name: String,
     pub dtype: DataType,
@@ -22,6 +23,21 @@ pub type FieldRef = Arc<Field>;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct FieldID {
     pub id: Arc<str>,
+}
+
+impl PartialEq for Field {
+    fn eq(&self, other: &Self) -> bool {
+        // Skips metadata check
+        self.name == other.name && self.dtype == other.dtype
+    }
+}
+
+impl Hash for Field {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.dtype.hash(state);
+        // Skip hashing metadata
+    }
 }
 
 impl FieldID {
