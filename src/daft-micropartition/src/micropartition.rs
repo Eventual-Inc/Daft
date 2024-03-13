@@ -309,11 +309,6 @@ fn materialize_scan_task(
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
                 FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
-                    let predicate_sql = scan_task
-                        .pushdowns
-                        .filters
-                        .as_ref()
-                        .and_then(|p| p.to_sql());
                     let predicate_expr = scan_task
                         .pushdowns
                         .filters
@@ -325,7 +320,6 @@ fn materialize_scan_task(
                                 py,
                                 sql,
                                 url,
-                                predicate_sql.as_deref(),
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task

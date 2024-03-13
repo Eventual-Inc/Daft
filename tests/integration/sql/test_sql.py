@@ -13,6 +13,12 @@ from tests.integration.sql.conftest import TEST_TABLE_NAME
 
 
 @pytest.mark.integration()
+def test_sql_show(test_db) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
+    df.show()
+
+
+@pytest.mark.integration()
 def test_sql_create_dataframe_ok(test_db) -> None:
     df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)
     pdf = pd.read_sql_query(f"SELECT * FROM {TEST_TABLE_NAME}", test_db)

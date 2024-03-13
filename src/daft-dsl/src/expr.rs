@@ -574,28 +574,19 @@ impl Expr {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
                 Expr::Column(name) => write!(buffer, "{}", name),
-                Expr::Literal(lit) => {
-                    if let Some(s) = lit.to_sql() {
-                        write!(buffer, "{}", s)
-                    } else {
-                        Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "Unsupported literal for SQL translation",
-                        ))
-                    }
-                }
+                Expr::Literal(lit) => lit.display_sql(buffer),
                 Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
                 Expr::BinaryOp { op, left, right } => {
                     to_sql_inner(left, buffer)?;
                     let op = match op {
-                        Operator::Eq => "=".to_string(),
-                        Operator::NotEq => "!=".to_string(),
-                        Operator::Lt => "<".to_string(),
-                        Operator::LtEq => "<=".to_string(),
-                        Operator::Gt => ">".to_string(),
-                        Operator::GtEq => ">=".to_string(),
-                        Operator::And => "AND".to_string(),
-                        Operator::Or => "OR".to_string(),
+                        Operator::Eq => "=",
+                        Operator::NotEq => "!=",
+                        Operator::Lt => "<",
+                        Operator::LtEq => "<=",
+                        Operator::Gt => ">",
+                        Operator::GtEq => ">=",
+                        Operator::And => "AND",
+                        Operator::Or => "OR",
                         _ => {
                             return Err(io::Error::new(
                                 io::ErrorKind::Other,

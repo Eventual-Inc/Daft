@@ -77,11 +77,9 @@ class TableReadSQLOptions:
     """Options for parsing SQL tables
 
     Args:
-        predicate_sql: SQL predicate to apply to the table
         predicate_expression: Expression predicate to apply to the table
     """
 
-    predicate_sql: str | None = None
     predicate_expression: Expression | None = None
 
 

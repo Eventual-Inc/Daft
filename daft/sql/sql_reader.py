@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from urllib.parse import urlparse
 
 import pyarrow as pa
@@ -25,10 +26,15 @@ class SQLReader:
         self.predicate = predicate
 
     def read(self) -> pa.Table:
-        sql = self._construct_sql_query()
-        return self._execute_sql_query(sql)
+        try:
+            sql = self._construct_sql_query(apply_limit=True)
+            return self._execute_sql_query(sql)
+        except RuntimeError:
+            warnings.warn("Failed to execute the query with a limit, attempting to read the entire table.")
+            sql = self._construct_sql_query(apply_limit=False)
+            return self._execute_sql_query(sql)
 
-    def _construct_sql_query(self) -> str:
+    def _construct_sql_query(self, apply_limit: bool) -> str:
         clauses = []
         if self.projection is not None:
             clauses.append(f"SELECT {', '.join(self.projection)}")
@@ -40,7 +46,7 @@ class SQLReader:
         if self.predicate is not None:
             clauses.append(f"WHERE {self.predicate}")
 
-        if self.limit is not None:
+        if self.limit is not None and apply_limit is True:
             clauses.append(f"LIMIT {self.limit}")
 
         return "\n".join(clauses)
@@ -88,6 +94,7 @@ class SQLReader:
                 rows = result.fetchall()
                 pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
 
+                # TODO: Use type codes from cursor description to create pyarrow schema
                 return pa.Table.from_pydict(pydict)
         except Exception as e:
             raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e
