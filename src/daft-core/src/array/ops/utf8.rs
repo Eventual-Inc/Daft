@@ -211,6 +211,29 @@ impl Utf8Array {
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
     }
 
+    pub fn capitalize(&self) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| {
+                let v = val?;
+                let mut chars = v.chars();
+                match chars.next() {
+                    None => Some(String::new()),
+                    Some(first) => {
+                        let first_char_uppercased = first.to_uppercase();
+                        let mut res = String::with_capacity(v.len());
+                        res.extend(first_char_uppercased);
+                        res.extend(chars.flat_map(|c| c.to_lowercase()));
+                        Some(res)
+                    }
+                }
+            })
+            .collect::<arrow2::array::Utf8Array<i64>>()
+            .with_validity(self_arrow.validity().cloned());
+        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
     fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,

@@ -1,3 +1,4 @@
+mod capitalize;
 mod contains;
 mod endswith;
 mod length;
@@ -9,6 +10,7 @@ mod split;
 mod startswith;
 mod upper;
 
+use capitalize::CapitalizeEvaluator;
 use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
 use length::LengthEvaluator;
@@ -37,6 +39,7 @@ pub enum Utf8Expr {
     Lstrip,
     Rstrip,
     Reverse,
+    Capitalize,
 }
 
 impl Utf8Expr {
@@ -54,6 +57,7 @@ impl Utf8Expr {
             Lstrip => &LstripEvaluator {},
             Rstrip => &RstripEvaluator {},
             Reverse => &ReverseEvaluator {},
+            Capitalize => &CapitalizeEvaluator {},
         }
     }
 }
@@ -124,6 +128,13 @@ pub fn rstrip(data: &Expr) -> Expr {
 pub fn reverse(data: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Reverse),
+        inputs: vec![data.clone()],
+    }
+}
+
+pub fn capitalize(data: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Capitalize),
         inputs: vec![data.clone()],
     }
 }

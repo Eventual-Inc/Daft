@@ -100,4 +100,14 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_capitalize(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.capitalize()?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Capitalize not implemented for type {dt}"
+            ))),
+        }
+    }
 }

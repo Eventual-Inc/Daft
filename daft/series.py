@@ -613,6 +613,10 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_reverse())
 
+    def capitalize(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_capitalize())
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:
