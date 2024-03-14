@@ -612,6 +612,7 @@ class ScanTask:
         storage_config: StorageConfig,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
+        stats: PyTable | None,
     ) -> ScanTask:
         """
         Create a SQL Scan Task
