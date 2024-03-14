@@ -160,6 +160,104 @@ impl Utf8Array {
         }
     }
 
+    pub fn extract(&self, pattern: &Utf8Array, index: i32) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+        if self_arrow
+            .validity()
+            .map_or(false, |v| v.unset_bits() == v.len())
+            || pattern_arrow
+                .validity()
+                .map_or(false, |v| v.unset_bits() == v.len())
+        {
+            return Ok(Utf8Array::full_null(
+                self.name(),
+                self.data_type(),
+                std::cmp::max(self.len(), pattern.len()),
+            ));
+            // Handle empty cases.
+        }
+        if self.is_empty() || pattern.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+
+        match (self.len(), pattern.len()) {
+            // Matching len case:
+            (self_len, pattern_len) if self_len == pattern_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(pattern_arrow.iter())
+                    .map(|(val, pat)| match (val, pat) {
+                        (Some(val), Some(pat)) => {
+                            let re = regex::Regex::new(pat)?;
+                            Ok(re.captures(val).and_then(|captures| {
+                                captures.get(index as usize).map(|m| m.as_str())
+                            }))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+                Ok(Utf8Array::from((self.name(), Box::new(arrow_result?))))
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let pattern_scalar_value = pattern.get(0);
+                match pattern_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(pattern_v) => {
+                        let re = regex::Regex::new(pattern_v)?;
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let captures = re.captures(val?)?;
+                                let res = captures.get(index as usize).map(|m| m.as_str());
+                                res
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Broadcast self case
+            (1, pattern_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        pattern_len,
+                    )),
+                    Some(self_v) => {
+                        let arrow_result: DaftResult<arrow2::array::Utf8Array<i64>> = pattern_arrow
+                            .iter()
+                            .map(|pat| match pat {
+                                None => Ok(None),
+                                Some(p) => {
+                                    let re = regex::Regex::new(p)?;
+                                    Ok(re.captures(self_v).and_then(|captures| {
+                                        captures.get(index as usize).map(|m| m.as_str())
+                                    }))
+                                }
+                            })
+                            .collect();
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result?))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
+    }
+
     pub fn length(&self) -> DaftResult<UInt64Array> {
         let self_arrow = self.as_arrow();
         let arrow_result = self_arrow

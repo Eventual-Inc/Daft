@@ -793,6 +793,23 @@ class ExpressionStringNamespace(ExpressionNamespace):
         # Delegate to + operator implementation.
         return Expression._from_pyexpr(self._expr) + other
 
+    def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
+        """Extracts the regex match group from each string in a string column. If index is 0, the entire match is returned, otherwise the specified group is returned.
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df.with_column("x", df["x"].str.extract(r"ba(.)", 1)).collect()
+
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a String expression with the extracted regex match
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_extract(pattern_expr._expr, index))
+
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column
 

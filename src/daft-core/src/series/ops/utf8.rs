@@ -50,6 +50,15 @@ impl Series {
         }
     }
 
+    pub fn utf8_extract(&self, pattern: &Series, index: i32) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.extract(pattern.utf8()?, index)?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Extract not implemented for type {dt}"
+            ))),
+        }
+    }
+
     pub fn utf8_length(&self) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => Ok(self.utf8()?.length()?.into_series()),
