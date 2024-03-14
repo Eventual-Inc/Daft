@@ -359,13 +359,18 @@ fn materialize_scan_task(
 impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
-    /// Schema invariants:
+    /// Invariants:
     /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
+    /// 2. Creating a new MicroPartition with a ScanTask that has any filter predicates or limits is not allowed and will panic
     pub fn new_unloaded(
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        if scan_task.pushdowns.filters.is_some() {
+            panic!("Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters");
+        }
+
         let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
         let statistics = statistics
@@ -424,11 +429,19 @@ impl MicroPartition {
         ) {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _, _) => Ok(Self::new_unloaded(
-                scan_task.clone(),
-                metadata.clone(),
-                statistics.clone(),
-            )),
+            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
+                Ok(Self::new_unloaded(
+                    scan_task.clone(),
+                    scan_task
+                        .pushdowns
+                        .limit
+                        .map(|limit| TableMetadata {
+                            length: metadata.length.min(limit),
+                        })
+                        .unwrap_or_else(|| metadata.clone()),
+                    statistics.clone(),
+                ))
+            }
 
             // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
             // We can perform an eager **metadata** read to create an unloaded MicroPartition
@@ -830,7 +843,8 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate, perform an eager read only reading what row groups we need.
+    // If we have a predicate then we no longer have an accurate accounting of required metadata
+    // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
     if predicate.is_some() {
         return _read_parquet_into_loaded_micropartition(
             io_client,
