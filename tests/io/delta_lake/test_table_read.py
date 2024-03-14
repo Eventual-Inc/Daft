@@ -64,5 +64,6 @@ def test_deltalake_read_row_group_splits(tmp_path, base_table):
     # Force file splitting
     with split_small_pq_files():
         df = daft.read_delta_lake(str(path))
+        df = df.where(df["a"] > 1)
         df.collect()
-        assert len(df._result) == 3, "Length of non-materialized data when read through deltalake should be correct"
+        assert len(df._result) == 2, "Length of non-materialized data when read through deltalake should be correct"
