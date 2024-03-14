@@ -68,6 +68,12 @@ pub enum AggExpr {
     },
 }
 
+pub enum Cardinality {
+    Original,
+    Single,
+    Variable,
+}
+
 pub fn col<S: Into<Arc<str>>>(name: S) -> Expr {
     Expr::Column(name.into())
 }
@@ -77,6 +83,30 @@ pub fn binary_op(op: Operator, left: &Expr, right: &Expr) -> Expr {
         op,
         left: left.clone().into(),
         right: right.clone().into(),
+    }
+}
+
+impl Cardinality {
+    pub fn union(self, other: Self) -> DaftResult<Self> {
+        use Cardinality::*;
+
+        match (self, other) {
+            (Variable, Single) | (Single, Variable) => Ok(Variable),
+            (Variable, _) | (_, Variable) => Err(DaftError::ValueError("Cannot combine expression with variable cardinality and expression with non-singular cardinality.".to_string())),
+            (Original, _) | (_, Original) => Ok(Original),
+            (Single, Single) => Ok(Single),
+        }
+    }
+}
+
+impl PartialEq for Cardinality {
+    fn eq(&self, other: &Self) -> bool {
+        use Cardinality::*;
+        match (self, other) {
+            (Original, Original) | (Single, Single) => true,
+            (Variable, Variable) => false,
+            _ => false,
+        }
     }
 }
 
@@ -639,6 +669,30 @@ impl Expr {
         to_sql_inner(self, &mut buffer)
             .ok()
             .and_then(|_| String::from_utf8(buffer).ok())
+    }
+
+    pub fn cardinality(&self) -> DaftResult<Cardinality> {
+        use Expr::*;
+        match self {
+            Column(_) => Ok(Cardinality::Original),
+            Literal(_) | Agg(_) => Ok(Cardinality::Single),
+            Alias(e, ..) | Cast(e, ..) | Not(e) | IsNull(e) | NotNull(e) | IsIn(e, ..) => {
+                e.cardinality()
+            }
+            BinaryOp { left, right, .. } => left.cardinality()?.union(right.cardinality()?),
+            Function { inputs, .. } => inputs
+                .iter()
+                .map(|i| i.cardinality())
+                .reduce(|acc, c| acc?.union(c?))
+                .unwrap_or(Ok(Cardinality::Single)),
+            IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => predicate
+                .cardinality()?
+                .union(if_true.cardinality()?.union(if_false.cardinality()?)?),
+        }
     }
 }
 

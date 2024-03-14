@@ -19,6 +19,7 @@ pub struct Project {
     pub projection: Vec<Expr>,
     pub resource_request: ResourceRequest,
     pub clustering_spec: Arc<ClusteringSpec>,
+    pub subquery: Option<PhysicalPlanRef>,
 }
 
 impl Project {
@@ -27,6 +28,7 @@ impl Project {
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
         clustering_spec: Arc<ClusteringSpec>,
+        subquery: Option<PhysicalPlanRef>,
     ) -> DaftResult<Self> {
         let clustering_spec = Self::translate_clustering_spec(clustering_spec, &projection);
         Ok(Self {
@@ -34,6 +36,7 @@ impl Project {
             projection,
             resource_request,
             clustering_spec,
+            subquery,
         })
     }
 

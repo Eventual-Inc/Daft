@@ -309,8 +309,8 @@ impl PhysicalPlan {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::Project(Project { projection, resource_request, clustering_spec, .. }) => Self::Project(Project::try_new(
-                    input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(),
+                Self::Project(Project { projection, resource_request, clustering_spec, subquery, .. }) => Self::Project(Project::try_new(
+                    input.clone(), projection.clone(), resource_request.clone(), clustering_spec.clone(), subquery.clone().map(|s| s.with_new_children(children).into()),
                 ).unwrap()),
                 Self::Filter(Filter { predicate, .. }) => Self::Filter(Filter::new(input.clone(), predicate.clone())),
                 Self::Limit(Limit { limit, eager, num_partitions, .. }) => Self::Limit(Limit::new(input.clone(), *limit, *eager, *num_partitions)),
@@ -570,9 +570,17 @@ impl PhysicalPlan {
                 input,
                 projection,
                 resource_request,
+                subquery,
                 ..
             }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
+
+                let subquery_iter = if let Some(s) = subquery {
+                    s.to_partition_tasks(py, psets)?
+                } else {
+                    py.None()
+                };
+
                 let projection_pyexprs: Vec<PyExpr> = projection
                     .iter()
                     .map(|expr| PyExpr::from(expr.clone()))
@@ -580,7 +588,12 @@ impl PhysicalPlan {
                 let py_iter = py
                     .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "project"))?
-                    .call1((upstream_iter, projection_pyexprs, resource_request.clone()))?;
+                    .call1((
+                        upstream_iter,
+                        subquery_iter,
+                        projection_pyexprs,
+                        resource_request.clone(),
+                    ))?;
                 Ok(py_iter.into())
             }
             PhysicalPlan::Filter(Filter { input, predicate }) => {

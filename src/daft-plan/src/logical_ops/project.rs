@@ -18,7 +18,10 @@ pub struct Project {
     pub projection: Vec<Expr>,
     pub resource_request: ResourceRequest,
     pub projected_schema: SchemaRef,
+    pub subquery: Option<Arc<LogicalPlan>>,
 }
+
+type SubqueryOutput = (Option<Arc<LogicalPlan>>, Arc<LogicalPlan>, Vec<Expr>);
 
 impl Project {
     pub(crate) fn try_new(
@@ -26,9 +29,12 @@ impl Project {
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
     ) -> Result<Self> {
+        let (subquery, agged_input, agged_projection) =
+            Self::extract_agg_subquery(input, projection)?;
+
         // Factor the projection and see if there are any substitutions to factor out.
         let (factored_input, factored_projection) =
-            Self::try_factor_subexpressions(input, projection, &resource_request)?;
+            Self::try_factor_subexpressions(agged_input, agged_projection, &resource_request)?;
 
         let upstream_schema = factored_input.schema();
         let projected_schema = {
@@ -44,7 +50,15 @@ impl Project {
             projection: factored_projection,
             resource_request,
             projected_schema,
+            subquery,
         })
+    }
+
+    fn extract_agg_subquery(
+        _input: Arc<LogicalPlan>,
+        _projection: Vec<Expr>,
+    ) -> Result<SubqueryOutput> {
+        todo!()
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

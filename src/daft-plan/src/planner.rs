@@ -92,15 +92,24 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
             input,
             projection,
             resource_request,
+            subquery,
             ..
         }) => {
-            let input_physical = plan(input, cfg)?;
+            let input_physical = plan(input, cfg.clone())?;
             let clustering_spec = input_physical.clustering_spec().clone();
+
+            let subquery = if let Some(query) = subquery {
+                Some(plan(query, cfg.clone())?.into())
+            } else {
+                None
+            };
+
             Ok(PhysicalPlan::Project(Project::try_new(
                 input_physical.into(),
                 projection.clone(),
                 resource_request.clone(),
                 clustering_spec,
+                subquery,
             )?))
         }
         LogicalPlan::Filter(LogicalFilter { input, predicate }) => {
@@ -484,6 +493,7 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         final_exprs,
                         Default::default(),
                         clustering_spec,
+                        None,
                     )?)
                 }
             };

@@ -48,8 +48,12 @@ def empty_scan(
 
 
 def project(
-    input: physical_plan.InProgressPhysicalPlan[PartitionT], projection: list[PyExpr], resource_request: ResourceRequest
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    subquery_input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    projection: list[PyExpr],
+    resource_request: ResourceRequest,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    # TODO(Kevin): subquery implementation
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
     return physical_plan.pipeline_instruction(
         child_plan=input,
