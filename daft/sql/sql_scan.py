@@ -84,7 +84,11 @@ class SQLScanOperator(ScanOperator):
         size_bytes = math.ceil(total_size / num_scan_tasks) if strategy == PartitionBoundStrategy.PERCENTILE else None
         scan_tasks = []
         for i in range(num_scan_tasks):
-            sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {self._partition_col} >= {partition_bounds_sql[i]} AND {self._partition_col} {'<' if i < num_scan_tasks - 1 else '<='} {partition_bounds_sql[i + 1]}"
+            left_clause = f"{self._partition_col} >= {partition_bounds_sql[i]}"
+            right_clause = (
+                f"{self._partition_col} {'<' if i < num_scan_tasks - 1 else '<='} {partition_bounds_sql[i + 1]}"
+            )
+            sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql=sql))
 
