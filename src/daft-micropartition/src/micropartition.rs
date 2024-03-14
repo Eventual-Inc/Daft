@@ -842,8 +842,9 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate, perform an eager read only reading what row groups we need.
-    if predicate.is_some() {
+    // If we have a predicate or if num_rows was specified, we no longer have an accurate accounting of required metadata
+    // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
+    if predicate.is_some() || num_rows.is_some() {
         return _read_parquet_into_loaded_micropartition(
             io_client,
             runtime_handle,

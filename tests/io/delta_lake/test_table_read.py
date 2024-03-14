@@ -64,6 +64,33 @@ def test_deltalake_read_row_group_splits(tmp_path, base_table):
     # Force file splitting
     with split_small_pq_files():
         df = daft.read_delta_lake(str(path))
+        df.collect()
+        assert len(df) == 3, "Length of non-materialized data when read through deltalake should be correct"
+
+
+def test_deltalake_read_row_group_splits_with_filter(tmp_path, base_table):
+    path = tmp_path / "some_table"
+
+    # Force 2 rowgroups
+    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+
+    # Force file splitting
+    with split_small_pq_files():
+        df = daft.read_delta_lake(str(path))
         df = df.where(df["a"] > 1)
         df.collect()
-        assert len(df._result) == 2, "Length of non-materialized data when read through deltalake should be correct"
+        assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
+
+
+def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
+    path = tmp_path / "some_table"
+
+    # Force 2 rowgroups
+    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+
+    # Force file splitting
+    with split_small_pq_files():
+        df = daft.read_delta_lake(str(path))
+        df = df.limit(2)
+        df.collect()
+        assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
