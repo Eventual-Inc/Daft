@@ -367,9 +367,6 @@ impl MicroPartition {
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
-        if scan_task.pushdowns.limit.is_some() {
-            panic!("Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have limits");
-        }
         if scan_task.pushdowns.filters.is_some() {
             panic!("Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters");
         }
@@ -432,12 +429,16 @@ impl MicroPartition {
         ) {
             // CASE: ScanTask provides all required metadata.
             // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _, _)
-                if scan_task.pushdowns.filters.is_none() && scan_task.pushdowns.limit.is_none() =>
-            {
+            (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
                 Ok(Self::new_unloaded(
                     scan_task.clone(),
-                    metadata.clone(),
+                    scan_task
+                        .pushdowns
+                        .limit
+                        .map(|limit| TableMetadata {
+                            length: metadata.length.min(limit),
+                        })
+                        .unwrap_or_else(|| metadata.clone()),
                     statistics.clone(),
                 ))
             }
@@ -842,9 +843,9 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate or if num_rows was specified, we no longer have an accurate accounting of required metadata
+    // If we have a predicate then we no longer have an accurate accounting of required metadata
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
-    if predicate.is_some() || num_rows.is_some() {
+    if predicate.is_some() {
         return _read_parquet_into_loaded_micropartition(
             io_client,
             runtime_handle,
