@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from daft.delta_lake.delta_lake_scan import _io_config_to_storage_options
@@ -11,6 +13,19 @@ import pyarrow as pa
 import daft
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
+
+
+@contextlib.contextmanager
+def split_small_pq_files():
+    old_config = daft.context.get_context().daft_execution_config
+    daft.set_execution_config(
+        # Splits any parquet files >100 bytes in size
+        scan_tasks_min_size_bytes=1,
+        scan_tasks_max_size_bytes=100,
+    )
+    yield
+    daft.set_execution_config(config=old_config)
+
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
 pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="deltalake only supported if pyarrow >= 8.0.0")
@@ -38,3 +53,16 @@ def test_deltalake_read_show(deltalake_table):
     path, catalog_table, io_config, _ = deltalake_table
     df = daft.read_delta_lake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
     df.show()
+
+
+def test_deltalake_read_row_group_splits(tmp_path, base_table):
+    path = tmp_path / "some_table"
+
+    # Force 2 rowgroups
+    deltalake.write_deltalake(path, base_table, min_rows_per_group=1, max_rows_per_group=2)
+
+    # Force file splitting
+    with split_small_pq_files():
+        df = daft.read_delta_lake(str(path))
+        df.collect()
+        assert len(df._result) == 3, "Length of non-materialized data when read through deltalake should be correct"
