@@ -554,6 +554,8 @@ def write_iceberg(
 
     format = pads.ParquetFileFormat()
 
+    #TODO hydrate pyarrow schema with parquet file metadata
+
     _write_tabular_arrow_table(
         arrow_table=arrow_table,
         schema=None,

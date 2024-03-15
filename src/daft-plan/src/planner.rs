@@ -24,7 +24,7 @@ use crate::partitioning::{
     ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
 };
 use crate::physical_plan::PhysicalPlan;
-use crate::sink_info::{OutputFileInfo, SinkInfo};
+use crate::sink_info::{CatalogType, OutputFileInfo, SinkInfo};
 use crate::source_info::SourceInfo;
 use crate::FileFormat;
 use crate::{physical_ops::*, JoinStrategy};
@@ -714,6 +714,13 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                 file_info.clone(),
                                 input_physical.into(),
                             )))
+                        }
+                    }
+                }
+                SinkInfo::CatalogInfo(catalog_info) => {
+                    match &catalog_info.catalog {
+                        CatalogType::Iceberg(iceberg_info) => {
+                            Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input_physical.into())))
                         }
                     }
                 }

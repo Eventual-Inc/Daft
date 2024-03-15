@@ -1,4 +1,5 @@
 use common_io_config::IOConfig;
+use daft_core::schema::SchemaRef;
 use daft_dsl::Expr;
 use itertools::Itertools;
 
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
+    CatalogInfo(CatalogInfo)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -17,6 +19,25 @@ pub struct OutputFileInfo {
     pub partition_cols: Option<Vec<Expr>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CatalogInfo {
+    pub catalog: CatalogType,
+    pub catalog_columns: Vec<String>
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CatalogType {
+    Iceberg(IcebergCatalogInfo)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct IcebergCatalogInfo {
+    pub table_name: String,
+    pub iceberg_table: i64
 }
 
 impl OutputFileInfo {

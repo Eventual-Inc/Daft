@@ -1,5 +1,6 @@
 mod agg;
 mod broadcast_join;
+mod iceberg_write;
 mod coalesce;
 mod concat;
 mod csv;
@@ -25,6 +26,7 @@ mod split;
 
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;
+pub use iceberg_write::IcebergWrite;
 pub use coalesce::Coalesce;
 pub use concat::Concat;
 pub use csv::TabularWriteCsv;

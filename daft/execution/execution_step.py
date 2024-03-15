@@ -354,7 +354,7 @@ class WriteFile(SingleOutputInstruction):
         assert len(input_metadatas) == 1
         return [
             PartialPartitionMetadata(
-                num_rows=1,  # We currently write one file per partition.
+                num_rows=None, # we can write more than 1 file per partition
                 size_bytes=None,
             )
         ]

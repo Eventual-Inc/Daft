@@ -59,6 +59,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    IcebergWrite(IcebergWrite)
 }
 
 impl PhysicalPlan {
@@ -197,6 +198,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            Self::IcebergWrite(..) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
         }
     }
 
@@ -262,7 +264,7 @@ impl PhysicalPlan {
             Self::Aggregate(_) => None,
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
+            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) | Self::IcebergWrite(_) => {
                 None
             }
         }
@@ -290,6 +292,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -328,6 +331,7 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
@@ -379,6 +383,7 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::IcebergWrite(..) => "IcebergWrite",
         };
         name.to_string()
     }
