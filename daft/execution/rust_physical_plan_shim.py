@@ -253,3 +253,13 @@ def write_file(
         expr_projection,
         io_config,
     )
+
+
+def write_iceberg(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    io_config: IOConfig | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.iceberg_write(
+        input,
+        io_config,
+    )

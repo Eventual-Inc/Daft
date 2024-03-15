@@ -105,6 +105,26 @@ def file_write(
     )
 
 
+def iceberg_write(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    io_config: IOConfig | None,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Write the results of `child_plan` into files described by `write_info`."""
+    import ipdb
+
+    ipdb.set_trace()
+    yield from (
+        step.add_instruction(
+            execution_step.WriteIceberg(
+                io_config=io_config,
+            ),
+        )
+        if isinstance(step, PartitionTaskBuilder)
+        else step
+        for step in child_plan
+    )
+
+
 def pipeline_instruction(
     child_plan: InProgressPhysicalPlan[PartitionT],
     pipeable_instruction: Instruction,

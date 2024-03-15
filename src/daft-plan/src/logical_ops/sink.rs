@@ -6,7 +6,10 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 
-use crate::{sink_info::{CatalogType, SinkInfo}, LogicalPlan};
+use crate::{
+    sink_info::{CatalogType, SinkInfo},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -30,9 +33,12 @@ impl Sink {
                     }
                 }
                 fields
-            },
+            }
             SinkInfo::CatalogInfo(..) => {
-                vec![Field::new("operation", daft_core::DataType::Utf8), Field::new("path", daft_core::DataType::Utf8)]
+                vec![
+                    Field::new("operation", daft_core::DataType::Utf8),
+                    Field::new("path", daft_core::DataType::Utf8),
+                ]
             }
         };
         let schema = Schema::new(fields)?.into();
@@ -58,7 +64,6 @@ impl Sink {
                         // TODO multiline display for iceberg
                     }
                 }
-
             }
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));

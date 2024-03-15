@@ -354,7 +354,45 @@ class WriteFile(SingleOutputInstruction):
         assert len(input_metadatas) == 1
         return [
             PartialPartitionMetadata(
-                num_rows=None, # we can write more than 1 file per partition
+                num_rows=None,  # we can write more than 1 file per partition
+                size_bytes=None,
+            )
+        ]
+
+    def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
+        return table_io.write_tabular(
+            input,
+            path=self.root_dir,
+            schema=self.schema,
+            file_format=self.file_format,
+            compression=self.compression,
+            partition_cols=self.partition_cols,
+            io_config=self.io_config,
+        )
+
+
+dataclass(frozen=True)
+
+
+class WriteIceberg(SingleOutputInstruction):
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._write_iceberg(inputs)
+
+    def _write_iceberg(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        assert False, "need to implement"
+        [input] = inputs
+        partition = self._handle_file_write(
+            input=input,
+        )
+        return [partition]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
         ]

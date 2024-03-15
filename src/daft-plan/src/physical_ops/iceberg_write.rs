@@ -1,6 +1,9 @@
 use daft_core::schema::SchemaRef;
 
-use crate::{physical_plan::PhysicalPlanRef, sink_info::{CatalogInfo, IcebergCatalogInfo}};
+use crate::{
+    physical_plan::PhysicalPlanRef,
+    sink_info::{CatalogInfo, IcebergCatalogInfo},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -30,6 +33,7 @@ impl IcebergWrite {
         res.push("IcebergWrite:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         // res.extend(self.catalog_info.multiline_display());
+        // TODO(sammy): multiline display
         res
     }
 }

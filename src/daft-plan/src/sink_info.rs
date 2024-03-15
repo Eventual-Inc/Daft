@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
-    CatalogInfo(CatalogInfo)
+    CatalogInfo(CatalogInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,23 +21,21 @@ pub struct OutputFileInfo {
     pub io_config: Option<IOConfig>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CatalogInfo {
     pub catalog: CatalogType,
-    pub catalog_columns: Vec<String>
+    pub catalog_columns: Vec<String>,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CatalogType {
-    Iceberg(IcebergCatalogInfo)
+    Iceberg(IcebergCatalogInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IcebergCatalogInfo {
     pub table_name: String,
-    pub iceberg_table: i64
+    pub iceberg_table: i64,
 }
 
 impl OutputFileInfo {

@@ -25,6 +25,7 @@ use crate::{
         UnknownClusteringConfig,
     },
     physical_ops::*,
+    sink_info::IcebergCatalogInfo,
 };
 
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
@@ -59,7 +60,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
-    IcebergWrite(IcebergWrite)
+    IcebergWrite(IcebergWrite),
 }
 
 impl PhysicalPlan {
@@ -198,7 +199,9 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
-            Self::IcebergWrite(..) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
+            Self::IcebergWrite(..) => {
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
+            }
         }
     }
 
@@ -264,9 +267,10 @@ impl PhysicalPlan {
             Self::Aggregate(_) => None,
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) | Self::IcebergWrite(_) => {
-                None
-            }
+            Self::TabularWriteParquet(_)
+            | Self::TabularWriteCsv(_)
+            | Self::TabularWriteJson(_)
+            | Self::IcebergWrite(_) => None,
         }
     }
 
@@ -420,6 +424,7 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::IcebergWrite(iceberg_info) => iceberg_info.multiline_display(),
         }
     }
 
@@ -514,6 +519,27 @@ fn tabular_write(
             root_dir,
             compression.clone(),
             part_cols,
+            io_config
+                .as_ref()
+                .map(|cfg| common_io_config::python::IOConfig {
+                    config: cfg.clone(),
+                }),
+        ))?;
+    Ok(py_iter.into())
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "python")]
+fn iceberg_write(
+    py: Python<'_>,
+    upstream_iter: PyObject,
+    io_config: &Option<IOConfig>,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_iceberg"))?
+        .call1((
+            upstream_iter,
             io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
@@ -958,6 +984,12 @@ impl PhysicalPlan {
                 partition_cols,
                 io_config,
             ),
+
+            PhysicalPlan::IcebergWrite(IcebergWrite {
+                schema,
+                iceberg_info,
+                input,
+            }) => iceberg_write(py, input.to_partition_tasks(py, psets)?, &None),
         }
     }
 }

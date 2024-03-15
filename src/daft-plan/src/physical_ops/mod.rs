@@ -1,6 +1,5 @@
 mod agg;
 mod broadcast_join;
-mod iceberg_write;
 mod coalesce;
 mod concat;
 mod csv;
@@ -10,6 +9,7 @@ mod fanout;
 mod filter;
 mod flatten;
 mod hash_join;
+mod iceberg_write;
 #[cfg(feature = "python")]
 mod in_memory;
 mod json;
@@ -26,7 +26,6 @@ mod split;
 
 pub use agg::Aggregate;
 pub use broadcast_join::BroadcastJoin;
-pub use iceberg_write::IcebergWrite;
 pub use coalesce::Coalesce;
 pub use concat::Concat;
 pub use csv::TabularWriteCsv;
@@ -36,6 +35,7 @@ pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;
 pub use flatten::Flatten;
 pub use hash_join::HashJoin;
+pub use iceberg_write::IcebergWrite;
 #[cfg(feature = "python")]
 pub use in_memory::InMemoryScan;
 pub use json::TabularWriteJson;

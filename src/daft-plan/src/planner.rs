@@ -717,13 +717,15 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         }
                     }
                 }
-                SinkInfo::CatalogInfo(catalog_info) => {
-                    match &catalog_info.catalog {
-                        CatalogType::Iceberg(iceberg_info) => {
-                            Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input_physical.into())))
-                        }
+                SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+                    CatalogType::Iceberg(iceberg_info) => {
+                        Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(
+                            schema.clone(),
+                            iceberg_info.clone(),
+                            input_physical.into(),
+                        )))
                     }
-                }
+                },
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {
