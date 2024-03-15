@@ -49,8 +49,8 @@ After writing this local example table, we can easily read it into a Daft DataFr
 
     df = daft.read_delta_lake("some-table")
 
-Data Skipping
-*************
+Data Skipping Optimizations
+***************************
 
 Subsequent filters on the partition column ``"group"`` will efficiently skip data that doesn't match the predicate. In the below example, the ``group != 2`` partitions (files) will be pruned, i.e. they will never be read into memory.
 
