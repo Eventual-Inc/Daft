@@ -16,7 +16,12 @@ arrow_float_types = [pa.float32(), pa.float64()]
 arrow_binary_types = [pa.binary(), pa.large_binary()]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_string_types, repeat=2))
+VALID_INT_STRING_COMPARISONS = list(itertools.product(arrow_int_types, repeat=2)) + list(
+    itertools.product(arrow_string_types, repeat=2)
+)
+
+
+@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None])
     r_arrow = pa.array([1, 3, 1, 5, None, None])
@@ -43,7 +48,7 @@ def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_string_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([2])
     r_arrow = pa.array([1, 2, 3, None])
@@ -71,7 +76,7 @@ def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
     assert gt == [True, False, False, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_string_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None])
     r_arrow = pa.array([2])
@@ -98,7 +103,7 @@ def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, True, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_string_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None])
     r_arrow = pa.array([None], type=r_dtype)
@@ -578,7 +583,7 @@ def test_comparisons_binary_right_scalar(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, True, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_string_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None])
     r_arrow = pa.array([None], type=r_dtype)
@@ -744,3 +749,14 @@ def test_compare_timestamps_diff_tz(tu1, tu2):
     tz1 = Series.from_pylist([utc]).cast(DataType.timestamp(tu1, "UTC"))
     tz2 = Series.from_pylist([eastern]).cast(DataType.timestamp(tu1, "US/Eastern"))
     assert (tz1 == tz2).to_pylist() == [True]
+
+
+@pytest.mark.parametrize("op", [operator.eq, operator.ne, operator.lt, operator.gt, operator.le, operator.ge])
+def test_numeric_and_string_compare_raises_error(op):
+    left = Series.from_pylist([1, 2, 3])
+    right = Series.from_pylist(["1", "2", "3"])
+    with pytest.raises(ValueError, match="Cannot perform comparison on types:"):
+        op(left, right)
+
+    with pytest.raises(ValueError, match="Cannot perform comparison on types:"):
+        op(right, left)
