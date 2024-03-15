@@ -13,6 +13,7 @@ else:
 
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
 from daft.expressions import Expression, ExpressionsProjection, col
+from daft.filesystem import overwrite_files as _overwrite_files
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
@@ -369,6 +370,26 @@ class WriteFile(SingleOutputInstruction):
             partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
+
+
+@dataclass(frozen=True)
+class OverwriteFiles(SingleOutputInstruction):
+    root_dir: str | pathlib.Path
+    io_config: IOConfig | None
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        _overwrite_files(input, self.root_dir, self.io_config)
+        return [input]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        [input_meta] = input_metadatas
+        return [
+            PartialPartitionMetadata(
+                num_rows=input_meta.num_rows,
+                size_bytes=input_meta.size_bytes,
+            )
+        ]
 
 
 @dataclass(frozen=True)

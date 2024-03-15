@@ -59,6 +59,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    OverwriteFiles(OverwriteFiles),
 }
 
 impl PhysicalPlan {
@@ -197,6 +198,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            Self::OverwriteFiles(OverwriteFiles { input, .. }) => input.clustering_spec(),
         }
     }
 
@@ -262,9 +264,10 @@ impl PhysicalPlan {
             Self::Aggregate(_) => None,
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
-                None
-            }
+            Self::TabularWriteParquet(_)
+            | Self::TabularWriteCsv(_)
+            | Self::TabularWriteJson(_)
+            | Self::OverwriteFiles(_) => None,
         }
     }
 
@@ -290,6 +293,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::OverwriteFiles(OverwriteFiles { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -328,6 +332,7 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::OverwriteFiles(OverwriteFiles { file_info, .. }) => Self::OverwriteFiles(OverwriteFiles::new(input.clone(), file_info.clone())),
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
@@ -379,6 +384,7 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::OverwriteFiles(..) => "OverwriteFiles",
         };
         name.to_string()
     }
@@ -415,6 +421,7 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::OverwriteFiles(overwrite_files) => overwrite_files.multiline_display(),
         }
     }
 
@@ -953,6 +960,30 @@ impl PhysicalPlan {
                 partition_cols,
                 io_config,
             ),
+            PhysicalPlan::OverwriteFiles(OverwriteFiles {
+                input,
+                file_info:
+                    OutputFileInfo {
+                        root_dir,
+                        io_config,
+                        ..
+                    },
+            }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                    .getattr(pyo3::intern!(py, "overwrite_files"))?
+                    .call1((
+                        upstream_iter,
+                        root_dir,
+                        io_config
+                            .as_ref()
+                            .map(|cfg| common_io_config::python::IOConfig {
+                                config: cfg.clone(),
+                            }),
+                    ))?;
+                Ok(py_iter.into())
+            }
         }
     }
 }

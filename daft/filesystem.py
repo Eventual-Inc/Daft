@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import sys
 import urllib.parse
@@ -15,7 +16,7 @@ from typing import Any
 
 import fsspec
 from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
+from pyarrow.fs import FileSelector, FileSystem, LocalFileSystem, S3FileSystem
 from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
@@ -321,3 +322,27 @@ def glob_path_with_stats(
         num_rows.append(infos.get("rows"))
 
     return FileInfos.from_infos(file_paths=file_paths, file_sizes=file_sizes, num_rows=num_rows)
+
+
+###
+# File removal for overwrites
+###
+
+
+def overwrite_files(
+    table: MicroPartition,
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+) -> None:
+
+    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+    file_selector = FileSelector(resolved_path, recursive=True)
+    file_infos = fs.get_file_info(file_selector)
+    file_paths = [f.path for f in file_infos]
+
+    written_paths = table.to_pydict()["path"]
+    written_directories = {os.path.dirname(p) for p in written_paths}
+    written_path_set = set(written_paths)
+    for file_path in file_paths:
+        if file_path not in written_path_set and os.path.dirname(file_path) in written_directories:
+            fs.delete_file(file_path)
