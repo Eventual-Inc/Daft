@@ -75,6 +75,26 @@ impl Utf8Array {
     }
 
     pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+        if pattern.len() == 1 {
+            let pattern_scalar_value = pattern.get(0);
+            return match pattern_scalar_value {
+                None => Ok(BooleanArray::full_null(
+                    self.name(),
+                    self.data_type(),
+                    self.len(),
+                )),
+                Some(pattern_v) => {
+                    let re = regex::Regex::new(pattern_v)?;
+                    let arrow_result: arrow2::array::BooleanArray = self
+                        .as_arrow()
+                        .into_iter()
+                        .map(|self_v| Some(re.is_match(self_v?)))
+                        .collect();
+                    Ok(BooleanArray::from((self.name(), arrow_result)))
+                }
+            };
+        }
+
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
             Ok(regex::Regex::new(pat)?.is_match(data))
         })
