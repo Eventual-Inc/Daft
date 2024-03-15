@@ -73,16 +73,16 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
     "input,items,expected",
     [
         # Int
-        pytest.param([-1, 2, 3, 4], ["-1", "2"], [True, True, False, False], id="IntWithString"),
+        pytest.param([-1, 2, 3, 4], ["-1", "2"], None, id="IntWithString"),
         pytest.param([1, 2, 3, 4], [1.0, 2.0], [True, True, False, False], id="IntWithFloat"),
         pytest.param([0, 1, 2, 3], [True], [False, True, False, False], id="IntWithBool"),
         # Float
-        pytest.param([-1.0, 2.0, 3.0, 4.0], ["-1.0", "2.0"], [True, True, False, False], id="FloatWithString"),
+        pytest.param([-1.0, 2.0, 3.0, 4.0], ["-1.0", "2.0"], None, id="FloatWithString"),
         pytest.param([1.0, 2.0, 3.0, 4.0], [1, 2], [True, True, False, False], id="FloatWithInt"),
         pytest.param([0.0, 1.0, 2.0, 3.0], [True], [False, True, False, False], id="FloatWithBool"),
         # String
-        pytest.param(["1", "2", "3", "4"], [1, 2], [True, True, False, False], id="StringWithInt"),
-        pytest.param(["1.0", "2.0", "3.0", "4.0"], [1.0, 2.0], [True, True, False, False], id="StringWithFloat"),
+        pytest.param(["1", "2", "3", "4"], [1, 2], None, id="StringWithInt"),
+        pytest.param(["1.0", "2.0", "3.0", "4.0"], [1.0, 2.0], None, id="StringWithFloat"),
         # Bool
         pytest.param([True, False, None], [1, 0], [True, True, None], id="BoolWithInt"),
         pytest.param([True, False, None], [1.0], [True, False, None], id="BoolWithFloat"),
@@ -104,10 +104,14 @@ def test_table_expr_is_in_same_types(input, items, expected) -> None:
 )
 def test_table_expr_is_in_different_types_castable(input, items, expected) -> None:
     daft_table = MicroPartition.from_pydict({"input": input})
-    daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
-    pydict = daft_table.to_pydict()
 
-    assert pydict["input"] == expected
+    if expected is None:
+        with pytest.raises(ValueError, match="Cannot perform comparison on types:"):
+            daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
+    else:
+        daft_table = daft_table.eval_expression_list([col("input").is_in(items)])
+        pydict = daft_table.to_pydict()
+        assert pydict["input"] == expected
 
 
 @pytest.mark.parametrize(
