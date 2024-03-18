@@ -160,9 +160,10 @@ impl Utf8Array {
         }
     }
 
-    pub fn extract(&self, pattern: &Utf8Array, index: i32) -> DaftResult<Utf8Array> {
+    pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
+        // Handle all-null cases.
         if self_arrow
             .validity()
             .map_or(false, |v| v.unset_bits() == v.len())
@@ -175,9 +176,8 @@ impl Utf8Array {
                 self.data_type(),
                 std::cmp::max(self.len(), pattern.len()),
             ));
-            // Handle empty cases.
-        }
-        if self.is_empty() || pattern.is_empty() {
+        // Handle empty cases.
+        } else if self.is_empty() || pattern.is_empty() {
             return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
 
@@ -190,9 +190,9 @@ impl Utf8Array {
                     .map(|(val, pat)| match (val, pat) {
                         (Some(val), Some(pat)) => {
                             let re = regex::Regex::new(pat)?;
-                            Ok(re.captures(val).and_then(|captures| {
-                                captures.get(index as usize).map(|m| m.as_str())
-                            }))
+                            Ok(re
+                                .captures(val)
+                                .and_then(|captures| captures.get(index).map(|m| m.as_str())))
                         }
                         _ => Ok(None),
                     })
@@ -215,8 +215,7 @@ impl Utf8Array {
                             .iter()
                             .map(|val| {
                                 let captures = re.captures(val?)?;
-                                let res = captures.get(index as usize).map(|m| m.as_str());
-                                res
+                                captures.get(index).map(|m| m.as_str())
                             })
                             .collect::<arrow2::array::Utf8Array<i64>>();
 
@@ -241,7 +240,7 @@ impl Utf8Array {
                                 Some(p) => {
                                     let re = regex::Regex::new(p)?;
                                     Ok(re.captures(self_v).and_then(|captures| {
-                                        captures.get(index as usize).map(|m| m.as_str())
+                                        captures.get(index).map(|m| m.as_str())
                                     }))
                                 }
                             })

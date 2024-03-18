@@ -798,7 +798,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         Example:
             >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
-            >>> df.with_column("x", df["x"].str.extract(r"ba(.)", 1)).collect()
+            >>> df.with_column("ba", df["x"].str.extract(r"ba(.)", 1)).collect()
+            ╭──────┬──────╮
+            │ x    ┆ ba   │
+            │ ---  ┆ ---  │
+            │ Utf8 ┆ Utf8 │
+            ╞══════╪══════╡
+            │ foo  ┆ None │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ bar  ┆ r    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+            │ baz  ┆ z    │
+            ╰──────┴──────╯
 
         Args:
             pattern: The regex pattern to extract

@@ -50,7 +50,7 @@ impl Series {
         }
     }
 
-    pub fn utf8_extract(&self, pattern: &Series, index: i32) -> DaftResult<Series> {
+    pub fn utf8_extract(&self, pattern: &Series, index: usize) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => Ok(self.utf8()?.extract(pattern.utf8()?, index)?.into_series()),
             dt => Err(DaftError::TypeError(format!(

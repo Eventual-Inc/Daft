@@ -39,7 +39,7 @@ pub enum Utf8Expr {
     Contains,
     Split,
     Match,
-    Extract(i32),
+    Extract(usize),
     Length,
     Lower,
     Upper,
@@ -108,7 +108,7 @@ pub fn split(data: &Expr, pattern: &Expr) -> Expr {
     }
 }
 
-pub fn extract(data: &Expr, pattern: &Expr, index: i32) -> Expr {
+pub fn extract(data: &Expr, pattern: &Expr, index: usize) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Extract(index)),
         inputs: vec![data.clone(), pattern.clone()],

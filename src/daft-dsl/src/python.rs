@@ -402,7 +402,7 @@ impl PyExpr {
         Ok(split(&self.expr, &pattern.expr).into())
     }
 
-    pub fn utf8_extract(&self, pattern: &Self, index: i32) -> PyResult<Self> {
+    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
         use crate::functions::utf8::extract;
         Ok(extract(&self.expr, &pattern.expr, index).into())
     }

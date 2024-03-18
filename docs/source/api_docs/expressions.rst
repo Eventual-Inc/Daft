@@ -107,6 +107,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.endswith
    Expression.str.concat
    Expression.str.split
+   Expression.str.extract
    Expression.str.length
    Expression.str.lower
    Expression.str.upper
