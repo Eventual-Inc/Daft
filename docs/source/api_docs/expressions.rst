@@ -94,11 +94,12 @@ The following methods are available under the ``expr.str`` attribute.
    :template: autosummary/accessor_method.rst
 
    Expression.str.contains
-   Expression.str.endswith
+   Expression.str.match
    Expression.str.startswith
+   Expression.str.endswith
    Expression.str.concat
-   Expression.str.length
    Expression.str.split
+   Expression.str.length
    Expression.str.lower
    Expression.str.upper
    Expression.str.lstrip

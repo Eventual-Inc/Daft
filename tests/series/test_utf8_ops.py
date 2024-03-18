@@ -338,3 +338,34 @@ def test_series_utf8_capitalize(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.capitalize()
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "expected"],
+    [
+        # No broadcast
+        (["foo", "barbaz", "quux"], ["foo", "bar", "baz"], [True, True, False]),
+        # Broadcast pattern
+        (["foo", "barbaz", "quux"], ["foo"], [True, False, False]),
+        # Broadcast data
+        (["foo"], ["foo", "bar", "baz"], [True, False, False]),
+        # Broadcast null data
+        ([None], ["foo", "bar", "baz"], [None, None, None]),
+        # Broadcast null pattern
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], ["foo", "bar", "boo", None], [True, None, False, None]),
+    ],
+)
+def test_series_utf8_match(data, pattern, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.match(patterns)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_match_bad_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array(["["]))
+    with pytest.raises(ValueError):
+        s.str.match(pattern)
