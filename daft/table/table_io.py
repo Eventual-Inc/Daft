@@ -472,6 +472,42 @@ def write_tabular(
     return MicroPartition.from_pydict(data_dict)
 
 
+def coerce_pyarrow_table_to_schema(pa_table: pa.Table, input_schema: pa.Schema) -> pa.Table:
+    """Coerces a PyArrow table to the supplied schema
+
+    1. For each field in `pa_table`, cast it to the field in `input_schema` if one with a matching name
+        is available
+    2. Reorder the fields in the casted table to the supplied schema, dropping any fields in `pa_table`
+        that do not exist in the supplied schema
+    3. If any fields in the supplied schema are not present, add a null array of the correct type
+
+    Args:
+        pa_table (pa.Table): Table to coerce
+        input_schema (pa.Schema): Schema to coerce to
+
+    Returns:
+        pa.Table: Table with schema == `input_schema`
+    """
+    input_schema_names = set(input_schema.names)
+
+    # Perform casting of types to provided schema's types
+    cast_to_schema = [
+        input_schema.field(inferred_field.name) if inferred_field.name in input_schema_names else inferred_field
+        for inferred_field in pa_table.schema
+    ]
+    casted_table = pa_table.cast(pa.schema(cast_to_schema))
+
+    # Reorder and pad columns with a null column where necessary
+    pa_table_column_names = set(casted_table.column_names)
+    columns = []
+    for name in input_schema.names:
+        if name in pa_table_column_names:
+            columns.append(casted_table[name])
+        else:
+            columns.append(pa.nulls(len(casted_table), type=input_schema.field(name).type))
+    return pa.table(columns, schema=input_schema)
+
+
 def write_iceberg(
     mp: MicroPartition,
     base_path: str,
@@ -485,6 +521,7 @@ def write_iceberg(
         compute_statistics_plan,
         fill_parquet_file_metadata,
         parquet_path_to_id_mapping,
+        schema_to_pyarrow,
     )
     from pyiceberg.manifest import DataFile, DataFileContent
     from pyiceberg.manifest import FileFormat as IcebergFileFormat
@@ -536,11 +573,18 @@ def write_iceberg(
     execution_config = get_context().daft_execution_config
     inflation_factor = execution_config.parquet_inflation_factor
 
+    # TODO: these should be populate by `properties` but pyiceberg doesn't support them yet
     target_file_size = 512 * 1024 * 1024
-
     TARGET_ROW_GROUP_SIZE = 128 * 1024 * 1024
 
     arrow_table = mp.to_arrow()
+
+    file_schema = schema_to_pyarrow(schema)
+
+    # This ensures that we populate field_id for iceberg as well as fill in null values where needed
+    # This might break for nested fields with large_strings
+    # we should test that behavior
+    arrow_table = coerce_pyarrow_table_to_schema(arrow_table, file_schema)
 
     size_bytes = arrow_table.nbytes
 
@@ -554,11 +598,9 @@ def write_iceberg(
 
     format = pads.ParquetFileFormat()
 
-    # TODO hydrate pyarrow schema with parquet file metadata
-
     _write_tabular_arrow_table(
         arrow_table=arrow_table,
-        schema=None,
+        schema=file_schema,
         full_path=resolved_path,
         format=format,
         opts=format.make_write_options(compression="zstd"),
@@ -568,6 +610,7 @@ def write_iceberg(
         create_dir=is_local_fs,
         file_visitor=file_visitor,
     )
+
     return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
 
