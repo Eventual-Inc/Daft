@@ -19,10 +19,7 @@ impl Series {
         }
 
         let (output_type, intermediate, comp_type) =
-            match self.data_type().membership_op(items.data_type()) {
-                Ok(types) => types,
-                Err(_) => return default(self.name(), self.len()),
-            };
+            self.data_type().membership_op(items.data_type())?;
 
         let (lhs, rhs) = if let Some(ref it) = intermediate {
             (self.cast(it)?, items.cast(it)?)

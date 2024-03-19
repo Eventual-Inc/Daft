@@ -455,7 +455,13 @@ impl Expr {
             }
             IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             NotNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
-            IsIn(expr, ..) => Ok(Field::new(expr.name()?, DataType::Boolean)),
+            IsIn(left, right) => {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+                let (result_type, _intermediate, _comp_type) =
+                    left_field.dtype.membership_op(&right_field.dtype)?;
+                Ok(Field::new(left_field.name.as_str(), result_type))
+            }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema, self),
             BinaryOp { op, left, right } => {
