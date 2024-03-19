@@ -332,6 +332,7 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                Self::Count(Count {..}) => Self::Count(Count::new(input.clone())),
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
@@ -962,7 +963,7 @@ impl PhysicalPlan {
             PhysicalPlan::Count(Count { input }) => {
                 let upstream_iter = input.to_partition_tasks(py, psets)?;
                 let py_iter = py
-                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                     .getattr(pyo3::intern!(py, "count"))?
                     .call1((upstream_iter,))?;
                 Ok(py_iter.into())

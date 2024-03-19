@@ -168,6 +168,7 @@ impl LogicalPlan {
                 Self::Distinct(_) => Self::Distinct(Distinct::new(input.clone())),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::try_new(input.clone(), aggregations.clone(), groupby.clone()).unwrap()),
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
+                Self::Count(Count { .. }) => Self::Count(Count::new(input.clone())),
                 _ => panic!("Logical op {} has two inputs, but got one", self),
             },
             [input1, input2] => match self {

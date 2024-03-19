@@ -440,15 +440,12 @@ def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection)
 
 @dataclass(frozen=True)
 class LocalCount(SingleOutputInstruction):
-    schema: Schema
-
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._count(inputs)
 
     def _count(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         [input] = inputs
         partition = MicroPartition.from_pydict({"count": [len(input)]})
-        assert partition.schema() == self.schema
         return [partition]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:

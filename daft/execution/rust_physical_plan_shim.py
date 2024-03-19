@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from daft import col
 from daft.daft import (
     FileFormat,
     IOConfig,
@@ -253,3 +254,14 @@ def write_file(
         expr_projection,
         io_config,
     )
+
+
+def count(input: physical_plan.InProgressPhysicalPlan[PartitionT]) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    local_count = physical_plan.pipeline_instruction(
+        child_plan=input,
+        pipeable_instruction=execution_step.LocalCount(),
+        resource_request=ResourceRequest(),
+    )
+    coalesced = physical_plan.coalesce_into_single_partition(local_count)
+    global_count = local_aggregate(coalesced, agg_exprs=[col("count").sum()._expr], group_by=[])
+    return global_count

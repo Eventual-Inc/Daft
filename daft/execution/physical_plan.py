@@ -1194,6 +1194,61 @@ def split(
             )
 
 
+def _get_total_mean_imputed_size_bytes(tasks: list[SingleOutputPartitionTask[PartitionT]]) -> int | None:
+    """Calculates the total size_bytes of a list of tasks, imputing any `None` values using the mean size_bytes"""
+    # Calculate memory request for task.
+    size_bytes_per_task = [task.partition_metadata().size_bytes for task in tasks]
+    non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
+    non_null_size_bytes = sum(non_null_size_bytes_per_task)
+
+    # If all task size bytes are non-null, directly use the non-null size bytes sum.
+    if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
+        return non_null_size_bytes
+    # If some are null, impute null values with mean value
+    elif non_null_size_bytes_per_task:
+        mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
+        return non_null_size_bytes + mean_size * (len(size_bytes_per_task) - len(non_null_size_bytes_per_task))
+
+    # If all null, set to null.
+    return None
+
+
+def coalesce_into_single_partition(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Coalesces the results of the child_plan into a single partition."""
+    materializations: list[SingleOutputPartitionTask[PartitionT]] = []
+    stage_id = next(stage_id_counter)
+
+    # Exhaust the child plan
+    for child_step in child_plan:
+        if isinstance(child_step, PartitionTaskBuilder):
+            child_step = child_step.finalize_partition_task_single_output(stage_id)
+            materializations.append(child_step)
+        yield child_step
+
+    # Wait for all child materializations to finish
+    while True:
+        for child in materializations:
+            if not child.done():
+                yield None
+                break
+        # If for loop completes without breaks, all tasks are done and we can break the outer while loop
+        else:
+            break
+
+    # Coalesce and emit
+    size_bytes = _get_total_mean_imputed_size_bytes(materializations)
+    merge_step = PartitionTaskBuilder[PartitionT](
+        inputs=[_.partition() for _ in materializations],
+        partial_metadatas=[_.partition_metadata() for _ in materializations],
+        resource_request=ResourceRequest(memory_bytes=size_bytes),
+    ).add_instruction(
+        instruction=execution_step.ReduceMerge(),
+    )
+    yield merge_step
+
+
 def coalesce(
     child_plan: InProgressPhysicalPlan[PartitionT],
     from_num_partitions: int,
@@ -1221,25 +1276,7 @@ def coalesce(
         ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
         if len(ready_to_coalesce) == num_partitions_to_merge:
             # Coalesce the partition and emit it.
-
-            # Calculate memory request for task.
-            size_bytes_per_task = [task.partition_metadata().size_bytes for task in ready_to_coalesce]
-            non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
-            non_null_size_bytes = sum(non_null_size_bytes_per_task)
-            if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
-                # If all task size bytes are non-null, directly use the non-null size bytes sum.
-                size_bytes = non_null_size_bytes
-            elif non_null_size_bytes_per_task:
-                # If some are null, calculate the non-null mean and assume that null task size bytes
-                # have that size.
-                mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
-                size_bytes = non_null_size_bytes + mean_size * (
-                    len(size_bytes_per_task) - len(non_null_size_bytes_per_task)
-                )
-            else:
-                # If all null, set to null.
-                size_bytes = None
-
+            size_bytes = _get_total_mean_imputed_size_bytes(ready_to_coalesce)
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
                 partial_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
