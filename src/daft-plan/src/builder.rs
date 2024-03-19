@@ -46,6 +46,24 @@ impl LogicalPlanBuilder {
     }
 }
 
+fn check_for_agg(expr: &Expr) -> bool {
+    use Expr::*;
+
+    match expr {
+        Agg(_) => true,
+        Column(_) | Literal(_) => false,
+        Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
+        BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
+        Function { inputs, .. } => inputs.iter().any(check_for_agg),
+        IsIn(l, r) => check_for_agg(l) || check_for_agg(r),
+        IfElse {
+            if_true,
+            if_false,
+            predicate,
+        } => check_for_agg(if_true) || check_for_agg(if_false) || check_for_agg(predicate),
+    }
+}
+
 fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
     use Expr::*;
 
@@ -82,6 +100,26 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
         _ => Err(DaftError::ValueError(format!(
             "Expected aggregation expression, but got: {expr}"
         ))),
+    }
+}
+
+fn extract_and_check_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
+    use daft_dsl::AggExpr::*;
+
+    let agg_expr = extract_agg_expr(expr)?;
+    let has_nested_agg = match &agg_expr {
+        Count(e, _) | Sum(e) | Mean(e) | Min(e) | Max(e) | AnyValue(e, _) | List(e) | Concat(e) => {
+            check_for_agg(e)
+        }
+        MapGroups { inputs, .. } => inputs.iter().any(check_for_agg),
+    };
+
+    if has_nested_agg {
+        Err(DaftError::ValueError(format!(
+            "Nested aggregation expressions are not supported: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+        )))
+    } else {
+        Ok(agg_expr)
     }
 }
 
@@ -141,12 +179,26 @@ impl LogicalPlanBuilder {
         projection: Vec<Expr>,
         resource_request: ResourceRequest,
     ) -> DaftResult<Self> {
+        for expr in &projection {
+            if check_for_agg(expr) {
+                return Err(DaftError::ValueError(format!(
+                    "Aggregation expressions are not currently supported in projection: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                )));
+            }
+        }
+
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), projection, resource_request)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn filter(&self, predicate: Expr) -> DaftResult<Self> {
+        if check_for_agg(&predicate) {
+            return Err(DaftError::ValueError(format!(
+                "Aggregation expressions are not currently supported in filter: {predicate}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+            )));
+        }
+
         let logical_plan: LogicalPlan =
             logical_ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(logical_plan.into())
@@ -159,12 +211,28 @@ impl LogicalPlanBuilder {
     }
 
     pub fn explode(&self, to_explode: Vec<Expr>) -> DaftResult<Self> {
+        for expr in &to_explode {
+            if check_for_agg(expr) {
+                return Err(DaftError::ValueError(format!(
+                    "Aggregation expressions are not currently supported in explode: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                )));
+            }
+        }
+
         let logical_plan: LogicalPlan =
             logical_ops::Explode::try_new(self.plan.clone(), to_explode)?.into();
         Ok(logical_plan.into())
     }
 
     pub fn sort(&self, sort_by: Vec<Expr>, descending: Vec<bool>) -> DaftResult<Self> {
+        for expr in &sort_by {
+            if check_for_agg(expr) {
+                return Err(DaftError::ValueError(format!(
+                    "Aggregation expressions are not currently supported in sort: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                )));
+            }
+        }
+
         let logical_plan: LogicalPlan =
             logical_ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
         Ok(logical_plan.into())
@@ -175,6 +243,14 @@ impl LogicalPlanBuilder {
         num_partitions: Option<usize>,
         partition_by: Vec<Expr>,
     ) -> DaftResult<Self> {
+        for expr in &partition_by {
+            if check_for_agg(expr) {
+                return Err(DaftError::ValueError(format!(
+                    "Aggregation expressions are not currently supported in hash repartition: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                )));
+            }
+        }
+
         let logical_plan: LogicalPlan = logical_ops::Repartition::try_new(
             self.plan.clone(),
             RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
@@ -220,7 +296,7 @@ impl LogicalPlanBuilder {
     pub fn aggregate(&self, agg_exprs: Vec<Expr>, groupby_exprs: Vec<Expr>) -> DaftResult<Self> {
         let agg_exprs = agg_exprs
             .iter()
-            .map(extract_agg_expr)
+            .map(extract_and_check_agg_expr)
             .collect::<DaftResult<Vec<daft_dsl::AggExpr>>>()?;
 
         let logical_plan: LogicalPlan =
@@ -236,6 +312,16 @@ impl LogicalPlanBuilder {
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
     ) -> DaftResult<Self> {
+        for side in [&left_on, &right_on] {
+            for expr in side {
+                if check_for_agg(expr) {
+                    return Err(DaftError::ValueError(format!(
+                        "Aggregation expressions are not currently supported in join: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                    )));
+                }
+            }
+        }
+
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
             right.plan.clone(),
@@ -268,6 +354,16 @@ impl LogicalPlanBuilder {
         compression: Option<String>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
+        if let Some(partition_cols) = &partition_cols {
+            for expr in partition_cols {
+                if check_for_agg(expr) {
+                    return Err(DaftError::ValueError(format!(
+                        "Aggregation expressions are not currently supported in table write: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383"
+                    )));
+                }
+            }
+        }
+
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             file_format,

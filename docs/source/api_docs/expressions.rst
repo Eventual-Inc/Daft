@@ -71,14 +71,33 @@ Logical
 .. _api-membership-expression:
 
 Membership
-***********
+##########
 
 Checking if an expression is a member of a list of values
 
 .. autosummary::
-    :toctree: doc_gen/expression_methods
+   :toctree: doc_gen/expression_methods
 
-    daft.expressions.Expression.is_in
+   Expression.is_in
+
+.. _api=aggregation-expression:
+
+Aggregation
+###########
+
+The following can be used with DataFrame.agg or GroupedDataFrame.agg
+
+.. autosummary::
+   :toctree: doc_gen/expression_methods
+
+   Expression.count
+   Expression.sum
+   Expression.mean
+   Expression.min
+   Expression.max
+   Expression.any_value
+   Expression.agg_list
+   Expression.agg_concat
 
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
