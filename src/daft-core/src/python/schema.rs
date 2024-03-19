@@ -37,6 +37,10 @@ impl PySchema {
         Ok(self.schema.fields.eq(&other.schema.fields))
     }
 
+    pub fn estimate_row_size_bytes(&self) -> PyResult<f64> {
+        Ok(self.schema.estimate_row_size_bytes())
+    }
+
     #[staticmethod]
     pub fn from_field_name_and_types(
         names_and_types: Vec<(String, PyDataType)>,

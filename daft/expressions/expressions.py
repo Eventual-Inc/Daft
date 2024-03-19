@@ -478,6 +478,9 @@ class Expression:
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
+    def _to_sql(self) -> builtins.str | None:
+        return self._expr.to_sql()
+
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
 
@@ -681,6 +684,33 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         substr_expr = Expression._to_expression(substr)
         return Expression._from_pyexpr(self._expr.utf8_contains(substr_expr._expr))
+
+    def match(self, pattern: str | Expression) -> Expression:
+        """Checks whether each string matches the given regular expression pattern in a string column
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["foo", "bar", "baz"]})
+            >>> df.with_column("match", df["x"].str.match("ba.")).collect()
+            ╭─────────╮
+            │ match   │
+            │ ---     │
+            │ Boolean │
+            ╞═════════╡
+            │ false   │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ true    │
+            ╰─────────╯
+
+        Args:
+            pattern: Regex pattern to search for as string or as a column to pick values from
+
+        Returns:
+            Expression: a Boolean expression indicating whether each value matches the provided pattern
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_match(pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column

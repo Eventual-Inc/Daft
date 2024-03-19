@@ -76,6 +76,7 @@ from daft.io import (
     read_iceberg,
     read_json,
     read_parquet,
+    read_sql,
 )
 from daft.series import Series
 from daft.udf import udf
@@ -94,6 +95,7 @@ __all__ = [
     "read_parquet",
     "read_iceberg",
     "read_delta_lake",
+    "read_sql",
     "DataCatalogType",
     "DataCatalogTable",
     "DataFrame",

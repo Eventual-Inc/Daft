@@ -39,8 +39,10 @@ from daft.runners.partitioning import (
     TableParseCSVOptions,
     TableParseParquetOptions,
     TableReadOptions,
+    TableReadSQLOptions,
 )
 from daft.series import Series
+from daft.sql.sql_reader import SQLReader
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -77,7 +79,6 @@ def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions,
     their corresponding dtype in `schema`, and column ordering/inclusion matches `read_options.column_names` (if provided).
     """
     pruned_schema = schema
-
     # If reading only a subset of fields, prune the schema
     if read_options.column_names is not None:
         pruned_schema = Schema._from_fields([schema[name] for name in read_options.column_names])
@@ -214,6 +215,55 @@ def read_parquet(
         )
 
     return _cast_table_to_schema(MicroPartition.from_arrow(table), read_options=read_options, schema=schema)
+
+
+def read_sql(
+    sql: str,
+    url: str,
+    schema: Schema,
+    sql_options: TableReadSQLOptions = TableReadSQLOptions(),
+    read_options: TableReadOptions = TableReadOptions(),
+) -> MicroPartition:
+    """Reads a MicroPartition from a SQL query
+
+    Args:
+        sql (str): SQL query to execute
+        url (str): URL to the database
+        schema (Schema): Daft schema to read the SQL query into
+        sql_options (TableReadSQLOptions, optional): SQL-specific configs to apply when reading the file
+        read_options (TableReadOptions, optional): Options for reading the file
+
+    Returns:
+        MicroPartition: MicroPartition from SQL query
+    """
+
+    if sql_options.predicate_expression is not None:
+        # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
+        predicate_sql = sql_options.predicate_expression._to_sql()
+        apply_pushdowns_to_sql = predicate_sql is not None
+    else:
+        # If we don't have a predicate, we can still apply the limit and projection to the SQL query
+        predicate_sql = None
+        apply_pushdowns_to_sql = True
+
+    pa_table = SQLReader(
+        sql,
+        url,
+        limit=read_options.num_rows if apply_pushdowns_to_sql else None,
+        projection=read_options.column_names if apply_pushdowns_to_sql else None,
+        predicate=predicate_sql,
+    ).read()
+    mp = MicroPartition.from_arrow(pa_table)
+
+    if len(mp) != 0 and apply_pushdowns_to_sql is False:
+        # If we have a non-empty table and we didn't apply pushdowns to SQL, we need to apply them in-memory
+        if sql_options.predicate_expression is not None:
+            mp = mp.filter(ExpressionsProjection([sql_options.predicate_expression]))
+
+        if read_options.num_rows is not None:
+            mp = mp.head(read_options.num_rows)
+
+    return _cast_table_to_schema(mp, read_options=read_options, schema=schema)
 
 
 class PACSVStreamHelper:

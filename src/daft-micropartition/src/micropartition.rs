@@ -15,7 +15,9 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+use daft_scan::file_format::{
+    CsvSourceConfig, DatabaseSourceConfig, FileFormatConfig, ParquetSourceConfig,
+};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
@@ -227,6 +229,12 @@ fn materialize_scan_task(
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
+                FileFormatConfig::Database(_) => {
+                    return Err(common_error::DaftError::TypeError(
+                        "Native reads for Database file format not implemented".to_string(),
+                    ))
+                    .context(DaftCoreComputeSnafu);
+                }
             }
         }
         #[cfg(feature = "python")]
@@ -302,6 +310,33 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
+                FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
+                    let predicate_expr = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .map(|p| (*p.as_ref()).clone().into());
+                    Python::with_gil(|py| {
+                        urls.map(|url| {
+                            crate::python::read_sql_into_py_table(
+                                py,
+                                sql,
+                                url,
+                                predicate_expr.clone(),
+                                scan_task.schema.clone().into(),
+                                scan_task
+                                    .pushdowns
+                                    .columns
+                                    .as_ref()
+                                    .map(|cols| cols.as_ref().clone()),
+                                scan_task.pushdowns.limit,
+                            )
+                            .map(|t| t.into())
+                            .context(PyIOSnafu)
+                        })
+                        .collect::<crate::Result<Vec<_>>>()
+                    })?
+                }
             }
         }
     };
@@ -324,13 +359,18 @@ fn materialize_scan_task(
 impl MicroPartition {
     /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
     ///
-    /// Schema invariants:
+    /// Invariants:
     /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
+    /// 2. Creating a new MicroPartition with a ScanTask that has any filter predicates or limits is not allowed and will panic
     pub fn new_unloaded(
         scan_task: Arc<ScanTask>,
         metadata: TableMetadata,
         statistics: TableStatistics,
     ) -> Self {
+        if scan_task.pushdowns.filters.is_some() {
+            panic!("Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters");
+        }
+
         let schema = scan_task.materialized_schema();
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
         let statistics = statistics
@@ -392,7 +432,13 @@ impl MicroPartition {
             (Some(metadata), Some(statistics), _, _) if scan_task.pushdowns.filters.is_none() => {
                 Ok(Self::new_unloaded(
                     scan_task.clone(),
-                    metadata.clone(),
+                    scan_task
+                        .pushdowns
+                        .limit
+                        .map(|limit| TableMetadata {
+                            length: metadata.length.min(limit),
+                        })
+                        .unwrap_or_else(|| metadata.clone()),
                     statistics.clone(),
                 ))
             }
@@ -797,7 +843,8 @@ pub(crate) fn read_parquet_into_micropartition(
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
     let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
 
-    // If we have a predicate, perform an eager read only reading what row groups we need.
+    // If we have a predicate then we no longer have an accurate accounting of required metadata
+    // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
     if predicate.is_some() {
         return _read_parquet_into_loaded_micropartition(
             io_client,

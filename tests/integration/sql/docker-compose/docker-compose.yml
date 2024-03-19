@@ -1,0 +1,36 @@
+version: '3.7'
+services:
+  trino:
+    image: trinodb/trino
+    container_name: trino
+    ports:
+    - 8080:8080
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: password
+    ports:
+    - 5432:5432
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    environment:
+      MYSQL_DATABASE: mysql
+      MYSQL_USER: username
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+    - 3306:3306
+    volumes:
+    - mysql_data:/var/lib/mysql
+
+volumes:
+  postgres_data:
+  mysql_data:

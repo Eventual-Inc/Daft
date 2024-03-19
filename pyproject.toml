@@ -24,7 +24,7 @@ readme = "README.rst"
 requires-python = ">=3.7"
 
 [project.optional-dependencies]
-all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake]"]
+all = ["getdaft[aws, azure, gcp, ray, pandas, numpy, iceberg, deltalake, sql]"]
 aws = ["boto3"]
 azure = []
 deltalake = ["deltalake"]
@@ -38,6 +38,7 @@ ray = [
   # Explicitly install packaging. See issue: https://github.com/ray-project/ray/issues/34806
   "packaging"
 ]
+sql = ["connectorx", "sqlalchemy", "trino[sqlalchemy]"]
 viz = []
 
 [project.urls]

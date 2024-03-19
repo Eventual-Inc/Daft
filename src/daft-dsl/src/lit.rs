@@ -13,6 +13,7 @@ use daft_core::{
     utils::display_table::{display_date32, display_series_literal, display_timestamp},
 };
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 use std::{
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
@@ -211,6 +212,40 @@ impl LiteralValue {
             Python(val) => PythonArray::from(("literal", vec![val.pyobject.clone()])).into_series(),
         };
         result
+    }
+
+    pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
+        use LiteralValue::*;
+        let display_sql_err = Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Unsupported literal for SQL translation",
+        ));
+        match self {
+            Null | Boolean(..) | Int32(..) | UInt32(..) | Int64(..) | UInt64(..) | Float64(..) => {
+                write!(buffer, "{}", self)
+            }
+            Utf8(val) => write!(buffer, "'{}'", val),
+            Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
+            Timestamp(val, tu, tz) => {
+                // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
+                if tz.is_some() {
+                    return display_sql_err;
+                }
+                // Note: Our display_timestamp function returns a string in the ISO 8601 format "YYYY-MM-DDTHH:MM:SS.fffff".
+                // However, the ANSI SQL standard replaces the 'T' with a space. See: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.htm
+                // While many databases support the 'T', some such as Trino, do not. So we replace the 'T' with a space here.
+                // We also don't use the i64 unix timestamp directly, because different databases have different functions to convert unix timestamps to timestamps, e.g. Trino uses from_unixtime, while PostgreSQL uses to_timestamp.
+                write!(
+                    buffer,
+                    "TIMESTAMP '{}'",
+                    display_timestamp(*val, tu, tz).replace('T', " ")
+                )
+            }
+            // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
+            Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,
+            #[cfg(feature = "python")]
+            Python(..) => display_sql_err,
+        }
     }
 }
 

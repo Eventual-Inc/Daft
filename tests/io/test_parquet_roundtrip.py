@@ -42,6 +42,7 @@ PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeri
             pa.timestamp("ms"),
             DataType.timestamp(TimeUnit.ms()),
         ),
+        ([datetime.date(1994, 1, 1), datetime.date(1995, 1, 1), None], pa.date64(), DataType.timestamp(TimeUnit.ms())),
         (
             [datetime.timedelta(days=1), datetime.timedelta(days=2), None],
             pa.duration("ms"),

@@ -14,6 +14,7 @@ from daft.io._delta_lake import read_delta_lake
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
+from daft.io._sql import read_sql
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 
@@ -39,6 +40,7 @@ __all__ = [
     "read_parquet",
     "read_iceberg",
     "read_delta_lake",
+    "read_sql",
     "IOConfig",
     "S3Config",
     "AzureConfig",

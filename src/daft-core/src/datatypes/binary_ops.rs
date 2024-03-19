@@ -37,6 +37,10 @@ impl DataType {
             use DataType::*;
             match (self, other) {
                 (s, o) if s == o => Ok((Boolean, None, s.to_physical())),
+                (Utf8, o) | (o, Utf8) if o.is_numeric() => Err(DaftError::TypeError(format!(
+                    "Cannot perform comparison on Utf8 and numeric type.\ntypes: {}, {}",
+                    self, other
+                ))),
                 (s, o) if s.is_physical() && o.is_physical() => {
                     Ok((Boolean, None, try_physical_supertype(s, o)?))
                 }

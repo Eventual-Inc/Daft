@@ -324,6 +324,10 @@ impl PyExpr {
         Ok(self.expr.name()?)
     }
 
+    pub fn to_sql(&self) -> PyResult<Option<String>> {
+        Ok(self.expr.to_sql())
+    }
+
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
         Ok(self.expr.to_field(&schema.schema)?.into())
     }
@@ -386,6 +390,11 @@ impl PyExpr {
     pub fn utf8_contains(&self, pattern: &Self) -> PyResult<Self> {
         use crate::functions::utf8::contains;
         Ok(contains(&self.expr, &pattern.expr).into())
+    }
+
+    pub fn utf8_match(&self, pattern: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::match_;
+        Ok(match_(&self.expr, &pattern.expr).into())
     }
 
     pub fn utf8_split(&self, pattern: &Self) -> PyResult<Self> {

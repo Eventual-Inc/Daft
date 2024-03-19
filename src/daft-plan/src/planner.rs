@@ -715,6 +715,9 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                 input_physical.into(),
                             )))
                         }
+                        FileFormat::Database => Err(common_error::DaftError::ValueError(
+                            "Database sink not yet implemented".to_string(),
+                        )),
                     }
                 }
                 SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {

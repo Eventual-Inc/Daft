@@ -116,6 +116,9 @@ class Schema:
     def column_names(self) -> list[str]:
         return list(self._schema.names())
 
+    def estimate_row_size_bytes(self) -> float:
+        return self._schema.estimate_row_size_bytes()
+
     def __iter__(self) -> Iterator[Field]:
         col_names = self.column_names()
         yield from (self[name] for name in col_names)

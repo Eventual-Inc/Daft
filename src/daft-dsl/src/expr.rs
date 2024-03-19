@@ -17,6 +17,7 @@ use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display, Formatter, Result},
+    io::{self, Write},
     sync::Arc,
 };
 
@@ -454,7 +455,13 @@ impl Expr {
             }
             IsNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
             NotNull(expr) => Ok(Field::new(expr.name()?, DataType::Boolean)),
-            IsIn(expr, ..) => Ok(Field::new(expr.name()?, DataType::Boolean)),
+            IsIn(left, right) => {
+                let left_field = left.to_field(schema)?;
+                let right_field = right.to_field(schema)?;
+                let (result_type, _intermediate, _comp_type) =
+                    left_field.dtype.membership_op(&right_field.dtype)?;
+                Ok(Field::new(left_field.name.as_str(), result_type))
+            }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
             Function { func, inputs } => func.to_field(inputs.as_slice(), schema, self),
             BinaryOp { op, left, right } => {
@@ -567,6 +574,77 @@ impl Expr {
             ([required_col], false) => Some(required_col.clone()),
             _ => None,
         }
+    }
+
+    pub fn to_sql(&self) -> Option<String> {
+        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
+            match expr {
+                Expr::Column(name) => write!(buffer, "{}", name),
+                Expr::Literal(lit) => lit.display_sql(buffer),
+                Expr::Alias(inner, ..) => to_sql_inner(inner, buffer),
+                Expr::BinaryOp { op, left, right } => {
+                    to_sql_inner(left, buffer)?;
+                    let op = match op {
+                        Operator::Eq => "=",
+                        Operator::NotEq => "!=",
+                        Operator::Lt => "<",
+                        Operator::LtEq => "<=",
+                        Operator::Gt => ">",
+                        Operator::GtEq => ">=",
+                        Operator::And => "AND",
+                        Operator::Or => "OR",
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                "Unsupported operator for SQL translation",
+                            ))
+                        }
+                    };
+                    write!(buffer, " {} ", op)?;
+                    to_sql_inner(right, buffer)
+                }
+                Expr::Not(inner) => {
+                    write!(buffer, "NOT (")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ")")
+                }
+                Expr::IsNull(inner) => {
+                    write!(buffer, "(")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ") IS NULL")
+                }
+                Expr::NotNull(inner) => {
+                    write!(buffer, "(")?;
+                    to_sql_inner(inner, buffer)?;
+                    write!(buffer, ") IS NOT NULL")
+                }
+                Expr::IfElse {
+                    if_true,
+                    if_false,
+                    predicate,
+                } => {
+                    write!(buffer, "CASE WHEN ")?;
+                    to_sql_inner(predicate, buffer)?;
+                    write!(buffer, " THEN ")?;
+                    to_sql_inner(if_true, buffer)?;
+                    write!(buffer, " ELSE ")?;
+                    to_sql_inner(if_false, buffer)?;
+                    write!(buffer, " END")
+                }
+                // TODO: Implement SQL translations for these expressions if possible
+                Expr::Agg(..) | Expr::Cast(..) | Expr::IsIn(..) | Expr::Function { .. } => {
+                    Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Unsupported expression for SQL translation",
+                    ))
+                }
+            }
+        }
+
+        let mut buffer = Vec::new();
+        to_sql_inner(self, &mut buffer)
+            .ok()
+            .and_then(|_| String::from_utf8(buffer).ok())
     }
 }
 

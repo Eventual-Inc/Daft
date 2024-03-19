@@ -789,6 +789,46 @@ pub(crate) fn read_parquet_into_py_table(
         .extract()
 }
 
+pub(crate) fn read_sql_into_py_table(
+    py: Python,
+    sql: &str,
+    url: &str,
+    predicate_expr: Option<PyExpr>,
+    schema: PySchema,
+    include_columns: Option<Vec<String>>,
+    num_rows: Option<usize>,
+) -> PyResult<PyTable> {
+    let py_schema = py
+        .import(pyo3::intern!(py, "daft.logical.schema"))?
+        .getattr(pyo3::intern!(py, "Schema"))?
+        .getattr(pyo3::intern!(py, "_from_pyschema"))?
+        .call1((schema,))?;
+    let predicate_pyexpr = match predicate_expr {
+        Some(p) => Some(
+            py.import(pyo3::intern!(py, "daft.expressions.expressions"))?
+                .getattr(pyo3::intern!(py, "Expression"))?
+                .getattr(pyo3::intern!(py, "_from_pyexpr"))?
+                .call1((p,))?,
+        ),
+        None => None,
+    };
+    let sql_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableReadSQLOptions"))?
+        .call1((predicate_pyexpr,))?;
+    let read_options = py
+        .import(pyo3::intern!(py, "daft.runners.partitioning"))?
+        .getattr(pyo3::intern!(py, "TableReadOptions"))?
+        .call1((num_rows, include_columns))?;
+    py.import(pyo3::intern!(py, "daft.table.table_io"))?
+        .getattr(pyo3::intern!(py, "read_sql"))?
+        .call1((sql, url, py_schema, sql_options, read_options))?
+        .getattr(pyo3::intern!(py, "to_table"))?
+        .call0()?
+        .getattr(pyo3::intern!(py, "_table"))?
+        .extract()
+}
+
 impl From<MicroPartition> for PyMicroPartition {
     fn from(value: MicroPartition) -> Self {
         PyMicroPartition {

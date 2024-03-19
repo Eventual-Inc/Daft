@@ -169,13 +169,16 @@ pub fn split_by_row_groups(
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_groups = Vec::new();
                         let mut curr_size_bytes = 0;
+                        let mut curr_num_rows = 0;
 
                         for (i, rg) in file.row_groups.iter().enumerate() {
                             curr_row_groups.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
+                            curr_num_rows += rg.num_rows();
 
                             if curr_size_bytes >= min_size_bytes || i == file.row_groups.len() - 1 {
                                 let mut new_source = source.clone();
+
                                 match &mut new_source {
                                     DataFileSource::AnonymousDataFile {
                                         chunk_spec,
@@ -186,14 +189,29 @@ pub fn split_by_row_groups(
                                         chunk_spec,
                                         size_bytes,
                                         ..
-                                    } => {
+                                    } | DataFileSource::DatabaseDataSource { chunk_spec, size_bytes, .. } => {
                                         *chunk_spec = Some(ChunkSpec::Parquet(curr_row_groups));
                                         *size_bytes = Some(curr_size_bytes as u64);
-
-                                        curr_row_groups = Vec::new();
-                                        curr_size_bytes = 0;
                                     }
                                 };
+                                match &mut new_source {
+                                    DataFileSource::AnonymousDataFile {
+                                        metadata: Some(metadata),
+                                        ..
+                                    }
+                                    | DataFileSource::CatalogDataFile {
+                                        metadata,
+                                        ..
+                                    } | DataFileSource::DatabaseDataSource { metadata: Some(metadata), .. } => {
+                                        metadata.length = curr_num_rows;
+                                    }
+                                    _ => (),
+                                }
+
+                                // Reset accumulators
+                                curr_row_groups = Vec::new();
+                                curr_size_bytes = 0;
+                                curr_num_rows = 0;
 
                                 new_tasks.push(Ok(ScanTask::new(
                                     vec![new_source],

@@ -4,6 +4,7 @@ mod endswith;
 mod length;
 mod lower;
 mod lstrip;
+mod match_;
 mod reverse;
 mod rstrip;
 mod split;
@@ -23,7 +24,7 @@ use split::SplitEvaluator;
 use startswith::StartswithEvaluator;
 use upper::UpperEvaluator;
 
-use crate::Expr;
+use crate::{functions::utf8::match_::MatchEvaluator, Expr};
 
 use super::FunctionEvaluator;
 
@@ -33,6 +34,7 @@ pub enum Utf8Expr {
     StartsWith,
     Contains,
     Split,
+    Match,
     Length,
     Lower,
     Upper,
@@ -51,6 +53,7 @@ impl Utf8Expr {
             StartsWith => &StartswithEvaluator {},
             Contains => &ContainsEvaluator {},
             Split => &SplitEvaluator {},
+            Match => &MatchEvaluator {},
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
@@ -79,6 +82,13 @@ pub fn startswith(data: &Expr, pattern: &Expr) -> Expr {
 pub fn contains(data: &Expr, pattern: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Contains),
+        inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Match),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }
