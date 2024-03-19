@@ -104,7 +104,6 @@ def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype)
     assert before.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.skip(reason="Currently fails when reading multiple Parquet files with tensor types")
 def test_roundtrip_tensor_types(tmp_path):
     expected_dtype = DataType.tensor(DataType.int64())
     data = [np.array([[1, 2], [3, 4]]), None, None]
