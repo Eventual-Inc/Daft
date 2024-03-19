@@ -25,6 +25,7 @@ pub enum LogicalPlan {
     Sink(Sink),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    Count(Count),
 }
 
 impl LogicalPlan {
@@ -50,6 +51,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
+            Self::Count(..) => COUNT_SCHEMA.clone(),
         }
     }
 
@@ -127,6 +129,7 @@ impl LogicalPlan {
             }
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
+            Self::Count(..) => vec![IndexSet::new()],
         }
     }
 
@@ -146,6 +149,7 @@ impl LogicalPlan {
             Self::Sink(Sink { input, .. }) => vec![input],
             Self::Sample(Sample { input, .. }) => vec![input],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
+            Self::Count(Count { input, .. }) => vec![input],
         }
     }
 
@@ -207,6 +211,7 @@ impl LogicalPlan {
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::Count(..) => "Count",
         };
         name.to_string()
     }
@@ -229,6 +234,7 @@ impl LogicalPlan {
                 vec![format!("Sample: {fraction}", fraction = sample.fraction)]
             }
             Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
+            Self::Count(_) => vec!["Count".to_string()],
         }
     }
 
@@ -291,3 +297,4 @@ impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
+impl_from_data_struct_for_logical_plan!(Count);

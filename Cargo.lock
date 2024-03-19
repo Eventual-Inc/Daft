@@ -1413,6 +1413,7 @@ dependencies = [
  "daft-table",
  "indexmap 2.1.0",
  "itertools",
+ "lazy_static",
  "log",
  "pyo3",
  "pyo3-log",

@@ -281,6 +281,11 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    pub fn count(&self) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = logical_ops::Count::new(self.plan.clone()).into();
+        Ok(logical_plan.into())
+    }
+
     pub fn build(&self) -> Arc<LogicalPlan> {
         self.plan.clone()
     }
@@ -484,6 +489,10 @@ impl PyLogicalPlanBuilder {
                 io_config.map(|cfg| cfg.config),
             )?
             .into())
+    }
+
+    pub fn count(&self) -> PyResult<Self> {
+        Ok(self.builder.count()?.into())
     }
 
     pub fn schema(&self) -> PyResult<PySchema> {

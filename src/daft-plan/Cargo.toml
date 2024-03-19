@@ -11,6 +11,7 @@ daft-scan = {path = "../daft-scan", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 indexmap = {workspace = true}
 itertools = {workspace = true}
+lazy_static = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}

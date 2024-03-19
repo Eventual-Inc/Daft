@@ -3,10 +3,10 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING
 
-from daft.daft import CountMode, FileFormat, IOConfig, JoinStrategy, JoinType
+from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.daft import PyDaftExecutionConfig, ResourceRequest, ScanOperatorHandle
-from daft.expressions import Expression, col
+from daft.expressions import Expression
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
 
@@ -100,10 +100,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def count(self) -> LogicalPlanBuilder:
-        # TODO(Clark): Add dedicated logical/physical ops when introducing metadata-based count optimizations.
-        first_col = col(self.schema().column_names()[0])
-        builder = self._builder.aggregate([first_col.count(CountMode.All)._expr], [])
-        builder = builder.project([first_col.alias("count")._expr], ResourceRequest())
+        builder = self._builder.count()
         return LogicalPlanBuilder(builder)
 
     def distinct(self) -> LogicalPlanBuilder:

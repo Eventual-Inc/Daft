@@ -1,5 +1,6 @@
 mod agg;
 mod concat;
+mod count;
 mod distinct;
 mod explode;
 mod filter;
@@ -15,6 +16,7 @@ mod source;
 
 pub use agg::Aggregate;
 pub use concat::Concat;
+pub use count::{Count, COUNT_SCHEMA};
 pub use distinct::Distinct;
 pub use explode::Explode;
 pub use filter::Filter;

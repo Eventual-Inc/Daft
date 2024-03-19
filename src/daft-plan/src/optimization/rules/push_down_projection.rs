@@ -443,6 +443,10 @@ impl PushDownProjection {
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
+            LogicalPlan::Count(..) => {
+                // Cannot push past a Count, since the Count exposes just a single (new) column called `count`
+                Ok(Transformed::No(plan))
+            }
         }
     }
 

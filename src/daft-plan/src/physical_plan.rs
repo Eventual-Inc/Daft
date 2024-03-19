@@ -59,6 +59,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    Count(Count),
 }
 
 impl PhysicalPlan {
@@ -197,6 +198,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            Self::Count(..) => ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into(),
         }
     }
 
@@ -265,6 +267,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
                 None
             }
+            Self::Count(_) => Some(8), // Single int64 value
         }
     }
 
@@ -299,6 +302,7 @@ impl PhysicalPlan {
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => vec![left, right],
             Self::Concat(Concat { input, other }) => vec![input, other],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => vec![input],
+            Self::Count(Count { input }) => vec![input],
         }
     }
 
@@ -379,6 +383,7 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::Count(..) => "Count",
         };
         name.to_string()
     }
@@ -415,6 +420,7 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::Count(count) => count.multiline_display(),
         }
     }
 
@@ -953,6 +959,14 @@ impl PhysicalPlan {
                 partition_cols,
                 io_config,
             ),
+            PhysicalPlan::Count(Count { input }) => {
+                let upstream_iter = input.to_partition_tasks(py, psets)?;
+                let py_iter = py
+                    .import(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                    .getattr(pyo3::intern!(py, "count"))?
+                    .call1((upstream_iter,))?;
+                Ok(py_iter.into())
+            }
         }
     }
 }
