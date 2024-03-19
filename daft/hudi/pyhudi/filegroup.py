@@ -22,26 +22,24 @@ class BaseFile:
 
 @dataclass
 class FileSlice:
-    METADATA_SCHEMA = pa.schema([
-        ('path', pa.string()),
-        ('size', pa.uint32()),
-        ('num_records', pa.uint32()),
-        ('partition_path', pa.string()),
-    ])
+    METADATA_SCHEMA = pa.schema(
+        [
+            ("path", pa.string()),
+            ("size", pa.uint32()),
+            ("num_records", pa.uint32()),
+            ("partition_path", pa.string()),
+            # TODO(Shiyan): support column stats
+        ]
+    )
 
     file_group_id: str
     partition_path: str
     base_instant_time: str
-    base_file: BaseFile = None
+    base_file: BaseFile | None
 
     @property
     def metadata(self):
-        return (
-            self.base_file.path,
-            self.base_file.size,
-            self.base_file.num_records,
-            self.partition_path
-        )
+        return (self.base_file.path, self.base_file.size, self.base_file.num_records, self.partition_path)
 
 
 @dataclass
@@ -53,7 +51,7 @@ class FileGroup:
     def add_base_file(self, base_file: BaseFile):
         ct = base_file.commit_time
         if ct not in self.file_slices:
-            self.file_slices[ct] = FileSlice(self.file_group_id, self.partition_path, ct)
+            self.file_slices[ct] = FileSlice(self.file_group_id, self.partition_path, ct, base_file=None)
 
         self.file_slices.get(ct).base_file = base_file
 

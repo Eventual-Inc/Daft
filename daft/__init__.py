@@ -37,6 +37,7 @@ def get_build_type() -> str:
 
 __version__ = get_version()
 
+
 ###
 # Initialize analytics
 ###

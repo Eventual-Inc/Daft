@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
+import daft
 from daft.daft import (
     AzureConfig,
     FileFormatConfig,
@@ -17,8 +18,6 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-
-import daft
 from daft.hudi.pyhudi.table import HudiTable
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
@@ -58,7 +57,7 @@ class HudiScanOperator(ScanOperator):
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
-        # TODO integrate with metadata table to prune the files returned.
+        # TODO(Shiyan) integrate with metadata table to prune the files returned.
         latest_files_metadata: pa.RecordBatch = self._table.latest_files_metadata()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
@@ -98,7 +97,7 @@ class HudiScanOperator(ScanOperator):
                 partition_values = None
 
             # Populate scan task with column-wise stats.
-            # TODO: Add support for column stats
+            # TODO(Shiyan): Add support for column stats
 
             st = ScanTask.catalog_scan_task(
                 file=path,

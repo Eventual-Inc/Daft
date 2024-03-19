@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import List, Optional, Dict
 from urllib.parse import urlparse
 
 import fsspec
 import pyarrow as pa
 from fsspec import AbstractFileSystem
 
-from daft.hudi.pyhudi.filegroup import FileGroup, BaseFile, FileSlice
+from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
-from daft.hudi.pyhudi.utils import get_full_sub_dirs, get_leaf_dirs, get_full_file_paths
+from daft.hudi.pyhudi.utils import get_full_file_paths, get_full_sub_dirs, get_leaf_dirs
 
+# TODO(Shiyan): support base file in .orc
 BASE_FILE_EXTENSIONS = [".parquet"]
 
 
@@ -18,15 +20,15 @@ BASE_FILE_EXTENSIONS = [".parquet"]
 class MetaClient:
     fs: AbstractFileSystem
     base_path: str
-    timeline: Timeline = None
+    timeline: Timeline | None
 
     def get_active_timeline(self) -> Timeline:
         if not self.timeline:
             self.timeline = Timeline(self.base_path, self.fs)
         return self.timeline
 
-    def get_partition_paths(self, relative=True) -> List[str]:
-        first_level_full_partition_paths = get_full_sub_dirs(self.base_path, self.fs, excludes=['.hoodie'])
+    def get_partition_paths(self, relative=True) -> list[str]:
+        first_level_full_partition_paths = get_full_sub_dirs(self.base_path, self.fs, excludes=[".hoodie"])
         partition_paths = []
         common_prefix_len = len(self.base_path) + 1 if relative else 0
         for p in first_level_full_partition_paths:
@@ -36,7 +38,7 @@ class MetaClient:
     def get_full_partition_path(self, partition_path: str) -> str:
         return self.fs.sep.join([self.base_path, partition_path])
 
-    def get_file_groups(self, partition_path: str) -> List[FileGroup]:
+    def get_file_groups(self, partition_path: str) -> list[FileGroup]:
         full_partition_path = self.get_full_partition_path(partition_path)
         base_file_metadata = get_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
         fg_id_to_base_files = defaultdict(list)
@@ -54,10 +56,9 @@ class MetaClient:
 
 @dataclass(init=False)
 class FileSystemView:
-
     def __init__(self, meta_client: MetaClient):
         self.meta_client = meta_client
-        self.partition_to_file_groups = {}
+        self.partition_to_file_groups: dict[str, list[FileGroup]] = {}
         self._load_partitions()
 
     def _load_partitions(self):
@@ -69,11 +70,13 @@ class FileSystemView:
         file_groups = self.meta_client.get_file_groups(partition_path)
         self.partition_to_file_groups[partition_path] = file_groups
 
-    def get_latest_file_slices(self) -> List[FileSlice]:
+    def get_latest_file_slices(self) -> list[FileSlice]:
         file_slices = []
         for file_groups in self.partition_to_file_groups.values():
             for file_group in file_groups:
-                file_slices.append(file_group.get_latest_file_slice())
+                file_slice = file_group.get_latest_file_slice()
+                if file_slice is not None:
+                    file_slices.append(file_slice)
 
         return file_slices
 
@@ -82,29 +85,29 @@ class FileSystemView:
 class HudiTableProps:
     def __init__(self, fs: AbstractFileSystem, table_uri: str):
         self._props = {}
-        hoodie_properties_file = fs.sep.join([table_uri, '.hoodie', 'hoodie.properties'])
-        with fs.open(hoodie_properties_file, 'r') as f:
+        hoodie_properties_file = fs.sep.join([table_uri, ".hoodie", "hoodie.properties"])
+        with fs.open(hoodie_properties_file, "r") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#'):
+                if not line or line.startswith("#"):
                     continue
-                key, value = line.split('=')
+                key, value = line.split("=")
                 self._props[key] = value
 
     @property
     def name(self) -> str:
-        return self._props['hoodie.table.name']
+        return self._props["hoodie.table.name"]
 
     @property
-    def partition_fields(self) -> List[str]:
-        return self._props['hoodie.table.partition.fields']
+    def partition_fields(self) -> list[str]:
+        return self._props["hoodie.table.partition.fields"]
 
 
 @dataclass(init=False)
 class HudiTable:
-    def __init__(self, table_uri: str, storage_options: Optional[Dict[str, str]] = None):
+    def __init__(self, table_uri: str, storage_options: dict[str, str] | None = None):
         fs = fsspec.filesystem(urlparse(table_uri).scheme, storage_options=storage_options)
-        self._meta_client = MetaClient(fs, table_uri)
+        self._meta_client = MetaClient(fs, table_uri, timeline=None)
         self._props = HudiTableProps(fs, table_uri)
 
     def latest_files_metadata(self) -> pa.RecordBatch:
