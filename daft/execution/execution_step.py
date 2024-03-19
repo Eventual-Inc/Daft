@@ -375,10 +375,6 @@ class WriteFile(SingleOutputInstruction):
             io_config=self.io_config,
         )
 
-
-dataclass(frozen=True)
-
-
 @dataclass(frozen=True)
 class WriteIceberg(SingleOutputInstruction):
     base_path: str
