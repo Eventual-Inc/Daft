@@ -1,5 +1,8 @@
+import os
+from dataclasses import dataclass
 from typing import List
 
+import pyarrow.parquet as pq
 from fsspec import AbstractFileSystem
 
 
@@ -7,13 +10,22 @@ def fs_basename(path: str, fs: AbstractFileSystem) -> str:
     return path.rsplit(fs.sep, 1)[-1]
 
 
-def get_full_file_paths(path: str, fs: AbstractFileSystem, includes: List[str] = None) -> List[str]:
+@dataclass(init=False)
+class FsFileMetadata:
+    def __init__(self, path: str):
+        self.path = path
+        metadata = pq.read_metadata(path)
+        self.size = metadata.serialized_size
+        self.num_records = metadata.num_rows
+
+
+def get_full_file_paths(path: str, fs: AbstractFileSystem, includes: List[str] = None) -> List[FsFileMetadata]:
     sub_paths = fs.ls(path, detail=True)
     file_paths = []
     for sub_path in sub_paths:
         if sub_path['type'] == 'file':
-            if includes and fs_basename(sub_path['name'], fs) in includes:
-                file_paths.append(sub_path['name'])
+            if includes and os.path.splitext(sub_path['name'])[-1] in includes:
+                file_paths.append(FsFileMetadata(sub_path['name']))
 
     return file_paths
 
@@ -29,7 +41,7 @@ def get_full_sub_dirs(path: str, fs: AbstractFileSystem, excludes: List[str] = N
     return sub_dirs
 
 
-def get_leaf_dirs(path, fs: AbstractFileSystem, common_prefix_len=0) -> List[str]:
+def get_leaf_dirs(path: str, fs: AbstractFileSystem, common_prefix_len=0) -> List[str]:
     sub_paths = fs.ls(path, detail=True)
     leaf_dirs = []
 
@@ -39,7 +51,7 @@ def get_leaf_dirs(path, fs: AbstractFileSystem, common_prefix_len=0) -> List[str
 
     # leaf directory
     if len(leaf_dirs) == 0:
-        leaf_path = path['name'][common_prefix_len:]
+        leaf_path = path[common_prefix_len:]
         leaf_dirs.append(leaf_path)
 
     return leaf_dirs

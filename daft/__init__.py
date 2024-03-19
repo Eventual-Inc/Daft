@@ -37,7 +37,6 @@ def get_build_type() -> str:
 
 __version__ = get_version()
 
-
 ###
 # Initialize analytics
 ###
@@ -73,6 +72,7 @@ from daft.io import (
     from_glob_path,
     read_csv,
     read_delta_lake,
+    read_hudi,
     read_iceberg,
     read_json,
     read_parquet,
@@ -93,6 +93,7 @@ __all__ = [
     "read_csv",
     "read_json",
     "read_parquet",
+    "read_hudi",
     "read_iceberg",
     "read_delta_lake",
     "read_sql",

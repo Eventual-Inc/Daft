@@ -17,7 +17,7 @@ def read_hudi(
     """Create a DataFrame from a Hudi table.
 
     Example:
-        >>> df = daft.read_hudi("some-table-base-path")
+        >>> df = daft.read_hudi("some-table-uri")
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
 

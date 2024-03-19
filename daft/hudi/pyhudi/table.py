@@ -1,7 +1,9 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional, Dict
+from urllib.parse import urlparse
 
+import fsspec
 import pyarrow as pa
 from fsspec import AbstractFileSystem
 
@@ -20,11 +22,7 @@ class MetaClient:
 
     def get_active_timeline(self) -> Timeline:
         if not self.timeline:
-            self.timeline = Timeline([])
-        return self.timeline
-
-    def reload_active_timeline(self) -> Timeline:
-        self.timeline = Timeline([])
+            self.timeline = Timeline(self.base_path, self.fs)
         return self.timeline
 
     def get_partition_paths(self, relative=True) -> List[str]:
@@ -36,14 +34,14 @@ class MetaClient:
         return partition_paths
 
     def get_full_partition_path(self, partition_path: str) -> str:
-        return self.fs.sep.join(self.base_path, partition_path)
+        return self.fs.sep.join([self.base_path, partition_path])
 
     def get_file_groups(self, partition_path: str) -> List[FileGroup]:
         full_partition_path = self.get_full_partition_path(partition_path)
-        base_file_paths = get_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
+        base_file_metadata = get_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
         fg_id_to_base_files = defaultdict(list)
-        for p in base_file_paths:
-            base_file = BaseFile(p, self.fs)
+        for metadata in base_file_metadata:
+            base_file = BaseFile(metadata.path, metadata.size, metadata.num_records, self.fs)
             fg_id_to_base_files[base_file.file_group_id].append(base_file)
         file_groups = []
         for fg_id, base_files in fg_id_to_base_files.items():
@@ -80,25 +78,56 @@ class FileSystemView:
         return file_slices
 
 
-@dataclass
+@dataclass(init=False)
 class HudiTableProps:
-    name: str
-    schema: str
-    record_keys: List[str]
-    partition_fields: List[str]
+    def __init__(self, fs: AbstractFileSystem, table_uri: str):
+        self._props = {}
+        hoodie_properties_file = fs.sep.join([table_uri, '.hoodie', 'hoodie.properties'])
+        with fs.open(hoodie_properties_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                key, value = line.split('=')
+                self._props[key] = value
 
-    def py_arrow_schema(self) -> pa.Schema:
-        return None
+    @property
+    def name(self) -> str:
+        return self._props['hoodie.table.name']
+
+    @property
+    def partition_fields(self) -> List[str]:
+        return self._props['hoodie.table.partition.fields']
 
 
 @dataclass(init=False)
 class HudiTable:
     def __init__(self, table_uri: str, storage_options: Optional[Dict[str, str]] = None):
-        self.table_uri = table_uri
-        self._storage_options = storage_options
+        fs = fsspec.filesystem(urlparse(table_uri).scheme, storage_options=storage_options)
+        self._meta_client = MetaClient(fs, table_uri)
+        self._props = HudiTableProps(fs, table_uri)
 
-    def get_latest_file_slices(self) -> pa.RecordBatch:
-        return None
+    def latest_files_metadata(self) -> pa.RecordBatch:
+        fs_view = FileSystemView(self._meta_client)
+        file_slices = fs_view.get_latest_file_slices()
+        metadata = []
+        for file_slice in file_slices:
+            metadata.append(file_slice.metadata)
+        metadata_arrays = [pa.array(column) for column in list(zip(*metadata))]
+        return pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.METADATA_SCHEMA)
 
+    @property
+    def table_uri(self) -> str:
+        return self._meta_client.base_path
+
+    @property
+    def schema(self) -> pa.Schema:
+        return self._meta_client.get_active_timeline().get_latest_commit_schema()
+
+    @property
+    def is_partitioned(self) -> bool:
+        return self._props.partition_fields == ""
+
+    @property
     def props(self) -> HudiTableProps:
-        return HudiTableProps()
+        return self._props

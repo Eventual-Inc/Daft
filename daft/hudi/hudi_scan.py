@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urlparse
 
-import daft
 from daft.daft import (
     AzureConfig,
     FileFormatConfig,
@@ -19,6 +17,8 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+
+import daft
 from daft.hudi.pyhudi.table import HudiTable
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
@@ -32,8 +32,8 @@ class HudiScanOperator(ScanOperator):
         storage_options = _storage_config_to_storage_options(storage_config, table_uri)
         self._table = HudiTable(table_uri, storage_options=storage_options)
         self._storage_config = storage_config
-        self._schema = Schema.from_pyarrow_schema(self._table.props().py_arrow_schema())
-        partition_fields = set(self._table.props().partition_fields)
+        self._schema = Schema.from_pyarrow_schema(self._table.schema)
+        partition_fields = set(self._table.props.partition_fields)
         self._partition_keys = [
             PartitionField(field._field) for field in self._schema if field.name in partition_fields
         ]
@@ -42,7 +42,7 @@ class HudiScanOperator(ScanOperator):
         return self._schema
 
     def display_name(self) -> str:
-        return f"HudiScanOperator({self._table.props().name})"
+        return f"HudiScanOperator({self._table.props.name})"
 
     def partitioning_keys(self) -> list[PartitionField]:
         return self._partition_keys
@@ -52,7 +52,6 @@ class HudiScanOperator(ScanOperator):
             self.display_name(),
             f"Schema = {self._schema}",
             f"Partitioning keys = {self.partitioning_keys()}",
-            # TODO(Clark): Improve repr of storage config here.
             f"Storage config = {self._storage_config}",
         ]
 
@@ -60,36 +59,31 @@ class HudiScanOperator(ScanOperator):
         import pyarrow as pa
 
         # TODO integrate with metadata table to prune the files returned.
-        latest_file_slices: pa.RecordBatch = self._table.get_latest_file_slices()
+        latest_files_metadata: pa.RecordBatch = self._table.latest_files_metadata()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warn(
+            logging.warning(
                 f"{self.display_name()} has partitioning keys = {self.partitioning_keys()}, but no partition filter was specified. This will result in a full table scan."
             )
 
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
         scan_tasks = []
-        is_partitioned = (
-                "partition_values" in latest_file_slices.schema.names
-                and latest_file_slices.schema.field("partition_values").type.num_fields > 0
-        )
-        for task_idx in range(latest_file_slices.num_rows):
+        for task_idx in range(latest_files_metadata.num_rows):
             if limit_files and rows_left <= 0:
                 break
 
-            # NOTE: The paths in the transaction log consist of the post-table-uri suffix.
-            path = os.path.join(self._table.table_uri, latest_file_slices["path"][task_idx].as_py())
-            record_count = latest_file_slices["num_records"][task_idx].as_py()
+            path = latest_files_metadata["path"][task_idx].as_py()
+            record_count = latest_files_metadata["num_records"][task_idx].as_py()
             try:
-                size_bytes = latest_file_slices["size_bytes"][task_idx].as_py()
+                size_bytes = latest_files_metadata["size_bytes"][task_idx].as_py()
             except KeyError:
                 size_bytes = None
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
-            if is_partitioned:
-                dtype = latest_file_slices.schema.field("partition_values").type
-                part_values = latest_file_slices["partition_values"][task_idx]
+            if self._table.is_partitioned:
+                dtype = latest_files_metadata.schema.field("_hoodie_partition_path").type
+                part_values = latest_files_metadata["partition_values"][task_idx]
                 arrays = {}
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
@@ -104,26 +98,7 @@ class HudiScanOperator(ScanOperator):
                 partition_values = None
 
             # Populate scan task with column-wise stats.
-            dtype = latest_file_slices.schema.field("min").type
-            min_values = latest_file_slices["min"][task_idx]
-            max_values = latest_file_slices["max"][task_idx]
-            # TODO: Add support for tracking null counts in column stats.
-            # null_counts = add_actions["null_count"][task_idx]
-            arrays = {}
-            for field_idx in range(dtype.num_fields):
-                field_name = dtype.field(field_idx).name
-                try:
-                    arrow_arr = pa.array(
-                        [min_values[field_name], max_values[field_name]], type=dtype.field(field_idx).type
-                    )
-                except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
-                    # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
-                    arrow_arr = pa.array(
-                        [min_values[field_name].as_py(), max_values[field_name].as_py()],
-                        type=dtype.field(field_idx).type,
-                    )
-                arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-            stats = daft.table.Table.from_pydict(arrays)
+            # TODO: Add support for column stats
 
             st = ScanTask.catalog_scan_task(
                 file=path,
@@ -134,7 +109,7 @@ class HudiScanOperator(ScanOperator):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=stats._table,
+                stats=None,
             )
             if st is None:
                 continue
