@@ -554,7 +554,7 @@ def write_iceberg(
 
     format = pads.ParquetFileFormat()
 
-    #TODO hydrate pyarrow schema with parquet file metadata
+    # TODO hydrate pyarrow schema with parquet file metadata
 
     _write_tabular_arrow_table(
         arrow_table=arrow_table,
@@ -568,7 +568,7 @@ def write_iceberg(
         create_dir=is_local_fs,
         file_visitor=file_visitor,
     )
-    return data_files
+    return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
 
 
 def _write_tabular_arrow_table(

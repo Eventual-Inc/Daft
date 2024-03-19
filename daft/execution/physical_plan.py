@@ -19,7 +19,7 @@ import logging
 import math
 import pathlib
 from collections import deque
-from typing import Generator, Generic, Iterable, Iterator, TypeVar, Union
+from typing import TYPE_CHECKING, Generator, Generic, Iterable, Iterator, TypeVar, Union
 
 from daft.context import get_context
 from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
@@ -44,6 +44,10 @@ from daft.table.micropartition import MicroPartition
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
@@ -107,15 +111,21 @@ def file_write(
 
 def iceberg_write(
     child_plan: InProgressPhysicalPlan[PartitionT],
+    base_path: str,
+    iceberg_schema: IcebergSchema,
+    iceberg_properties: IcebergTableProperties,
+    spec_id: int,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Write the results of `child_plan` into files described by `write_info`."""
-    import ipdb
+    """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
 
-    ipdb.set_trace()
     yield from (
         step.add_instruction(
             execution_step.WriteIceberg(
+                base_path=base_path,
+                iceberg_schema=iceberg_schema,
+                iceberg_properties=iceberg_properties,
+                spec_id=spec_id,
                 io_config=io_config,
             ),
         )

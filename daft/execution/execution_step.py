@@ -4,7 +4,7 @@ import itertools
 import pathlib
 import sys
 from dataclasses import dataclass, field
-from typing import Generic
+from typing import TYPE_CHECKING, Generic
 
 if sys.version_info < (3, 8):
     from typing_extensions import Protocol
@@ -23,6 +23,11 @@ from daft.runners.partitioning import (
     PartitionT,
 )
 from daft.table import MicroPartition, table_io
+
+if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
+
 
 ID_GEN = itertools.count()
 
@@ -374,14 +379,18 @@ class WriteFile(SingleOutputInstruction):
 dataclass(frozen=True)
 
 
+@dataclass(frozen=True)
 class WriteIceberg(SingleOutputInstruction):
+    base_path: str
+    iceberg_schema: IcebergSchema
+    iceberg_properties: IcebergTableProperties
+    spec_id: int
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._write_iceberg(inputs)
 
     def _write_iceberg(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        assert False, "need to implement"
         [input] = inputs
         partition = self._handle_file_write(
             input=input,
@@ -398,13 +407,12 @@ class WriteIceberg(SingleOutputInstruction):
         ]
 
     def _handle_file_write(self, input: MicroPartition) -> MicroPartition:
-        return table_io.write_tabular(
+        return table_io.write_iceberg(
             input,
-            path=self.root_dir,
-            schema=self.schema,
-            file_format=self.file_format,
-            compression=self.compression,
-            partition_cols=self.partition_cols,
+            base_path=self.base_path,
+            schema=self.iceberg_schema,
+            properties=self.iceberg_properties,
+            spec_id=self.spec_id,
             io_config=self.io_config,
         )
 

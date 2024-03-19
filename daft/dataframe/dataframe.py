@@ -4,6 +4,7 @@
 # in order to support runtime typechecking across different Python versions.
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
+import os
 import pathlib
 import warnings
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import pyarrow as pa
     import dask
+    from pyiceberg.table import Table as IcebergTable
 
 from daft.logical.schema import Schema
 
@@ -428,6 +430,69 @@ class DataFrame:
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         return result_df
+
+    def write_iceberg(self, table: "IcebergTable", mode: str = "append") -> "DataFrame":
+
+        if len(table.spec().fields) > 0:
+            raise ValueError("Cannot write to partitioned Iceberg tables")
+        from pyiceberg.table import _MergingSnapshotProducer
+        from pyiceberg.table.snapshots import Operation
+
+        operations = []
+        path = []
+        rows = []
+        size = []
+
+        if mode == "append":
+            operation = Operation.APPEND
+        elif mode == "overwrite":
+            operation = Operation.OVERWRITE
+        else:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
+
+        # We perform the merge here since IcebergTable is not pickle-able
+        merge = _MergingSnapshotProducer(operation=operation, table=table)
+
+        builder = self._builder.write_iceberg(table)
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        write_result = write_df.to_pydict()
+        assert "data_file" in write_result
+        data_files = write_result["data_file"]
+
+        if operation == Operation.OVERWRITE:
+            plan_files = table.scan().plan_files()
+            for pf in plan_files:
+                data_file = pf.file
+                operations.append("DELETE")
+                path.append(data_file.file_path)
+                rows.append(data_file.record_count)
+                size.append(data_file.file_size_in_bytes)
+
+        for data_file in data_files:
+            merge.append_data_file(data_file)
+            operations.append("ADD")
+            path.append(data_file.file_path)
+            rows.append(data_file.record_count)
+            size.append(data_file.file_size_in_bytes)
+
+        merge.commit()
+        import pyarrow as pa
+
+        from daft import from_pydict
+
+        with_operations = from_pydict(
+            {
+                "operation": pa.array(operations, type=pa.string()),
+                "rows": pa.array(rows, type=pa.int64()),
+                "file_size": pa.array(size, type=pa.int64()),
+                "file_name": pa.array([os.path.basename(fp) for fp in path], type=pa.string()),
+            }
+        )
+        # NOTE: We are losing the history of the plan here.
+        # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
+        return with_operations
 
     ###
     # DataFrame operations

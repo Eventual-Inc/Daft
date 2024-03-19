@@ -11,6 +11,8 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
+    from pyiceberg.table import Table as IcebergTable
+
     from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
 
@@ -192,4 +194,17 @@ class LogicalPlanBuilder:
             raise ValueError(f"Writing is only supported for Parquet and CSV file formats, but got: {file_format}")
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(str(root_dir), file_format, part_cols_pyexprs, compression, io_config)
+        return LogicalPlanBuilder(builder)
+
+    def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+        from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
+
+        name = ".".join(table.name())
+        location = f"{table.location()}/data"
+        spec_id = table.spec().spec_id
+        schema = table.schema()
+        props = table.properties
+        columns = [col.name for col in schema.columns]
+        io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
+        builder = self._builder.iceberg_write(name, location, spec_id, schema, props, columns, io_config)
         return LogicalPlanBuilder(builder)

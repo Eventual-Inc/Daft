@@ -533,14 +533,19 @@ fn tabular_write(
 fn iceberg_write(
     py: Python<'_>,
     upstream_iter: PyObject,
-    io_config: &Option<IOConfig>,
+    iceberg_info: &IcebergCatalogInfo,
 ) -> PyResult<PyObject> {
     let py_iter = py
         .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
         .getattr(pyo3::intern!(py, "write_iceberg"))?
         .call1((
             upstream_iter,
-            io_config
+            &iceberg_info.table_location,
+            &iceberg_info.iceberg_schema,
+            &iceberg_info.iceberg_properties,
+            iceberg_info.spec_id,
+            iceberg_info
+                .io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
                     config: cfg.clone(),
@@ -989,7 +994,7 @@ impl PhysicalPlan {
                 schema,
                 iceberg_info,
                 input,
-            }) => iceberg_write(py, input.to_partition_tasks(py, psets)?, &None),
+            }) => iceberg_write(py, input.to_partition_tasks(py, psets)?, iceberg_info),
         }
     }
 }

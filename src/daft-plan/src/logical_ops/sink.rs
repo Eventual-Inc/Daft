@@ -36,8 +36,8 @@ impl Sink {
             }
             SinkInfo::CatalogInfo(..) => {
                 vec![
-                    Field::new("operation", daft_core::DataType::Utf8),
-                    Field::new("path", daft_core::DataType::Utf8),
+                    // We have to return datafile since PyIceberg Table is not picklable yet
+                    Field::new("data_file", daft_core::DataType::Python),
                 ]
             }
         };
