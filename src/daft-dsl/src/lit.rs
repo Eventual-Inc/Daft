@@ -214,32 +214,62 @@ impl LiteralValue {
         result
     }
 
-    pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
+    pub fn display_sql<W: Write>(&self, buffer: &mut W, db_scheme: &str) -> io::Result<()> {
         use LiteralValue::*;
         let display_sql_err = Err(io::Error::new(
             io::ErrorKind::Other,
             "Unsupported literal for SQL translation",
         ));
-        match self {
-            Null | Boolean(..) | Int32(..) | UInt32(..) | Int64(..) | UInt64(..) | Float64(..) => {
-                write!(buffer, "{}", self)
+        let display_date_sql = |val: i32| match db_scheme {
+            "postgresql" | "postgres" | "mysql" | "mysql+pymysql" | "trino" | "redshift"
+            | "clickhouse" => Some(format!("DATE '{}'", display_date32(val))),
+            "sqlite" => Some(format!("DATE ('{}')", display_date32(val))),
+            _ => None,
+        };
+        let display_timestamp_sql = |val: i64, tu: &TimeUnit, tz: &Option<String>| {
+            // The `display_timestamp` function formats a timestamp in the ISO 8601 format: "YYYY-MM-DDTHH:MM:SS.fffff".
+            // ANSI SQL standard uses a space instead of 'T'. Some databases do not support 'T', hence it's replaced with a space.
+            // Reference: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.html
+            match db_scheme {
+                "postgresql" | "postgres" | "mysql" | "mysql+pymysql" | "trino" | "redshift"
+                | "clickhouse" => Some(format!(
+                    "TIMESTAMP '{}'",
+                    display_timestamp(val, tu, tz).replace('T', " ")
+                )),
+                "sqlite" => Some(format!(
+                    "DATETIME ('{}')",
+                    display_timestamp(val, tu, tz).replace('T', " ")
+                )),
+                _ => None,
             }
+        };
+
+        match self {
+            Null => write!(buffer, "NULL"),
+            Boolean(v) => write!(buffer, "{}", v),
+            Int32(val) => write!(buffer, "{}", val),
+            UInt32(val) => write!(buffer, "{}", val),
+            Int64(val) => write!(buffer, "{}", val),
+            UInt64(val) => write!(buffer, "{}", val),
+            Float64(val) => write!(buffer, "{}", val),
             Utf8(val) => write!(buffer, "'{}'", val),
-            Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
+            Date(val) => {
+                if let Some(date_sql) = display_date_sql(*val) {
+                    write!(buffer, "{}", date_sql)
+                } else {
+                    display_sql_err
+                }
+            }
             Timestamp(val, tu, tz) => {
                 // Different databases have different ways of handling timezones, so there's no reliable way to convert this to SQL.
                 if tz.is_some() {
                     return display_sql_err;
                 }
-                // Note: Our display_timestamp function returns a string in the ISO 8601 format "YYYY-MM-DDTHH:MM:SS.fffff".
-                // However, the ANSI SQL standard replaces the 'T' with a space. See: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.htm
-                // While many databases support the 'T', some such as Trino, do not. So we replace the 'T' with a space here.
-                // We also don't use the i64 unix timestamp directly, because different databases have different functions to convert unix timestamps to timestamps, e.g. Trino uses from_unixtime, while PostgreSQL uses to_timestamp.
-                write!(
-                    buffer,
-                    "TIMESTAMP '{}'",
-                    display_timestamp(*val, tu, tz).replace('T', " ")
-                )
+                if let Some(timestamp_sql) = display_timestamp_sql(*val, tu, tz) {
+                    write!(buffer, "{}", timestamp_sql)
+                } else {
+                    display_sql_err
+                }
             }
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,

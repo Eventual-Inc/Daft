@@ -9,6 +9,10 @@ import pyarrow as pa
 logger = logging.getLogger(__name__)
 
 
+def get_db_scheme_from_url(url: str) -> str:
+    return urlparse(url).scheme.strip().lower()
+
+
 class SQLReader:
     def __init__(
         self,
@@ -26,15 +30,18 @@ class SQLReader:
         self.predicate = predicate
 
     def read(self) -> pa.Table:
+        sql = self._construct_sql_query_with_limit()
         try:
-            sql = self._construct_sql_query(apply_limit=True)
             return self._execute_sql_query(sql)
-        except RuntimeError:
-            warnings.warn("Failed to execute the query with a limit, attempting to read the entire table.")
-            sql = self._construct_sql_query(apply_limit=False)
-            return self._execute_sql_query(sql)
+        except RuntimeError as e:
+            if self.limit is not None:
+                warnings.warn(
+                    f"Failed to execute the query with limit {self.limit}: {e}. Attempting to read the entire table."
+                )
+                return self._execute_sql_query(self._construct_sql_query())
+            raise
 
-    def _construct_sql_query(self, apply_limit: bool) -> str:
+    def _construct_sql_query(self) -> str:
         clauses = []
         if self.projection is not None:
             clauses.append(f"SELECT {', '.join(self.projection)}")
@@ -46,10 +53,11 @@ class SQLReader:
         if self.predicate is not None:
             clauses.append(f"WHERE {self.predicate}")
 
-        if self.limit is not None and apply_limit is True:
-            clauses.append(f"LIMIT {self.limit}")
-
         return "\n".join(clauses)
+
+    def _construct_sql_query_with_limit(self) -> str:
+        sql = self._construct_sql_query()
+        return f"{sql}\nLIMIT {self.limit}" if self.limit is not None else sql
 
     def _execute_sql_query(self, sql: str) -> pa.Table:
         # Supported DBs extracted from here https://github.com/sfu-db/connector-x/tree/7b3147436b7e20b96691348143d605e2249d6119?tab=readme-ov-file#sources
@@ -65,11 +73,10 @@ class SQLReader:
             "redshift",
         }
 
-        db_type = urlparse(self.url).scheme
-        db_type = db_type.strip().lower()
+        db_scheme = get_db_scheme_from_url(self.url)
 
         # Check if the database type is supported
-        if db_type in supported_dbs:
+        if db_scheme in supported_dbs:
             return self._execute_sql_query_with_connectorx(sql)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql)
