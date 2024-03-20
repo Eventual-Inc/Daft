@@ -85,6 +85,21 @@ impl Hash for IcebergCatalogInfo {
     }
 }
 
+#[cfg(feature = "python")]
+impl IcebergCatalogInfo {
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Table Name = {}", self.table_name));
+        res.push(format!("Table Location = {}", self.table_location));
+        res.push(format!("Spec ID = {}", self.spec_id));
+        match &self.io_config {
+            None => res.push("IOConfig = None".to_string()),
+            Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+        };
+        res
+    }
+}
+
 impl OutputFileInfo {
     pub fn new(
         root_dir: String,

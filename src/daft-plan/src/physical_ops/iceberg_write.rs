@@ -29,8 +29,7 @@ impl IcebergWrite {
         let mut res = vec![];
         res.push("IcebergWrite:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
-        // res.extend(self.catalog_info.multiline_display());
-        // TODO(sammy): multiline display
+        res.extend(self.iceberg_info.multiline_display());
         res
     }
 }

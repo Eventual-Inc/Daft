@@ -56,14 +56,12 @@ impl Sink {
                 res.extend(output_file_info.multiline_display());
             }
             #[cfg(feature = "python")]
-            SinkInfo::CatalogInfo(catalog_info) => {
-                match &catalog_info.catalog {
-                    crate::sink_info::CatalogType::Iceberg(iceberg_info) => {
-                        res.push(format!("Sink: Iceberg({})", iceberg_info.table_name));
-                        // TODO multiline display for iceberg
-                    }
+            SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+                crate::sink_info::CatalogType::Iceberg(iceberg_info) => {
+                    res.push(format!("Sink: Iceberg({})", iceberg_info.table_name));
+                    res.extend(iceberg_info.multiline_display());
                 }
-            }
+            },
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
         res
