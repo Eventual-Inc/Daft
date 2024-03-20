@@ -412,3 +412,9 @@ def test_series_utf8_left_mismatch_len() -> None:
     pattern = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
     with pytest.raises(ValueError):
         s.str.left(pattern)
+
+
+def test_series_utf8_left_bad_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.left(1)
