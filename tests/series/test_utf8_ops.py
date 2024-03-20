@@ -369,3 +369,32 @@ def test_series_utf8_match_bad_pattern() -> None:
     pattern = Series.from_arrow(pa.array(["["]))
     with pytest.raises(ValueError):
         s.str.match(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "expected"],
+    [
+        # No Broadcast
+        (["foo", "barbaz", "quux"], [0, 1, 2], ["", "b", "qu"]),
+        # Broadcast pattern
+        (["foo", "barbaz", "quux"], [1], ["f", "b", "q"]),
+        # Broadcast data
+        (["foo"], [0, 1, 2], ["", "f", "fo"]),
+        # Broadcast null data
+        ([None], [0, 1, 2], [None, None, None]),
+        # Broadcast null pattern
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+    ],
+)
+def test_series_utf8_left(data, pattern, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.uint32()))
+    result = s.str.left(patterns)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_left_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.left(pattern)

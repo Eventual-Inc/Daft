@@ -1,9 +1,9 @@
 use crate::{
     array::ListArray,
-    datatypes::{BooleanArray, Field, UInt64Array, Utf8Array},
+    datatypes::{BooleanArray, Field, UInt32Array, UInt64Array, Utf8Array},
     DataType, Series,
 };
-use arrow2;
+use arrow2::{self};
 
 use common_error::{DaftError, DaftResult};
 
@@ -258,6 +258,76 @@ impl Utf8Array {
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn left(&self, n: &UInt32Array) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let n_arrow = n.as_arrow();
+        match (self.len(), n.len()) {
+            // Matching len case:
+            (self_len, n_len) if self_len == n_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(n_arrow.iter())
+                    .map(|(val, n)| {
+                        let v = val?;
+                        let n = n?;
+                        Some(v.chars().take(*n as usize).collect::<String>())
+                    })
+                    .collect::<arrow2::array::Utf8Array<i64>>()
+                    .with_validity(self_arrow.validity().cloned());
+                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // Broadcast pattern case:
+            (_self_len, 1) => {
+                let n_scalar_value = n.get(0);
+                match n_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self.len(),
+                    )),
+                    Some(n_scalar_value) => {
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(v.chars().take(n_scalar_value as usize).collect::<String>())
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>()
+                            .with_validity(self_arrow.validity().cloned());
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self case:
+            (1, _n_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n.len())),
+                    Some(self_scalar_value) => {
+                        let arrow_result = n_arrow
+                            .iter()
+                            .map(|n| {
+                                let n = n?;
+                                Some(
+                                    self_scalar_value
+                                        .chars()
+                                        .take(*n as usize)
+                                        .collect::<String>(),
+                                )
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>()
+                            .with_validity(self_arrow.validity().cloned());
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
     }
 
     fn binary_broadcasted_compare<ScalarKernel>(

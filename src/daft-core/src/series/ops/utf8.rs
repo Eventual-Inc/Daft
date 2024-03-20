@@ -119,4 +119,14 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_left(&self, pattern: &Series) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.left(pattern.u32()?)?.into_series()),
+            DataType::Null => Ok(self.clone()),
+            dt => Err(DaftError::TypeError(format!(
+                "Left not implemented for type {dt}"
+            ))),
+        }
+    }
 }

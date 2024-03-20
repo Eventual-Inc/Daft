@@ -623,6 +623,12 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_capitalize())
 
+    def left(self, pattern: Series) -> Series:
+        if not isinstance(pattern, Series):
+            raise ValueError(f"expected another Series but got {type(pattern)}")
+        assert self._series is not None and pattern._series is not None
+        return Series._from_pyseries(self._series.utf8_left(pattern._series))
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:
