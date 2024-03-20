@@ -1,12 +1,16 @@
 import builtins
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 import pyarrow
 from daft.io.scan import ScanOperator
+
+if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
 
 class ImageMode(Enum):
     """
@@ -1237,6 +1241,16 @@ class LogicalPlanBuilder:
         file_format: FileFormat,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
+        io_config: IOConfig | None = None,
+    ) -> LogicalPlanBuilder: ...
+    def iceberg_write(
+        self,
+        table_name: str,
+        table_location: str,
+        spec_id: int,
+        iceberg_schema: IcebergSchema,
+        iceberg_properties: IcebergTableProperties,
+        catalog_columns: list[str],
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def schema(self) -> PySchema: ...

@@ -438,9 +438,9 @@ class DataFrame:
 
         import pyiceberg
         from packaging.version import parse
+
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
-
 
         from pyiceberg.table import _MergingSnapshotProducer
         from pyiceberg.table.snapshots import Operation
