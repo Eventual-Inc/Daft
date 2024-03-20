@@ -17,7 +17,6 @@ from typing import (
     Iterable,
     Iterator,
     List,
-    Literal,
     Optional,
     Set,
     Tuple,
@@ -429,9 +428,7 @@ class DataFrame:
         return result_df
 
     @DataframePublicAPI
-    def write_iceberg(
-        self, table: "IcebergTable", mode: Union[Literal["append"], Literal["overwrite"]] = "append"
-    ) -> "DataFrame":
+    def write_iceberg(self, table: "IcebergTable", mode: str = "append") -> "DataFrame":
         """Writes the DataFrame to an Iceberg Table, returning a new DataFrame with the operations that occurred.
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
@@ -440,7 +437,7 @@ class DataFrame:
 
         Args:
             table (IcebergTable): Destination Iceberg Table to write dataframe to.
-            mode (Union[Literal[&quot;append&quot;], Literal[&quot;overwrite&quot;]], optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
+            mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -483,17 +480,20 @@ class DataFrame:
         data_files = write_result["data_file"]
 
         if operation == Operation.OVERWRITE:
-            plan_files = table.scan().plan_files()
-            for pf in plan_files:
-                data_file = pf.file
-                operations.append("DELETE")
-                path.append(data_file.file_path)
-                rows.append(data_file.record_count)
-                size.append(data_file.file_size_in_bytes)
+            deleted_files = table.scan().plan_files()
+        else:
+            deleted_files = []
 
         for data_file in data_files:
             merge.append_data_file(data_file)
             operations.append("ADD")
+            path.append(data_file.file_path)
+            rows.append(data_file.record_count)
+            size.append(data_file.file_size_in_bytes)
+
+        for pf in deleted_files:
+            data_file = pf.file
+            operations.append("DELETE")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
