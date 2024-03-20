@@ -33,6 +33,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
+from daft.prefect import PrefectBlocks, PrefectBlockType
 from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
 from daft.runners.pyrunner import LocalPartitionSet
 from daft.table import MicroPartition
@@ -334,7 +335,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_parquet(
         self,
-        root_dir: Union[str, pathlib.Path],
+        root_dir: Union[str, pathlib.Path, PrefectBlockType],
         compression: str = "snappy",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
@@ -358,6 +359,11 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        if isinstance(root_dir, PrefectBlocks):
+            from daft.prefect import prefect_block_to_path_and_io_config
+
+            root_dir, io_config = prefect_block_to_path_and_io_config(root_dir)
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None

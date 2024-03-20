@@ -15,11 +15,12 @@ from daft.daft import (
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
 from daft.io.common import get_tabular_files_scan
+from daft.prefect import PrefectBlocks, PrefectBlockType
 
 
 @PublicAPI
 def read_parquet(
-    path: Union[str, List[str]],
+    path: Union[str, List[str], PrefectBlockType],
     schema_hints: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
     use_native_downloader: bool = True,
@@ -48,6 +49,11 @@ def read_parquet(
     returns:
         DataFrame: parsed DataFrame
     """
+    if isinstance(path, PrefectBlocks):
+        from daft.prefect import prefect_block_to_path_and_io_config
+
+        path, io_config = prefect_block_to_path_and_io_config(path)
+
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     if isinstance(path, list) and len(path) == 0:
