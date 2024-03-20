@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+
+pyiceberg = pytest.importorskip("pyiceberg")
+
 from pyiceberg.catalog.sql import SqlCatalog
 
 import daft
