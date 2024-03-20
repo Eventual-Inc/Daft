@@ -388,6 +388,16 @@ def test_series_utf8_match_bad_pattern() -> None:
         ([[], [0, 1], []]),
         # Empty patterns.
         ([["foo"] * 4, [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "b", None]),
+        # All null data.
+        ([None] * 4, [1] * 4, [None] * 4),
+        # All null patterns.
+        (["foo"] * 4, [None] * 4, [None] * 4),
+        # Broadcasted null data.
+        ([None], [1] * 4, [None] * 4),
+        # Broadcasted null pattern.
+        (["foo"] * 4, [None], [None] * 4),
     ],
 )
 def test_series_utf8_left(data, pattern, expected) -> None:

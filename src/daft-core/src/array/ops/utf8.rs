@@ -265,10 +265,7 @@ impl Utf8Array {
         let n_arrow = n.as_arrow();
         // Handle empty cases.
         if self.is_empty() || n.is_empty() {
-            return Ok(Utf8Array::empty(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ));
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
         match (self.len(), n.len()) {
             // Matching len case:
@@ -276,23 +273,24 @@ impl Utf8Array {
                 let arrow_result = self_arrow
                     .iter()
                     .zip(n_arrow.iter())
-                    .map(|(val, n)| {
-                        let v = val?;
-                        let n = n?;
-                        Some(v.chars().take(*n as usize).collect::<String>())
+                    .map(|(val, n)| match (val, n) {
+                        (Some(val), Some(pat)) => {
+                            Some(val.chars().take(*pat as usize).collect::<String>())
+                        }
+                        _ => None,
                     })
-                    .collect::<arrow2::array::Utf8Array<i64>>()
-                    .with_validity(self_arrow.validity().cloned());
+                    .collect::<arrow2::array::Utf8Array<i64>>();
+
                 Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
             }
             // Broadcast pattern case:
-            (_self_len, 1) => {
+            (self_len, 1) => {
                 let n_scalar_value = n.get(0);
                 match n_scalar_value {
                     None => Ok(Utf8Array::full_null(
                         self.name(),
                         self.data_type(),
-                        self.len(),
+                        self_len,
                     )),
                     Some(n_scalar_value) => {
                         let arrow_result = self_arrow
@@ -301,17 +299,17 @@ impl Utf8Array {
                                 let v = val?;
                                 Some(v.chars().take(n_scalar_value as usize).collect::<String>())
                             })
-                            .collect::<arrow2::array::Utf8Array<i64>>()
-                            .with_validity(self_arrow.validity().cloned());
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
                         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
                     }
                 }
             }
             // broadcast self case:
-            (1, _n_len) => {
+            (1, n_len) => {
                 let self_scalar_value = self.get(0);
                 match self_scalar_value {
-                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n.len())),
+                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n_len)),
                     Some(self_scalar_value) => {
                         let arrow_result = n_arrow
                             .iter()
@@ -324,8 +322,8 @@ impl Utf8Array {
                                         .collect::<String>(),
                                 )
                             })
-                            .collect::<arrow2::array::Utf8Array<i64>>()
-                            .with_validity(self_arrow.validity().cloned());
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
                         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
                     }
                 }
