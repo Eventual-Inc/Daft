@@ -1055,7 +1055,7 @@ class DataFrame:
         Args:
             *cols (Union[str, Expression]): columns to get an arbitrary value from
         Returns:
-            DataFrame: Globally aggregated max. Should be a single row.
+            DataFrame: DataFrame with any values.
         """
         return self._apply_agg_fn(Expression.any_value, cols)
 
