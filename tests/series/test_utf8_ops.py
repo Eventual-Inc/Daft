@@ -384,6 +384,10 @@ def test_series_utf8_match_bad_pattern() -> None:
         ([None], [0, 1, 2], [None, None, None]),
         # Broadcast null pattern
         (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # Empty data.
+        ([[], [0, 1], []]),
+        # Empty patterns.
+        ([["foo"] * 4, [], []]),
     ],
 )
 def test_series_utf8_left(data, pattern, expected) -> None:

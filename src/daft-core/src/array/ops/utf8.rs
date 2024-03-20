@@ -263,6 +263,13 @@ impl Utf8Array {
     pub fn left(&self, n: &UInt32Array) -> DaftResult<Utf8Array> {
         let self_arrow = self.as_arrow();
         let n_arrow = n.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || n.is_empty() {
+            return Ok(Utf8Array::empty(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ));
+        }
         match (self.len(), n.len()) {
             // Matching len case:
             (self_len, n_len) if self_len == n_len => {
