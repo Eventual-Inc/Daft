@@ -6,10 +6,7 @@ use daft_core::{
     schema::{Schema, SchemaRef},
 };
 
-use crate::{
-    sink_info::{CatalogType, SinkInfo},
-    LogicalPlan,
-};
+use crate::{sink_info::SinkInfo, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -34,6 +31,7 @@ impl Sink {
                 }
                 fields
             }
+            #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(..) => {
                 vec![
                     // We have to return datafile since PyIceberg Table is not picklable yet
@@ -57,9 +55,10 @@ impl Sink {
                 res.push(format!("Sink: {:?}", output_file_info.file_format));
                 res.extend(output_file_info.multiline_display());
             }
+            #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(catalog_info) => {
                 match &catalog_info.catalog {
-                    CatalogType::Iceberg(iceberg_info) => {
+                    crate::sink_info::CatalogType::Iceberg(iceberg_info) => {
                         res.push(format!("Sink: Iceberg({})", iceberg_info.table_name));
                         // TODO multiline display for iceberg
                     }

@@ -1,18 +1,23 @@
 use std::hash::Hash;
 
 use common_io_config::IOConfig;
-use daft_core::schema::SchemaRef;
 use daft_dsl::Expr;
 use itertools::Itertools;
+
+#[cfg(feature = "python")]
 use pyo3::PyObject;
 
 use crate::FileFormat;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
 use daft_scan::py_object_serde::{deserialize_py_object, serialize_py_object};
+
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SinkInfo {
     OutputFileInfo(OutputFileInfo),
+    #[cfg(feature = "python")]
     CatalogInfo(CatalogInfo),
 }
 
@@ -25,17 +30,20 @@ pub struct OutputFileInfo {
     pub io_config: Option<IOConfig>,
 }
 
+#[cfg(feature = "python")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CatalogInfo {
     pub catalog: CatalogType,
     pub catalog_columns: Vec<String>,
 }
 
+#[cfg(feature = "python")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CatalogType {
     Iceberg(IcebergCatalogInfo),
 }
 
+#[cfg(feature = "python")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IcebergCatalogInfo {
     pub table_name: String,
@@ -55,6 +63,7 @@ pub struct IcebergCatalogInfo {
     pub io_config: Option<IOConfig>,
 }
 
+#[cfg(feature = "python")]
 impl PartialEq for IcebergCatalogInfo {
     fn eq(&self, other: &Self) -> bool {
         self.table_name == other.table_name
@@ -63,9 +72,10 @@ impl PartialEq for IcebergCatalogInfo {
             && self.io_config == other.io_config
     }
 }
-
+#[cfg(feature = "python")]
 impl Eq for IcebergCatalogInfo {}
 
+#[cfg(feature = "python")]
 impl Hash for IcebergCatalogInfo {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.table_name.hash(state);
@@ -74,8 +84,6 @@ impl Hash for IcebergCatalogInfo {
         self.io_config.hash(state);
     }
 }
-
-impl CatalogInfo {}
 
 impl OutputFileInfo {
     pub fn new(

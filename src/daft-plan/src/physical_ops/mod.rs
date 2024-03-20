@@ -9,6 +9,7 @@ mod fanout;
 mod filter;
 mod flatten;
 mod hash_join;
+#[cfg(feature = "python")]
 mod iceberg_write;
 #[cfg(feature = "python")]
 mod in_memory;
@@ -35,6 +36,7 @@ pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;
 pub use flatten::Flatten;
 pub use hash_join::HashJoin;
+#[cfg(feature = "python")]
 pub use iceberg_write::IcebergWrite;
 #[cfg(feature = "python")]
 pub use in_memory::InMemoryScan;

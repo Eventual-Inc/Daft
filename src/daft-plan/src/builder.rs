@@ -8,7 +8,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     planner::plan,
-    sink_info::{CatalogInfo, IcebergCatalogInfo, OutputFileInfo, SinkInfo},
+    sink_info::{OutputFileInfo, SinkInfo},
     source_info::SourceInfo,
     JoinStrategy, JoinType, PhysicalPlanScheduler, ResourceRequest,
 };
@@ -21,6 +21,7 @@ use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperat
 
 #[cfg(feature = "python")]
 use {
+    crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::{physical_plan::PhysicalPlanRef, source_info::InMemoryInfo},
     common_daft_config::PyDaftExecutionConfig,
     daft_core::python::schema::PySchema,
@@ -281,6 +282,8 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn iceberg_write(
         &self,
         table_name: String,
@@ -513,6 +516,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn iceberg_write(
         &self,
         table_name: String,

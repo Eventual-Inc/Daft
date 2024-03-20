@@ -1,9 +1,6 @@
 use daft_core::schema::SchemaRef;
 
-use crate::{
-    physical_plan::PhysicalPlanRef,
-    sink_info::{CatalogInfo, IcebergCatalogInfo},
-};
+use crate::{physical_plan::PhysicalPlanRef, sink_info::IcebergCatalogInfo};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

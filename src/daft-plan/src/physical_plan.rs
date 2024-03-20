@@ -25,8 +25,10 @@ use crate::{
         UnknownClusteringConfig,
     },
     physical_ops::*,
-    sink_info::IcebergCatalogInfo,
 };
+
+#[cfg(feature = "python")]
+use crate::sink_info::IcebergCatalogInfo;
 
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 
@@ -60,6 +62,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    #[cfg(feature = "python")]
     IcebergWrite(IcebergWrite),
 }
 
@@ -199,6 +202,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            #[cfg(feature = "python")]
             Self::IcebergWrite(..) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
             }
@@ -267,10 +271,11 @@ impl PhysicalPlan {
             Self::Aggregate(_) => None,
             // Post-write DataFrame will contain paths to files that were written.
             // TODO(Clark): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-            Self::TabularWriteParquet(_)
-            | Self::TabularWriteCsv(_)
-            | Self::TabularWriteJson(_)
-            | Self::IcebergWrite(_) => None,
+            Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
+                None
+            }
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(_) => None,
         }
     }
 
@@ -296,6 +301,7 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            #[cfg(feature = "python")]
             Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
@@ -335,6 +341,7 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                #[cfg(feature = "python")]
                 Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
@@ -387,6 +394,7 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            #[cfg(feature = "python")]
             Self::IcebergWrite(..) => "IcebergWrite",
         };
         name.to_string()
@@ -424,6 +432,7 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            #[cfg(feature = "python")]
             Self::IcebergWrite(iceberg_info) => iceberg_info.multiline_display(),
         }
     }
@@ -989,9 +998,9 @@ impl PhysicalPlan {
                 partition_cols,
                 io_config,
             ),
-
+            #[cfg(feature = "python")]
             PhysicalPlan::IcebergWrite(IcebergWrite {
-                schema,
+                schema: _,
                 iceberg_info,
                 input,
             }) => iceberg_write(py, input.to_partition_tasks(py, psets)?, iceberg_info),
