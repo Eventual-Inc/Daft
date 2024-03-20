@@ -11,8 +11,8 @@ from daft.logical.builder import LogicalPlanBuilder
 
 @PublicAPI
 def read_hudi(
-        table_uri: str,
-        io_config: Optional["IOConfig"] = None,
+    table_uri: str,
+    io_config: Optional["IOConfig"] = None,
 ) -> DataFrame:
     """Create a DataFrame from a Hudi table.
 
