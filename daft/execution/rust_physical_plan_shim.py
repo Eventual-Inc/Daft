@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.daft import (
     FileFormat,
     IOConfig,
@@ -15,6 +17,10 @@ from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
 from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
 
 
 def scan_with_tasks(
@@ -252,4 +258,22 @@ def write_file(
         compression,
         expr_projection,
         io_config,
+    )
+
+
+def write_iceberg(
+    input: physical_plan.InProgressPhysicalPlan[PartitionT],
+    base_path: str,
+    iceberg_schema: IcebergSchema,
+    iceberg_properties: IcebergTableProperties,
+    spec_id: int,
+    io_config: IOConfig | None,
+) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
+    return physical_plan.iceberg_write(
+        input,
+        base_path=base_path,
+        iceberg_schema=iceberg_schema,
+        iceberg_properties=iceberg_properties,
+        spec_id=spec_id,
+        io_config=io_config,
     )

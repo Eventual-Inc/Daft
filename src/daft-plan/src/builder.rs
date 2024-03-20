@@ -21,6 +21,7 @@ use daft_scan::{file_format::FileFormat, Pushdowns, ScanExternalInfo, ScanOperat
 
 #[cfg(feature = "python")]
 use {
+    crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::{physical_plan::PhysicalPlanRef, source_info::InMemoryInfo},
     common_daft_config::PyDaftExecutionConfig,
     daft_core::python::schema::PySchema,
@@ -281,6 +282,35 @@ impl LogicalPlanBuilder {
         Ok(logical_plan.into())
     }
 
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn iceberg_write(
+        &self,
+        table_name: String,
+        table_location: String,
+        spec_id: i64,
+        iceberg_schema: PyObject,
+        iceberg_properties: PyObject,
+        io_config: Option<IOConfig>,
+        catalog_columns: Vec<String>,
+    ) -> DaftResult<Self> {
+        let sink_info = SinkInfo::CatalogInfo(CatalogInfo {
+            catalog: crate::sink_info::CatalogType::Iceberg(IcebergCatalogInfo {
+                table_name,
+                table_location,
+                spec_id,
+                iceberg_schema,
+                iceberg_properties,
+                io_config,
+            }),
+            catalog_columns,
+        });
+
+        let logical_plan: LogicalPlan =
+            logical_ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(logical_plan.into())
+    }
+
     pub fn build(&self) -> Arc<LogicalPlan> {
         self.plan.clone()
     }
@@ -482,6 +512,31 @@ impl PyLogicalPlanBuilder {
                 partition_cols,
                 compression,
                 io_config.map(|cfg| cfg.config),
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn iceberg_write(
+        &self,
+        table_name: String,
+        table_location: String,
+        spec_id: i64,
+        iceberg_schema: PyObject,
+        iceberg_properties: PyObject,
+        catalog_columns: Vec<String>,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .iceberg_write(
+                table_name,
+                table_location,
+                spec_id,
+                iceberg_schema,
+                iceberg_properties,
+                io_config.map(|cfg| cfg.config),
+                catalog_columns,
             )?
             .into())
     }

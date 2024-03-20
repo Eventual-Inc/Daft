@@ -720,6 +720,16 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                         )),
                     }
                 }
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+                    crate::sink_info::CatalogType::Iceberg(iceberg_info) => {
+                        Ok(PhysicalPlan::IcebergWrite(IcebergWrite::new(
+                            schema.clone(),
+                            iceberg_info.clone(),
+                            input_physical.into(),
+                        )))
+                    }
+                },
             }
         }
         LogicalPlan::MonotonicallyIncreasingId(LogicalMonotonicallyIncreasingId {

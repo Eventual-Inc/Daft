@@ -4,7 +4,7 @@ import contextlib
 import math
 import pathlib
 from collections.abc import Callable, Generator
-from typing import IO, Any, Union
+from typing import IO, TYPE_CHECKING, Any, Union
 from uuid import uuid4
 
 import pyarrow as pa
@@ -46,6 +46,10 @@ from daft.sql.sql_reader import SQLReader
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
+
+if TYPE_CHECKING:
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table import TableProperties as IcebergTableProperties
 
 
 @contextlib.contextmanager
@@ -410,7 +414,7 @@ def write_tabular(
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
 
-    from daft.utils import ARROW_VERSION
+    pass
 
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     if isinstance(path, pathlib.Path):
@@ -492,28 +496,17 @@ def write_tabular(
             visited_paths.append(written_file.path)
             partition_idx.append(i)
 
-        kwargs = dict()
-
-        if ARROW_VERSION >= (7, 0, 0):
-            kwargs["max_rows_per_file"] = rows_per_file
-            kwargs["min_rows_per_group"] = rows_per_row_group
-            kwargs["max_rows_per_group"] = rows_per_row_group
-
-        if ARROW_VERSION >= (8, 0, 0) and not is_local_fs:
-            kwargs["create_dir"] = False
-
-        pads.write_dataset(
-            arrow_table,
-            base_dir=full_path,
-            basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+        _write_tabular_arrow_table(
+            arrow_table=arrow_table,
+            schema=arrow_table.schema,
+            full_path=full_path,
             format=format,
-            partitioning=None,
-            file_options=opts,
+            opts=opts,
+            fs=fs,
+            rows_per_file=rows_per_file,
+            rows_per_row_group=rows_per_row_group,
+            create_dir=is_local_fs,
             file_visitor=file_visitor,
-            use_threads=True,
-            existing_data_behavior="overwrite_or_ignore",
-            filesystem=fs,
-            **kwargs,
         )
 
     data_dict: dict[str, Any] = {
@@ -527,3 +520,184 @@ def write_tabular(
         for c_name in partition_values.column_names():
             data_dict[c_name] = partition_values.get_column(c_name).take(partition_idx_series)
     return MicroPartition.from_pydict(data_dict)
+
+
+def coerce_pyarrow_table_to_schema(pa_table: pa.Table, input_schema: pa.Schema) -> pa.Table:
+    """Coerces a PyArrow table to the supplied schema
+
+    1. For each field in `pa_table`, cast it to the field in `input_schema` if one with a matching name
+        is available
+    2. Reorder the fields in the casted table to the supplied schema, dropping any fields in `pa_table`
+        that do not exist in the supplied schema
+    3. If any fields in the supplied schema are not present, add a null array of the correct type
+
+    Args:
+        pa_table (pa.Table): Table to coerce
+        input_schema (pa.Schema): Schema to coerce to
+
+    Returns:
+        pa.Table: Table with schema == `input_schema`
+    """
+    input_schema_names = set(input_schema.names)
+
+    # Perform casting of types to provided schema's types
+    cast_to_schema = [
+        input_schema.field(inferred_field.name) if inferred_field.name in input_schema_names else inferred_field
+        for inferred_field in pa_table.schema
+    ]
+    casted_table = pa_table.cast(pa.schema(cast_to_schema))
+
+    # Reorder and pad columns with a null column where necessary
+    pa_table_column_names = set(casted_table.column_names)
+    columns = []
+    for name in input_schema.names:
+        if name in pa_table_column_names:
+            columns.append(casted_table[name])
+        else:
+            columns.append(pa.nulls(len(casted_table), type=input_schema.field(name).type))
+    return pa.table(columns, schema=input_schema)
+
+
+def write_iceberg(
+    mp: MicroPartition,
+    base_path: str,
+    schema: IcebergSchema,
+    properties: IcebergTableProperties,
+    spec_id: int | None,
+    io_config: IOConfig | None = None,
+):
+
+    from pyiceberg.io.pyarrow import (
+        compute_statistics_plan,
+        fill_parquet_file_metadata,
+        parquet_path_to_id_mapping,
+        schema_to_pyarrow,
+    )
+    from pyiceberg.manifest import DataFile, DataFileContent
+    from pyiceberg.manifest import FileFormat as IcebergFileFormat
+    from pyiceberg.typedef import Record
+
+    [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
+    if isinstance(base_path, pathlib.Path):
+        path_str = str(base_path)
+    else:
+        path_str = base_path
+
+    protocol = get_protocol_from_path(path_str)
+    canonicalized_protocol = canonicalize_protocol(protocol)
+
+    data_files = []
+
+    def file_visitor(written_file, protocol=protocol):
+
+        file_path = f"{protocol}://{written_file.path}"
+        size = written_file.size
+        metadata = written_file.metadata
+        # TODO Version guard pyarrow version
+        data_file = DataFile(
+            content=DataFileContent.DATA,
+            file_path=file_path,
+            file_format=IcebergFileFormat.PARQUET,
+            partition=Record(),
+            file_size_in_bytes=size,
+            # After this has been fixed:
+            # https://github.com/apache/iceberg-python/issues/271
+            # sort_order_id=task.sort_order_id,
+            sort_order_id=None,
+            # Just copy these from the table for now
+            spec_id=spec_id,
+            equality_ids=None,
+            key_metadata=None,
+        )
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=metadata,
+            stats_columns=compute_statistics_plan(schema, properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+        data_files.append(data_file)
+
+    is_local_fs = canonicalized_protocol == "file"
+
+    execution_config = get_context().daft_execution_config
+    inflation_factor = execution_config.parquet_inflation_factor
+
+    # TODO: these should be populate by `properties` but pyiceberg doesn't support them yet
+    target_file_size = 512 * 1024 * 1024
+    TARGET_ROW_GROUP_SIZE = 128 * 1024 * 1024
+
+    arrow_table = mp.to_arrow()
+
+    file_schema = schema_to_pyarrow(schema)
+
+    # This ensures that we populate field_id for iceberg as well as fill in null values where needed
+    # This might break for nested fields with large_strings
+    # we should test that behavior
+    arrow_table = coerce_pyarrow_table_to_schema(arrow_table, file_schema)
+
+    size_bytes = arrow_table.nbytes
+
+    target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+    num_rows = len(arrow_table)
+
+    rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+
+    target_row_groups = max(math.ceil(size_bytes / TARGET_ROW_GROUP_SIZE / inflation_factor), 1)
+    rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
+
+    format = pads.ParquetFileFormat()
+
+    _write_tabular_arrow_table(
+        arrow_table=arrow_table,
+        schema=file_schema,
+        full_path=resolved_path,
+        format=format,
+        opts=format.make_write_options(compression="zstd"),
+        fs=fs,
+        rows_per_file=rows_per_file,
+        rows_per_row_group=rows_per_row_group,
+        create_dir=is_local_fs,
+        file_visitor=file_visitor,
+    )
+
+    return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
+
+
+def _write_tabular_arrow_table(
+    arrow_table: pa.Table,
+    schema: pa.Schema | None,
+    full_path: str,
+    format: pads.FileFormat,
+    opts: pads.FileWriteOptions | None,
+    fs: Any,
+    rows_per_file: int,
+    rows_per_row_group: int,
+    create_dir: bool,
+    file_visitor: Callable | None,
+):
+    kwargs = dict()
+
+    from daft.utils import ARROW_VERSION
+
+    if ARROW_VERSION >= (7, 0, 0):
+        kwargs["max_rows_per_file"] = rows_per_file
+        kwargs["min_rows_per_group"] = rows_per_row_group
+        kwargs["max_rows_per_group"] = rows_per_row_group
+
+    if ARROW_VERSION >= (8, 0, 0) and not create_dir:
+        kwargs["create_dir"] = False
+
+    pads.write_dataset(
+        arrow_table,
+        schema=schema,
+        base_dir=full_path,
+        basename_template=str(uuid4()) + "-{i}." + format.default_extname,
+        format=format,
+        partitioning=None,
+        file_options=opts,
+        file_visitor=file_visitor,
+        use_threads=True,
+        existing_data_behavior="overwrite_or_ignore",
+        filesystem=fs,
+        **kwargs,
+    )

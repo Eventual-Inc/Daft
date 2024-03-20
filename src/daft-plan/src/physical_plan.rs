@@ -27,6 +27,9 @@ use crate::{
     physical_ops::*,
 };
 
+#[cfg(feature = "python")]
+use crate::sink_info::IcebergCatalogInfo;
+
 pub(crate) type PhysicalPlanRef = Arc<PhysicalPlan>;
 
 /// Physical plan for a Daft query.
@@ -59,6 +62,8 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    #[cfg(feature = "python")]
+    IcebergWrite(IcebergWrite),
 }
 
 impl PhysicalPlan {
@@ -197,6 +202,10 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(..) => {
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
+            }
         }
     }
 
@@ -265,6 +274,8 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(_) | Self::TabularWriteCsv(_) | Self::TabularWriteJson(_) => {
                 None
             }
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(_) => None,
         }
     }
 
@@ -290,6 +301,8 @@ impl PhysicalPlan {
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left, right],
             Self::BroadcastJoin(BroadcastJoin {
                 broadcaster,
@@ -328,6 +341,8 @@ impl PhysicalPlan {
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteJson(TabularWriteJson { schema, file_info, .. }) => Self::TabularWriteJson(TabularWriteJson::new(schema.clone(), file_info.clone(), input.clone())),
+                #[cfg(feature = "python")]
+                Self::IcebergWrite(IcebergWrite { schema, iceberg_info, .. }) => Self::IcebergWrite(IcebergWrite::new(schema.clone(), iceberg_info.clone(), input.clone())),
                 _ => panic!("Physical op {:?} has two inputs, but got one", self),
             },
             [input1, input2] => match self {
@@ -379,6 +394,8 @@ impl PhysicalPlan {
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
             Self::TabularWriteJson(..) => "TabularWriteJson",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(..) => "IcebergWrite",
         };
         name.to_string()
     }
@@ -415,6 +432,8 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            #[cfg(feature = "python")]
+            Self::IcebergWrite(iceberg_info) => iceberg_info.multiline_display(),
         }
     }
 
@@ -510,6 +529,32 @@ fn tabular_write(
             compression.clone(),
             part_cols,
             io_config
+                .as_ref()
+                .map(|cfg| common_io_config::python::IOConfig {
+                    config: cfg.clone(),
+                }),
+        ))?;
+    Ok(py_iter.into())
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "python")]
+fn iceberg_write(
+    py: Python<'_>,
+    upstream_iter: PyObject,
+    iceberg_info: &IcebergCatalogInfo,
+) -> PyResult<PyObject> {
+    let py_iter = py
+        .import(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+        .getattr(pyo3::intern!(py, "write_iceberg"))?
+        .call1((
+            upstream_iter,
+            &iceberg_info.table_location,
+            &iceberg_info.iceberg_schema,
+            &iceberg_info.iceberg_properties,
+            iceberg_info.spec_id,
+            iceberg_info
+                .io_config
                 .as_ref()
                 .map(|cfg| common_io_config::python::IOConfig {
                     config: cfg.clone(),
@@ -953,6 +998,12 @@ impl PhysicalPlan {
                 partition_cols,
                 io_config,
             ),
+            #[cfg(feature = "python")]
+            PhysicalPlan::IcebergWrite(IcebergWrite {
+                schema: _,
+                iceberg_info,
+                input,
+            }) => iceberg_write(py, input.to_partition_tasks(py, psets)?, iceberg_info),
         }
     }
 }
