@@ -17,6 +17,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Set,
     Tuple,
@@ -343,8 +344,6 @@ class DataFrame:
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
-        Currently generates a parquet file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
-
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
@@ -395,8 +394,6 @@ class DataFrame:
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
-        Currently generates a csv file per partition unless `partition_cols` are used, then the number of files can equal the number of partitions times the number of values of partition col.
-
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
 
@@ -431,7 +428,23 @@ class DataFrame:
         result_df._preview = write_df._preview
         return result_df
 
-    def write_iceberg(self, table: "IcebergTable", mode: str = "append") -> "DataFrame":
+    @DataframePublicAPI
+    def write_iceberg(
+        self, table: "IcebergTable", mode: Union[Literal["append"], Literal["overwrite"]] = "append"
+    ) -> "DataFrame":
+        """Writes the DataFrame to an Iceberg Table, returning a new DataFrame with the operations that occurred.
+        Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
+
+        Args:
+            table (IcebergTable): Destination Iceberg Table to write dataframe to.
+            mode (Union[Literal[&quot;append&quot;], Literal[&quot;overwrite&quot;]], optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to "append".
+
+        Returns:
+            DataFrame: The operations that occurred with this write.
+        """
 
         if len(table.spec().fields) > 0:
             raise ValueError("Cannot write to partitioned Iceberg tables")
@@ -458,6 +471,7 @@ class DataFrame:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
 
         # We perform the merge here since IcebergTable is not pickle-able
+        # We should be able to move to a transaction API for iceberg 0.7.0
         merge = _MergingSnapshotProducer(operation=operation, table=table)
 
         builder = self._builder.write_iceberg(table)
