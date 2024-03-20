@@ -577,15 +577,23 @@ def write_iceberg(
     from pyiceberg.manifest import FileFormat as IcebergFileFormat
     from pyiceberg.typedef import Record
 
+    [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
+    if isinstance(base_path, pathlib.Path):
+        path_str = str(base_path)
+    else:
+        path_str = base_path
+
+    protocol = get_protocol_from_path(path_str)
+    canonicalized_protocol = canonicalize_protocol(protocol)
+
     data_files = []
 
-    def file_visitor(written_file):
+    def file_visitor(written_file, protocol=protocol):
 
-        file_path = written_file.path
+        file_path = f"{protocol}://{written_file.path}"
         size = written_file.size
         metadata = written_file.metadata
         # TODO Version guard pyarrow version
-
         data_file = DataFile(
             content=DataFileContent.DATA,
             file_path=file_path,
@@ -608,15 +616,6 @@ def write_iceberg(
             parquet_column_mapping=parquet_path_to_id_mapping(schema),
         )
         data_files.append(data_file)
-
-    [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
-    if isinstance(base_path, pathlib.Path):
-        path_str = str(base_path)
-    else:
-        path_str = base_path
-
-    protocol = get_protocol_from_path(path_str)
-    canonicalized_protocol = canonicalize_protocol(protocol)
 
     is_local_fs = canonicalized_protocol == "file"
 
