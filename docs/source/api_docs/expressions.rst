@@ -69,6 +69,25 @@ Logical
     Expression.__ge__
     Expression.is_in
 
+.. _api=aggregation-expression:
+
+Aggregation
+###########
+
+The following can be used with DataFrame.agg or GroupedDataFrame.agg
+
+.. autosummary::
+   :toctree: doc_gen/expression_methods
+
+   Expression.count
+   Expression.sum
+   Expression.mean
+   Expression.min
+   Expression.max
+   Expression.any_value
+   Expression.agg_list
+   Expression.agg_concat
+
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
 

@@ -343,34 +343,50 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+        """Counts the number of values in the expression.
+
+        Args:
+            mode: whether to count all values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+        """
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
     def sum(self) -> Expression:
+        """Calculates the sum of the values in the expression"""
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
     def mean(self) -> Expression:
+        """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:
+        """Calculates the minimum value in the expression"""
         expr = self._expr.min()
         return Expression._from_pyexpr(expr)
 
     def max(self) -> Expression:
+        """Calculates the maximum value in the expression"""
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
     def any_value(self, ignore_nulls=False) -> Expression:
+        """Returns any value in the expression
+
+        Args:
+            ignore_nulls: whether to ignore null values when selecting the value. Defaults to False.
+        """
         expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
     def agg_list(self) -> Expression:
+        """Aggregates the values in the expression into a list"""
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
+        """Aggregates the values in the expression into a single string by concatenating them"""
         expr = self._expr.agg_concat()
         return Expression._from_pyexpr(expr)
 
