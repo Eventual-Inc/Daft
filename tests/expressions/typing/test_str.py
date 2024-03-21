@@ -118,5 +118,15 @@ def test_str_left(binary_data_fixture, op, request):
         data=binary_data_fixture,
         expr=op(col(lhs.name()), col(rhs.name())),
         run_kernel=lambda: op(lhs, rhs),
-        resolvable=(lhs.datatype() == DataType.string()) and (rhs.datatype() == DataType.uint32()),
+        resolvable=(lhs.datatype() == DataType.string())
+        and (
+            rhs.datatype() == DataType.int64()
+            or rhs.datatype() == DataType.int32()
+            or rhs.datatype() == DataType.int16()
+            or rhs.datatype() == DataType.int8()
+            or rhs.datatype() == DataType.uint64()
+            or rhs.datatype() == DataType.uint32()
+            or rhs.datatype() == DataType.uint16()
+            or rhs.datatype() == DataType.uint8()
+        ),
     )

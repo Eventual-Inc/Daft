@@ -45,6 +45,10 @@ impl Series {
         self.downcast()
     }
 
+    pub fn i128(&self) -> DaftResult<&UInt64Array> {
+        self.downcast()
+    }
+
     pub fn u8(&self) -> DaftResult<&UInt8Array> {
         self.downcast()
     }

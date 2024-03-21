@@ -18,14 +18,14 @@ impl FunctionEvaluator for LeftEvaluator {
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
-            [data, pattern] => match (data.to_field(schema), pattern.to_field(schema)) {
-                (Ok(data_field), Ok(pattern_field)) => {
-                    match (&data_field.dtype, &pattern_field.dtype) {
-                        (DataType::Utf8, DataType::UInt32) => {
+            [data, nchars] => match (data.to_field(schema), nchars.to_field(schema)) {
+                (Ok(data_field), Ok(nchars_field)) => {
+                    match (&data_field.dtype, &nchars_field.dtype) {
+                        (DataType::Utf8, dt) if dt.is_integer() => {
                             Ok(Field::new(data_field.name, DataType::Utf8))
                         }
                         _ => Err(DaftError::TypeError(format!(
-                            "Expects inputs to left to be utf8 and uint32, but received {data_field} and {pattern_field}",
+                            "Expects inputs to left to be utf8 and uint32, but received {data_field} and {nchars_field}",
                         ))),
                     }
                 }
@@ -40,7 +40,7 @@ impl FunctionEvaluator for LeftEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [data, pattern] => data.utf8_left(pattern),
+            [data, nchars] => data.utf8_left(nchars),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()

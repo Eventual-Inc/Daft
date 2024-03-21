@@ -414,7 +414,21 @@ def test_series_utf8_left_mismatch_len() -> None:
         s.str.left(nchars)
 
 
-def test_series_utf8_left_bad_pattern() -> None:
+def test_series_utf8_left_bad_nchars() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     with pytest.raises(ValueError):
         s.str.left(1)
+
+
+def test_series_utf8_left_bad_nchars_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
+
+
+def test_series_utf8_left_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    nchars = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
