@@ -890,6 +890,14 @@ class ExpressionListNamespace(ExpressionNamespace):
         default_expr = lit(default)
         return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
 
+    def sum(self) -> Expression:
+        """Sums each list. Empty lists and lists with all nulls yield null.
+
+        Returns:
+            Expression: an expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_sum())
+
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:

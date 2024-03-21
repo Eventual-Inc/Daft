@@ -1,17 +1,20 @@
 use std::iter::repeat;
+use std::ops::Add;
 
+use crate::array::DataArray;
 use crate::array::{
     growable::{make_growable, Growable},
     FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{Int64Array, UInt64Array, Utf8Array};
+use crate::datatypes::{DaftNumericType, Int64Array, UInt64Array, Utf8Array};
 use crate::DataType;
 
 use crate::series::Series;
 
 use arrow2;
 
-use common_error::DaftResult;
+use arrow2::compute::aggregate::Sum;
+use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
 
@@ -169,6 +172,57 @@ impl ListArray {
             }
         }
     }
+
+    fn sum_data_array<T: DaftNumericType>(&self, arr: &DataArray<T>) -> DaftResult<Series>
+    where
+        <T::Native as arrow2::types::simd::Simd>::Simd:
+            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+    {
+        let sums = arrow2::types::IndexRange::new(0, self.len() as u64)
+            .map(|i| i as usize)
+            .map(|i| {
+                if let Some(validity) = self.validity() && !validity.get_bit(i) {
+                    return None;
+                }
+
+                let start = *self.offsets().get(i).unwrap() as usize;
+                let end = *self.offsets().get(i + 1).unwrap() as usize;
+
+                let slice = arr.slice(start, end).unwrap();
+                let slice_arr = slice.as_arrow();
+
+                arrow2::compute::aggregate::sum_primitive(slice_arr)
+            });
+
+        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
+
+        Series::try_from((self.name(), array))
+    }
+
+    pub fn sum(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+
+        match self.flat_child.data_type() {
+            Int8 | Int16 | Int32 | Int64 => {
+                let casted = self.flat_child.cast(&Int64)?;
+                let arr = casted.i64()?;
+
+                self.sum_data_array(arr)
+            }
+            UInt8 | UInt16 | UInt32 | UInt64 => {
+                let casted = self.flat_child.cast(&UInt64)?;
+                let arr = casted.u64()?;
+
+                self.sum_data_array(arr)
+            }
+            Float32 => self.sum_data_array(self.flat_child.f32()?),
+            Float64 => self.sum_data_array(self.flat_child.f64()?),
+            other => Err(DaftError::TypeError(format!(
+                "Sum not implemented for {}",
+                other
+            ))),
+        }
+    }
 }
 
 impl FixedSizeListArray {
@@ -300,6 +354,58 @@ impl FixedSizeListArray {
                 let idx_iter = idx.as_arrow().iter().map(|x| *x.unwrap());
                 self.get_children_helper(idx_iter, default)
             }
+        }
+    }
+
+    fn sum_data_array<T: DaftNumericType>(&self, arr: &DataArray<T>) -> DaftResult<Series>
+    where
+        <T::Native as arrow2::types::simd::Simd>::Simd:
+            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+    {
+        let step = self.fixed_element_len();
+        let sums = arrow2::types::IndexRange::new(0, self.len() as u64)
+            .map(|i| i as usize)
+            .map(|i| {
+                if let Some(validity) = self.validity() && !validity.get_bit(i) {
+                    return None;
+                }
+
+                let start = i * step;
+                let end = (i + 1) + step;
+
+                let slice = arr.slice(start, end).unwrap();
+                let slice_arr = slice.as_arrow();
+
+                arrow2::compute::aggregate::sum_primitive(slice_arr)
+            });
+
+        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
+
+        Series::try_from((self.name(), array))
+    }
+
+    pub fn sum(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+
+        match self.flat_child.data_type() {
+            Int8 | Int16 | Int32 | Int64 => {
+                let casted = self.flat_child.cast(&Int64)?;
+                let arr = casted.i64()?;
+
+                self.sum_data_array(arr)
+            }
+            UInt8 | UInt16 | UInt32 | UInt64 => {
+                let casted = self.flat_child.cast(&UInt64)?;
+                let arr = casted.u64()?;
+
+                self.sum_data_array(arr)
+            }
+            Float32 => self.sum_data_array(self.flat_child.f32()?),
+            Float64 => self.sum_data_array(self.flat_child.f64()?),
+            other => Err(DaftError::TypeError(format!(
+                "Sum not implemented for {}",
+                other
+            ))),
         }
     }
 }

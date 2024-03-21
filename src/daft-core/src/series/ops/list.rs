@@ -67,4 +67,15 @@ impl Series {
             ))),
         }
     }
+
+    pub fn list_sum(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.sum(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.sum(),
+            dt => Err(DaftError::TypeError(format!(
+                "Sum not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

@@ -482,6 +482,11 @@ impl PyExpr {
         Ok(get(&self.expr, &idx.expr, &default.expr).into())
     }
 
+    pub fn list_sum(&self) -> PyResult<Self> {
+        use crate::functions::list::sum;
+        Ok(sum(&self.expr).into())
+    }
+
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(&self.expr, name).into())

@@ -128,6 +128,39 @@ impl Field {
             ))),
         }
     }
+
+    pub fn to_sum(&self) -> DaftResult<Self> {
+        Ok(Field::new(
+            self.name.as_str(),
+            match &self.dtype {
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    DataType::Int64
+                }
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                    DataType::UInt64
+                }
+                DataType::Float32 => DataType::Float32,
+                DataType::Float64 => DataType::Float64,
+                other => {
+                    return Err(DaftError::TypeError(format!(
+                    "Expected input to sum() to be numeric but received dtype {} for column \"{}\"",
+                    other, self.name,
+                )))
+                }
+            },
+        ))
+    }
+
+    pub fn to_mean(&self) -> DaftResult<Self> {
+        if self.dtype.is_numeric() {
+            Ok(Field::new(self.name.as_str(), DataType::Float64))
+        } else {
+            Err(DaftError::TypeError(format!(
+                "Numeric mean is not implemented for column \"{}\" of type {}",
+                self.name, self.dtype,
+            )))
+        }
+    }
 }
 
 impl From<&ArrowField> for Field {
