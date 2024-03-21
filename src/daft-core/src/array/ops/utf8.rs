@@ -1,11 +1,12 @@
 use crate::{
-    array::ListArray,
-    datatypes::{BooleanArray, Field, UInt64Array, Utf8Array},
+    array::{DataArray, ListArray},
+    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Field, UInt64Array, Utf8Array},
     DataType, Series,
 };
-use arrow2;
+use arrow2::{self, array::Array};
 
 use common_error::{DaftError, DaftResult};
+use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
@@ -258,6 +259,98 @@ impl Utf8Array {
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn left<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let self_arrow = self.as_arrow();
+        let n_arrow = n.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || n_arrow.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+        match (self.len(), n_arrow.len()) {
+            // Matching len case:
+            (self_len, n_len) if self_len == n_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(n_arrow.iter())
+                    .map(|(val, n)| match (val, n) {
+                        (Some(val), Some(nchar)) => {
+                            let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "failed to cast rhs as usize {nchar}"
+                                ))
+                            })?;
+                            Ok(Some(val.chars().take(nchar).collect::<String>()))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let n_scalar_value = n.get(0);
+                match n_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(n_scalar_value) => {
+                        let n_scalar_value: usize =
+                            NumCast::from(n_scalar_value).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "failed to cast rhs as usize {n_scalar_value}"
+                                ))
+                            })?;
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(v.chars().take(n_scalar_value).collect::<String>())
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self case:
+            (1, n_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n_len)),
+                    Some(self_scalar_value) => {
+                        let arrow_result = n_arrow
+                            .iter()
+                            .map(|n| match n {
+                                None => Ok(None),
+                                Some(n) => {
+                                    let n: usize = NumCast::from(*n).ok_or_else(|| {
+                                        DaftError::ComputeError(format!(
+                                            "failed to cast rhs as usize {n}"
+                                        ))
+                                    })?;
+                                    Ok(Some(self_scalar_value.chars().take(n).collect::<String>()))
+                                }
+                            })
+                            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, n_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {n_len}"
+            ))),
+        }
     }
 
     fn binary_broadcasted_compare<ScalarKernel>(

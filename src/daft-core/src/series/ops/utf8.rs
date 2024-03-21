@@ -119,4 +119,39 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_left(&self, nchars: &Series) -> DaftResult<Series> {
+        match (self.data_type(), nchars.data_type()) {
+            (DataType::Utf8, DataType::UInt32) => {
+                Ok(self.utf8()?.left(nchars.u32()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int32) => {
+                Ok(self.utf8()?.left(nchars.i32()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::UInt64) => {
+                Ok(self.utf8()?.left(nchars.u64()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int64) => {
+                Ok(self.utf8()?.left(nchars.i64()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int8) => Ok(self.utf8()?.left(nchars.i8()?)?.into_series()),
+            (DataType::Utf8, DataType::UInt8) => Ok(self.utf8()?.left(nchars.u8()?)?.into_series()),
+            (DataType::Utf8, DataType::Int16) => {
+                Ok(self.utf8()?.left(nchars.i16()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::UInt16) => {
+                Ok(self.utf8()?.left(nchars.u16()?)?.into_series())
+            }
+            (DataType::Utf8, DataType::Int128) => {
+                Ok(self.utf8()?.left(nchars.i128()?)?.into_series())
+            }
+            (DataType::Null, dt) if dt.is_integer() => Ok(self.clone()),
+            (DataType::Utf8, dt) => Err(DaftError::TypeError(format!(
+                "Left not implemented for nchar type {dt}"
+            ))),
+            (dt, _) => Err(DaftError::TypeError(format!(
+                "Left not implemented for type {dt}"
+            ))),
+        }
+    }
 }

@@ -104,3 +104,29 @@ def test_str_capitalize():
         run_kernel=s.str.capitalize,
         resolvable=True,
     )
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        pytest.param(lambda data, pat: data.str.left(pat), id="left"),
+    ],
+)
+def test_str_left(binary_data_fixture, op, request):
+    lhs, rhs = binary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=binary_data_fixture,
+        expr=op(col(lhs.name()), col(rhs.name())),
+        run_kernel=lambda: op(lhs, rhs),
+        resolvable=(lhs.datatype() == DataType.string())
+        and (
+            rhs.datatype() == DataType.int64()
+            or rhs.datatype() == DataType.int32()
+            or rhs.datatype() == DataType.int16()
+            or rhs.datatype() == DataType.int8()
+            or rhs.datatype() == DataType.uint64()
+            or rhs.datatype() == DataType.uint32()
+            or rhs.datatype() == DataType.uint16()
+            or rhs.datatype() == DataType.uint8()
+        ),
+    )
