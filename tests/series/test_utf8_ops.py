@@ -372,46 +372,46 @@ def test_series_utf8_match_bad_pattern() -> None:
 
 
 @pytest.mark.parametrize(
-    ["data", "pattern", "expected"],
+    ["data", "nchars", "expected"],
     [
         # No Broadcast
         (["foo", "barbaz", "quux"], [0, 1, 2], ["", "b", "qu"]),
-        # Broadcast pattern
+        # Broadcast nchars
         (["foo", "barbaz", "quux"], [1], ["f", "b", "q"]),
         # Broadcast data
         (["foo"], [0, 1, 2], ["", "f", "fo"]),
         # Broadcast null data
         ([None], [0, 1, 2], [None, None, None]),
-        # Broadcast null pattern
+        # Broadcast null nchars
         (["foo", "barbaz", "quux"], [None], [None, None, None]),
         # Empty data.
         ([[], [0, 1], []]),
-        # Empty patterns.
+        # Empty nchars
         ([["foo"] * 4, [], []]),
         # Mixed-in nulls
         (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "b", None]),
         # All null data.
         ([None] * 4, [1] * 4, [None] * 4),
-        # All null patterns.
+        # All null nchars
         (["foo"] * 4, [None] * 4, [None] * 4),
         # Broadcasted null data.
         ([None], [1] * 4, [None] * 4),
-        # Broadcasted null pattern.
+        # Broadcasted null nchars
         (["foo"] * 4, [None], [None] * 4),
     ],
 )
-def test_series_utf8_left(data, pattern, expected) -> None:
+def test_series_utf8_left(data, nchars, expected) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
-    patterns = Series.from_arrow(pa.array(pattern, type=pa.uint32()))
-    result = s.str.left(patterns)
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    result = s.str.left(nchars)
     assert result.to_pylist() == expected
 
 
 def test_series_utf8_left_mismatch_len() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    pattern = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
     with pytest.raises(ValueError):
-        s.str.left(pattern)
+        s.str.left(nchars)
 
 
 def test_series_utf8_left_bad_pattern() -> None:

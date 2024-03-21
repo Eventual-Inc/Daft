@@ -329,8 +329,8 @@ impl Utf8Array {
                 }
             }
             // Mismatched len case:
-            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            (self_len, n_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {n_len}"
             ))),
         }
     }
