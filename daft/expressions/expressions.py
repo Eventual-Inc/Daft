@@ -854,8 +854,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.utf8_capitalize())
 
-    def left(self, pattern: int | Expression) -> Expression:
-        """Get the n left-most characters of a UTF-8 string
+    def left(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) left-most characters of each string
 
         Example:
             >>> col("x").str.left(3)
@@ -863,8 +863,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is the `n` left-most characters of `self`
         """
-        pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_left(pattern_expr._expr))
+        nchars_expr = Expression._to_expression(nchars)
+        return Expression._from_pyexpr(self._expr.utf8_left(nchars_expr._expr))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
