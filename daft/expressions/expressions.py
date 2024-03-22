@@ -350,6 +350,14 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
+    def approx_quantile(self) -> Expression:
+        expr = self._expr.approx_quantile()
+        return Expression._from_pyexpr(expr)
+
+    def approx_sketch(self) -> Expression:
+        expr = self._expr.approx_sketch()
+        return Expression._from_pyexpr(expr)
+
     def mean(self) -> Expression:
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)

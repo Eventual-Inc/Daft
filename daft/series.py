@@ -463,6 +463,14 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())
 
+    def approx_quantile(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.approx_quantile())
+
+    def approx_sketch(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.approx_sketch())
+
     def if_else(self, if_true: object, if_false: object) -> Series:
         if not isinstance(if_true, Series):
             raise ValueError(f"expected another Series but got {type(if_true)}")

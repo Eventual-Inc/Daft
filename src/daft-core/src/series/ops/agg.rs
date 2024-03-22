@@ -68,6 +68,58 @@ impl Series {
         }
     }
 
+    pub fn approx_quantile(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftApproxQuantileAggable;
+        use crate::datatypes::DataType::*;
+
+        match self.data_type() {
+            Binary => {
+                let casted = self.cast(&Binary)?;
+                match groups {
+                    Some(groups) => Ok(DaftApproxQuantileAggable::grouped_approx_quantile(
+                        &casted.binary()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => Ok(
+                        DaftApproxQuantileAggable::approx_quantile(&casted.binary()?)?
+                            .into_series(),
+                    ),
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Numeric approx quantile is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftApproxSketchAggable;
+        use crate::datatypes::DataType::*;
+
+        // Upcast all numeric types to float64 and compute approx_sketch.
+        match self.data_type() {
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+                let casted = self.cast(&Float64)?;
+                match groups {
+                    Some(groups) => Ok(DaftApproxSketchAggable::grouped_approx_sketch(
+                        &casted.f64()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => {
+                        Ok(DaftApproxSketchAggable::approx_sketch(&casted.f64()?)?.into_series())
+                    }
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Numeric approx sketch is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftMeanAggable;
         use crate::datatypes::DataType::*;

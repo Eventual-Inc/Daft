@@ -322,6 +322,8 @@ impl Table {
         match agg_expr {
             Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
             Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
+            ApproxQuantile(expr) => Series::approx_quantile(&self.eval_expression(expr)?, groups),
+            ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
             Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
             Max(expr) => Series::max(&self.eval_expression(expr)?, groups),

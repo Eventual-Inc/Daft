@@ -56,6 +56,8 @@ pub enum Expr {
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
+    ApproxQuantile(ExprRef),
+    ApproxSketch(ExprRef),
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
@@ -86,6 +88,8 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
+            | ApproxQuantile(expr)
+            | ApproxSketch(expr)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -106,6 +110,14 @@ impl AggExpr {
             Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
+            }
+            ApproxQuantile(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_approx_quantile()"))
+            }
+            ApproxSketch(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_approx_sketch()"))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -142,6 +154,8 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
+            | ApproxQuantile(expr)
+            | ApproxSketch(expr)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -181,6 +195,45 @@ impl AggExpr {
                         }
                     },
                 ))
+            }
+            ApproxQuantile(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                  field.name.as_str(),
+                  match &field.dtype {
+                      DataType::Binary => DataType::Float64,
+                      other => {
+                          return Err(DaftError::TypeError(format!(
+                              "Expected input to approx_quantile() to be binary but received dtype {} for column \"{}\"",
+                              other, field.name,
+                          )))
+                      }
+                  },
+              ))
+            }
+            ApproxSketch(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                field.name.as_str(),
+                match &field.dtype {
+                    DataType::Int8
+                    | DataType::Int16
+                    | DataType::Int32
+                    | DataType::Int64
+                    | DataType::UInt8
+                    | DataType::UInt16
+                    | DataType::UInt32
+                    | DataType::UInt64
+                    | DataType::Float32
+                    | DataType::Float64 => DataType::Binary,
+                    other => {
+                        return Err(DaftError::TypeError(format!(
+                            "Expected input to approx_sketch() to be numeric but received dtype {} for column \"{}\"",
+                            other, field.name,
+                        )))
+                    }
+                },
+            ))
             }
             Mean(expr) => {
                 let field = expr.to_field(schema)?;
@@ -275,6 +328,14 @@ impl Expr {
 
     pub fn sum(&self) -> Self {
         Expr::Agg(AggExpr::Sum(self.clone().into()))
+    }
+
+    pub fn approx_quantile(&self) -> Self {
+        Expr::Agg(AggExpr::ApproxQuantile(self.clone().into()))
+    }
+
+    pub fn approx_sketch(&self) -> Self {
+        Expr::Agg(AggExpr::ApproxSketch(self.clone().into()))
     }
 
     pub fn mean(&self) -> Self {
@@ -692,6 +753,8 @@ impl Display for AggExpr {
         match self {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
+            ApproxQuantile(expr) => write!(f, "approx_quantile({expr})"),
+            ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),

@@ -1,5 +1,7 @@
 mod abs;
 mod apply;
+mod approx_quantile;
+mod approx_sketch;
 mod arange;
 mod arithmetic;
 pub mod arrow2;
@@ -120,6 +122,18 @@ pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftApproxQuantileAggable {
+    type Output;
+    fn approx_quantile(&self) -> Self::Output;
+    fn grouped_approx_quantile(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftApproxSketchAggable {
+    type Output;
+    fn approx_sketch(&self) -> Self::Output;
+    fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMeanAggable {

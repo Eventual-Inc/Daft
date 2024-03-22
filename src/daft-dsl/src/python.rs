@@ -222,6 +222,14 @@ impl PyExpr {
         Ok(self.expr.sum().into())
     }
 
+    pub fn approx_quantile(&self) -> PyResult<Self> {
+        Ok(self.expr.approx_quantile().into())
+    }
+
+    pub fn approx_sketch(&self) -> PyResult<Self> {
+        Ok(self.expr.approx_sketch().into())
+    }
+
     pub fn mean(&self) -> PyResult<Self> {
         Ok(self.expr.mean().into())
     }
