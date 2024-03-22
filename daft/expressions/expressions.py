@@ -1076,16 +1076,27 @@ class ExpressionsProjection(Iterable[Expression]):
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns."""
 
-    def decode(self) -> Expression:
+    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Expression:
         """
         Decodes the binary data in this column into images.
 
         This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
 
+        Args:
+            on_error: Whether to raise when encountering an error, or log a warning and return a null
+
         Returns:
             Expression: An Image expression represnting an image column.
         """
-        return Expression._from_pyexpr(self._expr.image_decode())
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+
+        return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """
