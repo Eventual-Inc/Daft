@@ -368,8 +368,8 @@ impl PySeries {
         Ok(self.series.list_get(&idx.series, &default.series)?.into())
     }
 
-    pub fn image_decode(&self) -> PyResult<Self> {
-        Ok(self.series.image_decode()?.into())
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
+        Ok(self.series.image_decode(raise_error_on_failure)?.into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

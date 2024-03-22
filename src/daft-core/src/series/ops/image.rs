@@ -5,9 +5,9 @@ use crate::series::{IntoSeries, Series};
 use common_error::{DaftError, DaftResult};
 
 impl Series {
-    pub fn image_decode(&self) -> DaftResult<Series> {
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Binary => Ok(self.binary()?.image_decode()?.into_series()),
+            DataType::Binary => Ok(self.binary()?.image_decode(raise_error_on_failure)?.into_series()),
             dtype => Err(DaftError::ValueError(format!(
                 "Decoding in-memory data into images is only supported for binary arrays, but got {}", dtype
             ))),

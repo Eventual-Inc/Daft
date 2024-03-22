@@ -4,11 +4,11 @@ use daft_core::{
     series::Series,
 };
 
-use crate::Expr;
+use crate::{functions::FunctionExpr, Expr};
 
 use common_error::{DaftError, DaftResult};
 
-use super::super::FunctionEvaluator;
+use super::{super::FunctionEvaluator, ImageExpr};
 
 pub struct DecodeEvaluator {}
 
@@ -36,9 +36,19 @@ impl FunctionEvaluator for DecodeEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
+        let raise_error_on_failure = match expr {
+            Expr::Function {
+                func:
+                    FunctionExpr::Image(ImageExpr::Decode {
+                        raise_error_on_failure,
+                    }),
+                inputs: _,
+            } => raise_error_on_failure,
+            _ => panic!("DecodeEvaluator expects an Image::Decode expression"),
+        };
         match inputs {
-            [input] => input.image_decode(),
+            [input] => input.image_decode(*raise_error_on_failure),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()

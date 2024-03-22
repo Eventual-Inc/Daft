@@ -709,3 +709,12 @@ def test_bad_cast_fixed_shape_image():
 
     with pytest.raises(ValueError, match="Expected Numpy array to be of type: UInt8"):
         s.cast(target_dtype)
+
+
+def test_on_error_image_decode():
+    s = Series.from_pylist([b"not an image"])
+
+    with pytest.raises(ValueError, match="Decoding image from bytes failed"):
+        s.image.decode(on_error="raise")
+
+    s.image.decode(on_error="null").to_pylist() == [None]

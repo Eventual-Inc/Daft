@@ -447,9 +447,9 @@ impl PyExpr {
         Ok(left(&self.expr, &count.expr).into())
     }
 
-    pub fn image_decode(&self) -> PyResult<Self> {
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
-        Ok(decode(&self.expr).into())
+        Ok(decode(&self.expr, raise_error_on_failure).into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

@@ -17,7 +17,7 @@ use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ImageExpr {
-    Decode(),
+    Decode { raise_error_on_failure: bool },
     Encode { image_format: ImageFormat },
     Resize { w: u32, h: u32 },
     Crop(),
@@ -29,7 +29,7 @@ impl ImageExpr {
         use ImageExpr::*;
 
         match self {
-            Decode() => &DecodeEvaluator {},
+            Decode { .. } => &DecodeEvaluator {},
             Encode { .. } => &EncodeEvaluator {},
             Resize { .. } => &ResizeEvaluator {},
             Crop { .. } => &CropEvaluator {},
@@ -37,9 +37,11 @@ impl ImageExpr {
     }
 }
 
-pub fn decode(input: &Expr) -> Expr {
+pub fn decode(input: &Expr, raise_error_on_failure: bool) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Image(ImageExpr::Decode()),
+        func: super::FunctionExpr::Image(ImageExpr::Decode {
+            raise_error_on_failure,
+        }),
         inputs: vec![input.clone()],
     }
 }

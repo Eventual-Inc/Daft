@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import sys
 from typing import Any, TypeVar
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 import pyarrow as pa
 
@@ -685,8 +691,15 @@ class SeriesListNamespace(SeriesNamespace):
 
 
 class SeriesImageNamespace(SeriesNamespace):
-    def decode(self) -> Series:
-        return Series._from_pyseries(self._series.image_decode())
+    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Series:
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Series:
         if isinstance(image_format, str):
