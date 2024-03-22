@@ -868,13 +868,24 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
 
+    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+        """Counts the number of elements in each list
+
+        Args:
+            mode: The mode to use for counting. Defaults to CountMode.Valid
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        return Expression._from_pyexpr(self._expr.list_count(mode))
+
     def lengths(self) -> Expression:
         """Gets the length of each list
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_lengths())
+        return Expression._from_pyexpr(self._expr.list_count(CountMode.All))
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list
@@ -897,6 +908,14 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: an expression with the type of the list values
         """
         return Expression._from_pyexpr(self._expr.list_sum())
+
+    def mean(self) -> Expression:
+        """Calculates the mean of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_mean())
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

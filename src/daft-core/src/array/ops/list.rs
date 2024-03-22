@@ -6,8 +6,8 @@ use crate::array::{
     growable::{make_growable, Growable},
     FixedSizeListArray, ListArray,
 };
-use crate::datatypes::{DaftNumericType, Int64Array, UInt64Array, Utf8Array};
-use crate::DataType;
+use crate::datatypes::{DaftNumericType, Float64Array, Int64Array, UInt64Array, Utf8Array};
+use crate::{CountMode, DataType};
 
 use crate::series::Series;
 
@@ -45,11 +45,39 @@ fn join_arrow_list_of_utf8s(
 }
 
 impl ListArray {
-    pub fn lengths(&self) -> DaftResult<UInt64Array> {
-        let lengths = self.offsets().lengths().map(|l| Some(l as u64));
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+        let counts = match mode {
+            CountMode::All => self.offsets().lengths().map(|l| l as u64).collect(),
+            CountMode::Valid => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    if let Some(validity) = self.flat_child.validity() {
+                        (w[0]..w[1])
+                            .map(|i| validity.get_bit(i as usize) as u64)
+                            .sum()
+                    } else {
+                        (w[1] - w[0]) as u64
+                    }
+                })
+                .collect(),
+            CountMode::Null => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    if let Some(validity) = self.flat_child.validity() {
+                        (w[0]..w[1])
+                            .map(|i| !validity.get_bit(i as usize) as u64)
+                            .sum()
+                    } else {
+                        (w[1] - w[0]) as u64
+                    }
+                })
+                .collect(),
+        };
+
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_iter(lengths)
-                .with_validity(self.validity().cloned()),
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -223,30 +251,73 @@ impl ListArray {
             ))),
         }
     }
+
+    pub fn mean(&self) -> DaftResult<Float64Array> {
+        use crate::datatypes::DataType::*;
+
+        match self.flat_child.data_type() {
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+                let counts = self.count(CountMode::Valid)?;
+                let sum_series = self.sum()?.cast(&Float64)?;
+                let sums = sum_series.f64()?;
+
+                let means = counts
+                    .into_iter()
+                    .zip(sums)
+                    .map(|(count, sum)| match (count, sum) {
+                        (Some(count), Some(sum)) if *count != 0 => Some(sum / (*count as f64)),
+                        _ => None,
+                    });
+
+                let arr = Box::new(arrow2::array::PrimitiveArray::from_trusted_len_iter(means));
+
+                Ok(Float64Array::from((self.name(), arr)))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Mean not implemented for {}",
+                other
+            ))),
+        }
+    }
 }
 
 impl FixedSizeListArray {
-    pub fn lengths(&self) -> DaftResult<UInt64Array> {
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        match self.validity() {
-            None => Ok(UInt64Array::from((
-                self.name(),
-                repeat(size as u64)
-                    .take(self.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(validity) => {
-                let arrow_arr = arrow2::array::UInt64Array::from_iter(validity.iter().map(|v| {
-                    if v {
-                        Some(size as u64)
-                    } else {
-                        None
-                    }
-                }));
-                Ok(UInt64Array::from((self.name(), Box::new(arrow_arr))))
+        let counts = match mode {
+            CountMode::All => repeat(size as u64).take(self.len()).collect(),
+            CountMode::Valid => {
+                if let Some(validity) = self.flat_child.validity() {
+                    (0..self.len())
+                        .map(|i| {
+                            (0..size)
+                                .map(|j| validity.get_bit(i * size + j) as u64)
+                                .sum()
+                        })
+                        .collect()
+                } else {
+                    repeat(size as u64).take(self.len()).collect()
+                }
             }
-        }
+            CountMode::Null => {
+                if let Some(validity) = self.flat_child.validity() {
+                    (0..self.len())
+                        .map(|i| {
+                            (0..size)
+                                .map(|j| !validity.get_bit(i * size + j) as u64)
+                                .sum()
+                        })
+                        .collect()
+                } else {
+                    repeat(0).take(self.len()).collect()
+                }
+            }
+        };
+
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
     }
 
     pub fn explode(&self) -> DaftResult<Series> {
@@ -371,7 +442,7 @@ impl FixedSizeListArray {
                 }
 
                 let start = i * step;
-                let end = (i + 1) + step;
+                let end = (i + 1) * step;
 
                 let slice = arr.slice(start, end).unwrap();
                 let slice_arr = slice.as_arrow();
@@ -404,6 +475,34 @@ impl FixedSizeListArray {
             Float64 => self.sum_data_array(self.flat_child.f64()?),
             other => Err(DaftError::TypeError(format!(
                 "Sum not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn mean(&self) -> DaftResult<Float64Array> {
+        use crate::datatypes::DataType::*;
+
+        match self.flat_child.data_type() {
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | Float32 | Float64 => {
+                let counts = self.count(CountMode::Valid)?;
+                let sum_series = self.sum()?.cast(&Float64)?;
+                let sums = sum_series.f64()?;
+
+                let means = counts
+                    .into_iter()
+                    .zip(sums)
+                    .map(|(count, sum)| match (count, sum) {
+                        (Some(count), Some(sum)) if *count != 0 => Some(sum / (*count as f64)),
+                        _ => None,
+                    });
+
+                let arr = Box::new(arrow2::array::PrimitiveArray::from_trusted_len_iter(means));
+
+                Ok(Float64Array::from((self.name(), arr)))
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Mean not implemented for {}",
                 other
             ))),
         }

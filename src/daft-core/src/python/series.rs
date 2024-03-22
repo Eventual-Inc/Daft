@@ -352,8 +352,8 @@ impl PySeries {
         Ok(self.series.murmur3_32()?.into_series().into())
     }
 
-    pub fn list_lengths(&self) -> PyResult<Self> {
-        Ok(self.series.list_lengths()?.into_series().into())
+    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
+        Ok(self.series.list_count(mode)?.into_series().into())
     }
 
     pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {

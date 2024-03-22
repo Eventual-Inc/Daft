@@ -472,9 +472,9 @@ impl PyExpr {
         Ok(join(&self.expr, &delimiter.expr).into())
     }
 
-    pub fn list_lengths(&self) -> PyResult<Self> {
-        use crate::functions::list::lengths;
-        Ok(lengths(&self.expr).into())
+    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
+        use crate::functions::list::count;
+        Ok(count(&self.expr, mode).into())
     }
 
     pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
@@ -485,6 +485,11 @@ impl PyExpr {
     pub fn list_sum(&self) -> PyResult<Self> {
         use crate::functions::list::sum;
         Ok(sum(&self.expr).into())
+    }
+
+    pub fn list_mean(&self) -> PyResult<Self> {
+        use crate::functions::list::mean;
+        Ok(mean(&self.expr).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
