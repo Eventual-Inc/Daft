@@ -76,7 +76,11 @@ where
     <L::PhysicalType as DaftDataType>::ArrayType: FullNull,
 {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let physical = <L::PhysicalType as DaftDataType>::ArrayType::full_null(name, dtype, length);
+        let physical = <L::PhysicalType as DaftDataType>::ArrayType::full_null(
+            name,
+            &dtype.to_physical(),
+            length,
+        );
         Self::new(Field::new(name, dtype.clone()), physical)
     }
 
