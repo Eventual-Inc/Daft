@@ -304,6 +304,10 @@ impl PySeries {
         Ok(self.series.utf8_left(&pattern.series)?.into())
     }
 
+    pub fn utf8_right(&self, pattern: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_right(&pattern.series)?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }
