@@ -698,7 +698,7 @@ class SeriesImageNamespace(SeriesNamespace):
         elif on_error == "null":
             raise_on_error = False
         else:
-            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
         return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Series:

@@ -714,6 +714,9 @@ def test_bad_cast_fixed_shape_image():
 def test_on_error_image_decode():
     s = Series.from_pylist([b"not an image"])
 
+    with pytest.raises(NotImplementedError, match="Unimplemented on_error option"):
+        s.image.decode(on_error="NOT IMPLEMENTED")
+
     with pytest.raises(ValueError, match="Decoding image from bytes failed"):
         s.image.decode(on_error="raise")
 
