@@ -2,7 +2,9 @@ mod count;
 mod explode;
 mod get;
 mod join;
+mod max;
 mod mean;
+mod min;
 mod sum;
 
 use count::CountEvaluator;
@@ -10,7 +12,9 @@ use daft_core::CountMode;
 use explode::ExplodeEvaluator;
 use get::GetEvaluator;
 use join::JoinEvaluator;
+use max::MaxEvaluator;
 use mean::MeanEvaluator;
+use min::MinEvaluator;
 use serde::{Deserialize, Serialize};
 use sum::SumEvaluator;
 
@@ -26,6 +30,8 @@ pub enum ListExpr {
     Get,
     Sum,
     Mean,
+    Min,
+    Max,
 }
 
 impl ListExpr {
@@ -39,6 +45,8 @@ impl ListExpr {
             Get => &GetEvaluator {},
             Sum => &SumEvaluator {},
             Mean => &MeanEvaluator {},
+            Min => &MinEvaluator {},
+            Max => &MaxEvaluator {},
         }
     }
 }
@@ -81,6 +89,20 @@ pub fn sum(input: &Expr) -> Expr {
 pub fn mean(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::List(ListExpr::Mean),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn min(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::List(ListExpr::Min),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn max(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::List(ListExpr::Max),
         inputs: vec![input.clone()],
     }
 }

@@ -90,4 +90,26 @@ impl Series {
             ))),
         }
     }
+
+    pub fn list_min(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.min(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.min(),
+            dt => Err(DaftError::TypeError(format!(
+                "Min not implemented for {}",
+                dt
+            ))),
+        }
+    }
+
+    pub fn list_max(&self) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::List(_) => self.list()?.max(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
+            dt => Err(DaftError::TypeError(format!(
+                "Max not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

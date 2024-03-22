@@ -917,6 +917,22 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(self._expr.list_mean())
 
+    def min(self) -> Expression:
+        """Calculates the minimum of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_min())
+
+    def max(self) -> Expression:
+        """Calculates the maximum of each list. If no non-null values in a list, the result is null.
+
+        Returns:
+            Expression: a Float64 expression with the type of the list values
+        """
+        return Expression._from_pyexpr(self._expr.list_max())
+
 
 class ExpressionStructNamespace(ExpressionNamespace):
     def get(self, name: str) -> Expression:

@@ -492,6 +492,16 @@ impl PyExpr {
         Ok(mean(&self.expr).into())
     }
 
+    pub fn list_min(&self) -> PyResult<Self> {
+        use crate::functions::list::min;
+        Ok(min(&self.expr).into())
+    }
+
+    pub fn list_max(&self) -> PyResult<Self> {
+        use crate::functions::list::max;
+        Ok(max(&self.expr).into())
+    }
+
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(&self.expr, name).into())

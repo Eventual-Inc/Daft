@@ -13,10 +13,13 @@ use crate::series::Series;
 
 use arrow2;
 
+use arrow2::array::PrimitiveArray;
 use arrow2::compute::aggregate::Sum;
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
+
+type Arrow2AggregateFn<'a, T> = &'a dyn Fn(&PrimitiveArray<T>) -> Option<T>;
 
 fn join_arrow_list_of_utf8s(
     list_element: Option<&dyn arrow2::array::Array>,
@@ -201,7 +204,11 @@ impl ListArray {
         }
     }
 
-    fn sum_data_array<T: DaftNumericType>(&self, arr: &DataArray<T>) -> DaftResult<Series>
+    fn agg_data_array<T: DaftNumericType>(
+        &self,
+        arr: &DataArray<T>,
+        op: Arrow2AggregateFn<T::Native>,
+    ) -> DaftResult<Series>
     where
         <T::Native as arrow2::types::simd::Simd>::Simd:
             Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
@@ -219,7 +226,7 @@ impl ListArray {
                 let slice = arr.slice(start, end).unwrap();
                 let slice_arr = slice.as_arrow();
 
-                arrow2::compute::aggregate::sum_primitive(slice_arr)
+                op(slice_arr)
             });
 
         let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
@@ -229,22 +236,23 @@ impl ListArray {
 
     pub fn sum(&self) -> DaftResult<Series> {
         use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::sum_primitive;
 
         match self.flat_child.data_type() {
             Int8 | Int16 | Int32 | Int64 => {
                 let casted = self.flat_child.cast(&Int64)?;
                 let arr = casted.i64()?;
 
-                self.sum_data_array(arr)
+                self.agg_data_array(arr, &sum_primitive)
             }
             UInt8 | UInt16 | UInt32 | UInt64 => {
                 let casted = self.flat_child.cast(&UInt64)?;
                 let arr = casted.u64()?;
 
-                self.sum_data_array(arr)
+                self.agg_data_array(arr, &sum_primitive)
             }
-            Float32 => self.sum_data_array(self.flat_child.f32()?),
-            Float64 => self.sum_data_array(self.flat_child.f64()?),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &sum_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &sum_primitive),
             other => Err(DaftError::TypeError(format!(
                 "Sum not implemented for {}",
                 other
@@ -275,6 +283,50 @@ impl ListArray {
             }
             other => Err(DaftError::TypeError(format!(
                 "Mean not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn min(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::min_primitive;
+
+        match self.flat_child.data_type() {
+            Int8 => self.agg_data_array(self.flat_child.i8()?, &min_primitive),
+            Int16 => self.agg_data_array(self.flat_child.i16()?, &min_primitive),
+            Int32 => self.agg_data_array(self.flat_child.i32()?, &min_primitive),
+            Int64 => self.agg_data_array(self.flat_child.i64()?, &min_primitive),
+            UInt8 => self.agg_data_array(self.flat_child.u8()?, &min_primitive),
+            UInt16 => self.agg_data_array(self.flat_child.u16()?, &min_primitive),
+            UInt32 => self.agg_data_array(self.flat_child.u32()?, &min_primitive),
+            UInt64 => self.agg_data_array(self.flat_child.u64()?, &min_primitive),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &min_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &min_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Min not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn max(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::max_primitive;
+
+        match self.flat_child.data_type() {
+            Int8 => self.agg_data_array(self.flat_child.i8()?, &max_primitive),
+            Int16 => self.agg_data_array(self.flat_child.i16()?, &max_primitive),
+            Int32 => self.agg_data_array(self.flat_child.i32()?, &max_primitive),
+            Int64 => self.agg_data_array(self.flat_child.i64()?, &max_primitive),
+            UInt8 => self.agg_data_array(self.flat_child.u8()?, &max_primitive),
+            UInt16 => self.agg_data_array(self.flat_child.u16()?, &max_primitive),
+            UInt32 => self.agg_data_array(self.flat_child.u32()?, &max_primitive),
+            UInt64 => self.agg_data_array(self.flat_child.u64()?, &max_primitive),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &max_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &max_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Max not implemented for {}",
                 other
             ))),
         }
@@ -428,7 +480,11 @@ impl FixedSizeListArray {
         }
     }
 
-    fn sum_data_array<T: DaftNumericType>(&self, arr: &DataArray<T>) -> DaftResult<Series>
+    fn agg_data_array<T: DaftNumericType>(
+        &self,
+        arr: &DataArray<T>,
+        op: Arrow2AggregateFn<T::Native>,
+    ) -> DaftResult<Series>
     where
         <T::Native as arrow2::types::simd::Simd>::Simd:
             Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
@@ -447,7 +503,7 @@ impl FixedSizeListArray {
                 let slice = arr.slice(start, end).unwrap();
                 let slice_arr = slice.as_arrow();
 
-                arrow2::compute::aggregate::sum_primitive(slice_arr)
+                op(slice_arr)
             });
 
         let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
@@ -457,22 +513,23 @@ impl FixedSizeListArray {
 
     pub fn sum(&self) -> DaftResult<Series> {
         use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::sum_primitive;
 
         match self.flat_child.data_type() {
             Int8 | Int16 | Int32 | Int64 => {
                 let casted = self.flat_child.cast(&Int64)?;
                 let arr = casted.i64()?;
 
-                self.sum_data_array(arr)
+                self.agg_data_array(arr, &sum_primitive)
             }
             UInt8 | UInt16 | UInt32 | UInt64 => {
                 let casted = self.flat_child.cast(&UInt64)?;
                 let arr = casted.u64()?;
 
-                self.sum_data_array(arr)
+                self.agg_data_array(arr, &sum_primitive)
             }
-            Float32 => self.sum_data_array(self.flat_child.f32()?),
-            Float64 => self.sum_data_array(self.flat_child.f64()?),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &sum_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &sum_primitive),
             other => Err(DaftError::TypeError(format!(
                 "Sum not implemented for {}",
                 other
@@ -503,6 +560,50 @@ impl FixedSizeListArray {
             }
             other => Err(DaftError::TypeError(format!(
                 "Mean not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn min(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::min_primitive;
+
+        match self.flat_child.data_type() {
+            Int8 => self.agg_data_array(self.flat_child.i8()?, &min_primitive),
+            Int16 => self.agg_data_array(self.flat_child.i16()?, &min_primitive),
+            Int32 => self.agg_data_array(self.flat_child.i32()?, &min_primitive),
+            Int64 => self.agg_data_array(self.flat_child.i64()?, &min_primitive),
+            UInt8 => self.agg_data_array(self.flat_child.u8()?, &min_primitive),
+            UInt16 => self.agg_data_array(self.flat_child.u16()?, &min_primitive),
+            UInt32 => self.agg_data_array(self.flat_child.u32()?, &min_primitive),
+            UInt64 => self.agg_data_array(self.flat_child.u64()?, &min_primitive),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &min_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &min_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Min not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn max(&self) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::max_primitive;
+
+        match self.flat_child.data_type() {
+            Int8 => self.agg_data_array(self.flat_child.i8()?, &max_primitive),
+            Int16 => self.agg_data_array(self.flat_child.i16()?, &max_primitive),
+            Int32 => self.agg_data_array(self.flat_child.i32()?, &max_primitive),
+            Int64 => self.agg_data_array(self.flat_child.i64()?, &max_primitive),
+            UInt8 => self.agg_data_array(self.flat_child.u8()?, &max_primitive),
+            UInt16 => self.agg_data_array(self.flat_child.u16()?, &max_primitive),
+            UInt32 => self.agg_data_array(self.flat_child.u32()?, &max_primitive),
+            UInt64 => self.agg_data_array(self.flat_child.u64()?, &max_primitive),
+            Float32 => self.agg_data_array(self.flat_child.f32()?, &max_primitive),
+            Float64 => self.agg_data_array(self.flat_child.f64()?, &max_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Max not implemented for {}",
                 other
             ))),
         }
