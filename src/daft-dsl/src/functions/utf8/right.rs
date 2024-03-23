@@ -13,7 +13,7 @@ pub(super) struct RightEvaluator {}
 
 impl FunctionEvaluator for RightEvaluator {
     fn fn_name(&self) -> &'static str {
-        "left"
+        "right"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
