@@ -407,11 +407,7 @@ impl ImageArray {
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         if data.is_empty() {
-            // Create an all-null array if the data array is empty.
-            return Ok(ImageArray::new(
-                Field::new(name, data_type.clone()),
-                StructArray::empty(name, &data_type.to_physical()),
-            ));
+            return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
