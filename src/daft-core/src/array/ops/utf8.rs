@@ -62,6 +62,17 @@ where
     ))
 }
 
+fn right_most_chars(val: &str, nchar: usize) -> String {
+    let len = val.chars().count();
+    if nchar == 0 || len == 0 {
+        String::new()
+    } else if nchar >= len {
+        val.to_string()
+    } else {
+        val.chars().skip(len - nchar).collect::<String>()
+    }
+}
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.ends_with(pat)))
@@ -474,14 +485,7 @@ impl Utf8Array {
                                     "failed to cast rhs as usize {nchar}"
                                 ))
                             })?;
-                            let len = val.chars().count();
-                            if nchar == 0 || len == 0 {
-                                Ok(Some(String::new()))
-                            } else if nchar >= len {
-                                Ok(Some(val.to_string()))
-                            } else {
-                                Ok(Some(val.chars().skip(len - nchar).collect::<String>()))
-                            }
+                            Ok(Some(right_most_chars(val, nchar)))
                         }
                         _ => Ok(None),
                     })
@@ -509,14 +513,7 @@ impl Utf8Array {
                             .iter()
                             .map(|val| {
                                 let v = val?;
-                                let len = v.chars().count();
-                                if n_scalar_value == 0 || len == 0 {
-                                    Some(String::new())
-                                } else if n_scalar_value >= len {
-                                    Some(v.to_string())
-                                } else {
-                                    Some(v.chars().skip(len - n_scalar_value).collect::<String>())
-                                }
+                                Some(right_most_chars(v, n_scalar_value))
                             })
                             .collect::<arrow2::array::Utf8Array<i64>>();
 
@@ -530,7 +527,6 @@ impl Utf8Array {
                 match self_scalar_value {
                     None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n_len)),
                     Some(self_scalar_value) => {
-                        let len = self_scalar_value.chars().count();
                         let arrow_result = n_arrow
                             .iter()
                             .map(|n| match n {
@@ -541,18 +537,7 @@ impl Utf8Array {
                                             "failed to cast rhs as usize {n}"
                                         ))
                                     })?;
-                                    if len == 0 || n == 0 {
-                                        Ok(Some(String::new()))
-                                    } else if n >= len {
-                                        Ok(Some(self_scalar_value.to_string()))
-                                    } else {
-                                        Ok(Some(
-                                            self_scalar_value
-                                                .chars()
-                                                .skip(len - n)
-                                                .collect::<String>(),
-                                        ))
-                                    }
+                                    Ok(Some(right_most_chars(self_scalar_value, n)))
                                 }
                             })
                             .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
