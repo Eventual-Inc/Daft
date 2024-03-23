@@ -1,0 +1,12 @@
+[dependencies]
+pyo3 = {workspace = true, optional = true}
+sysinfo = "0.30.7"
+
+[features]
+default = ["python"]
+python = ["dep:pyo3"]
+
+[package]
+edition = {workspace = true}
+name = "common-system-info"
+version = {workspace = true}

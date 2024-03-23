@@ -1,5 +1,6 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
+common-system-info = {path = "src/common/system-info", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -31,7 +32,8 @@ python = [
   "daft-micropartition/python",
   "daft-scan/python",
   "daft-stats/python",
-  "common-daft-config/python"
+  "common-daft-config/python",
+  "common-system-info/python"
 ]
 
 [lib]
@@ -75,6 +77,7 @@ members = [
   "src/common/io-config",
   "src/common/treenode",
   "src/common/daft-config",
+  "src/common/system-info",
   "src/daft-core",
   "src/daft-io",
   "src/daft-parquet",

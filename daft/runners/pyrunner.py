@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Iterable, Iterator
 
-import psutil
-
 from daft.context import get_context
-from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest
+from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution import physical_plan
 from daft.execution.execution_step import Instruction, PartitionTask
 from daft.filesystem import glob_path_with_stats
@@ -111,10 +108,10 @@ class PyRunner(Runner[MicroPartition]):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
-
-        self.num_cpus = multiprocessing.cpu_count()
+        system_info = SystemInfo()
+        self.num_cpus = system_info.cpu_count()
         self.num_gpus = cuda_device_count()
-        self.bytes_memory = psutil.virtual_memory().total
+        self.bytes_memory = system_info.total_memory()
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
