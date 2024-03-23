@@ -109,7 +109,14 @@ class PyRunner(Runner[MicroPartition]):
         super().__init__()
         self._use_thread_pool: bool = use_thread_pool if use_thread_pool is not None else True
         system_info = SystemInfo()
-        self.num_cpus = system_info.cpu_count()
+        num_cpus = system_info.cpu_count()
+        if num_cpus is None:
+            import multiprocessing
+
+            self.num_cpus = multiprocessing.cpu_count()
+        else:
+            self.num_cpus = num_cpus
+
         self.num_gpus = cuda_device_count()
         self.bytes_memory = system_info.total_memory()
 
