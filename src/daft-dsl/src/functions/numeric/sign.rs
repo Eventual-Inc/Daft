@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::SignOp, datatypes::Field, schema::Schema, series::Series};
+use daft_core::{datatypes::Field, schema::Schema, series::Series};
 
 use super::super::FunctionEvaluator;
 use crate::Expr;
@@ -21,7 +21,7 @@ impl FunctionEvaluator for SignEvaluator {
         let field = inputs.first().unwrap().to_field(schema)?;
         if !field.dtype.is_numeric() {
             return Err(DaftError::TypeError(format!(
-                "Expected input to floor to be numeric, got {}",
+                "Expected input to sign to be numeric, got {}",
                 field.dtype
             )));
         }

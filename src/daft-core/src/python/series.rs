@@ -8,7 +8,7 @@ use pyo3::{
 };
 
 use crate::{
-    array::{ops::DaftLogical, ops::SignOp, pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
     count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
     ffi,

@@ -1,44 +1,14 @@
-use num_traits::Float;
+use num_traits::Signed;
 
-use crate::{
-    array::DataArray,
-    datatypes::{DaftFloatType, DaftNumericType, Int16Array, Int32Array, Int64Array, Int8Array},
-};
+use crate::{array::DataArray, datatypes::DaftNumericType};
 
 use common_error::DaftResult;
 
-use super::SignOp;
-
-impl<T: DaftFloatType> SignOp for DataArray<T>
+impl<T: DaftNumericType> DataArray<T>
 where
-    T: DaftNumericType,
-    T::Native: Float,
+    T::Native: Signed,
 {
-    fn sign(&self) -> DaftResult<Self> {
-        self.apply(|v| v.signum())
-    }
-}
-
-impl SignOp for Int8Array {
-    fn sign(&self) -> DaftResult<Self> {
-        self.apply(|v| v.signum())
-    }
-}
-
-impl SignOp for Int16Array {
-    fn sign(&self) -> DaftResult<Self> {
-        self.apply(|v| v.signum())
-    }
-}
-
-impl SignOp for Int32Array {
-    fn sign(&self) -> DaftResult<Self> {
-        self.apply(|v| v.signum())
-    }
-}
-
-impl SignOp for Int64Array {
-    fn sign(&self) -> DaftResult<Self> {
+    pub fn sign(&self) -> DaftResult<Self> {
         self.apply(|v| v.signum())
     }
 }

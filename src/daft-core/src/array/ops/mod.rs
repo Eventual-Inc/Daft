@@ -103,12 +103,6 @@ pub trait DaftIsNan {
     fn is_nan(&self) -> Self::Output;
 }
 
-pub trait SignOp {
-    fn sign(&self) -> DaftResult<Self>
-    where
-        Self: Sized;
-}
-
 pub type VecIndices = Vec<u64>;
 pub type GroupIndices = Vec<VecIndices>;
 pub type GroupIndicesPair = (VecIndices, GroupIndices);

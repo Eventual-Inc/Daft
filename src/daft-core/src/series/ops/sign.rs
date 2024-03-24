@@ -1,10 +1,10 @@
 use crate::datatypes::DataType;
-use crate::{array::ops::SignOp, series::Series};
+use crate::series::Series;
 use common_error::DaftError;
 use common_error::DaftResult;
 
-impl SignOp for Series {
-    fn sign(&self) -> DaftResult<Series> {
+impl Series {
+    pub fn sign(&self) -> DaftResult<Series> {
         use crate::series::array_impl::IntoSeries;
         use DataType::*;
         match self.data_type() {

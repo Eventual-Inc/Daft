@@ -217,7 +217,20 @@ def test_table_numeric_sign() -> None:
     )
 
     floor_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
-    floor_table.to_pylist()
+
+    def checkSign(val):
+        if val < 0:
+            return -1
+        if val > 0:
+            return 1
+        return 0
+
+    assert [checkSign(v) if v is not None else v for v in table.get_column("a").to_pylist()] == floor_table.get_column(
+        "a"
+    ).to_pylist()
+    assert [checkSign(v) if v is not None else v for v in table.get_column("b").to_pylist()] == floor_table.get_column(
+        "b"
+    ).to_pylist()
 
 
 def test_table_sign_bad_input() -> None:
