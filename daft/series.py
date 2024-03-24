@@ -361,6 +361,9 @@ class Series:
     def floor(self) -> Series:
         return Series._from_pyseries(self._series.floor())
 
+    def sign(self) -> Series:
+        return Series._from_pyseries(self._series.sign())
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")

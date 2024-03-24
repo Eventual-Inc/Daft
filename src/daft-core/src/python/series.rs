@@ -8,7 +8,7 @@ use pyo3::{
 };
 
 use crate::{
-    array::{ops::DaftLogical, pseudo_arrow::PseudoArrowArray, DataArray},
+    array::{ops::DaftLogical, ops::SignOp, pseudo_arrow::PseudoArrowArray, DataArray},
     count_mode::CountMode,
     datatypes::{DataType, Field, ImageFormat, ImageMode, PythonType},
     ffi,
@@ -114,6 +114,10 @@ impl PySeries {
 
     pub fn floor(&self) -> PyResult<Self> {
         Ok(self.series.floor()?.into())
+    }
+
+    pub fn sign(&self) -> PyResult<Self> {
+        Ok(self.series.sign()?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {

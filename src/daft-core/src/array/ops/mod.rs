@@ -33,6 +33,7 @@ mod null;
 mod pairwise;
 mod repr;
 mod search_sorted;
+mod sign;
 mod sort;
 mod struct_;
 mod sum;
@@ -100,6 +101,12 @@ pub trait DaftNotNull {
 pub trait DaftIsNan {
     type Output;
     fn is_nan(&self) -> Self::Output;
+}
+
+pub trait SignOp {
+    fn sign(&self) -> DaftResult<Self>
+    where
+        Self: Sized;
 }
 
 pub type VecIndices = Vec<u64>;

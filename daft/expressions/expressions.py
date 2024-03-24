@@ -342,6 +342,11 @@ class Expression:
         expr = self._expr.floor()
         return Expression._from_pyexpr(expr)
 
+    def sign(self) -> Expression:
+        """The floor of a numeric expression (``expr.sign()``)"""
+        expr = self._expr.sign()
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 

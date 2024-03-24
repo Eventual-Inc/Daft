@@ -202,3 +202,26 @@ def test_table_floor_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to floor to be numeric"):
         table.eval_expression_list([col("a").floor()])
+
+
+def test_table_numeric_sign() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": [None, -1.0, -0.5, 0.0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+    )
+
+    floor_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    floor_table.to_pylist()
+
+    table = MicroPartition.from_pydict(
+        {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
+    )
+
+    floor_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    floor_table.to_pylist()
+
+
+def test_table_sign_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
+        table.eval_expression_list([col("a").sign()])
