@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import multiprocessing
 import os
 
-import psutil
 import pytest
 import ray
 
 import daft
 from daft import ResourceRequest, udf
 from daft.context import get_context
+from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
 
@@ -37,11 +36,11 @@ def my_udf(c):
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
-
+    system_info = SystemInfo()
     df = df.with_column(
         "foo",
         my_udf(col("id")),
-        resource_request=ResourceRequest(num_cpus=multiprocessing.cpu_count() + 1),
+        resource_request=ResourceRequest(num_cpus=system_info.cpu_count() + 1),
     )
 
     with pytest.raises(RuntimeError):
@@ -60,11 +59,12 @@ def test_requesting_too_many_gpus():
 @pytest.mark.skipif(get_context().runner_config.name not in {"py"}, reason="requires PyRunner to be in use")
 def test_requesting_too_much_memory():
     df = daft.from_pydict(DATA)
+    system_info = SystemInfo()
 
     df = df.with_column(
         "foo",
         my_udf(col("id")),
-        resource_request=ResourceRequest(memory_bytes=psutil.virtual_memory().total + 1),
+        resource_request=ResourceRequest(memory_bytes=system_info.total_memory() + 1),
     )
 
     with pytest.raises(RuntimeError):
