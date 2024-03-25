@@ -68,32 +68,6 @@ impl Series {
         }
     }
 
-    pub fn approx_quantile(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
-        use crate::array::ops::DaftApproxQuantileAggable;
-        use crate::datatypes::DataType::*;
-
-        match self.data_type() {
-            Binary => {
-                let casted = self.cast(&Binary)?;
-                match groups {
-                    Some(groups) => Ok(DaftApproxQuantileAggable::grouped_approx_quantile(
-                        &casted.binary()?,
-                        groups,
-                    )?
-                    .into_series()),
-                    None => Ok(
-                        DaftApproxQuantileAggable::approx_quantile(&casted.binary()?)?
-                            .into_series(),
-                    ),
-                }
-            }
-            other => Err(DaftError::TypeError(format!(
-                "Numeric approx quantile is not implemented for type {}",
-                other
-            ))),
-        }
-    }
-
     pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
         use crate::array::ops::DaftApproxSketchAggable;
         use crate::datatypes::DataType::*;

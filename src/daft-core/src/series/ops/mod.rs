@@ -5,6 +5,7 @@ use super::Series;
 
 pub mod abs;
 pub mod agg;
+pub mod approx_quantile;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;

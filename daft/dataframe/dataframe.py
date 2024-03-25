@@ -1100,16 +1100,16 @@ class DataFrame:
         """
         return self._apply_agg_fn(Expression.sum, cols)
 
-    @DataframePublicAPI
-    def approx_quantile(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global approx quantile on the DataFrame
+    # @DataframePublicAPI
+    # def approx_quantile(self, *cols: ColumnInputType) -> "DataFrame":
+    #     """Performs a global approx quantile on the DataFrame
 
-        Args:
-            *cols (Union[str, Expression]): columns to approx quantile
-        Returns:
-            DataFrame: Globally aggregated approx quantile. Should be a single row.
-        """
-        return self._apply_agg_fn(Expression.approx_quantile, cols)
+    #     Args:
+    #         *cols (Union[str, Expression]): columns to approx quantile
+    #     Returns:
+    #         DataFrame: Globally aggregated approx quantile. Should be a single row.
+    #     """
+    #     return self._apply_agg_fn(Expression.approx_quantile, cols)
 
     @DataframePublicAPI
     def approx_sketch(self, *cols: ColumnInputType) -> "DataFrame":

@@ -124,12 +124,6 @@ pub trait DaftSumAggable {
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
 }
 
-pub trait DaftApproxQuantileAggable {
-    type Output;
-    fn approx_quantile(&self) -> Self::Output;
-    fn grouped_approx_quantile(&self, groups: &GroupIndices) -> Self::Output;
-}
-
 pub trait DaftApproxSketchAggable {
     type Output;
     fn approx_sketch(&self) -> Self::Output;

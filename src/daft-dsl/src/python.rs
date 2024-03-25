@@ -223,7 +223,8 @@ impl PyExpr {
     }
 
     pub fn approx_quantile(&self) -> PyResult<Self> {
-        Ok(self.expr.approx_quantile().into())
+        use functions::sketch::approx_quantile;
+        Ok(approx_quantile(&self.expr).into())
     }
 
     pub fn approx_sketch(&self) -> PyResult<Self> {

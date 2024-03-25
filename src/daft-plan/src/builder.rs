@@ -63,7 +63,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<daft_dsl::AggExpr> {
             match agg_expr {
                 Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
                 Sum(e) => Sum(Alias(e, name.clone()).into()),
-                ApproxQuantile(e) => ApproxQuantile(Alias(e, name.clone()).into()),
+                // ApproxQuantile(e) => ApproxQuantile(Alias(e, name.clone()).into()),
                 ApproxSketch(e) => ApproxSketch(Alias(e, name.clone()).into()),
                 Mean(e) => Mean(Alias(e, name.clone()).into()),
                 Min(e) => Min(Alias(e, name.clone()).into()),

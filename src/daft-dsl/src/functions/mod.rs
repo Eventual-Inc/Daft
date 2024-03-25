@@ -4,6 +4,7 @@ pub mod json;
 pub mod list;
 pub mod numeric;
 pub mod partitioning;
+pub mod sketch;
 pub mod struct_;
 pub mod temporal;
 pub mod uri;
@@ -16,6 +17,7 @@ use self::json::JsonExpr;
 use self::list::ListExpr;
 use self::numeric::NumericExpr;
 use self::partitioning::PartitioningExpr;
+use self::sketch::SketchExpr;
 use self::struct_::StructExpr;
 use self::temporal::TemporalExpr;
 use self::utf8::Utf8Expr;
@@ -39,6 +41,7 @@ pub enum FunctionExpr {
     Utf8(Utf8Expr),
     Temporal(TemporalExpr),
     List(ListExpr),
+    Sketch(SketchExpr),
     Struct(StructExpr),
     Json(JsonExpr),
     Image(ImageExpr),
@@ -64,6 +67,7 @@ impl FunctionExpr {
             Utf8(expr) => expr.get_evaluator(),
             Temporal(expr) => expr.get_evaluator(),
             List(expr) => expr.get_evaluator(),
+            Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
             Json(expr) => expr.query_evaluator(),
             Image(expr) => expr.get_evaluator(),

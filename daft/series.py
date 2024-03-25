@@ -464,7 +464,6 @@ class Series:
         return Series._from_pyseries(self._series.sum())
 
     def approx_quantile(self) -> Series:
-        assert self._series is not None
         return Series._from_pyseries(self._series.approx_quantile())
 
     def approx_sketch(self) -> Series:
