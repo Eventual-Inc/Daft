@@ -52,8 +52,7 @@ where
         0 => None,
         _ => Some(validity.into()),
     };
-    let flat_child =
-        Series::try_from(("splits", Box::new(splits) as Box<dyn arrow2::array::Array>))?;
+    let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
     Ok(ListArray::new(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
         flat_child,
@@ -146,10 +145,7 @@ fn regex_extract_all_matches<'a>(
         0 => None,
         _ => Some(validity.into()),
     };
-    let flat_child = Series::try_from((
-        "matches",
-        Box::new(matches) as Box<dyn arrow2::array::Array>,
-    ))?;
+    let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
 
     Ok(ListArray::new(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
@@ -161,15 +157,27 @@ fn regex_extract_all_matches<'a>(
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.ends_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.ends_with(pat)),
+            "endswith",
+        )
     }
 
     pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.starts_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.starts_with(pat)),
+            "startswith",
+        )
     }
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.contains(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.contains(pat)),
+            "contains",
+        )
     }
 
     pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -193,9 +201,11 @@ impl Utf8Array {
             };
         }
 
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
-            Ok(regex::Regex::new(pat)?.is_match(data))
-        })
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(regex::Regex::new(pat)?.is_match(data)),
+            "match",
+        )
     }
 
     pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
@@ -252,7 +262,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in split: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -306,7 +316,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in extract: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -363,7 +373,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in extract_all: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -490,7 +500,7 @@ impl Utf8Array {
                         (Some(val), Some(nchar)) => {
                             let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {nchar}"
+                                    "Error in left: failed to cast rhs as usize {nchar}"
                                 ))
                             })?;
                             Ok(Some(val.chars().take(nchar).collect::<String>()))
@@ -514,7 +524,7 @@ impl Utf8Array {
                         let n_scalar_value: usize =
                             NumCast::from(n_scalar_value).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {n_scalar_value}"
+                                    "Error in left: failed to cast rhs as usize {n_scalar_value}"
                                 ))
                             })?;
                         let arrow_result = self_arrow
@@ -542,7 +552,7 @@ impl Utf8Array {
                                 Some(n) => {
                                     let n: usize = NumCast::from(*n).ok_or_else(|| {
                                         DaftError::ComputeError(format!(
-                                            "failed to cast rhs as usize {n}"
+                                            "Error in left: failed to cast rhs as usize {n}"
                                         ))
                                     })?;
                                     Ok(Some(self_scalar_value.chars().take(n).collect::<String>()))
@@ -556,7 +566,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, n_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {n_len}"
+                "Error in left: lhs and rhs have different length arrays: {self_len} vs {n_len}"
             ))),
         }
     }
@@ -657,6 +667,7 @@ impl Utf8Array {
         &self,
         other: &Self,
         operation: ScalarKernel,
+        op_name: &str,
     ) -> DaftResult<BooleanArray>
     where
         ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
@@ -720,7 +731,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, other_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {other_len}"
+                "Error in {op_name}: lhs and rhs have different length arrays: {self_len} vs {other_len}"
             ))),
         }
     }
