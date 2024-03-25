@@ -5,7 +5,6 @@ use super::Series;
 
 pub mod abs;
 pub mod agg;
-pub mod approx_quantile;
 pub mod arithmetic;
 pub mod broadcast;
 pub mod cast;
@@ -29,6 +28,7 @@ pub mod not;
 pub mod null;
 pub mod partitioning;
 pub mod search_sorted;
+pub mod sketch_quantile;
 pub mod sort;
 pub mod struct_;
 pub mod take;

@@ -12,7 +12,7 @@ impl<T: DaftArrowBackedType> DataArray<T>
 where
     T: DaftArrowBackedType,
 {
-    pub fn approx_quantile(&self, q: &Float64Array) -> DaftResult<Float64Array> {
+    pub fn sketch_quantile(&self, q: &Float64Array) -> DaftResult<Float64Array> {
         let arr: &BinaryArray<i64> = self.data().as_any().downcast_ref().unwrap();
         let result_arr = PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| {
             let str = std::str::from_utf8(v).unwrap();

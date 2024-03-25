@@ -18,7 +18,7 @@ impl FunctionEvaluator for QuantileEvaluator {
                 let q_field = q.to_field(schema)?;
                 if q_field.dtype != DataType::Float64 {
                     return Err(DaftError::TypeError(format!(
-                        "Expected approx_quantile q to be of type {}, received: {}",
+                        "Expected sketch_quantile q to be of type {}, received: {}",
                         DataType::Float64,
                         q_field.dtype
                     )));
@@ -41,7 +41,7 @@ impl FunctionEvaluator for QuantileEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [input, q] => input.approx_quantile(q),
+            [input, q] => input.sketch_quantile(q),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()

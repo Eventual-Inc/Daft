@@ -1,6 +1,5 @@
 mod abs;
 mod apply;
-mod approx_quantile;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -35,6 +34,7 @@ mod null;
 mod pairwise;
 mod repr;
 mod search_sorted;
+mod sketch_quantile;
 mod sort;
 mod struct_;
 mod sum;
