@@ -799,7 +799,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr) + other
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
-        """Extracts the regex match group from each string in a string column. If index is 0, the entire match is returned, otherwise the specified group is returned.
+        """Extracts the specified match group from the first regex match in each string in a string column. If index is 0, the entire match is returned.
         If the pattern does not match or the group does not exist, a null value is returned.
 
         Example:
@@ -826,6 +826,35 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_extract(pattern_expr._expr, index))
+
+    def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
+        r"""Extracts the specified match group from all regex matches in each string in a string column. If index is 0, the entire match is returned.
+        If the pattern does not match or the group does not exist, a null value is returned.
+
+        Example:
+            >>> df = daft.from_pydict({"x": ["123 456", "789 012", "345 678"]})
+            >>> df.with_column("matches", df["x"].str.extract_all(r"(\d+) (\d+)")).collect()
+            ╭─────────┬────────────╮
+            │ x       ┆ matches    │
+            │ ---     ┆ ---        │
+            │ Utf8    ┆ List[Utf8] │
+            ╞═════════╪════════════╡
+            │ 123 456 ┆ [123 456]  │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 789 012 ┆ [789 012]  │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 345 678 ┆ [345 678]  │
+            ╰─────────┴────────────╯
+
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a List[Utf8] expression with the extracted regex matches
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column

@@ -2,6 +2,7 @@ mod capitalize;
 mod contains;
 mod endswith;
 mod extract;
+mod extract_all;
 mod left;
 mod length;
 mod lower;
@@ -18,6 +19,7 @@ use capitalize::CapitalizeEvaluator;
 use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
 use extract::ExtractEvaluator;
+use extract_all::ExtractAllEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
@@ -42,6 +44,7 @@ pub enum Utf8Expr {
     Split,
     Match,
     Extract(usize),
+    ExtractAll(usize),
     Length,
     Lower,
     Upper,
@@ -64,6 +67,7 @@ impl Utf8Expr {
             Split => &SplitEvaluator {},
             Match => &MatchEvaluator {},
             Extract(_) => &ExtractEvaluator {},
+            ExtractAll(_) => &ExtractAllEvaluator {},
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
@@ -115,6 +119,13 @@ pub fn split(data: &Expr, pattern: &Expr) -> Expr {
 pub fn extract(data: &Expr, pattern: &Expr, index: usize) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Extract(index)),
+        inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn extract_all(data: &Expr, pattern: &Expr, index: usize) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }

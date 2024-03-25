@@ -19,6 +19,7 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
         pytest.param(lambda data, pat: data.str.endswith(pat), id="match"),
         pytest.param(lambda data, pat: data.str.concat(pat), id="concat"),
         pytest.param(lambda data, pat: data.str.extract(pat), id="extract"),
+        pytest.param(lambda data, pat: data.str.extract_all(pat), id="extract_all"),
     ],
 )
 def test_str_compares(binary_data_fixture, op, request):
