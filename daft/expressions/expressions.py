@@ -343,7 +343,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def sign(self) -> Expression:
-        """The floor of a numeric expression (``expr.sign()``)"""
+        """The sign of a numeric expression (``expr.sign()``)"""
         expr = self._expr.sign()
         return Expression._from_pyexpr(expr)
 
