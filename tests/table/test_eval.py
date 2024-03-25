@@ -209,14 +209,14 @@ def test_table_numeric_sign() -> None:
         {"a": [None, -1.0, -0.5, 0.0, 0.5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
     )
 
-    floor_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
-    floor_table.to_pylist()
+    sign_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    sign_table.to_pylist()
 
     table = MicroPartition.from_pydict(
         {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.7, -1.5, -1.3, 0.3, 0.7, None, None]}
     )
 
-    floor_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
+    sign_table = table.eval_expression_list([col("a").sign(), col("b").sign()])
 
     def checkSign(val):
         if val < 0:
@@ -225,10 +225,10 @@ def test_table_numeric_sign() -> None:
             return 1
         return 0
 
-    assert [checkSign(v) if v is not None else v for v in table.get_column("a").to_pylist()] == floor_table.get_column(
+    assert [checkSign(v) if v is not None else v for v in table.get_column("a").to_pylist()] == sign_table.get_column(
         "a"
     ).to_pylist()
-    assert [checkSign(v) if v is not None else v for v in table.get_column("b").to_pylist()] == floor_table.get_column(
+    assert [checkSign(v) if v is not None else v for v in table.get_column("b").to_pylist()] == sign_table.get_column(
         "b"
     ).to_pylist()
 
