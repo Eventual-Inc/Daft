@@ -1,10 +1,12 @@
 mod abs;
 mod ceil;
 mod floor;
+mod sign;
 
 use abs::AbsEvaluator;
 use ceil::CeilEvaluator;
 use floor::FloorEvaluator;
+use sign::SignEvaluator;
 
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +19,7 @@ pub enum NumericExpr {
     Abs,
     Ceil,
     Floor,
+    Sign,
 }
 
 impl NumericExpr {
@@ -27,6 +30,7 @@ impl NumericExpr {
             Abs => &AbsEvaluator {},
             Ceil => &CeilEvaluator {},
             Floor => &FloorEvaluator {},
+            Sign => &SignEvaluator {},
         }
     }
 }
@@ -48,6 +52,13 @@ pub fn ceil(input: &Expr) -> Expr {
 pub fn floor(input: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Numeric(NumericExpr::Floor),
+        inputs: vec![input.clone()],
+    }
+}
+
+pub fn sign(input: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Numeric(NumericExpr::Sign),
         inputs: vec![input.clone()],
     }
 }

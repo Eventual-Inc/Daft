@@ -210,6 +210,11 @@ impl PyExpr {
         Ok(floor(&self.expr).into())
     }
 
+    pub fn sign(&self) -> PyResult<Self> {
+        use functions::numeric::sign;
+        Ok(sign(&self.expr).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }

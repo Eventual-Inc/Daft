@@ -33,6 +33,7 @@ mod null;
 mod pairwise;
 mod repr;
 mod search_sorted;
+mod sign;
 mod sort;
 mod struct_;
 mod sum;

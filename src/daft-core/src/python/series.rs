@@ -116,6 +116,10 @@ impl PySeries {
         Ok(self.series.floor()?.into())
     }
 
+    pub fn sign(&self) -> PyResult<Self> {
+        Ok(self.series.sign()?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }
