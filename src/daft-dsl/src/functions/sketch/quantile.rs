@@ -12,29 +12,40 @@ impl FunctionEvaluator for QuantileEvaluator {
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
+        match inputs {
+            [input, q] => {
+                let input_field = input.to_field(schema)?;
+                let q_field = q.to_field(schema)?;
+                if q_field.dtype != DataType::Float64 {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected approx_quantile q to be of type {}, received: {}",
+                        DataType::Float64,
+                        q_field.dtype
+                    )));
+                }
+
+                match input_field.dtype {
+                    DataType::Binary => Ok(Field::new(input_field.name, DataType::Float64)),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to be a binary type, received: {}",
+                        input_field.dtype
+                    ))),
+                }
+            }
+            _ => Err(DaftError::SchemaMismatch(format!(
+                "Expected 2 input args, got {}",
                 inputs.len()
-            )));
+            ))),
         }
-        let field = inputs.first().unwrap().to_field(schema)?;
-        if field.dtype != DataType::Binary {
-            return Err(DaftError::TypeError(format!(
-                "Expected input to floor to be numeric, got {}",
-                field.dtype
-            )));
-        }
-        Ok(Field::new(field.name, DataType::Float64))
     }
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
-        if inputs.len() != 1 {
-            return Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
+        match inputs {
+            [input, q] => input.approx_quantile(q),
+            _ => Err(DaftError::ValueError(format!(
+                "Expected 2 input args, got {}",
                 inputs.len()
-            )));
+            ))),
         }
-        inputs.first().unwrap().approx_quantile()
     }
 }

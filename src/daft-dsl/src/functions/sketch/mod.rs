@@ -23,9 +23,9 @@ impl SketchExpr {
     }
 }
 
-pub fn approx_quantile(input: &Expr) -> Expr {
+pub fn approx_quantile(input: &Expr, q: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Sketch(SketchExpr::Quantile),
-        inputs: vec![input.clone()],
+        inputs: vec![input.clone(), q.clone()],
     }
 }

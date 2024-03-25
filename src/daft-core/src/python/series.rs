@@ -198,8 +198,8 @@ impl PySeries {
         Ok((self.series).sum(None)?.into())
     }
 
-    pub fn approx_quantile(&self) -> PyResult<Self> {
-        Ok(self.series.approx_quantile()?.into())
+    pub fn approx_quantile(&self, q: &Self) -> PyResult<Self> {
+        Ok(self.series.approx_quantile(&q.series)?.into())
     }
 
     pub fn approx_sketch(&self) -> PyResult<Self> {

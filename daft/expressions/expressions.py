@@ -350,8 +350,8 @@ class Expression:
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
-    def approx_quantile(self) -> Expression:
-        expr = self._expr.approx_quantile()
+    def approx_quantile(self, q: Expression) -> Expression:
+        expr = self._expr.approx_quantile(q._expr)
         return Expression._from_pyexpr(expr)
 
     def approx_sketch(self) -> Expression:
@@ -566,7 +566,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
             elif on_error == "null":
                 raise_on_error = False
             else:
-                raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+                raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
 
             if not (isinstance(max_connections, int) and max_connections > 0):
                 raise ValueError(f"Invalid value for `max_connections`: {max_connections}")

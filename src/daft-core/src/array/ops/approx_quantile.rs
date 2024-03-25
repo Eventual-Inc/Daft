@@ -12,13 +12,13 @@ impl<T: DaftArrowBackedType> DataArray<T>
 where
     T: DaftArrowBackedType,
 {
-    pub fn approx_quantile(&self /*, quantile: f64*/) -> DaftResult<Float64Array> {
+    pub fn approx_quantile(&self, q: &Float64Array) -> DaftResult<Float64Array> {
         let arr: &BinaryArray<i64> = self.data().as_any().downcast_ref().unwrap();
         let result_arr = PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| {
             let str = std::str::from_utf8(v).unwrap();
             // println!("VALUE2 {}", str);
             let sketch: DDSketch = serde_json::from_str(str).unwrap();
-            sketch.quantile(/*quantile*/ 0.5).unwrap().unwrap()
+            sketch.quantile(q.get(0).unwrap()).unwrap().unwrap() // TODO handle
         }))
         .with_validity(arr.validity().cloned());
 
