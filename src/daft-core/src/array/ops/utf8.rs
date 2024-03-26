@@ -293,7 +293,7 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
                         regex_extract_first_match(iter, index, self.name())
                     }
                 }
@@ -309,7 +309,7 @@ impl Utf8Array {
                     )),
                     Some(self_v) => {
                         let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).zip(regexes);
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
                         regex_extract_first_match(iter, index, self.name())
                     }
                 }
@@ -350,7 +350,7 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
                         regex_extract_all_matches(iter, index, self_len, self.name())
                     }
                 }
@@ -366,7 +366,7 @@ impl Utf8Array {
                     )),
                     Some(self_v) => {
                         let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).zip(regexes);
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
                         regex_extract_all_matches(iter, index, pattern_len, self.name())
                     }
                 }
