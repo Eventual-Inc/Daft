@@ -916,6 +916,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
         nchars_expr = Expression._to_expression(nchars)
         return Expression._from_pyexpr(self._expr.utf8_left(nchars_expr._expr))
 
+    def right(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) right-most characters of each string
+
+        Example:
+            >>> col("x").str.right(3)
+
+        Returns:
+            Expression: a String expression which is the `n` right-most characters of `self`
+        """
+        nchars_expr = Expression._to_expression(nchars)
+        return Expression._from_pyexpr(self._expr.utf8_right(nchars_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

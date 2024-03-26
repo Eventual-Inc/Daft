@@ -452,6 +452,11 @@ impl PyExpr {
         Ok(left(&self.expr, &count.expr).into())
     }
 
+    pub fn utf8_right(&self, count: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::right;
+        Ok(right(&self.expr, &count.expr).into())
+    }
+
     pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
         Ok(decode(&self.expr, raise_error_on_failure).into())

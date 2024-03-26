@@ -398,6 +398,8 @@ def test_series_utf8_match_bad_pattern() -> None:
         ([None], [1] * 4, [None] * 4),
         # Broadcasted null nchars
         (["foo"] * 4, [None], [None] * 4),
+        # with emojis
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😃", "abc😃😄😅"]),
     ],
 )
 def test_series_utf8_left(data, nchars, expected) -> None:
@@ -432,6 +434,58 @@ def test_series_utf8_left_bad_dtype() -> None:
     nchars = Series.from_arrow(pa.array([1, 2, 3]))
     with pytest.raises(ValueError):
         s.str.left(nchars)
+
+
+@pytest.mark.parametrize(
+    ["data", "nchars", "expected"],
+    [
+        (["foo", "barbaz", "quux"], [0, 1, 2], ["", "z", "ux"]),
+        (["foo", "barbaz", "quux"], [1], ["o", "z", "x"]),
+        (["foo"], [0, 1, 2], ["", "o", "oo"]),
+        ([None], [0, 1, 2], [None, None, None]),
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        ([[], [0, 1], []]),
+        ([["foo"] * 4, [], []]),
+        (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "z", None]),
+        ([None] * 4, [1] * 4, [None] * 4),
+        (["foo"] * 4, [None] * 4, [None] * 4),
+        ([None], [1] * 4, [None] * 4),
+        (["foo"] * 4, [None], [None] * 4),
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😝", "abc😃😄😅"]),
+    ],
+)
+def test_series_utf8_right(data, nchars, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    result = s.str.right(nchars)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_right_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
+
+
+def test_series_utf8_right_bad_nchars() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.right(1)
+
+
+def test_series_utf8_right_bad_nchars_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
+
+
+def test_series_utf8_right_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    nchars = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
 
 
 @pytest.mark.parametrize(

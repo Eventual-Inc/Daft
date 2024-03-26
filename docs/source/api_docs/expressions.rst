@@ -117,6 +117,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.reverse
    Expression.str.capitalize
    Expression.str.left
+   Expression.str.right
 
 .. _api-expressions-temporal:
 

@@ -9,11 +9,11 @@ use common_error::{DaftError, DaftResult};
 
 use super::super::FunctionEvaluator;
 
-pub(super) struct LeftEvaluator {}
+pub(super) struct RightEvaluator {}
 
-impl FunctionEvaluator for LeftEvaluator {
+impl FunctionEvaluator for RightEvaluator {
     fn fn_name(&self) -> &'static str {
-        "left"
+        "right"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
@@ -40,7 +40,7 @@ impl FunctionEvaluator for LeftEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [data, nchars] => data.utf8_left(nchars),
+            [data, nchars] => data.utf8_right(nchars),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
