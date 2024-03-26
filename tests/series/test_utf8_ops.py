@@ -398,6 +398,8 @@ def test_series_utf8_match_bad_pattern() -> None:
         ([None], [1] * 4, [None] * 4),
         # Broadcasted null nchars
         (["foo"] * 4, [None], [None] * 4),
+        # with emojis
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😃", "abc😃😄😅"]),
     ],
 )
 def test_series_utf8_left(data, nchars, expected) -> None:
@@ -449,6 +451,7 @@ def test_series_utf8_left_bad_dtype() -> None:
         (["foo"] * 4, [None] * 4, [None] * 4),
         ([None], [1] * 4, [None] * 4),
         (["foo"] * 4, [None], [None] * 4),
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😝", "abc😃😄😅"]),
     ],
 )
 def test_series_utf8_right(data, nchars, expected) -> None:
