@@ -62,14 +62,15 @@ where
     ))
 }
 
-fn right_most_chars(val: &str, nchar: usize) -> String {
+fn right_most_chars(val: &str, nchar: usize) -> &str {
     let len = val.chars().count();
     if nchar == 0 || len == 0 {
-        String::new()
+        ""
     } else if nchar >= len {
-        val.to_string()
+        val
     } else {
-        val.chars().skip(len - nchar).collect::<String>()
+        let skip = len.saturating_sub(nchar);
+        val.char_indices().nth(skip).map_or("", |(i, _)| &val[i..])
     }
 }
 
