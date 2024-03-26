@@ -120,6 +120,15 @@ impl PySeries {
         Ok(self.series.sign()?.into())
     }
 
+    pub fn round(&self, digits: i32) -> PyResult<Self> {
+        if digits < 0 {
+            return Err(PyValueError::new_err(format!(
+                "digits value can not be negative: {digits}"
+            )));
+        }
+        Ok(self.series.round(digits)?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }

@@ -347,6 +347,14 @@ class Expression:
         expr = self._expr.sign()
         return Expression._from_pyexpr(expr)
 
+    def round(self, digits: int | Expression = 0) -> Expression:
+        """The sign of a numeric expression (``expr.sign()``)"""
+        if digits is None:
+            digits = 0
+        digits = Expression._to_expression(digits)
+        expr = self._expr.round(digits._expr)
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 

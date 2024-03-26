@@ -237,3 +237,27 @@ def test_table_sign_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to sign to be numeric"):
         table.eval_expression_list([col("a").sign()])
+
+
+def test_table_numeric_round() -> None:
+    from decimal import ROUND_HALF_UP, Decimal
+
+    table = MicroPartition.from_pydict(
+        {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.765, -1.565, -1.321, 0.399, 0.781, None, None]}
+    )
+    round_table = table.eval_expression_list([col("a").round(None), col("b").round(2)])
+    assert [
+        Decimal(v).to_integral_value(rounding=ROUND_HALF_UP) if v is not None else v
+        for v in table.get_column("a").to_pylist()
+    ] == round_table.get_column("a").to_pylist()
+    assert [
+        float(Decimal(str(v)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)) if v is not None else v
+        for v in table.get_column("b").to_pylist()
+    ] == round_table.get_column("b").to_pylist()
+
+
+def test_table_round_bad_input() -> None:
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+
+    with pytest.raises(ValueError, match="Expected input to round to be numeric"):
+        table.eval_expression_list([col("a").round()])
