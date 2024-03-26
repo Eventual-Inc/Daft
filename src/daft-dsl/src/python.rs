@@ -412,6 +412,11 @@ impl PyExpr {
         Ok(extract(&self.expr, &pattern.expr, index).into())
     }
 
+    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        use crate::functions::utf8::extract_all;
+        Ok(extract_all(&self.expr, &pattern.expr, index).into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
         Ok(length(&self.expr).into())

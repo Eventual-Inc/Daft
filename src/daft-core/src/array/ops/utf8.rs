@@ -52,8 +52,7 @@ where
         0 => None,
         _ => Some(validity.into()),
     };
-    let flat_child =
-        Series::try_from(("splits", Box::new(splits) as Box<dyn arrow2::array::Array>))?;
+    let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
     Ok(ListArray::new(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
         flat_child,
@@ -74,17 +73,111 @@ fn right_most_chars(val: &str, nchar: usize) -> &str {
     }
 }
 
+fn regex_extract_first_match<'a>(
+    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    index: usize,
+    name: &str,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = iter
+        .map(|(val, re)| match (val, re) {
+            (Some(val), Some(re)) => {
+                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
+                // regex::find is faster than regex::captures but only returns the full match, not the capture groups.
+                // So, use regex::find if index == 0, otherwise use regex::captures.
+                if index == 0 {
+                    Ok(re?.find(val).map(|m| m.as_str()))
+                } else {
+                    Ok(re?
+                        .captures(val)
+                        .and_then(|captures| captures.get(index))
+                        .map(|m| m.as_str()))
+                }
+            }
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
+fn regex_extract_all_matches<'a>(
+    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    index: usize,
+    len: usize,
+    name: &str,
+) -> DaftResult<ListArray> {
+    let mut matches = arrow2::array::MutableUtf8Array::new();
+    let mut offsets = arrow2::offset::Offsets::new();
+    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
+
+    for (val, re) in iter {
+        let mut num_matches = 0i64;
+        match (val, re) {
+            (Some(val), Some(re)) => {
+                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures_iter
+                // regex::find_iter is faster than regex::captures_iter but only returns the full match, not the capture groups.
+                // So, use regex::find_iter if index == 0, otherwise use regex::captures.
+                if index == 0 {
+                    for m in re?.find_iter(val) {
+                        matches.push(Some(m.as_str()));
+                        num_matches += 1;
+                    }
+                } else {
+                    for captures in re?.captures_iter(val) {
+                        if let Some(capture) = captures.get(index) {
+                            matches.push(Some(capture.as_str()));
+                            num_matches += 1;
+                        }
+                    }
+                }
+                validity.push(true);
+            }
+            (_, _) => {
+                validity.push(false);
+            }
+        }
+        offsets.try_push(num_matches)?;
+    }
+
+    let matches: arrow2::array::Utf8Array<i64> = matches.into();
+    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
+    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+        0 => None,
+        _ => Some(validity.into()),
+    };
+    let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
+
+    Ok(ListArray::new(
+        Field::new(name, DataType::List(Box::new(DataType::Utf8))),
+        flat_child,
+        offsets,
+        validity,
+    ))
+}
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.ends_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.ends_with(pat)),
+            "endswith",
+        )
     }
 
     pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.starts_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.starts_with(pat)),
+            "startswith",
+        )
     }
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.contains(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.contains(pat)),
+            "contains",
+        )
     }
 
     pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -108,9 +201,11 @@ impl Utf8Array {
             };
         }
 
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
-            Ok(regex::Regex::new(pat)?.is_match(data))
-        })
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(regex::Regex::new(pat)?.is_match(data)),
+            "match",
+        )
     }
 
     pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
@@ -167,7 +262,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in split: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -175,42 +270,17 @@ impl Utf8Array {
     pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
-        // Handle all-null cases.
-        if self_arrow
-            .validity()
-            .map_or(false, |v| v.unset_bits() == v.len())
-            || pattern_arrow
-                .validity()
-                .map_or(false, |v| v.unset_bits() == v.len())
-        {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                self.data_type(),
-                std::cmp::max(self.len(), pattern.len()),
-            ));
-        // Handle empty cases.
-        } else if self.is_empty() || pattern.is_empty() {
+
+        if self.is_empty() || pattern.is_empty() {
             return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
 
         match (self.len(), pattern.len()) {
             // Matching len case:
             (self_len, pattern_len) if self_len == pattern_len => {
-                let arrow_result = self_arrow
-                    .iter()
-                    .zip(pattern_arrow.iter())
-                    .map(|(val, pat)| match (val, pat) {
-                        (Some(val), Some(pat)) => {
-                            let re = regex::Regex::new(pat)?;
-                            Ok(re
-                                .captures(val)
-                                .and_then(|captures| captures.get(index).map(|m| m.as_str())))
-                        }
-                        _ => Ok(None),
-                    })
-                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
-
-                Ok(Utf8Array::from((self.name(), Box::new(arrow_result?))))
+                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                let iter = self_arrow.iter().zip(regexes);
+                regex_extract_first_match(iter, index, self.name())
             }
             // Broadcast pattern case:
             (self_len, 1) => {
@@ -222,16 +292,9 @@ impl Utf8Array {
                         self_len,
                     )),
                     Some(pattern_v) => {
-                        let re = regex::Regex::new(pattern_v)?;
-                        let arrow_result = self_arrow
-                            .iter()
-                            .map(|val| {
-                                let captures = re.captures(val?)?;
-                                captures.get(index).map(|m| m.as_str())
-                            })
-                            .collect::<arrow2::array::Utf8Array<i64>>();
-
-                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                        let re = Some(regex::Regex::new(pattern_v));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
+                        regex_extract_first_match(iter, index, self.name())
                     }
                 }
             }
@@ -245,26 +308,72 @@ impl Utf8Array {
                         pattern_len,
                     )),
                     Some(self_v) => {
-                        let arrow_result: DaftResult<arrow2::array::Utf8Array<i64>> = pattern_arrow
-                            .iter()
-                            .map(|pat| match pat {
-                                None => Ok(None),
-                                Some(p) => {
-                                    let re = regex::Regex::new(p)?;
-                                    Ok(re.captures(self_v).and_then(|captures| {
-                                        captures.get(index).map(|m| m.as_str())
-                                    }))
-                                }
-                            })
-                            .collect();
-
-                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result?))))
+                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
+                        regex_extract_first_match(iter, index, self.name())
                     }
                 }
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in extract: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
+    }
+
+    pub fn extract_all(&self, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+
+        if self.is_empty() || pattern.is_empty() {
+            return Ok(ListArray::empty(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ));
+        }
+
+        match (self.len(), pattern.len()) {
+            // Matching len case:
+            (self_len, pattern_len) if self_len == pattern_len => {
+                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                let iter = self_arrow.iter().zip(regexes);
+                regex_extract_all_matches(iter, index, self_len, self.name())
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let pattern_scalar_value = pattern.get(0);
+                match pattern_scalar_value {
+                    None => Ok(ListArray::full_null(
+                        self.name(),
+                        &DataType::List(Box::new(DataType::Utf8)),
+                        self_len,
+                    )),
+                    Some(pattern_v) => {
+                        let re = Some(regex::Regex::new(pattern_v));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
+                        regex_extract_all_matches(iter, index, self_len, self.name())
+                    }
+                }
+            }
+            // Broadcast self case
+            (1, pattern_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(ListArray::full_null(
+                        self.name(),
+                        &DataType::List(Box::new(DataType::Utf8)),
+                        pattern_len,
+                    )),
+                    Some(self_v) => {
+                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
+                        regex_extract_all_matches(iter, index, pattern_len, self.name())
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "Error in extract_all: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -391,7 +500,7 @@ impl Utf8Array {
                         (Some(val), Some(nchar)) => {
                             let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {nchar}"
+                                    "Error in left: failed to cast rhs as usize {nchar}"
                                 ))
                             })?;
                             Ok(Some(val.chars().take(nchar).collect::<String>()))
@@ -415,7 +524,7 @@ impl Utf8Array {
                         let n_scalar_value: usize =
                             NumCast::from(n_scalar_value).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
-                                    "failed to cast rhs as usize {n_scalar_value}"
+                                    "Error in left: failed to cast rhs as usize {n_scalar_value}"
                                 ))
                             })?;
                         let arrow_result = self_arrow
@@ -443,7 +552,7 @@ impl Utf8Array {
                                 Some(n) => {
                                     let n: usize = NumCast::from(*n).ok_or_else(|| {
                                         DaftError::ComputeError(format!(
-                                            "failed to cast rhs as usize {n}"
+                                            "Error in left: failed to cast rhs as usize {n}"
                                         ))
                                     })?;
                                     Ok(Some(self_scalar_value.chars().take(n).collect::<String>()))
@@ -457,7 +566,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, n_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {n_len}"
+                "Error in left: lhs and rhs have different length arrays: {self_len} vs {n_len}"
             ))),
         }
     }
@@ -558,6 +667,7 @@ impl Utf8Array {
         &self,
         other: &Self,
         operation: ScalarKernel,
+        op_name: &str,
     ) -> DaftResult<BooleanArray>
     where
         ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
@@ -621,7 +731,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, other_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {other_len}"
+                "Error in {op_name}: lhs and rhs have different length arrays: {self_len} vs {other_len}"
             ))),
         }
     }

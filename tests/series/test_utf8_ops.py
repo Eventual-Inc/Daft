@@ -512,8 +512,8 @@ def test_series_utf8_extract(data, pattern, expected) -> None:
     assert result.to_pylist() == expected
 
 
-@pytest.mark.parametrize("data", [["abc"]])
-@pytest.mark.parametrize("pattern", [["^(a)bc"]])
+@pytest.mark.parametrize("data", [["abc abc"]])
+@pytest.mark.parametrize("pattern", [["(a)bc"]])
 @pytest.mark.parametrize(
     "index, expected",
     [
@@ -529,8 +529,56 @@ def test_series_utf8_extract_index(data, pattern, index, expected) -> None:
     assert result.to_pylist() == expected
 
 
-def test_series_utf8_match_bad_pattern() -> None:
+def test_series_utf8_extract_bad_pattern() -> None:
     s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
     pattern = Series.from_arrow(pa.array(["["]))
     with pytest.raises(ValueError):
         s.str.extract(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "expected"],
+    [
+        # No broadcast
+        (["1 2 3", "45 6", "789"], [r"\d+", r"\d+", r"\d"], [["1", "2", "3"], ["45", "6"], ["7", "8", "9"]]),
+        # Broadcast pattern
+        (["1 2 3", "45 6", "789"], [r"\d+"], [["1", "2", "3"], ["45", "6"], ["789"]]),
+        # Broadcast data
+        (["123"], [r"\d+", r"\d", r"\d+"], [["123"], ["1", "2", "3"], ["123"]]),
+        # Broadcast null data
+        ([None], [r"\d+", r"\d", r"\d+"], [None, None, None]),
+        # Broadcast null pattern
+        (["1 2 3", "45 6", "789"], [None], [None, None, None]),
+        # Mixed in nulls
+        (["1 2 3", None, "789"], [None, r"\d+", r"\d"], [None, None, ["7", "8", "9"]]),
+    ],
+)
+def test_series_utf8_extract_all(data, pattern, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract_all(patterns)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("data", [["abc abc"]])
+@pytest.mark.parametrize("pattern", [["(a)bc"]])
+@pytest.mark.parametrize(
+    "index, expected",
+    [
+        (0, [["abc", "abc"]]),
+        (1, [["a", "a"]]),
+        (2, [[]]),
+    ],
+)
+def test_series_utf8_extract_all_index(data, pattern, index, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract_all(patterns, index)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_extract_all_bad_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array(["["]))
+    with pytest.raises(ValueError):
+        s.str.extract_all(pattern)

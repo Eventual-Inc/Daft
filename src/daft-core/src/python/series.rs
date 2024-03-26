@@ -276,6 +276,10 @@ impl PySeries {
         Ok(self.series.utf8_extract(&pattern.series, index)?.into())
     }
 
+    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        Ok(self.series.utf8_extract_all(&pattern.series, index)?.into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         Ok(self.series.utf8_length()?.into())
     }
