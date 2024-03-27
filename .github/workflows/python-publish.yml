@@ -102,7 +102,7 @@ jobs:
     #     pytest -v
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: dist
@@ -140,7 +140,7 @@ jobs:
         architecture: x64
     - run: pip install -U twine
     - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
