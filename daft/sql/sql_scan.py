@@ -75,7 +75,7 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
-        partition_bounds = [lit(bound)._to_sql(get_db_scheme_from_url(self.url)) for bound in partition_bounds]
+        partition_bounds_sql = [lit(bound)._to_sql(get_db_scheme_from_url(self.url)) for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
