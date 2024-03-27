@@ -27,6 +27,7 @@ pub mod list;
 pub mod not;
 pub mod null;
 pub mod partitioning;
+pub mod round;
 pub mod search_sorted;
 pub mod sign;
 pub mod sort;

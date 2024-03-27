@@ -347,6 +347,16 @@ class Expression:
         expr = self._expr.sign()
         return Expression._from_pyexpr(expr)
 
+    def round(self, decimals: int = 0) -> Expression:
+        """The round of a numeric expression (``expr.round(decimals = 0)``)
+
+        Args:
+            decimals: number of decimal places to round to. Defaults to 0.
+        """
+        assert isinstance(decimals, int)
+        expr = self._expr.round(decimals)
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 

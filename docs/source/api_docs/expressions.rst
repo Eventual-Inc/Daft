@@ -49,6 +49,7 @@ Numeric
     Expression.ceil
     Expression.floor
     Expression.sign
+    Expression.round
 
 .. _api-comparison-expression:
 

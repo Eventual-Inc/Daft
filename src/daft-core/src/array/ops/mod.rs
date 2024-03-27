@@ -32,6 +32,7 @@ mod mean;
 mod null;
 mod pairwise;
 mod repr;
+mod round;
 mod search_sorted;
 mod sign;
 mod sort;
