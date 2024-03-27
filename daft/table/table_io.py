@@ -42,7 +42,7 @@ from daft.runners.partitioning import (
     TableReadSQLOptions,
 )
 from daft.series import Series
-from daft.sql.sql_reader import SQLReader
+from daft.sql.sql_reader import SQLReader, get_db_scheme_from_url
 from daft.table import MicroPartition
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
@@ -239,7 +239,7 @@ def read_sql(
 
     if sql_options.predicate_expression is not None:
         # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-        predicate_sql = sql_options.predicate_expression._to_sql()
+        predicate_sql = sql_options.predicate_expression._to_sql(get_db_scheme_from_url(url))
         apply_pushdowns_to_sql = predicate_sql is not None
     else:
         # If we don't have a predicate, we can still apply the limit and projection to the SQL query

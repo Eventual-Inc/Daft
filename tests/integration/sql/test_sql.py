@@ -91,7 +91,7 @@ def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
     "column, value",
     [
         ("id", 100),
-        ("float_col", 100.0),
+        ("float_col", 100.0123),
         ("string_col", "row_100"),
         ("bool_col", True),
         ("date_col", datetime.date(2021, 1, 1)),
