@@ -764,7 +764,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
-        r"""Splits each string on the given pattern, into a list of strings.
+        r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
         Example:
             >>> df = daft.from_pydict({"data": ["foo.bar.baz", "a.b.c", "1.2.3"]})
@@ -782,6 +782,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╰─────────────┴─────────────────╯
 
             Split on a regex pattern
+
             >>> df = daft.from_pydict({"data": ["foo.bar...baz", "a.....b.c", "1.2...3.."]})
             >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
             ╭───────────────┬─────────────────╮
