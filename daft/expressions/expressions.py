@@ -353,8 +353,7 @@ class Expression:
         Args:
             decimals: number of decimal places to round to. Defaults to 0.
         """
-        if decimals is None:
-            decimals = 0
+        assert isinstance(decimals, int)
         expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 

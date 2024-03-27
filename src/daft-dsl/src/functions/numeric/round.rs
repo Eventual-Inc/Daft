@@ -43,7 +43,7 @@ impl FunctionEvaluator for RoundEvaluator {
                 func: FunctionExpr::Numeric(NumericExpr::Round(index)),
                 inputs: _,
             } => index,
-            _ => panic!("Expected Utf8 ExtractAll Expr, got {expr}"),
+            _ => panic!("Expected Round Expr, got {expr}"),
         };
         inputs.first().unwrap().round(*decimal)
     }
