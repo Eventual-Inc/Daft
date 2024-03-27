@@ -245,7 +245,7 @@ def test_table_numeric_round() -> None:
     table = MicroPartition.from_pydict(
         {"a": [None, -1, -5, 0, 5, 2, None], "b": [-1.765, -1.565, -1.321, 0.399, 0.781, None, None]}
     )
-    round_table = table.eval_expression_list([col("a").round(None), col("b").round(2)])
+    round_table = table.eval_expression_list([col("a").round(0), col("b").round(2)])
     assert [
         Decimal(v).to_integral_value(rounding=ROUND_HALF_UP) if v is not None else v
         for v in table.get_column("a").to_pylist()
