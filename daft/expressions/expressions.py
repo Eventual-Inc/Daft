@@ -348,7 +348,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
-        """The sign of a numeric expression (``expr.round(decimals = 0)``)
+        """The round of a numeric expression (``expr.round(decimals = 0)``)
 
         Args:
             decimals: number of decimal places to round to. Defaults to 0.

@@ -11,7 +11,7 @@ pub(super) struct RoundEvaluator {}
 
 impl FunctionEvaluator for RoundEvaluator {
     fn fn_name(&self) -> &'static str {
-        "sign"
+        "round"
     }
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {

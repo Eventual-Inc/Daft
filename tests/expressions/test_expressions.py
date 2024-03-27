@@ -118,7 +118,7 @@ def test_repr_functions_round() -> None:
     a = col("a")
     y = a.round()
     repr_out = repr(y)
-    assert repr_out == "round(col(a), lit(0))"
+    assert repr_out == "round(col(a))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
