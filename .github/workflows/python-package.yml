@@ -199,7 +199,7 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -270,7 +270,7 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -352,7 +352,7 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -439,7 +439,7 @@ jobs:
           pyproject.toml
           requirements-dev.txt
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -515,7 +515,7 @@ jobs:
           pyproject.toml
           requirements-dev.txt
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: wheels
         path: dist
@@ -612,7 +612,7 @@ jobs:
     - rust-tests
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
         name: coverage-reports
         path: ./report-output
