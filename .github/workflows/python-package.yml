@@ -414,8 +414,6 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-iceberg:
-    # Dependabot-triggered PRs don't have access to the required secrets for this to run successfully
-    if: ${{ github.triggering_actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
