@@ -20,6 +20,21 @@ from daft.table import MicroPartition
             ["a,b,c", "d,e", "f", "g,h"],
             [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
         ),
+        (
+            col("col").str.split(r",+", True),
+            ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
+            [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
+        ),
+        (
+            col("col").str.split(lit(r",+"), True),
+            ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
+            [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
+        ),
+        (
+            col("col").str.split(col("emptystrings") + lit(r",+"), True),
+            ["a,,,,b,,,,c", "d,,,e", "f", "g,h"],
+            [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]],
+        ),
     ],
 )
 def test_series_utf8_split_broadcast_pattern(expr, data, expected) -> None:
