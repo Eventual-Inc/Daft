@@ -261,3 +261,8 @@ def test_table_round_bad_input() -> None:
 
     with pytest.raises(ValueError, match="Expected input to round to be numeric"):
         table.eval_expression_list([col("a").round()])
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+
+    with pytest.raises(ValueError, match="decimal can not be negative: -2"):
+        table.eval_expression_list([col("a").round(-2)])

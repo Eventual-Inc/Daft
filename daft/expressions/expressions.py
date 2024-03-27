@@ -347,12 +347,15 @@ class Expression:
         expr = self._expr.sign()
         return Expression._from_pyexpr(expr)
 
-    def round(self, digits: int | Expression = 0) -> Expression:
-        """The sign of a numeric expression (``expr.sign()``)"""
-        if digits is None:
-            digits = 0
-        digits = Expression._to_expression(digits)
-        expr = self._expr.round(digits._expr)
+    def round(self, decimals: int = 0) -> Expression:
+        """The sign of a numeric expression (``expr.round(decimals = 0)``)
+
+        Args:
+            decimals: number of decimal places to round to. Defaults to 0.
+        """
+        if decimals is None:
+            decimals = 0
+        expr = self._expr.round(decimals)
         return Expression._from_pyexpr(expr)
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:

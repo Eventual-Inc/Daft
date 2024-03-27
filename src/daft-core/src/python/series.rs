@@ -120,13 +120,13 @@ impl PySeries {
         Ok(self.series.sign()?.into())
     }
 
-    pub fn round(&self, digits: i32) -> PyResult<Self> {
-        if digits < 0 {
+    pub fn round(&self, decimal: i32) -> PyResult<Self> {
+        if decimal < 0 {
             return Err(PyValueError::new_err(format!(
-                "digits value can not be negative: {digits}"
+                "decimal value can not be negative: {decimal}"
             )));
         }
-        Ok(self.series.round(digits)?.into())
+        Ok(self.series.round(decimal)?.into())
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {

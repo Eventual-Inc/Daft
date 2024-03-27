@@ -22,7 +22,7 @@ pub enum NumericExpr {
     Ceil,
     Floor,
     Sign,
-    Round,
+    Round(i32),
 }
 
 impl NumericExpr {
@@ -34,7 +34,7 @@ impl NumericExpr {
             Ceil => &CeilEvaluator {},
             Floor => &FloorEvaluator {},
             Sign => &SignEvaluator {},
-            Round => &RoundEvaluator {},
+            Round(_) => &RoundEvaluator {},
         }
     }
 }
@@ -67,9 +67,9 @@ pub fn sign(input: &Expr) -> Expr {
     }
 }
 
-pub fn round(input: &Expr, digits: &Expr) -> Expr {
+pub fn round(input: &Expr, decimal: i32) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Numeric(NumericExpr::Round),
-        inputs: vec![input.clone(), digits.clone()],
+        func: super::FunctionExpr::Numeric(NumericExpr::Round(decimal)),
+        inputs: vec![input.clone()],
     }
 }

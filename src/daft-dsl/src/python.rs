@@ -215,9 +215,14 @@ impl PyExpr {
         Ok(sign(&self.expr).into())
     }
 
-    pub fn round(&self, digits: &Self) -> PyResult<Self> {
+    pub fn round(&self, decimal: i32) -> PyResult<Self> {
         use functions::numeric::round;
-        Ok(round(&self.expr, &digits.expr).into())
+        if decimal < 0 {
+            return Err(PyValueError::new_err(format!(
+                "decimal can not be negative: {decimal}"
+            )));
+        }
+        Ok(round(&self.expr, decimal).into())
     }
 
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
