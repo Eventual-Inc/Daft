@@ -114,7 +114,7 @@ jobs:
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports
+        name: coverage-reports-unit-tests-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}
         path: ./report-output
 
     - name: Send Slack notification on failure
@@ -169,7 +169,7 @@ jobs:
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels
+        name: wheels-${{ matrix.python-version }}
         path: dist
 
   integration-test-tpch:
@@ -201,7 +201,8 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -272,7 +273,8 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -354,7 +356,8 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -441,7 +444,8 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -517,7 +521,8 @@ jobs:
     - name: Download built wheels
       uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -582,7 +587,7 @@ jobs:
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports
+        name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.25.0
@@ -614,7 +619,8 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
-        name: coverage-reports
+        pattern: coverage-reports*
+        merge-multiple: true
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3

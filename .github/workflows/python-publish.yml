@@ -104,7 +104,7 @@ jobs:
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels
+        name: wheels-${{ matrix.os }}-${{ matrix.compile_arch }}
         path: dist
 
     - name: Send Slack notification on failure
@@ -142,7 +142,8 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - run: ls -R ./dist
     - name: Publish bdist package to PYPI
