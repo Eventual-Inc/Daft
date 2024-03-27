@@ -41,9 +41,9 @@ impl Series {
         }
     }
 
-    pub fn utf8_split(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_split(&self, pattern: &Series, regex: bool) -> DaftResult<Series> {
         match self.data_type() {
-            DataType::Utf8 => Ok(self.utf8()?.split(pattern.utf8()?)?.into_series()),
+            DataType::Utf8 => Ok(self.utf8()?.split(pattern.utf8()?, regex)?.into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "Split not implemented for type {dt}"
             ))),

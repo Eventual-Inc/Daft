@@ -103,47 +103,76 @@ def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
         # Single-character pattern.
-        (["a,b,c", "d,e", "f", "g,h"], [","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]]),
+        (["a,b,c", "d,e", "f", "g,h"], [","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]], False),
         # Multi-character pattern.
-        (["abbcbbd", "bb", "bbe", "fbb"], ["bb"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]]),
+        (["abbcbbd", "bb", "bbe", "fbb"], ["bb"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]], False),
         # Empty pattern (character-splitting).
-        (["foo", "bar"], [""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]]),
+        (["foo", "bar"], [""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]], False),
+        # Single-character pattern (regex).
+        (["a,b,c", "d,e", "f", "g,h"], [r","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]], True),
+        # Multi-character pattern (regex).
+        (["abbcbbd", "bb", "bbe", "fbb"], [r"b+"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]], True),
+        # Empty pattern (regex).
+        (["foo", "bar"], [r""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]], True),
     ],
 )
-def test_series_utf8_split_broadcast_pattern(data, patterns, expected) -> None:
+def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
-        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [",", ":", ";", "."], [["a", "b", "c"]] * 4),
-        (["aabbccdd"] * 4, ["aa", "bb", "cc", "dd"], [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]]),
+        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [",", ":", ";", "."], [["a", "b", "c"]] * 4, False),
+        (
+            ["aabbccdd"] * 4,
+            ["aa", "bb", "cc", "dd"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            False,
+        ),
+        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [r",", r":", r";", r"\."], [["a", "b", "c"]] * 4, True),
+        (
+            ["aabbccdd"] * 4,
+            [r"a+", r"b+", r"c+", r"d+"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            True,
+        ),
     ],
 )
-def test_series_utf8_split_multi_pattern(data, patterns, expected) -> None:
+def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
-        (["aabbccdd"], ["aa", "bb", "cc", "dd"], [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]]),
+        (
+            ["aabbccdd"],
+            ["aa", "bb", "cc", "dd"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            False,
+        ),
+        (
+            ["aabbccdd"],
+            [r"a+", r"b+", r"c+", r"d+"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            True,
+        ),
     ],
 )
-def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
+def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
@@ -151,7 +180,7 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
     ["data", "patterns", "expected"],
     [
         # Mixed-in nulls.
-        (["a,b,c", None, "a;b;c", "a.b.c"], [",", ":", None, "."], [["a", "b", "c"], None, None, ["a", "b", "c"]]),
+        (["a,b,c", None, "a;b;c", "a/b/c"], [",", ":", None, "/"], [["a", "b", "c"], None, None, ["a", "b", "c"]]),
         # All null data.
         ([None] * 4, [","] * 4, [None] * 4),
         # All null patterns.
@@ -162,10 +191,11 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
         (["foo"] * 4, [None], [None] * 4),
     ],
 )
-def test_series_utf8_split_nulls(data, patterns, expected) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
@@ -178,7 +208,8 @@ def test_series_utf8_split_nulls(data, patterns, expected) -> None:
         ([["foo"] * 4, [], []]),
     ],
 )
-def test_series_utf8_split_empty_arrs(data, patterns, expected) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_empty_arrs(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
     result = s.str.split(patterns)
@@ -194,10 +225,11 @@ def test_series_utf8_split_empty_arrs(data, patterns, expected) -> None:
         object(),
     ],
 )
-def test_series_utf8_split_invalid_inputs(patterns) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_invalid_inputs(patterns, regex) -> None:
     s = Series.from_arrow(pa.array(["a,b,c", "d, e", "f"]))
     with pytest.raises(ValueError):
-        s.str.split(patterns)
+        s.str.split(patterns, regex=regex)
 
 
 def test_series_utf8_length() -> None:

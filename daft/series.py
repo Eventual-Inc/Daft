@@ -592,11 +592,11 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and pattern._series is not None
         return Series._from_pyseries(self._series.utf8_match(pattern._series))
 
-    def split(self, pattern: Series) -> Series:
+    def split(self, pattern: Series, regex: bool = False) -> Series:
         if not isinstance(pattern, Series):
             raise ValueError(f"expected another Series but got {type(pattern)}")
         assert self._series is not None and pattern._series is not None
-        return Series._from_pyseries(self._series.utf8_split(pattern._series))
+        return Series._from_pyseries(self._series.utf8_split(pattern._series, regex))
 
     def concat(self, other: Series) -> Series:
         if not isinstance(other, Series):
