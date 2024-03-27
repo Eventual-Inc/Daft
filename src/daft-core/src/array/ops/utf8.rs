@@ -11,12 +11,13 @@ use num_traits::NumCast;
 use super::{as_arrow::AsArrow, full::FullNull};
 
 fn split_array_on_literal<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<&'a str>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    pattern_iter: impl Iterator<Item = Option<&'a str>>,
     splits: &mut arrow2::array::MutableUtf8Array<i64>,
     offsets: &mut arrow2::offset::Offsets<i64>,
     validity: &mut arrow2::bitmap::MutableBitmap,
 ) -> DaftResult<()> {
-    for (val, pat) in iter {
+    for (val, pat) in arr_iter.zip(pattern_iter) {
         let mut num_splits = 0i64;
         match (val, pat) {
             (Some(val), Some(pat)) => {
@@ -36,12 +37,13 @@ fn split_array_on_literal<'a>(
 }
 
 fn split_array_on_regex<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     splits: &mut arrow2::array::MutableUtf8Array<i64>,
     offsets: &mut arrow2::offset::Offsets<i64>,
     validity: &mut arrow2::bitmap::MutableBitmap,
 ) -> DaftResult<()> {
-    for (val, re) in iter {
+    for (val, re) in arr_iter.zip(regex_iter) {
         let mut num_splits = 0i64;
         match (val, re) {
             (Some(val), Some(re)) => {
@@ -73,11 +75,13 @@ fn right_most_chars(val: &str, nchar: usize) -> &str {
 }
 
 fn regex_extract_first_match<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     index: usize,
     name: &str,
 ) -> DaftResult<Utf8Array> {
-    let arrow_result = iter
+    let arrow_result = arr_iter
+        .zip(regex_iter)
         .map(|(val, re)| match (val, re) {
             (Some(val), Some(re)) => {
                 // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
@@ -100,7 +104,8 @@ fn regex_extract_first_match<'a>(
 }
 
 fn regex_extract_all_matches<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     index: usize,
     len: usize,
     name: &str,
@@ -109,7 +114,7 @@ fn regex_extract_all_matches<'a>(
     let mut offsets = arrow2::offset::Offsets::new();
     let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
 
-    for (val, re) in iter {
+    for (val, re) in arr_iter.zip(regex_iter) {
         let mut num_matches = 0i64;
         match (val, re) {
             (Some(val), Some(re)) => {
@@ -242,9 +247,9 @@ impl Utf8Array {
             (self_len, pattern_len) if self_len == pattern_len => {
                 if regex {
                     let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                    split_array_on_regex(self_arrow.into_iter().zip(regex_iter), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_regex(self_arrow.iter(), regex_iter, &mut splits, &mut offsets, &mut validity)?
                 } else {
-                    split_array_on_literal(self_arrow.into_iter().zip(pattern_arrow.iter()), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_literal(self_arrow.iter(), pattern_arrow.iter(), &mut splits, &mut offsets, &mut validity)?
                 }
             },
             // Broadcast pattern case:
@@ -253,10 +258,10 @@ impl Utf8Array {
                 if regex {
                     let re = Some(regex::Regex::new(pattern_scalar_value));
                     let regex_iter = std::iter::repeat(re).take(self_len);
-                    split_array_on_regex(self_arrow.into_iter().zip(regex_iter), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_regex(self_arrow.iter(), regex_iter, &mut splits, &mut offsets, &mut validity)?
                 } else {
                     let pattern_iter = std::iter::repeat(Some(pattern_scalar_value)).take(self_len);
-                    split_array_on_literal(self_arrow.into_iter().zip(pattern_iter), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_literal(self_arrow.iter(), pattern_iter, &mut splits, &mut offsets, &mut validity)?
                 }
             }
             // Broadcast self case:
@@ -265,9 +270,9 @@ impl Utf8Array {
                 let arr_iter = std::iter::repeat(Some(self_scalar_value)).take(pattern_len);
                 if regex {
                     let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                    split_array_on_regex(arr_iter.zip(regex_iter), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_regex(arr_iter, regex_iter, &mut splits, &mut offsets, &mut validity)?
                 } else {
-                    split_array_on_literal(arr_iter.zip(pattern_arrow.iter()), &mut splits, &mut offsets, &mut validity)?
+                    split_array_on_literal(arr_iter, pattern_arrow.iter(), &mut splits, &mut offsets, &mut validity)?
                 }
             }
             // Mismatched len case:
@@ -303,9 +308,8 @@ impl Utf8Array {
         match (self.len(), pattern.len()) {
             // Matching len case:
             (self_len, pattern_len) if self_len == pattern_len => {
-                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                let iter = self_arrow.iter().zip(regexes);
-                regex_extract_first_match(iter, index, self.name())
+                let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                regex_extract_first_match(self_arrow.iter(), regex_iter, index, self.name())
             }
             // Broadcast pattern case:
             (self_len, 1) => {
@@ -318,8 +322,8 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
-                        regex_extract_first_match(iter, index, self.name())
+                        let regex_iter = std::iter::repeat(re).take(self_len);
+                        regex_extract_first_match(self_arrow.iter(), regex_iter, index, self.name())
                     }
                 }
             }
@@ -333,9 +337,9 @@ impl Utf8Array {
                         pattern_len,
                     )),
                     Some(self_v) => {
-                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
-                        regex_extract_first_match(iter, index, self.name())
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        regex_extract_first_match(arr_iter, regex_iter, index, self.name())
                     }
                 }
             }
@@ -360,9 +364,8 @@ impl Utf8Array {
         match (self.len(), pattern.len()) {
             // Matching len case:
             (self_len, pattern_len) if self_len == pattern_len => {
-                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                let iter = self_arrow.iter().zip(regexes);
-                regex_extract_all_matches(iter, index, self_len, self.name())
+                let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                regex_extract_all_matches(self_arrow.iter(), regex_iter, index, self_len, self.name())
             }
             // Broadcast pattern case:
             (self_len, 1) => {
@@ -375,8 +378,8 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
-                        regex_extract_all_matches(iter, index, self_len, self.name())
+                        let regex_iter = std::iter::repeat(re).take(self_len);
+                        regex_extract_all_matches(self_arrow.iter(), regex_iter, index, self_len, self.name())
                     }
                 }
             }
@@ -390,9 +393,9 @@ impl Utf8Array {
                         pattern_len,
                     )),
                     Some(self_v) => {
-                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
-                        regex_extract_all_matches(iter, index, pattern_len, self.name())
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        regex_extract_all_matches(arr_iter, regex_iter, index, pattern_len, self.name())
                     }
                 }
             }
