@@ -10,7 +10,11 @@ from fsspec import AbstractFileSystem
 
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
-from daft.hudi.pyhudi.utils import get_full_file_paths, get_full_sub_dirs, get_leaf_dirs
+from daft.hudi.pyhudi.utils import (
+    list_full_file_paths,
+    list_full_sub_dirs,
+    list_leaf_dirs,
+)
 
 # TODO(Shiyan): support base file in .orc
 BASE_FILE_EXTENSIONS = [".parquet"]
@@ -28,11 +32,11 @@ class MetaClient:
         return self.timeline
 
     def get_partition_paths(self, relative=True) -> list[str]:
-        first_level_full_partition_paths = get_full_sub_dirs(self.base_path, self.fs, excludes=[".hoodie"])
+        first_level_full_partition_paths = list_full_sub_dirs(self.base_path, self.fs, excludes=[".hoodie"])
         partition_paths = []
         common_prefix_len = len(self.base_path) + 1 if relative else 0
         for p in first_level_full_partition_paths:
-            partition_paths.extend(get_leaf_dirs(p, self.fs, common_prefix_len))
+            partition_paths.extend(list_leaf_dirs(p, self.fs, common_prefix_len))
         return partition_paths
 
     def get_full_partition_path(self, partition_path: str) -> str:
@@ -40,10 +44,10 @@ class MetaClient:
 
     def get_file_groups(self, partition_path: str) -> list[FileGroup]:
         full_partition_path = self.get_full_partition_path(partition_path)
-        base_file_metadata = get_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
+        base_file_metadata = list_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
         fg_id_to_base_files = defaultdict(list)
         for metadata in base_file_metadata:
-            base_file = BaseFile(metadata.path, metadata.size, metadata.num_records, self.fs)
+            base_file = BaseFile(metadata, self.fs)
             fg_id_to_base_files[base_file.file_group_id].append(base_file)
         file_groups = []
         for fg_id, base_files in fg_id_to_base_files.items():
@@ -103,6 +107,14 @@ class HudiTableProps:
         return self._props["hoodie.table.partition.fields"]
 
 
+@dataclass
+class HudiTableMetadata:
+
+    files_metadata: pa.RecordBatch
+    colstats_min_values: pa.RecordBatch
+    colstats_max_values: pa.RecordBatch
+
+
 @dataclass(init=False)
 class HudiTable:
     def __init__(self, table_uri: str, storage_options: dict[str, str] | None = None):
@@ -110,14 +122,24 @@ class HudiTable:
         self._meta_client = MetaClient(fs, table_uri, timeline=None)
         self._props = HudiTableProps(fs, table_uri)
 
-    def latest_files_metadata(self) -> pa.RecordBatch:
-        fs_view = FileSystemView(self._meta_client)
-        file_slices = fs_view.get_latest_file_slices()
-        metadata = []
+    def latest_table_metadata(self) -> HudiTableMetadata:
+        file_slices = FileSystemView(self._meta_client).get_latest_file_slices()
+        files_metadata = []
+        min_vals_arr = []
+        max_vals_arr = []
         for file_slice in file_slices:
-            metadata.append(file_slice.metadata)
-        metadata_arrays = [pa.array(column) for column in list(zip(*metadata))]
-        return pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.METADATA_SCHEMA)
+            files_metadata.append(file_slice.files_metadata)
+            min_vals, max_vals = file_slice.colstats_min_max
+            min_vals_arr.append(min_vals)
+            max_vals_arr.append(max_vals)
+        metadata_arrays = [pa.array(column) for column in list(zip(*files_metadata))]
+        min_value_arrays = [pa.array(column) for column in list(zip(*min_vals_arr))]
+        max_value_arrays = [pa.array(column) for column in list(zip(*max_vals_arr))]
+        return HudiTableMetadata(
+            pa.RecordBatch.from_arrays(metadata_arrays, schema=FileSlice.FILES_METADATA_SCHEMA),
+            pa.RecordBatch.from_arrays(min_value_arrays, schema=self.schema),
+            pa.RecordBatch.from_arrays(max_value_arrays, schema=self.schema),
+        )
 
     @property
     def table_uri(self) -> str:

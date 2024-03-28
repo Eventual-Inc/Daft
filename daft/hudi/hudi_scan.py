@@ -18,7 +18,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.hudi.pyhudi.table import HudiTable
+from daft.hudi.pyhudi.table import HudiTable, HudiTableMetadata
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 
@@ -57,8 +57,8 @@ class HudiScanOperator(ScanOperator):
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
-        # TODO(Shiyan) integrate with metadata table to prune the files returned.
-        latest_files_metadata: pa.RecordBatch = self._table.latest_files_metadata()
+        hudi_table_metadata: HudiTableMetadata = self._table.latest_table_metadata()
+        files_metadata = hudi_table_metadata.files_metadata
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
             logging.warning(
@@ -68,21 +68,21 @@ class HudiScanOperator(ScanOperator):
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
         scan_tasks = []
-        for task_idx in range(latest_files_metadata.num_rows):
+        for task_idx in range(files_metadata.num_rows):
             if limit_files and rows_left <= 0:
                 break
 
-            path = latest_files_metadata["path"][task_idx].as_py()
-            record_count = latest_files_metadata["num_records"][task_idx].as_py()
+            path = files_metadata["path"][task_idx].as_py()
+            record_count = files_metadata["num_records"][task_idx].as_py()
             try:
-                size_bytes = latest_files_metadata["size_bytes"][task_idx].as_py()
+                size_bytes = files_metadata["size_bytes"][task_idx].as_py()
             except KeyError:
                 size_bytes = None
             file_format_config = FileFormatConfig.from_parquet_config(ParquetSourceConfig())
 
             if self._table.is_partitioned:
-                dtype = latest_files_metadata.schema.field("_hoodie_partition_path").type
-                part_values = latest_files_metadata["partition_values"][task_idx]
+                dtype = files_metadata.schema.field("partition_values").type
+                part_values = files_metadata["partition_values"][task_idx]
                 arrays = {}
                 for field_idx in range(dtype.num_fields):
                     field_name = dtype.field(field_idx).name
@@ -97,7 +97,25 @@ class HudiScanOperator(ScanOperator):
                 partition_values = None
 
             # Populate scan task with column-wise stats.
-            # TODO(Shiyan): Add support for column stats
+            schema = self._table.schema
+            min_values = hudi_table_metadata.colstats_min_values
+            max_values = hudi_table_metadata.colstats_max_values
+            arrays = {}
+            for field_idx in range(len(schema)):
+                field_name = schema.field(field_idx).name
+                field_type = schema.field(field_idx).type
+                try:
+                    arrow_arr = pa.array(
+                        [min_values[field_name][task_idx], max_values[field_name][task_idx]], type=field_type
+                    )
+                except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                    # pyarrow < 13.0.0 doesn't accept pyarrow scalars in the array constructor.
+                    arrow_arr = pa.array(
+                        [min_values[field_name][task_idx].as_py(), max_values[field_name][task_idx].as_py()],
+                        type=field_type,
+                    )
+                arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
+            stats = daft.table.Table.from_pydict(arrays)._table
 
             st = ScanTask.catalog_scan_task(
                 file=path,
@@ -108,7 +126,7 @@ class HudiScanOperator(ScanOperator):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=None,
+                stats=stats,
             )
             if st is None:
                 continue
