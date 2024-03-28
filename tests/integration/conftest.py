@@ -14,7 +14,7 @@ from tests.conftest import assert_df_equals
 SCALE_FACTOR = 0.2
 
 
-@pytest.fixture(scope="session", autouse=True, params=[1, 2])
+@pytest.fixture(scope="session", params=[1, 2])
 def gen_tpch(request):
     # Parametrize the number of parts for each file so that we run tests on single-partition files and multi-partition files
     num_parts = request.param
