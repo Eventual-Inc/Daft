@@ -161,6 +161,56 @@ fn regex_extract_all_matches<'a>(
     ))
 }
 
+fn regex_replace<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
+    replacement_iter: impl Iterator<Item = Option<&'a str>>,
+    name: &str,
+    replace_all: bool,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = arr_iter
+        .zip(regex_iter)
+        .zip(replacement_iter)
+        .map(|((val, re), replacement)| match (val, re, replacement) {
+            (Some(val), Some(re), Some(replacement)) => {
+                if replace_all {
+                    Ok(Some(re?.replace_all(val, replacement)))
+                } else {
+                    Ok(Some(re?.replace(val, replacement)))
+                }
+            }
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
+fn replace_on_literal<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    pattern_iter: impl Iterator<Item = Option<&'a str>>,
+    replacement_iter: impl Iterator<Item = Option<&'a str>>,
+    name: &str,
+    replace_all: bool,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = arr_iter
+        .zip(pattern_iter)
+        .zip(replacement_iter)
+        .map(|((val, pat), replacement)| match (val, pat, replacement) {
+            (Some(val), Some(pat), Some(replacement)) => {
+                if replace_all {
+                    Ok(Some(val.replace(pat, replacement)))
+                } else {
+                    Ok(Some(val.replacen(pat, replacement, 1)))
+                }
+            }
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
@@ -404,6 +454,163 @@ impl Utf8Array {
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
                 "Error in extract_all: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
+    }
+
+    pub fn replace(
+        &self,
+        pattern: &Utf8Array,
+        replacement: &Utf8Array,
+        regex: bool,
+        replace_all: bool,
+    ) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+        let replacement_arrow = replacement.as_arrow();
+
+        if self.is_empty() || pattern.is_empty() || replacement.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+
+        match (self.len(), pattern.len(), replacement.len()) {
+            (self_len, pattern_len, replacement_len)
+                if self_len == pattern_len && self_len == replacement_len =>
+            {
+                if regex {
+                    let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                    regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                } else {
+                    replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_arrow.iter(), self.name(), replace_all)
+
+                }
+            }
+            (1, pattern_len, replacement_len) if pattern_len == replacement_len => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        pattern_len,
+                    )),
+                    Some(self_v) => {
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        if regex {
+                            let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                            regex_replace(arr_iter, regexes, replacement_arrow.iter(), self.name(), replace_all)
+                        } else {
+                            replace_on_literal(arr_iter, pattern_arrow.iter(), replacement_arrow.iter(), self.name(), replace_all)
+                        }
+                    }
+                }
+            }
+            (self_len, 1, replacement_len) if self_len == replacement_len => {
+                let pattern_scalar_value = pattern.get(0);
+                match pattern_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(pattern_v) => {
+                        if regex {
+                            let re = Some(regex::Regex::new(pattern_v));
+                            let regex_iter = std::iter::repeat(re).take(self_len);
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                        } else {
+                            let pattern_iter = std::iter::repeat(Some(pattern_v)).take(self_len);
+                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_arrow.iter(), self.name(), replace_all)
+                        }
+                    }
+                }
+            }
+            (self_len, pattern_len, 1) if self_len == pattern_len => {
+                let replacement_scalar_value = replacement.get(0);
+                match replacement_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(replacement_v) => {
+                        let replacement_iter = std::iter::repeat(Some(replacement_v)).take(self_len);
+                        if regex {
+                            let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name(), replace_all)
+                        } else {
+                            replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_iter, self.name(), replace_all)
+                        }
+                    }
+                }
+            }
+            (1,1,replacement_len) => {
+                let self_scalar_value = self.get(0);
+                let pattern_scalar_value = pattern.get(0);
+                match (self_scalar_value, pattern_scalar_value) {
+                    (None, _) | (_, None) => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        replacement_len,
+                    )),
+                    (Some(self_v), Some(pattern_v)) => {
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(replacement_len);
+                        if regex {
+                            let re = Some(regex::Regex::new(pattern_v));
+                            let regex_iter = std::iter::repeat(re).take(replacement_len);
+                            regex_replace(arr_iter, regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                        } else {
+                            let pattern_iter = std::iter::repeat(Some(pattern_v)).take(replacement_len);
+                            replace_on_literal(arr_iter, pattern_iter, replacement_arrow.iter(), self.name(), replace_all)
+                        }
+                    }
+                }
+            },
+            (1,pattern_len,1) => {
+                let self_scalar_value = self.get(0);
+                let replacement_scalar_value = replacement.get(0);
+                match (self_scalar_value, replacement_scalar_value) {
+                    (None, _) | (_, None) => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        pattern_len,
+                    )),
+                    (Some(self_v), Some(replacement_v)) => {
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        let replacement_iter = std::iter::repeat(Some(replacement_v)).take(pattern_len);
+                        if regex {
+                            let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                            regex_replace(arr_iter, regex_iter, replacement_iter, self.name(), replace_all)
+                        } else {
+                            let pattern_iter = pattern_arrow.iter();
+                            replace_on_literal(arr_iter, pattern_iter, replacement_iter, self.name(), replace_all)
+                        }
+                    }
+                }
+            },
+            (self_len,1,1) => {
+                let pattern_scalar_value = pattern.get(0);
+                let replacement_scalar_value = replacement.get(0);
+                match (pattern_scalar_value, replacement_scalar_value) {
+                    (None, _) | (_, None) => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    (Some(pattern_v), Some(replacement_v)) => {
+                        let replacement_iter = std::iter::repeat(Some(replacement_v)).take(self_len);
+                        if regex {
+                            let re = Some(regex::Regex::new(pattern_v));
+                            let regex_iter = std::iter::repeat(re).take(self_len);
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name(), replace_all)
+                        } else {
+                            let pattern_iter = std::iter::repeat(Some(pattern_v)).take(self_len);
+                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_iter, self.name(), replace_all)
+                        }
+                    }
+                }
+            },
+            (self_len,pattern_len, replacement_len) => Err(DaftError::ComputeError(format!(
+                "Error in replace: lhs, pattern, and replacement have different length arrays: {self_len} vs {pattern_len} vs {replacement_len}"
             ))),
         }
     }

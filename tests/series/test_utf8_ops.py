@@ -660,3 +660,28 @@ def test_series_utf8_find_bad_dtype() -> None:
     substrs = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
     with pytest.raises(ValueError):
         s.str.find(substrs)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "replacement", "expected"],
+    [
+        # No broadcast
+        (["foo", "barbaz", "quux"], ["o", "a", "u"], ["O", "A", "U"], ["fOo", "bArbaz", "qUux"]),
+        # Broadcast pattern
+        (["abc", "bcd", "cde"], ["b"], ["B"], ["aBc", "Bcd", "cde"]),
+        # Broadcast data
+        (["foo"], ["f", "o", " "], ["F", "O", "O"], ["Foo", "fOo", "foo"]),
+        # Broadcast null data
+        ([None], ["f", "o", " "], ["F", "O", "O"], [None, None, None]),
+        # Broadcast null pattern
+        (["foo", "barbaz", "quux"], [None], ["F", "O", "O"], [None, None, None]),
+        # Mixed in nulls
+        (["foo", None, "quux"], [None, "o", "u"], ["F", "O", "O"], [None, None, "qOux"]),
+    ],
+)
+def test_series_utf8_replace(data, pattern, replacement, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacements = Series.from_arrow(pa.array(replacement, type=pa.string()))
+    result = s.str.replace(patterns, replacements)
+    assert result.to_pylist() == expected

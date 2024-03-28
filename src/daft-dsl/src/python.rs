@@ -427,6 +427,21 @@ impl PyExpr {
         Ok(extract_all(&self.expr, &pattern.expr, index).into())
     }
 
+    pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
+        use crate::functions::utf8::replace;
+        Ok(replace(&self.expr, &pattern.expr, &replacement.expr, regex).into())
+    }
+
+    pub fn utf8_replace_all(
+        &self,
+        pattern: &Self,
+        replacement: &Self,
+        regex: bool,
+    ) -> PyResult<Self> {
+        use crate::functions::utf8::replace_all;
+        Ok(replace_all(&self.expr, &pattern.expr, &replacement.expr, regex).into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
         Ok(length(&self.expr).into())
