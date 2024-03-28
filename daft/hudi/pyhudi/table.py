@@ -10,9 +10,9 @@ import pyarrow.fs as pafs
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
 from daft.hudi.pyhudi.utils import (
-    list_full_file_paths,
     list_full_sub_dirs,
     list_leaf_dirs,
+    list_relative_file_paths,
 )
 
 # TODO(Shiyan): support base file in .orc
@@ -33,17 +33,16 @@ class MetaClient:
     def get_partition_paths(self, relative=True) -> list[str]:
         first_level_full_partition_paths = list_full_sub_dirs(self.base_path, self.fs, excludes=[".hoodie"])
         partition_paths = []
-        common_prefix_len = len(self.base_path) + 1 if relative else 0
         for p in first_level_full_partition_paths:
-            partition_paths.extend(list_leaf_dirs(p, self.fs, common_prefix_len))
-        return partition_paths
+            partition_paths.extend(list_leaf_dirs(p, self.fs))
 
-    def get_full_partition_path(self, partition_path: str) -> str:
-        return os.path.join(self.base_path, partition_path)
+        common_prefix_len = len(self.base_path) + 1 if relative else 0
+        return [p[common_prefix_len:] for p in partition_paths]
 
     def get_file_groups(self, partition_path: str) -> list[FileGroup]:
-        full_partition_path = self.get_full_partition_path(partition_path)
-        base_file_metadata = list_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
+        base_file_metadata = list_relative_file_paths(
+            self.base_path, partition_path, self.fs, includes=BASE_FILE_EXTENSIONS
+        )
         fg_id_to_base_files = defaultdict(list)
         for metadata in base_file_metadata:
             base_file = BaseFile(metadata)
@@ -124,16 +123,17 @@ class UnsupportedException(Exception):
 
 @dataclass(init=False)
 class HudiTable:
-    def __init__(self, fs: pafs.FileSystem, table_uri: str):
-        self._meta_client = MetaClient(fs, table_uri, timeline=None)
-        self._props = HudiTableProps(fs, table_uri)
+    def __init__(self, table_uri: str, fs: pafs.FileSystem, base_path: str):
+        self.table_uri = table_uri
+        self._meta_client = MetaClient(fs, base_path, timeline=None)
+        self._props = HudiTableProps(fs, base_path)
         self._validate_table_props()
 
     def _validate_table_props(self):
         if self._props.get_config("hoodie.table.type") != "COPY_ON_WRITE":
-            raise UnsupportedException
+            raise UnsupportedException("Only support COPY_ON_WRITE table")
         if self._props.get_config("hoodie.table.keygenerator.class") != "org.apache.hudi.keygen.SimpleKeyGenerator":
-            raise UnsupportedException
+            raise UnsupportedException("Only support using Simple Key Generator")
 
     def latest_table_metadata(self) -> HudiTableMetadata:
         file_slices = FileSystemView(self._meta_client).get_latest_file_slices()
@@ -155,7 +155,7 @@ class HudiTable:
         )
 
     @property
-    def table_uri(self) -> str:
+    def base_path(self) -> str:
         return self._meta_client.base_path
 
     @property

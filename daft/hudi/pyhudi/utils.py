@@ -10,10 +10,11 @@ import pyarrow.parquet as pq
 
 @dataclass(init=False)
 class FsFileMetadata:
-    def __init__(self, path: str, base_name: str):
+    def __init__(self, fs: pafs.FileSystem, base_path: str, path: str, base_name: str):
+        self.base_path = base_path
         self.path = path
         self.base_name = base_name
-        metadata = pq.read_metadata(path)
+        metadata = pq.read_metadata(os.path.join(base_path, path), filesystem=fs)
         self.size = metadata.serialized_size
         self.num_records = metadata.num_rows
         self.schema, self.min_values, self.max_values = FsFileMetadata._extract_min_max(metadata)
@@ -37,13 +38,18 @@ class FsFileMetadata:
         return arrow_schema, min_vals, max_vals
 
 
-def list_full_file_paths(path: str, fs: pafs.FileSystem, includes: list[str] | None) -> list[FsFileMetadata]:
-    sub_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(path))
+def list_relative_file_paths(
+    base_path: str, sub_path: str, fs: pafs.FileSystem, includes: list[str] | None
+) -> list[FsFileMetadata]:
+    listed_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(os.path.join(base_path, sub_path)))
     file_paths = []
-    for sub_path in sub_paths:
-        if sub_path.type == pafs.FileType.File:
-            if includes and os.path.splitext(sub_path.base_name)[-1] in includes:
-                file_paths.append(FsFileMetadata(sub_path.path, sub_path.base_name))
+    common_prefix_len = len(base_path) + 1
+    for listed_path in listed_paths:
+        if listed_path.type == pafs.FileType.File:
+            if includes and os.path.splitext(listed_path.base_name)[-1] in includes:
+                file_paths.append(
+                    FsFileMetadata(fs, base_path, listed_path.path[common_prefix_len:], listed_path.base_name)
+                )
 
     return file_paths
 
@@ -59,17 +65,16 @@ def list_full_sub_dirs(path: str, fs: pafs.FileSystem, excludes: list[str] | Non
     return sub_dirs
 
 
-def list_leaf_dirs(path: str, fs: pafs.FileSystem, common_prefix_len=0) -> list[str]:
+def list_leaf_dirs(path: str, fs: pafs.FileSystem) -> list[str]:
     sub_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(path))
     leaf_dirs = []
 
     for sub_path in sub_paths:
         if sub_path.type == pafs.FileType.Directory:
-            leaf_dirs.extend(list_leaf_dirs(sub_path.path, fs, common_prefix_len))
+            leaf_dirs.extend(list_leaf_dirs(sub_path.path, fs))
 
     # leaf directory
     if len(leaf_dirs) == 0:
-        leaf_path = path[common_prefix_len:]
-        leaf_dirs.append(leaf_path)
+        leaf_dirs.append(path)
 
     return leaf_dirs

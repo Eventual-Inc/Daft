@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator
 
 import daft
@@ -23,7 +24,7 @@ class HudiScanOperator(ScanOperator):
     def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
         super().__init__()
         resolved_path, resolved_fs = _resolve_paths_and_filesystem(table_uri, storage_config.config.io_config)
-        self._table = HudiTable(resolved_fs, resolved_path[0])
+        self._table = HudiTable(table_uri, resolved_fs, resolved_path[0])
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema)
         partition_fields = set(self._table.props.partition_fields)
@@ -66,7 +67,7 @@ class HudiScanOperator(ScanOperator):
             if limit_files and rows_left <= 0:
                 break
 
-            path = files_metadata["path"][task_idx].as_py()
+            path = os.path.join(self._table.table_uri, files_metadata["path"][task_idx].as_py())
             record_count = files_metadata["num_records"][task_idx].as_py()
             try:
                 size_bytes = files_metadata["size_bytes"][task_idx].as_py()
