@@ -940,7 +940,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
     def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
-        """Replaces all occurrences of a pattern in a string column with a replacement string.
+        """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
 
         Example:
             >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
