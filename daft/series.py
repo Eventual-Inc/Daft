@@ -659,6 +659,12 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and nchars._series is not None
         return Series._from_pyseries(self._series.utf8_right(nchars._series))
 
+    def find(self, substr: Series) -> Series:
+        if not isinstance(substr, Series):
+            raise ValueError(f"expected another Series but got {type(substr)}")
+        assert self._series is not None and substr._series is not None
+        return Series._from_pyseries(self._series.utf8_find(substr._series))
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:

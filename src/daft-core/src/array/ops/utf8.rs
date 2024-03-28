@@ -1,6 +1,8 @@
 use crate::{
     array::{DataArray, ListArray},
-    datatypes::{BooleanArray, DaftIntegerType, DaftNumericType, Field, UInt64Array, Utf8Array},
+    datatypes::{
+        BooleanArray, DaftIntegerType, DaftNumericType, Field, Int64Array, UInt64Array, Utf8Array,
+    },
     DataType, Series,
 };
 use arrow2::{self, array::Array};
@@ -477,6 +479,89 @@ impl Utf8Array {
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+    }
+
+    pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
+        let self_arrow = self.as_arrow();
+        let substr_arrow = substr.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || substr_arrow.is_empty() {
+            return Ok(Int64Array::empty(self.name(), self.data_type()));
+        }
+        match (self.len(), substr.len()) {
+            // matching len case
+            (self_len, substr_len) if self_len == substr_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(substr_arrow.iter())
+                    .map(|(val, substr)| match (val, substr) {
+                        (Some(val), Some(substr)) => {
+                            Some(val.find(substr).map(|pos| pos as i64).unwrap_or(-1))
+                        }
+                        _ => None,
+                    })
+                    .collect::<arrow2::array::Int64Array>();
+
+                Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // broadcast pattern case
+            (self_len, 1) => {
+                let substr_scalar_value = substr.get(0);
+                match substr_scalar_value {
+                    None => Ok(Int64Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(substr_scalar_value) => {
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(
+                                    v.find(substr_scalar_value)
+                                        .map(|pos| pos as i64)
+                                        .unwrap_or(-1),
+                                )
+                            })
+                            .collect::<arrow2::array::Int64Array>();
+
+                        Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self case
+            (1, substr_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Int64Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        substr_len,
+                    )),
+                    Some(self_scalar_value) => {
+                        let arrow_result = substr_arrow
+                            .iter()
+                            .map(|substr| {
+                                let substr = substr?;
+                                Some(
+                                    self_scalar_value
+                                        .find(substr)
+                                        .map(|pos| pos as i64)
+                                        .unwrap_or(-1),
+                                )
+                            })
+                            .collect::<arrow2::array::Int64Array>();
+
+                        Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, substr_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {substr_len}"
+            ))),
+        }
     }
 
     pub fn left<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>

@@ -1011,6 +1011,18 @@ class ExpressionStringNamespace(ExpressionNamespace):
         nchars_expr = Expression._to_expression(nchars)
         return Expression._from_pyexpr(self._expr.utf8_right(nchars_expr._expr))
 
+    def find(self, substr: str | Expression) -> Expression:
+        """Returns the index of the first occurrence of the substring in each string
+
+        Example:
+            >>> col("x").str.find("foo")
+
+        Returns:
+            Expression: an Int64 expression with the index of the first occurrence of the substring in each string
+        """
+        substr_expr = Expression._to_expression(substr)
+        return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:
