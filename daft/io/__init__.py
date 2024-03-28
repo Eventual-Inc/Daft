@@ -11,6 +11,7 @@ from daft.daft import (
 )
 from daft.io._csv import read_csv
 from daft.io._delta_lake import read_delta_lake
+from daft.io._hudi import read_hudi
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
@@ -38,6 +39,7 @@ __all__ = [
     "read_json",
     "from_glob_path",
     "read_parquet",
+    "read_hudi",
     "read_iceberg",
     "read_delta_lake",
     "read_sql",
