@@ -540,7 +540,7 @@ jobs:
         popd
     - name: Run sql integration tests
       run: |
-        pytest tests/integration/sql -m 'integration' --durations=50
+        pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
