@@ -4,18 +4,15 @@ import os
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.fs as pafs
 import pyarrow.parquet as pq
-from fsspec import AbstractFileSystem
-
-
-def fs_basename(path: str, fs: AbstractFileSystem) -> str:
-    return path.rsplit(fs.sep, 1)[-1]
 
 
 @dataclass(init=False)
 class FsFileMetadata:
-    def __init__(self, path: str):
+    def __init__(self, path: str, base_name: str):
         self.path = path
+        self.base_name = base_name
         metadata = pq.read_metadata(path)
         self.size = metadata.serialized_size
         self.num_records = metadata.num_rows
@@ -40,35 +37,35 @@ class FsFileMetadata:
         return arrow_schema, min_vals, max_vals
 
 
-def list_full_file_paths(path: str, fs: AbstractFileSystem, includes: list[str] | None) -> list[FsFileMetadata]:
-    sub_paths = fs.ls(path, detail=True)
+def list_full_file_paths(path: str, fs: pafs.FileSystem, includes: list[str] | None) -> list[FsFileMetadata]:
+    sub_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(path))
     file_paths = []
     for sub_path in sub_paths:
-        if sub_path["type"] == "file":
-            if includes and os.path.splitext(sub_path["name"])[-1] in includes:
-                file_paths.append(FsFileMetadata(sub_path["name"]))
+        if sub_path.type == pafs.FileType.File:
+            if includes and os.path.splitext(sub_path.base_name)[-1] in includes:
+                file_paths.append(FsFileMetadata(sub_path.path, sub_path.base_name))
 
     return file_paths
 
 
-def list_full_sub_dirs(path: str, fs: AbstractFileSystem, excludes: list[str] | None) -> list[str]:
-    sub_paths = fs.ls(path, detail=True)
+def list_full_sub_dirs(path: str, fs: pafs.FileSystem, excludes: list[str] | None) -> list[str]:
+    sub_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(path))
     sub_dirs = []
     for sub_path in sub_paths:
-        if sub_path["type"] == "directory":
-            if not excludes or (excludes and fs_basename(sub_path["name"], fs) not in excludes):
-                sub_dirs.append(sub_path["name"])
+        if sub_path.type == pafs.FileType.Directory:
+            if not excludes or (excludes and sub_path.base_name not in excludes):
+                sub_dirs.append(sub_path.path)
 
     return sub_dirs
 
 
-def list_leaf_dirs(path: str, fs: AbstractFileSystem, common_prefix_len=0) -> list[str]:
-    sub_paths = fs.ls(path, detail=True)
+def list_leaf_dirs(path: str, fs: pafs.FileSystem, common_prefix_len=0) -> list[str]:
+    sub_paths: list[pafs.FileInfo] = fs.get_file_info(pafs.FileSelector(path))
     leaf_dirs = []
 
     for sub_path in sub_paths:
-        if sub_path["type"] == "directory":
-            leaf_dirs.extend(list_leaf_dirs(sub_path["name"], fs, common_prefix_len))
+        if sub_path.type == pafs.FileType.Directory:
+            leaf_dirs.extend(list_leaf_dirs(sub_path.path, fs, common_prefix_len))
 
     # leaf directory
     if len(leaf_dirs) == 0:

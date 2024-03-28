@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pyarrow as pa
-from fsspec import AbstractFileSystem
 from sortedcontainers import SortedDict
 
 from daft.hudi.pyhudi.utils import FsFileMetadata
@@ -11,9 +10,9 @@ from daft.hudi.pyhudi.utils import FsFileMetadata
 
 @dataclass(init=False)
 class BaseFile:
-    def __init__(self, metadata: FsFileMetadata, fs: AbstractFileSystem):
-        self.metadata = metadata
-        file_name = metadata.path.rsplit(fs.sep, 1)[-1]
+    def __init__(self, fs_metadata: FsFileMetadata):
+        self.metadata = fs_metadata
+        file_name = fs_metadata.base_name
         self.file_name = file_name
         file_group_id, _, commit_time_ext = file_name.split("_")
         self.file_group_id = file_group_id

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 
 import pyarrow as pa
+import pyarrow.fs as pafs
 import pyarrow.parquet as pq
-from fsspec import AbstractFileSystem
 
 
 class State(Enum):
@@ -33,31 +34,32 @@ class Instant:
 @dataclass(init=False)
 class Timeline:
     base_path: str
-    fs: AbstractFileSystem
+    fs: pafs.FileSystem
     instants: list[Instant]
 
-    def __init__(self, base_path: str, fs: AbstractFileSystem):
+    def __init__(self, base_path: str, fs: pafs.FileSystem):
         self.base_path = base_path
         self.fs = fs
         self._load_completed_commit_instants()
 
     def _load_completed_commit_instants(self):
-        timeline_path = self.fs.sep.join([self.base_path, ".hoodie"])
+        timeline_path = os.path.join(self.base_path, ".hoodie")
         action = "commit"
         ext = ".commit"
         instants = []
-        for timeline_file_path in filter(lambda p: p.endswith(ext), self.fs.ls(timeline_path, detail=False)):
-            timestamp = timeline_file_path[len(timeline_path) + 1 : -len(ext)]
-            instants.append(Instant(state=State.COMPLETED, action=action, timestamp=timestamp))
+        for file_info in self.fs.get_file_info(pafs.FileSelector(timeline_path)):
+            if file_info.base_name.endswith(ext):
+                timestamp = file_info.base_name[: -len(ext)]
+                instants.append(Instant(state=State.COMPLETED, action=action, timestamp=timestamp))
         self.instants = sorted(instants)
 
     def get_latest_commit_metadata(self) -> dict:
-        latest_instant_file_path = self.fs.sep.join([self.base_path, ".hoodie", self.instants[-1].file_name])
-        with self.fs.open(latest_instant_file_path) as f:
+        latest_instant_file_path = os.path.join(self.base_path, ".hoodie", self.instants[-1].file_name)
+        with self.fs.open_input_file(latest_instant_file_path) as f:
             return json.load(f)
 
     def get_latest_commit_schema(self) -> pa.Schema:
         latest_commit_metadata = self.get_latest_commit_metadata()
         _, write_stats = next(iter(latest_commit_metadata["partitionToWriteStats"].items()))
-        base_file_path = self.fs.sep.join([self.base_path, write_stats[0]["path"]])
+        base_file_path = os.path.join(self.base_path, write_stats[0]["path"])
         return pq.read_schema(base_file_path)

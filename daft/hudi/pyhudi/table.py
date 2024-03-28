@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
-import fsspec
 import pyarrow as pa
-from fsspec import AbstractFileSystem
+import pyarrow.fs as pafs
 
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline
@@ -22,7 +21,7 @@ BASE_FILE_EXTENSIONS = [".parquet"]
 
 @dataclass
 class MetaClient:
-    fs: AbstractFileSystem
+    fs: pafs.FileSystem
     base_path: str
     timeline: Timeline | None
 
@@ -40,14 +39,14 @@ class MetaClient:
         return partition_paths
 
     def get_full_partition_path(self, partition_path: str) -> str:
-        return self.fs.sep.join([self.base_path, partition_path])
+        return os.path.join(self.base_path, partition_path)
 
     def get_file_groups(self, partition_path: str) -> list[FileGroup]:
         full_partition_path = self.get_full_partition_path(partition_path)
         base_file_metadata = list_full_file_paths(full_partition_path, self.fs, includes=BASE_FILE_EXTENSIONS)
         fg_id_to_base_files = defaultdict(list)
         for metadata in base_file_metadata:
-            base_file = BaseFile(metadata, self.fs)
+            base_file = BaseFile(metadata)
             fg_id_to_base_files[base_file.file_group_id].append(base_file)
         file_groups = []
         for fg_id, base_files in fg_id_to_base_files.items():
@@ -87,11 +86,12 @@ class FileSystemView:
 
 @dataclass(init=False)
 class HudiTableProps:
-    def __init__(self, fs: AbstractFileSystem, table_uri: str):
+    def __init__(self, fs: pafs.FileSystem, table_uri: str):
         self._props = {}
-        hoodie_properties_file = fs.sep.join([table_uri, ".hoodie", "hoodie.properties"])
-        with fs.open(hoodie_properties_file, "r") as f:
-            for line in f:
+        hoodie_properties_file = os.path.join(table_uri, ".hoodie", "hoodie.properties")
+        with fs.open_input_file(hoodie_properties_file) as f:
+            lines = f.readall().decode("utf-8").splitlines()
+            for line in lines:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
@@ -117,8 +117,7 @@ class HudiTableMetadata:
 
 @dataclass(init=False)
 class HudiTable:
-    def __init__(self, table_uri: str, storage_options: dict[str, str] | None = None):
-        fs = fsspec.filesystem(urlparse(table_uri).scheme, storage_options=storage_options)
+    def __init__(self, fs: pafs.FileSystem, table_uri: str):
         self._meta_client = MetaClient(fs, table_uri, timeline=None)
         self._props = HudiTableProps(fs, table_uri)
 
