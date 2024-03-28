@@ -692,34 +692,6 @@ def test_series_utf8_replace(data, pattern, replacement, expected) -> None:
 @pytest.mark.parametrize(
     ["data", "pattern", "replacement", "expected"],
     [
-        # No broadcast
-        (["foo", "barbaz", "quux"], ["o", "a", "u"], ["O", "A", "U"], ["fOO", "bArbAz", "qUUx"]),
-        # Broadcast data
-        (["foobar"], ["f", "o", "b"], ["F", "O", "B"], ["Foobar", "fOObar", "fooBar"]),
-        # Broadcast pattern
-        (["123", "12", "1"], ["1"], ["2", "3", "4"], ["223", "32", "4"]),
-        # Broadcast replacement
-        (["foo", "barbaz", "quux"], ["o", "a", "u"], [" "], ["f  ", "b rb z", "q  x"]),
-        # Broadcast data and pattern
-        (["foo"], ["o"], ["O", "A", "U"], ["fOO", "fAA", "fUU"]),
-        # Broadcast data and replacement
-        (["foo"], ["o", "f", " "], ["O"], ["fOO", "Ooo", "foo"]),
-        # Broadcast pattern and replacement
-        (["123", "12", "1"], ["1"], ["A"], ["A23", "A2", "A"]),
-    ],
-)
-@pytest.mark.parametrize("regex", [True, False])
-def test_series_utf8_replace(data, pattern, replacement, expected, regex) -> None:
-    s = Series.from_arrow(pa.array(data, type=pa.string()))
-    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
-    replacements = Series.from_arrow(pa.array(replacement, type=pa.string()))
-    result = s.str.replace(patterns, replacements, regex=regex)
-    assert result.to_pylist() == expected
-
-
-@pytest.mark.parametrize(
-    ["data", "pattern", "replacement", "expected"],
-    [
         # Start of string.
         (["foo", "barbaz", "quux"], ["^f", "^b", "^q"], ["F", "B", "Q"], ["Foo", "Barbaz", "Quux"]),
         # Multi-character pattern.
