@@ -292,19 +292,7 @@ impl PySeries {
     pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
         Ok(self
             .series
-            .utf8_replace(&pattern.series, &replacement.series, regex, false)?
-            .into())
-    }
-
-    pub fn utf8_replace_all(
-        &self,
-        pattern: &Self,
-        replacement: &Self,
-        regex: bool,
-    ) -> PyResult<Self> {
-        Ok(self
-            .series
-            .utf8_replace(&pattern.series, &replacement.series, regex, true)?
+            .utf8_replace(&pattern.series, &replacement.series, regex)?
             .into())
     }
 

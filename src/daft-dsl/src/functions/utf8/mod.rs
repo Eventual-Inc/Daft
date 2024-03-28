@@ -10,7 +10,6 @@ mod lower;
 mod lstrip;
 mod match_;
 mod replace;
-mod replace_all;
 mod reverse;
 mod right;
 mod rstrip;
@@ -29,7 +28,6 @@ use length::LengthEvaluator;
 use lower::LowerEvaluator;
 use lstrip::LstripEvaluator;
 use replace::ReplaceEvaluator;
-use replace_all::ReplaceAllEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
 use rstrip::RstripEvaluator;
@@ -52,7 +50,6 @@ pub enum Utf8Expr {
     Extract(usize),
     ExtractAll(usize),
     Replace(bool),
-    ReplaceAll(bool),
     Length,
     Lower,
     Upper,
@@ -78,7 +75,6 @@ impl Utf8Expr {
             Extract(_) => &ExtractEvaluator {},
             ExtractAll(_) => &ExtractAllEvaluator {},
             Replace(_) => &ReplaceEvaluator {},
-            ReplaceAll(_) => &ReplaceAllEvaluator {},
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
@@ -145,13 +141,6 @@ pub fn extract_all(data: &Expr, pattern: &Expr, index: usize) -> Expr {
 pub fn replace(data: &Expr, pattern: &Expr, replacement: &Expr, regex: bool) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Replace(regex)),
-        inputs: vec![data.clone(), pattern.clone(), replacement.clone()],
-    }
-}
-
-pub fn replace_all(data: &Expr, pattern: &Expr, replacement: &Expr, regex: bool) -> Expr {
-    Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::ReplaceAll(regex)),
         inputs: vec![data.clone(), pattern.clone(), replacement.clone()],
     }
 }

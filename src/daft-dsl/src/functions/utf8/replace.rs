@@ -54,7 +54,7 @@ impl FunctionEvaluator for ReplaceEvaluator {
                     } => regex,
                     _ => panic!("Expected Utf8 Replace Expr, got {expr}"),
                 };
-                data.utf8_replace(pattern, replacement, *regex, false)
+                data.utf8_replace(pattern, replacement, *regex)
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 3 input args, got {}",

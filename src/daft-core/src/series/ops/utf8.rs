@@ -76,12 +76,11 @@ impl Series {
         pattern: &Series,
         replacement: &Series,
         regex: bool,
-        replace_all: bool,
     ) -> DaftResult<Series> {
         match self.data_type() {
             DataType::Utf8 => Ok(self
                 .utf8()?
-                .replace(pattern.utf8()?, replacement.utf8()?, regex, replace_all)?
+                .replace(pattern.utf8()?, replacement.utf8()?, regex)?
                 .into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "Replace not implemented for type {dt}"

@@ -166,19 +166,12 @@ fn regex_replace<'a>(
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     replacement_iter: impl Iterator<Item = Option<&'a str>>,
     name: &str,
-    replace_all: bool,
 ) -> DaftResult<Utf8Array> {
     let arrow_result = arr_iter
         .zip(regex_iter)
         .zip(replacement_iter)
         .map(|((val, re), replacement)| match (val, re, replacement) {
-            (Some(val), Some(re), Some(replacement)) => {
-                if replace_all {
-                    Ok(Some(re?.replace_all(val, replacement)))
-                } else {
-                    Ok(Some(re?.replace(val, replacement)))
-                }
-            }
+            (Some(val), Some(re), Some(replacement)) => Ok(Some(re?.replace_all(val, replacement))),
             _ => Ok(None),
         })
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
@@ -191,19 +184,12 @@ fn replace_on_literal<'a>(
     pattern_iter: impl Iterator<Item = Option<&'a str>>,
     replacement_iter: impl Iterator<Item = Option<&'a str>>,
     name: &str,
-    replace_all: bool,
 ) -> DaftResult<Utf8Array> {
     let arrow_result = arr_iter
         .zip(pattern_iter)
         .zip(replacement_iter)
         .map(|((val, pat), replacement)| match (val, pat, replacement) {
-            (Some(val), Some(pat), Some(replacement)) => {
-                if replace_all {
-                    Ok(Some(val.replace(pat, replacement)))
-                } else {
-                    Ok(Some(val.replacen(pat, replacement, 1)))
-                }
-            }
+            (Some(val), Some(pat), Some(replacement)) => Ok(Some(val.replace(pat, replacement))),
             _ => Ok(None),
         })
         .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
@@ -463,7 +449,6 @@ impl Utf8Array {
         pattern: &Utf8Array,
         replacement: &Utf8Array,
         regex: bool,
-        replace_all: bool,
     ) -> DaftResult<Utf8Array> {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
@@ -479,9 +464,9 @@ impl Utf8Array {
             {
                 if regex {
                     let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                    regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                    regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name())
                 } else {
-                    replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_arrow.iter(), self.name(), replace_all)
+                    replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_arrow.iter(), self.name())
 
                 }
             }
@@ -497,9 +482,9 @@ impl Utf8Array {
                         let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
                         if regex {
                             let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                            regex_replace(arr_iter, regexes, replacement_arrow.iter(), self.name(), replace_all)
+                            regex_replace(arr_iter, regexes, replacement_arrow.iter(), self.name())
                         } else {
-                            replace_on_literal(arr_iter, pattern_arrow.iter(), replacement_arrow.iter(), self.name(), replace_all)
+                            replace_on_literal(arr_iter, pattern_arrow.iter(), replacement_arrow.iter(), self.name())
                         }
                     }
                 }
@@ -516,10 +501,10 @@ impl Utf8Array {
                         if regex {
                             let re = Some(regex::Regex::new(pattern_v));
                             let regex_iter = std::iter::repeat(re).take(self_len);
-                            regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_arrow.iter(), self.name())
                         } else {
                             let pattern_iter = std::iter::repeat(Some(pattern_v)).take(self_len);
-                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_arrow.iter(), self.name(), replace_all)
+                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_arrow.iter(), self.name())
                         }
                     }
                 }
@@ -536,9 +521,9 @@ impl Utf8Array {
                         let replacement_iter = std::iter::repeat(Some(replacement_v)).take(self_len);
                         if regex {
                             let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name(), replace_all)
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name())
                         } else {
-                            replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_iter, self.name(), replace_all)
+                            replace_on_literal(self_arrow.iter(), pattern_arrow.iter(), replacement_iter, self.name())
                         }
                     }
                 }
@@ -557,10 +542,10 @@ impl Utf8Array {
                         if regex {
                             let re = Some(regex::Regex::new(pattern_v));
                             let regex_iter = std::iter::repeat(re).take(replacement_len);
-                            regex_replace(arr_iter, regex_iter, replacement_arrow.iter(), self.name(), replace_all)
+                            regex_replace(arr_iter, regex_iter, replacement_arrow.iter(), self.name())
                         } else {
                             let pattern_iter = std::iter::repeat(Some(pattern_v)).take(replacement_len);
-                            replace_on_literal(arr_iter, pattern_iter, replacement_arrow.iter(), self.name(), replace_all)
+                            replace_on_literal(arr_iter, pattern_iter, replacement_arrow.iter(), self.name())
                         }
                     }
                 }
@@ -579,10 +564,10 @@ impl Utf8Array {
                         let replacement_iter = std::iter::repeat(Some(replacement_v)).take(pattern_len);
                         if regex {
                             let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                            regex_replace(arr_iter, regex_iter, replacement_iter, self.name(), replace_all)
+                            regex_replace(arr_iter, regex_iter, replacement_iter, self.name())
                         } else {
                             let pattern_iter = pattern_arrow.iter();
-                            replace_on_literal(arr_iter, pattern_iter, replacement_iter, self.name(), replace_all)
+                            replace_on_literal(arr_iter, pattern_iter, replacement_iter, self.name())
                         }
                     }
                 }
@@ -601,10 +586,10 @@ impl Utf8Array {
                         if regex {
                             let re = Some(regex::Regex::new(pattern_v));
                             let regex_iter = std::iter::repeat(re).take(self_len);
-                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name(), replace_all)
+                            regex_replace(self_arrow.iter(), regex_iter, replacement_iter, self.name())
                         } else {
                             let pattern_iter = std::iter::repeat(Some(pattern_v)).take(self_len);
-                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_iter, self.name(), replace_all)
+                            replace_on_literal(self_arrow.iter(), pattern_iter, replacement_iter, self.name())
                         }
                     }
                 }
