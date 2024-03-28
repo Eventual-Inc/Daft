@@ -1,5 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::series::IntoSeries;
+use daft_core::CountMode;
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     datatypes::{DataType, UInt64Array},
@@ -60,11 +61,14 @@ impl Table {
                 }
             }
         }
-        let first_len = evaluated_columns.first().unwrap().list_lengths()?;
+        let first_len = evaluated_columns
+            .first()
+            .unwrap()
+            .list_count(CountMode::All)?;
         if evaluated_columns
             .iter()
             .skip(1)
-            .any(|c| c.list_lengths().unwrap().ne(&first_len))
+            .any(|c| c.list_count(CountMode::All).unwrap().ne(&first_len))
         {
             return Err(DaftError::ValueError(
                 "In multicolumn explode, list length did not match".to_string(),

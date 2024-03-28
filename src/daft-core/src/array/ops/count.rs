@@ -32,7 +32,7 @@ fn grouped_count_arrow_bitmap(
                 .iter()
                 .map(|g| {
                     g.iter()
-                        .map(|i| validity.get_bit(!*i as usize) as u64)
+                        .map(|i| !validity.get_bit(*i as usize) as u64)
                         .sum()
                 })
                 .collect(),
