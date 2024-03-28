@@ -958,6 +958,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             ╰──────┴─────────╯
 
             Replace with a regex pattern
+
             >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
             >>> df.with_column("replace", df["data"].str.replace(r"o+", "a", regex=True)).collect()
             ╭───────┬─────────╮
