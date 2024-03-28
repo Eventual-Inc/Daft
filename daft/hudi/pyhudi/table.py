@@ -106,6 +106,9 @@ class HudiTableProps:
     def partition_fields(self) -> list[str]:
         return self._props["hoodie.table.partition.fields"]
 
+    def get_config(self, key: str) -> str:
+        return self._props[key]
+
 
 @dataclass
 class HudiTableMetadata:
@@ -115,11 +118,22 @@ class HudiTableMetadata:
     colstats_max_values: pa.RecordBatch
 
 
+class UnsupportedException(Exception):
+    pass
+
+
 @dataclass(init=False)
 class HudiTable:
     def __init__(self, fs: pafs.FileSystem, table_uri: str):
         self._meta_client = MetaClient(fs, table_uri, timeline=None)
         self._props = HudiTableProps(fs, table_uri)
+        self._validate_table_props()
+
+    def _validate_table_props(self):
+        if self._props.get_config("hoodie.table.type") != "COPY_ON_WRITE":
+            raise UnsupportedException
+        if self._props.get_config("hoodie.table.keygenerator.class") != "org.apache.hudi.keygen.SimpleKeyGenerator":
+            raise UnsupportedException
 
     def latest_table_metadata(self) -> HudiTableMetadata:
         file_slices = FileSystemView(self._meta_client).get_latest_file_slices()
