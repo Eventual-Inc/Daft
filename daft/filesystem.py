@@ -140,7 +140,7 @@ def _resolve_paths_and_filesystem(
 
     # Sanitize s3a/s3n protocols, which are produced by Hadoop-based systems as a way of denoting which s3
     # filesystem client to use. However this doesn't matter for Daft, and PyArrow cannot recognize these protocols.
-    paths = [f"s3://{p[5:]}" if p.startswith("s3a://") or p.startswith("s3n://") else p for p in paths]
+    paths = [f"s3://{p[6:]}" if p.startswith("s3a://") or p.startswith("s3n://") else p for p in paths]
 
     # Ensure that protocols for all paths are consistent, i.e. that they would map to the
     # same filesystem.
