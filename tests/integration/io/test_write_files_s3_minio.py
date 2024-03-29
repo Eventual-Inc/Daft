@@ -26,7 +26,8 @@ def bucket(minio_io_config):
 
 
 @pytest.mark.integration()
-def test_writing_parquet(minio_io_config, bucket):
+@pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
+def test_writing_parquet(minio_io_config, bucket, protocol):
     data = {
         "foo": [1, 2, 3],
         "bar": ["a", "b", "c"],
@@ -34,7 +35,7 @@ def test_writing_parquet(minio_io_config, bucket):
     df = daft.from_pydict(data)
     df = df.repartition(2)
     results = df.write_parquet(
-        f"s3://{bucket}/parquet-writes-{uuid.uuid4()}",
+        f"{protocol}{bucket}/parquet-writes-{uuid.uuid4()}",
         partition_cols=["bar"],
         io_config=minio_io_config,
     )
