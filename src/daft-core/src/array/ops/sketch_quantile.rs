@@ -16,7 +16,6 @@ where
         let arr: &BinaryArray<i64> = self.data().as_any().downcast_ref().unwrap();
         let result_arr = PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| {
             let str = std::str::from_utf8(v).unwrap();
-            // println!("VALUE2 {}", str);
             let sketch: DDSketch = serde_json::from_str(str).unwrap();
             sketch.quantile(q.get(0).unwrap()).unwrap().unwrap() // TODO handle
         }))

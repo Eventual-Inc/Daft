@@ -18,8 +18,8 @@ impl TreeNode for Expr {
                 match agg_expr {
                     Count(expr, ..)
                     | Sum(expr)
-                    // | ApproxQuantile(expr)
                     | ApproxSketch(expr)
+                    | MergeSketch(expr)
                     | Mean(expr)
                     | Min(expr)
                     | Max(expr)
@@ -66,6 +66,7 @@ impl TreeNode for Expr {
                     Count(expr, mode) => transform(expr.as_ref().clone())?.count(mode),
                     Sum(expr) => transform(expr.as_ref().clone())?.sum(),
                     ApproxSketch(expr) => transform(expr.as_ref().clone())?.approx_sketch(),
+                    MergeSketch(expr) => transform(expr.as_ref().clone())?.merge_sketch(),
                     Mean(expr) => transform(expr.as_ref().clone())?.mean(),
                     Min(expr) => transform(expr.as_ref().clone())?.min(),
                     Max(expr) => transform(expr.as_ref().clone())?.max(),

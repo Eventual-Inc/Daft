@@ -30,6 +30,7 @@ mod len;
 mod list;
 mod list_agg;
 mod mean;
+mod merge_sketch;
 mod null;
 mod pairwise;
 mod repr;
@@ -128,6 +129,12 @@ pub trait DaftApproxSketchAggable {
     type Output;
     fn approx_sketch(&self) -> Self::Output;
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftMergeSketchAggable {
+    type Output;
+    fn merge_sketch(&self) -> Self::Output;
+    fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftMeanAggable {

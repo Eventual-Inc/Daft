@@ -88,7 +88,33 @@ impl Series {
                 }
             }
             other => Err(DaftError::TypeError(format!(
-                "Numeric approx sketch is not implemented for type {}",
+                "Approx sketch is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+        use crate::array::ops::DaftMergeSketchAggable;
+        use crate::datatypes::DataType::*;
+
+        // Upcast all numeric types to float64 and compute merge_sketch.
+        match self.data_type() {
+            Binary => {
+                let casted = self.cast(&Binary)?;
+                match groups {
+                    Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
+                        &casted.binary()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => {
+                        Ok(DaftMergeSketchAggable::merge_sketch(&casted.binary()?)?.into_series())
+                    }
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Merge sketch is not implemented for type {}",
                 other
             ))),
         }

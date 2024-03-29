@@ -319,39 +319,39 @@ pub fn plan(logical_plan: &LogicalPlan, cfg: Arc<DaftExecutionConfig>) -> DaftRe
                                         .into()));
                                 final_exprs.push(Column(sum_of_sum_id.clone()).alias(output_name));
                             }
-                            // ApproxQuantile(e) => {
-                            //     let sketch_id = agg_expr.semantic_id(&schema).id;
-                            //     let approx_id = ApproxQuantile(Column(sketch_id.clone()).into())
-                            //         .semantic_id(&schema)
-                            //         .id;
-                            //     first_stage_aggs
-                            //         .entry(sketch_id.clone())
-                            //         .or_insert(ApproxSketch(
-                            //             e.alias(sketch_id.clone()).clone().into(),
-                            //         ));
-                            //     second_stage_aggs.entry(approx_id.clone()).or_insert(
-                            //         ApproxQuantile(
-                            //             Column(sketch_id.clone()).alias(approx_id.clone()).into(),
-                            //         ),
-                            //     );
-                            //     final_exprs.push(Column(approx_id.clone()).alias(output_name));
-                            // }
-                            ApproxSketch(_e) => {
-                                // let sketch_id = agg_expr.semantic_id(&schema).id;
-                                // let approx_id = ApproxSketch(Column(sketch_id.clone()).into())
-                                //     .semantic_id(&schema)
-                                //     .id;
-                                // first_stage_aggs
-                                //     .entry(sketch_id.clone())
-                                //     .or_insert(ApproxSketch(
-                                //         e.alias(sketch_id.clone()).clone().into(),
-                                //     ));
-                                // second_stage_aggs
-                                //     .entry(approx_id.clone())
-                                //     .or_insert(ApproxSketch(
-                                //         Column(sketch_id.clone()).alias(approx_id.clone()).into(),
-                                //     ));
-                                // final_exprs.push(Column(approx_id.clone()).alias(output_name));
+                            ApproxSketch(e) => {
+                                let sketch_id = agg_expr.semantic_id(&schema).id;
+                                let approx_id = ApproxSketch(Column(sketch_id.clone()).into())
+                                    .semantic_id(&schema)
+                                    .id;
+                                first_stage_aggs
+                                    .entry(sketch_id.clone())
+                                    .or_insert(ApproxSketch(
+                                        e.alias(sketch_id.clone()).clone().into(),
+                                    ));
+                                second_stage_aggs
+                                    .entry(approx_id.clone())
+                                    .or_insert(MergeSketch(
+                                        Column(sketch_id.clone()).alias(approx_id.clone()).into(),
+                                    ));
+                                final_exprs.push(Column(approx_id.clone()).alias(output_name));
+                            }
+                            MergeSketch(e) => {
+                                let sketch_id = agg_expr.semantic_id(&schema).id;
+                                let merge_id = MergeSketch(Column(sketch_id.clone()).into())
+                                    .semantic_id(&schema)
+                                    .id;
+                                first_stage_aggs
+                                    .entry(sketch_id.clone())
+                                    .or_insert(MergeSketch(
+                                        e.alias(sketch_id.clone()).clone().into(),
+                                    ));
+                                second_stage_aggs
+                                    .entry(merge_id.clone())
+                                    .or_insert(MergeSketch(
+                                        Column(sketch_id.clone()).alias(merge_id.clone()).into(),
+                                    ));
+                                final_exprs.push(Column(merge_id.clone()).alias(output_name));
                             }
                             Mean(e) => {
                                 let sum_id = Sum(e.clone()).semantic_id(&schema).id;

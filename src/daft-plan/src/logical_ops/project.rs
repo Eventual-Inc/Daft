@@ -358,13 +358,13 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e.clone())
         }
-        // AggExpr::ApproxQuantile(ref child) => {
-        //     replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-        //         .map_yes_no(AggExpr::ApproxQuantile, |_| e.clone())
-        // }
         AggExpr::ApproxSketch(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::ApproxSketch, |_| e.clone())
+        }
+        AggExpr::MergeSketch(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::MergeSketch, |_| e.clone())
         }
         AggExpr::Mean(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

@@ -56,8 +56,8 @@ pub enum Expr {
 pub enum AggExpr {
     Count(ExprRef, CountMode),
     Sum(ExprRef),
-    // ApproxQuantile(ExprRef),
     ApproxSketch(ExprRef),
+    MergeSketch(ExprRef),
     Mean(ExprRef),
     Min(ExprRef),
     Max(ExprRef),
@@ -88,8 +88,8 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            // | ApproxQuantile(expr)
             | ApproxSketch(expr)
+            | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -114,6 +114,10 @@ impl AggExpr {
             ApproxSketch(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_sketch()"))
+            }
+            MergeSketch(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_merge_sketch()"))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -150,8 +154,8 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            // | ApproxQuantile(expr)
             | ApproxSketch(expr)
+            | MergeSketch(expr)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -215,6 +219,21 @@ impl AggExpr {
                     }
                 },
             ))
+            }
+            MergeSketch(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                  field.name.as_str(),
+                  match &field.dtype {
+                      DataType::Binary => DataType::Float64,
+                      other => {
+                          return Err(DaftError::TypeError(format!(
+                              "Expected input to merge_sketch() to be binary but received dtype {} for column \"{}\"",
+                              other, field.name,
+                          )))
+                        }
+                    },
+                ))
             }
             Mean(expr) => {
                 let field = expr.to_field(schema)?;
@@ -313,6 +332,10 @@ impl Expr {
 
     pub fn approx_sketch(&self) -> Self {
         Expr::Agg(AggExpr::ApproxSketch(self.clone().into()))
+    }
+
+    pub fn merge_sketch(&self) -> Self {
+        Expr::Agg(AggExpr::MergeSketch(self.clone().into()))
     }
 
     pub fn mean(&self) -> Self {
@@ -731,6 +754,7 @@ impl Display for AggExpr {
             Count(expr, mode) => write!(f, "count({expr}, {mode})"),
             Sum(expr) => write!(f, "sum({expr})"),
             ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
+            MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
             Mean(expr) => write!(f, "mean({expr})"),
             Min(expr) => write!(f, "min({expr})"),
             Max(expr) => write!(f, "max({expr})"),
