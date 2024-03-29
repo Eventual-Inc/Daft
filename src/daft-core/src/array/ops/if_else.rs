@@ -23,9 +23,9 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
             None => Ok(T::full_null(name, dtype, lhs_len).into_series()),
             Some(predicate_scalar_value) => {
                 if predicate_scalar_value {
-                    Ok(lhs.clone().into_series())
+                    Ok(lhs.clone().into_series().rename(name))
                 } else {
-                    Ok(rhs.clone().into_series())
+                    Ok(rhs.clone().into_series().rename(name))
                 }
             }
         };
