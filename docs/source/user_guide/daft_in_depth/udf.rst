@@ -1,7 +1,7 @@
 User-Defined Functions (UDF)
 ============================
 
-A key piece of functionality in DaFt is the ability to flexibly define custom functions that can run on any data in your dataframe. This guide walks you through the different types of UDFs that DaFt allows you to run.
+A key piece of functionality in Daft is the ability to flexibly define custom functions that can run on any data in your dataframe. This guide walks you through the different types of UDFs that Daft allows you to run.
 
 Let's first create a dataframe that will be used as a running example throughout this tutorial!
 
@@ -188,4 +188,4 @@ Custom resources can be requested when you call :meth:`df.with_column() <daft.Da
         resource_request=ResourceRequest(num_gpus=1, num_cpus=8),
     )
 
-In the above example, if ran Daft on a Ray cluster consisting of 8 GPUs and 64 CPUs, Daft would be able to run 8 replicas of your UDF in parallel, thus massively increasing the throughput of your UDF!
+In the above example, if Daft ran on a Ray cluster consisting of 8 GPUs and 64 CPUs, Daft would be able to run 8 replicas of your UDF in parallel, thus massively increasing the throughput of your UDF!

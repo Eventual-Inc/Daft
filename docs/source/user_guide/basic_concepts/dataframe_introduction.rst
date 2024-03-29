@@ -115,7 +115,7 @@ If you "eagerly" call :meth:`df.collect() <daft.DataFrame.collect>` immediately 
 1. If data is too large at any step, materializing all of it may cause memory issues
 2. Optimizations are not possible since we cannot "predict future operations"
 
-However, data science is all about experimentation and trying different things on the same data. This means that materialization crucial when working interactively with DataFrames, since it speeds up all subsequent experimentation on that DataFrame.
+However, data science is all about experimentation and trying different things on the same data. This means that materialization is crucial when working interactively with DataFrames, since it speeds up all subsequent experimentation on that DataFrame.
 
 We suggest materializing DataFrames using :meth:`df.collect() <daft.DataFrame.collect>` when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
 
@@ -139,7 +139,7 @@ In many other cases however, there are better options than materializing your en
 Schemas and Types
 -----------------
 
-Notice also that when we printed our DataFrame, Daft displayed its **schema**. Each column of your DataFrame has a **name** and a **type**, and that all data in that column will adhere to that type!
+Notice also that when we printed our DataFrame, Daft displayed its **schema**. Each column of your DataFrame has a **name** and a **type**, and all data in that column will adhere to that type!
 
 Daft can display your DataFrame's schema without materializing it. Under the hood, it performs intelligent sampling of your data to determine the appropriate schema, and if you make any modifications to your DataFrame it can infer the resulting types based on the operation.
 

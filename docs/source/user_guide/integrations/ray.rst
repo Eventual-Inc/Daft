@@ -12,7 +12,7 @@ You can run Daft on Ray in two ways: by using the `Ray Client <https://docs.ray.
 
 Ray Client
 **********
-The Ray client is quick way to get started with running tasks and retrieving their results on Ray using Python.
+The Ray client is a quick way to get started with running tasks and retrieving their results on Ray using Python.
 
 .. WARNING::
     To run tasks using the Ray client, the version of Daft and the minor version (eg. 3.9, 3.10) of Python must match between client and server.
