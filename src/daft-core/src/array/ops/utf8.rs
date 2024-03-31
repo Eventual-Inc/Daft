@@ -485,7 +485,7 @@ impl Utf8Array {
         let self_arrow = self.as_arrow();
         let substr_arrow = substr.as_arrow();
         // Handle empty cases.
-        if self.is_empty() || substr_arrow.is_empty() {
+        if self.is_empty() || substr.is_empty() {
             return Ok(Int64Array::empty(self.name(), self.data_type()));
         }
         match (self.len(), substr.len()) {
@@ -510,7 +510,7 @@ impl Utf8Array {
                 match substr_scalar_value {
                     None => Ok(Int64Array::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Int64,
                         self_len,
                     )),
                     Some(substr_scalar_value) => {
@@ -536,7 +536,7 @@ impl Utf8Array {
                 match self_scalar_value {
                     None => Ok(Int64Array::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Int64,
                         substr_len,
                     )),
                     Some(self_scalar_value) => {

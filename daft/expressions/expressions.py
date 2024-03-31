@@ -1014,6 +1014,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string
 
+        Notes:
+            The returned index is 0-based.
+            If the substring is not found, -1 is returned.
+
         Example:
             >>> col("x").str.find("foo")
 
