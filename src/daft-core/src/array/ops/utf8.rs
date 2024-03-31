@@ -188,7 +188,7 @@ impl Utf8Array {
             return match pattern_scalar_value {
                 None => Ok(BooleanArray::full_null(
                     self.name(),
-                    self.data_type(),
+                    &DataType::Boolean,
                     self.len(),
                 )),
                 Some(pattern_v) => {
@@ -778,7 +778,7 @@ impl Utf8Array {
                 match other_scalar_value {
                     None => Ok(BooleanArray::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Boolean,
                         self_len,
                     )),
                     Some(other_v) => {
@@ -799,7 +799,7 @@ impl Utf8Array {
                 match self_scalar_value {
                     None => Ok(BooleanArray::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Boolean,
                         other_len,
                     )),
                     Some(self_v) => {

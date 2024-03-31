@@ -25,6 +25,12 @@ where
 {
     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        if dtype != &T::get_dtype() {
+            panic!(
+                "Cannot create DataArray from dtype: {dtype} with physical type: {}",
+                T::get_dtype()
+            );
+        }
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
