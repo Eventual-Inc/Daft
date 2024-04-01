@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import pyarrow as pa
-import pytest
-
 import daft
-
-PYARROW_LE_10_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (10, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LE_10_0_0, reason="hudi only supported if pyarrow >= 10.0.0")
 
 
 def test_hudi_read_table(unzip_table_0_x_cow_partitioned):

@@ -14,7 +14,8 @@ class FsFileMetadata:
         self.base_path = base_path
         self.path = path
         self.base_name = base_name
-        metadata = pq.read_metadata(os.path.join(base_path, path), filesystem=fs)
+        with fs.open_input_file(os.path.join(base_path, path)) as f:
+            metadata = pq.read_metadata(f)
         self.size = metadata.serialized_size
         self.num_records = metadata.num_rows
         self.schema, self.min_values, self.max_values = FsFileMetadata._extract_min_max(metadata)

@@ -62,4 +62,5 @@ class Timeline:
         latest_commit_metadata = self.get_latest_commit_metadata()
         _, write_stats = next(iter(latest_commit_metadata["partitionToWriteStats"].items()))
         base_file_path = os.path.join(self.base_path, write_stats[0]["path"])
-        return pq.read_schema(base_file_path, filesystem=self.fs)
+        with self.fs.open_input_file(base_file_path) as f:
+            return pq.read_schema(f)
