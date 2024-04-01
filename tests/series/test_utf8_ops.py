@@ -679,6 +679,8 @@ def test_series_utf8_find_bad_dtype() -> None:
         (["foo"], ["o", "f", " "], ["O"], ["fOO", "Ooo", "foo"]),
         # Broadcast pattern and replacement
         (["123", "12", "1"], ["1"], ["A"], ["A23", "A2", "A"]),
+        # All empty
+        ([], [], [], []),
     ],
 )
 @pytest.mark.parametrize("regex", [True, False])
@@ -734,6 +736,8 @@ def test_series_utf8_replace_nulls(data, pattern, replacement, expected, regex) 
     [
         # Mismatched number of patterns and replacements
         (["foo", "barbaz", "quux"], ["o", "a"], ["O"]),
+        (["foo", "barbaz", "quux"], [], ["O", "A"]),
+        (["foo", "barbaz", "quux"], ["o", "a"], []),
         # bad input type
         ([1, 2, 3], ["o", "a"], ["O", "A"]),
     ],
@@ -741,8 +745,8 @@ def test_series_utf8_replace_nulls(data, pattern, replacement, expected, regex) 
 @pytest.mark.parametrize("regex", [True, False])
 def test_series_utf8_replace_bad_inputs(data, pattern, replacement, regex) -> None:
     s = Series.from_arrow(pa.array(data))
-    pattern = Series.from_arrow(pa.array(pattern))
-    replacement = Series.from_arrow(pa.array(replacement))
+    pattern = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacement = Series.from_arrow(pa.array(replacement, type=pa.string()))
     with pytest.raises(ValueError):
         s.str.replace(pattern, replacement, regex=regex)
 
