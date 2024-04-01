@@ -25,7 +25,7 @@ where
 {
     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        if dtype != &T::get_dtype() {
+        if dtype != &T::get_dtype() && !matches!(T::get_dtype(), DataType::Unknown) {
             panic!(
                 "Cannot create DataArray from dtype: {dtype} with physical type: {}",
                 T::get_dtype()
