@@ -976,10 +976,10 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Args:
             pattern: The pattern to replace
             replacement: The replacement string
-            regex: Whether the pattern is a regex pattern. Defaults to False.
+            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
 
         Returns:
-            Expression: a String expression with the replaced strings
+            Expression: a String expression with patterns replaced by the replacement string
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
