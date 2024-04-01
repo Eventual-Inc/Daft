@@ -582,3 +582,49 @@ def test_series_utf8_extract_all_bad_pattern() -> None:
     pattern = Series.from_arrow(pa.array(["["]))
     with pytest.raises(ValueError):
         s.str.extract_all(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "substrs", "expected"],
+    [
+        # No broadcast
+        (["foo", "barbaz", "quux"], ["foo", "baz", "baz"], [0, 3, -1]),
+        # Broadcast substrs
+        (["foo", None, "quux"], ["foo"], [0, None, -1]),
+        # Broadcast data
+        (["foo"], ["foo", None, "baz"], [0, None, -1]),
+        # Broadcast null data
+        ([None], ["foo", "bar", "baz"], [None, None, None]),
+        # Broadcast null substrs
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # Empty data.
+        ([[], ["foo", "bar"], []]),
+        # Empty substrs
+        ([["foo"] * 4, [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], ["oo", "bar", "baz", None], [1, None, 3, None]),
+        # All null data.
+        ([None] * 4, ["foo"] * 4, [None] * 4),
+        # All null substrs
+        (["foo"] * 4, [None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_find(data, substrs, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    substrs = Series.from_arrow(pa.array(substrs, type=pa.string()))
+    result = s.str.find(substrs)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_find_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    substrs = Series.from_arrow(pa.array(["foo", "baz"], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.find(substrs)
+
+
+def test_series_utf8_find_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    substrs = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.find(substrs)

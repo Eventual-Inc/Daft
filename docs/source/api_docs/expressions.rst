@@ -120,6 +120,7 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.capitalize
    Expression.str.left
    Expression.str.right
+   Expression.str.find
 
 .. _api-expressions-temporal:
 

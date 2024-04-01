@@ -3,6 +3,7 @@ mod contains;
 mod endswith;
 mod extract;
 mod extract_all;
+mod find;
 mod left;
 mod length;
 mod lower;
@@ -20,6 +21,7 @@ use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
 use extract::ExtractEvaluator;
 use extract_all::ExtractAllEvaluator;
+use find::FindEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
@@ -54,6 +56,7 @@ pub enum Utf8Expr {
     Capitalize,
     Left,
     Right,
+    Find,
 }
 
 impl Utf8Expr {
@@ -77,6 +80,7 @@ impl Utf8Expr {
             Capitalize => &CapitalizeEvaluator {},
             Left => &LeftEvaluator {},
             Right => &RightEvaluator {},
+            Find => &FindEvaluator {},
         }
     }
 }
@@ -190,5 +194,12 @@ pub fn right(data: &Expr, count: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Right),
         inputs: vec![data.clone(), count.clone()],
+    }
+}
+
+pub fn find(data: &Expr, pattern: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Find),
+        inputs: vec![data.clone(), pattern.clone()],
     }
 }

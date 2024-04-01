@@ -20,6 +20,7 @@ from tests.expressions.typing.conftest import assert_typing_resolve_vs_runtime_b
         pytest.param(lambda data, pat: data.str.concat(pat), id="concat"),
         pytest.param(lambda data, pat: data.str.extract(pat), id="extract"),
         pytest.param(lambda data, pat: data.str.extract_all(pat), id="extract_all"),
+        pytest.param(lambda data, pat: data.str.find(pat), id="find"),
     ],
 )
 def test_str_compares(binary_data_fixture, op, request):
@@ -112,7 +113,7 @@ def test_str_capitalize():
     "op",
     [
         pytest.param(lambda data, pat: data.str.left(pat), id="left"),
-        pytest.param(lambda data, pat: data.str.left(pat), id="right"),
+        pytest.param(lambda data, pat: data.str.right(pat), id="right"),
     ],
 )
 def test_str_left_right(binary_data_fixture, op, request):

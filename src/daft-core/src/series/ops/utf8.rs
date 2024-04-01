@@ -212,4 +212,13 @@ impl Series {
             ))),
         }
     }
+
+    pub fn utf8_find(&self, substr: &Series) -> DaftResult<Series> {
+        match self.data_type() {
+            DataType::Utf8 => Ok(self.utf8()?.find(substr.utf8()?)?.into_series()),
+            dt => Err(DaftError::TypeError(format!(
+                "Find not implemented for type {dt}"
+            ))),
+        }
+    }
 }
