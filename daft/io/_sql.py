@@ -1,9 +1,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 
-from typing import Callable, Optional, Union
-
-from sqlalchemy.engine import Connection
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -12,11 +10,14 @@ from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.sql.sql_scan import SQLScanOperator
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+
 
 @PublicAPI
 def read_sql(
     sql: str,
-    conn: Union[Callable[[], Connection], str],
+    conn: Union[Callable[[], "Connection"], str],
     partition_col: Optional[str] = None,
     num_partitions: Optional[int] = None,
 ) -> DataFrame:
@@ -62,7 +63,7 @@ def read_sql(
         sql,
         url,
         storage_config,
-        sql_alchemy_conn=sql_alchemy_conn,
+        sql_alchemy_conn,
         partition_col=partition_col,
         num_partitions=num_partitions,
     )
