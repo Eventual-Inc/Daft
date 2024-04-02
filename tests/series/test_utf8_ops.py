@@ -745,6 +745,9 @@ def test_series_utf8_replace_nulls(data, pattern, replacement, expected, regex) 
 @pytest.mark.parametrize("regex", [True, False])
 def test_series_utf8_replace_bad_inputs(data, pattern, replacement, regex) -> None:
     s = Series.from_arrow(pa.array(data))
+    with pytest.raises(ValueError):
+        s.str.replace(pattern, replacement, regex=regex)
+
     pattern = Series.from_arrow(pa.array(pattern, type=pa.string()))
     replacement = Series.from_arrow(pa.array(replacement, type=pa.string()))
     with pytest.raises(ValueError):
