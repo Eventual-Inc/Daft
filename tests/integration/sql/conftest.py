@@ -23,8 +23,8 @@ from sqlalchemy import (
 )
 
 URLS = [
-    "postgresql://username:password@localhost:5432/postgres",
     "trino://user@localhost:8080/memory/default",
+    "postgresql://username:password@localhost:5432/postgres",
     "mysql+pymysql://username:password@localhost:3306/mysql",
 ]
 TEST_TABLE_NAME = "example"
