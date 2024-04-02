@@ -18,7 +18,7 @@ from daft.daft import (
 from daft.expressions.expressions import lit
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
-from daft.sql.sql_reader import SQLReader, get_db_scheme_from_url
+from daft.sql.sql_reader import SQLReader, get_db_dialect_and_driver_from_url
 from daft.table import Table
 
 if TYPE_CHECKING:
@@ -42,20 +42,19 @@ class SQLScanOperator(ScanOperator):
         num_partitions: int | None = None,
     ) -> None:
         super().__init__()
+        self.sql = sql
+        self.conn = conn
         if isinstance(conn, str):
-            self.url = conn
-            self._conn_factory = None
+            self.dialect, self.driver = get_db_dialect_and_driver_from_url(conn)
         else:
-            self._conn_factory = conn
             connection = conn()
             if not hasattr(connection, "engine"):
                 raise ValueError(
                     "Failed to create SQLScanOperator: SQLAlchemy Connection Factory must return a Connection with an engine attribute."
                 )
-            self.url = connection.engine.url.render_as_string()
+            self.dialect, self.driver = connection.engine.dialect.name, connection.engine.driver
             connection.close()
 
-        self.sql = sql
         self.storage_config = storage_config
         self._partition_col = partition_col
         self._num_partitions = num_partitions
@@ -65,7 +64,8 @@ class SQLScanOperator(ScanOperator):
         return self._schema
 
     def display_name(self) -> str:
-        return f"SQLScanOperator(sql={self.sql}, url={self.url})"
+        conn_str = self.conn if isinstance(self.conn, str) else self.conn.__name__
+        return f"SQLScanOperator(sql={self.sql}, conn={conn_str})"
 
     def partitioning_keys(self) -> list[PartitionField]:
         return []
@@ -90,7 +90,7 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
-        partition_bounds_sql = [lit(bound)._to_sql(get_db_scheme_from_url(self.url)) for bound in partition_bounds]
+        partition_bounds_sql = [lit(bound)._to_sql(self.dialect) for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
@@ -106,12 +106,12 @@ class SQLScanOperator(ScanOperator):
             sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             file_format_config = FileFormatConfig.from_database_config(
-                DatabaseSourceConfig(sql=sql, conn_factory=self._conn_factory)
+                DatabaseSourceConfig(sql=sql, conn_factory=self.conn if not isinstance(self.conn, str) else None)
             )
 
             scan_tasks.append(
                 ScanTask.sql_scan_task(
-                    url=self.url,
+                    url=self.conn if isinstance(self.conn, str) else self.dialect,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=None,
@@ -134,15 +134,14 @@ class SQLScanOperator(ScanOperator):
         return False
 
     def _attempt_schema_read(self) -> Schema:
-        pa_table = SQLReader(self.sql, self.url, self._conn_factory, limit=1).read()
+        pa_table = SQLReader(self.sql, self.conn, limit=1).read()
         schema = Schema.from_pyarrow_schema(pa_table.schema)
         return schema
 
     def _get_num_rows(self) -> int:
         pa_table = SQLReader(
             self.sql,
-            self.url,
-            self._conn_factory,
+            self.conn,
             projection=["COUNT(*)"],
         ).read()
 
@@ -163,8 +162,7 @@ class SQLScanOperator(ScanOperator):
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
             pa_table = SQLReader(
                 self.sql,
-                self.url,
-                self._conn_factory,
+                self.conn,
                 projection=[
                     f"percentile_cont({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
@@ -178,8 +176,7 @@ class SQLScanOperator(ScanOperator):
 
             pa_table = SQLReader(
                 self.sql,
-                self.url,
-                self._conn_factory,
+                self.conn,
                 projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"],
             ).read()
             return pa_table, PartitionBoundStrategy.MIN_MAX
@@ -228,12 +225,12 @@ class SQLScanOperator(ScanOperator):
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
         file_format_config = FileFormatConfig.from_database_config(
-            DatabaseSourceConfig(self.sql, conn_factory=self._conn_factory)
+            DatabaseSourceConfig(self.sql, conn_factory=self.conn if not isinstance(self.conn, str) else None)
         )
         return iter(
             [
                 ScanTask.sql_scan_task(
-                    url=self.url,
+                    url=self.conn if isinstance(self.conn, str) else self.dialect,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=total_rows,

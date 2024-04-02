@@ -13,24 +13,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_db_scheme_from_url(url: str) -> str:
-    return urlparse(url).scheme.strip().lower()
+def get_db_dialect_and_driver_from_url(url: str) -> tuple[str, str]:
+    scheme = urlparse(url).scheme.strip().lower()
+    if "+" in scheme:
+        dialect, driver = scheme.split("+")
+    else:
+        dialect, driver = scheme, ""
+    return dialect, driver
 
 
 class SQLReader:
     def __init__(
         self,
         sql: str,
-        url: str,
-        conn_factory: Callable[[], Connection] | None,
+        conn: str | Callable[[], Connection],
         limit: int | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
     ) -> None:
 
         self.sql = sql
-        self.url = url
-        self.conn_factory = conn_factory
+        self.conn = conn
         self.limit = limit
         self.projection = projection
         self.predicate = predicate
@@ -78,35 +81,41 @@ class SQLReader:
             "clickhouse",
             "redshift",
         }
-        db_scheme = get_db_scheme_from_url(self.url)
 
-        # Check if the database type is supported
-        if db_scheme in supported_dbs and self.conn_factory is None:
-            return self._execute_sql_query_with_connectorx(sql)
+        if isinstance(self.conn, str):
+            dialect, driver = get_db_dialect_and_driver_from_url(self.conn)
+
+            # Use connectorx if the dialect is supported and driver is not specified
+            if dialect in supported_dbs and driver == "":
+                return self._execute_sql_query_with_connectorx(sql)
+            else:
+                return self._execute_sql_query_with_sqlalchemy(sql)
+
         else:
             return self._execute_sql_query_with_sqlalchemy(sql)
 
     def _execute_sql_query_with_connectorx(self, sql: str) -> pa.Table:
         import connectorx as cx
 
+        assert isinstance(self.conn, str)
         logger.info(f"Using connectorx to execute sql: {sql}")
         try:
-            table = cx.read_sql(conn=self.url, query=sql, return_type="arrow")
+            table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e
+            raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.conn}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str) -> pa.Table:
         from sqlalchemy import create_engine, text
 
         logger.info(f"Using sqlalchemy to execute sql: {sql}")
         try:
-            if self.conn_factory is not None:
-                with self.conn_factory() as connection:
+            if isinstance(self.conn, str):
+                with create_engine(self.conn).connect() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
             else:
-                with create_engine(self.url).connect() as connection:
+                with self.conn() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
 
@@ -114,4 +123,5 @@ class SQLReader:
             # TODO: Use type codes from cursor description to create pyarrow schema
             return pa.Table.from_pydict(pydict)
         except Exception as e:
-            raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e
+            connection_str = self.conn if isinstance(self.conn, str) else self.conn.__name__
+            raise RuntimeError(f"Failed to execute sql: {sql} from connection: {connection_str}, error: {e}") from e
