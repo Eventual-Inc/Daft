@@ -157,13 +157,12 @@ def test_approx_sketch_groupby(daft_df, service_requests_csv_pd_df, repartition_
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
-        .agg(col("Unique Key").approx_sketch().alias("sketches"))
-        .with_column("Unique Key", col("sketches").sketch_quantile(0.5))
-        .select(*[col(k) for k in keys], "Unique Key")
+        .agg(col("Unique Key").approx_sketch())
+        .with_column("Unique Key", col("Unique Key").sketch_quantile(0.5))
     )
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).median("Unique Key").reset_index()
     daft_pd_df = daft_df.to_pandas()
-    # Assert approximate median to be at 5% of exact median
+    # Assert approximate median to be at 2% of exact median
     pd.testing.assert_series_equal(
         daft_pd_df["Unique Key"], service_requests_csv_pd_df["Unique Key"], check_exact=False, rtol=0.02
     )

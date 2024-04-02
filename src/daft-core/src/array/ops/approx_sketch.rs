@@ -1,6 +1,7 @@
 use super::as_arrow::AsArrow;
 use super::DaftApproxSketchAggable;
 use crate::array::ops::GroupIndices;
+use crate::utils::sketch::{sketch_from_value, sketch_to_binary};
 use crate::{array::DataArray, datatypes::*};
 use arrow2;
 use arrow2::array::Array;
@@ -11,22 +12,34 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     type Output = DaftResult<DataArray<BinaryType>>;
 
     fn approx_sketch(&self) -> Self::Output {
-        let config = Config::defaults();
-        let mut sketch = DDSketch::new(config);
-
         let primitive_arr = self.as_arrow();
-        for value in primitive_arr.iter().flatten() {
-            sketch.add(*value);
-        }
-
-        let sketch_str = &serde_json::to_string(&sketch);
-
-        let result = match sketch_str {
-            Ok(s) => Some(s.as_bytes()),
-            Err(..) => None,
+        let sketch = if primitive_arr.null_count() > 0 {
+            primitive_arr
+                .iter()
+                .fold(None, |acc, value| match (acc, value) {
+                    (acc, None) => acc,
+                    (None, Some(v)) => Some(sketch_from_value(*v)),
+                    (Some(mut acc), Some(v)) => {
+                        acc.add(*v);
+                        Some(acc)
+                    }
+                })
+        } else {
+            Some(primitive_arr.values_iter().fold(
+                DDSketch::new(Config::defaults()),
+                |mut acc, value| {
+                    acc.add(*value);
+                    acc
+                },
+            ))
         };
 
-        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([result]));
+        let binary = match sketch {
+            Some(s) => Some(sketch_to_binary(&s)?),
+            None => None,
+        };
+
+        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([binary]));
 
         DataArray::new(
             Field::new(&self.field.name, DataType::Binary).into(),
@@ -37,64 +50,49 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
         let sketch_per_group = if arrow_array.null_count() > 0 {
-            let sketches = groups.iter().map(|g| {
-                let sketch = g.iter().fold(None, |acc, index| {
-                    let idx = *index as usize;
-                    match (acc, arrow_array.is_null(idx)) {
-                        (acc, true) => acc,
-                        (None, false) => {
-                            let config = Config::defaults();
-                            let mut sketch = DDSketch::new(config);
-                            sketch.add(arrow_array.value(idx));
-                            Some(sketch)
+            let sketches: Vec<Option<Vec<u8>>> = groups
+                .iter()
+                .map(|g| {
+                    let sketch = g.iter().fold(None, |acc, index| {
+                        let idx = *index as usize;
+                        match (acc, arrow_array.is_null(idx)) {
+                            (acc, true) => acc,
+                            (None, false) => Some(sketch_from_value(arrow_array.value(idx))),
+                            (Some(mut acc), false) => {
+                                acc.add(arrow_array.value(idx));
+                                Some(acc)
+                            }
                         }
-                        (Some(mut acc), false) => {
-                            acc.add(arrow_array.value(idx));
-                            Some(acc)
-                        }
+                    });
+
+                    match sketch {
+                        Some(s) => Ok(Some(sketch_to_binary(&s)?)),
+                        None => Ok(None),
                     }
-                });
-
-                let sketch_str = serde_json::to_string(&sketch);
-
-                match sketch_str {
-                    Ok(s) => Some(s),
-                    Err(..) => None,
-                }
-            });
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
             Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
-                sketches,
+                sketches.into_iter(),
             ))
         } else {
-            let sketches = groups.iter().map(|g| {
-                let sketch = g.iter().fold(None, |acc, index| {
-                    let idx = *index as usize;
-                    match (acc, arrow_array.is_null(idx)) {
-                        (acc, true) => acc,
-                        (None, false) => {
-                            let config = Config::defaults();
-                            let mut sketch = DDSketch::new(config);
-                            sketch.add(arrow_array.value(idx));
-                            Some(sketch)
-                        }
-                        (Some(mut acc), false) => {
-                            acc.add(arrow_array.value(idx));
-                            Some(acc)
-                        }
-                    }
-                });
+            let sketches: Vec<Option<Vec<u8>>> = groups
+                .iter()
+                .map(|g| {
+                    let sketch =
+                        g.iter()
+                            .fold(DDSketch::new(Config::defaults()), |mut acc, index| {
+                                let idx = *index as usize;
+                                acc.add(arrow_array.value(idx));
+                                acc
+                            });
 
-                let sketch_str = serde_json::to_string(&sketch);
-
-                match sketch_str {
-                    Ok(s) => Some(s),
-                    Err(..) => None,
-                }
-            });
+                    Ok(Some(sketch_to_binary(&sketch)?))
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
             Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
-                sketches,
+                sketches.into_iter(),
             ))
         };
 

@@ -1,34 +1,47 @@
 use super::as_arrow::AsArrow;
 use super::DaftMergeSketchAggable;
 use crate::array::ops::GroupIndices;
+use crate::utils::sketch::{sketch_from_binary, sketch_merge, sketch_to_binary};
 use crate::{array::DataArray, datatypes::*};
 use arrow2;
 use arrow2::array::Array;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use sketches_ddsketch::{Config, DDSketch};
 
 impl DaftMergeSketchAggable for &DataArray<BinaryType> {
     type Output = DaftResult<DataArray<BinaryType>>;
 
     fn merge_sketch(&self) -> Self::Output {
-        let config = Config::defaults();
-        let mut sketch = DDSketch::new(config);
-
         let primitive_arr = self.as_arrow();
-        for value in primitive_arr.iter().flatten() {
-            let str = std::str::from_utf8(value).unwrap();
-            let s: DDSketch = serde_json::from_str(str).unwrap();
-            sketch.merge(&s).unwrap();
-        }
-
-        let sketch_str = &serde_json::to_string(&sketch);
-
-        let result = match sketch_str {
-            Ok(s) => Some(s.as_bytes()),
-            Err(..) => None,
+        let sketch = if primitive_arr.null_count() > 0 {
+            primitive_arr
+                .iter()
+                .try_fold(None, |acc, value| match (acc, value) {
+                    (acc, None) => Ok::<_, DaftError>(acc),
+                    (None, Some(v)) => Ok(Some(sketch_from_binary(v)?)),
+                    (Some(mut acc), Some(v)) => {
+                        let s = sketch_from_binary(v)?;
+                        sketch_merge(&mut acc, &s)?;
+                        Ok(Some(acc))
+                    }
+                })?
+        } else {
+            Some(primitive_arr.values_iter().try_fold(
+                DDSketch::new(Config::defaults()),
+                |mut acc, value| {
+                    let s = sketch_from_binary(value)?;
+                    sketch_merge(&mut acc, &s)?;
+                    Ok::<_, DaftError>(acc)
+                },
+            )?)
         };
 
-        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([result]));
+        let binary = match sketch {
+            Some(s) => Some(sketch_to_binary(&s)?),
+            None => None,
+        };
+
+        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([binary]));
 
         DataArray::new(self.field.clone(), arrow_array)
     }
@@ -36,66 +49,57 @@ impl DaftMergeSketchAggable for &DataArray<BinaryType> {
     fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
         let sketch_per_group = if arrow_array.null_count() > 0 {
-            let sketches = groups.iter().map(|g| {
-                let sketch = g.iter().fold(None, |acc, index| {
-                    let idx = *index as usize;
-                    match (acc, arrow_array.is_null(idx)) {
-                        (acc, true) => acc,
-                        (None, false) => {
-                            let str = std::str::from_utf8(arrow_array.value(idx)).unwrap();
-                            let sketch: DDSketch = serde_json::from_str(str).unwrap();
-                            Some(sketch)
+            let sketches: Vec<Option<Vec<u8>>> = groups
+                .iter()
+                .map(|g| {
+                    let sketch = g.iter().try_fold(None, |acc, index| {
+                        let idx = *index as usize;
+                        match (acc, arrow_array.is_null(idx)) {
+                            (acc, true) => Ok::<_, DaftError>(acc),
+                            (None, false) => Ok(Some(sketch_from_binary(arrow_array.value(idx))?)),
+                            (Some(mut acc), false) => {
+                                let sketch = sketch_from_binary(arrow_array.value(idx))?;
+                                sketch_merge(&mut acc, &sketch)?;
+                                Ok(Some(acc))
+                            }
                         }
-                        (Some(mut acc), false) => {
-                            let str = std::str::from_utf8(arrow_array.value(idx)).unwrap();
-                            let sketch: DDSketch = serde_json::from_str(str).unwrap();
-                            acc.merge(&sketch).unwrap();
-                            Some(acc)
-                        }
+                    })?;
+
+                    match sketch {
+                        Some(s) => Ok(Some(sketch_to_binary(&s)?)),
+                        None => Ok(None),
                     }
-                });
-
-                let sketch_str = serde_json::to_string(&sketch);
-
-                match sketch_str {
-                    Ok(s) => Some(s),
-                    Err(..) => None,
-                }
-            });
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
             Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
-                sketches,
+                sketches.into_iter(),
             ))
         } else {
-            let sketches = groups.iter().map(|g| {
-                let sketch = g.iter().fold(None, |acc, index| {
-                    let idx = *index as usize;
-                    match (acc, arrow_array.is_null(idx)) {
-                        (acc, true) => acc,
-                        (None, false) => {
-                            let str = std::str::from_utf8(arrow_array.value(idx)).unwrap();
-                            let sketch: DDSketch = serde_json::from_str(str).unwrap();
-                            Some(sketch)
+            let sketches: Vec<Option<Vec<u8>>> = groups
+                .iter()
+                .map(|g| {
+                    let sketch = g.iter().try_fold(None, |acc, index| {
+                        let idx = *index as usize;
+                        match acc {
+                            None => Ok(Some(sketch_from_binary(arrow_array.value(idx))?)),
+                            Some(mut acc) => {
+                                let sketch = sketch_from_binary(arrow_array.value(idx))?;
+                                sketch_merge(&mut acc, &sketch)?;
+                                Ok::<_, DaftError>(Some(acc))
+                            }
                         }
-                        (Some(mut acc), false) => {
-                            let str = std::str::from_utf8(arrow_array.value(idx)).unwrap();
-                            let sketch: DDSketch = serde_json::from_str(str).unwrap();
-                            acc.merge(&sketch).unwrap();
-                            Some(acc)
-                        }
+                    })?;
+
+                    match sketch {
+                        Some(s) => Ok(Some(sketch_to_binary(&s)?)),
+                        None => Ok(None),
                     }
-                });
-
-                let sketch_str = serde_json::to_string(&sketch);
-
-                match sketch_str {
-                    Ok(s) => Some(s),
-                    Err(..) => None,
-                }
-            });
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
 
             Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
-                sketches,
+                sketches.into_iter(),
             ))
         };
 
