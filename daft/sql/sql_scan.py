@@ -5,7 +5,9 @@ import math
 import warnings
 from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Callable
+
+from sqlalchemy.engine import Connection
 
 from daft.context import get_context
 from daft.daft import (
@@ -35,6 +37,7 @@ class SQLScanOperator(ScanOperator):
         sql: str,
         url: str,
         storage_config: StorageConfig,
+        sql_alchemy_conn: Callable[[], Connection] | None,
         partition_col: str | None = None,
         num_partitions: int | None = None,
     ) -> None:
@@ -42,6 +45,7 @@ class SQLScanOperator(ScanOperator):
         self.sql = sql
         self.url = url
         self.storage_config = storage_config
+        self._sql_alchemy_conn = sql_alchemy_conn
         self._partition_col = partition_col
         self._num_partitions = num_partitions
         self._schema = self._attempt_schema_read()
@@ -90,7 +94,9 @@ class SQLScanOperator(ScanOperator):
             )
             sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
-            file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql=sql))
+            file_format_config = FileFormatConfig.from_database_config(
+                DatabaseSourceConfig(sql=sql, sql_alchemy_conn=self._sql_alchemy_conn)
+            )
 
             scan_tasks.append(
                 ScanTask.sql_scan_task(
@@ -117,7 +123,7 @@ class SQLScanOperator(ScanOperator):
         return False
 
     def _attempt_schema_read(self) -> Schema:
-        pa_table = SQLReader(self.sql, self.url, limit=1).read()
+        pa_table = SQLReader(self.sql, self.url, self._sql_alchemy_conn, limit=1).read()
         schema = Schema.from_pyarrow_schema(pa_table.schema)
         return schema
 
@@ -125,6 +131,7 @@ class SQLScanOperator(ScanOperator):
         pa_table = SQLReader(
             self.sql,
             self.url,
+            self._sql_alchemy_conn,
             projection=["COUNT(*)"],
         ).read()
 
@@ -146,6 +153,7 @@ class SQLScanOperator(ScanOperator):
             pa_table = SQLReader(
                 self.sql,
                 self.url,
+                self._sql_alchemy_conn,
                 projection=[
                     f"percentile_cont({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
@@ -160,6 +168,7 @@ class SQLScanOperator(ScanOperator):
             pa_table = SQLReader(
                 self.sql,
                 self.url,
+                self._sql_alchemy_conn,
                 projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"],
             ).read()
             return pa_table, PartitionBoundStrategy.MIN_MAX
@@ -207,7 +216,9 @@ class SQLScanOperator(ScanOperator):
         return bounds, strategy
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
-        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(self.sql))
+        file_format_config = FileFormatConfig.from_database_config(
+            DatabaseSourceConfig(self.sql, sql_alchemy_conn=self._sql_alchemy_conn)
+        )
         return iter(
             [
                 ScanTask.sql_scan_task(

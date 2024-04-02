@@ -15,9 +15,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
 };
-use daft_scan::file_format::{
-    CsvSourceConfig, DatabaseSourceConfig, FileFormatConfig, ParquetSourceConfig,
-};
+use daft_scan::file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_scan::storage_config::{NativeStorageConfig, StorageConfig};
 use daft_scan::{ChunkSpec, DataFileSource, Pushdowns, ScanTask};
 use daft_table::Table;
@@ -229,6 +227,7 @@ fn materialize_scan_task(
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
+                #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
                     return Err(common_error::DaftError::TypeError(
                         "Native reads for Database file format not implemented".to_string(),
@@ -310,7 +309,10 @@ fn materialize_scan_task(
                     })
                     .collect::<crate::Result<Vec<_>>>()
                 })?,
-                FileFormatConfig::Database(DatabaseSourceConfig { sql }) => {
+                FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
+                    sql,
+                    sql_alchemy_conn,
+                }) => {
                     let predicate_expr = scan_task
                         .pushdowns
                         .filters
@@ -322,6 +324,7 @@ fn materialize_scan_task(
                                 py,
                                 sql,
                                 url,
+                                sql_alchemy_conn,
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task

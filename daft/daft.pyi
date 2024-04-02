@@ -2,6 +2,8 @@ import builtins
 from enum import Enum
 from typing import Any, Callable, TYPE_CHECKING
 
+from sqlalchemy.engine import Connection
+
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
@@ -232,8 +234,9 @@ class DatabaseSourceConfig:
     """
 
     sql: str
+    sql_alchemy_conn: Callable[[], Connection] | None
 
-    def __init__(self, sql: str): ...
+    def __init__(self, sql: str, sql_alchemy_conn: Callable[[], Connection] | None): ...
 
 class FileFormatConfig:
     """

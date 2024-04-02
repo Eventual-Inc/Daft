@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import warnings
+from typing import Callable
 from urllib.parse import urlparse
 
 import pyarrow as pa
+from sqlalchemy.engine import Connection
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class SQLReader:
         self,
         sql: str,
         url: str,
+        sql_alchemy_conn: Callable[[], Connection] | None,
         limit: int | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
@@ -25,6 +28,7 @@ class SQLReader:
 
         self.sql = sql
         self.url = url
+        self.sql_alchemy_conn = sql_alchemy_conn
         self.limit = limit
         self.projection = projection
         self.predicate = predicate
@@ -72,11 +76,10 @@ class SQLReader:
             "clickhouse",
             "redshift",
         }
-
         db_scheme = get_db_scheme_from_url(self.url)
 
         # Check if the database type is supported
-        if db_scheme in supported_dbs:
+        if db_scheme in supported_dbs and self.sql_alchemy_conn is None:
             return self._execute_sql_query_with_connectorx(sql)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql)
@@ -96,12 +99,17 @@ class SQLReader:
 
         logger.info(f"Using sqlalchemy to execute sql: {sql}")
         try:
-            with create_engine(self.url).connect() as connection:
-                result = connection.execute(text(sql))
-                rows = result.fetchall()
-                pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
+            if self.sql_alchemy_conn is not None:
+                with self.sql_alchemy_conn() as connection:
+                    result = connection.execute(text(sql))
+                    rows = result.fetchall()
+            else:
+                with create_engine(self.url).connect() as connection:
+                    result = connection.execute(text(sql))
+                    rows = result.fetchall()
 
-                # TODO: Use type codes from cursor description to create pyarrow schema
-                return pa.Table.from_pydict(pydict)
+            pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
+            # TODO: Use type codes from cursor description to create pyarrow schema
+            return pa.Table.from_pydict(pydict)
         except Exception as e:
             raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.url}, error: {e}") from e

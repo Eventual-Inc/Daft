@@ -1,7 +1,9 @@
 # isort: dont-add-import: from __future__ import annotations
 
 
-from typing import Optional
+from typing import Callable, Optional, Union
+
+from sqlalchemy.engine import Connection
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -13,7 +15,10 @@ from daft.sql.sql_scan import SQLScanOperator
 
 @PublicAPI
 def read_sql(
-    sql: str, url: str, partition_col: Optional[str] = None, num_partitions: Optional[int] = None
+    sql: str,
+    conn: Union[Callable[[], Connection], str],
+    partition_col: Optional[str] = None,
+    num_partitions: Optional[int] = None,
 ) -> DataFrame:
     """Creates a DataFrame from a SQL query.
 
@@ -39,6 +44,17 @@ def read_sql(
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 
+    if isinstance(conn, str):
+        url = conn
+        sql_alchemy_conn = None
+    elif callable(conn):
+        with conn() as conn:
+            if not isinstance(conn, Connection):
+                raise ValueError("Failed to execute read_sql: conn must return a sqlalchemy Connection")
+            url = conn.engine.url
+    else:
+        raise ValueError("Failed to execute read_sql: conn must be a string or a callable")
+
     io_config = context.get_context().daft_planning_config.default_io_config
     storage_config = StorageConfig.python(PythonStorageConfig(io_config))
 
@@ -46,6 +62,7 @@ def read_sql(
         sql,
         url,
         storage_config,
+        sql_alchemy_conn=sql_alchemy_conn,
         partition_col=partition_col,
         num_partitions=num_partitions,
     )

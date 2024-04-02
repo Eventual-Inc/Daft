@@ -4,10 +4,11 @@ use daft_core::{
     impl_bincode_py_state_serialization,
 };
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
-
 #[cfg(feature = "python")]
 use {
+    crate::py_object_serde::{deserialize_py_object, serialize_py_object},
     daft_core::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
         pyclass, pyclass::CompareOp, pymethods, types::PyBytes, IntoPy, PyObject, PyResult,
@@ -56,6 +57,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Parquet(_) => Self::Parquet,
             FileFormatConfig::Csv(_) => Self::Csv,
             FileFormatConfig::Json(_) => Self::Json,
+            #[cfg(feature = "python")]
             FileFormatConfig::Database(_) => Self::Database,
         }
     }
@@ -67,6 +69,7 @@ pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
+    #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
 }
 
@@ -78,6 +81,7 @@ impl FileFormatConfig {
             Parquet(_) => "Parquet",
             Csv(_) => "Csv",
             Json(_) => "Json",
+            #[cfg(feature = "python")]
             Database(_) => "Database",
         }
     }
@@ -87,6 +91,7 @@ impl FileFormatConfig {
             Self::Parquet(source) => source.multiline_display(),
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
+            #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
         }
     }
@@ -290,15 +295,53 @@ impl JsonSourceConfig {
 impl_bincode_py_state_serialization!(JsonSourceConfig);
 
 /// Configuration for a Database data source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg(feature = "python")]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    pub sql_alchemy_conn: PyObject,
 }
 
+#[cfg(feature = "python")]
+impl PartialEq for DatabaseSourceConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.sql == other.sql
+            && Python::with_gil(|py| {
+                self.sql_alchemy_conn
+                    .as_ref(py)
+                    .eq(other.sql_alchemy_conn.as_ref(py))
+                    .unwrap()
+            })
+    }
+}
+
+#[cfg(feature = "python")]
+impl Eq for DatabaseSourceConfig {}
+
+#[cfg(feature = "python")]
+impl Hash for DatabaseSourceConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.sql.hash(state);
+        let py_obj_hash = Python::with_gil(|py| self.sql_alchemy_conn.as_ref(py).hash());
+        match py_obj_hash {
+            Ok(hash) => hash.hash(state),
+            Err(_) => serde_json::to_vec(self).unwrap().hash(state),
+        }
+    }
+}
+
+#[cfg(feature = "python")]
 impl DatabaseSourceConfig {
-    pub fn new_internal(sql: String) -> Self {
-        Self { sql }
+    pub fn new_internal(sql: String, sql_alchemy_conn: PyObject) -> Self {
+        Self {
+            sql,
+            sql_alchemy_conn,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -313,8 +356,8 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str) -> Self {
-        Self::new_internal(sql.to_string())
+    fn new(sql: &str, sql_alchemy_conn: PyObject) -> Self {
+        Self::new_internal(sql.to_string(), sql_alchemy_conn)
     }
 }
 

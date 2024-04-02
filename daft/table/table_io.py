@@ -12,6 +12,7 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
+from sqlalchemy.engine import Connection
 
 from daft.context import get_context
 from daft.daft import (
@@ -220,6 +221,7 @@ def read_parquet(
 def read_sql(
     sql: str,
     url: str,
+    sql_alchemy_conn: Callable[[], Connection] | None,
     schema: Schema,
     sql_options: TableReadSQLOptions = TableReadSQLOptions(),
     read_options: TableReadOptions = TableReadOptions(),
@@ -249,6 +251,7 @@ def read_sql(
     pa_table = SQLReader(
         sql,
         url,
+        sql_alchemy_conn,
         limit=read_options.num_rows if apply_pushdowns_to_sql else None,
         projection=read_options.column_names if apply_pushdowns_to_sql else None,
         predicate=predicate_sql,
