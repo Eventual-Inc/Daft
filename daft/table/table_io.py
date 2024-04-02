@@ -12,7 +12,6 @@ from pyarrow import csv as pacsv
 from pyarrow import dataset as pads
 from pyarrow import json as pajson
 from pyarrow import parquet as papq
-from sqlalchemy.engine import Connection
 
 from daft.context import get_context
 from daft.daft import (
@@ -51,6 +50,7 @@ FileInput = Union[pathlib.Path, str, IO[bytes]]
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+    from sqlalchemy.engine import Connection
 
 
 @contextlib.contextmanager
