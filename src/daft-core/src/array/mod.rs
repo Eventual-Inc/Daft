@@ -68,6 +68,10 @@ where
         self.data().len()
     }
 
+    pub fn null_count(&self) -> usize {
+        self.data().null_count()
+    }
+
     pub fn data_type(&self) -> &DataType {
         &self.field.dtype
     }

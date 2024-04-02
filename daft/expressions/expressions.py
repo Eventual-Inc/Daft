@@ -939,6 +939,52 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
 
+    def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
+        """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
+
+        Example:
+            >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
+            >>> df.with_column("replace", df["data"].str.replace("ba", "123")).collect()
+            ╭──────┬─────────╮
+            │ data ┆ replace │
+            │ ---  ┆ ---     │
+            │ Utf8 ┆ Utf8    │
+            ╞══════╪═════════╡
+            │ foo  ┆ foo     │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ bar  ┆ 123r    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ baz  ┆ 123z    │
+            ╰──────┴─────────╯
+
+            Replace with a regex pattern
+
+            >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
+            >>> df.with_column("replace", df["data"].str.replace(r"o+", "a", regex=True)).collect()
+            ╭───────┬─────────╮
+            │ data  ┆ replace │
+            │ ---   ┆ ---     │
+            │ Utf8  ┆ Utf8    │
+            ╞═══════╪═════════╡
+            │ foo   ┆ fa      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ fooo  ┆ fa      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ foooo ┆ fa      │
+            ╰───────┴─────────╯
+
+        Args:
+            pattern: The pattern to replace
+            replacement: The replacement string
+            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
+
+        Returns:
+            Expression: a String expression with patterns replaced by the replacement string
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        replacement_expr = Expression._to_expression(replacement)
+        return Expression._from_pyexpr(self._expr.utf8_replace(pattern_expr._expr, replacement_expr._expr, regex))
+
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column
 

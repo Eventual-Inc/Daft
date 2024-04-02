@@ -12,6 +12,54 @@ use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
+enum BroadcastedStrIter<'a> {
+    Repeat(std::iter::Take<std::iter::Repeat<Option<&'a str>>>),
+    NonRepeat(
+        arrow2::bitmap::utils::ZipValidity<
+            &'a str,
+            arrow2::array::ArrayValuesIter<'a, arrow2::array::Utf8Array<i64>>,
+            arrow2::bitmap::utils::BitmapIter<'a>,
+        >,
+    ),
+}
+
+impl<'a> Iterator for BroadcastedStrIter<'a> {
+    type Item = Option<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            BroadcastedStrIter::Repeat(iter) => iter.next(),
+            BroadcastedStrIter::NonRepeat(iter) => iter.next(),
+        }
+    }
+}
+
+fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> BroadcastedStrIter<'_> {
+    if arr.len() == 1 {
+        BroadcastedStrIter::Repeat(std::iter::repeat(arr.get(0)).take(len))
+    } else {
+        BroadcastedStrIter::NonRepeat(arr.as_arrow().iter())
+    }
+}
+
+fn is_valid_input_lengths(lengths: &[usize]) -> bool {
+    // Check if all elements are equal
+    if lengths.iter().all(|&x| x == lengths[0]) {
+        return true;
+    }
+
+    // Separate the elements into '1's and others
+    let ones_count = lengths.iter().filter(|&&x| x == 1).count();
+    let others: Vec<&usize> = lengths.iter().filter(|&&x| x != 1).collect();
+
+    if ones_count > 0 && !others.is_empty() {
+        // Check if all 'other' elements are equal and greater than 1, which means that this is a broadcastable operation
+        others.iter().all(|&&x| x == *others[0] && x > 1)
+    } else {
+        false
+    }
+}
+
 fn split_array_on_literal<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     pattern_iter: impl Iterator<Item = Option<&'a str>>,
@@ -159,6 +207,42 @@ fn regex_extract_all_matches<'a>(
         offsets,
         validity,
     ))
+}
+
+fn regex_replace<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
+    replacement_iter: impl Iterator<Item = Option<&'a str>>,
+    name: &str,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = arr_iter
+        .zip(regex_iter)
+        .zip(replacement_iter)
+        .map(|((val, re), replacement)| match (val, re, replacement) {
+            (Some(val), Some(re), Some(replacement)) => Ok(Some(re?.replace_all(val, replacement))),
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
+fn replace_on_literal<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    pattern_iter: impl Iterator<Item = Option<&'a str>>,
+    replacement_iter: impl Iterator<Item = Option<&'a str>>,
+    name: &str,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = arr_iter
+        .zip(pattern_iter)
+        .zip(replacement_iter)
+        .map(|((val, pat), replacement)| match (val, pat, replacement) {
+            (Some(val), Some(pat), Some(replacement)) => Ok(Some(val.replace(pat, replacement))),
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }
 
 impl Utf8Array {
@@ -405,6 +489,60 @@ impl Utf8Array {
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
                 "Error in extract_all: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
+        }
+    }
+
+    pub fn replace(
+        &self,
+        pattern: &Utf8Array,
+        replacement: &Utf8Array,
+        regex: bool,
+    ) -> DaftResult<Utf8Array> {
+        let self_len = self.len();
+        let pattern_len = pattern.len();
+        let replacement_len = replacement.len();
+
+        if !is_valid_input_lengths(&[self_len, pattern_len, replacement_len]) {
+            return Err(DaftError::ValueError(format!(
+                "Error in replace: lhs, pattern, and replacement have different length arrays: {self_len} vs {pattern_len} vs {replacement_len}"
+            )));
+        }
+        if self.is_empty() && pattern.is_empty() && replacement.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+        }
+
+        let result_len = std::cmp::max(self_len, std::cmp::max(pattern_len, replacement_len));
+        if self.null_count() == self_len
+            || pattern.null_count() == pattern_len
+            || replacement.null_count() == replacement_len
+        {
+            return Ok(Utf8Array::full_null(
+                self.name(),
+                &DataType::Utf8,
+                result_len,
+            ));
+        }
+
+        let self_iter = create_broadcasted_str_iter(self, result_len);
+        let replacement_iter = create_broadcasted_str_iter(replacement, result_len);
+
+        match (regex, pattern_len) {
+            (true, 1) => {
+                let regex_iter =
+                    std::iter::repeat(pattern.get(0).map(regex::Regex::new)).take(result_len);
+                regex_replace(self_iter, regex_iter, replacement_iter, self.name())
+            }
+            (true, _) => {
+                let regex_iter = pattern
+                    .as_arrow()
+                    .iter()
+                    .map(|pat| pat.map(regex::Regex::new));
+                regex_replace(self_iter, regex_iter, replacement_iter, self.name())
+            }
+            (false, _) => {
+                let pattern_iter = create_broadcasted_str_iter(pattern, result_len);
+                replace_on_literal(self_iter, pattern_iter, replacement_iter, self.name())
+            }
         }
     }
 
