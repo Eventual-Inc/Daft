@@ -35,17 +35,31 @@ class SQLScanOperator(ScanOperator):
     def __init__(
         self,
         sql: str,
-        url: str,
+        conn: str | Callable[[], Connection],
         storage_config: StorageConfig,
-        sql_alchemy_conn: Callable[[], Connection] | None,
         partition_col: str | None = None,
         num_partitions: int | None = None,
     ) -> None:
         super().__init__()
+        if isinstance(conn, str):
+            self.url = conn
+            self._sql_alchemy_conn = None
+        elif callable(conn):
+            self._sql_alchemy_conn = conn
+            connection = conn()
+            if not hasattr(connection, "engine"):
+                raise ValueError(
+                    "Failed to create SQLScanOperator: SQLAlchemy Connection Factory must return a Connection with an engine attribute."
+                )
+            self.url = connection.engine.url.render_as_string()
+            connection.close()
+        else:
+            raise ValueError(
+                f"Failed to create SQLScanOperator: invalid conn type {type(conn)}, expected str or SQLAlchemy Connection Factory."
+            )
+
         self.sql = sql
-        self.url = url
         self.storage_config = storage_config
-        self._sql_alchemy_conn = sql_alchemy_conn
         self._partition_col = partition_col
         self._num_partitions = num_partitions
         self._schema = self._attempt_schema_read()

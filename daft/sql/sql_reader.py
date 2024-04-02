@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from urllib.parse import urlparse
 
 import pyarrow as pa
-from sqlalchemy.engine import Connection
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 logger = logging.getLogger(__name__)
 

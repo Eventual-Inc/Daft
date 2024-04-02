@@ -224,3 +224,9 @@ def test_sql_read_with_projection_pushdown(db_conn, generated_data, num_partitio
 def test_sql_bad_url() -> None:
     with pytest.raises(RuntimeError, match="Failed to execute sql"):
         daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", "bad_url://")
+
+
+@pytest.mark.integration()
+def test_sql_bad_connection_factory() -> None:
+    with pytest.raises(ValueError, match="Failed to create SQLScanOperator:"):
+        daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", lambda: "bad_conn")
