@@ -2,8 +2,6 @@ import builtins
 from enum import Enum
 from typing import Any, Callable, TYPE_CHECKING
 
-from sqlalchemy.engine import Connection
-
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.execution import physical_plan
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
@@ -13,6 +11,7 @@ from daft.io.scan import ScanOperator
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+    from sqlalchemy.engine import Connection
 
 class ImageMode(Enum):
     """
