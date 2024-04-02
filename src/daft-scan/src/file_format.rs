@@ -304,7 +304,7 @@ pub struct DatabaseSourceConfig {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
-    pub sql_alchemy_conn: PyObject,
+    pub conn_factory: PyObject,
 }
 
 #[cfg(feature = "python")]
@@ -312,9 +312,9 @@ impl PartialEq for DatabaseSourceConfig {
     fn eq(&self, other: &Self) -> bool {
         self.sql == other.sql
             && Python::with_gil(|py| {
-                self.sql_alchemy_conn
+                self.conn_factory
                     .as_ref(py)
-                    .eq(other.sql_alchemy_conn.as_ref(py))
+                    .eq(other.conn_factory.as_ref(py))
                     .unwrap()
             })
     }
@@ -327,7 +327,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
-        let py_obj_hash = Python::with_gil(|py| self.sql_alchemy_conn.as_ref(py).hash());
+        let py_obj_hash = Python::with_gil(|py| self.conn_factory.as_ref(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
             Err(_) => serde_json::to_vec(self).unwrap().hash(state),
@@ -337,11 +337,8 @@ impl Hash for DatabaseSourceConfig {
 
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
-    pub fn new_internal(sql: String, sql_alchemy_conn: PyObject) -> Self {
-        Self {
-            sql,
-            sql_alchemy_conn,
-        }
+    pub fn new_internal(sql: String, conn_factory: PyObject) -> Self {
+        Self { sql, conn_factory }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -356,8 +353,8 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, sql_alchemy_conn: PyObject) -> Self {
-        Self::new_internal(sql.to_string(), sql_alchemy_conn)
+    fn new(sql: &str, conn_factory: PyObject) -> Self {
+        Self::new_internal(sql.to_string(), conn_factory)
     }
 }
 

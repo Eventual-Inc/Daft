@@ -21,25 +21,56 @@ def read_sql(
     partition_col: Optional[str] = None,
     num_partitions: Optional[int] = None,
 ) -> DataFrame:
-    """Creates a DataFrame from a SQL query.
-
-    Example:
-        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
-
-    .. NOTE::
-        If partition_col is specified, this function will partition the query by the specified column. You may specify the number of partitions, or let Daft determine the number of partitions.
-        Daft will first calculate percentiles of the specified column. For example if num_partitions is 3, Daft will calculate the 33rd and 66th percentiles of the specified column, and use these values to partition the query.
-        If the database does not support the necessary SQL syntax to calculate percentiles, Daft will calculate the min and max of the specified column and partition the query into equal ranges.
+    """Creates a DataFrame from the results of a SQL query.
 
     Args:
         sql (str): SQL query to execute
-        url (str): URL to the database
+        conn (Union[Callable[[], Connection], str]): SQLAlchemy connection factory or database URL
         partition_col (Optional[str]): Column to partition the data by, defaults to None
         num_partitions (Optional[int]): Number of partitions to read the data into,
             defaults to None, which will lets Daft determine the number of partitions.
 
     Returns:
         DataFrame: Dataframe containing the results of the query
+
+    .. NOTE::
+        #. Partitioning:
+            When `partition_col` is specified, the function partitions the query based on that column.
+            You can define `num_partitions` or leave it to Daft to decide.
+            Daft calculates the specified column's percentiles to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
+            If the database or column type lacks percentile calculation support, Daft partitions the query using equal ranges between the column's minimum and maximum values.
+
+        #. Execution:
+            Daft executes SQL queries using using `ConnectorX <https://sfu-db.github.io/connector-x/intro.html>`_ or `SQLAlchemy <https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine>`_,
+            preferring ConnectorX unless a SQLAlchemy connection factory is specified or the database dialect is unsupported by ConnectorX.
+
+    Example:
+        Read data from a SQL query and a database URL:
+
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
+
+        Read data from a SQL query and a SQLAlchemy connection factory:
+
+        >>> def create_conn():
+        ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
+        >>> df = daft.read_sql("SELECT * FROM my_table", create_conn)
+
+        Read data from a SQL query and partition the data by a column:
+
+        >>> df = daft.read_sql(
+        ...     "SELECT * FROM my_table",
+        ...     "sqlite:///my_database.db",
+        ...     partition_col="id"
+        ... )
+
+        Read data from a SQL query and partition the data into 3 partitions:
+
+        >>> df = daft.read_sql(
+        ...     "SELECT * FROM my_table",
+        ...     "sqlite:///my_database.db",
+        ...     partition_col="id",
+        ...     num_partitions=3
+        ... )
     """
 
     if num_partitions is not None and partition_col is None:

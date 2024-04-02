@@ -311,7 +311,7 @@ fn materialize_scan_task(
                 })?,
                 FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
                     sql,
-                    sql_alchemy_conn,
+                    conn_factory,
                 }) => {
                     let predicate_expr = scan_task
                         .pushdowns
@@ -324,7 +324,7 @@ fn materialize_scan_task(
                                 py,
                                 sql,
                                 url,
-                                sql_alchemy_conn,
+                                conn_factory,
                                 predicate_expr.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task

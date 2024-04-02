@@ -44,9 +44,9 @@ class SQLScanOperator(ScanOperator):
         super().__init__()
         if isinstance(conn, str):
             self.url = conn
-            self._sql_alchemy_conn = None
-        elif callable(conn):
-            self._sql_alchemy_conn = conn
+            self._conn_factory = None
+        else:
+            self._conn_factory = conn
             connection = conn()
             if not hasattr(connection, "engine"):
                 raise ValueError(
@@ -54,10 +54,6 @@ class SQLScanOperator(ScanOperator):
                 )
             self.url = connection.engine.url.render_as_string()
             connection.close()
-        else:
-            raise ValueError(
-                f"Failed to create SQLScanOperator: invalid conn type {type(conn)}, expected str or SQLAlchemy Connection Factory."
-            )
 
         self.sql = sql
         self.storage_config = storage_config
@@ -110,7 +106,7 @@ class SQLScanOperator(ScanOperator):
             sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             file_format_config = FileFormatConfig.from_database_config(
-                DatabaseSourceConfig(sql=sql, sql_alchemy_conn=self._sql_alchemy_conn)
+                DatabaseSourceConfig(sql=sql, conn_factory=self._conn_factory)
             )
 
             scan_tasks.append(
@@ -138,7 +134,7 @@ class SQLScanOperator(ScanOperator):
         return False
 
     def _attempt_schema_read(self) -> Schema:
-        pa_table = SQLReader(self.sql, self.url, self._sql_alchemy_conn, limit=1).read()
+        pa_table = SQLReader(self.sql, self.url, self._conn_factory, limit=1).read()
         schema = Schema.from_pyarrow_schema(pa_table.schema)
         return schema
 
@@ -146,7 +142,7 @@ class SQLScanOperator(ScanOperator):
         pa_table = SQLReader(
             self.sql,
             self.url,
-            self._sql_alchemy_conn,
+            self._conn_factory,
             projection=["COUNT(*)"],
         ).read()
 
@@ -168,7 +164,7 @@ class SQLScanOperator(ScanOperator):
             pa_table = SQLReader(
                 self.sql,
                 self.url,
-                self._sql_alchemy_conn,
+                self._conn_factory,
                 projection=[
                     f"percentile_cont({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
@@ -183,7 +179,7 @@ class SQLScanOperator(ScanOperator):
             pa_table = SQLReader(
                 self.sql,
                 self.url,
-                self._sql_alchemy_conn,
+                self._conn_factory,
                 projection=[f"MIN({self._partition_col}) AS min", f"MAX({self._partition_col}) AS max"],
             ).read()
             return pa_table, PartitionBoundStrategy.MIN_MAX
@@ -232,7 +228,7 @@ class SQLScanOperator(ScanOperator):
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
         file_format_config = FileFormatConfig.from_database_config(
-            DatabaseSourceConfig(self.sql, sql_alchemy_conn=self._sql_alchemy_conn)
+            DatabaseSourceConfig(self.sql, conn_factory=self._conn_factory)
         )
         return iter(
             [

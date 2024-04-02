@@ -22,7 +22,7 @@ class SQLReader:
         self,
         sql: str,
         url: str,
-        sql_alchemy_conn: Callable[[], Connection] | None,
+        conn_factory: Callable[[], Connection] | None,
         limit: int | None = None,
         projection: list[str] | None = None,
         predicate: str | None = None,
@@ -30,7 +30,7 @@ class SQLReader:
 
         self.sql = sql
         self.url = url
-        self.sql_alchemy_conn = sql_alchemy_conn
+        self.conn_factory = conn_factory
         self.limit = limit
         self.projection = projection
         self.predicate = predicate
@@ -81,7 +81,7 @@ class SQLReader:
         db_scheme = get_db_scheme_from_url(self.url)
 
         # Check if the database type is supported
-        if db_scheme in supported_dbs and self.sql_alchemy_conn is None:
+        if db_scheme in supported_dbs and self.conn_factory is None:
             return self._execute_sql_query_with_connectorx(sql)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql)
@@ -101,8 +101,8 @@ class SQLReader:
 
         logger.info(f"Using sqlalchemy to execute sql: {sql}")
         try:
-            if self.sql_alchemy_conn is not None:
-                with self.sql_alchemy_conn() as connection:
+            if self.conn_factory is not None:
+                with self.conn_factory() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
             else:

@@ -233,9 +233,9 @@ class DatabaseSourceConfig:
     """
 
     sql: str
-    sql_alchemy_conn: Callable[[], Connection] | None
+    conn_factory: Callable[[], Connection] | None
 
-    def __init__(self, sql: str, sql_alchemy_conn: Callable[[], Connection] | None): ...
+    def __init__(self, sql: str, conn_factory: Callable[[], Connection] | None): ...
 
 class FileFormatConfig:
     """
