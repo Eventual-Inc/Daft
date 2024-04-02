@@ -234,8 +234,9 @@ class DatabaseSourceConfig:
 
     sql: str
     conn_factory: Callable[[], Connection] | None
+    predicate_sql: str | None
 
-    def __init__(self, sql: str, conn_factory: Callable[[], Connection] | None): ...
+    def __init__(self, sql: str, conn_factory: Callable[[], Connection] | None, predicate_sql: str | None): ...
 
 class FileFormatConfig:
     """

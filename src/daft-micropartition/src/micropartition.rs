@@ -312,6 +312,7 @@ fn materialize_scan_task(
                 FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
                     sql,
                     conn_factory,
+                    predicate_sql,
                 }) => {
                     let predicate_expr = scan_task
                         .pushdowns
@@ -326,6 +327,7 @@ fn materialize_scan_task(
                                 url,
                                 conn_factory,
                                 predicate_expr.clone(),
+                                predicate_sql.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task
                                     .pushdowns

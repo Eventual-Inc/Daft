@@ -305,6 +305,7 @@ pub struct DatabaseSourceConfig {
         deserialize_with = "deserialize_py_object"
     )]
     pub conn_factory: PyObject,
+    pub predicate_sql: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -317,6 +318,7 @@ impl PartialEq for DatabaseSourceConfig {
                     .eq(other.conn_factory.as_ref(py))
                     .unwrap()
             })
+            && self.predicate_sql == other.predicate_sql
     }
 }
 
@@ -327,6 +329,7 @@ impl Eq for DatabaseSourceConfig {}
 impl Hash for DatabaseSourceConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sql.hash(state);
+        self.predicate_sql.hash(state);
         let py_obj_hash = Python::with_gil(|py| self.conn_factory.as_ref(py).hash());
         match py_obj_hash {
             Ok(hash) => hash.hash(state),
@@ -337,8 +340,16 @@ impl Hash for DatabaseSourceConfig {
 
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
-    pub fn new_internal(sql: String, conn_factory: PyObject) -> Self {
-        Self { sql, conn_factory }
+    pub fn new_internal(
+        sql: String,
+        conn_factory: PyObject,
+        predicate_sql: Option<String>,
+    ) -> Self {
+        Self {
+            sql,
+            conn_factory,
+            predicate_sql,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -353,8 +364,12 @@ impl DatabaseSourceConfig {
 impl DatabaseSourceConfig {
     /// Create a config for a Database data source.
     #[new]
-    fn new(sql: &str, conn_factory: PyObject) -> Self {
-        Self::new_internal(sql.to_string(), conn_factory)
+    fn new(sql: &str, conn_factory: PyObject, predicate_sql: Option<&str>) -> Self {
+        Self::new_internal(
+            sql.to_string(),
+            conn_factory,
+            predicate_sql.map(String::from),
+        )
     }
 }
 

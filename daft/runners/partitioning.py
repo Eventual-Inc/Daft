@@ -78,9 +78,11 @@ class TableReadSQLOptions:
 
     Args:
         predicate_expression: Expression predicate to apply to the table
+        predicate_sql: SQL predicate to apply to the table
     """
 
     predicate_expression: Expression | None = None
+    predicate_sql: str | None = None
 
 
 @dataclass(frozen=True)

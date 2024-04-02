@@ -45,6 +45,7 @@ class SQLScanOperator(ScanOperator):
         self.sql = sql
         self.conn = conn
         if isinstance(conn, str):
+            self.url = conn
             self.dialect, self.driver = get_db_dialect_and_driver_from_url(conn)
         else:
             connection = conn()
@@ -52,6 +53,7 @@ class SQLScanOperator(ScanOperator):
                 raise ValueError(
                     "Failed to create SQLScanOperator: SQLAlchemy Connection Factory must return a Connection with an engine attribute."
                 )
+            self.url = connection.engine.url.render_as_string(hide_password=True)
             self.dialect, self.driver = connection.engine.dialect.name, connection.engine.driver
             connection.close()
 
@@ -77,24 +79,18 @@ class SQLScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
-        total_rows = self._get_num_rows()
-        estimate_row_size_bytes = self.schema().estimate_row_size_bytes()
-        total_size = total_rows * estimate_row_size_bytes
-        num_scan_tasks = (
-            math.ceil(total_size / get_context().daft_execution_config.read_sql_partition_size_bytes)
-            if self._num_partitions is None
-            else self._num_partitions
-        )
+        predicate_sql = pushdowns.filters.to_sql(self.dialect) if pushdowns.filters is not None else None
 
+        total_rows, total_size, num_scan_tasks = self._get_size_estimates()
         if num_scan_tasks == 1 or self._partition_col is None:
-            return self._single_scan_task(pushdowns, total_rows, total_size)
+            return self._single_scan_task(pushdowns, predicate_sql, total_rows, total_size)
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
         partition_bounds_sql = [lit(bound)._to_sql(self.dialect) for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
-            return self._single_scan_task(pushdowns, total_rows, total_size)
+            return self._single_scan_task(pushdowns, predicate_sql, total_rows, total_size)
 
         size_bytes = math.ceil(total_size / num_scan_tasks) if strategy == PartitionBoundStrategy.PERCENTILE else None
         scan_tasks = []
@@ -106,12 +102,12 @@ class SQLScanOperator(ScanOperator):
             sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             file_format_config = FileFormatConfig.from_database_config(
-                DatabaseSourceConfig(sql=sql, conn_factory=self.conn if not isinstance(self.conn, str) else None)
+                DatabaseSourceConfig(sql, self.conn if not isinstance(self.conn, str) else None, predicate_sql)
             )
 
             scan_tasks.append(
                 ScanTask.sql_scan_task(
-                    url=self.conn if isinstance(self.conn, str) else self.dialect,
+                    url=self.url,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=None,
@@ -137,6 +133,17 @@ class SQLScanOperator(ScanOperator):
         pa_table = SQLReader(self.sql, self.conn, limit=1).read()
         schema = Schema.from_pyarrow_schema(pa_table.schema)
         return schema
+
+    def _get_size_estimates(self) -> tuple[int, float, int]:
+        total_rows = self._get_num_rows()
+        estimate_row_size_bytes = self.schema().estimate_row_size_bytes()
+        total_size = total_rows * estimate_row_size_bytes
+        num_scan_tasks = (
+            math.ceil(total_size / get_context().daft_execution_config.read_sql_partition_size_bytes)
+            if self._num_partitions is None
+            else self._num_partitions
+        )
+        return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:
         pa_table = SQLReader(
@@ -223,14 +230,16 @@ class SQLScanOperator(ScanOperator):
 
         return bounds, strategy
 
-    def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
+    def _single_scan_task(
+        self, pushdowns: Pushdowns, predicate_sql: str | None, total_rows: int | None, total_size: float
+    ) -> Iterator[ScanTask]:
         file_format_config = FileFormatConfig.from_database_config(
-            DatabaseSourceConfig(self.sql, conn_factory=self.conn if not isinstance(self.conn, str) else None)
+            DatabaseSourceConfig(self.sql, self.conn if not isinstance(self.conn, str) else None, predicate_sql)
         )
         return iter(
             [
                 ScanTask.sql_scan_task(
-                    url=self.conn if isinstance(self.conn, str) else self.dialect,
+                    url=self.url,
                     file_format=file_format_config,
                     schema=self._schema._schema,
                     num_rows=total_rows,
