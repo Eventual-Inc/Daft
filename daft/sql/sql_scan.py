@@ -5,9 +5,7 @@ import math
 import warnings
 from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any, Callable
-
-from sqlalchemy.engine import Connection
+from typing import TYPE_CHECKING, Any, Callable
 
 from daft.context import get_context
 from daft.daft import (
@@ -22,6 +20,9 @@ from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
 from daft.sql.sql_reader import SQLReader, get_db_scheme_from_url
 from daft.table import Table
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 logger = logging.getLogger(__name__)
 
