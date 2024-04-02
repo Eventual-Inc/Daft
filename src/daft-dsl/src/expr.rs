@@ -225,7 +225,7 @@ impl AggExpr {
                 Ok(Field::new(
                   field.name.as_str(),
                   match &field.dtype {
-                      DataType::Binary => DataType::Float64,
+                      DataType::Binary => DataType::Binary,
                       other => {
                           return Err(DaftError::TypeError(format!(
                               "Expected input to merge_sketch() to be binary but received dtype {} for column \"{}\"",

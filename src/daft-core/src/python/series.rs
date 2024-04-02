@@ -203,7 +203,7 @@ impl PySeries {
     }
 
     pub fn approx_sketch(&self) -> PyResult<Self> {
-        Ok((self.series).approx_sketch(None)?.into())
+        Ok(self.series.approx_sketch(None)?.into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {

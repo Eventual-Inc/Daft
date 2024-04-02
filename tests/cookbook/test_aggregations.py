@@ -21,6 +21,20 @@ def test_sum(daft_df, service_requests_csv_pd_df, repartition_nparts):
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key="unique_key_sum")
 
 
+def test_approx_sketch(daft_df, service_requests_csv_pd_df, repartition_nparts):
+    """Computes approx sketch across an entire column for the entire table"""
+    daft_df = daft_df.repartition(repartition_nparts).approx_sketch(col("Unique Key").alias("unique_key_approx_sketch"))
+    daft_df = daft_df.with_column("unique_key_median", col("unique_key_approx_sketch").sketch_quantile(0.5))
+    service_requests_csv_pd_df = pd.DataFrame.from_records(
+        [{"unique_key_median": service_requests_csv_pd_df["Unique Key"].quantile(0.5)}]
+    )
+    daft_pd_df = daft_df.to_pandas()
+    # Assert approximate median to be at 2% of exact median
+    pd.testing.assert_series_equal(
+        daft_pd_df["unique_key_median"], service_requests_csv_pd_df["unique_key_median"], check_exact=False, rtol=0.02
+    )
+
+
 def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts):
     """Averages across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).mean(col("Unique Key").alias("unique_key_mean"))
@@ -129,6 +143,30 @@ def test_sum_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).sum("Unique Key").reset_index()
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, service_requests_csv_pd_df, sort_key=keys)
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        pytest.param(["Borough"], id="NumGroupByKeys:1"),
+        pytest.param(["Borough", "Complaint Type"], id="NumGroupByKeys:2"),
+    ],
+)
+def test_approx_sketch_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys):
+    """Computes approx sketch across groups"""
+    daft_df = (
+        daft_df.repartition(repartition_nparts)
+        .groupby(*[col(k) for k in keys])
+        .agg(col("Unique Key").approx_sketch().alias("sketches"))
+        .with_column("Unique Key", col("sketches").sketch_quantile(0.5))
+        .select(*[col(k) for k in keys], "Unique Key")
+    )
+    service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).median("Unique Key").reset_index()
+    daft_pd_df = daft_df.to_pandas()
+    # Assert approximate median to be at 5% of exact median
+    pd.testing.assert_series_equal(
+        daft_pd_df["Unique Key"], service_requests_csv_pd_df["Unique Key"], check_exact=False, rtol=0.02
+    )
 
 
 @pytest.mark.parametrize(

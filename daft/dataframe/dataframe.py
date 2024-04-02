@@ -1054,6 +1054,8 @@ class DataFrame:
 
         if op == "sum":
             return expr.sum()
+        elif op == "approx_sketch":
+            return expr.approx_sketch()
         elif op == "count":
             return expr.count()
         elif op == "min":
@@ -1618,6 +1620,17 @@ class GroupedDataFrame:
 
         Returns:
             DataFrame: DataFrame with grouped sums.
+        """
+        return self.df._apply_agg_fn(Expression.sum, cols, self.group_by)
+
+    def approx_sketch(self, *cols: ColumnInputType) -> "DataFrame":
+        """Perform grouped approx sketch on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to approx sketch
+
+        Returns:
+            DataFrame: DataFrame with grouped approx sketches.
         """
         return self.df._apply_agg_fn(Expression.sum, cols, self.group_by)
 
