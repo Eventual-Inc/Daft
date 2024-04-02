@@ -92,7 +92,7 @@ members = [
 
 [workspace.dependencies]
 async-compat = "0.2.3"
-async-compression = {version = "0.4.5", features = ["tokio", "all-algorithms"]}
+async-compression = {version = "0.4.7", features = ["tokio", "all-algorithms"]}
 async-stream = "0.3.5"
 bytes = "1.4.0"
 chrono = "0.4.26"
