@@ -210,6 +210,21 @@ impl PyExpr {
         Ok(floor(&self.expr).into())
     }
 
+    pub fn sign(&self) -> PyResult<Self> {
+        use functions::numeric::sign;
+        Ok(sign(&self.expr).into())
+    }
+
+    pub fn round(&self, decimal: i32) -> PyResult<Self> {
+        use functions::numeric::round;
+        if decimal < 0 {
+            return Err(PyValueError::new_err(format!(
+                "decimal can not be negative: {decimal}"
+            )));
+        }
+        Ok(round(&self.expr, decimal).into())
+    }
+
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self.expr.if_else(&if_true.expr, &if_false.expr).into())
     }
@@ -333,8 +348,8 @@ impl PyExpr {
         Ok(self.expr.name()?)
     }
 
-    pub fn to_sql(&self) -> PyResult<Option<String>> {
-        Ok(self.expr.to_sql())
+    pub fn to_sql(&self, db_scheme: &str) -> PyResult<Option<String>> {
+        Ok(self.expr.to_sql(db_scheme))
     }
 
     pub fn to_field(&self, schema: &PySchema) -> PyResult<PyField> {
@@ -411,6 +426,16 @@ impl PyExpr {
         Ok(split(&self.expr, &pattern.expr).into())
     }
 
+    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        use crate::functions::utf8::extract;
+        Ok(extract(&self.expr, &pattern.expr, index).into())
+    }
+
+    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        use crate::functions::utf8::extract_all;
+        Ok(extract_all(&self.expr, &pattern.expr, index).into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         use crate::functions::utf8::length;
         Ok(length(&self.expr).into())
@@ -446,9 +471,24 @@ impl PyExpr {
         Ok(capitalize(&self.expr).into())
     }
 
-    pub fn image_decode(&self) -> PyResult<Self> {
+    pub fn utf8_left(&self, count: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::left;
+        Ok(left(&self.expr, &count.expr).into())
+    }
+
+    pub fn utf8_right(&self, count: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::right;
+        Ok(right(&self.expr, &count.expr).into())
+    }
+
+    pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
+        use crate::functions::utf8::find;
+        Ok(find(&self.expr, &substr.expr).into())
+    }
+
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
         use crate::functions::image::decode;
-        Ok(decode(&self.expr).into())
+        Ok(decode(&self.expr, raise_error_on_failure).into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

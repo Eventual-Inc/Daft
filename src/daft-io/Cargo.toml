@@ -1,7 +1,7 @@
 [dependencies]
 async-recursion = "1.0.4"
 async-stream = "0.3.5"
-async-trait = "0.1.74"
+async-trait = "0.1.79"
 aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
 aws-credential-types = {version = "0.55.3", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "0.28.0", features = ["native-tls", "rt-tokio"], default-features = false}
@@ -22,7 +22,7 @@ hyper-tls = "0.5.0"
 itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
-openssl-sys = {version = "0.9.93", features = ["vendored"]}
+openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 rand = "0.8.5"

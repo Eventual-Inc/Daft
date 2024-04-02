@@ -319,6 +319,7 @@ pub mod pylib {
             Ok(Some(PyScanTask(scan_task.into())))
         }
 
+        #[allow(clippy::too_many_arguments)]
         #[staticmethod]
         pub fn sql_scan_task(
             url: String,
@@ -328,14 +329,18 @@ pub mod pylib {
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
+            stats: Option<PyTable>,
         ) -> PyResult<Self> {
+            let statistics = stats
+                .map(|s| TableStatistics::from_stats_table(&s.table))
+                .transpose()?;
             let data_source = DataFileSource::DatabaseDataSource {
                 path: url,
                 chunk_spec: None,
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
                 partition_spec: None,
-                statistics: None,
+                statistics,
             };
 
             let scan_task = ScanTask::new(

@@ -369,3 +369,262 @@ def test_series_utf8_match_bad_pattern() -> None:
     pattern = Series.from_arrow(pa.array(["["]))
     with pytest.raises(ValueError):
         s.str.match(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "nchars", "expected"],
+    [
+        # No Broadcast
+        (["foo", "barbaz", "quux"], [0, 1, 2], ["", "b", "qu"]),
+        # Broadcast nchars
+        (["foo", "barbaz", "quux"], [1], ["f", "b", "q"]),
+        # Broadcast data
+        (["foo"], [0, 1, 2], ["", "f", "fo"]),
+        # Broadcast null data
+        ([None], [0, 1, 2], [None, None, None]),
+        # Broadcast null nchars
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # Empty data.
+        ([[], [0, 1], []]),
+        # Empty nchars
+        ([["foo"] * 4, [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "b", None]),
+        # All null data.
+        ([None] * 4, [1] * 4, [None] * 4),
+        # All null nchars
+        (["foo"] * 4, [None] * 4, [None] * 4),
+        # Broadcasted null data.
+        ([None], [1] * 4, [None] * 4),
+        # Broadcasted null nchars
+        (["foo"] * 4, [None], [None] * 4),
+        # with emojis
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😃", "abc😃😄😅"]),
+    ],
+)
+def test_series_utf8_left(data, nchars, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    result = s.str.left(nchars)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_left_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
+
+
+def test_series_utf8_left_bad_nchars() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.left(1)
+
+
+def test_series_utf8_left_bad_nchars_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
+
+
+def test_series_utf8_left_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    nchars = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.left(nchars)
+
+
+@pytest.mark.parametrize(
+    ["data", "nchars", "expected"],
+    [
+        (["foo", "barbaz", "quux"], [0, 1, 2], ["", "z", "ux"]),
+        (["foo", "barbaz", "quux"], [1], ["o", "z", "x"]),
+        (["foo"], [0, 1, 2], ["", "o", "oo"]),
+        ([None], [0, 1, 2], [None, None, None]),
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        ([[], [0, 1], []]),
+        ([["foo"] * 4, [], []]),
+        (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "z", None]),
+        ([None] * 4, [1] * 4, [None] * 4),
+        (["foo"] * 4, [None] * 4, [None] * 4),
+        ([None], [1] * 4, [None] * 4),
+        (["foo"] * 4, [None], [None] * 4),
+        (["😃😌😝", "abc😃😄😅"], [1, 6], ["😝", "abc😃😄😅"]),
+    ],
+)
+def test_series_utf8_right(data, nchars, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    nchars = Series.from_arrow(pa.array(nchars, type=pa.uint32()))
+    result = s.str.right(nchars)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_right_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array([1, 2], type=pa.uint32()))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
+
+
+def test_series_utf8_right_bad_nchars() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.right(1)
+
+
+def test_series_utf8_right_bad_nchars_dtype() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    nchars = Series.from_arrow(pa.array(["1", "2", "3"]))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
+
+
+def test_series_utf8_right_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    nchars = Series.from_arrow(pa.array([1, 2, 3]))
+    with pytest.raises(ValueError):
+        s.str.right(nchars)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "expected"],
+    [
+        # No broadcast
+        (["123", "456", "789"], [r"\d+", r"\d+", r"\d"], ["123", "456", "7"]),
+        # Broadcast pattern
+        (["123", "456", "789"], [r"\d+"], ["123", "456", "789"]),
+        # Broadcast data
+        (["123"], [r"\d+", r"\d{2}", r"\d"], ["123", "12", "1"]),
+        # Broadcast null data
+        ([None], [r"\d+", r"\d{2}", r"\d"], [None, None, None]),
+        # Broadcast null pattern
+        (["123", "456", "789"], [None], [None, None, None]),
+        # Mixed in nulls
+        (["123", None, "789"], [None, r"\d+", r"\d"], [None, None, "7"]),
+    ],
+)
+def test_series_utf8_extract(data, pattern, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract(patterns)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("data", [["abc abc"]])
+@pytest.mark.parametrize("pattern", [["(a)bc"]])
+@pytest.mark.parametrize(
+    "index, expected",
+    [
+        (0, ["abc"]),
+        (1, ["a"]),
+        (2, [None]),
+    ],
+)
+def test_series_utf8_extract_index(data, pattern, index, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract(patterns, index)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_extract_bad_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array(["["]))
+    with pytest.raises(ValueError):
+        s.str.extract(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "expected"],
+    [
+        # No broadcast
+        (["1 2 3", "45 6", "789"], [r"\d+", r"\d+", r"\d"], [["1", "2", "3"], ["45", "6"], ["7", "8", "9"]]),
+        # Broadcast pattern
+        (["1 2 3", "45 6", "789"], [r"\d+"], [["1", "2", "3"], ["45", "6"], ["789"]]),
+        # Broadcast data
+        (["123"], [r"\d+", r"\d", r"\d+"], [["123"], ["1", "2", "3"], ["123"]]),
+        # Broadcast null data
+        ([None], [r"\d+", r"\d", r"\d+"], [None, None, None]),
+        # Broadcast null pattern
+        (["1 2 3", "45 6", "789"], [None], [None, None, None]),
+        # Mixed in nulls
+        (["1 2 3", None, "789"], [None, r"\d+", r"\d"], [None, None, ["7", "8", "9"]]),
+    ],
+)
+def test_series_utf8_extract_all(data, pattern, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract_all(patterns)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("data", [["abc abc"]])
+@pytest.mark.parametrize("pattern", [["(a)bc"]])
+@pytest.mark.parametrize(
+    "index, expected",
+    [
+        (0, [["abc", "abc"]]),
+        (1, [["a", "a"]]),
+        (2, [[]]),
+    ],
+)
+def test_series_utf8_extract_all_index(data, pattern, index, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    result = s.str.extract_all(patterns, index)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_extract_all_bad_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array(["["]))
+    with pytest.raises(ValueError):
+        s.str.extract_all(pattern)
+
+
+@pytest.mark.parametrize(
+    ["data", "substrs", "expected"],
+    [
+        # No broadcast
+        (["foo", "barbaz", "quux"], ["foo", "baz", "baz"], [0, 3, -1]),
+        # Broadcast substrs
+        (["foo", None, "quux"], ["foo"], [0, None, -1]),
+        # Broadcast data
+        (["foo"], ["foo", None, "baz"], [0, None, -1]),
+        # Broadcast null data
+        ([None], ["foo", "bar", "baz"], [None, None, None]),
+        # Broadcast null substrs
+        (["foo", "barbaz", "quux"], [None], [None, None, None]),
+        # Empty data.
+        ([[], ["foo", "bar"], []]),
+        # Empty substrs
+        ([["foo"] * 4, [], []]),
+        # Mixed-in nulls
+        (["foo", None, "barbaz", "quux"], ["oo", "bar", "baz", None], [1, None, 3, None]),
+        # All null data.
+        ([None] * 4, ["foo"] * 4, [None] * 4),
+        # All null substrs
+        (["foo"] * 4, [None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_find(data, substrs, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    substrs = Series.from_arrow(pa.array(substrs, type=pa.string()))
+    result = s.str.find(substrs)
+    assert result.to_pylist() == expected
+
+
+def test_series_utf8_find_mismatch_len() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    substrs = Series.from_arrow(pa.array(["foo", "baz"], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.find(substrs)
+
+
+def test_series_utf8_find_bad_dtype() -> None:
+    s = Series.from_arrow(pa.array([1, 2, 3]))
+    substrs = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
+    with pytest.raises(ValueError):
+        s.str.find(substrs)

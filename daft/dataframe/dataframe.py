@@ -1147,6 +1147,18 @@ class DataFrame:
         return self._apply_agg_fn(Expression.max, cols)
 
     @DataframePublicAPI
+    def any_value(self, *cols: ColumnInputType) -> "DataFrame":
+        """Returns an arbitrary value on this DataFrame.
+        Values for each column are not guaranteed to be from the same row.
+
+        Args:
+            *cols (Union[str, Expression]): columns to get an arbitrary value from
+        Returns:
+            DataFrame: DataFrame with any values.
+        """
+        return self._apply_agg_fn(Expression.any_value, cols)
+
+    @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global count on the DataFrame
 

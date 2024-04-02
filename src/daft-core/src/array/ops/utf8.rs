@@ -1,11 +1,14 @@
 use crate::{
-    array::ListArray,
-    datatypes::{BooleanArray, Field, UInt64Array, Utf8Array},
+    array::{DataArray, ListArray},
+    datatypes::{
+        BooleanArray, DaftIntegerType, DaftNumericType, Field, Int64Array, UInt64Array, Utf8Array,
+    },
     DataType, Series,
 };
-use arrow2;
+use arrow2::{self, array::Array};
 
 use common_error::{DaftError, DaftResult};
+use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
@@ -51,8 +54,101 @@ where
         0 => None,
         _ => Some(validity.into()),
     };
-    let flat_child =
-        Series::try_from(("splits", Box::new(splits) as Box<dyn arrow2::array::Array>))?;
+    let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
+    Ok(ListArray::new(
+        Field::new(name, DataType::List(Box::new(DataType::Utf8))),
+        flat_child,
+        offsets,
+        validity,
+    ))
+}
+
+fn right_most_chars(val: &str, nchar: usize) -> &str {
+    let len = val.chars().count();
+    if nchar == 0 || len == 0 {
+        ""
+    } else if nchar >= len {
+        val
+    } else {
+        let skip = len.saturating_sub(nchar);
+        val.char_indices().nth(skip).map_or("", |(i, _)| &val[i..])
+    }
+}
+
+fn regex_extract_first_match<'a>(
+    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    index: usize,
+    name: &str,
+) -> DaftResult<Utf8Array> {
+    let arrow_result = iter
+        .map(|(val, re)| match (val, re) {
+            (Some(val), Some(re)) => {
+                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
+                // regex::find is faster than regex::captures but only returns the full match, not the capture groups.
+                // So, use regex::find if index == 0, otherwise use regex::captures.
+                if index == 0 {
+                    Ok(re?.find(val).map(|m| m.as_str()))
+                } else {
+                    Ok(re?
+                        .captures(val)
+                        .and_then(|captures| captures.get(index))
+                        .map(|m| m.as_str()))
+                }
+            }
+            _ => Ok(None),
+        })
+        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+
+    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+}
+
+fn regex_extract_all_matches<'a>(
+    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    index: usize,
+    len: usize,
+    name: &str,
+) -> DaftResult<ListArray> {
+    let mut matches = arrow2::array::MutableUtf8Array::new();
+    let mut offsets = arrow2::offset::Offsets::new();
+    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
+
+    for (val, re) in iter {
+        let mut num_matches = 0i64;
+        match (val, re) {
+            (Some(val), Some(re)) => {
+                // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures_iter
+                // regex::find_iter is faster than regex::captures_iter but only returns the full match, not the capture groups.
+                // So, use regex::find_iter if index == 0, otherwise use regex::captures.
+                if index == 0 {
+                    for m in re?.find_iter(val) {
+                        matches.push(Some(m.as_str()));
+                        num_matches += 1;
+                    }
+                } else {
+                    for captures in re?.captures_iter(val) {
+                        if let Some(capture) = captures.get(index) {
+                            matches.push(Some(capture.as_str()));
+                            num_matches += 1;
+                        }
+                    }
+                }
+                validity.push(true);
+            }
+            (_, _) => {
+                validity.push(false);
+            }
+        }
+        offsets.try_push(num_matches)?;
+    }
+
+    let matches: arrow2::array::Utf8Array<i64> = matches.into();
+    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
+    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+        0 => None,
+        _ => Some(validity.into()),
+    };
+    let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
+
     Ok(ListArray::new(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
         flat_child,
@@ -63,15 +159,27 @@ where
 
 impl Utf8Array {
     pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.ends_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.ends_with(pat)),
+            "endswith",
+        )
     }
 
     pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.starts_with(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.starts_with(pat)),
+            "startswith",
+        )
     }
 
     pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| Ok(data.contains(pat)))
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(data.contains(pat)),
+            "contains",
+        )
     }
 
     pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
@@ -80,7 +188,7 @@ impl Utf8Array {
             return match pattern_scalar_value {
                 None => Ok(BooleanArray::full_null(
                     self.name(),
-                    self.data_type(),
+                    &DataType::Boolean,
                     self.len(),
                 )),
                 Some(pattern_v) => {
@@ -95,9 +203,11 @@ impl Utf8Array {
             };
         }
 
-        self.binary_broadcasted_compare(pattern, |data: &str, pat: &str| {
-            Ok(regex::Regex::new(pat)?.is_match(data))
-        })
+        self.binary_broadcasted_compare(
+            pattern,
+            |data: &str, pat: &str| Ok(regex::Regex::new(pat)?.is_match(data)),
+            "match",
+        )
     }
 
     pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
@@ -154,7 +264,118 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+                "Error in split: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
+    }
+
+    pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+
+        if self.is_empty() || pattern.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+
+        match (self.len(), pattern.len()) {
+            // Matching len case:
+            (self_len, pattern_len) if self_len == pattern_len => {
+                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                let iter = self_arrow.iter().zip(regexes);
+                regex_extract_first_match(iter, index, self.name())
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let pattern_scalar_value = pattern.get(0);
+                match pattern_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(pattern_v) => {
+                        let re = Some(regex::Regex::new(pattern_v));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
+                        regex_extract_first_match(iter, index, self.name())
+                    }
+                }
+            }
+            // Broadcast self case
+            (1, pattern_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        pattern_len,
+                    )),
+                    Some(self_v) => {
+                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
+                        regex_extract_first_match(iter, index, self.name())
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "Error in extract: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
+            ))),
+        }
+    }
+
+    pub fn extract_all(&self, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
+        let self_arrow = self.as_arrow();
+        let pattern_arrow = pattern.as_arrow();
+
+        if self.is_empty() || pattern.is_empty() {
+            return Ok(ListArray::empty(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ));
+        }
+
+        match (self.len(), pattern.len()) {
+            // Matching len case:
+            (self_len, pattern_len) if self_len == pattern_len => {
+                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                let iter = self_arrow.iter().zip(regexes);
+                regex_extract_all_matches(iter, index, self_len, self.name())
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let pattern_scalar_value = pattern.get(0);
+                match pattern_scalar_value {
+                    None => Ok(ListArray::full_null(
+                        self.name(),
+                        &DataType::List(Box::new(DataType::Utf8)),
+                        self_len,
+                    )),
+                    Some(pattern_v) => {
+                        let re = Some(regex::Regex::new(pattern_v));
+                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
+                        regex_extract_all_matches(iter, index, self_len, self.name())
+                    }
+                }
+            }
+            // Broadcast self case
+            (1, pattern_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(ListArray::full_null(
+                        self.name(),
+                        &DataType::List(Box::new(DataType::Utf8)),
+                        pattern_len,
+                    )),
+                    Some(self_v) => {
+                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
+                        regex_extract_all_matches(iter, index, pattern_len, self.name())
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
+                "Error in extract_all: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
             ))),
         }
     }
@@ -260,10 +481,278 @@ impl Utf8Array {
         Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
     }
 
+    pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
+        let self_arrow = self.as_arrow();
+        let substr_arrow = substr.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || substr.is_empty() {
+            return Ok(Int64Array::empty(self.name(), self.data_type()));
+        }
+        match (self.len(), substr.len()) {
+            // matching len case
+            (self_len, substr_len) if self_len == substr_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(substr_arrow.iter())
+                    .map(|(val, substr)| match (val, substr) {
+                        (Some(val), Some(substr)) => {
+                            Some(val.find(substr).map(|pos| pos as i64).unwrap_or(-1))
+                        }
+                        _ => None,
+                    })
+                    .collect::<arrow2::array::Int64Array>();
+
+                Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // broadcast pattern case
+            (self_len, 1) => {
+                let substr_scalar_value = substr.get(0);
+                match substr_scalar_value {
+                    None => Ok(Int64Array::full_null(
+                        self.name(),
+                        &DataType::Int64,
+                        self_len,
+                    )),
+                    Some(substr_scalar_value) => {
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(
+                                    v.find(substr_scalar_value)
+                                        .map(|pos| pos as i64)
+                                        .unwrap_or(-1),
+                                )
+                            })
+                            .collect::<arrow2::array::Int64Array>();
+
+                        Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self case
+            (1, substr_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Int64Array::full_null(
+                        self.name(),
+                        &DataType::Int64,
+                        substr_len,
+                    )),
+                    Some(self_scalar_value) => {
+                        let arrow_result = substr_arrow
+                            .iter()
+                            .map(|substr| {
+                                let substr = substr?;
+                                Some(
+                                    self_scalar_value
+                                        .find(substr)
+                                        .map(|pos| pos as i64)
+                                        .unwrap_or(-1),
+                                )
+                            })
+                            .collect::<arrow2::array::Int64Array>();
+
+                        Ok(Int64Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, substr_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {substr_len}"
+            ))),
+        }
+    }
+
+    pub fn left<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let self_arrow = self.as_arrow();
+        let n_arrow = n.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || n_arrow.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+        match (self.len(), n_arrow.len()) {
+            // Matching len case:
+            (self_len, n_len) if self_len == n_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(n_arrow.iter())
+                    .map(|(val, n)| match (val, n) {
+                        (Some(val), Some(nchar)) => {
+                            let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in left: failed to cast rhs as usize {nchar}"
+                                ))
+                            })?;
+                            Ok(Some(val.chars().take(nchar).collect::<String>()))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let n_scalar_value = n.get(0);
+                match n_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(n_scalar_value) => {
+                        let n_scalar_value: usize =
+                            NumCast::from(n_scalar_value).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "Error in left: failed to cast rhs as usize {n_scalar_value}"
+                                ))
+                            })?;
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(v.chars().take(n_scalar_value).collect::<String>())
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self case:
+            (1, n_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n_len)),
+                    Some(self_scalar_value) => {
+                        let arrow_result = n_arrow
+                            .iter()
+                            .map(|n| match n {
+                                None => Ok(None),
+                                Some(n) => {
+                                    let n: usize = NumCast::from(*n).ok_or_else(|| {
+                                        DaftError::ComputeError(format!(
+                                            "Error in left: failed to cast rhs as usize {n}"
+                                        ))
+                                    })?;
+                                    Ok(Some(self_scalar_value.chars().take(n).collect::<String>()))
+                                }
+                            })
+                            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, n_len) => Err(DaftError::ComputeError(format!(
+                "Error in left: lhs and rhs have different length arrays: {self_len} vs {n_len}"
+            ))),
+        }
+    }
+
+    pub fn right<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: Ord,
+    {
+        let self_arrow = self.as_arrow();
+        let n_arrow = n.as_arrow();
+        // Handle empty cases.
+        if self.is_empty() || n_arrow.is_empty() {
+            return Ok(Utf8Array::empty(self.name(), self.data_type()));
+        }
+        match (self.len(), n_arrow.len()) {
+            // Matching len case:
+            (self_len, n_len) if self_len == n_len => {
+                let arrow_result = self_arrow
+                    .iter()
+                    .zip(n_arrow.iter())
+                    .map(|(val, n)| match (val, n) {
+                        (Some(val), Some(nchar)) => {
+                            let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "failed to cast rhs as usize {nchar}"
+                                ))
+                            })?;
+                            Ok(Some(right_most_chars(val, nchar)))
+                        }
+                        _ => Ok(None),
+                    })
+                    .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+            }
+            // Broadcast pattern case:
+            (self_len, 1) => {
+                let n_scalar_value = n.get(0);
+                match n_scalar_value {
+                    None => Ok(Utf8Array::full_null(
+                        self.name(),
+                        self.data_type(),
+                        self_len,
+                    )),
+                    Some(n_scalar_value) => {
+                        let n_scalar_value: usize =
+                            NumCast::from(n_scalar_value).ok_or_else(|| {
+                                DaftError::ComputeError(format!(
+                                    "failed to cast rhs as usize {n_scalar_value}"
+                                ))
+                            })?;
+                        let arrow_result = self_arrow
+                            .iter()
+                            .map(|val| {
+                                let v = val?;
+                                Some(right_most_chars(v, n_scalar_value))
+                            })
+                            .collect::<arrow2::array::Utf8Array<i64>>();
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // broadcast self
+            (1, n_len) => {
+                let self_scalar_value = self.get(0);
+                match self_scalar_value {
+                    None => Ok(Utf8Array::full_null(self.name(), self.data_type(), n_len)),
+                    Some(self_scalar_value) => {
+                        let arrow_result = n_arrow
+                            .iter()
+                            .map(|n| match n {
+                                None => Ok(None),
+                                Some(n) => {
+                                    let n: usize = NumCast::from(*n).ok_or_else(|| {
+                                        DaftError::ComputeError(format!(
+                                            "failed to cast rhs as usize {n}"
+                                        ))
+                                    })?;
+                                    Ok(Some(right_most_chars(self_scalar_value, n)))
+                                }
+                            })
+                            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+
+                        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+                    }
+                }
+            }
+            // Mismatched len case:
+            (self_len, n_len) => Err(DaftError::ComputeError(format!(
+                "lhs and rhs have different length arrays: {self_len} vs {n_len}"
+            ))),
+        }
+    }
+
     fn binary_broadcasted_compare<ScalarKernel>(
         &self,
         other: &Self,
         operation: ScalarKernel,
+        op_name: &str,
     ) -> DaftResult<BooleanArray>
     where
         ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
@@ -289,7 +778,7 @@ impl Utf8Array {
                 match other_scalar_value {
                     None => Ok(BooleanArray::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Boolean,
                         self_len,
                     )),
                     Some(other_v) => {
@@ -310,7 +799,7 @@ impl Utf8Array {
                 match self_scalar_value {
                     None => Ok(BooleanArray::full_null(
                         self.name(),
-                        self.data_type(),
+                        &DataType::Boolean,
                         other_len,
                     )),
                     Some(self_v) => {
@@ -327,7 +816,7 @@ impl Utf8Array {
             }
             // Mismatched len case:
             (self_len, other_len) => Err(DaftError::ComputeError(format!(
-                "lhs and rhs have different length arrays: {self_len} vs {other_len}"
+                "Error in {op_name}: lhs and rhs have different length arrays: {self_len} vs {other_len}"
             ))),
         }
     }

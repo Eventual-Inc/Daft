@@ -6,7 +6,7 @@ Apache Iceberg
 Daft currently natively supports:
 
 1. **Distributed Reads:** Daft will fully distribute the I/O of reads over your compute resources (whether Ray or on multithreading on the local PyRunner)
-2. **Skipping filtered data:** Daft uses ``df.where(...)`` filter calls to only read data that matches your predicates
+2. **Skipping Filtered Data:** Daft uses ``df.where(...)`` filter calls to only read data that matches your predicates
 3. **All Catalogs From PyIceberg:** Daft is natively integrated with PyIceberg, and supports all the catalogs that PyIceberg does
 
 Reading a Table

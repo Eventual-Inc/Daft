@@ -407,11 +407,7 @@ impl ImageArray {
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         if data.is_empty() {
-            // Create an all-null array if the data array is empty.
-            return Ok(ImageArray::new(
-                Field::new(name, data_type.clone()),
-                StructArray::empty(name, &data_type.to_physical()),
-            ));
+            return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
@@ -791,7 +787,7 @@ where
 }
 
 impl BinaryArray {
-    pub fn image_decode(&self) -> DaftResult<ImageArray> {
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> DaftResult<ImageArray> {
         let arrow_array = self
             .data()
             .as_any()
@@ -801,8 +797,21 @@ impl BinaryArray {
         let mut cached_dtype: Option<DataType> = None;
         // Load images from binary buffers.
         // Confirm that all images have the same value dtype.
-        for row in arrow_array.iter() {
-            let img_buf = row.map(DaftImageBuffer::decode).transpose()?;
+        for (index, row) in arrow_array.iter().enumerate() {
+            let img_buf = match row.map(DaftImageBuffer::decode).transpose() {
+                Ok(val) => val,
+                Err(err) => {
+                    if raise_error_on_failure {
+                        return Err(err);
+                    } else {
+                        log::warn!(
+                            "Error occurred during image decoding at index: {index} {} (falling back to Null)",
+                            err
+                        );
+                        None
+                    }
+                }
+            };
             let dtype = img_buf.as_ref().map(|im| im.mode().get_dtype());
             match (dtype.as_ref(), cached_dtype.as_ref()) {
                 (Some(t1), Some(t2)) => {

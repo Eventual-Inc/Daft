@@ -342,11 +342,32 @@ class Expression:
         expr = self._expr.floor()
         return Expression._from_pyexpr(expr)
 
+    def sign(self) -> Expression:
+        """The sign of a numeric expression (``expr.sign()``)"""
+        expr = self._expr.sign()
+        return Expression._from_pyexpr(expr)
+
+    def round(self, decimals: int = 0) -> Expression:
+        """The round of a numeric expression (``expr.round(decimals = 0)``)
+
+        Args:
+            decimals: number of decimal places to round to. Defaults to 0.
+        """
+        assert isinstance(decimals, int)
+        expr = self._expr.round(decimals)
+        return Expression._from_pyexpr(expr)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+        """Counts the number of values in the expression.
+
+        Args:
+            mode: whether to count all values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+        """
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
     def sum(self) -> Expression:
+        """Calculates the sum of the values in the expression"""
         expr = self._expr.sum()
         return Expression._from_pyexpr(expr)
 
@@ -359,26 +380,36 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def mean(self) -> Expression:
+        """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:
+        """Calculates the minimum value in the expression"""
         expr = self._expr.min()
         return Expression._from_pyexpr(expr)
 
     def max(self) -> Expression:
+        """Calculates the maximum value in the expression"""
         expr = self._expr.max()
         return Expression._from_pyexpr(expr)
 
     def any_value(self, ignore_nulls=False) -> Expression:
+        """Returns any value in the expression
+
+        Args:
+            ignore_nulls: whether to ignore null values when selecting the value. Defaults to False.
+        """
         expr = self._expr.any_value(ignore_nulls)
         return Expression._from_pyexpr(expr)
 
     def agg_list(self) -> Expression:
+        """Aggregates the values in the expression into a list"""
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
     def agg_concat(self) -> Expression:
+        """Aggregates the values in the expression into a single string by concatenating them"""
         expr = self._expr.agg_concat()
         return Expression._from_pyexpr(expr)
 
@@ -486,8 +517,8 @@ class Expression:
     def __repr__(self) -> builtins.str:
         return repr(self._expr)
 
-    def _to_sql(self) -> builtins.str | None:
-        return self._expr.to_sql()
+    def _to_sql(self, db_scheme: builtins.str) -> builtins.str:
+        return self._expr.to_sql(db_scheme)
 
     def _to_field(self, schema: Schema) -> Field:
         return Field._from_pyfield(self._expr.to_field(schema._schema))
@@ -785,6 +816,108 @@ class ExpressionStringNamespace(ExpressionNamespace):
         # Delegate to + operator implementation.
         return Expression._from_pyexpr(self._expr) + other
 
+    def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
+        r"""Extracts the specified match group from the first regex match in each string in a string column.
+
+        Notes:
+            If index is 0, the entire match is returned.
+            If the pattern does not match or the group does not exist, a null value is returned.
+
+        Example:
+            >>> regex = r"(\d)(\d*)"
+            >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
+            >>> df.with_column("match", df["x"].str.extract(regex))
+            ╭─────────┬─────────╮
+            │ x       ┆ match   │
+            │ ---     ┆ ---     │
+            │ Utf8    ┆ Utf8    │
+            ╞═════════╪═════════╡
+            │ 123-456 ┆ 123     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ 789     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ 345     │
+            ╰─────────┴─────────╯
+
+            Extract the first capture group
+
+            >>> df.with_column("match", df["x"].str.extract(regex, 1)).collect()
+            ╭─────────┬─────────╮
+            │ x       ┆ match   │
+            │ ---     ┆ ---     │
+            │ Utf8    ┆ Utf8    │
+            ╞═════════╪═════════╡
+            │ 123-456 ┆ 1       │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ 7       │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ 3       │
+            ╰─────────┴─────────╯
+
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a String expression with the extracted regex match
+
+        See also:
+            `extract_all`
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_extract(pattern_expr._expr, index))
+
+    def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
+        r"""Extracts the specified match group from all regex matches in each string in a string column.
+
+        Notes:
+            This expression always returns a list of strings.
+            If index is 0, the entire match is returned. If the pattern does not match or the group does not exist, an empty list is returned.
+
+        Example:
+            >>> regex = r"(\d)(\d*)"
+            >>> df = daft.from_pydict({"x": ["123-456", "789-012", "345-678"]})
+            >>> df.with_column("match", df["x"].str.extract_all(regex))
+            ╭─────────┬────────────╮
+            │ x       ┆ matches    │
+            │ ---     ┆ ---        │
+            │ Utf8    ┆ List[Utf8] │
+            ╞═════════╪════════════╡
+            │ 123-456 ┆ [123, 456] │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ [789, 012] │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ [345, 678] │
+            ╰─────────┴────────────╯
+
+            Extract the first capture group
+
+            >>> df.with_column("match", df["x"].str.extract_all(regex, 1)).collect()
+            ╭─────────┬────────────╮
+            │ x       ┆ matches    │
+            │ ---     ┆ ---        │
+            │ Utf8    ┆ List[Utf8] │
+            ╞═════════╪════════════╡
+            │ 123-456 ┆ [1, 4]     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 789-012 ┆ [7, 0]     │
+            ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 345-678 ┆ [3, 6]     │
+            ╰─────────┴────────────╯
+
+        Args:
+            pattern: The regex pattern to extract
+            index: The index of the regex match group to extract
+
+        Returns:
+            Expression: a List[Utf8] expression with the extracted regex matches
+
+        See also:
+            `extract`
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
+
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column
 
@@ -861,6 +994,46 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
         """
         return Expression._from_pyexpr(self._expr.utf8_capitalize())
+
+    def left(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) left-most characters of each string
+
+        Example:
+            >>> col("x").str.left(3)
+
+        Returns:
+            Expression: a String expression which is the `n` left-most characters of `self`
+        """
+        nchars_expr = Expression._to_expression(nchars)
+        return Expression._from_pyexpr(self._expr.utf8_left(nchars_expr._expr))
+
+    def right(self, nchars: int | Expression) -> Expression:
+        """Gets the n (from nchars) right-most characters of each string
+
+        Example:
+            >>> col("x").str.right(3)
+
+        Returns:
+            Expression: a String expression which is the `n` right-most characters of `self`
+        """
+        nchars_expr = Expression._to_expression(nchars)
+        return Expression._from_pyexpr(self._expr.utf8_right(nchars_expr._expr))
+
+    def find(self, substr: str | Expression) -> Expression:
+        """Returns the index of the first occurrence of the substring in each string
+
+        .. NOTE::
+            The returned index is 0-based.
+            If the substring is not found, -1 is returned.
+
+        Example:
+            >>> col("x").str.find("foo")
+
+        Returns:
+            Expression: an Int64 expression with the index of the first occurrence of the substring in each string
+        """
+        substr_expr = Expression._to_expression(substr)
+        return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
 
 
 class ExpressionListNamespace(ExpressionNamespace):
@@ -1027,16 +1200,27 @@ class ExpressionsProjection(Iterable[Expression]):
 class ExpressionImageNamespace(ExpressionNamespace):
     """Expression operations for image columns."""
 
-    def decode(self) -> Expression:
+    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Expression:
         """
         Decodes the binary data in this column into images.
 
         This can only be applied to binary columns that contain encoded images (e.g. PNG, JPEG, etc.)
 
+        Args:
+            on_error: Whether to raise when encountering an error, or log a warning and return a null
+
         Returns:
             Expression: An Image expression represnting an image column.
         """
-        return Expression._from_pyexpr(self._expr.image_decode())
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplemented(f"Unimplemented on_error option: {on_error}.")
+
+        return Expression._from_pyexpr(self._expr.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
         """

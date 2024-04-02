@@ -7,6 +7,8 @@ use crate::series::array_impl::ArrayWrapper;
 use crate::series::Series;
 use common_error::DaftResult;
 
+use self::logical::ImageArray;
+
 impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
         match self.inner.as_any().downcast_ref() {
@@ -42,6 +44,10 @@ impl Series {
     }
 
     pub fn i64(&self) -> DaftResult<&Int64Array> {
+        self.downcast()
+    }
+
+    pub fn i128(&self) -> DaftResult<&UInt64Array> {
         self.downcast()
     }
 
@@ -90,6 +96,10 @@ impl Series {
     }
 
     pub fn struct_(&self) -> DaftResult<&StructArray> {
+        self.downcast()
+    }
+
+    pub fn image(&self) -> DaftResult<&ImageArray> {
         self.downcast()
     }
 

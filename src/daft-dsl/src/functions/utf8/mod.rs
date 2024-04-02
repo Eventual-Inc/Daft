@@ -1,11 +1,16 @@
 mod capitalize;
 mod contains;
 mod endswith;
+mod extract;
+mod extract_all;
+mod find;
+mod left;
 mod length;
 mod lower;
 mod lstrip;
 mod match_;
 mod reverse;
+mod right;
 mod rstrip;
 mod split;
 mod startswith;
@@ -14,10 +19,15 @@ mod upper;
 use capitalize::CapitalizeEvaluator;
 use contains::ContainsEvaluator;
 use endswith::EndswithEvaluator;
+use extract::ExtractEvaluator;
+use extract_all::ExtractAllEvaluator;
+use find::FindEvaluator;
+use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
 use lstrip::LstripEvaluator;
 use reverse::ReverseEvaluator;
+use right::RightEvaluator;
 use rstrip::RstripEvaluator;
 use serde::{Deserialize, Serialize};
 use split::SplitEvaluator;
@@ -35,6 +45,8 @@ pub enum Utf8Expr {
     Contains,
     Split,
     Match,
+    Extract(usize),
+    ExtractAll(usize),
     Length,
     Lower,
     Upper,
@@ -42,6 +54,9 @@ pub enum Utf8Expr {
     Rstrip,
     Reverse,
     Capitalize,
+    Left,
+    Right,
+    Find,
 }
 
 impl Utf8Expr {
@@ -54,6 +69,8 @@ impl Utf8Expr {
             Contains => &ContainsEvaluator {},
             Split => &SplitEvaluator {},
             Match => &MatchEvaluator {},
+            Extract(_) => &ExtractEvaluator {},
+            ExtractAll(_) => &ExtractAllEvaluator {},
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
@@ -61,6 +78,9 @@ impl Utf8Expr {
             Rstrip => &RstripEvaluator {},
             Reverse => &ReverseEvaluator {},
             Capitalize => &CapitalizeEvaluator {},
+            Left => &LeftEvaluator {},
+            Right => &RightEvaluator {},
+            Find => &FindEvaluator {},
         }
     }
 }
@@ -96,6 +116,20 @@ pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
 pub fn split(data: &Expr, pattern: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Split),
+        inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn extract(data: &Expr, pattern: &Expr, index: usize) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Extract(index)),
+        inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn extract_all(data: &Expr, pattern: &Expr, index: usize) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }
@@ -146,5 +180,26 @@ pub fn capitalize(data: &Expr) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Capitalize),
         inputs: vec![data.clone()],
+    }
+}
+
+pub fn left(data: &Expr, count: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Left),
+        inputs: vec![data.clone(), count.clone()],
+    }
+}
+
+pub fn right(data: &Expr, count: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Right),
+        inputs: vec![data.clone(), count.clone()],
+    }
+}
+
+pub fn find(data: &Expr, pattern: &Expr) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Find),
+        inputs: vec![data.clone(), pattern.clone()],
     }
 }

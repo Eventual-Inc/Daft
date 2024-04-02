@@ -48,6 +48,8 @@ Numeric
     Expression.__mod__
     Expression.ceil
     Expression.floor
+    Expression.sign
+    Expression.round
 
 .. _api-comparison-expression:
 
@@ -69,6 +71,25 @@ Logical
     Expression.__ge__
     Expression.is_in
 
+.. _api=aggregation-expression:
+
+Aggregation
+###########
+
+The following can be used with DataFrame.agg or GroupedDataFrame.agg
+
+.. autosummary::
+   :toctree: doc_gen/expression_methods
+
+   Expression.count
+   Expression.sum
+   Expression.mean
+   Expression.min
+   Expression.max
+   Expression.any_value
+   Expression.agg_list
+   Expression.agg_concat
+
 .. _expression-accessor-properties:
 .. _api-string-expression-operations:
 
@@ -88,6 +109,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.endswith
    Expression.str.concat
    Expression.str.split
+   Expression.str.extract
+   Expression.str.extract_all
    Expression.str.length
    Expression.str.lower
    Expression.str.upper
@@ -95,6 +118,9 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.rstrip
    Expression.str.reverse
    Expression.str.capitalize
+   Expression.str.left
+   Expression.str.right
+   Expression.str.find
 
 .. _api-expressions-temporal:
 

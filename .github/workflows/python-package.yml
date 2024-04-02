@@ -46,7 +46,7 @@ jobs:
         cache-all-crates: 'true'
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
@@ -112,13 +112,13 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports
+        name: coverage-reports-unit-tests-${{ runner.os }}-${{ matrix.python-version }}-${{ matrix.daft-runner }}-${{ matrix.pyarrow-version }}
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -150,7 +150,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -167,9 +167,9 @@ jobs:
     - name: Build wheels
       run: maturin build --release --compatibility linux --out dist
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: wheels
+        name: wheels-${{ matrix.python-version }}
         path: dist
 
   integration-test-tpch:
@@ -189,7 +189,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -199,9 +199,10 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -224,7 +225,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -260,7 +261,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -270,9 +271,10 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -299,7 +301,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -342,7 +344,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -352,9 +354,10 @@ jobs:
           requirements-dev.txt
 
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -394,7 +397,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() }}
       with:
         payload: |
@@ -414,8 +417,6 @@ jobs:
         SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   integration-test-iceberg:
-    # Dependabot-triggered PRs don't have access to the required secrets for this to run successfully
-    if: ${{ github.triggering_actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -432,7 +433,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -441,9 +442,10 @@ jobs:
           pyproject.toml
           requirements-dev.txt
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -472,7 +474,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -508,7 +510,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -517,9 +519,10 @@ jobs:
           pyproject.toml
           requirements-dev.txt
     - name: Download built wheels
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - name: Setup Virtual Env
       run: |
@@ -537,11 +540,11 @@ jobs:
         popd
     - name: Run sql integration tests
       run: |
-        pytest tests/integration/sql -m 'integration' --durations=50
+        pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -582,12 +585,12 @@ jobs:
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: coverage-reports
+        name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -614,9 +617,10 @@ jobs:
     - rust-tests
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
-        name: coverage-reports
+        pattern: coverage-reports*
+        merge-multiple: true
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v3
@@ -624,7 +628,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         files: ./report-output/*
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -662,7 +666,7 @@ jobs:
         cache-all-crates: 'true'
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -705,7 +709,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -734,7 +738,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -760,7 +764,7 @@ jobs:
         pre-commit run --all-files
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |

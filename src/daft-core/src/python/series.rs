@@ -116,6 +116,19 @@ impl PySeries {
         Ok(self.series.floor()?.into())
     }
 
+    pub fn sign(&self) -> PyResult<Self> {
+        Ok(self.series.sign()?.into())
+    }
+
+    pub fn round(&self, decimal: i32) -> PyResult<Self> {
+        if decimal < 0 {
+            return Err(PyValueError::new_err(format!(
+                "decimal value can not be negative: {decimal}"
+            )));
+        }
+        Ok(self.series.round(decimal)?.into())
+    }
+
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
         Ok(self.series.take(&idx.series)?.into())
     }
@@ -276,6 +289,14 @@ impl PySeries {
         Ok(self.series.utf8_split(&pattern.series)?.into())
     }
 
+    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        Ok(self.series.utf8_extract(&pattern.series, index)?.into())
+    }
+
+    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
+        Ok(self.series.utf8_extract_all(&pattern.series, index)?.into())
+    }
+
     pub fn utf8_length(&self) -> PyResult<Self> {
         Ok(self.series.utf8_length()?.into())
     }
@@ -302,6 +323,18 @@ impl PySeries {
 
     pub fn utf8_capitalize(&self) -> PyResult<Self> {
         Ok(self.series.utf8_capitalize()?.into())
+    }
+
+    pub fn utf8_left(&self, nchars: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_left(&nchars.series)?.into())
+    }
+
+    pub fn utf8_right(&self, nchars: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_right(&nchars.series)?.into())
+    }
+
+    pub fn utf8_find(&self, substr: &Self) -> PyResult<Self> {
+        Ok(self.series.utf8_find(&substr.series)?.into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {
@@ -368,8 +401,8 @@ impl PySeries {
         Ok(self.series.list_get(&idx.series, &default.series)?.into())
     }
 
-    pub fn image_decode(&self) -> PyResult<Self> {
-        Ok(self.series.image_decode()?.into())
+    pub fn image_decode(&self, raise_error_on_failure: bool) -> PyResult<Self> {
+        Ok(self.series.image_decode(raise_error_on_failure)?.into())
     }
 
     pub fn image_encode(&self, image_format: ImageFormat) -> PyResult<Self> {

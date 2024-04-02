@@ -142,6 +142,7 @@ Writing Data
 
     DataFrame.write_parquet
     DataFrame.write_csv
+    DataFrame.write_iceberg
 
 Integrations
 ************

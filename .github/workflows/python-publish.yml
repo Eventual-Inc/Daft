@@ -41,7 +41,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
@@ -102,13 +102,13 @@ jobs:
     #     pytest -v
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: wheels
+        name: wheels-${{ matrix.os }}-${{ matrix.compile_arch }}
         path: dist
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -134,15 +134,16 @@ jobs:
     needs:
     - build-and-test
     steps:
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
     - run: pip install -U twine
     - uses: actions/checkout@v4
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with:
-        name: wheels
+        pattern: wheels-*
+        merge-multiple: true
         path: dist
     - run: ls -R ./dist
     - name: Publish bdist package to PYPI
@@ -152,7 +153,7 @@ jobs:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: conda-incubator/setup-miniconda@v3
       with:
         # Really doesn't matter what version we upload with
         # just the version we test with
@@ -182,7 +183,7 @@ jobs:
         upload_wheels
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: failure()
       with:
         payload: |

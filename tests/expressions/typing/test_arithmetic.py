@@ -92,3 +92,23 @@ def test_floor(unary_data_fixture):
         run_kernel=lambda: arg.floor(),
         resolvable=is_numeric(arg.datatype()),
     )
+
+
+def test_sign(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).sign(),
+        run_kernel=lambda: arg.sign(),
+        resolvable=is_numeric(arg.datatype()),
+    )
+
+
+def test_round(unary_data_fixture):
+    arg = unary_data_fixture
+    assert_typing_resolve_vs_runtime_behavior(
+        data=(unary_data_fixture,),
+        expr=col(arg.name()).round(0),
+        run_kernel=lambda: arg.round(0),
+        resolvable=is_numeric(arg.datatype()),
+    )

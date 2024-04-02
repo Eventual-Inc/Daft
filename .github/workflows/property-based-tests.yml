@@ -28,7 +28,7 @@ jobs:
         cache-all-crates: 'true'
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -54,7 +54,7 @@ jobs:
         HYPOTHESIS_MAX_EXAMPLES: 10000
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.24.0
+      uses: slackapi/slack-github-action@v1.25.0
       if: failure()
       with:
         payload: |

@@ -25,6 +25,12 @@ where
 {
     /// Creates a DataArray<T> of size `length` that is filled with all nulls.
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        if dtype != &T::get_dtype() && !matches!(T::get_dtype(), DataType::Unknown) {
+            panic!(
+                "Cannot create DataArray from dtype: {dtype} with physical type: {}",
+                T::get_dtype()
+            );
+        }
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
@@ -76,7 +82,11 @@ where
     <L::PhysicalType as DaftDataType>::ArrayType: FullNull,
 {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let physical = <L::PhysicalType as DaftDataType>::ArrayType::full_null(name, dtype, length);
+        let physical = <L::PhysicalType as DaftDataType>::ArrayType::full_null(
+            name,
+            &dtype.to_physical(),
+            length,
+        );
         Self::new(Field::new(name, dtype.clone()), physical)
     }
 

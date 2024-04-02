@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import sys
 from typing import Any, TypeVar
+
+if sys.version_info < (3, 8):
+    from typing_extensions import Literal
+else:
+    from typing import Literal
 
 import pyarrow as pa
 
@@ -355,6 +361,12 @@ class Series:
     def floor(self) -> Series:
         return Series._from_pyseries(self._series.floor())
 
+    def sign(self) -> Series:
+        return Series._from_pyseries(self._series.sign())
+
+    def round(self, decimal: int) -> Series:
+        return Series._from_pyseries(self._series.round(decimal))
+
     def __add__(self, other: object) -> Series:
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
@@ -604,6 +616,18 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series) + other
 
+    def extract(self, pattern: Series, index: int = 0) -> Series:
+        if not isinstance(pattern, Series):
+            raise ValueError(f"expected another Series but got {type(pattern)}")
+        assert self._series is not None and pattern._series is not None
+        return Series._from_pyseries(self._series.utf8_extract(pattern._series, index))
+
+    def extract_all(self, pattern: Series, index: int = 0) -> Series:
+        if not isinstance(pattern, Series):
+            raise ValueError(f"expected another Series but got {type(pattern)}")
+        assert self._series is not None and pattern._series is not None
+        return Series._from_pyseries(self._series.utf8_extract_all(pattern._series, index))
+
     def length(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_length())
@@ -631,6 +655,24 @@ class SeriesStringNamespace(SeriesNamespace):
     def capitalize(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.utf8_capitalize())
+
+    def left(self, nchars: Series) -> Series:
+        if not isinstance(nchars, Series):
+            raise ValueError(f"expected another Series but got {type(nchars)}")
+        assert self._series is not None and nchars._series is not None
+        return Series._from_pyseries(self._series.utf8_left(nchars._series))
+
+    def right(self, nchars: Series) -> Series:
+        if not isinstance(nchars, Series):
+            raise ValueError(f"expected another Series but got {type(nchars)}")
+        assert self._series is not None and nchars._series is not None
+        return Series._from_pyseries(self._series.utf8_right(nchars._series))
+
+    def find(self, substr: Series) -> Series:
+        if not isinstance(substr, Series):
+            raise ValueError(f"expected another Series but got {type(substr)}")
+        assert self._series is not None and substr._series is not None
+        return Series._from_pyseries(self._series.utf8_find(substr._series))
 
 
 class SeriesDateNamespace(SeriesNamespace):
@@ -682,8 +724,15 @@ class SeriesListNamespace(SeriesNamespace):
 
 
 class SeriesImageNamespace(SeriesNamespace):
-    def decode(self) -> Series:
-        return Series._from_pyseries(self._series.image_decode())
+    def decode(self, on_error: Literal["raise"] | Literal["null"] = "raise") -> Series:
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
+        return Series._from_pyseries(self._series.image_decode(raise_error_on_failure=raise_on_error))
 
     def encode(self, image_format: str | ImageFormat) -> Series:
         if isinstance(image_format, str):
