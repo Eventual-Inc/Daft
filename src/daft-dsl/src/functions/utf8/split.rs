@@ -1,4 +1,4 @@
-use crate::Expr;
+use crate::{functions::FunctionExpr, Expr};
 use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
@@ -7,7 +7,7 @@ use daft_core::{
 
 use common_error::{DaftError, DaftResult};
 
-use super::super::FunctionEvaluator;
+use super::{super::FunctionEvaluator, Utf8Expr};
 
 pub(super) struct SplitEvaluator {}
 
@@ -38,9 +38,18 @@ impl FunctionEvaluator for SplitEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series], expr: &Expr) -> DaftResult<Series> {
         match inputs {
-            [data, pattern] => data.utf8_split(pattern),
+            [data, pattern] => {
+                let regex = match expr {
+                    Expr::Function {
+                        func: FunctionExpr::Utf8(Utf8Expr::Split(regex)),
+                        inputs: _,
+                    } => regex,
+                    _ => panic!("Expected Utf8 Split Expr, got {expr}"),
+                };
+                data.utf8_split(pattern, *regex)
+            }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()

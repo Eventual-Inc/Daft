@@ -43,7 +43,7 @@ pub enum Utf8Expr {
     EndsWith,
     StartsWith,
     Contains,
-    Split,
+    Split(bool),
     Match,
     Extract(usize),
     ExtractAll(usize),
@@ -67,7 +67,7 @@ impl Utf8Expr {
             EndsWith => &EndswithEvaluator {},
             StartsWith => &StartswithEvaluator {},
             Contains => &ContainsEvaluator {},
-            Split => &SplitEvaluator {},
+            Split(_) => &SplitEvaluator {},
             Match => &MatchEvaluator {},
             Extract(_) => &ExtractEvaluator {},
             ExtractAll(_) => &ExtractAllEvaluator {},
@@ -113,9 +113,9 @@ pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
     }
 }
 
-pub fn split(data: &Expr, pattern: &Expr) -> Expr {
+pub fn split(data: &Expr, pattern: &Expr, regex: bool) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::Split),
+        func: super::FunctionExpr::Utf8(Utf8Expr::Split(regex)),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }

@@ -277,8 +277,8 @@ impl PySeries {
         Ok(self.series.utf8_match(&pattern.series)?.into())
     }
 
-    pub fn utf8_split(&self, pattern: &Self) -> PyResult<Self> {
-        Ok(self.series.utf8_split(&pattern.series)?.into())
+    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
+        Ok(self.series.utf8_split(&pattern.series, regex)?.into())
     }
 
     pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {

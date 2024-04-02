@@ -12,24 +12,13 @@ use num_traits::NumCast;
 
 use super::{as_arrow::AsArrow, full::FullNull};
 
-fn split_array_on_patterns<'a, T, U>(
-    arr_iter: T,
-    pattern_iter: U,
-    buffer_len: usize,
-    name: &str,
-) -> DaftResult<ListArray>
-where
-    T: arrow2::trusted_len::TrustedLen + Iterator<Item = Option<&'a str>>,
-    U: Iterator<Item = Option<&'a str>>,
-{
-    // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurences in the ith string in arr_iter.
-    let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
-    // arr_iter implements TrustedLen, so we can always use size_hint().1 as the exact length of the iterator. The only
-    // time this would fail is if the length of the iterator exceeds usize::MAX, which should never happen for an i64
-    // offset array, since the array length can't exceed i64::MAX on 64-bit machines.
-    let arr_len = arr_iter.size_hint().1.unwrap();
-    let mut offsets = arrow2::offset::Offsets::new();
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(arr_len);
+fn split_array_on_literal<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    pattern_iter: impl Iterator<Item = Option<&'a str>>,
+    splits: &mut arrow2::array::MutableUtf8Array<i64>,
+    offsets: &mut arrow2::offset::Offsets<i64>,
+    validity: &mut arrow2::bitmap::MutableBitmap,
+) -> DaftResult<()> {
     for (val, pat) in arr_iter.zip(pattern_iter) {
         let mut num_splits = 0i64;
         match (val, pat) {
@@ -46,21 +35,33 @@ where
         }
         offsets.try_push(num_splits)?;
     }
-    // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
-    splits.shrink_to_fit();
-    let splits: arrow2::array::Utf8Array<i64> = splits.into();
-    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-        0 => None,
-        _ => Some(validity.into()),
-    };
-    let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
-    Ok(ListArray::new(
-        Field::new(name, DataType::List(Box::new(DataType::Utf8))),
-        flat_child,
-        offsets,
-        validity,
-    ))
+    Ok(())
+}
+
+fn split_array_on_regex<'a>(
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
+    splits: &mut arrow2::array::MutableUtf8Array<i64>,
+    offsets: &mut arrow2::offset::Offsets<i64>,
+    validity: &mut arrow2::bitmap::MutableBitmap,
+) -> DaftResult<()> {
+    for (val, re) in arr_iter.zip(regex_iter) {
+        let mut num_splits = 0i64;
+        match (val, re) {
+            (Some(val), Some(re)) => {
+                for split in re?.split(val) {
+                    splits.push(Some(split));
+                    num_splits += 1;
+                }
+                validity.push(true);
+            }
+            (_, _) => {
+                validity.push(false);
+            }
+        }
+        offsets.try_push(num_splits)?;
+    }
+    Ok(())
 }
 
 fn right_most_chars(val: &str, nchar: usize) -> &str {
@@ -76,11 +77,13 @@ fn right_most_chars(val: &str, nchar: usize) -> &str {
 }
 
 fn regex_extract_first_match<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     index: usize,
     name: &str,
 ) -> DaftResult<Utf8Array> {
-    let arrow_result = iter
+    let arrow_result = arr_iter
+        .zip(regex_iter)
         .map(|(val, re)| match (val, re) {
             (Some(val), Some(re)) => {
                 // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures
@@ -103,7 +106,8 @@ fn regex_extract_first_match<'a>(
 }
 
 fn regex_extract_all_matches<'a>(
-    iter: impl Iterator<Item = (Option<&'a str>, Option<Result<regex::Regex, regex::Error>>)>,
+    arr_iter: impl Iterator<Item = Option<&'a str>>,
+    regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     index: usize,
     len: usize,
     name: &str,
@@ -112,7 +116,7 @@ fn regex_extract_all_matches<'a>(
     let mut offsets = arrow2::offset::Offsets::new();
     let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
 
-    for (val, re) in iter {
+    for (val, re) in arr_iter.zip(regex_iter) {
         let mut num_matches = 0i64;
         match (val, re) {
             (Some(val), Some(re)) => {
@@ -210,7 +214,7 @@ impl Utf8Array {
         )
     }
 
-    pub fn split(&self, pattern: &Utf8Array) -> DaftResult<ListArray> {
+    pub fn split(&self, pattern: &Utf8Array, regex: bool) -> DaftResult<ListArray> {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
         // Handle all-null cases.
@@ -234,39 +238,65 @@ impl Utf8Array {
             ));
         }
         let buffer_len = self_arrow.values().len();
+
+        // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurences in the ith string in arr_iter.
+        let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
+        let mut offsets = arrow2::offset::Offsets::new();
+        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(self.len());
+
         match (self.len(), pattern.len()) {
             // Matching len case:
-            (self_len, pattern_len) if self_len == pattern_len => split_array_on_patterns(
-                self_arrow.into_iter(),
-                pattern_arrow.into_iter(),
-                buffer_len,
-                self.name(),
-            ),
+            (self_len, pattern_len) if self_len == pattern_len => {
+                if regex {
+                    let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                    split_array_on_regex(self_arrow.iter(), regex_iter, &mut splits, &mut offsets, &mut validity)?
+                } else {
+                    split_array_on_literal(self_arrow.iter(), pattern_arrow.iter(), &mut splits, &mut offsets, &mut validity)?
+                }
+            },
             // Broadcast pattern case:
             (self_len, 1) => {
                 let pattern_scalar_value = pattern.get(0).unwrap();
-                split_array_on_patterns(
-                    self_arrow.into_iter(),
-                    std::iter::repeat(Some(pattern_scalar_value)).take(self_len),
-                    buffer_len,
-                    self.name(),
-                )
+                if regex {
+                    let re = Some(regex::Regex::new(pattern_scalar_value));
+                    let regex_iter = std::iter::repeat(re).take(self_len);
+                    split_array_on_regex(self_arrow.iter(), regex_iter, &mut splits, &mut offsets, &mut validity)?
+                } else {
+                    let pattern_iter = std::iter::repeat(Some(pattern_scalar_value)).take(self_len);
+                    split_array_on_literal(self_arrow.iter(), pattern_iter, &mut splits, &mut offsets, &mut validity)?
+                }
             }
             // Broadcast self case:
             (1, pattern_len) => {
                 let self_scalar_value = self.get(0).unwrap();
-                split_array_on_patterns(
-                    std::iter::repeat(Some(self_scalar_value)).take(pattern_len),
-                    pattern_arrow.into_iter(),
-                    buffer_len * pattern_len,
-                    self.name(),
-                )
+                let arr_iter = std::iter::repeat(Some(self_scalar_value)).take(pattern_len);
+                if regex {
+                    let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                    split_array_on_regex(arr_iter, regex_iter, &mut splits, &mut offsets, &mut validity)?
+                } else {
+                    split_array_on_literal(arr_iter, pattern_arrow.iter(), &mut splits, &mut offsets, &mut validity)?
+                }
             }
             // Mismatched len case:
             (self_len, pattern_len) => Err(DaftError::ComputeError(format!(
                 "Error in split: lhs and rhs have different length arrays: {self_len} vs {pattern_len}"
-            ))),
+            )))?,
         }
+        // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
+        splits.shrink_to_fit();
+        let splits: arrow2::array::Utf8Array<i64> = splits.into();
+        let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
+        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+            0 => None,
+            _ => Some(validity.into()),
+        };
+        let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
+        Ok(ListArray::new(
+            Field::new(self.name(), DataType::List(Box::new(DataType::Utf8))),
+            flat_child,
+            offsets,
+            validity,
+        ))
     }
 
     pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
@@ -280,9 +310,8 @@ impl Utf8Array {
         match (self.len(), pattern.len()) {
             // Matching len case:
             (self_len, pattern_len) if self_len == pattern_len => {
-                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                let iter = self_arrow.iter().zip(regexes);
-                regex_extract_first_match(iter, index, self.name())
+                let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                regex_extract_first_match(self_arrow.iter(), regex_iter, index, self.name())
             }
             // Broadcast pattern case:
             (self_len, 1) => {
@@ -295,8 +324,8 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
-                        regex_extract_first_match(iter, index, self.name())
+                        let regex_iter = std::iter::repeat(re).take(self_len);
+                        regex_extract_first_match(self_arrow.iter(), regex_iter, index, self.name())
                     }
                 }
             }
@@ -310,9 +339,9 @@ impl Utf8Array {
                         pattern_len,
                     )),
                     Some(self_v) => {
-                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
-                        regex_extract_first_match(iter, index, self.name())
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        regex_extract_first_match(arr_iter, regex_iter, index, self.name())
                     }
                 }
             }
@@ -337,9 +366,8 @@ impl Utf8Array {
         match (self.len(), pattern.len()) {
             // Matching len case:
             (self_len, pattern_len) if self_len == pattern_len => {
-                let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                let iter = self_arrow.iter().zip(regexes);
-                regex_extract_all_matches(iter, index, self_len, self.name())
+                let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                regex_extract_all_matches(self_arrow.iter(), regex_iter, index, self_len, self.name())
             }
             // Broadcast pattern case:
             (self_len, 1) => {
@@ -352,8 +380,8 @@ impl Utf8Array {
                     )),
                     Some(pattern_v) => {
                         let re = Some(regex::Regex::new(pattern_v));
-                        let iter = self_arrow.iter().zip(std::iter::repeat(re).take(self_len));
-                        regex_extract_all_matches(iter, index, self_len, self.name())
+                        let regex_iter = std::iter::repeat(re).take(self_len);
+                        regex_extract_all_matches(self_arrow.iter(), regex_iter, index, self_len, self.name())
                     }
                 }
             }
@@ -367,9 +395,9 @@ impl Utf8Array {
                         pattern_len,
                     )),
                     Some(self_v) => {
-                        let regexes = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
-                        let iter = std::iter::repeat(Some(self_v)).take(pattern_len).zip(regexes);
-                        regex_extract_all_matches(iter, index, pattern_len, self.name())
+                        let arr_iter = std::iter::repeat(Some(self_v)).take(pattern_len);
+                        let regex_iter = pattern_arrow.iter().map(|pat| pat.map(regex::Regex::new));
+                        regex_extract_all_matches(arr_iter, regex_iter, index, pattern_len, self.name())
                     }
                 }
             }

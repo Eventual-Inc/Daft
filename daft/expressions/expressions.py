@@ -773,21 +773,50 @@ class ExpressionStringNamespace(ExpressionNamespace):
         prefix_expr = Expression._to_expression(prefix)
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
-    def split(self, pattern: str | Expression) -> Expression:
-        """Splits each string on the given pattern, into one or more strings.
+    def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
+        r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
         Example:
-            >>> col("x").str.split(",")
-            >>> col("x").str.split(col("pattern"))
+            >>> df = daft.from_pydict({"data": ["foo.bar.baz", "a.b.c", "1.2.3"]})
+            >>> df.with_column("split", df["data"].str.split(".")).collect()
+            ╭─────────────┬─────────────────╮
+            │ data        ┆ split           │
+            │ ---         ┆ ---             │
+            │ Utf8        ┆ List[Utf8]      │
+            ╞═════════════╪═════════════════╡
+            │ foo.bar.baz ┆ [foo, bar, baz] │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a.b.c       ┆ [a, b, c]       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1.2.3       ┆ [1, 2, 3]       │
+            ╰─────────────┴─────────────────╯
+
+            Split on a regex pattern
+
+            >>> df = daft.from_pydict({"data": ["foo.bar...baz", "a.....b.c", "1.2...3.."]})
+            >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
+            ╭───────────────┬─────────────────╮
+            │ data          ┆ split           │
+            │ ---           ┆ ---             │
+            │ Utf8          ┆ List[Utf8]      │
+            ╞═══════════════╪═════════════════╡
+            │ foo.bar...baz ┆ [foo, bar, baz] │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a.....b.c     ┆ [a, b, c]       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1.2...3..     ┆ [1, 2, 3, ]     │
+            ╰───────────────┴─────────────────╯
+
 
         Args:
             pattern: The pattern on which each string should be split, or a column to pick such patterns from.
+            regex: Whether the pattern is a regular expression. Defaults to False.
 
         Returns:
             Expression: A List[Utf8] expression containing the string splits for each string in the column.
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr))
+        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
 
     def concat(self, other: str) -> Expression:
         """Concatenates two string expressions together
