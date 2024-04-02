@@ -1,0 +1,45 @@
+/*! algolia.css */
+
+/* Jump to sections instead of scrolling to them */
+html {
+    scroll-behavior: auto !important;
+  }
+  
+  html {
+    --docsearch-modal-max-width: 1000px;
+  }
+  
+  html[data-theme="light"] {
+
+    --docsearch-modal-width: var(--docsearch-modal-max-width);
+  }
+  
+  html[data-theme="dark"] {
+
+    --docsearch-modal-width: var(--docsearch-modal-max-width);
+  }
+  
+  #site-navigation {
+    overflow: visible;
+  }
+  
+  #search-algolia {
+    display: flex;
+    justify-content: center;
+  }
+  
+  .DocSearch-Button {
+    background-color: var(--pst-color-surface);
+    margin: 0;
+  }
+  
+  .DocSearch-Modal{
+    max-height: 800px;
+  }
+  
+  
+  .bd-header-article {
+    min-width: 488px;
+    z-index: 200; /* sphinx-book-theme default is 1020, lower this enough to stay below algolia modal */
+  }
+  

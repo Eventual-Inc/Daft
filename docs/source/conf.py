@@ -61,11 +61,44 @@ nb_execution_mode = "off"
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
-html_css_files = ["header.css", "custom-function-signatures.css"]
+html_css_files = [
+    "header.css", 
+    "custom-function-signatures.css",
+    "algolia.css",
+    "https://cdn.jsdelivr.net/npm/@docsearch/css@3",
+]
+
+html_js_files = [
+    (
+        "https://cdn.jsdelivr.net/npm/@docsearch/js@3.3.3/dist/umd/index.js",
+        {"defer": "defer"},
+    ),
+    ("algolia.js", {"defer": "defer"}),
+]
+
+
+
 html_theme_options = {
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
+    # Shows source of docs
+    "repository_url": "https://github.com/Eventual-Inc/Daft",
+    "use_issues_button": True,
+
 }
+
+# `navbar-logo.html` and `sbt-sidebar-nav.html` come from `sphinx-book-theme`
+html_sidebars = {
+    "**": [
+        "navbar-logo.html",
+        # "sidebar-version.html",
+        "search-field.html",
+        "sbt-sidebar-nav.html",
+    ],
+    # to suppress sidebar on home page uncomment this line:
+    #    "index": [],
+}
+
 
 # -- Copy button configuration
 
