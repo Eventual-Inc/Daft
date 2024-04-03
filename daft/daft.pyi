@@ -233,10 +233,10 @@ class DatabaseSourceConfig:
     """
 
     sql: str
+    dialect: str
     conn_factory: Callable[[], Connection] | None
-    predicate_sql: str | None
 
-    def __init__(self, sql: str, conn_factory: Callable[[], Connection] | None, predicate_sql: str | None): ...
+    def __init__(self, sql: str, dialect: str, conn_factory: Callable[[], Connection] | None): ...
 
 class FileFormatConfig:
     """

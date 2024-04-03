@@ -220,6 +220,7 @@ def read_parquet(
 
 def read_sql(
     sql: str,
+    dialect: str,
     url: str,
     conn_factory: Callable[[], Connection] | None,
     schema: Schema,
@@ -241,9 +242,11 @@ def read_sql(
 
     if sql_options.predicate_expression is not None:
         # If the predicate can be translated to SQL, we can apply all pushdowns to the SQL query
-        apply_pushdowns_to_sql = sql_options.predicate_sql is not None
+        predicate_sql = sql_options.predicate_expression._to_sql(dialect)
+        apply_pushdowns_to_sql = predicate_sql is not None
     else:
         # If we don't have a predicate, we can still apply the limit and projection to the SQL query
+        predicate_sql = None
         apply_pushdowns_to_sql = True
 
     pa_table = SQLReader(
@@ -251,7 +254,7 @@ def read_sql(
         conn_factory if conn_factory is not None else url,
         limit=read_options.num_rows if apply_pushdowns_to_sql else None,
         projection=read_options.column_names if apply_pushdowns_to_sql else None,
-        predicate=sql_options.predicate_sql,
+        predicate=predicate_sql,
     ).read()
     mp = MicroPartition.from_arrow(pa_table)
 

@@ -79,18 +79,16 @@ class SQLScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
-        predicate_sql = pushdowns.filters.to_sql(self.dialect) if pushdowns.filters is not None else None
-
         total_rows, total_size, num_scan_tasks = self._get_size_estimates()
         if num_scan_tasks == 1 or self._partition_col is None:
-            return self._single_scan_task(pushdowns, predicate_sql, total_rows, total_size)
+            return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
         partition_bounds_sql = [lit(bound)._to_sql(self.dialect) for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn("Unable to partion the data using the specified column. Falling back to a single scan task.")
-            return self._single_scan_task(pushdowns, predicate_sql, total_rows, total_size)
+            return self._single_scan_task(pushdowns, total_rows, total_size)
 
         size_bytes = math.ceil(total_size / num_scan_tasks) if strategy == PartitionBoundStrategy.PERCENTILE else None
         scan_tasks = []
@@ -102,7 +100,7 @@ class SQLScanOperator(ScanOperator):
             sql = f"SELECT * FROM ({self.sql}) AS subquery WHERE {left_clause} AND {right_clause}"
             stats = Table.from_pydict({self._partition_col: [partition_bounds[i], partition_bounds[i + 1]]})
             file_format_config = FileFormatConfig.from_database_config(
-                DatabaseSourceConfig(sql, self.conn if not isinstance(self.conn, str) else None, predicate_sql)
+                DatabaseSourceConfig(sql, self.dialect, self.conn if not isinstance(self.conn, str) else None)
             )
 
             scan_tasks.append(
@@ -230,11 +228,9 @@ class SQLScanOperator(ScanOperator):
 
         return bounds, strategy
 
-    def _single_scan_task(
-        self, pushdowns: Pushdowns, predicate_sql: str | None, total_rows: int | None, total_size: float
-    ) -> Iterator[ScanTask]:
+    def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
         file_format_config = FileFormatConfig.from_database_config(
-            DatabaseSourceConfig(self.sql, self.conn if not isinstance(self.conn, str) else None, predicate_sql)
+            DatabaseSourceConfig(self.sql, self.dialect, self.conn if not isinstance(self.conn, str) else None)
         )
         return iter(
             [

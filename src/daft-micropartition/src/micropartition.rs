@@ -311,8 +311,8 @@ fn materialize_scan_task(
                 })?,
                 FileFormatConfig::Database(daft_scan::file_format::DatabaseSourceConfig {
                     sql,
+                    dialect,
                     conn_factory,
-                    predicate_sql,
                 }) => {
                     let predicate_expr = scan_task
                         .pushdowns
@@ -324,10 +324,10 @@ fn materialize_scan_task(
                             crate::python::read_sql_into_py_table(
                                 py,
                                 sql,
+                                dialect,
                                 url,
                                 conn_factory,
                                 predicate_expr.clone(),
-                                predicate_sql.clone(),
                                 scan_task.schema.clone().into(),
                                 scan_task
                                     .pushdowns
