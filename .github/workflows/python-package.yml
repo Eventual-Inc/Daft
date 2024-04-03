@@ -466,7 +466,7 @@ jobs:
     - name: Spin up services
       run: |
         pushd ./tests/integration/iceberg/docker-compose/
-        docker-compose -f ./docker-compose.yml up -d
+        docker compose -f ./docker-compose.yml up -d
         popd
     - name: Run Iceberg integration tests
       run: |
@@ -536,7 +536,7 @@ jobs:
     - name: Spin up services
       run: |
         pushd ./tests/integration/sql/docker-compose/
-        docker-compose -f ./docker-compose.yml up -d
+        docker compose -f ./docker-compose.yml up -d
         popd
     - name: Run sql integration tests
       run: |
