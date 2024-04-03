@@ -12,8 +12,8 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
     fn approx_sketch(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
-        let sketch = if primitive_arr.null_count() > 0 {
-            primitive_arr
+        let arrow_array = if primitive_arr.null_count() > 0 {
+            let sketch = primitive_arr
                 .iter()
                 .fold(None, |acc, value| match (acc, value) {
                     (acc, None) => acc,
@@ -22,24 +22,24 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         acc.add(*v);
                         Some(acc)
                     }
-                })
+                });
+            let binary = match sketch {
+                Some(s) => Some(s.to_binary()?),
+                None => None,
+            };
+
+            Box::new(arrow2::array::BinaryArray::<i64>::from([binary]))
         } else {
-            Some(
-                primitive_arr
-                    .values_iter()
-                    .fold(Sketch::new(), |mut acc, value| {
-                        acc.add(*value);
-                        acc
-                    }),
-            )
-        };
+            let sketch = primitive_arr
+                .values_iter()
+                .fold(Sketch::new(), |mut acc, value| {
+                    acc.add(*value);
+                    acc
+                });
+            let binary = sketch.to_binary()?;
 
-        let binary = match sketch {
-            Some(s) => Some(s.to_binary()?),
-            None => None,
+            Box::new(arrow2::array::BinaryArray::<i64>::from_slice([binary]))
         };
-
-        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([binary]));
 
         DataArray::new(
             Field::new(&self.field.name, DataType::Binary).into(),

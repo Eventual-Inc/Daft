@@ -12,8 +12,8 @@ impl DaftMergeSketchAggable for &DataArray<BinaryType> {
 
     fn merge_sketch(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
-        let sketch = if primitive_arr.null_count() > 0 {
-            primitive_arr
+        let arrow_array = if primitive_arr.null_count() > 0 {
+            let sketch = primitive_arr
                 .iter()
                 .try_fold(None, |acc, value| match (acc, value) {
                     (acc, None) => Ok::<_, DaftError>(acc),
@@ -23,25 +23,26 @@ impl DaftMergeSketchAggable for &DataArray<BinaryType> {
                         acc.merge(&s)?;
                         Ok(Some(acc))
                     }
-                })?
+                })?;
+            let binary = match sketch {
+                Some(s) => Some(s.to_binary()?),
+                None => None,
+            };
+
+            Box::new(arrow2::array::BinaryArray::<i64>::from([binary]))
         } else {
-            Some(
+            let sketch =
                 primitive_arr
                     .values_iter()
                     .try_fold(Sketch::new(), |mut acc, value| {
                         let s = Sketch::from_binary(value)?;
                         acc.merge(&s)?;
                         Ok::<_, DaftError>(acc)
-                    })?,
-            )
-        };
+                    })?;
+            let binary = sketch.to_binary()?;
 
-        let binary = match sketch {
-            Some(s) => Some(s.to_binary()?),
-            None => None,
+            Box::new(arrow2::array::BinaryArray::<i64>::from_slice([binary]))
         };
-
-        let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from([binary]));
 
         DataArray::new(self.field.clone(), arrow_array)
     }

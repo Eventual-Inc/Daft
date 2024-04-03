@@ -22,7 +22,6 @@ where
         }
 
         let quantile = q.get(0).unwrap();
-
         let primitive_arr: &BinaryArray<i64> = self.data().as_any().downcast_ref().unwrap();
         let quantiles_arr = if primitive_arr.null_count() > 0 {
             primitive_arr
@@ -38,7 +37,6 @@ where
                 .map(|value| Sketch::from_binary(value)?.quantile(quantile))
                 .collect::<DaftResult<Vec<_>>>()?
         };
-
         let result_arr = PrimitiveArray::from_trusted_len_iter(quantiles_arr.into_iter());
 
         DataArray::new(
