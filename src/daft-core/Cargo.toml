@@ -27,7 +27,7 @@ rand = {workspace = true}
 regex = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
-sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
+sketches-ddsketch = {workspace = true}
 
 [dependencies.image]
 default-features = false

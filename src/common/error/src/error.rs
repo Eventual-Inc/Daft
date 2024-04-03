@@ -93,6 +93,18 @@ impl From<std::fmt::Error> for DaftError {
     }
 }
 
+impl From<std::str::Utf8Error> for DaftError {
+    fn from(error: std::str::Utf8Error) -> Self {
+        DaftError::ValueError(error.to_string())
+    }
+}
+
+impl From<sketches_ddsketch::DDSketchError> for DaftError {
+    fn from(error: sketches_ddsketch::DDSketchError) -> Self {
+        DaftError::ValueError(error.to_string())
+    }
+}
+
 pub type DaftResult<T> = std::result::Result<T, DaftError>;
 
 impl Display for DaftError {

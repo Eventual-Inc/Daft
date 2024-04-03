@@ -949,6 +949,7 @@ dependencies = [
  "pyo3",
  "regex",
  "serde_json",
+ "sketches-ddsketch",
 ]
 
 [[package]]
