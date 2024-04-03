@@ -52,7 +52,7 @@ jobs:
       uses: messense/maturin-action@v1
       with:
         target: x86_64
-        args: --profile release-lto --out dist --sdist
+        args: --profile release-lto --out dist
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     - name: Build wheels - Linux x86
@@ -61,6 +61,7 @@ jobs:
       with:
         target: x86_64
         manylinux: auto
+        # only produce sdist for linux x86 to avoid multiple copies
         args: --profile release-lto --out dist --sdist
         before-script-linux: yum -y install perl-IPC-Cmd
       env:
@@ -73,7 +74,7 @@ jobs:
         manylinux: auto
         # GCC 4.8.5 in manylinux2014 container doesn't support c11 atomic. This caused issues with the `ring` crate that causes TLS to fail
         container: messense/manylinux_2_24-cross:aarch64
-        args: --profile release-lto --out dist --sdist
+        args: --profile release-lto --out dist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
 
     - name: Build wheels - Mac aarch64
@@ -82,7 +83,7 @@ jobs:
       with:
         target: aarch64
         manylinux: auto
-        args: --profile release-lto --out dist --sdist
+        args: --profile release-lto --out dist
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
 
