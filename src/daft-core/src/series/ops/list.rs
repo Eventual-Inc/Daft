@@ -1,6 +1,6 @@
 use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
-use crate::{CountMode, IntoSeries};
+use crate::CountMode;
 use common_error::DaftError;
 
 use common_error::DaftResult;
@@ -18,7 +18,7 @@ impl Series {
         }
     }
 
-    pub fn list_count(&self, mode: CountMode) -> DaftResult<Series> {
+    pub fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         use DataType::*;
 
         match self.data_type() {
@@ -35,7 +35,7 @@ impl Series {
                     )
                     .with_validity(data_array.validity().cloned()),
                 );
-                Ok(UInt64Array::from((self.name(), array)).into_series())
+                Ok(UInt64Array::from((self.name(), array)))
             }
             dt => Err(DaftError::TypeError(format!(
                 "Count not implemented for {}",

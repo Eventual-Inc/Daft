@@ -80,7 +80,7 @@ impl Table {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let capacity_expected = exploded_columns.first().unwrap().len();
-        let take_idx = lengths_to_indices(first_len.u64()?, capacity_expected)?.into_series();
+        let take_idx = lengths_to_indices(&first_len, capacity_expected)?.into_series();
 
         let mut new_series = self.columns.clone();
 

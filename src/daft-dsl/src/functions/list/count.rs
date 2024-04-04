@@ -3,6 +3,7 @@ use daft_core::{
     datatypes::{DataType, Field},
     schema::Schema,
     series::Series,
+    IntoSeries,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -53,7 +54,7 @@ impl FunctionEvaluator for CountEvaluator {
                     _ => panic!("Expected List Count Expr, got {expr}"),
                 };
 
-                Ok(input.list_count(*mode)?)
+                Ok(input.list_count(*mode)?.into_series())
             }
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",

@@ -1,10 +1,13 @@
 use std::iter::repeat;
 
-use crate::array::{
-    growable::{make_growable, Growable},
-    FixedSizeListArray, ListArray,
-};
 use crate::datatypes::{Int64Array, Utf8Array};
+use crate::{
+    array::{
+        growable::{make_growable, Growable},
+        FixedSizeListArray, ListArray,
+    },
+    datatypes::UInt64Array,
+};
 use crate::{CountMode, DataType};
 
 use crate::series::Series;
@@ -42,6 +45,38 @@ fn join_arrow_list_of_utf8s(
 }
 
 impl ListArray {
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                self.offsets().lengths().map(|l| l as u64).collect()
+            }
+            (CountMode::Valid, Some(validity)) => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    (w[0]..w[1])
+                        .map(|i| validity.get_bit(i as usize) as u64)
+                        .sum()
+                })
+                .collect(),
+            (CountMode::Null, None) => repeat(0).take(self.offsets().len() - 1).collect(),
+            (CountMode::Null, Some(validity)) => self
+                .offsets()
+                .windows(2)
+                .map(|w| {
+                    (w[0]..w[1])
+                        .map(|i| !validity.get_bit(i as usize) as u64)
+                        .sum()
+                })
+                .collect(),
+        };
+
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
+    }
+
     pub fn explode(&self) -> DaftResult<Series> {
         let offsets = self.offsets();
 
@@ -199,10 +234,6 @@ impl ListArray {
         Ok(Series::concat(agg_refs.as_slice())?.rename(self.name()))
     }
 
-    pub fn count(&self, mode: CountMode) -> DaftResult<Series> {
-        self.agg_helper(|s| s.count(None, mode))
-    }
-
     pub fn sum(&self) -> DaftResult<Series> {
         self.agg_helper(|s| s.sum(None))
     }
@@ -221,6 +252,35 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
+    pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+        let size = self.fixed_element_len();
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                repeat(size as u64).take(self.len()).collect()
+            }
+            (CountMode::Valid, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
+            (CountMode::Null, None) => repeat(0).take(self.len()).collect(),
+            (CountMode::Null, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| !validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
+        };
+
+        let array = Box::new(
+            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+        );
+        Ok(UInt64Array::from((self.name(), array)))
+    }
+
     pub fn explode(&self) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
         let total_capacity = if list_size == 0 {
@@ -366,10 +426,6 @@ impl FixedSizeListArray {
         let agg_refs: Vec<_> = aggs.iter().collect();
 
         Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
-    }
-
-    pub fn count(&self, mode: CountMode) -> DaftResult<Series> {
-        self.agg_helper(|s| s.count(None, mode))
     }
 
     pub fn sum(&self) -> DaftResult<Series> {
