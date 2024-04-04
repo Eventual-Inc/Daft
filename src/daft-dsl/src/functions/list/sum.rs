@@ -19,10 +19,11 @@ impl FunctionEvaluator for SumEvaluator {
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let field = input.to_field(schema)?;
+                let inner_field = input.to_field(schema)?.to_exploded_field()?;
+
                 Ok(Field::new(
-                    field.name.as_str(),
-                    try_sum_supertype(&field.dtype)?,
+                    inner_field.name.as_str(),
+                    try_sum_supertype(&inner_field.dtype)?,
                 ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
