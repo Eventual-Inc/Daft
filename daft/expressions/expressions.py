@@ -781,21 +781,50 @@ class ExpressionStringNamespace(ExpressionNamespace):
         prefix_expr = Expression._to_expression(prefix)
         return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
 
-    def split(self, pattern: str | Expression) -> Expression:
-        """Splits each string on the given pattern, into one or more strings.
+    def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
+        r"""Splits each string on the given literal or regex pattern, into a list of strings.
 
         Example:
-            >>> col("x").str.split(",")
-            >>> col("x").str.split(col("pattern"))
+            >>> df = daft.from_pydict({"data": ["foo.bar.baz", "a.b.c", "1.2.3"]})
+            >>> df.with_column("split", df["data"].str.split(".")).collect()
+            ╭─────────────┬─────────────────╮
+            │ data        ┆ split           │
+            │ ---         ┆ ---             │
+            │ Utf8        ┆ List[Utf8]      │
+            ╞═════════════╪═════════════════╡
+            │ foo.bar.baz ┆ [foo, bar, baz] │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a.b.c       ┆ [a, b, c]       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1.2.3       ┆ [1, 2, 3]       │
+            ╰─────────────┴─────────────────╯
+
+            Split on a regex pattern
+
+            >>> df = daft.from_pydict({"data": ["foo.bar...baz", "a.....b.c", "1.2...3.."]})
+            >>> df.with_column("split", df["data"].str.split(r"\.+", regex=True)).collect()
+            ╭───────────────┬─────────────────╮
+            │ data          ┆ split           │
+            │ ---           ┆ ---             │
+            │ Utf8          ┆ List[Utf8]      │
+            ╞═══════════════╪═════════════════╡
+            │ foo.bar...baz ┆ [foo, bar, baz] │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ a.....b.c     ┆ [a, b, c]       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 1.2...3..     ┆ [1, 2, 3, ]     │
+            ╰───────────────┴─────────────────╯
+
 
         Args:
             pattern: The pattern on which each string should be split, or a column to pick such patterns from.
+            regex: Whether the pattern is a regular expression. Defaults to False.
 
         Returns:
             Expression: A List[Utf8] expression containing the string splits for each string in the column.
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr))
+        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
 
     def concat(self, other: str) -> Expression:
         """Concatenates two string expressions together
@@ -917,6 +946,52 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
+
+    def replace(self, pattern: str | Expression, replacement: str | Expression, regex: bool = False) -> Expression:
+        """Replaces all occurrences of a pattern in a string column with a replacement string. The pattern can be a literal string or a regex pattern.
+
+        Example:
+            >>> df = daft.from_pydict({"data": ["foo", "bar", "baz"]})
+            >>> df.with_column("replace", df["data"].str.replace("ba", "123")).collect()
+            ╭──────┬─────────╮
+            │ data ┆ replace │
+            │ ---  ┆ ---     │
+            │ Utf8 ┆ Utf8    │
+            ╞══════╪═════════╡
+            │ foo  ┆ foo     │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ bar  ┆ 123r    │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ baz  ┆ 123z    │
+            ╰──────┴─────────╯
+
+            Replace with a regex pattern
+
+            >>> df = daft.from_pydict({"data": ["foo", "fooo", "foooo"]})
+            >>> df.with_column("replace", df["data"].str.replace(r"o+", "a", regex=True)).collect()
+            ╭───────┬─────────╮
+            │ data  ┆ replace │
+            │ ---   ┆ ---     │
+            │ Utf8  ┆ Utf8    │
+            ╞═══════╪═════════╡
+            │ foo   ┆ fa      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ fooo  ┆ fa      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ foooo ┆ fa      │
+            ╰───────┴─────────╯
+
+        Args:
+            pattern: The pattern to replace
+            replacement: The replacement string
+            regex: Whether the pattern is a regex pattern or an exact match. Defaults to False.
+
+        Returns:
+            Expression: a String expression with patterns replaced by the replacement string
+        """
+        pattern_expr = Expression._to_expression(pattern)
+        replacement_expr = Expression._to_expression(replacement)
+        return Expression._from_pyexpr(self._expr.utf8_replace(pattern_expr._expr, replacement_expr._expr, regex))
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column

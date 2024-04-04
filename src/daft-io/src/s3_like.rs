@@ -33,6 +33,7 @@ use aws_sdk_s3::primitives::ByteStreamError;
 
 use std::collections::HashMap;
 
+use std::io;
 use std::ops::Range;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
@@ -160,10 +161,20 @@ impl From<Error> for super::Error {
                 },
             },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
-            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes {
-                path,
-                source: source.into(),
-            },
+            UnableToReadBytes { path, source } => {
+                use std::error::Error;
+                let io_error = if let Some(source) = source.source() {
+                    // if we have a source, lets extract out the error as a string rather than rely on the aws-sdk fmt.
+                    let source_as_string = source.to_string();
+                    std::io::Error::new(io::ErrorKind::Other, source_as_string)
+                } else {
+                    std::io::Error::new(io::ErrorKind::Other, source)
+                };
+                super::Error::UnableToReadBytes {
+                    path,
+                    source: io_error,
+                }
+            }
             NotAFile { path } => super::Error::NotAFile { path },
             UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
                 store: SourceType::S3,

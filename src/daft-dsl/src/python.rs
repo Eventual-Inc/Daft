@@ -421,9 +421,9 @@ impl PyExpr {
         Ok(match_(&self.expr, &pattern.expr).into())
     }
 
-    pub fn utf8_split(&self, pattern: &Self) -> PyResult<Self> {
+    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> PyResult<Self> {
         use crate::functions::utf8::split;
-        Ok(split(&self.expr, &pattern.expr).into())
+        Ok(split(&self.expr, &pattern.expr, regex).into())
     }
 
     pub fn utf8_extract(&self, pattern: &Self, index: usize) -> PyResult<Self> {
@@ -434,6 +434,11 @@ impl PyExpr {
     pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> PyResult<Self> {
         use crate::functions::utf8::extract_all;
         Ok(extract_all(&self.expr, &pattern.expr, index).into())
+    }
+
+    pub fn utf8_replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> PyResult<Self> {
+        use crate::functions::utf8::replace;
+        Ok(replace(&self.expr, &pattern.expr, &replacement.expr, regex).into())
     }
 
     pub fn utf8_length(&self) -> PyResult<Self> {

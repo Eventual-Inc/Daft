@@ -9,6 +9,7 @@ mod length;
 mod lower;
 mod lstrip;
 mod match_;
+mod replace;
 mod reverse;
 mod right;
 mod rstrip;
@@ -26,6 +27,7 @@ use left::LeftEvaluator;
 use length::LengthEvaluator;
 use lower::LowerEvaluator;
 use lstrip::LstripEvaluator;
+use replace::ReplaceEvaluator;
 use reverse::ReverseEvaluator;
 use right::RightEvaluator;
 use rstrip::RstripEvaluator;
@@ -43,10 +45,11 @@ pub enum Utf8Expr {
     EndsWith,
     StartsWith,
     Contains,
-    Split,
+    Split(bool),
     Match,
     Extract(usize),
     ExtractAll(usize),
+    Replace(bool),
     Length,
     Lower,
     Upper,
@@ -67,10 +70,11 @@ impl Utf8Expr {
             EndsWith => &EndswithEvaluator {},
             StartsWith => &StartswithEvaluator {},
             Contains => &ContainsEvaluator {},
-            Split => &SplitEvaluator {},
+            Split(_) => &SplitEvaluator {},
             Match => &MatchEvaluator {},
             Extract(_) => &ExtractEvaluator {},
             ExtractAll(_) => &ExtractAllEvaluator {},
+            Replace(_) => &ReplaceEvaluator {},
             Length => &LengthEvaluator {},
             Lower => &LowerEvaluator {},
             Upper => &UpperEvaluator {},
@@ -113,9 +117,9 @@ pub fn match_(data: &Expr, pattern: &Expr) -> Expr {
     }
 }
 
-pub fn split(data: &Expr, pattern: &Expr) -> Expr {
+pub fn split(data: &Expr, pattern: &Expr, regex: bool) -> Expr {
     Expr::Function {
-        func: super::FunctionExpr::Utf8(Utf8Expr::Split),
+        func: super::FunctionExpr::Utf8(Utf8Expr::Split(regex)),
         inputs: vec![data.clone(), pattern.clone()],
     }
 }
@@ -131,6 +135,13 @@ pub fn extract_all(data: &Expr, pattern: &Expr, index: usize) -> Expr {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::ExtractAll(index)),
         inputs: vec![data.clone(), pattern.clone()],
+    }
+}
+
+pub fn replace(data: &Expr, pattern: &Expr, replacement: &Expr, regex: bool) -> Expr {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Replace(regex)),
+        inputs: vec![data.clone(), pattern.clone(), replacement.clone()],
     }
 }
 

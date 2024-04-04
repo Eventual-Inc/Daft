@@ -414,8 +414,6 @@ def write_tabular(
     partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> MicroPartition:
 
-    pass
-
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
     if isinstance(path, pathlib.Path):
         path_str = str(path)

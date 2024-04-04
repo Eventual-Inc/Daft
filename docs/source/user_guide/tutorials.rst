@@ -31,6 +31,18 @@ Generate images from text prompts using a deep learning model (Mini DALL-E) and 
 `Run this tutorial on Google Colab <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/text_to_image/text_to_image_generation.ipynb>`__
 
 
+.. These can't be run because DeltaLake can't be accessed in anonymous mode from Google Colab
+.. ML model batch inference/training on a Data Catalog
+.. ---------------------------------------------------
+
+.. Run ML models or train them on data in your data catalog (e.g. Apache Iceberg, DeltaLake or Hudi)
+
+.. 1. `Local batch inference <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/delta_lake/1-local-image-batch-inference.ipynb>`__
+.. 1. `Distributed batch inference <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/delta_lake/2-distributed-batch-inferece.ipynb>`__
+.. 1. `Single-node Pytorch model training <https://colab.research.google.com/github/Eventual-Inc/Daft/blob/main/tutorials/delta_lake/3-pytorch-ray-single-node-training.ipynb>`__
+
+
+
 .. Other ideas:
 .. Scaling up in the cloud with Ray **[Coming Soon]**
 .. Building a HTTP service **[Coming Soon]**

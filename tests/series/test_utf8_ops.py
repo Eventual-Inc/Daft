@@ -103,47 +103,76 @@ def test_series_utf8_compare_invalid_inputs(funcname, bad_series) -> None:
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
         # Single-character pattern.
-        (["a,b,c", "d,e", "f", "g,h"], [","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]]),
+        (["a,b,c", "d,e", "f", "g,h"], [","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]], False),
         # Multi-character pattern.
-        (["abbcbbd", "bb", "bbe", "fbb"], ["bb"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]]),
+        (["abbcbbd", "bb", "bbe", "fbb"], ["bb"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]], False),
         # Empty pattern (character-splitting).
-        (["foo", "bar"], [""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]]),
+        (["foo", "bar"], [""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]], False),
+        # Single-character pattern (regex).
+        (["a,b,c", "d,e", "f", "g,h"], [r","], [["a", "b", "c"], ["d", "e"], ["f"], ["g", "h"]], True),
+        # Multi-character pattern (regex).
+        (["abbcbbd", "bb", "bbe", "fbb"], [r"b+"], [["a", "c", "d"], ["", ""], ["", "e"], ["f", ""]], True),
+        # Empty pattern (regex).
+        (["foo", "bar"], [r""], [["", "f", "o", "o", ""], ["", "b", "a", "r", ""]], True),
     ],
 )
-def test_series_utf8_split_broadcast_pattern(data, patterns, expected) -> None:
+def test_series_utf8_split_broadcast_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
-        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [",", ":", ";", "."], [["a", "b", "c"]] * 4),
-        (["aabbccdd"] * 4, ["aa", "bb", "cc", "dd"], [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]]),
+        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [",", ":", ";", "."], [["a", "b", "c"]] * 4, False),
+        (
+            ["aabbccdd"] * 4,
+            ["aa", "bb", "cc", "dd"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            False,
+        ),
+        (["a,b,c", "a:b:c", "a;b;c", "a.b.c"], [r",", r":", r";", r"\."], [["a", "b", "c"]] * 4, True),
+        (
+            ["aabbccdd"] * 4,
+            [r"a+", r"b+", r"c+", r"d+"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            True,
+        ),
     ],
 )
-def test_series_utf8_split_multi_pattern(data, patterns, expected) -> None:
+def test_series_utf8_split_multi_pattern(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns", "expected", "regex"],
     [
-        (["aabbccdd"], ["aa", "bb", "cc", "dd"], [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]]),
+        (
+            ["aabbccdd"],
+            ["aa", "bb", "cc", "dd"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            False,
+        ),
+        (
+            ["aabbccdd"],
+            [r"a+", r"b+", r"c+", r"d+"],
+            [["", "bbccdd"], ["aa", "ccdd"], ["aabb", "dd"], ["aabbcc", ""]],
+            True,
+        ),
     ],
 )
-def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
+def test_series_utf8_split_broadcast_arr(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data))
     patterns = Series.from_arrow(pa.array(patterns))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
@@ -151,7 +180,7 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
     ["data", "patterns", "expected"],
     [
         # Mixed-in nulls.
-        (["a,b,c", None, "a;b;c", "a.b.c"], [",", ":", None, "."], [["a", "b", "c"], None, None, ["a", "b", "c"]]),
+        (["a,b,c", None, "a;b;c", "a/b/c"], [",", ":", None, "/"], [["a", "b", "c"], None, None, ["a", "b", "c"]]),
         # All null data.
         ([None] * 4, [","] * 4, [None] * 4),
         # All null patterns.
@@ -162,10 +191,11 @@ def test_series_utf8_split_broadcast_arr(data, patterns, expected) -> None:
         (["foo"] * 4, [None], [None] * 4),
     ],
 )
-def test_series_utf8_split_nulls(data, patterns, expected) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
-    result = s.str.split(patterns)
+    result = s.str.split(patterns, regex=regex)
     assert result.to_pylist() == expected
 
 
@@ -178,7 +208,8 @@ def test_series_utf8_split_nulls(data, patterns, expected) -> None:
         ([["foo"] * 4, [], []]),
     ],
 )
-def test_series_utf8_split_empty_arrs(data, patterns, expected) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_empty_arrs(data, patterns, expected, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
     result = s.str.split(patterns)
@@ -194,10 +225,11 @@ def test_series_utf8_split_empty_arrs(data, patterns, expected) -> None:
         object(),
     ],
 )
-def test_series_utf8_split_invalid_inputs(patterns) -> None:
+@pytest.mark.parametrize("regex", [False, True])
+def test_series_utf8_split_invalid_inputs(patterns, regex) -> None:
     s = Series.from_arrow(pa.array(["a,b,c", "d, e", "f"]))
     with pytest.raises(ValueError):
-        s.str.split(patterns)
+        s.str.split(patterns, regex=regex)
 
 
 def test_series_utf8_length() -> None:
@@ -628,3 +660,103 @@ def test_series_utf8_find_bad_dtype() -> None:
     substrs = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
     with pytest.raises(ValueError):
         s.str.find(substrs)
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "replacement", "expected"],
+    [
+        # No broadcast
+        (["foo", "barbaz", "quux"], ["o", "a", "u"], ["O", "A", "U"], ["fOO", "bArbAz", "qUUx"]),
+        # Broadcast data
+        (["foobar"], ["f", "o", "b"], ["F", "O", "B"], ["Foobar", "fOObar", "fooBar"]),
+        # Broadcast pattern
+        (["123", "12", "1"], ["1"], ["2", "3", "4"], ["223", "32", "4"]),
+        # Broadcast replacement
+        (["foo", "barbaz", "quux"], ["o", "a", "u"], [" "], ["f  ", "b rb z", "q  x"]),
+        # Broadcast data and pattern
+        (["foo"], ["o"], ["O", "A", "U"], ["fOO", "fAA", "fUU"]),
+        # Broadcast data and replacement
+        (["foo"], ["o", "f", " "], ["O"], ["fOO", "Ooo", "foo"]),
+        # Broadcast pattern and replacement
+        (["123", "12", "1"], ["1"], ["A"], ["A23", "A2", "A"]),
+        # All empty
+        ([], [], [], []),
+    ],
+)
+@pytest.mark.parametrize("regex", [True, False])
+def test_series_utf8_replace(data, pattern, replacement, expected, regex) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacements = Series.from_arrow(pa.array(replacement, type=pa.string()))
+    result = s.str.replace(patterns, replacements, regex=regex)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "replacement", "expected"],
+    [
+        # Start of string.
+        (["foo", "barbaz", "quux"], ["^f", "^b", "^q"], ["F", "B", "Q"], ["Foo", "Barbaz", "Quux"]),
+        # Multi-character pattern.
+        (["aabbaa", "abddaaaaaaa", "acaca"], [r"a+"], ["foo"], ["foobbfoo", "foobddfoo", "foocfoocfoo"]),
+    ],
+)
+def test_series_utf8_replace_regex(data, pattern, replacement, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacements = Series.from_arrow(pa.array(replacement, type=pa.string()))
+    result = s.str.replace(patterns, replacements, regex=True)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "replacement", "expected"],
+    [
+        # Broadcast null data
+        ([None], ["o", "a", "u"], ["O", "A", "U"], [None, None, None]),
+        # Broadcast null pattern
+        (["foo", "barbaz", "quux"], [None], [" "], [None, None, None]),
+        # Broadcast null replacement
+        (["foo", "barbaz", "quux"], ["o", "a", "u"], [None], [None, None, None]),
+        # Mixed-in nulls
+        ([None, "barbaz", "quux", "1"], ["o", None, "u", "1"], ["O", "A", None, "2"], [None, None, None, "2"]),
+    ],
+)
+@pytest.mark.parametrize("regex", [True, False])
+def test_series_utf8_replace_nulls(data, pattern, replacement, expected, regex) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    patterns = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacements = Series.from_arrow(pa.array(replacement, type=pa.string()))
+    result = s.str.replace(patterns, replacements, regex=regex)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "pattern", "replacement"],
+    [
+        # Mismatched number of patterns and replacements
+        (["foo", "barbaz", "quux"], ["o", "a"], ["O"]),
+        (["foo", "barbaz", "quux"], [], ["O", "A"]),
+        (["foo", "barbaz", "quux"], ["o", "a"], []),
+        # bad input type
+        ([1, 2, 3], ["o", "a"], ["O", "A"]),
+    ],
+)
+@pytest.mark.parametrize("regex", [True, False])
+def test_series_utf8_replace_bad_inputs(data, pattern, replacement, regex) -> None:
+    s = Series.from_arrow(pa.array(data))
+    with pytest.raises(ValueError):
+        s.str.replace(pattern, replacement, regex=regex)
+
+    pattern = Series.from_arrow(pa.array(pattern, type=pa.string()))
+    replacement = Series.from_arrow(pa.array(replacement, type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.replace(pattern, replacement, regex=regex)
+
+
+def test_series_utf8_replace_bad_regex_pattern() -> None:
+    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
+    pattern = Series.from_arrow(pa.array(["["]))
+    replacement = Series.from_arrow(pa.array([" "]))
+    with pytest.raises(ValueError):
+        s.str.replace(pattern, replacement, regex=True)
