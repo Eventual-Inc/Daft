@@ -19,8 +19,6 @@ use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
 
-type Arrow2AggregateFn<'a, T> = &'a dyn Fn(&PrimitiveArray<T>) -> Option<T>;
-
 fn join_arrow_list_of_utf8s(
     list_element: Option<&dyn arrow2::array::Array>,
     delimiter_str: &str,
@@ -47,34 +45,82 @@ fn join_arrow_list_of_utf8s(
         })
 }
 
+trait ListChildAggable {
+    fn agg_data_array<T, U>(&self, arr: &DataArray<T>, op: U) -> DaftResult<Series>
+    where
+        T: DaftNumericType,
+        <T::Native as arrow2::types::simd::Simd>::Simd:
+            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+        U: Fn(&PrimitiveArray<T::Native>) -> Option<T::Native>;
+
+    fn _min(&self, flat_child: &Series) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::min_primitive;
+
+        match flat_child.data_type() {
+            Int8 => self.agg_data_array(flat_child.i8()?, &min_primitive),
+            Int16 => self.agg_data_array(flat_child.i16()?, &min_primitive),
+            Int32 => self.agg_data_array(flat_child.i32()?, &min_primitive),
+            Int64 => self.agg_data_array(flat_child.i64()?, &min_primitive),
+            UInt8 => self.agg_data_array(flat_child.u8()?, &min_primitive),
+            UInt16 => self.agg_data_array(flat_child.u16()?, &min_primitive),
+            UInt32 => self.agg_data_array(flat_child.u32()?, &min_primitive),
+            UInt64 => self.agg_data_array(flat_child.u64()?, &min_primitive),
+            Float32 => self.agg_data_array(flat_child.f32()?, &min_primitive),
+            Float64 => self.agg_data_array(flat_child.f64()?, &min_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Min not implemented for {}",
+                other
+            ))),
+        }
+    }
+
+    fn _max(&self, flat_child: &Series) -> DaftResult<Series> {
+        use crate::datatypes::DataType::*;
+        use arrow2::compute::aggregate::max_primitive;
+
+        match flat_child.data_type() {
+            Int8 => self.agg_data_array(flat_child.i8()?, &max_primitive),
+            Int16 => self.agg_data_array(flat_child.i16()?, &max_primitive),
+            Int32 => self.agg_data_array(flat_child.i32()?, &max_primitive),
+            Int64 => self.agg_data_array(flat_child.i64()?, &max_primitive),
+            UInt8 => self.agg_data_array(flat_child.u8()?, &max_primitive),
+            UInt16 => self.agg_data_array(flat_child.u16()?, &max_primitive),
+            UInt32 => self.agg_data_array(flat_child.u32()?, &max_primitive),
+            UInt64 => self.agg_data_array(flat_child.u64()?, &max_primitive),
+            Float32 => self.agg_data_array(flat_child.f32()?, &max_primitive),
+            Float64 => self.agg_data_array(flat_child.f64()?, &max_primitive),
+            other => Err(DaftError::TypeError(format!(
+                "Max not implemented for {}",
+                other
+            ))),
+        }
+    }
+}
+
 impl ListArray {
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
-        let counts = match mode {
-            CountMode::All => self.offsets().lengths().map(|l| l as u64).collect(),
-            CountMode::Valid => self
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                self.offsets().lengths().map(|l| l as u64).collect()
+            }
+            (CountMode::Valid, Some(validity)) => self
                 .offsets()
                 .windows(2)
                 .map(|w| {
-                    if let Some(validity) = self.flat_child.validity() {
-                        (w[0]..w[1])
-                            .map(|i| validity.get_bit(i as usize) as u64)
-                            .sum()
-                    } else {
-                        (w[1] - w[0]) as u64
-                    }
+                    (w[0]..w[1])
+                        .map(|i| validity.get_bit(i as usize) as u64)
+                        .sum()
                 })
                 .collect(),
-            CountMode::Null => self
+            (CountMode::Null, None) => repeat(0).take(self.offsets().len() - 1).collect(),
+            (CountMode::Null, Some(validity)) => self
                 .offsets()
                 .windows(2)
                 .map(|w| {
-                    if let Some(validity) = self.flat_child.validity() {
-                        (w[0]..w[1])
-                            .map(|i| !validity.get_bit(i as usize) as u64)
-                            .sum()
-                    } else {
-                        (w[1] - w[0]) as u64
-                    }
+                    (w[0]..w[1])
+                        .map(|i| !validity.get_bit(i as usize) as u64)
+                        .sum()
                 })
                 .collect(),
         };
@@ -204,36 +250,6 @@ impl ListArray {
         }
     }
 
-    fn agg_data_array<T: DaftNumericType>(
-        &self,
-        arr: &DataArray<T>,
-        op: Arrow2AggregateFn<T::Native>,
-    ) -> DaftResult<Series>
-    where
-        <T::Native as arrow2::types::simd::Simd>::Simd:
-            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
-    {
-        let sums = arrow2::types::IndexRange::new(0, self.len() as u64)
-            .map(|i| i as usize)
-            .map(|i| {
-                if let Some(validity) = self.validity() && !validity.get_bit(i) {
-                    return None;
-                }
-
-                let start = *self.offsets().get(i).unwrap() as usize;
-                let end = *self.offsets().get(i + 1).unwrap() as usize;
-
-                let slice = arr.slice(start, end).unwrap();
-                let slice_arr = slice.as_arrow();
-
-                op(slice_arr)
-            });
-
-        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
-
-        Series::try_from((self.name(), array))
-    }
-
     pub fn sum(&self) -> DaftResult<Series> {
         use crate::datatypes::DataType::*;
         use arrow2::compute::aggregate::sum_primitive;
@@ -289,81 +305,66 @@ impl ListArray {
     }
 
     pub fn min(&self) -> DaftResult<Series> {
-        use crate::datatypes::DataType::*;
-        use arrow2::compute::aggregate::min_primitive;
-
-        match self.flat_child.data_type() {
-            Int8 => self.agg_data_array(self.flat_child.i8()?, &min_primitive),
-            Int16 => self.agg_data_array(self.flat_child.i16()?, &min_primitive),
-            Int32 => self.agg_data_array(self.flat_child.i32()?, &min_primitive),
-            Int64 => self.agg_data_array(self.flat_child.i64()?, &min_primitive),
-            UInt8 => self.agg_data_array(self.flat_child.u8()?, &min_primitive),
-            UInt16 => self.agg_data_array(self.flat_child.u16()?, &min_primitive),
-            UInt32 => self.agg_data_array(self.flat_child.u32()?, &min_primitive),
-            UInt64 => self.agg_data_array(self.flat_child.u64()?, &min_primitive),
-            Float32 => self.agg_data_array(self.flat_child.f32()?, &min_primitive),
-            Float64 => self.agg_data_array(self.flat_child.f64()?, &min_primitive),
-            other => Err(DaftError::TypeError(format!(
-                "Min not implemented for {}",
-                other
-            ))),
-        }
+        self._min(&self.flat_child)
     }
 
     pub fn max(&self) -> DaftResult<Series> {
-        use crate::datatypes::DataType::*;
-        use arrow2::compute::aggregate::max_primitive;
+        self._max(&self.flat_child)
+    }
+}
 
-        match self.flat_child.data_type() {
-            Int8 => self.agg_data_array(self.flat_child.i8()?, &max_primitive),
-            Int16 => self.agg_data_array(self.flat_child.i16()?, &max_primitive),
-            Int32 => self.agg_data_array(self.flat_child.i32()?, &max_primitive),
-            Int64 => self.agg_data_array(self.flat_child.i64()?, &max_primitive),
-            UInt8 => self.agg_data_array(self.flat_child.u8()?, &max_primitive),
-            UInt16 => self.agg_data_array(self.flat_child.u16()?, &max_primitive),
-            UInt32 => self.agg_data_array(self.flat_child.u32()?, &max_primitive),
-            UInt64 => self.agg_data_array(self.flat_child.u64()?, &max_primitive),
-            Float32 => self.agg_data_array(self.flat_child.f32()?, &max_primitive),
-            Float64 => self.agg_data_array(self.flat_child.f64()?, &max_primitive),
-            other => Err(DaftError::TypeError(format!(
-                "Max not implemented for {}",
-                other
-            ))),
-        }
+impl ListChildAggable for ListArray {
+    fn agg_data_array<T, U>(&self, arr: &DataArray<T>, op: U) -> DaftResult<Series>
+    where
+        T: DaftNumericType,
+        <T::Native as arrow2::types::simd::Simd>::Simd:
+            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+        U: Fn(&PrimitiveArray<T::Native>) -> Option<T::Native>,
+    {
+        let aggs = arrow2::types::IndexRange::new(0, self.len() as u64)
+            .map(|i| i as usize)
+            .map(|i| {
+                if let Some(validity) = self.validity() && !validity.get_bit(i) {
+                    return None;
+                }
+
+                let start = *self.offsets().get(i).unwrap() as usize;
+                let end = *self.offsets().get(i + 1).unwrap() as usize;
+
+                let slice = arr.slice(start, end).unwrap();
+                let slice_arr = slice.as_arrow();
+
+                op(slice_arr)
+            });
+
+        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(aggs).boxed();
+
+        Series::try_from((self.name(), array))
     }
 }
 
 impl FixedSizeListArray {
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        let counts = match mode {
-            CountMode::All => repeat(size as u64).take(self.len()).collect(),
-            CountMode::Valid => {
-                if let Some(validity) = self.flat_child.validity() {
-                    (0..self.len())
-                        .map(|i| {
-                            (0..size)
-                                .map(|j| validity.get_bit(i * size + j) as u64)
-                                .sum()
-                        })
-                        .collect()
-                } else {
-                    repeat(size as u64).take(self.len()).collect()
-                }
+        let counts = match (mode, self.flat_child.validity()) {
+            (CountMode::All, _) | (CountMode::Valid, None) => {
+                repeat(size as u64).take(self.len()).collect()
             }
-            CountMode::Null => {
-                if let Some(validity) = self.flat_child.validity() {
-                    (0..self.len())
-                        .map(|i| {
-                            (0..size)
-                                .map(|j| !validity.get_bit(i * size + j) as u64)
-                                .sum()
-                        })
-                        .collect()
-                } else {
-                    repeat(0).take(self.len()).collect()
-                }
-            }
+            (CountMode::Valid, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
+            (CountMode::Null, None) => repeat(0).take(self.len()).collect(),
+            (CountMode::Null, Some(validity)) => (0..self.len())
+                .map(|i| {
+                    (0..size)
+                        .map(|j| !validity.get_bit(i * size + j) as u64)
+                        .sum()
+                })
+                .collect(),
         };
 
         let array = Box::new(
@@ -480,17 +481,15 @@ impl FixedSizeListArray {
         }
     }
 
-    fn agg_data_array<T: DaftNumericType>(
-        &self,
-        arr: &DataArray<T>,
-        op: Arrow2AggregateFn<T::Native>,
-    ) -> DaftResult<Series>
+    fn agg_data_array<T, U>(&self, arr: &DataArray<T>, op: U) -> DaftResult<Series>
     where
+        T: DaftNumericType,
         <T::Native as arrow2::types::simd::Simd>::Simd:
             Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+        U: Fn(&PrimitiveArray<T::Native>) -> Option<T::Native>,
     {
         let step = self.fixed_element_len();
-        let sums = arrow2::types::IndexRange::new(0, self.len() as u64)
+        let aggs = arrow2::types::IndexRange::new(0, self.len() as u64)
             .map(|i| i as usize)
             .map(|i| {
                 if let Some(validity) = self.validity() && !validity.get_bit(i) {
@@ -506,7 +505,7 @@ impl FixedSizeListArray {
                 op(slice_arr)
             });
 
-        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(sums).boxed();
+        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(aggs).boxed();
 
         Series::try_from((self.name(), array))
     }
@@ -566,46 +565,41 @@ impl FixedSizeListArray {
     }
 
     pub fn min(&self) -> DaftResult<Series> {
-        use crate::datatypes::DataType::*;
-        use arrow2::compute::aggregate::min_primitive;
-
-        match self.flat_child.data_type() {
-            Int8 => self.agg_data_array(self.flat_child.i8()?, &min_primitive),
-            Int16 => self.agg_data_array(self.flat_child.i16()?, &min_primitive),
-            Int32 => self.agg_data_array(self.flat_child.i32()?, &min_primitive),
-            Int64 => self.agg_data_array(self.flat_child.i64()?, &min_primitive),
-            UInt8 => self.agg_data_array(self.flat_child.u8()?, &min_primitive),
-            UInt16 => self.agg_data_array(self.flat_child.u16()?, &min_primitive),
-            UInt32 => self.agg_data_array(self.flat_child.u32()?, &min_primitive),
-            UInt64 => self.agg_data_array(self.flat_child.u64()?, &min_primitive),
-            Float32 => self.agg_data_array(self.flat_child.f32()?, &min_primitive),
-            Float64 => self.agg_data_array(self.flat_child.f64()?, &min_primitive),
-            other => Err(DaftError::TypeError(format!(
-                "Min not implemented for {}",
-                other
-            ))),
-        }
+        self._min(&self.flat_child)
     }
 
     pub fn max(&self) -> DaftResult<Series> {
-        use crate::datatypes::DataType::*;
-        use arrow2::compute::aggregate::max_primitive;
+        self._max(&self.flat_child)
+    }
+}
 
-        match self.flat_child.data_type() {
-            Int8 => self.agg_data_array(self.flat_child.i8()?, &max_primitive),
-            Int16 => self.agg_data_array(self.flat_child.i16()?, &max_primitive),
-            Int32 => self.agg_data_array(self.flat_child.i32()?, &max_primitive),
-            Int64 => self.agg_data_array(self.flat_child.i64()?, &max_primitive),
-            UInt8 => self.agg_data_array(self.flat_child.u8()?, &max_primitive),
-            UInt16 => self.agg_data_array(self.flat_child.u16()?, &max_primitive),
-            UInt32 => self.agg_data_array(self.flat_child.u32()?, &max_primitive),
-            UInt64 => self.agg_data_array(self.flat_child.u64()?, &max_primitive),
-            Float32 => self.agg_data_array(self.flat_child.f32()?, &max_primitive),
-            Float64 => self.agg_data_array(self.flat_child.f64()?, &max_primitive),
-            other => Err(DaftError::TypeError(format!(
-                "Max not implemented for {}",
-                other
-            ))),
-        }
+impl ListChildAggable for FixedSizeListArray {
+    fn agg_data_array<T, U>(&self, arr: &DataArray<T>, op: U) -> DaftResult<Series>
+    where
+        T: DaftNumericType,
+        <T::Native as arrow2::types::simd::Simd>::Simd:
+            Add<Output = <T::Native as arrow2::types::simd::Simd>::Simd> + Sum<T::Native>,
+        U: Fn(&PrimitiveArray<T::Native>) -> Option<T::Native>,
+    {
+        let step = self.fixed_element_len();
+        let aggs = arrow2::types::IndexRange::new(0, self.len() as u64)
+            .map(|i| i as usize)
+            .map(|i| {
+                if let Some(validity) = self.validity() && !validity.get_bit(i) {
+                    return None;
+                }
+
+                let start = i * step;
+                let end = (i + 1) * step;
+
+                let slice = arr.slice(start, end).unwrap();
+                let slice_arr = slice.as_arrow();
+
+                op(slice_arr)
+            });
+
+        let array = arrow2::array::PrimitiveArray::from_trusted_len_iter(aggs).boxed();
+
+        Series::try_from((self.name(), array))
     }
 }

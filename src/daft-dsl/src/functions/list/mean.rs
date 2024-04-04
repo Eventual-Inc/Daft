@@ -1,5 +1,10 @@
 use crate::Expr;
-use daft_core::{datatypes::Field, schema::Schema, series::Series, IntoSeries};
+use daft_core::{
+    datatypes::{try_mean_supertype, Field},
+    schema::Schema,
+    series::Series,
+    IntoSeries,
+};
 
 use common_error::{DaftError, DaftResult};
 
@@ -14,7 +19,13 @@ impl FunctionEvaluator for MeanEvaluator {
 
     fn to_field(&self, inputs: &[Expr], schema: &Schema, _: &Expr) -> DaftResult<Field> {
         match inputs {
-            [input] => Ok(input.to_field(schema)?.to_exploded_field()?.to_mean()?),
+            [input] => {
+                let field = input.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_mean_supertype(&field.dtype)?,
+                ))
+            }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
