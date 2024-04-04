@@ -42,6 +42,7 @@ WORKING_SHOW_COLLECT = [
     "test_add_new_column",
     "test_new_column_with_no_data",
     "test_table_rename",
+    "test_evolve_partitioning",
 ]
 
 

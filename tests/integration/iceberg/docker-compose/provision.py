@@ -384,3 +384,23 @@ with test_table_rename_tbl.update_schema() as txn:
 with test_table_rename_tbl.update_schema() as txn:
     txn.delete_column("deleted_and_then_overwritten_col")
     txn.add_column("deleted_and_then_overwritten_col", StringType())
+
+
+spark.sql(
+    """
+  CREATE OR REPLACE TABLE default.test_evolve_partitioning
+  USING iceberg
+  PARTITIONED BY (months(dt))
+"""
+)
+
+spark.sql("INSERT INTO default.test_evolve_partitioning VALUES (CAST('2021-01-01' AS date))")
+
+spark.sql(
+    """
+    ALTER TABLE default.test_evolve_partitioning
+    REPLACE PARTITION FIELD dt_month WITH days(dt)
+"""
+)
+
+spark.sql("INSERT INTO default.test_evolve_partitioning VALUES (CAST('2021-02-01' AS date))")
