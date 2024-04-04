@@ -1,11 +1,9 @@
 DataFrame Operations
 ====================
 
-In the previous section, we covered Expressions which are ways of expressing computation on a single column.
+In the previous section, we covered Expressions which are ways of expressing computations on a single column.
 
-However, the Daft DataFrame is table containing equal-length columns. Many operations affect the entire table at once, affecting the ordering or sizes of all columns.
-
-This section of the user guide covers these operations, and how to use them.
+The following section will cover operations that transform the entire DataFrame. You will explore the core DataFrame operations and learn how to use them.
 
 Selecting Columns
 -----------------

@@ -6,4 +6,5 @@ Basic Concepts
     basic_concepts/introduction
     basic_concepts/dataframe_introduction
     basic_concepts/expressions
+    basic_concepts/dataframe-operations
     basic_concepts/read-and-write
