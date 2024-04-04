@@ -1,6 +1,6 @@
-use crate::datatypes::{DataType, Float64Array, UInt64Array, Utf8Array};
+use crate::datatypes::{DataType, UInt64Array, Utf8Array};
 use crate::series::Series;
-use crate::CountMode;
+use crate::{CountMode, IntoSeries};
 use common_error::DaftError;
 
 use common_error::DaftResult;
@@ -18,7 +18,7 @@ impl Series {
         }
     }
 
-    pub fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
+    pub fn list_count(&self, mode: CountMode) -> DaftResult<Series> {
         use DataType::*;
 
         match self.data_type() {
@@ -35,7 +35,7 @@ impl Series {
                     )
                     .with_validity(data_array.validity().cloned()),
                 );
-                Ok(UInt64Array::from((self.name(), array)))
+                Ok(UInt64Array::from((self.name(), array)).into_series())
             }
             dt => Err(DaftError::TypeError(format!(
                 "Count not implemented for {}",
@@ -80,7 +80,7 @@ impl Series {
         }
     }
 
-    pub fn list_mean(&self) -> DaftResult<Float64Array> {
+    pub fn list_mean(&self) -> DaftResult<Series> {
         match self.data_type() {
             DataType::List(_) => self.list()?.mean(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.mean(),

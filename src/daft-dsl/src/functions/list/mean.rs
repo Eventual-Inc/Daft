@@ -3,7 +3,6 @@ use daft_core::{
     datatypes::{try_mean_supertype, Field},
     schema::Schema,
     series::Series,
-    IntoSeries,
 };
 
 use common_error::{DaftError, DaftResult};
@@ -35,7 +34,7 @@ impl FunctionEvaluator for MeanEvaluator {
 
     fn evaluate(&self, inputs: &[Series], _: &Expr) -> DaftResult<Series> {
         match inputs {
-            [input] => Ok(input.list_mean()?.into_series()),
+            [input] => Ok(input.list_mean()?),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
