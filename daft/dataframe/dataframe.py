@@ -138,7 +138,7 @@ class DataFrame:
         print(builder.pretty_print(simple))
         if not show_all:
             print(
-                "\n \n Set `show_all=True` to also see the Optimized and Physical plans, including the number of partitions."
+                "\n \n Set `show_all=True` to also see the Optimized and Physical plans, including the number of partitions. This will run the query optimizer."
             )
         if show_all:
             print("\n== Optimized Logical Plan ==\n")
