@@ -1,6 +1,6 @@
 use daft_core::{
     count_mode::CountMode,
-    datatypes::{try_sum_supertype, DataType, Field, FieldID},
+    datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
     schema::Schema,
     utils::supertype::try_get_supertype,
 };
@@ -169,7 +169,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_sum_supertype(&field.dtype)?,
+                    try_mean_supertype(&field.dtype)?,
                 ))
             }
             Min(expr) | Max(expr) | AnyValue(expr, _) => {
