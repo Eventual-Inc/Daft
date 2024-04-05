@@ -56,7 +56,7 @@ fn check_for_agg(expr: &Expr) -> bool {
         Alias(e, _) | Cast(e, _) | Not(e) | IsNull(e) | NotNull(e) => check_for_agg(e),
         BinaryOp { left, right, .. } => check_for_agg(left) || check_for_agg(right),
         Function { inputs, .. } => inputs.iter().any(check_for_agg),
-        IsIn(l, r) => check_for_agg(l) || check_for_agg(r),
+        IsIn(l, r) | FillNull(l, r) => check_for_agg(l) || check_for_agg(r),
         IfElse {
             if_true,
             if_false,
