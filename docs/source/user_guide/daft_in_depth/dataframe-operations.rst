@@ -3,7 +3,7 @@ DataFrame Operations
 
 In the previous section, we covered Expressions which are ways of expressing computation on a single column.
 
-However, the Daft DataFrame is table containing equal-length columns. Many operations affect the entire table at once, affecting the ordering or sizes of all columns.
+However, the Daft DataFrame is a table containing equal-length columns. Many operations affect the entire table at once, which in turn affects the ordering or sizes of all columns.
 
 This section of the user guide covers these operations, and how to use them.
 
@@ -146,9 +146,9 @@ Combining DataFrames
 
 Two DataFrames can be column-wise joined using :meth:`df.join() <daft.DataFrame.join>`.
 
-This requires a "join key", which can be supplied as the ``on`` argument if both DataFrames have the same name for their key columns, or the ``left_on`` and ``right_on`` argument if the key column has different names in each dataframe.
+This requires a "join key", which can be supplied as the ``on`` argument if both DataFrames have the same name for their key columns, or the ``left_on`` and ``right_on`` argument if the key column has different names in each DataFrame.
 
-Daft also supports multi-column joins key you have a join key comprising of multiple columns!
+Daft also supports multi-column joins if you have a join key comprising of multiple columns!
 
 .. code-block:: python
 
@@ -240,7 +240,7 @@ The :meth:`df.explode() <daft.DataFrame.explode>` method can be used to explode 
 Repartitioning
 --------------
 
-Daft is a distributed DataFrame, and the dataframe is broken in multiple "partitions" which are distributed across the cluster.
+Daft is a distributed DataFrame, and the dataframe is broken into multiple "partitions" which are processed in parallel across the cores in your machine or cluster.
 
 You may choose to increase or decrease the number of partitions with :meth:`df.repartition() <daft.DataFrame.partition>`.
 
