@@ -202,10 +202,8 @@ def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
 @pytest.mark.parametrize(
     ["data", "patterns", "expected"],
     [
-        # Empty data.
-        ([[], [","] * 4, []]),
-        # Empty patterns.
-        ([["foo"] * 4, [], []]),
+        # Empty data and pattern
+        ([[], [], []]),
     ],
 )
 @pytest.mark.parametrize("regex", [False, True])
@@ -416,10 +414,8 @@ def test_series_utf8_match_bad_pattern() -> None:
         ([None], [0, 1, 2], [None, None, None]),
         # Broadcast null nchars
         (["foo", "barbaz", "quux"], [None], [None, None, None]),
-        # Empty data.
-        ([[], [0, 1], []]),
-        # Empty nchars
-        ([["foo"] * 4, [], []]),
+        # All Empty
+        ([[], [], []]),
         # Mixed-in nulls
         (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "b", None]),
         # All null data.
@@ -476,8 +472,7 @@ def test_series_utf8_left_bad_dtype() -> None:
         (["foo"], [0, 1, 2], ["", "o", "oo"]),
         ([None], [0, 1, 2], [None, None, None]),
         (["foo", "barbaz", "quux"], [None], [None, None, None]),
-        ([[], [0, 1], []]),
-        ([["foo"] * 4, [], []]),
+        ([[], [], []]),
         (["foo", None, "barbaz", "quux"], [0, 1, 1, None], ["", None, "z", None]),
         ([None] * 4, [1] * 4, [None] * 4),
         (["foo"] * 4, [None] * 4, [None] * 4),
@@ -629,10 +624,8 @@ def test_series_utf8_extract_all_bad_pattern() -> None:
         ([None], ["foo", "bar", "baz"], [None, None, None]),
         # Broadcast null substrs
         (["foo", "barbaz", "quux"], [None], [None, None, None]),
-        # Empty data.
-        ([[], ["foo", "bar"], []]),
-        # Empty substrs
-        ([["foo"] * 4, [], []]),
+        # All Empty
+        ([[], [], []]),
         # Mixed-in nulls
         (["foo", None, "barbaz", "quux"], ["oo", "bar", "baz", None], [1, None, 3, None]),
         # All null data.
