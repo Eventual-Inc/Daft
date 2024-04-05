@@ -200,14 +200,16 @@ def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
 
 
 @pytest.mark.parametrize(
-    ["data", "patterns", "expected"],
+    ["data", "patterns"],
     [
-        # Empty data and pattern
-        ([[], [], []]),
+        # Empty data.
+        ([[], [","] * 4, []]),
+        # Empty patterns.
+        ([["foo"] * 4, [], []]),
     ],
 )
 @pytest.mark.parametrize("regex", [False, True])
-def test_series_utf8_split_empty_arrs(data, patterns, expected, regex) -> None:
+def test_series_utf8_split_empty_arrs(data, patterns, regex) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     patterns = Series.from_arrow(pa.array(patterns, type=pa.string()))
     with pytest.raises(ValueError):
