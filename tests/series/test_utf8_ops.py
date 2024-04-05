@@ -203,9 +203,9 @@ def test_series_utf8_split_nulls(data, patterns, expected, regex) -> None:
     ["data", "patterns"],
     [
         # Empty data.
-        ([[], [","] * 4, []]),
+        ([[], [","] * 4]),
         # Empty patterns.
-        ([["foo"] * 4, [], []]),
+        ([["foo"] * 4, []]),
     ],
 )
 @pytest.mark.parametrize("regex", [False, True])
