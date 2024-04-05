@@ -23,14 +23,11 @@ impl Sketch {
     }
 
     pub fn from_binary(binary: &[u8]) -> DaftResult<Self> {
-        let sketch_str = std::str::from_utf8(binary)?;
-        let sketch: DDSketch = serde_json::from_str(sketch_str)?;
-        Ok(Sketch(sketch))
+        Ok(Sketch(bincode::deserialize(binary)?))
     }
 
     pub fn to_binary(&self) -> DaftResult<Vec<u8>> {
-        let sketch_str = serde_json::to_string(&self.0)?;
-        Ok(sketch_str.as_bytes().to_vec())
+        Ok(bincode::serialize(&self.0)?)
     }
 }
 

@@ -105,6 +105,12 @@ impl From<sketches_ddsketch::DDSketchError> for DaftError {
     }
 }
 
+impl From<bincode::Error> for DaftError {
+    fn from(error: bincode::Error) -> Self {
+        DaftError::ValueError(error.to_string())
+    }
+}
+
 pub type DaftResult<T> = std::result::Result<T, DaftError>;
 
 impl Display for DaftError {

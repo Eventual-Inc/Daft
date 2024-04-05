@@ -946,6 +946,7 @@ name = "common-error"
 version = "0.2.0-dev0"
 dependencies = [
  "arrow2",
+ "bincode",
  "pyo3",
  "regex",
  "serde_json",
