@@ -132,6 +132,30 @@ impl FixedSizeListArray {
         ))
     }
 
+    pub fn iter(&self) -> Box<dyn Iterator<Item = Option<Series>> + '_> {
+        let step = self.fixed_element_len();
+
+        if let Some(validity) = self.validity() {
+            Box::new((0..self.len()).map(move |i| {
+                if validity.get_bit(i) {
+                    let start = i * step;
+                    let end = (i + 1) * step;
+
+                    Some(self.flat_child.slice(start, end).unwrap())
+                } else {
+                    None
+                }
+            }))
+        } else {
+            Box::new((0..self.len()).map(move |i| {
+                let start = i * step;
+                let end = (i + 1) * step;
+
+                Some(self.flat_child.slice(start, end).unwrap())
+            }))
+        }
+    }
+
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(arrow2::array::FixedSizeListArray::new(

@@ -195,60 +195,6 @@ impl ListArray {
             }
         }
     }
-
-    fn agg_helper<T>(&self, op: T) -> DaftResult<Series>
-    where
-        T: Fn(&Series) -> DaftResult<Series>,
-    {
-        let aggs = if let Some(validity) = self.validity() {
-            let test_result = op(&Series::empty("", self.flat_child.data_type()))?;
-
-            (0..self.len())
-                .map(|i| {
-                    if validity.get_bit(i) {
-                        let start = *self.offsets().get(i).unwrap() as usize;
-                        let end = *self.offsets().get(i + 1).unwrap() as usize;
-
-                        let slice = self.flat_child.slice(start, end)?;
-                        op(&slice)
-                    } else {
-                        Ok(Series::full_null("", test_result.data_type(), 1))
-                    }
-                })
-                .collect::<DaftResult<Vec<_>>>()?
-        } else {
-            self.offsets()
-                .windows(2)
-                .map(|w| {
-                    let start = w[0] as usize;
-                    let end = w[1] as usize;
-
-                    let slice = self.flat_child.slice(start, end)?;
-                    op(&slice)
-                })
-                .collect::<DaftResult<Vec<_>>>()?
-        };
-
-        let agg_refs: Vec<_> = aggs.iter().collect();
-
-        Ok(Series::concat(agg_refs.as_slice())?.rename(self.name()))
-    }
-
-    pub fn sum(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.sum(None))
-    }
-
-    pub fn mean(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.mean(None))
-    }
-
-    pub fn min(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.min(None))
-    }
-
-    pub fn max(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.max(None))
-    }
 }
 
 impl FixedSizeListArray {
@@ -388,59 +334,45 @@ impl FixedSizeListArray {
             }
         }
     }
-
-    fn agg_helper<T>(&self, op: T) -> DaftResult<Series>
-    where
-        T: Fn(&Series) -> DaftResult<Series>,
-    {
-        let step = self.fixed_element_len();
-
-        let aggs = if let Some(validity) = self.validity() {
-            let test_result = op(&Series::empty("", self.flat_child.data_type()))?;
-
-            (0..self.len())
-                .map(|i| {
-                    if validity.get_bit(i) {
-                        let start = i * step;
-                        let end = (i + 1) * step;
-
-                        let slice = self.flat_child.slice(start, end)?;
-                        op(&slice)
-                    } else {
-                        Ok(Series::full_null("", test_result.data_type(), 1))
-                    }
-                })
-                .collect::<DaftResult<Vec<_>>>()?
-        } else {
-            (0..self.len())
-                .map(|i| {
-                    let start = i * step;
-                    let end = (i + 1) * step;
-
-                    let slice = self.flat_child.slice(start, end)?;
-                    op(&slice)
-                })
-                .collect::<DaftResult<Vec<_>>>()?
-        };
-
-        let agg_refs: Vec<_> = aggs.iter().collect();
-
-        Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
-    }
-
-    pub fn sum(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.sum(None))
-    }
-
-    pub fn mean(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.mean(None))
-    }
-
-    pub fn min(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.min(None))
-    }
-
-    pub fn max(&self) -> DaftResult<Series> {
-        self.agg_helper(|s| s.max(None))
-    }
 }
+
+macro_rules! impl_aggs_list_array {
+    ($la:ident) => {
+        impl $la {
+            fn agg_helper<T>(&self, op: T) -> DaftResult<Series>
+            where
+                T: Fn(&Series) -> DaftResult<Series>,
+            {
+                // Assumes `op`` returns a null Series given an empty Series
+                let aggs = self
+                    .iter()
+                    .map(|s| s.unwrap_or(Series::empty("", self.child_data_type())))
+                    .map(|s| op(&s))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                let agg_refs: Vec<_> = aggs.iter().collect();
+
+                Series::concat(agg_refs.as_slice()).map(|s| s.rename(self.name()))
+            }
+
+            pub fn sum(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.sum(None))
+            }
+
+            pub fn mean(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.mean(None))
+            }
+
+            pub fn min(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.min(None))
+            }
+
+            pub fn max(&self) -> DaftResult<Series> {
+                self.agg_helper(|s| s.max(None))
+            }
+        }
+    };
+}
+
+impl_aggs_list_array!(ListArray);
+impl_aggs_list_array!(FixedSizeListArray);

@@ -151,6 +151,28 @@ impl ListArray {
         ))
     }
 
+    pub fn iter(&self) -> Box<dyn Iterator<Item = Option<Series>> + '_> {
+        if let Some(validity) = self.validity() {
+            Box::new((0..self.len()).map(|i| {
+                if validity.get_bit(i) {
+                    let start = *self.offsets().get(i).unwrap() as usize;
+                    let end = *self.offsets().get(i + 1).unwrap() as usize;
+
+                    Some(self.flat_child.slice(start, end).unwrap())
+                } else {
+                    None
+                }
+            }))
+        } else {
+            Box::new(self.offsets().windows(2).map(|w| {
+                let start = w[0] as usize;
+                let end = w[1] as usize;
+
+                Some(self.flat_child.slice(start, end).unwrap())
+            }))
+        }
+    }
+
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(arrow2::array::ListArray::new(
