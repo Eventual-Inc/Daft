@@ -17,7 +17,11 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 .iter()
                 .fold(None, |acc, value| match (acc, value) {
                     (acc, None) => acc,
-                    (None, Some(v)) => Some(Sketch::from_value(*v)),
+                    (None, Some(v)) => {
+                        let mut sketch = Sketch::new();
+                        sketch.add(*v);
+                        Some(sketch)
+                    }
                     (Some(mut acc), Some(v)) => {
                         acc.add(*v);
                         Some(acc)
@@ -57,7 +61,11 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                         let idx = *index as usize;
                         match (acc, arrow_array.is_null(idx)) {
                             (acc, true) => acc,
-                            (None, false) => Some(Sketch::from_value(arrow_array.value(idx))),
+                            (None, false) => {
+                                let mut sketch = Sketch::new();
+                                sketch.add(arrow_array.value(idx));
+                                Some(sketch)
+                            }
                             (Some(mut acc), false) => {
                                 acc.add(arrow_array.value(idx));
                                 Some(acc)
