@@ -47,6 +47,7 @@ publish = false
 version = "0.2.0-dev0"
 
 [patch.crates-io]
+arrow2 = {git = "https://github.com/Eventual-Inc/arrow2", rev = "c0764b00cc05126c80c7ce17ebd7a95d87f815c1"}
 parquet2 = {git = "https://github.com/Eventual-Inc/parquet2", rev = "d4c24086c4cc824fbabef093ab2fda95d3aacb78"}
 
 [profile.dev]
