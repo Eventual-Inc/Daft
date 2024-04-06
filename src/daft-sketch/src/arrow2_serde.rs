@@ -1,42 +1,91 @@
 use arrow2::array::Array;
 use lazy_static::lazy_static;
-use serde_arrow::schema::{SchemaLike, SerdeArrowSchema, TracingOptions};
+use serde_arrow::{
+    schema::{SchemaLike, SerdeArrowSchema, TracingOptions},
+    utils::{Item, Items},
+};
 use sketches_ddsketch::DDSketch;
 
 lazy_static! {
-    static ref ARROW2_DDSKETCH_FIELDS: Vec<arrow2::datatypes::Field> =
-        SerdeArrowSchema::from_type::<DDSketch>(TracingOptions::default())
+    static ref ARROW2_DDSKETCH_ITEM_FIELDS: Vec<arrow2::datatypes::Field> =
+        SerdeArrowSchema::from_type::<Item<DDSketch>>(TracingOptions::default())
             .unwrap()
             .to_arrow2_fields()
             .unwrap();
 
     /// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
-    pub static ref ARROW2_DDSKETCH_DTYPE: arrow2::datatypes::DataType = arrow2::datatypes::DataType::Struct(ARROW2_DDSKETCH_FIELDS.clone());
+    pub static ref ARROW2_DDSKETCH_DTYPE: arrow2::datatypes::DataType = ARROW2_DDSKETCH_ITEM_FIELDS.first().unwrap().data_type().clone();
 }
 
 /// Converts a Vec<Option<DDSketch>> into an arrow2 Array
-pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Array> {
+pub fn into_arrow2(sketches: Vec<DDSketch>) -> Box<dyn arrow2::array::Array> {
     if sketches.is_empty() {
         return arrow2::array::StructArray::new_empty(ARROW2_DDSKETCH_DTYPE.clone()).to_boxed();
     }
-    let arrow2_arrays =
-        serde_arrow::to_arrow2(ARROW2_DDSKETCH_FIELDS.as_slice(), &sketches).unwrap();
-    let validity = arrow2_arrays
-        .iter()
-        .fold(None, |acc, arr| match (&acc, arr.validity()) {
-            (_, None) => acc,
-            (None, Some(arr)) => Some(arr.clone()),
-            (Some(validity), Some(arr)) => Some(arrow2::bitmap::and(validity, arr)),
-        });
-    arrow2::array::StructArray::new(ARROW2_DDSKETCH_DTYPE.clone(), arrow2_arrays, validity)
-        .to_boxed()
+
+    let wrapped_sketches: Items<Vec<DDSketch>> = Items(sketches);
+    let mut arrow2_arrays =
+        serde_arrow::to_arrow2(ARROW2_DDSKETCH_ITEM_FIELDS.as_slice(), &wrapped_sketches).unwrap();
+
+    println!("{:?}", *ARROW2_DDSKETCH_ITEM_FIELDS);
+    arrow2_arrays.pop().unwrap()
 }
 
 /// Converts an arrow2 Array into a Vec<Option<DDSketch>>
 pub fn from_arrow2(
     arrow_array: Box<dyn arrow2::array::Array>,
-) -> serde_arrow::Result<Vec<Option<DDSketch>>> {
-    let arrow_struct_arr: &arrow2::array::StructArray =
-        arrow_array.as_any().downcast_ref().unwrap();
-    serde_arrow::from_arrow2(&ARROW2_DDSKETCH_FIELDS, arrow_struct_arr.values())
+) -> serde_arrow::Result<Vec<DDSketch>> {
+    if arrow_array.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let item_vec = serde_arrow::from_arrow2::<Vec<Item<DDSketch>>, _>(
+        &ARROW2_DDSKETCH_ITEM_FIELDS,
+        &[arrow_array],
+    );
+    item_vec.map(|item_vec| item_vec.into_iter().map(|item| item.0).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{from_arrow2, into_arrow2};
+    use sketches_ddsketch::{Config, DDSketch};
+
+    #[test]
+    fn test_roundtrip_single() -> serde_arrow::Result<()> {
+        let mut sketch = DDSketch::new(Config::default());
+
+        for i in 0..10 {
+            sketch.add(i as f64);
+        }
+
+        let expected_min = sketch.min();
+        let expected_max = sketch.max();
+        let expected_sum = sketch.sum();
+        let expected_count = sketch.count();
+        let expected_length = sketch.length();
+        let expected_quantile = sketch.quantile(0.5);
+
+        let sketches = vec![sketch];
+        let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
+
+        assert_eq!(round_tripped.len(), 1);
+        let received = round_tripped.pop().unwrap();
+        assert_eq!(received.min(), expected_min);
+        assert_eq!(received.max(), expected_max);
+        assert_eq!(received.sum(), expected_sum);
+        assert_eq!(received.count(), expected_count);
+        assert_eq!(received.length(), expected_length);
+        assert_eq!(received.quantile(0.5).unwrap(), expected_quantile.unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_roundtrip_empty() -> serde_arrow::Result<()> {
+        let sketches = vec![];
+        let round_tripped = from_arrow2(into_arrow2(sketches))?;
+        assert_eq!(round_tripped.len(), 0);
+        Ok(())
+    }
 }
