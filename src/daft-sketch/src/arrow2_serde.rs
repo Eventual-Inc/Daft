@@ -8,7 +8,7 @@ use sketches_ddsketch::DDSketch;
 
 lazy_static! {
     static ref ARROW2_DDSKETCH_ITEM_FIELDS: Vec<arrow2::datatypes::Field> =
-        SerdeArrowSchema::from_type::<Item<DDSketch>>(TracingOptions::default())
+        SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
             .unwrap()
             .to_arrow2_fields()
             .unwrap();
@@ -18,28 +18,27 @@ lazy_static! {
 }
 
 /// Converts a Vec<Option<DDSketch>> into an arrow2 Array
-pub fn into_arrow2(sketches: Vec<DDSketch>) -> Box<dyn arrow2::array::Array> {
+pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Array> {
     if sketches.is_empty() {
         return arrow2::array::StructArray::new_empty(ARROW2_DDSKETCH_DTYPE.clone()).to_boxed();
     }
 
-    let wrapped_sketches: Items<Vec<DDSketch>> = Items(sketches);
+    let wrapped_sketches: Items<Vec<Option<DDSketch>>> = Items(sketches);
     let mut arrow2_arrays =
         serde_arrow::to_arrow2(ARROW2_DDSKETCH_ITEM_FIELDS.as_slice(), &wrapped_sketches).unwrap();
 
-    println!("{:?}", *ARROW2_DDSKETCH_ITEM_FIELDS);
     arrow2_arrays.pop().unwrap()
 }
 
 /// Converts an arrow2 Array into a Vec<Option<DDSketch>>
 pub fn from_arrow2(
     arrow_array: Box<dyn arrow2::array::Array>,
-) -> serde_arrow::Result<Vec<DDSketch>> {
+) -> serde_arrow::Result<Vec<Option<DDSketch>>> {
     if arrow_array.is_empty() {
         return Ok(vec![]);
     }
 
-    let item_vec = serde_arrow::from_arrow2::<Vec<Item<DDSketch>>, _>(
+    let item_vec = serde_arrow::from_arrow2::<Vec<Item<Option<DDSketch>>>, _>(
         &ARROW2_DDSKETCH_ITEM_FIELDS,
         &[arrow_array],
     );
@@ -66,11 +65,11 @@ mod tests {
         let expected_length = sketch.length();
         let expected_quantile = sketch.quantile(0.5);
 
-        let sketches = vec![sketch];
+        let sketches = vec![Some(sketch)];
         let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
 
         assert_eq!(round_tripped.len(), 1);
-        let received = round_tripped.pop().unwrap();
+        let received = round_tripped.pop().unwrap().unwrap();
         assert_eq!(received.min(), expected_min);
         assert_eq!(received.max(), expected_max);
         assert_eq!(received.sum(), expected_sum);
@@ -78,6 +77,26 @@ mod tests {
         assert_eq!(received.length(), expected_length);
         assert_eq!(received.quantile(0.5).unwrap(), expected_quantile.unwrap());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_roundtrip_null() -> serde_arrow::Result<()> {
+        let sketches = vec![None];
+        let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
+        assert_eq!(round_tripped.len(), 1);
+        assert!(round_tripped.pop().unwrap().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_roundtrip_some_null() -> serde_arrow::Result<()> {
+        let sketches = vec![Some(DDSketch::new(Config::default())), None];
+        let mut round_tripped = from_arrow2(into_arrow2(sketches))?;
+        assert_eq!(round_tripped.len(), 2);
+
+        assert!(round_tripped.pop().unwrap().is_none());
+        assert!(round_tripped.pop().unwrap().is_some());
         Ok(())
     }
 
