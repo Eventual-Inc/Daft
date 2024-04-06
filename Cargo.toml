@@ -88,7 +88,8 @@ members = [
   "src/daft-table",
   "src/daft-plan",
   "src/daft-micropartition",
-  "src/daft-scan"
+  "src/daft-scan",
+  "src/daft-sketch"
 ]
 
 [workspace.dependencies]
