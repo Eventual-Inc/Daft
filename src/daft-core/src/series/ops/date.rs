@@ -1,7 +1,10 @@
 use crate::series::array_impl::IntoSeries;
-use crate::{datatypes::DataType, series::Series};
-
+use crate::{
+    datatypes::{logical::DateArray, DataType,logical::TimeArray},
+    series::Series,
+};
 use common_error::{DaftError, DaftResult};
+
 
 impl Series {
     pub fn dt_date(&self) -> DaftResult<Self> {
@@ -40,9 +43,13 @@ impl Series {
             DataType::Timestamp(..) => {
                 let ts_array = self.timestamp()?;
                 Ok(ts_array.hour()?.into_series())
-            }
+            },
+            DataType::Time(_) => {
+                let time_array = self.downcast::<TimeArray>()?;
+                Ok(time_array.hour()?.into_series())
+            },
             _ => Err(DaftError::ComputeError(format!(
-                "Can only run day() operation on temporal types, got {}",
+                "Can only run hour() operation on temporal types, got {}",
                 self.data_type()
             ))),
         }
