@@ -33,16 +33,13 @@ class SQLConnection:
 
     @classmethod
     def from_connection_factory(cls, conn_factory: Callable[[], Connection]) -> SQLConnection:
-        if not callable(conn_factory):
-            raise ValueError("SQLAlchemy Connection Factory must be callable.")
-        if not hasattr(conn_factory, "__enter__") or not hasattr(conn_factory, "__exit__"):
-            raise ValueError("SQLAlchemy Connection Factory must be a context manager.")
-        with conn_factory() as connection:
-            if not hasattr(connection, "engine"):
-                raise ValueError("SQLAlchemy Connection Factory must return a Connection with an engine attribute.")
-            dialect = connection.engine.dialect.name
-            driver = connection.engine.driver
-        return SQLConnection(conn_factory, driver, dialect)
+        try:
+            with conn_factory() as connection:
+                dialect = connection.engine.dialect.name
+                driver = connection.engine.driver
+            return SQLConnection(conn_factory, driver, dialect)
+        except Exception as e:
+            raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
 
     def read(
         self, sql: str, projection: list[str] | None = None, predicate: str | None = None, limit: int | None = None
