@@ -325,8 +325,8 @@ impl Table {
             ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
             ApproxPercentile(expr, q) => Series::approx_percentile(
                 &self.eval_expression(expr)?,
-                &self.eval_expression(q)?,
                 groups,
+                &self.eval_expression(q)?,
             ),
             MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
             Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),

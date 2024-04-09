@@ -378,7 +378,7 @@ impl Expr {
     pub fn sketch_quantile(&self, q: &Self) -> Self {
         Expr::Function {
             func: FunctionExpr::Sketch(SketchExpr::Quantile),
-            inputs: vec![q.clone()],
+            inputs: vec![self.clone(), q.clone()],
         }
     }
 

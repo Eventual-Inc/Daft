@@ -50,7 +50,7 @@ impl DaftApproxPercentileAggable for &DataArray<Float64Type> {
         DataArray::new(self.field.clone(), arrow_array)
     }
 
-    fn grouped_approx_percentile(&self, q: &Series, groups: &GroupIndices) -> Self::Output {
+    fn grouped_approx_percentile(&self, groups: &GroupIndices, q: &Series) -> Self::Output {
         let percentiles = convert_q_to_vec(q)?;
         let arrow_array = self.as_arrow();
         let sketch_per_group = if arrow_array.null_count() > 0 {

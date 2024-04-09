@@ -96,8 +96,8 @@ impl Series {
 
     pub fn approx_percentile(
         &self,
-        q: &Series,
         groups: Option<&GroupIndices>,
+        q: &Series,
     ) -> DaftResult<Series> {
         use crate::array::ops::DaftApproxPercentileAggable;
         use crate::datatypes::DataType::*;
@@ -109,8 +109,8 @@ impl Series {
                 match groups {
                     Some(groups) => Ok(DaftApproxPercentileAggable::grouped_approx_percentile(
                         &casted.f64()?,
-                        q,
                         groups,
+                        q,
                     )?
                     .into_series()),
                     None => Ok(

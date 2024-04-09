@@ -212,7 +212,7 @@ impl PySeries {
     }
 
     pub fn approx_percentile(&self, q: &Self) -> PyResult<Self> {
-        Ok(self.series.approx_percentile(&q.series, None)?.into())
+        Ok(self.series.approx_percentile(None, &q.series)?.into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {

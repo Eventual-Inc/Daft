@@ -1054,8 +1054,6 @@ class DataFrame:
 
         if op == "sum":
             return expr.sum()
-        # elif op == "approx_percentile":
-        #     return expr.approx_percentile()
         elif op == "count":
             return expr.count()
         elif op == "min":
