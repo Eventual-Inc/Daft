@@ -3,7 +3,8 @@ use std::borrow::Cow;
 use crate::{
     array::{DataArray, ListArray},
     datatypes::{
-        BooleanArray, DaftIntegerType, DaftNumericType, Field, Int64Array, UInt64Array, Utf8Array,
+        BooleanArray, DaftIntegerType, DaftNumericType, DaftPhysicalType, Field, Int64Array,
+        UInt64Array, Utf8Array,
     },
     DataType, Series,
 };
@@ -60,6 +61,37 @@ fn is_valid_input_lengths(lengths: &[usize]) -> bool {
     } else {
         false
     }
+}
+
+fn parse_inputs<T>(
+    self_arr: &Utf8Array,
+    other_arrs: &[&DataArray<T>],
+) -> Result<(bool, usize), String>
+where
+    T: DaftPhysicalType,
+{
+    assert!(!other_arrs.is_empty());
+
+    let lengths = std::iter::once(self_arr.len())
+        .chain(other_arrs.iter().map(|arr| arr.len()))
+        .collect::<Vec<_>>();
+    let result_len = lengths.iter().max().unwrap();
+
+    // check valid input lengths
+    if !is_valid_input_lengths(&lengths) {
+        let invalid_length_str =
+            itertools::Itertools::join(&mut lengths.iter().map(|x| x.to_string()), ", ");
+        return Err(format!("Inputs have invalid lengths: {invalid_length_str}"));
+    }
+
+    // check if any array has all nulls
+    if other_arrs.iter().any(|arr| arr.null_count() == arr.len())
+        || self_arr.null_count() == self_arr.len()
+    {
+        return Ok((true, *result_len));
+    }
+
+    Ok((false, *result_len))
 }
 
 fn split_array_on_literal<'a>(
@@ -289,26 +321,19 @@ impl Utf8Array {
     }
 
     pub fn split(&self, pattern: &Utf8Array, regex: bool) -> DaftResult<ListArray> {
-        let self_len = self.len();
-        let pattern_len = pattern.len();
-        let result_len = std::cmp::max(self_len, pattern_len);
-
-        if !is_valid_input_lengths(&[self_len, pattern_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in split: inputs have different lengths: {self_len} vs {pattern_len}"
-            )));
-        }
-        if self.is_empty() && pattern.is_empty() {
-            return Ok(ListArray::empty(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ));
-        }
-        if self.null_count() == self_len || pattern.null_count() == pattern_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
+            .map_err(|e| DaftError::ValueError(format!("Error in split: {e}")))?;
+        if is_full_null {
             return Ok(ListArray::full_null(
                 self.name(),
                 &DataType::List(Box::new(DataType::Utf8)),
-                result_len,
+                expected_size,
+            ));
+        }
+        if expected_size == 0 {
+            return Ok(ListArray::empty(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
             ));
         }
 
@@ -317,13 +342,13 @@ impl Utf8Array {
         // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurences in the ith string in arr_iter.
         let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
         let mut offsets = arrow2::offset::Offsets::new();
-        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(self_len);
+        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(self.len());
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        match (regex, pattern_len) {
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        match (regex, pattern.len()) {
             (true, 1) => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(result_len);
+                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
                 split_array_on_regex(
                     self_iter,
                     regex_iter,
@@ -346,7 +371,7 @@ impl Utf8Array {
                 )?
             }
             (false, _) => {
-                let pattern_iter = create_broadcasted_str_iter(pattern, result_len);
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
                 split_array_on_literal(
                     self_iter,
                     pattern_iter,
@@ -374,31 +399,24 @@ impl Utf8Array {
     }
 
     pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
-        let self_len = self.len();
-        let pattern_len = pattern.len();
-        let result_len = std::cmp::max(self_len, pattern_len);
-
-        if !is_valid_input_lengths(&[self_len, pattern_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in extract: inputs have different lengths: {self_len} vs {pattern_len}"
-            )));
-        }
-        if self.is_empty() && pattern.is_empty() {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
-        }
-        if self.null_count() == self_len || pattern.null_count() == pattern_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
+            .map_err(|e| DaftError::ValueError(format!("Error in extract: {e}")))?;
+        if is_full_null {
             return Ok(Utf8Array::full_null(
                 self.name(),
                 &DataType::Utf8,
-                result_len,
+                expected_size,
             ));
         }
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+        }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        match pattern_len {
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(result_len);
+                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
                 regex_extract_first_match(self_iter, regex_iter, index, self.name())
             }
             _ => {
@@ -412,42 +430,35 @@ impl Utf8Array {
     }
 
     pub fn extract_all(&self, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
-        let self_len = self.len();
-        let pattern_len = pattern.len();
-        let result_len = std::cmp::max(self_len, pattern_len);
-
-        if !is_valid_input_lengths(&[self_len, pattern_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in extract_all: inputs have different lengths: {self_len} vs {pattern_len}"
-            )));
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
+            .map_err(|e| DaftError::ValueError(format!("Error in extract_all: {e}")))?;
+        if is_full_null {
+            return Ok(ListArray::full_null(
+                self.name(),
+                &DataType::List(Box::new(DataType::Utf8)),
+                expected_size,
+            ));
         }
-        if self.is_empty() && pattern.is_empty() {
+        if expected_size == 0 {
             return Ok(ListArray::empty(
                 self.name(),
                 &DataType::List(Box::new(DataType::Utf8)),
             ));
         }
-        if self.null_count() == self_len || pattern.null_count() == pattern_len {
-            return Ok(ListArray::full_null(
-                self.name(),
-                &DataType::List(Box::new(DataType::Utf8)),
-                result_len,
-            ));
-        }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        match pattern_len {
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        match pattern.len() {
             1 => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(result_len);
-                regex_extract_all_matches(self_iter, regex_iter, index, result_len, self.name())
+                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
+                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())
             }
             _ => {
                 let regex_iter = pattern
                     .as_arrow()
                     .iter()
                     .map(|pat| pat.map(regex::Regex::new));
-                regex_extract_all_matches(self_iter, regex_iter, index, result_len, self.name())
+                regex_extract_all_matches(self_iter, regex_iter, index, expected_size, self.name())
             }
         }
     }
@@ -458,37 +469,26 @@ impl Utf8Array {
         replacement: &Utf8Array,
         regex: bool,
     ) -> DaftResult<Utf8Array> {
-        let self_len = self.len();
-        let pattern_len = pattern.len();
-        let replacement_len = replacement.len();
-        let result_len = std::cmp::max(self_len, std::cmp::max(pattern_len, replacement_len));
-
-        if !is_valid_input_lengths(&[self_len, pattern_len, replacement_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in replace: inputs have different lengths: {self_len} vs {pattern_len} vs {replacement_len}"
-            )));
-        }
-        if self.is_empty() && pattern.is_empty() && replacement.is_empty() {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
-        }
-        if self.null_count() == self_len
-            || pattern.null_count() == pattern_len
-            || replacement.null_count() == replacement_len
-        {
+        let (is_full_null, expected_size) = parse_inputs(self, &[pattern, replacement])
+            .map_err(|e| DaftError::ValueError(format!("Error in replace: {e}")))?;
+        if is_full_null {
             return Ok(Utf8Array::full_null(
                 self.name(),
                 &DataType::Utf8,
-                result_len,
+                expected_size,
             ));
         }
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+        }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        let replacement_iter = create_broadcasted_str_iter(replacement, result_len);
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let replacement_iter = create_broadcasted_str_iter(replacement, expected_size);
 
-        match (regex, pattern_len) {
+        match (regex, pattern.len()) {
             (true, 1) => {
                 let regex = regex::Regex::new(pattern.get(0).unwrap());
-                let regex_iter = std::iter::repeat(Some(regex)).take(result_len);
+                let regex_iter = std::iter::repeat(Some(regex)).take(expected_size);
                 regex_replace(self_iter, regex_iter, replacement_iter, self.name())
             }
             (true, _) => {
@@ -499,7 +499,7 @@ impl Utf8Array {
                 regex_replace(self_iter, regex_iter, replacement_iter, self.name())
             }
             (false, _) => {
-                let pattern_iter = create_broadcasted_str_iter(pattern, result_len);
+                let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
                 replace_on_literal(self_iter, pattern_iter, replacement_iter, self.name())
             }
         }
@@ -555,28 +555,21 @@ impl Utf8Array {
     }
 
     pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
-        let self_len = self.len();
-        let substr_len = substr.len();
-        let result_len = std::cmp::max(self_len, substr_len);
-
-        if !is_valid_input_lengths(&[self_len, substr_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in find: inputs have different lengths: {self_len} vs {substr_len}"
-            )));
-        }
-        if self.is_empty() && substr.is_empty() {
-            return Ok(Int64Array::empty(self.name(), &DataType::Int64));
-        }
-        if self.null_count() == self_len || substr.null_count() == substr_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[substr])
+            .map_err(|e| DaftError::ValueError(format!("Error in find: {e}")))?;
+        if is_full_null {
             return Ok(Int64Array::full_null(
                 self.name(),
                 &DataType::Int64,
-                result_len,
+                expected_size,
             ));
         }
+        if expected_size == 0 {
+            return Ok(Int64Array::empty(self.name(), &DataType::Int64));
+        }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        let substr_iter = create_broadcasted_str_iter(substr, result_len);
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let substr_iter = create_broadcasted_str_iter(substr, expected_size);
         let arrow_result = self_iter
             .zip(substr_iter)
             .map(|(val, substr)| match (val, substr) {
@@ -595,24 +588,17 @@ impl Utf8Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
     {
-        let self_len = self.len();
-        let nchars_len = nchars.len();
-        let result_len = std::cmp::max(self_len, nchars_len);
-
-        if !is_valid_input_lengths(&[self_len, nchars_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in left: inputs have different lengths: {self_len} vs {nchars_len}"
-            )));
-        }
-        if self.is_empty() && nchars.is_empty() {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
-        }
-        if self.null_count() == self_len || nchars.null_count() == nchars_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[nchars])
+            .map_err(|e| DaftError::ValueError(format!("Error in left: {e}")))?;
+        if is_full_null {
             return Ok(Utf8Array::full_null(
                 self.name(),
                 &DataType::Utf8,
-                result_len,
+                expected_size,
             ));
+        }
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
         }
 
         fn left_most_chars(val: &str, n: usize) -> &str {
@@ -623,14 +609,14 @@ impl Utf8Array {
             }
         }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        match nchars_len {
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
                     DaftError::ComputeError(format!("failed to cast rhs as usize {n}"))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(result_len);
+                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
                     .zip(nchars_iter)
                     .map(|(val, n)| Some(left_most_chars(val?, n)))
@@ -663,24 +649,17 @@ impl Utf8Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
     {
-        let self_len = self.len();
-        let nchars_len = nchars.len();
-        let result_len = std::cmp::max(self_len, nchars_len);
-
-        if !is_valid_input_lengths(&[self_len, nchars_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in right: inputs have different lengths: {self_len} vs {nchars_len}"
-            )));
-        }
-        if self.is_empty() && nchars.is_empty() {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
-        }
-        if self.null_count() == self_len || nchars.null_count() == nchars_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[nchars])
+            .map_err(|e| DaftError::ValueError(format!("Error in right: {e}")))?;
+        if is_full_null {
             return Ok(Utf8Array::full_null(
                 self.name(),
                 &DataType::Utf8,
-                result_len,
+                expected_size,
             ));
+        }
+        if expected_size == 0 {
+            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
         }
 
         fn right_most_chars(val: &str, nchar: usize) -> &str {
@@ -692,14 +671,14 @@ impl Utf8Array {
             }
         }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        match nchars_len {
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
                     DaftError::ComputeError(format!("failed to cast rhs as usize {n}"))
                 })?;
-                let nchars_iter = std::iter::repeat(n).take(result_len);
+                let nchars_iter = std::iter::repeat(n).take(expected_size);
                 let arrow_result = self_iter
                     .zip(nchars_iter)
                     .map(|(val, n)| Some(right_most_chars(val?, n)))
@@ -736,28 +715,21 @@ impl Utf8Array {
     where
         ScalarKernel: Fn(&str, &str) -> DaftResult<bool>,
     {
-        let self_len = self.len();
-        let other_len = other.len();
-        let result_len = std::cmp::max(self_len, other_len);
-
-        if !is_valid_input_lengths(&[self_len, other_len]) {
-            return Err(DaftError::ValueError(format!(
-                "Error in {op_name}: inputs have different lengths: {self_len} vs {other_len}"
-            )));
-        }
-        if self.is_empty() && other.is_empty() {
-            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
-        }
-        if self.null_count() == self_len || other.null_count() == other_len {
+        let (is_full_null, expected_size) = parse_inputs(self, &[other])
+            .map_err(|e| DaftError::ValueError(format!("Error in {op_name}: {e}")))?;
+        if is_full_null {
             return Ok(BooleanArray::full_null(
                 self.name(),
                 &DataType::Boolean,
-                result_len,
+                expected_size,
             ));
         }
+        if expected_size == 0 {
+            return Ok(BooleanArray::empty(self.name(), &DataType::Boolean));
+        }
 
-        let self_iter = create_broadcasted_str_iter(self, result_len);
-        let other_iter = create_broadcasted_str_iter(other, result_len);
+        let self_iter = create_broadcasted_str_iter(self, expected_size);
+        let other_iter = create_broadcasted_str_iter(other, expected_size);
         let arrow_result = self_iter
             .zip(other_iter)
             .map(|(self_v, other_v)| match (self_v, other_v) {
