@@ -314,8 +314,8 @@ impl Utf8Array {
                 &DataType::List(Box::new(DataType::Utf8)),
                 std::cmp::max(self.len(), pattern.len()),
             ));
-        // Handle empty cases.
-        } else if self.is_empty() || pattern.is_empty() {
+        // Handle empty data and pattern case.
+        } else if self.is_empty() && pattern.is_empty() {
             return Ok(ListArray::empty(
                 self.name(),
                 &DataType::List(Box::new(DataType::Utf8)),
@@ -387,7 +387,8 @@ impl Utf8Array {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
 
-        if self.is_empty() || pattern.is_empty() {
+        // Handle empty data and pattern case.
+        if self.is_empty() && pattern.is_empty() {
             return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
 
@@ -440,7 +441,8 @@ impl Utf8Array {
         let self_arrow = self.as_arrow();
         let pattern_arrow = pattern.as_arrow();
 
-        if self.is_empty() || pattern.is_empty() {
+        // Handle empty data and pattern case.
+        if self.is_empty() && pattern.is_empty() {
             return Ok(ListArray::empty(
                 self.name(),
                 &DataType::List(Box::new(DataType::Utf8)),
@@ -650,8 +652,8 @@ impl Utf8Array {
     pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
         let self_arrow = self.as_arrow();
         let substr_arrow = substr.as_arrow();
-        // Handle empty cases.
-        if self.is_empty() || substr.is_empty() {
+        // Handle empty data and pattern case.
+        if self.is_empty() && substr.is_empty() {
             return Ok(Int64Array::empty(self.name(), self.data_type()));
         }
         match (self.len(), substr.len()) {
@@ -737,8 +739,8 @@ impl Utf8Array {
     {
         let self_arrow = self.as_arrow();
         let n_arrow = n.as_arrow();
-        // Handle empty cases.
-        if self.is_empty() || n_arrow.is_empty() {
+        // Handle empty cases data and pattern case.
+        if self.is_empty() && n_arrow.is_empty() {
             return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
         match (self.len(), n_arrow.len()) {
@@ -829,8 +831,8 @@ impl Utf8Array {
     {
         let self_arrow = self.as_arrow();
         let n_arrow = n.as_arrow();
-        // Handle empty cases.
-        if self.is_empty() || n_arrow.is_empty() {
+        // Handle empty data and pattern case.
+        if self.is_empty() && n_arrow.is_empty() {
             return Ok(Utf8Array::empty(self.name(), self.data_type()));
         }
         match (self.len(), n_arrow.len()) {

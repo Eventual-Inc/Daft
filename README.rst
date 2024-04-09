@@ -89,6 +89,8 @@ Contributing
 
 To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_
 
+Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22>`_ to get yourself warmed up with Daft. Comment in the issue to pick it up, and feel free to ask any questions!
+
 Telemetry
 ---------
 
